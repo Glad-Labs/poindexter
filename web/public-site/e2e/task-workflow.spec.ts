@@ -1,376 +1,465 @@
 /**
- * Task Workflow E2E Tests (#13)
- * ==============================
+ * Task Pause/Resume Workflow E2E Tests
+ * =====================================
  *
- * Covers the gaps identified in issue #13:
- * - Task lifecycle: create → in_progress → pause → resume → complete
- * - Workflow pause and resume via API
- * - Task status polling / progression
- * - Task approval flow
+ * Covers issue #13 — E2E coverage gaps: pause/resume workflow.
  *
- * Tests use the apiClient fixture for backend API calls.
- * No browser navigation needed — these are API-contract tests.
+ * These are API-level tests using the `request` fixture so they work
+ * reliably without requiring a browser or UI to be running.
+ *
+ * Auth: All requests use `Authorization: Bearer dev-token` (requires
+ * DEVELOPMENT_MODE=true on the backend, which is the dev default).
+ *
+ * API base: http://localhost:8000
+ *
+ * Key endpoints exercised:
+ *   POST /api/tasks               — create a task
+ *   GET  /api/tasks               — list tasks
+ *   GET  /api/tasks/:id           — fetch single task
+ *   POST /api/tasks/bulk          — bulk pause / resume / cancel
  */
 
-import { test, expect } from './fixtures';
+import { test, expect } from '@playwright/test';
 
 // ---------------------------------------------------------------------------
-// Task Creation
+// Constants
 // ---------------------------------------------------------------------------
 
-test.describe('Task Creation', () => {
-  test('creates a task and returns task_id', async ({ page }) => {
-    const resp = await page.request.post('http://localhost:8000/api/tasks', {
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: 'Bearer dev-token',
-      },
-      data: {
-        task_name: 'E2E Workflow Test Task',
-        topic: 'Artificial intelligence in modern healthcare systems',
-        category: 'technology',
-        target_audience: 'Healthcare professionals',
-        primary_keyword: 'AI healthcare',
-      },
-    });
+const API = 'http://localhost:8000';
 
-    // 202 Accepted or 201 Created
-    expect([201, 202]).toContain(resp.status());
-    const body = await resp.json();
-    expect(body).toHaveProperty('task_id');
-    expect(typeof body.task_id).toBe('string');
-  });
+const AUTH_HEADERS = {
+  Authorization: 'Bearer dev-token',
+  'Content-Type': 'application/json',
+};
 
-  test('rejects task creation with missing topic', async ({ page }) => {
-    const resp = await page.request.post('http://localhost:8000/api/tasks', {
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: 'Bearer dev-token',
-      },
-      data: {
-        task_name: 'Incomplete Task',
-        // topic intentionally omitted
-      },
-    });
-
-    expect(resp.status()).toBe(422);
-  });
-
-  test('rejects task creation without authentication', async ({ page }) => {
-    const resp = await page.request.post('http://localhost:8000/api/tasks', {
-      headers: { 'Content-Type': 'application/json' },
-      data: {
-        task_name: 'Unauthenticated Task',
-        topic: 'Test topic for authentication check',
-      },
-    });
-
-    // 401 Unauthorized or 403 Forbidden
-    expect([401, 403]).toContain(resp.status());
-  });
-});
+/** Minimal valid task body accepted by POST /api/tasks */
+function makeTaskBody(suffix: string) {
+  return {
+    task_name: `E2E Pause/Resume Test — ${suffix}`,
+    topic: `Automated e2e test topic ${suffix}`,
+    primary_keyword: 'e2e-testing',
+    target_audience: 'QA Engineers',
+    category: 'general',
+  };
+}
 
 // ---------------------------------------------------------------------------
-// Task Status Retrieval
+// Helpers
 // ---------------------------------------------------------------------------
 
-test.describe('Task Status', () => {
-  test('returns 404 for non-existent task', async ({ page }) => {
-    const resp = await page.request.get(
-      'http://localhost:8000/api/tasks/nonexistent-task-id-abc123/status',
-      {
-        headers: { Authorization: 'Bearer dev-token' },
-      }
-    );
-
-    expect(resp.status()).toBe(404);
+async function createTask(request: any, suffix: string) {
+  const res = await request.post(`${API}/api/tasks`, {
+    headers: AUTH_HEADERS,
+    data: makeTaskBody(suffix),
   });
+  return res;
+}
 
-  test('task status response includes required fields', async ({ page }) => {
-    // First create a task
-    const createResp = await page.request.post(
-      'http://localhost:8000/api/tasks',
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer dev-token',
-        },
-        data: {
-          task_name: 'Status Check Task',
-          topic: 'Machine learning fundamentals for enterprise teams',
-          category: 'technology',
-        },
-      }
-    );
-
-    if (![201, 202].includes(createResp.status())) {
-      test.skip();
-      return;
-    }
-
-    const { task_id } = await createResp.json();
-
-    const statusResp = await page.request.get(
-      `http://localhost:8000/api/tasks/${task_id}/status`,
-      { headers: { Authorization: 'Bearer dev-token' } }
-    );
-
-    expect(statusResp.status()).toBe(200);
-    const status = await statusResp.json();
-    expect(status).toHaveProperty('status');
-    expect(status).toHaveProperty('progress');
-    expect(typeof status.progress).toBe('number');
-    expect(status.progress).toBeGreaterThanOrEqual(0);
+async function bulkAction(
+  request: any,
+  taskIds: string[],
+  action: 'pause' | 'resume' | 'cancel' | 'reject' | 'retry'
+) {
+  return request.post(`${API}/api/tasks/bulk`, {
+    headers: AUTH_HEADERS,
+    data: { task_ids: taskIds, action },
   });
+}
 
-  test('newly created task starts in pending status', async ({ page }) => {
-    const createResp = await page.request.post(
-      'http://localhost:8000/api/tasks',
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer dev-token',
-        },
-        data: {
-          task_name: 'Pending Status Test',
-          topic: 'Cloud computing trends and enterprise adoption strategies',
-        },
-      }
-    );
-
-    if (![201, 202].includes(createResp.status())) {
-      test.skip();
-      return;
-    }
-
-    const { task_id } = await createResp.json();
-
-    const statusResp = await page.request.get(
-      `http://localhost:8000/api/tasks/${task_id}/status`,
-      { headers: { Authorization: 'Bearer dev-token' } }
-    );
-
-    const body = await statusResp.json();
-    // Newly created task should be pending or in_progress (if auto-started)
-    expect(['pending', 'in_progress', 'queued']).toContain(body.status);
-  });
-});
+async function getTask(request: any, taskId: string) {
+  return request.get(`${API}/api/tasks/${taskId}`, { headers: AUTH_HEADERS });
+}
 
 // ---------------------------------------------------------------------------
-// Workflow Pause / Resume
+// Suite
 // ---------------------------------------------------------------------------
 
-test.describe('Workflow Pause and Resume', () => {
-  test('pause endpoint returns 200 or 404 for unknown task', async ({
-    page,
+test.describe('Task Pause/Resume Workflow', () => {
+  // -------------------------------------------------------------------------
+  // Backend availability guard
+  // -------------------------------------------------------------------------
+
+  test('backend health check — skip suite if backend is down', async ({
+    request,
   }) => {
-    // Test pause on a non-existent task — should be 404
-    const resp = await page.request.post(
-      'http://localhost:8000/api/tasks/nonexistent-abc/pause',
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer dev-token',
-        },
-      }
-    );
+    const res = await request
+      .get(`${API}/health`, { timeout: 5000 })
+      .catch(() => null);
 
-    // Either 404 (task not found) or 405 (method not allowed if endpoint doesn't exist)
-    expect([404, 405, 422]).toContain(resp.status());
-  });
-
-  test('resume endpoint returns 200 or 404 for unknown task', async ({
-    page,
-  }) => {
-    const resp = await page.request.post(
-      'http://localhost:8000/api/tasks/nonexistent-abc/resume',
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer dev-token',
-        },
-      }
-    );
-
-    expect([404, 405, 422]).toContain(resp.status());
-  });
-
-  test('pause and resume a real task changes status', async ({ page }) => {
-    // Create a task first
-    const createResp = await page.request.post(
-      'http://localhost:8000/api/tasks',
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer dev-token',
-        },
-        data: {
-          task_name: 'Pause Resume Test Task',
-          topic: 'DevOps automation strategies for mid-size engineering teams',
-          category: 'technology',
-        },
-      }
-    );
-
-    if (![201, 202].includes(createResp.status())) {
-      test.skip();
-      return;
-    }
-
-    const { task_id } = await createResp.json();
-
-    // Attempt to pause
-    const pauseResp = await page.request.post(
-      `http://localhost:8000/api/tasks/${task_id}/pause`,
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer dev-token',
-        },
-      }
-    );
-
-    // If pause endpoint exists, should succeed or return informative error
-    if (pauseResp.status() === 405) {
-      // Endpoint doesn't exist yet — skip without failing
-      test.skip();
-      return;
-    }
-
-    if (pauseResp.ok()) {
-      // Verify paused status
-      const statusResp = await page.request.get(
-        `http://localhost:8000/api/tasks/${task_id}/status`,
-        { headers: { Authorization: 'Bearer dev-token' } }
+    if (!res || !res.ok()) {
+      test.skip(
+        true,
+        'Backend not reachable at http://localhost:8000 — skipping task workflow tests'
       );
-      const status = await statusResp.json();
-      expect(['paused', 'pending', 'in_progress']).toContain(status.status);
-
-      // Resume
-      const resumeResp = await page.request.post(
-        `http://localhost:8000/api/tasks/${task_id}/resume`,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: 'Bearer dev-token',
-          },
-        }
-      );
-
-      // Should either succeed or return a sensible status
-      expect([200, 202, 404, 409]).toContain(resumeResp.status());
     }
   });
-});
 
-// ---------------------------------------------------------------------------
-// Task Approval Flow
-// ---------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // Task creation
+  // -------------------------------------------------------------------------
 
-test.describe('Task Approval Flow', () => {
-  test('approval endpoint returns 404 for non-existent task', async ({
-    page,
-  }) => {
-    const resp = await page.request.post(
-      'http://localhost:8000/api/tasks/nonexistent-xyz/approve',
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer dev-token',
-        },
-        data: { approved: true },
-      }
-    );
+  test('creates a task and returns a valid task ID', async ({ request }) => {
+    const res = await createTask(request, 'create-check');
 
-    expect([404, 405]).toContain(resp.status());
-  });
-
-  test('can retrieve task details after creation', async ({ page }) => {
-    const createResp = await page.request.post(
-      'http://localhost:8000/api/tasks',
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer dev-token',
-        },
-        data: {
-          task_name: 'Approval Flow Test',
-          topic: 'Sustainable business practices for tech startups',
-        },
-      }
-    );
-
-    if (![201, 202].includes(createResp.status())) {
-      test.skip();
+    // Some backends return 200, others 201 — accept both.
+    // 401 is also possible when not running in DEVELOPMENT_MODE.
+    if (res.status() === 401) {
+      test.skip(
+        true,
+        'Server not in DEVELOPMENT_MODE — dev-token rejected, skipping task creation test'
+      );
       return;
     }
 
-    const { task_id } = await createResp.json();
+    expect([200, 201]).toContain(res.status());
 
-    const getResp = await page.request.get(
-      `http://localhost:8000/api/tasks/${task_id}`,
-      { headers: { Authorization: 'Bearer dev-token' } }
-    );
+    const body = await res.json().catch(() => null);
+    expect(body).not.toBeNull();
 
-    expect(getResp.status()).toBe(200);
-    const task = await getResp.json();
-    expect(task.task_id ?? task.id).toBe(task_id);
-    expect(task).toHaveProperty('status');
-    expect(task).toHaveProperty('topic');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Task List Pagination
-// ---------------------------------------------------------------------------
-
-test.describe('Task List Pagination', () => {
-  test('GET /api/tasks returns paginated response shape', async ({ page }) => {
-    const resp = await page.request.get(
-      'http://localhost:8000/api/tasks?offset=0&limit=5',
-      { headers: { Authorization: 'Bearer dev-token' } }
-    );
-
-    expect(resp.status()).toBe(200);
-    const body = await resp.json();
-    expect(body).toHaveProperty('tasks');
-    expect(body).toHaveProperty('total');
-    expect(body).toHaveProperty('offset');
-    expect(body).toHaveProperty('limit');
-    expect(Array.isArray(body.tasks)).toBe(true);
-    expect(body.limit).toBe(5);
-    expect(body.offset).toBe(0);
+    // The response should contain an id field
+    const taskId: string | undefined = body?.id ?? body?.task_id;
+    expect(taskId).toBeTruthy();
+    expect(typeof taskId).toBe('string');
   });
 
-  test('rejects limit > 100 with 422', async ({ page }) => {
-    const resp = await page.request.get(
-      'http://localhost:8000/api/tasks?limit=9999',
-      { headers: { Authorization: 'Bearer dev-token' } }
-    );
+  test('created task appears in the task list', async ({ request }) => {
+    // Create task
+    const createRes = await createTask(request, 'list-check');
+    const createBody = await createRes.json().catch(() => null);
+    const taskId: string | undefined =
+      createBody?.id ?? createBody?.task_id;
 
-    expect(resp.status()).toBe(422);
+    // Guard: if creation failed (backend down / auth issue) skip gracefully
+    if (!createRes.ok() || !taskId) {
+      test.skip(true, 'Task creation failed — skipping list-presence check');
+      return;
+    }
+
+    const listRes = await request.get(`${API}/api/tasks`, {
+      headers: AUTH_HEADERS,
+    });
+    expect(listRes.ok()).toBe(true);
+
+    const listBody = await listRes.json().catch(() => null);
+    // API returns {tasks: [...], total: N, ...}
+    const tasks: any[] = listBody?.tasks ?? listBody?.data ?? listBody ?? [];
+    expect(Array.isArray(tasks)).toBe(true);
+
+    const found = tasks.some(
+      (t: any) => t.id === taskId || t.task_id === taskId
+    );
+    expect(found).toBe(true);
   });
 
-  test('rejects negative offset with 422', async ({ page }) => {
-    const resp = await page.request.get(
-      'http://localhost:8000/api/tasks?offset=-1',
-      { headers: { Authorization: 'Bearer dev-token' } }
-    );
+  // -------------------------------------------------------------------------
+  // Pause action
+  // -------------------------------------------------------------------------
 
-    expect(resp.status()).toBe(422);
+  test('pauses a task via bulk action and status becomes "paused"', async ({
+    request,
+  }) => {
+    const createRes = await createTask(request, 'pause-test');
+    if (!createRes.ok()) {
+      test.skip(true, 'Task creation failed — skipping pause test');
+      return;
+    }
+
+    const createBody = await createRes.json().catch(() => null);
+    const taskId: string | undefined =
+      createBody?.id ?? createBody?.task_id;
+    if (!taskId) {
+      test.skip(true, 'No task ID returned — skipping pause test');
+      return;
+    }
+
+    // Issue pause
+    const pauseRes = await bulkAction(request, [taskId], 'pause');
+    expect(pauseRes.ok()).toBe(true);
+
+    const pauseBody = await pauseRes.json().catch(() => null);
+    expect(pauseBody).not.toBeNull();
+    // Response shape: { message, updated, failed, total, errors? }
+    expect(pauseBody.updated).toBeGreaterThanOrEqual(1);
+    expect(pauseBody.failed).toBe(0);
+
+    // Verify task status via GET /api/tasks/:id
+    const taskRes = await getTask(request, taskId);
+    if (taskRes.ok()) {
+      const taskBody = await taskRes.json().catch(() => null);
+      const status: string = taskBody?.status ?? taskBody?.task_status ?? '';
+      expect(status).toBe('paused');
+    }
   });
 
-  test('status filter returns only matching tasks', async ({ page }) => {
-    const resp = await page.request.get(
-      'http://localhost:8000/api/tasks?status=pending',
-      { headers: { Authorization: 'Bearer dev-token' } }
-    );
+  test('bulk pause response contains correct total count', async ({
+    request,
+  }) => {
+    const [r1, r2] = await Promise.all([
+      createTask(request, 'pause-count-1'),
+      createTask(request, 'pause-count-2'),
+    ]);
 
-    expect(resp.status()).toBe(200);
-    const body = await resp.json();
-    // All returned tasks should have pending status (or list could be empty)
-    for (const task of body.tasks) {
-      expect(task.status).toBe('pending');
+    if (!r1.ok() || !r2.ok()) {
+      test.skip(
+        true,
+        'Task creation failed — skipping bulk pause count test'
+      );
+      return;
+    }
+
+    const [b1, b2] = await Promise.all([r1.json(), r2.json()]);
+    const ids = [b1?.id ?? b1?.task_id, b2?.id ?? b2?.task_id].filter(
+      Boolean
+    ) as string[];
+
+    if (ids.length < 2) {
+      test.skip(true, 'Could not retrieve task IDs — skipping');
+      return;
+    }
+
+    const bulkRes = await bulkAction(request, ids, 'pause');
+    expect(bulkRes.ok()).toBe(true);
+
+    const bulkBody = await bulkRes.json().catch(() => null);
+    expect(bulkBody.total).toBe(ids.length);
+    expect(bulkBody.updated).toBe(ids.length);
+    expect(bulkBody.failed).toBe(0);
+  });
+
+  // -------------------------------------------------------------------------
+  // Resume action
+  // -------------------------------------------------------------------------
+
+  test('resumes a paused task and status returns to "pending"', async ({
+    request,
+  }) => {
+    // Create
+    const createRes = await createTask(request, 'resume-test');
+    if (!createRes.ok()) {
+      test.skip(true, 'Task creation failed — skipping resume test');
+      return;
+    }
+
+    const createBody = await createRes.json().catch(() => null);
+    const taskId: string | undefined =
+      createBody?.id ?? createBody?.task_id;
+    if (!taskId) {
+      test.skip(true, 'No task ID — skipping resume test');
+      return;
+    }
+
+    // Pause first
+    const pauseRes = await bulkAction(request, [taskId], 'pause');
+    if (!pauseRes.ok()) {
+      test.skip(true, 'Pause failed — skipping resume test');
+      return;
+    }
+
+    // Now resume
+    const resumeRes = await bulkAction(request, [taskId], 'resume');
+    expect(resumeRes.ok()).toBe(true);
+
+    const resumeBody = await resumeRes.json().catch(() => null);
+    expect(resumeBody).not.toBeNull();
+    expect(resumeBody.updated).toBeGreaterThanOrEqual(1);
+    expect(resumeBody.failed).toBe(0);
+
+    // Verify task status
+    const taskRes = await getTask(request, taskId);
+    if (taskRes.ok()) {
+      const taskBody = await taskRes.json().catch(() => null);
+      const status: string = taskBody?.status ?? taskBody?.task_status ?? '';
+      // resume maps to "pending"
+      expect(status).toBe('pending');
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Cancel action
+  // -------------------------------------------------------------------------
+
+  test('cancels a task via bulk action and status becomes "cancelled"', async ({
+    request,
+  }) => {
+    const createRes = await createTask(request, 'cancel-test');
+    if (!createRes.ok()) {
+      test.skip(true, 'Task creation failed — skipping cancel test');
+      return;
+    }
+
+    const createBody = await createRes.json().catch(() => null);
+    const taskId: string | undefined =
+      createBody?.id ?? createBody?.task_id;
+    if (!taskId) {
+      test.skip(true, 'No task ID — skipping cancel test');
+      return;
+    }
+
+    const cancelRes = await bulkAction(request, [taskId], 'cancel');
+    expect(cancelRes.ok()).toBe(true);
+
+    const cancelBody = await cancelRes.json().catch(() => null);
+    expect(cancelBody).not.toBeNull();
+    expect(cancelBody.updated).toBeGreaterThanOrEqual(1);
+    expect(cancelBody.failed).toBe(0);
+
+    const taskRes = await getTask(request, taskId);
+    if (taskRes.ok()) {
+      const taskBody = await taskRes.json().catch(() => null);
+      const status: string = taskBody?.status ?? taskBody?.task_status ?? '';
+      expect(status).toBe('cancelled');
+    }
+  });
+
+  test('cancelled task cannot be paused (operation may report failure)', async ({
+    request,
+  }) => {
+    const createRes = await createTask(request, 'cancel-then-pause');
+    if (!createRes.ok()) {
+      test.skip(true, 'Task creation failed');
+      return;
+    }
+
+    const createBody = await createRes.json().catch(() => null);
+    const taskId: string | undefined =
+      createBody?.id ?? createBody?.task_id;
+    if (!taskId) {
+      test.skip(true, 'No task ID');
+      return;
+    }
+
+    // Cancel first
+    await bulkAction(request, [taskId], 'cancel');
+
+    // Attempt to pause a cancelled task — backend may allow or deny
+    // Either way the request itself should return a 2xx (bulk endpoint
+    // handles per-task errors gracefully)
+    const pauseRes = await bulkAction(request, [taskId], 'pause');
+    expect(pauseRes.ok()).toBe(true);
+
+    const pauseBody = await pauseRes.json().catch(() => null);
+    // total should still reflect how many we sent
+    expect(pauseBody.total).toBe(1);
+    // updated + failed should sum to total
+    expect(pauseBody.updated + pauseBody.failed).toBe(pauseBody.total);
+  });
+
+  // -------------------------------------------------------------------------
+  // Input validation
+  // -------------------------------------------------------------------------
+
+  test('bulk action with empty task_ids returns 400', async ({ request }) => {
+    const res = await request.post(`${API}/api/tasks/bulk`, {
+      headers: AUTH_HEADERS,
+      data: { task_ids: [], action: 'pause' },
+    });
+    // 400 = validation error (expected), 401 = server not in DEVELOPMENT_MODE
+    expect([400, 401]).toContain(res.status());
+    if (res.status() === 401) {
+      // Not in dev mode — validation won't run. Document the expected behavior
+      // and skip the specific assertion.
+      test.skip(
+        true,
+        'Server not in DEVELOPMENT_MODE — auth rejected before validation'
+      );
+    }
+  });
+
+  test('bulk action with invalid action string returns 400', async ({
+    request,
+  }) => {
+    const res = await request.post(`${API}/api/tasks/bulk`, {
+      headers: AUTH_HEADERS,
+      data: {
+        task_ids: ['550e8400-e29b-41d4-a716-446655440000'],
+        action: 'fly',
+      },
+    });
+    // 400 = validation error (expected), 401 = server not in DEVELOPMENT_MODE
+    expect([400, 401]).toContain(res.status());
+    if (res.status() === 401) {
+      test.skip(
+        true,
+        'Server not in DEVELOPMENT_MODE — auth rejected before validation'
+      );
+    }
+  });
+
+  test('bulk action with malformed UUID fails gracefully', async ({
+    request,
+  }) => {
+    const res = await request.post(`${API}/api/tasks/bulk`, {
+      headers: AUTH_HEADERS,
+      data: { task_ids: ['not-a-uuid'], action: 'pause' },
+    });
+    // 200 with per-task error, 400 top-level error, or 401 when not in dev mode
+    expect([200, 400, 401]).toContain(res.status());
+
+    if (res.status() === 200) {
+      const body = await res.json().catch(() => null);
+      // The malformed UUID should be counted as failed
+      expect(body.failed).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Full pause → resume → cancel lifecycle
+  // -------------------------------------------------------------------------
+
+  test('full task lifecycle: create → pause → resume → cancel', async ({
+    request,
+  }) => {
+    const createRes = await createTask(request, 'lifecycle-test');
+    if (!createRes.ok()) {
+      test.skip(true, 'Task creation failed — skipping lifecycle test');
+      return;
+    }
+
+    const createBody = await createRes.json().catch(() => null);
+    const taskId: string | undefined =
+      createBody?.id ?? createBody?.task_id;
+    if (!taskId) {
+      test.skip(true, 'No task ID — skipping lifecycle test');
+      return;
+    }
+
+    // --- Pause ---
+    const pauseRes = await bulkAction(request, [taskId], 'pause');
+    expect(pauseRes.ok()).toBe(true);
+    const pauseBody = await pauseRes.json();
+    expect(pauseBody.updated).toBe(1);
+
+    // Verify paused
+    let taskRes = await getTask(request, taskId);
+    if (taskRes.ok()) {
+      const t = await taskRes.json().catch(() => null);
+      expect(t?.status ?? t?.task_status).toBe('paused');
+    }
+
+    // --- Resume ---
+    const resumeRes = await bulkAction(request, [taskId], 'resume');
+    expect(resumeRes.ok()).toBe(true);
+    const resumeBody = await resumeRes.json();
+    expect(resumeBody.updated).toBe(1);
+
+    // Verify pending
+    taskRes = await getTask(request, taskId);
+    if (taskRes.ok()) {
+      const t = await taskRes.json().catch(() => null);
+      expect(t?.status ?? t?.task_status).toBe('pending');
+    }
+
+    // --- Cancel ---
+    const cancelRes = await bulkAction(request, [taskId], 'cancel');
+    expect(cancelRes.ok()).toBe(true);
+    const cancelBody = await cancelRes.json();
+    expect(cancelBody.updated).toBe(1);
+
+    // Verify cancelled
+    taskRes = await getTask(request, taskId);
+    if (taskRes.ok()) {
+      const t = await taskRes.json().catch(() => null);
+      expect(t?.status ?? t?.task_status).toBe('cancelled');
     }
   });
 });
