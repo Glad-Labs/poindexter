@@ -5,7 +5,7 @@ and the response format for all workflow executions.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from src.cofounder_agent.tasks.base import TaskResult
@@ -155,14 +155,14 @@ class WorkflowCheckpoint:
     accumulated_data: Dict[str, Any]
     pending_approval: Dict[str, Any]
     pending_actions: List[str]
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     expires_at: Optional[datetime] = None
 
     def is_expired(self) -> bool:
         """Check if checkpoint has expired."""
         if not self.expires_at:
             return False
-        return datetime.utcnow() > self.expires_at
+        return datetime.now(timezone.utc) > self.expires_at
 
 
 @dataclass
