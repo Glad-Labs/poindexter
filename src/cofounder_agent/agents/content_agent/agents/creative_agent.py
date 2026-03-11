@@ -70,7 +70,17 @@ class CreativeAgent:
             )
             logger.debug(f"Accumulated feedback:\n{accumulated_feedback}")
 
-            # NEW: SCORE IMPROVEMENT CHECK (if quality scores tracked)
+            # Enforce maximum refinement iterations (issue #188)
+            max_refinements = getattr(post, "refinement_loops", 3)
+            current_iteration = len(post.qa_feedback)
+            if current_iteration > max_refinements:
+                logger.warning(
+                    f"CreativeAgent: Max refinements reached ({current_iteration}/{max_refinements}) "
+                    f"— returning best draft"
+                )
+                return post
+
+            # Score improvement check (if quality scores tracked)
             if hasattr(post, "quality_scores") and len(post.quality_scores) > 1:
                 latest_score = post.quality_scores[-1]
                 previous_score = post.quality_scores[-2]
@@ -81,10 +91,19 @@ class CreativeAgent:
                     f"(+{score_improvement:.1f} points)"
                 )
 
-                # NEW: Early exit if improvement is minimal (less than 5 points on 0-100 scale)
-                if score_improvement < 5.0 and len(post.qa_feedback) > 1:
+                # Exit if content is good enough OR improvement has truly stalled (issue #187).
+                # Previous logic exited when delta < 5 regardless of absolute score,
+                # allowing 68/100 content to publish below the 70-point threshold.
+                if latest_score >= 75.0:
                     logger.info(
-                        f"⏹️  CreativeAgent: Stopping refinement - minimal improvement ({score_improvement:.1f} points). "
+                        f"CreativeAgent: Content meets quality bar ({latest_score:.1f}/100 >= 75). "
+                        f"Stopping refinement."
+                    )
+                    return post
+                if score_improvement < 2.0 and len(post.qa_feedback) > 1:
+                    logger.info(
+                        f"CreativeAgent: Stopping refinement - improvement stalled "
+                        f"({score_improvement:.1f} points). "
                         f"Returning current content (score: {latest_score:.1f}/100)"
                     )
                     return post  # Return without further refinement

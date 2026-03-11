@@ -30,6 +30,7 @@ Critical Floor = 50/100 — if clarity, readability, or relevance falls below th
   compensatory passing from high scores in other dimensions.
 """
 
+import json
 import logging
 import re
 from dataclasses import asdict, dataclass, field
@@ -233,7 +234,7 @@ class UnifiedQualityService:
     - Complete audit trail
     """
 
-    def __init__(self, model_router=None, database_service=None, qa_agent=None):
+    def __init__(self, model_router=None, database_service=None, qa_agent=None, llm_client=None):
         """
         Initialize quality service
 
@@ -241,10 +242,12 @@ class UnifiedQualityService:
             model_router: Optional ModelRouter for LLM access
             database_service: Optional DatabaseService for persistence
             qa_agent: Optional QA Agent for binary approval
+            llm_client: Optional LLMClient for direct LLM evaluation calls
         """
         self.model_router = model_router
         self.database_service = database_service
         self.qa_agent = qa_agent
+        self.llm_client = llm_client
 
         # Statistics
         self.total_evaluations = 0
@@ -382,38 +385,131 @@ class UnifiedQualityService:
 
     async def _evaluate_llm_based(self, content: str, context: Dict[str, Any]) -> QualityAssessment:
         """
-        Accurate LLM-based evaluation using language model.
+        LLM-based evaluation using language model (issue #189).
 
-        Requires model_router to be configured.
+        Uses llm_client for direct calls.  Falls back to pattern-based if no
+        LLM client is available or if the LLM call fails.
         """
-        if not self.model_router:
+        if not self.llm_client:
             logger.warning(
-                "LLM evaluation requested but model_router not available, falling back to pattern-based"
+                "LLM evaluation requested but llm_client not available, falling back to pattern-based"
             )
             return await self._evaluate_pattern_based(content, context)
 
         logger.debug("Running LLM-based evaluation...")
 
-        # Using pattern-based heuristics for now (LLM evaluation can be added later if needed)
-        return await self._evaluate_pattern_based(content, context)
+        topic = context.get("topic", "unknown topic")
+        # Truncate very long content to avoid excessive token usage
+        content_excerpt = content[:4000] if len(content) > 4000 else content
+
+        evaluation_prompt = (
+            "You are a content quality evaluator. Score the following content on 7 dimensions, "
+            "each from 0 to 10 (integers only). Respond ONLY with a JSON object — no markdown, "
+            "no explanation.\n\n"
+            f"Topic: {topic}\n\n"
+            f"Content:\n{content_excerpt}\n\n"
+            "Return JSON with these keys:\n"
+            '{"clarity": N, "accuracy": N, "completeness": N, "relevance": N, '
+            '"seo_quality": N, "readability": N, "engagement": N, "feedback": "one sentence summary", '
+            '"suggestions": ["suggestion1", "suggestion2"]}'
+        )
+
+        try:
+            raw_response = await self.llm_client.generate_text(evaluation_prompt)
+
+            # Extract JSON from response (may contain markdown fences)
+            json_match = re.search(r"\{[^{}]*\}", raw_response, re.DOTALL)
+            if not json_match:
+                logger.warning("LLM evaluation returned no valid JSON, falling back to pattern-based")
+                return await self._evaluate_pattern_based(content, context)
+
+            scores = json.loads(json_match.group())
+
+            # Validate and clamp dimension scores to 0-10 range, then scale to 0-100
+            def _clamp_score(val: Any) -> float:
+                try:
+                    return max(0.0, min(10.0, float(val))) * 10
+                except (TypeError, ValueError):
+                    return 50.0  # neutral fallback
+
+            dimensions = QualityDimensions(
+                clarity=_clamp_score(scores.get("clarity", 5)),
+                accuracy=_clamp_score(scores.get("accuracy", 5)),
+                completeness=_clamp_score(scores.get("completeness", 5)),
+                relevance=_clamp_score(scores.get("relevance", 5)),
+                seo_quality=_clamp_score(scores.get("seo_quality", 5)),
+                readability=_clamp_score(scores.get("readability", 5)),
+                engagement=_clamp_score(scores.get("engagement", 5)),
+            )
+
+            overall_score = dimensions.average()
+            feedback = scores.get("feedback", self._generate_feedback(dimensions, context))
+            suggestions = scores.get("suggestions", self._generate_suggestions(dimensions))
+            if isinstance(suggestions, str):
+                suggestions = [suggestions]
+
+            return QualityAssessment(
+                dimensions=dimensions,
+                overall_score=overall_score,
+                passing=overall_score >= 70,
+                feedback=feedback,
+                suggestions=suggestions,
+                evaluation_method=EvaluationMethod.LLM_BASED,
+                content_length=len(content),
+                word_count=len(content.split()),
+            )
+
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+            logger.warning(f"LLM evaluation parsing failed ({e}), falling back to pattern-based")
+            return await self._evaluate_pattern_based(content, context)
+        except Exception as e:
+            logger.error(f"[_evaluate_llm_based] LLM call failed: {e}", exc_info=True)
+            return await self._evaluate_pattern_based(content, context)
 
     async def _evaluate_hybrid(self, content: str, context: Dict[str, Any]) -> QualityAssessment:
         """
         Hybrid evaluation combining pattern-based and LLM-based.
 
-        Runs both evaluations and combines results with weighting.
+        Runs both evaluations and averages their dimension scores (50/50 weight).
+        Falls back to pattern-based only if no LLM client is available.
         """
         logger.debug("Running hybrid evaluation...")
 
-        # Get pattern-based assessment
         pattern_assessment = await self._evaluate_pattern_based(content, context)
 
-        # Get LLM-based assessment if available
-        if self.model_router:
-            llm_assessment = await self._evaluate_llm_based(content, context)
-            # Assessments combined (default: equal weight)
+        if not self.llm_client:
+            return pattern_assessment
 
-        return pattern_assessment
+        llm_assessment = await self._evaluate_llm_based(content, context)
+
+        # If LLM fell back to pattern-based, just return pattern (avoid double-counting)
+        if llm_assessment.evaluation_method == EvaluationMethod.PATTERN_BASED:
+            return pattern_assessment
+
+        # Average dimension scores (equal weight)
+        p = pattern_assessment.dimensions
+        l = llm_assessment.dimensions
+        combined_dims = QualityDimensions(
+            clarity=(p.clarity + l.clarity) / 2,
+            accuracy=(p.accuracy + l.accuracy) / 2,
+            completeness=(p.completeness + l.completeness) / 2,
+            relevance=(p.relevance + l.relevance) / 2,
+            seo_quality=(p.seo_quality + l.seo_quality) / 2,
+            readability=(p.readability + l.readability) / 2,
+            engagement=(p.engagement + l.engagement) / 2,
+        )
+
+        overall = combined_dims.average()
+        return QualityAssessment(
+            dimensions=combined_dims,
+            overall_score=overall,
+            passing=overall >= 70,
+            feedback=llm_assessment.feedback,
+            suggestions=llm_assessment.suggestions,
+            evaluation_method=EvaluationMethod.HYBRID,
+            content_length=len(content),
+            word_count=len(content.split()),
+        )
 
     # ========================================================================
     # SCORING METHODS (Pattern-Based Heuristics)
@@ -643,15 +739,23 @@ class UnifiedQualityService:
 # ============================================================================
 
 
-def get_quality_service(model_router=None, database_service=None) -> UnifiedQualityService:
+def get_quality_service(
+    model_router=None, database_service=None, llm_client=None
+) -> UnifiedQualityService:
     """Factory function for UnifiedQualityService dependency injection"""
-    return UnifiedQualityService(model_router=model_router, database_service=database_service)
+    return UnifiedQualityService(
+        model_router=model_router, database_service=database_service, llm_client=llm_client
+    )
 
 
 # Backward compatibility alias
-def get_content_quality_service(model_router=None, database_service=None) -> UnifiedQualityService:
-    """Backward compatibility alias for get_quality_service (ContentQualityService renamed to UnifiedQualityService)"""
-    return UnifiedQualityService(model_router=model_router, database_service=database_service)
+def get_content_quality_service(
+    model_router=None, database_service=None, llm_client=None
+) -> UnifiedQualityService:
+    """Backward compatibility alias for get_quality_service"""
+    return UnifiedQualityService(
+        model_router=model_router, database_service=database_service, llm_client=llm_client
+    )
 
 
 # Backward compatibility alias for class name

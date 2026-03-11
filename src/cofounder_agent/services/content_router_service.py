@@ -933,11 +933,27 @@ async def process_content_generation_task(
         min_words_required = int(target_length * 0.9) if target_length else 0
         meets_length_requirement = word_count >= min_words_required
 
-        if meets_length_requirement:
+        # Enforce quality gate — content must pass quality threshold (issue #186).
+        # Previously, quality_result.passing was evaluated but never checked before
+        # setting the task status, so all content proceeded to human review regardless
+        # of quality score.
+        meets_quality_requirement = quality_result.passing
+
+        if meets_length_requirement and meets_quality_requirement:
             final_status = "awaiting_approval"
             final_approval_status = "pending_human_review"
             logger.info(
                 f"✅ Length gate passed: {word_count} words (minimum required: {min_words_required})"
+            )
+            logger.info(
+                f"✅ Quality gate passed: {quality_result.overall_score:.1f}/100 (threshold: 70)"
+            )
+        elif not meets_quality_requirement:
+            final_status = "failed"
+            final_approval_status = "failed"
+            logger.warning(
+                f"❌ Quality gate failed: {quality_result.overall_score:.1f}/100 "
+                f"(threshold: 70, feedback: {quality_result.feedback})"
             )
         else:
             final_status = "failed"
