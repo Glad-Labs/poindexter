@@ -32,6 +32,46 @@ router = APIRouter(
 
 
 # ============================================================================
+# WORKFLOW ROOT - Overview and discovery endpoint
+# ============================================================================
+
+
+@router.get("", response_model=Dict[str, Any], name="List Workflows")
+async def list_workflows(request: Request):
+    """
+    Root workflow endpoint.  Returns available workflow sub-resources and
+    basic statistics.
+
+    This prevents a 404 when clients hit ``GET /api/workflows`` expecting a
+    standard RESTful list endpoint (issue #181).
+    """
+    # Try to get workflow engine stats if available
+    stats = {}
+    try:
+        workflow_engine = get_workflow_engine_dependency(request)
+        if workflow_engine:
+            stats = {
+                "active_workflows": len(getattr(workflow_engine, "active_workflows", {})),
+            }
+    except Exception:
+        pass
+
+    return {
+        "status": "ok",
+        "message": "Workflow API root. Use sub-endpoints to manage workflows.",
+        "stats": stats,
+        "endpoints": {
+            "phases": "/api/workflows/phases",
+            "templates": "/api/workflows/templates",
+            "executions": "/api/workflows/executions",
+            "execute_template": "/api/workflows/execute/{template_name}",
+            "status": "/api/workflows/status/{workflow_id}",
+            "history": "/api/workflows/templates/history",
+        },
+    }
+
+
+# ============================================================================
 # WORKFLOW PHASES - Available phase definitions
 # ============================================================================
 
