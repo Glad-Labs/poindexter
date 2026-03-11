@@ -704,14 +704,51 @@ class UnifiedQualityService:
     async def _store_evaluation(
         self, assessment: QualityAssessment, context: Dict[str, Any]
     ) -> None:
-        """Store evaluation result in database"""
+        """Store evaluation result in database for audit trail and learning loop."""
         try:
             if not self.database_service:
                 return
 
-            # Quality metrics tracked in memory and task metadata
-            # await self.database_service.create_quality_evaluation({...})
-            logger.debug("Evaluation stored in database")
+            task_id = context.get("task_id") or context.get("content_id")
+            if not task_id:
+                logger.debug("[_store_evaluation] No task_id in context — skipping persistence")
+                return
+
+            await self.database_service.create_quality_evaluation(
+                {
+                    "content_id": task_id,
+                    "task_id": task_id,
+                    "overall_score": assessment.overall_score,
+                    "criteria": {
+                        "clarity": assessment.dimensions.clarity,
+                        "accuracy": assessment.dimensions.accuracy,
+                        "completeness": assessment.dimensions.completeness,
+                        "relevance": assessment.dimensions.relevance,
+                        "seo_quality": assessment.dimensions.seo_quality,
+                        "readability": assessment.dimensions.readability,
+                        "engagement": assessment.dimensions.engagement,
+                    },
+                    "passing": assessment.passing,
+                    "feedback": assessment.feedback,
+                    "suggestions": assessment.suggestions,
+                    "evaluated_by": assessment.evaluated_by,
+                    "evaluation_method": assessment.evaluation_method.value
+                    if hasattr(assessment.evaluation_method, "value")
+                    else str(assessment.evaluation_method),
+                    "content_length": assessment.content_length,
+                    "context_data": {
+                        k: v
+                        for k, v in context.items()
+                        if k not in ("content",)  # exclude large content blob
+                    },
+                }
+            )
+            logger.debug(
+                "[_store_evaluation] Quality evaluation persisted: task_id=%s score=%.0f passing=%s",
+                task_id,
+                assessment.overall_score,
+                assessment.passing,
+            )
         except Exception as e:
             logger.error(f"[_store_evaluation] Failed to store evaluation: {e}", exc_info=True)
 
