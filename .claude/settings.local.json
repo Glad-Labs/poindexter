@@ -30,7 +30,14 @@
       "mcp__filesystem__search_files",
       "mcp__filesystem__create_directory",
       "mcp__filesystem__move_file",
-      "mcp__filesystem__get_file_info"
+      "mcp__filesystem__get_file_info",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_console_messages",
+      "mcp__playwright__browser_network_requests",
+      "mcp__playwright__browser_evaluate",
+      "mcp__playwright__browser_wait_for",
+      "mcp__playwright__browser_snapshot",
+      "mcp__playwright__browser_click"
     ]
   }
 }
