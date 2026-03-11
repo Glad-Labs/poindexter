@@ -56,7 +56,7 @@ npm run test                  # Jest for all workspaces
 npm run test:ci               # CI mode (coverage, no watch)
 
 # Single test file (Python):
-cd src/cofounder_agent && poetry run pytest tests/unit/backend/test_task_routes.py -v
+cd src/cofounder_agent && poetry run pytest tests/integration/test_task_routes.py -v
 
 # Single test file (JS — from workspace root):
 cd web/oversight-hub && npx vitest run src/components/__tests__/MyComponent.test.jsx

@@ -157,7 +157,7 @@ class WorkflowCheckpoint:
     accumulated_data: Dict[str, Any]
     pending_approval: Dict[str, Any]
     pending_actions: List[str]
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     expires_at: Optional[datetime] = None
 
     def is_expired(self) -> bool:

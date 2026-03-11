@@ -42,7 +42,7 @@ class CapabilityTaskDefinition:
     description: str = ""
     steps: List[CapabilityStep] = field(default_factory=list)
     tags: List[str] = field(default_factory=list)
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     owner_id: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
@@ -95,7 +95,7 @@ class TaskExecutionResult:
     final_outputs: Dict[str, Any] = field(default_factory=dict)
     total_duration_ms: float = 0.0
     error: Optional[str] = None
-    started_at: datetime = field(default_factory=datetime.utcnow)
+    started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: Optional[datetime] = None
 
     def to_dict(self) -> Dict[str, Any]:
