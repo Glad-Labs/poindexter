@@ -300,8 +300,8 @@ async def execute_custom_workflow(
     request_body: Dict[str, Any],
     request: Request,
     service: CustomWorkflowsService = Depends(get_custom_workflows_service_dependency),
-) -> Dict[str, Any]:
     _current_user: dict = Depends(get_current_user),
+) -> Dict[str, Any]:
     """
     Execute a saved custom workflow.
 
@@ -514,7 +514,7 @@ async def get_performance_metrics(
         return metrics
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Error fetching performance metrics: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500, detail="Failed to fetch performance metrics"
@@ -534,7 +534,7 @@ async def get_execution_details(
         return details
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(
             f"Error fetching execution details for {execution_id}: {str(e)}", exc_info=True
         )
