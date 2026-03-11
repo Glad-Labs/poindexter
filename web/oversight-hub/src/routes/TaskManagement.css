@@ -252,6 +252,45 @@
   accent-color: var(--accent-primary);
 }
 
+/* Bulk action bar */
+.bulk-action-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--bg-secondary, #1e2a3a);
+  border: 1px solid var(--accent-primary, #4fc3f7);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.bulk-count {
+  font-weight: 600;
+  color: var(--accent-primary, #4fc3f7);
+  margin-right: 8px;
+  white-space: nowrap;
+}
+
+/* Checkbox column in table */
+.checkbox-col {
+  width: 40px;
+  text-align: center;
+  padding: 8px 4px !important;
+}
+
+.checkbox-col input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--accent-primary, #4fc3f7);
+}
+
+/* Selected row highlight */
+tr.row-selected {
+  background: rgba(79, 195, 247, 0.08) !important;
+}
+
 .task-content {
   flex: 1;
 }
@@ -1039,6 +1078,11 @@
 .action-btn.delete:hover:not(:disabled) {
   background-color: rgba(255, 59, 48, 0.2);
   color: #ff3b30;
+}
+
+.action-btn.duplicate:hover:not(:disabled) {
+  background-color: rgba(79, 195, 247, 0.15);
+  color: #4fc3f7;
 }
 
 .action-btn.pause:hover:not(:disabled) {

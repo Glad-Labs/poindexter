@@ -950,6 +950,10 @@ export async function bulkUpdateTasks(taskIds, action) {
   return makeRequest('/api/tasks/bulk', 'POST', payload, true, null, 30000);
 }
 
+export async function duplicateTask(taskId) {
+  return makeRequest(`/api/tasks/${taskId}/duplicate`, 'POST', null, true, null, 30000);
+}
+
 /**
  * Orchestrator Routes - Get orchestration status and analytics
  */

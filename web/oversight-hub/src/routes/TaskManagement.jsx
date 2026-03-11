@@ -10,7 +10,10 @@ import logger from '@/lib/logger';
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import useStore from '../store/useStore';
-import { bulkUpdateTasks } from '../services/cofounderAgentClient';
+import {
+  bulkUpdateTasks,
+  duplicateTask,
+} from '../services/cofounderAgentClient';
 import { unifiedStatusService } from '../services/unifiedStatusService';
 import useFetchTasks from '../hooks/useFetchTasks';
 import { useWebSocketEvent } from '../context/WebSocketContext';
@@ -32,6 +35,8 @@ function TaskManagement() {
   const [limit] = useState(10);
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
+  const [selectedTaskIds, setSelectedTaskIds] = useState([]);
+  const [bulkActing, setBulkActing] = useState(false);
 
   // Use custom hook for task fetching - replaces duplicate fetchTasks/fetchTasksWrapper
   const {
@@ -148,9 +153,56 @@ function TaskManagement() {
     }
   };
 
+  // Selection handlers
+  const handleSelectOne = (taskId, checked) => {
+    setSelectedTaskIds((prev) =>
+      checked ? [...prev, taskId] : prev.filter((id) => id !== taskId)
+    );
+  };
+
+  const handleSelectAll = (checked) => {
+    setSelectedTaskIds(checked ? filteredTasks.map((t) => t.id) : []);
+  };
+
+  const handleBulkAction = async (action) => {
+    if (selectedTaskIds.length === 0) return;
+    const confirmMsg = `${action.charAt(0).toUpperCase() + action.slice(1)} ${selectedTaskIds.length} task(s)?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      setBulkActing(true);
+      setError(null);
+      const result = await bulkUpdateTasks(selectedTaskIds, action);
+      const updatedCount = result?.updated ?? result?.updated_count ?? 0;
+      setSuccessMessage(`${updatedCount} task(s) ${action}ed successfully`);
+      setTimeout(() => setSuccessMessage(null), 3000);
+      setSelectedTaskIds([]);
+      refreshTasks();
+    } catch (err) {
+      logger.error(`Bulk ${action} error:`, err);
+      setError(`Bulk ${action} failed: ${err.message}`);
+    } finally {
+      setBulkActing(false);
+    }
+  };
+
+  const handleDuplicateTask = async (e, taskId) => {
+    e.stopPropagation();
+    try {
+      setError(null);
+      const result = await duplicateTask(taskId);
+      setSuccessMessage(`Task duplicated: "${result.task_name}"`);
+      setTimeout(() => setSuccessMessage(null), 3000);
+      refreshTasks();
+    } catch (err) {
+      logger.error('Error duplicating task:', err);
+      setError(`Failed to duplicate task: ${err.message}`);
+    }
+  };
+
   // Sort tasks (filtering is now server-side via API params)
   const getFilteredTasks = () => {
-    let filtered = localTasks || [];
+    const filtered = localTasks || [];
 
     // Apply sorting
     return filtered.sort((a, b) => {
@@ -337,6 +389,52 @@ function TaskManagement() {
         </div>
       </div>
 
+      {/* Bulk Action Toolbar */}
+      {selectedTaskIds.length > 0 && (
+        <div className="bulk-action-bar">
+          <span className="bulk-count">{selectedTaskIds.length} selected</span>
+          <button
+            className="action-btn pause"
+            onClick={() => handleBulkAction('pause')}
+            disabled={bulkActing}
+            title="Pause selected tasks"
+          >
+            ⏸️ Pause
+          </button>
+          <button
+            className="action-btn resume"
+            onClick={() => handleBulkAction('resume')}
+            disabled={bulkActing}
+            title="Resume selected tasks"
+          >
+            ▶️ Resume
+          </button>
+          <button
+            className="action-btn cancel"
+            onClick={() => handleBulkAction('cancel')}
+            disabled={bulkActing}
+            title="Cancel selected tasks"
+          >
+            ⏹️ Cancel
+          </button>
+          <button
+            className="action-btn delete"
+            onClick={() => handleBulkAction('reject')}
+            disabled={bulkActing}
+            title="Reject selected tasks"
+          >
+            🗑️ Reject
+          </button>
+          <button
+            className="btn-clear-filters"
+            onClick={() => setSelectedTaskIds([])}
+            title="Clear selection"
+          >
+            ✕ Clear
+          </button>
+        </div>
+      )}
+
       {/* Tasks Table */}
       <div className="tasks-table-container">
         {loading && <div className="loading">Loading tasks...</div>}
@@ -373,6 +471,19 @@ function TaskManagement() {
             <table className="tasks-table">
               <thead>
                 <tr>
+                  <th className="checkbox-col">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all tasks"
+                      checked={
+                        filteredTasks.length > 0 &&
+                        filteredTasks.every((t) =>
+                          selectedTaskIds.includes(t.id)
+                        )
+                      }
+                      onChange={(e) => handleSelectAll(e.target.checked)}
+                    />
+                  </th>
                   <th
                     onClick={() => handleSort('task_name')}
                     className={`sortable ${sortBy === 'task_name' ? 'active-sort' : ''}`}
@@ -413,10 +524,23 @@ function TaskManagement() {
                 {filteredTasks.map((task) => (
                   <tr
                     key={task.id}
-                    className={`status-${getStatusClass(task.status)} clickable-row`}
+                    className={`status-${getStatusClass(task.status)} clickable-row${selectedTaskIds.includes(task.id) ? ' row-selected' : ''}`}
                     onClick={() => handleEditTask(task)}
                     title="Click to view details"
                   >
+                    <td
+                      className="checkbox-col"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        aria-label={`Select task ${task.id}`}
+                        checked={selectedTaskIds.includes(task.id)}
+                        onChange={(e) =>
+                          handleSelectOne(task.id, e.target.checked)
+                        }
+                      />
+                    </td>
                     <td className="task-name">
                       {typeof task.task_name === 'object'
                         ? JSON.stringify(task.task_name)
@@ -560,6 +684,14 @@ function TaskManagement() {
                           🔄
                         </button>
                       )}
+                      <button
+                        className="action-btn duplicate"
+                        onClick={(e) => handleDuplicateTask(e, task.id)}
+                        title="Duplicate Task"
+                        disabled={deleting}
+                      >
+                        📋
+                      </button>
                       <button
                         className="action-btn delete"
                         onClick={(e) => handleDeleteTask(e, task.id)}
