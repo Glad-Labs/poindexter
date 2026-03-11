@@ -180,7 +180,7 @@ const TaskTable = ({
                     )}
 
                   <Tooltip title="Edit">
-                    <IconButton size="small" onClick={() => onEditTask(task)}>
+                    <IconButton size="small" aria-label="Edit task" onClick={() => onEditTask(task)}>
                       <EditIcon fontSize="small" />
                     </IconButton>
                   </Tooltip>
@@ -188,6 +188,7 @@ const TaskTable = ({
                     <IconButton
                       size="small"
                       color="error"
+                      aria-label="Delete task"
                       onClick={() => onDeleteTask(task.id)}
                     >
                       <DeleteIcon fontSize="small" />
