@@ -840,7 +840,7 @@ async def get_performance_metrics(
             },
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
-    except Exception as e:
+    except (ValueError, KeyError, TypeError, AttributeError, ImportError) as e:
         logger.error(f"Error getting performance metrics: {str(e)}", exc_info=True)
         # Return graceful fallback
         return {

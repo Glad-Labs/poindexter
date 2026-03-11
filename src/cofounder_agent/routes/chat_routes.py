@@ -229,7 +229,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
                             timestamp=datetime.now(timezone.utc).isoformat(),
                             tokens_used=tokens_used,
                         )
-                except Exception as e:
+                except (ConnectionError, TimeoutError, AttributeError, KeyError) as e:
                     logger.debug(f"[Chat] Could not check available models: {str(e)}")
 
                 # Prepare messages for Ollama chat
@@ -270,7 +270,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 )  # 24 hour TTL for system questions
                 logger.debug(f"[Chat] Response cached (TTL: 24h)")
 
-            except Exception as e:
+            except (ConnectionError, TimeoutError, ValueError, KeyError, AttributeError, RuntimeError) as e:
                 logger.error(
                     f"[Chat] Ollama error with model {model_name or 'default'}: {str(e)}",
                     exc_info=True,
@@ -323,7 +323,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
         logger.error(f"[Chat] Validation error: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
-    except Exception as e:
+    except (ConnectionError, TimeoutError, TypeError, AttributeError, RuntimeError) as e:
         logger.error(f"[Chat] Error processing message: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Chat processing failed: {str(e)}")
 
@@ -362,7 +362,7 @@ async def get_conversation(conversation_id: str) -> Dict[str, Any]:
             "last_message": msgs[-1].get("timestamp") if msgs else None,
         }
 
-    except Exception as e:
+    except (KeyError, TypeError, AttributeError) as e:
         logger.error(f"[Chat] Error retrieving conversation: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -389,7 +389,7 @@ async def clear_conversation(conversation_id: str) -> Dict[str, str]:
             "message": f"Conversation cleared",
         }
 
-    except Exception as e:
+    except (KeyError, TypeError, AttributeError) as e:
         logger.error(f"[Chat] Error clearing conversation: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
