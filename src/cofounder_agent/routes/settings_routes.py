@@ -237,7 +237,7 @@ async def list_settings(
         return SettingListResponse(
             total=total, page=page, per_page=per_page, pages=pages, items=items
         )
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError) as e:
         logger.error(f"[list_settings] {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve settings")
 
@@ -305,7 +305,7 @@ async def get_setting(
         )
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError) as e:
         logger.error(f"[get_setting] {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve setting")
 
@@ -407,7 +407,7 @@ async def create_setting(
         )
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError) as e:
         logger.error(f"[create_setting] {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to create setting")
 
@@ -467,7 +467,7 @@ async def batch_update_settings(
         )
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError) as e:
         logger.error(f"[batch_update_settings] {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to update setting")
 
@@ -587,7 +587,7 @@ async def update_setting(
         )
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError) as e:
         logger.error(f"[update_setting] {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to update setting")
 
@@ -649,7 +649,7 @@ async def delete_setting(
         return None
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError) as e:
         logger.error(f"[delete_setting] {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to delete setting")
 
@@ -785,7 +785,7 @@ async def bulk_update_settings(
                     description=description,
                 )
                 updated_count += 1
-            except Exception as item_err:
+            except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as item_err:
                 failed_keys.append({"key": key, "error": str(item_err)})
 
         if failed_keys:
@@ -804,7 +804,7 @@ async def bulk_update_settings(
         }
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError) as e:
         logger.error(f"[bulk_update_settings] {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Bulk update failed")
 
@@ -879,7 +879,7 @@ async def export_settings(
         }
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError) as e:
         logger.error(f"[export_settings] {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Export failed")
 

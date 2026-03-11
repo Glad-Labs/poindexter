@@ -122,7 +122,7 @@ def convert_markdown_to_html(markdown_content: str) -> str:
 
         logger.info(f"Converted markdown to HTML (len={len(html)} chars)")
         return html
-    except Exception as e:
+    except (ValueError, AttributeError, TypeError) as e:
         logger.error(f"Error converting markdown: {e}", exc_info=True)
         # Fallback: return as-is
         return markdown_content
@@ -375,7 +375,7 @@ async def get_post_by_slug(
                     post_id,
                 )
                 tags = [dict(row) for row in tag_rows]
-            except Exception as tag_error:
+            except (KeyError, AttributeError, TypeError, RuntimeError) as tag_error:
                 # If tags table doesn't exist or query fails, just return empty tags
                 logger.warning(f"Could not fetch tags for post {post_id}: {str(tag_error)}", exc_info=True)
                 tags = []
@@ -518,7 +518,7 @@ async def cms_status():
                 "tables": tables,
                 "timestamp": datetime.now().isoformat(),
             }
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Error checking CMS status: {str(e)}", exc_info=True)
         return {
             "status": "error",
