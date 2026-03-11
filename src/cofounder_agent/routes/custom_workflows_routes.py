@@ -82,7 +82,7 @@ def get_user_id(request: Request) -> str:
         except jwt.InvalidTokenError as e:
             logger.warning(f"Invalid JWT token in get_user_id(): {e}")
             raise HTTPException(status_code=401, detail="Invalid token")
-        except Exception as e:
+        except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
             logger.warning(f"Error extracting user ID from JWT: {e}", exc_info=True)
             raise HTTPException(status_code=401, detail="Authentication failed")
 
@@ -101,7 +101,7 @@ async def create_custom_workflow(
     workflow: CustomWorkflow,
     request: Request,
     service: CustomWorkflowsService = Depends(get_custom_workflows_service_dependency),
-    current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_user),
 ) -> CustomWorkflow:
     """
     Create and save a new custom workflow.
@@ -124,7 +124,7 @@ async def create_custom_workflow(
     except ValueError as e:
         logger.warning(f"Invalid workflow: {str(e)}")
         raise HTTPException(status_code=400, detail=f"Invalid workflow: {str(e)}")
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Error creating workflow: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to create workflow")
 
@@ -136,7 +136,7 @@ async def list_custom_workflows(
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     page_size: int = Query(20, ge=1, le=100, description="Results per page"),
     include_templates: bool = Query(True, description="Include shared templates"),
-    current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_user),
 ) -> WorkflowListPageResponse:
     """
     List workflows for the current user.
@@ -175,7 +175,7 @@ async def list_custom_workflows(
             page_size=page_size,
             has_next=result["has_next"],
         )
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Error listing workflows: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to list workflows")
 
@@ -185,7 +185,7 @@ async def get_custom_workflow(
     workflow_id: str,
     request: Request,
     service: CustomWorkflowsService = Depends(get_custom_workflows_service_dependency),
-    current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_user),
 ) -> CustomWorkflow:
     """
     Retrieve a custom workflow by ID.
@@ -211,7 +211,7 @@ async def get_custom_workflow(
         return workflow
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Error retrieving workflow: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve workflow")
 
@@ -222,7 +222,7 @@ async def update_custom_workflow(
     workflow: CustomWorkflow,
     request: Request,
     service: CustomWorkflowsService = Depends(get_custom_workflows_service_dependency),
-    current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_user),
 ) -> CustomWorkflow:
     """
     Update an existing custom workflow.
@@ -251,7 +251,7 @@ async def update_custom_workflow(
         if "not found" in error_msg.lower() or "access denied" in error_msg.lower():
             raise HTTPException(status_code=404, detail=error_msg)
         raise HTTPException(status_code=400, detail=f"Invalid workflow: {error_msg}")
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Error updating workflow: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to update workflow")
 
@@ -261,7 +261,7 @@ async def delete_custom_workflow(
     workflow_id: str,
     request: Request,
     service: CustomWorkflowsService = Depends(get_custom_workflows_service_dependency),
-    current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_user),
 ) -> Dict[str, str]:
     """
     Delete a custom workflow.
@@ -289,7 +289,7 @@ async def delete_custom_workflow(
     except ValueError as e:
         logger.warning(f"Access denied or not found: {str(e)}")
         raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Error deleting workflow: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to delete workflow")
 
@@ -301,7 +301,7 @@ async def execute_custom_workflow(
     request: Request,
     service: CustomWorkflowsService = Depends(get_custom_workflows_service_dependency),
 ) -> Dict[str, Any]:
-    current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_user),
     """
     Execute a saved custom workflow.
 
@@ -356,7 +356,7 @@ async def execute_custom_workflow(
         return result
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Error executing workflow: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to execute workflow")
 
@@ -364,7 +364,7 @@ async def execute_custom_workflow(
 @router.get("/available-phases", name="Get Available Phases")
 async def get_available_phases(
     service: CustomWorkflowsService = Depends(get_custom_workflows_service_dependency),
-    current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """
     Get list of available phases that can be used when building workflows.
@@ -376,7 +376,7 @@ async def get_available_phases(
         phases = await service.get_available_phases()
 
         return {"phases": phases, "total_count": len(phases)}
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Error getting available phases: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get available phases")
 
@@ -396,7 +396,7 @@ async def get_workflow_execution(
         return execution
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Error getting workflow execution {execution_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get workflow execution")
 
@@ -409,7 +409,7 @@ async def list_workflow_executions(
     limit: int = Query(20, ge=1, le=100, description="Max executions to return"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     status: Optional[str] = Query(None, description="Optional status filter"),
-    current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """List execution history for a specific workflow."""
     try:
@@ -433,7 +433,7 @@ async def list_workflow_executions(
         }
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(
             f"Error listing workflow executions for {workflow_id}: {str(e)}", exc_info=True
         )
@@ -447,7 +447,7 @@ async def get_workflow_history(
     limit: int = Query(50, ge=1, le=500, description="Max results"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     status: Optional[str] = Query(None, description="Filter by status"),
-    current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """Get workflow execution history for the user."""
     try:
@@ -477,7 +477,7 @@ async def get_workflow_history(
         }
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Error fetching workflow history: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch workflow history")
 
@@ -494,7 +494,7 @@ async def get_workflow_statistics(
         return stats
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Error fetching workflow statistics: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500, detail="Failed to fetch workflow statistics"
