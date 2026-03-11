@@ -59,6 +59,9 @@ class StartupManager:
             logger.info("🚀 Starting Glad Labs AI Co-Founder application...")
             logger.info(f"  Environment: {os.getenv('ENVIRONMENT', 'production')}")
 
+            # Step 0: Validate secrets (fail fast in production with known defaults)
+            self._validate_secrets()
+
             # Step 1: Initialize PostgreSQL database (MANDATORY)
             await self._initialize_database()
 
@@ -121,6 +124,40 @@ class StartupManager:
             self.startup_error = f"Critical startup failure: {str(e)}"
             logger.error(f" {self.startup_error}", exc_info=True)
             raise
+
+    def _validate_secrets(self) -> None:
+        """
+        Validate that known-default placeholder secrets have been replaced.
+
+        In production (ENVIRONMENT=production) any default secret is a hard failure.
+        In development/staging a warning is logged but startup continues.
+        """
+        is_production = os.getenv("ENVIRONMENT", "production").lower() == "production"
+
+        KNOWN_DEFAULTS = {
+            "JWT_SECRET_KEY": "development-secret-key-change-in-production",
+            "JWT_SECRET": "development-secret-key-change-in-production",
+            "SECRET_KEY": "your-secret-key-here",
+            "REVALIDATE_SECRET": "dev-secret-key",
+        }
+
+        violations: list = []
+        for env_var, default_value in KNOWN_DEFAULTS.items():
+            actual = os.getenv(env_var, "")
+            if actual == default_value or actual == "":
+                if actual == default_value:
+                    violations.append(f"{env_var} is using the known-default placeholder value")
+                # empty string means not set — only warn, don't block (may be intentionally absent)
+
+        if violations:
+            msg = "Secret validation failed:\n" + "\n".join(f"  - {v}" for v in violations)
+            if is_production:
+                logger.error(f"[startup] FATAL — {msg}")
+                raise RuntimeError(
+                    f"Refusing to start in production with default secrets. {msg}"
+                )
+            else:
+                logger.warning(f"[startup] {msg}\n  Set these in .env.local before deploying to production.")
 
     async def _initialize_database(self) -> None:
         """Initialize PostgreSQL database connection"""
