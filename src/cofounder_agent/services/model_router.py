@@ -564,8 +564,13 @@ def get_model_for_phase(
     Returns:
         Model identifier string (e.g., "gpt-4", "ollama/gpt-oss:20b")
     """
+    # Phase-differentiated model tiers (#196):
+    # - research/assess/finalize: simple filtering/classification → cheap model
+    # - refine: editing existing draft → medium model
+    # - draft/outline: creative generation → best available model
     defaults_by_phase = {
         "fast": {
+            # All phases use the smallest model for maximum speed
             "research": "ollama/gpt-oss:20b",
             "outline": "ollama/gpt-oss:20b",
             "draft": "ollama/gpt-oss:20b",
@@ -574,20 +579,22 @@ def get_model_for_phase(
             "finalize": "ollama/gpt-oss:20b",
         },
         "balanced": {
-            "research": "ollama/gpt-oss:20b",
-            "outline": "ollama/gpt-oss:20b",
-            "draft": "ollama/gpt-oss:20b",
-            "assess": "ollama/gpt-oss:20b",
-            "refine": "ollama/gpt-oss:20b",
-            "finalize": "ollama/gpt-oss:20b",
+            # Draft gets best local model; simple stages use cheap model (~40% savings)
+            "research": "ollama/gpt-oss:20b",   # SIMPLE: filtering/ranking snippets
+            "outline": "ollama/gpt-oss:20b",    # SIMPLE: structural planning
+            "draft": "ollama/gpt-oss:120b",     # COMPLEX: primary creative generation
+            "assess": "ollama/gpt-oss:20b",     # SIMPLE: binary approved/rejected + score
+            "refine": "ollama/gpt-oss:20b",     # MEDIUM: editing existing draft
+            "finalize": "ollama/gpt-oss:20b",   # SIMPLE: cleanup and formatting
         },
         "quality": {
-            "research": "ollama/gpt-oss:120b",
-            "outline": "ollama/gpt-oss:120b",
-            "draft": "ollama/gpt-oss:120b",
-            "assess": "ollama/gpt-oss:120b",
-            "refine": "ollama/gpt-oss:120b",
-            "finalize": "ollama/gpt-oss:120b",
+            # Draft gets largest model; other stages use medium model (~50% savings vs all-120b)
+            "research": "ollama/gpt-oss:20b",   # SIMPLE: filtering/ranking snippets
+            "outline": "ollama/gpt-oss:20b",    # SIMPLE: structural planning
+            "draft": "ollama/gpt-oss:120b",     # COMPLEX: primary creative generation
+            "assess": "ollama/gpt-oss:20b",     # SIMPLE: binary approved/rejected + score
+            "refine": "ollama/gpt-oss:20b",     # MEDIUM: editing existing draft
+            "finalize": "ollama/gpt-oss:20b",   # SIMPLE: cleanup and formatting
         },
     }
 
