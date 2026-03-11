@@ -676,6 +676,74 @@ async def process_content_generation_task(
         logger.info(f"   Feedback: {quality_result.feedback}\n")
 
         # ================================================================================
+        # STAGE 2C: QUALITY-GATED REFINEMENT LOOP (#186, #187, #188)
+        # If content fails the quality threshold, re-generate with feedback context up to
+        # MAX_REFINEMENTS times before proceeding. This enforces the 70/100 gate and
+        # prevents sub-threshold content from bypassing human approval without at least
+        # attempting improvement.
+        # ================================================================================
+        _MAX_REFINEMENTS = 3
+        _refinement_count = 0
+
+        while not quality_result.passing and _refinement_count < _MAX_REFINEMENTS:
+            _refinement_count += 1
+            logger.info(
+                f"🔄 STAGE 2C: Refinement attempt {_refinement_count}/{_MAX_REFINEMENTS} "
+                f"(score={quality_result.overall_score:.1f} < 70.0)"
+            )
+
+            # Embed quality feedback into topic context so generate_blog_post incorporates it
+            _refinement_topic = (
+                f"{topic}\n\n"
+                f"[QUALITY IMPROVEMENT — attempt {_refinement_count}/{_MAX_REFINEMENTS}]\n"
+                f"Previous score: {quality_result.overall_score:.1f}/100\n"
+                f"Feedback to address: {quality_result.feedback}"
+            )
+
+            content_text, model_used, _ = await content_generator.generate_blog_post(
+                topic=_refinement_topic,
+                style=style,
+                tone=tone,
+                target_length=target_length,
+                tags=tags or [topic],
+                preferred_model=preferred_model,
+                preferred_provider=preferred_provider,
+            )
+
+            # Re-evaluate with the unified quality service
+            quality_result = await quality_service.evaluate(
+                content=content_text,
+                context={"topic": topic, "keywords": tags or [topic], "audience": "General"},
+                method=EvaluationMethod.LLM_BASED,
+            )
+
+            logger.info(
+                f"   Refinement {_refinement_count}: "
+                f"score={quality_result.overall_score:.1f}, passing={quality_result.passing}"
+            )
+
+        if _refinement_count > 0:
+            # Update result with potentially improved content
+            result["content"] = content_text
+            result["content_length"] = len(content_text)
+            result["quality_score"] = quality_result.overall_score
+            result["quality_passing"] = quality_result.passing
+            result["refinement_attempts"] = _refinement_count
+            result["stages"]["2c_refinement_completed"] = True
+
+            if quality_result.passing:
+                logger.info(
+                    f"✅ Quality gate passed after {_refinement_count} refinement attempt(s) "
+                    f"(final score: {quality_result.overall_score:.1f}/100)\n"
+                )
+            else:
+                logger.warning(
+                    f"⚠️  Quality gate not met after {_MAX_REFINEMENTS} refinement attempts "
+                    f"(final score: {quality_result.overall_score:.1f}/100). "
+                    f"Proceeding to human approval gate.\n"
+                )
+
+        # ================================================================================
         # STAGE 3: SOURCE FEATURED IMAGE FROM UNIFIED IMAGE SERVICE
         # ================================================================================
         logger.info("🖼️  STAGE 3: Sourcing featured image from Pexels...")
