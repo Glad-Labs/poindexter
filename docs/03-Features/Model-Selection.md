@@ -24,7 +24,7 @@ curl -X POST http://localhost:8000/api/workflows/execute/blog_post \
     "topic": "The Future of AI",
     "keywords": ["artificial intelligence", "machine learning"],
     "target_audience": "Technical professionals",
-    "model": "claude-3-5-sonnet"
+    "model_tier": "standard"
   }'
 ```
 
@@ -34,12 +34,12 @@ curl -X POST http://localhost:8000/api/workflows/execute/blog_post \
 {
   "execution_id": "550e8400-e29b-41d4-a716-446655440000",
   "workflow_id": "550e8400-e29b-41d4-a716-446655440001",
-  "selected_model": "claude-3-5-sonnet",
-  "fallback_chain": ["gpt-4-turbo", "gemini-1.5-pro"],
+  "selected_tier": "standard",
+  "fallback_chain": ["budget", "free"],
   "status": "running",
   "current_phase": "research",
   "progress_percent": 0,
-  "created_at": "2026-03-08T14:35:00Z"
+  "created_at": "2026-03-10T14:35:00Z"
 }
 ```
 
@@ -56,7 +56,7 @@ curl -X POST "http://localhost:8000/api/workflows/custom/wf-550e8400/execute" \
       "topic": "Market Analysis",
       "depth": "comprehensive"
     },
-    "model": "gpt-4-turbo"
+    "model_tier": "premium"
   }'
 ```
 
@@ -66,46 +66,40 @@ curl -X POST "http://localhost:8000/api/workflows/custom/wf-550e8400/execute" \
 {
   "execution_id": "exec-550e8400-e29b-41d4",
   "workflow_id": "wf-550e8400",
-  "selected_model": "gpt-4-turbo",
+  "selected_tier": "premium",
   "status": "running",
   "progress_percent": 0,
-  "created_at": "2026-03-08T14:36:00Z"
+  "created_at": "2026-03-10T14:36:00Z"
 }
 ```
 
-## Available Models
+## Cost Tiers (ALWAYS Use Tiers, NOT Model Names)
 
-**Cost Tiers:**
+**Available Tiers:**
 
-- **Ultra-cheap** (local, zero API cost): `ollama/mistral`, `ollama/llama2`, `ollama/neural-chat`
-- **Cheap** (low API cost): `gemini-1.5-flash`
-- **Balanced** (standard cost): `claude-3-5-sonnet`, `gpt-4-turbo`
-- **Premium** (high cost): `claude-3-opus`, `gpt-4o`
-- **Ultra-premium** (multi-model ensemble): Multi-step verification
+- **`free`** (local, zero API cost): Ollama models (mistral, llama2, neural-chat)
+- **`budget`** (low API cost): GPT-3.5 Turbo, Claude Instant, Gemini Flash
+- **`standard`** (mid-tier cost): Claude Haiku, balanced quality/cost
+- **`premium`** (high-capability): Claude Opus, GPT-4 Turbo, Gemini Pro
 
-**Available Providers:**
-
-- **Anthropic Claude**: `claude-3-5-sonnet`, `claude-3-opus`, `claude-3-haiku`
-- **OpenAI**: `gpt-4-turbo`, `gpt-4o`, `gpt-3.5-turbo`
-- **Google Gemini**: `gemini-1.5-pro`, `gemini-1.5-flash`
-- **Ollama (local)**: `ollama/mistral`, `ollama/llama2`, `ollama/dolphin-mixtral`
+**Key Principle:** Always specify a cost tier (free/budget/standard/premium), never hardcode model names. The router automatically selects the best available model within that tier based on API availability, rate limits, and fallback chains.
 
 ## Automatic Fallback Chain
 
-If selected model is unavailable, system automatically tries:
+If primary tier is unavailable, system automatically cascades through:
 
 ```plaintext
-Ollama (local) → Anthropic → OpenAI → Google Gemini → Echo/Mock
+Free (Ollama) → Budget (Cheapest APIs) → Standard → Premium → Echo/Mock
 ```
 
 **Fallback Example:**
 
-- Request selection: `claude-3-5-sonnet`
+- Request tier: `premium`
 - Check API key: ✓ ANTHROPIC_API_KEY available
 - Check service: ✗ Rate limited
-- Fallback to: `gpt-4-turbo` (OpenAI)
+- Fallback to: `standard` tier
 - Check service: ✓ Available
-- Execution: Uses OpenAI with fallback logged
+- Execution: Uses standard tier model (e.g., Claude Haiku) with fallback logged
 
 ## Analytics and Cost Tracking
 
