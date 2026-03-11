@@ -62,24 +62,33 @@ npm run dev
 
 ```text
 web/public-site/
-├── components/           # Reusable React components
-│   ├── Header.js        # Navigation header
-│   ├── Layout.js        # Page layout wrapper
-│   ├── PostCard.js      # Individual post card
-│   └── PostList.js      # Post grid/list container
-├── lib/                 # Utility functions and API helpers
-│   └── api-fastapi.js  # FastAPI CMS integration functions
-├── pages/              # Next.js pages (file-based routing)
-│   ├── index.js        # Homepage with featured posts
-│   ├── about.js        # About page
-│   ├── privacy-policy.js # Privacy policy
+├── app/                # Next.js 15 App Router (file-based routing)
+│   ├── layout.js       # Root layout wrapper
+│   ├── page.js         # Homepage with featured posts
+│   ├── about/          # About page
 │   ├── archive/        # Paginated post archives
+│   ├── author/         # Author profile pages
+│   ├── blog/           # Blog post pages (legacy)
 │   ├── category/       # Category-filtered posts
-│   ├── posts/          # Individual post pages
-│   └── tag/            # Tag-filtered posts
+│   ├── tag/            # Tag-filtered posts
+│   ├── legal/          # Legal pages (privacy, terms, etc.)
+│   ├── api/            # API routes (revalidation, webhooks)
+│   └── error.tsx       # Error boundary component
+├── components/         # Reusable React components
+│   ├── TopNav.js       # Navigation header
+│   ├── Layout.js       # Page layout wrapper
+│   ├── PostCard.js     # Individual post card
+│   ├── PostList.js     # Post grid/list container
+│   └── ...             # Other UI components
+├── lib/                # Utility functions and API helpers
+│   ├── api.js          # FastAPI CMS integration
+│   ├── swr-config.js   # SWR caching configuration
+│   └── ...             # Other utilities
+├── public/             # Static assets (images, fonts, etc.)
 ├── scripts/            # Build and utility scripts
-│   └── generate-sitemap.js # SEO sitemap generation
-├── styles/             # Global styles and Tailwind config
+├── e2e/                # Playwright end-to-end tests
+├── __tests__/          # Jest unit/integration tests
+├── styles/             # Global CSS and Tailwind config
 └── .env.local          # Environment configuration
 ```
 
@@ -144,25 +153,31 @@ NEXT_PUBLIC_FASTAPI_URL=http://localhost:8000
 
 ## **🧩 Component Reference**
 
-### **Page Components**
+### **Page Components** (App Router)
 
-- **Homepage** (`pages/index.js`): Featured post + recent posts grid
-- **Post Detail** (`pages/posts/[slug].js`): Individual article display
-- **Category** (`pages/category/[slug].js`): Category-filtered posts
-- **Tag** (`pages/tag/[slug].js`): Tag-filtered posts
-- **Archive** (`pages/archive/[page].js`): Paginated post archives
+- **Homepage** (`app/page.js`): Featured post + recent posts grid
+- **Post Detail** (`app/blog/[slug]/page.js`): Individual article display
+- **Category** (`app/category/[slug]/page.tsx`): Category-filtered posts
+- **Tag** (`app/tag/[slug]/page.tsx`): Tag-filtered posts
+- **Archive** (`app/archive/[page]/page.tsx`): Paginated post archives
+- **Author** (`app/author/[id]/page.tsx`): Author profile pages
+- **About** (`app/about/page.js`): About page
+- **Legal** (`app/legal/*/page.tsx`): Privacy policy, terms of service, data requests
 
 ### **Reusable Components**
 
-- **Header** (`components/Header.js`): Navigation with modern Link syntax
+- **TopNav** (`components/TopNav.js`): Navigation header with responsive design
 - **Layout** (`components/Layout.js`): Page wrapper with header/footer
 - **PostCard** (`components/PostCard.js`): Post preview card with validation
 - **PostList** (`components/PostList.js`): Grid container for multiple posts
+- **ErrorBoundary** (`components/ErrorBoundary.tsx`): Error handling wrapper
+- **WebVitals** (`components/WebVitals.tsx`): Core Web Vitals reporting
 
 ### **Utilities**
 
-- **API Helpers** (`lib/api-fastapi.js`): Centralized FastAPI CMS communication
-- **URL Helpers**: getStrapiURL for asset URL construction (handles both relative and absolute URLs)
+- **API Helpers** (`lib/api.js`): Centralized FastAPI CMS communication
+- **SWR Configuration** (`lib/swr-config.js`): Caching and request deduplication
+- **URL Helpers**: Utilities for asset URL construction
 
 ---
 
@@ -180,10 +195,11 @@ npm run test        # Run Jest tests
 
 ### **Build Process**
 
-1. **Static Generation**: Pages pre-built using getStaticProps
-2. **Sitemap Generation**: Automatic sitemap creation post-build
-3. **Optimization**: Automatic code splitting and optimization
-4. **Asset Processing**: Image optimization and static asset handling
+1. **Static Generation**: Pages pre-built at build time using App Router's `generateStaticParams()` and ISR
+2. **Incremental Static Regeneration**: Content updates trigger background revalidation
+3. **Revalidation API**: POST to `/api/revalidate` endpoint to refresh pages on demand
+4. **Optimization**: Automatic code splitting and optimization
+5. **Asset Processing**: Image optimization and static asset handling via Next.js Image component
 
 ### **Testing Strategy**
 

@@ -205,16 +205,18 @@ GET  /api/agents/logs             # View agent logs
 
 ### Configuration
 
-In `src/lib/api.js`:
+In `src/lib/api.js` (uses Vite conventions with `import.meta.env.VITE_*`):
 
 ```javascript
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 export const createTask = async (taskData) => {
   const response = await axios.post(`${API_BASE_URL}/api/tasks`, taskData);
   return response.data;
 };
 ```
+
+**Note:** This application uses Vite, not Create React App, so environment variables use `VITE_*` prefix (accessed via `import.meta.env.*`), not `REACT_APP_*` prefix.
 
 ---
 
@@ -338,13 +340,17 @@ npm run build
 
 ### Environment Variables
 
-Set in `.env` or `.env.local`:
+Set in `.env.local` (uses Vite `VITE_*` convention):
 
 ```bash
-REACT_APP_API_URL=https://api.railway.app      # Backend URL
-REACT_APP_STRAPI_URL=https://cms.railway.app   # Strapi URL
-REACT_APP_DEBUG=false                           # Debug mode
+VITE_API_BASE_URL=https://api.railway.app      # Backend URL
+VITE_API_URL=https://api.railway.app           # Alternative backend URL
+VITE_WS_BASE_URL=https://api.railway.app       # WebSocket URL
+VITE_GH_OAUTH_CLIENT_ID=your_github_client_id  # GitHub OAuth
+VITE_USE_MOCK_AUTH=false                       # Use mock auth (dev only)
 ```
+
+**Note:** This is a Vite application, so use `VITE_*` prefix for environment variables (accessed via `import.meta.env.VITE_*` in code).
 
 ### Deploy to Vercel
 
