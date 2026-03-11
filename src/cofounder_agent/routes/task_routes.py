@@ -2816,3 +2816,91 @@ async def delete_task(
     except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to delete task {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to delete task")
+
+
+@router.post(
+    "/{task_id}/duplicate",
+    summary="Duplicate a task",
+    tags=["Task Management"],
+    status_code=201,
+)
+async def duplicate_task(
+    task_id: str,
+    _current_user: dict = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
+):
+    """
+    **Clone an existing task as a new pending task.**
+
+    Copies the key configuration fields (topic, task_type, style, tone,
+    category, target_audience, primary_keyword, tags, description,
+    writing_style_id, target_length) and creates a new task with status
+    `pending` and a title of `<original_title> (Copy)`.
+
+    **Returns:**
+    - 201 with `{ "task_id": "<new_id>", "task_name": "<name>" }`
+
+    **Error Responses:**
+    - 404: Original task not found
+    - 500: Duplication failed
+    """
+    try:
+        original = await db_service.get_task(task_id)
+        if not original:
+            raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
+
+        original_title = (
+            original.get("task_name")
+            or original.get("title")
+            or original.get("topic", "Task")
+        )
+        new_title = f"{original_title} (Copy)"
+
+        metadata = original.get("task_metadata") or {}
+        if isinstance(metadata, str):
+            try:
+                metadata = json.loads(metadata)
+            except (ValueError, TypeError):
+                metadata = {}
+
+        tags = original.get("tags", [])
+        if isinstance(tags, str):
+            try:
+                tags = json.loads(tags)
+            except (ValueError, TypeError):
+                tags = []
+
+        task_data = {
+            "task_name": new_title,
+            "title": new_title,
+            "topic": original.get("topic", ""),
+            "task_type": original.get("task_type", "blog_post"),
+            "status": "pending",
+            "style": original.get("style"),
+            "tone": original.get("tone"),
+            "target_length": original.get("target_length", 1500),
+            "category": original.get("category"),
+            "target_audience": original.get("target_audience"),
+            "primary_keyword": original.get("primary_keyword"),
+            "description": original.get("description"),
+            "writing_style_id": original.get("writing_style_id"),
+            "agent_id": original.get("agent_id", "content-agent"),
+            "tags": tags,
+            "task_metadata": {"task_name": new_title, "source_task_id": task_id},
+        }
+
+        new_task_id = await db_service.tasks.add_task(task_data)
+        logger.info(
+            f"[DUPLICATE_TASK] Created task {new_task_id} as copy of {task_id}"
+        )
+
+        return {"task_id": new_task_id, "task_name": new_title}
+
+    except HTTPException:
+        raise
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
+        logger.error(
+            f"[DUPLICATE_TASK] Failed to duplicate task {task_id}: {str(e)}",
+            exc_info=True,
+        )
+        raise HTTPException(status_code=500, detail="Failed to duplicate task")
