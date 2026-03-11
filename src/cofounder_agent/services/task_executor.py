@@ -1392,9 +1392,21 @@ class TaskExecutor:
             "target_audience": target_audience,
             "category": category,
             "status": final_status,
-            "stage": "complete" if content_is_valid else "validation_failed",
+            "stage": (
+                "complete"
+                if content_is_valid
+                else "generation_failed"
+                if not base_content_valid
+                else "validation_failed"
+            ),
             "percentage": 100,
-            "message": "Ready for approval" if content_is_valid else "Validation failed",
+            "message": (
+                "Ready for approval"
+                if content_is_valid
+                else "Content generation failed — no content produced"
+                if not base_content_valid
+                else f"Validation failed: {orchestrator_error or 'see validation_details'}"
+            ),
             "content": generated_content,  # Always store for preservation
             "generated_content": generated_content,
             "content_length": len(generated_content) if generated_content else 0,
