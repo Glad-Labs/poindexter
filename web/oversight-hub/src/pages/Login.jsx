@@ -23,16 +23,13 @@ const getEnv = (...keys) => {
 const Login = () => {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
-  const clientId = getEnv(
-    'VITE_GH_OAUTH_CLIENT_ID',
-    'REACT_APP_GH_OAUTH_CLIENT_ID'
-  );
+  const clientId = getEnv('VITE_GH_OAUTH_CLIENT_ID');
   // Mock auth ONLY allowed in development
   const mode = getEnv('MODE', 'NODE_ENV') || 'development';
   const isDevelopment = mode === 'development';
   const useMockAuth =
     isDevelopment &&
-    getEnv('VITE_USE_MOCK_AUTH', 'REACT_APP_USE_MOCK_AUTH') === 'true';
+    getEnv('VITE_USE_MOCK_AUTH') === 'true';
   const [debugInfo, setDebugInfo] = useState('');
 
   useEffect(() => {
@@ -47,7 +44,7 @@ const Login = () => {
     // Warn if mock auth is enabled in production
     if (
       !isDevelopment &&
-      getEnv('VITE_USE_MOCK_AUTH', 'REACT_APP_USE_MOCK_AUTH') === 'true'
+      getEnv('VITE_USE_MOCK_AUTH') === 'true'
     ) {
       logger.error('❌ SECURITY: Mock auth enabled in non-development mode!');
     }
@@ -66,7 +63,7 @@ const Login = () => {
     } else {
       if (!clientId) {
         alert(
-          'GitHub Client ID not configured. Check REACT_APP_GH_OAUTH_CLIENT_ID environment variable.'
+          'GitHub Client ID not configured. Set VITE_GH_OAUTH_CLIENT_ID in web/oversight-hub/.env.local'
         );
         return;
       }

@@ -144,6 +144,7 @@ jobs:
           VITE_API_URL: ${{ secrets.OVERSIGHT_PROD_API_URL }}
           VITE_AGENT_URL: ${{ secrets.OVERSIGHT_PROD_AGENT_URL }}
           VITE_AUTH_SECRET: ${{ secrets.OVERSIGHT_PROD_AUTH_SECRET }}
+          VITE_GH_OAUTH_CLIENT_ID: ${{ secrets.OVERSIGHT_PROD_GH_OAUTH_CLIENT_ID }}
           SENTRY_DSN: ${{ secrets.OVERSIGHT_PROD_SENTRY_DSN }}
 
       # ============================================

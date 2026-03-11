@@ -131,6 +131,7 @@ jobs:
           VITE_API_URL: ${{ secrets.OVERSIGHT_STAGING_API_URL }}
           VITE_AGENT_URL: ${{ secrets.OVERSIGHT_STAGING_AGENT_URL }}
           VITE_AUTH_SECRET: ${{ secrets.OVERSIGHT_STAGING_AUTH_SECRET }}
+          VITE_GH_OAUTH_CLIENT_ID: ${{ secrets.OVERSIGHT_STAGING_GH_OAUTH_CLIENT_ID }}
           SENTRY_DSN: ${{ secrets.OVERSIGHT_STAGING_SENTRY_DSN }}
 
       # ============================================
