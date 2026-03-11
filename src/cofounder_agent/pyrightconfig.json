@@ -7,5 +7,6 @@
   "extraPaths": ["."],
   "typeCheckingMode": "basic",
   "reportMissingImports": "none",
-  "reportMissingModuleSource": "none"
+  "reportMissingModuleSource": "none",
+  "plugins": ["pydantic.pyright"]
 }

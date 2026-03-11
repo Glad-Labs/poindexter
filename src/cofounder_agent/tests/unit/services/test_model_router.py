@@ -298,7 +298,7 @@ class TestGetModelForPhase:
         assert result == "ollama/gpt-oss:120b"
 
     def test_none_quality_preference_defaults_to_balanced(self):
-        result = get_model_for_phase("draft", {}, None)
+        result = get_model_for_phase("draft", {}, None)  # type: ignore[arg-type]
         # defaults to balanced tier; draft uses best model (#196)
         assert result == "ollama/gpt-oss:120b"
 

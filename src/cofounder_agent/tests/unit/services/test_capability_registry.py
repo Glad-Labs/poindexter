@@ -157,7 +157,7 @@ class TestInputSchemaValidate:
         )
         ok, err = schema.validate({})
         assert ok is False
-        assert "text" in err
+        assert err is not None and "text" in err
 
     def test_optional_param_not_in_inputs_still_valid(self):
         schema = InputSchema(
@@ -403,7 +403,7 @@ class TestRegistryToDict:
 @pytest.mark.unit
 class TestGlobalRegistry:
     def test_get_registry_creates_instance_if_none(self):
-        set_registry(None)
+        set_registry(None)  # type: ignore[arg-type]
         reg = get_registry()
         assert isinstance(reg, CapabilityRegistry)
 

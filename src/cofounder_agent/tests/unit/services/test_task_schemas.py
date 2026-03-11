@@ -24,21 +24,21 @@ from schemas.task_schemas import (
 @pytest.mark.unit
 class TestUnifiedTaskRequest:
     def test_minimal_valid_request(self):
-        req = UnifiedTaskRequest(topic="AI in Healthcare")
+        req = UnifiedTaskRequest(topic="AI in Healthcare")  # type: ignore[call-arg]
         assert req.topic == "AI in Healthcare"
         assert req.task_type == "blog_post"  # default
 
     def test_topic_too_short_raises(self):
         with pytest.raises(ValidationError):
-            UnifiedTaskRequest(topic="AI")  # < 3 chars
+            UnifiedTaskRequest(topic="AI")  # type: ignore[call-arg]  # < 3 chars
 
     def test_topic_too_long_raises(self):
         with pytest.raises(ValidationError):
-            UnifiedTaskRequest(topic="x" * 201)
+            UnifiedTaskRequest(topic="x" * 201)  # type: ignore[call-arg]
 
     def test_invalid_task_type_raises(self):
         with pytest.raises(ValidationError):
-            UnifiedTaskRequest(topic="Valid topic", task_type="invalid_type")
+            UnifiedTaskRequest(topic="Valid topic", task_type="invalid_type")  # type: ignore[call-arg]
 
     def test_all_valid_task_types_accepted(self):
         valid_types = [
@@ -52,50 +52,50 @@ class TestUnifiedTaskRequest:
             "financial_analysis",
         ]
         for task_type in valid_types:
-            req = UnifiedTaskRequest(topic="Some topic", task_type=task_type)
+            req = UnifiedTaskRequest(topic="Some topic", task_type=task_type)  # type: ignore[call-arg]
             assert req.task_type == task_type
 
     def test_invalid_style_raises(self):
         with pytest.raises(ValidationError):
-            UnifiedTaskRequest(topic="Valid topic", style="fancy")
+            UnifiedTaskRequest(topic="Valid topic", style="fancy")  # type: ignore[call-arg]
 
     def test_valid_tone_accepted(self):
-        req = UnifiedTaskRequest(topic="Valid topic", tone="casual")
+        req = UnifiedTaskRequest(topic="Valid topic", tone="casual")  # type: ignore[call-arg]
         assert req.tone == "casual"
 
     def test_invalid_tone_raises(self):
         with pytest.raises(ValidationError):
-            UnifiedTaskRequest(topic="Valid topic", tone="angry")
+            UnifiedTaskRequest(topic="Valid topic", tone="angry")  # type: ignore[call-arg]
 
     def test_target_length_below_min_raises(self):
         with pytest.raises(ValidationError):
-            UnifiedTaskRequest(topic="Valid topic", target_length=199)
+            UnifiedTaskRequest(topic="Valid topic", target_length=199)  # type: ignore[call-arg]
 
     def test_target_length_above_max_raises(self):
         with pytest.raises(ValidationError):
-            UnifiedTaskRequest(topic="Valid topic", target_length=5001)
+            UnifiedTaskRequest(topic="Valid topic", target_length=5001)  # type: ignore[call-arg]
 
     def test_target_length_at_boundaries_accepted(self):
-        low = UnifiedTaskRequest(topic="Valid topic", target_length=200)
-        high = UnifiedTaskRequest(topic="Valid topic", target_length=5000)
+        low = UnifiedTaskRequest(topic="Valid topic", target_length=200)  # type: ignore[call-arg]
+        high = UnifiedTaskRequest(topic="Valid topic", target_length=5000)  # type: ignore[call-arg]
         assert low.target_length == 200
         assert high.target_length == 5000
 
     def test_tags_over_limit_raises(self):
         with pytest.raises(ValidationError):
-            UnifiedTaskRequest(topic="Valid topic", tags=["t"] * 11)
+            UnifiedTaskRequest(topic="Valid topic", tags=["t"] * 11)  # type: ignore[call-arg]
 
     def test_quality_preference_invalid_raises(self):
         with pytest.raises(ValidationError):
-            UnifiedTaskRequest(topic="Valid topic", quality_preference="ultra")
+            UnifiedTaskRequest(topic="Valid topic", quality_preference="ultra")  # type: ignore[call-arg]
 
     def test_quality_preference_valid_values(self):
         for pref in ("fast", "balanced", "quality"):
-            req = UnifiedTaskRequest(topic="Valid topic", quality_preference=pref)
+            req = UnifiedTaskRequest(topic="Valid topic", quality_preference=pref)  # type: ignore[call-arg]
             assert req.quality_preference == pref
 
     def test_optional_fields_default_to_none_or_defaults(self):
-        req = UnifiedTaskRequest(topic="Valid topic")
+        req = UnifiedTaskRequest(topic="Valid topic")  # type: ignore[call-arg]
         assert req.tags is None
         assert req.platforms is None
         assert req.primary_keyword is None
@@ -132,12 +132,12 @@ class TestContentConstraints:
 
     def test_invalid_writing_style_raises(self):
         with pytest.raises(ValidationError):
-            ContentConstraints(writing_style="haiku")
+            ContentConstraints(writing_style="haiku")  # type: ignore[arg-type]
 
     def test_valid_writing_styles(self):
         valid = ["technical", "narrative", "listicle", "educational", "thought-leadership"]
         for style in valid:
-            cc = ContentConstraints(writing_style=style)
+            cc = ContentConstraints(writing_style=style)  # type: ignore[arg-type]
             assert cc.writing_style == style
 
     def test_tolerance_below_min_raises(self):
@@ -224,8 +224,8 @@ class TestTaskCreateRequest:
             topic="Valid topic",
             content_constraints=ContentConstraints(word_count=2000, strict_mode=True),
         )
-        assert req.content_constraints.word_count == 2000
-        assert req.content_constraints.strict_mode is True
+        assert req.content_constraints.word_count == 2000  # type: ignore[union-attr]
+        assert req.content_constraints.strict_mode is True  # type: ignore[union-attr]
 
     def test_writing_style_id_optional(self):
         req = TaskCreateRequest(task_name="Valid name", topic="Valid topic")
@@ -240,14 +240,14 @@ class TestTaskCreateRequest:
 @pytest.mark.unit
 class TestTaskStatusUpdateRequest:
     def test_minimal_valid_request(self):
-        req = TaskStatusUpdateRequest(status="approved")
+        req = TaskStatusUpdateRequest(status="approved")  # type: ignore[call-arg]
         assert req.status == "approved"
         assert req.updated_by is None
         assert req.reason is None
 
     def test_status_is_required(self):
         with pytest.raises(ValidationError):
-            TaskStatusUpdateRequest()
+            TaskStatusUpdateRequest()  # type: ignore[call-arg]
 
     def test_all_optional_fields_accepted(self):
         req = TaskStatusUpdateRequest(
@@ -259,7 +259,7 @@ class TestTaskStatusUpdateRequest:
         )
         assert req.updated_by == "editor@example.com"
         assert req.result == {"content": "Final post text"}
-        assert req.metadata["score"] == 9.1
+        assert req.metadata["score"] == 9.1  # type: ignore[index]
 
 
 # ---------------------------------------------------------------------------
@@ -270,7 +270,7 @@ class TestTaskStatusUpdateRequest:
 @pytest.mark.unit
 class TestApproveTaskRequest:
     def test_defaults(self):
-        req = ApproveTaskRequest()
+        req = ApproveTaskRequest()  # type: ignore[call-arg]
         assert req.approved is True
         assert req.auto_publish is False
         assert req.human_feedback is None
@@ -279,7 +279,7 @@ class TestApproveTaskRequest:
         assert req.image_source is None
 
     def test_reject_with_feedback(self):
-        req = ApproveTaskRequest(
+        req = ApproveTaskRequest(  # type: ignore[call-arg]
             approved=False,
             human_feedback="Needs more citations.",
             reviewer_id="editor@example.com",
@@ -288,11 +288,11 @@ class TestApproveTaskRequest:
         assert req.human_feedback == "Needs more citations."
 
     def test_auto_publish_true_accepted(self):
-        req = ApproveTaskRequest(approved=True, auto_publish=True)
+        req = ApproveTaskRequest(approved=True, auto_publish=True)  # type: ignore[call-arg]
         assert req.auto_publish is True
 
     def test_image_fields_accepted(self):
-        req = ApproveTaskRequest(
+        req = ApproveTaskRequest(  # type: ignore[call-arg]
             featured_image_url="https://example.com/img.jpg",
             image_source="pexels",
         )

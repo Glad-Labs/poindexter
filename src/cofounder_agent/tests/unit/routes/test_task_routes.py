@@ -61,8 +61,8 @@ def _build_app(mock_db=None) -> FastAPI:
 @pytest.mark.unit
 class TestNormalizeSeoKeywordsInTask:
     def test_returns_non_dict_unchanged(self):
-        assert _normalize_seo_keywords_in_task("not a dict") == "not a dict"
-        assert _normalize_seo_keywords_in_task(None) is None
+        assert _normalize_seo_keywords_in_task("not a dict") == "not a dict"  # type: ignore[arg-type]
+        assert _normalize_seo_keywords_in_task(None) is None  # type: ignore[arg-type]
 
     def test_parses_json_string_at_top_level(self):
         task = {"seo_keywords": '["ai", "ml"]'}

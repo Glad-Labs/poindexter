@@ -49,7 +49,7 @@ async def list_workflows(request: Request):
     # Try to get workflow engine stats if available
     stats = {}
     try:
-        workflow_engine = get_workflow_engine_dependency(request)
+        workflow_engine = get_workflow_engine_dependency()
         if workflow_engine:
             stats = {
                 "active_workflows": len(getattr(workflow_engine, "active_workflows", {})),
