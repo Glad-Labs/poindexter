@@ -2,8 +2,8 @@
 
 This document defines the database schemas for the operational system, built on PostgreSQL 15+ with asyncpg for async access patterns.
 
-**Last Updated:** February 11, 2026  
-**Version:** 3.0 (PostgreSQL)  
+**Last Updated:** March 10, 2026
+**Version:** 3.0.39 (PostgreSQL)
 **Architecture:** PostgreSQL 15+ + FastAPI + async task workers
 
 ---

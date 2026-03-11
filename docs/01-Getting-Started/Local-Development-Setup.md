@@ -1,7 +1,7 @@
 # 01 - Getting Started
 
-**Last Updated:** February 10, 2026  
-**Version:** 3.0.33
+**Last Updated:** March 10, 2026
+**Version:** 3.0.39
 **Status:** ✅ Active
 
 ---
