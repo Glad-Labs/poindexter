@@ -109,7 +109,7 @@ curl -X POST "http://localhost:8000/api/workflows/custom/wf-550e8400-e29b-41d4/e
       "topic": "AI Trends 2026",
       "audience": "Tech Decision Makers"
     },
-    "model": "claude-3-5-sonnet"
+    "model_tier": "standard"
   }'
 ```
 
