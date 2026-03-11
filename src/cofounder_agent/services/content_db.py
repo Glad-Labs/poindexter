@@ -272,7 +272,7 @@ class ContentDatabase(DatabaseServiceMixin):
         try:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(
-                    "SELECT id, name, slug, description FROM categories ORDER BY name"
+                    "SELECT id, name, slug, description FROM categories ORDER BY name LIMIT 1000"
                 )
                 return [ModelConverter.to_category_response(row) for row in rows]
         except Exception as e:
@@ -289,7 +289,7 @@ class ContentDatabase(DatabaseServiceMixin):
         try:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(
-                    "SELECT id, name, slug, description FROM tags ORDER BY name"
+                    "SELECT id, name, slug, description FROM tags ORDER BY name LIMIT 500"
                 )
                 return [ModelConverter.to_tag_response(row) for row in rows]
         except Exception as e:
