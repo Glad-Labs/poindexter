@@ -67,16 +67,17 @@ class MarketService:
             Dictionary with trend analysis and insights
         """
         try:
-            from agents.market_insight_agent.agents.market_insight_agent import (  # type: ignore
+            from agents.market_insight_agent.market_insight_agent import (
                 MarketInsightAgent,
             )
+            from agents.content_agent.services.llm_client import LLMClient
 
-            market_agent = MarketInsightAgent()
-            analysis = await market_agent.run(
-                topic=topic,
-                industry=industry,
-                timeframe_months=timeframe_months,
-            )
+            llm_client = LLMClient()
+            market_agent = MarketInsightAgent(llm_client=llm_client)
+            # MarketInsightAgent exposes suggest_topics() and create_tasks_from_trends(),
+            # not a generic run() method. Build a combined query from the parameters.
+            query = f"{topic} {industry} trends" if industry else topic
+            analysis = await market_agent.suggest_topics(query)
 
             logger.info(f"Market trend analysis completed for topic: {topic}")
 
