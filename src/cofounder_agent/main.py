@@ -350,7 +350,7 @@ async def api_health(
             "status": "healthy",
             "service": "cofounder-agent",
             "version": "3.0.1",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "components": {},
         }
 

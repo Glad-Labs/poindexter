@@ -666,7 +666,7 @@ class UnifiedOrchestrator:
             logger.info("   - Quality Preference: %s", quality_preference)
 
             # Generate task ID
-            task_id = "task_%s_%s" % (int(datetime.utcnow().timestamp()), uuid.uuid4().hex[:6])
+            task_id = "task_%s_%s" % (int(datetime.now(timezone.utc).timestamp()), uuid.uuid4().hex[:6])
 
             logger.info("[%s] Starting 5-stage pipeline for: %s", request.request_id, topic)
 

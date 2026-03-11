@@ -12,7 +12,7 @@ This service provides:
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -85,7 +85,7 @@ class FinancialService:
                 "phase": "financial_analysis",
                 "content_id": content_id,
                 "analysis": analysis,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "source": "financial_agent",
             }
 

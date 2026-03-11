@@ -10,7 +10,7 @@ SDK priority:
 import asyncio
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -238,7 +238,7 @@ class GeminiClient:
                 "configured": True,
                 "models": self.available_models,
                 "test_response": test_response[:50],
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
 
         except Exception as e:
@@ -246,7 +246,7 @@ class GeminiClient:
                 "status": "error",
                 "configured": True,
                 "error": str(e),
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
 
     def get_pricing(self, model: str = "gemini-pro") -> Dict[str, float]:

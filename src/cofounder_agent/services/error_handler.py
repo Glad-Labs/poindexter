@@ -22,7 +22,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from functools import wraps
 from typing import Any, Callable, Coroutine, Dict, Optional, TypeVar
@@ -124,7 +124,7 @@ class ErrorContext:
 
     def __post_init__(self):
         if self.timestamp is None:
-            self.timestamp = datetime.utcnow()
+            self.timestamp = datetime.now(timezone.utc)
         if self.metadata is None:
             self.metadata = {}
 
@@ -138,7 +138,7 @@ class ErrorContext:
             "request_id": self.request_id,
             "user_id": self.user_id,
             "timestamp": (
-                self.timestamp.isoformat() if self.timestamp else datetime.utcnow().isoformat()
+                self.timestamp.isoformat() if self.timestamp else datetime.now(timezone.utc).isoformat()
             ),
             "error_type": type(self.error).__name__ if self.error else None,
             "error_message": str(self.error) if self.error else None,
@@ -442,7 +442,7 @@ class CircuitBreaker:
         self.failure_count = 0
         self.last_failure_time = None
         self.is_open = False
-        self.last_state_change = datetime.utcnow()
+        self.last_state_change = datetime.now(timezone.utc)
 
     def call(self, func: Callable[..., T], *args, **kwargs) -> T:
         """
@@ -487,7 +487,7 @@ class CircuitBreaker:
 
         except self.expected_exception as e:
             self.failure_count += 1
-            self.last_failure_time = datetime.utcnow()
+            self.last_failure_time = datetime.now(timezone.utc)
 
             logger.error(
                 f"[call] Circuit breaker '{self.name}' - failure {self.failure_count}/{self.failure_threshold}: {e}",
@@ -497,7 +497,7 @@ class CircuitBreaker:
             # Open circuit if threshold reached
             if self.failure_count >= self.failure_threshold:
                 self.is_open = True
-                self.last_state_change = datetime.utcnow()
+                self.last_state_change = datetime.now(timezone.utc)
                 logger.error(f"🔴 Circuit breaker '{self.name}' is now OPEN")
 
                 # Report to Sentry if available
@@ -536,7 +536,7 @@ class CircuitBreaker:
 
         except self.expected_exception as e:
             self.failure_count += 1
-            self.last_failure_time = datetime.utcnow()
+            self.last_failure_time = datetime.now(timezone.utc)
 
             logger.error(
                 f"[call_async] Circuit breaker '{self.name}' - failure {self.failure_count}/{self.failure_threshold}: {e}",
@@ -546,7 +546,7 @@ class CircuitBreaker:
             # Open circuit if threshold reached
             if self.failure_count >= self.failure_threshold:
                 self.is_open = True
-                self.last_state_change = datetime.utcnow()
+                self.last_state_change = datetime.now(timezone.utc)
                 logger.error(f"🔴 Circuit breaker '{self.name}' is now OPEN")
 
                 # Report to Sentry if available
@@ -559,7 +559,7 @@ class CircuitBreaker:
         """Check if enough time has passed to attempt recovery"""
         if not self.last_failure_time:
             return False
-        return (datetime.utcnow() - self.last_failure_time).total_seconds() >= self.recovery_timeout
+        return (datetime.now(timezone.utc) - self.last_failure_time).total_seconds() >= self.recovery_timeout
 
     def get_status(self) -> Dict[str, Any]:
         """Get circuit breaker status for monitoring"""
@@ -692,7 +692,7 @@ class ErrorResponseFormatter:
         error_dict = {
             "error": type(error).__name__,
             "message": str(error),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
         if request_id:

@@ -298,7 +298,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
             response=response_text,
             model=request.model,  # Return original full model specification
             conversationId=request.conversationId,
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
             tokens_used=len(response_text.split()),  # Rough estimate
         )
 

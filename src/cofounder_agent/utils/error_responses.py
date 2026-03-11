@@ -20,7 +20,7 @@ Eliminates:
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
@@ -160,7 +160,7 @@ class ErrorResponseBuilder:
 
     def timestamp(self) -> "ErrorResponseBuilder":
         """Add current timestamp"""
-        self._timestamp = datetime.utcnow().isoformat() + "Z"
+        self._timestamp = datetime.now(timezone.utc).isoformat() + "Z"
         return self
 
     def build(self) -> ErrorResponse:

@@ -370,7 +370,7 @@ async def approve_task(
                     # Update task status to published and save post_id
                     post_id = str(post.id) if hasattr(post, "id") else str(post.get("id"))
                     publish_metadata = {
-                        "published_at": datetime.utcnow().isoformat(),
+                        "published_at": datetime.now(timezone.utc).isoformat(),
                         "published_by": approver_id,
                         "post_id": post_id,
                         "post_slug": slug,

@@ -34,44 +34,35 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: 📦 Install dependencies
-        run: npm ci && npm ci --workspaces
+      - name: 📦 Install Node dependencies
+        run: npm ci  # fix #167: root npm ci handles all workspaces automatically
 
-      - name: 📦 Install Python dependencies (CI/CD - Optimized)
+      - name: 📦 Install Poetry
         run: |
-          python -m pip install --upgrade pip
-          pip install --no-cache-dir -r scripts/requirements-ci.txt
-        continue-on-error: false
+          python -m pip install --upgrade pip poetry
+          poetry config virtualenvs.create false
 
-      - name: 🗑️ Clean pip cache
-        run: pip cache purge
-
-      - name: 📦 Install backend-specific requirements
+      - name: 📦 Install Python dependencies via Poetry
+        # fix #167: use Poetry (same as prod/staging) to ensure dependency parity
         run: |
-          pip install --no-cache-dir -r src/cofounder_agent/requirements.txt
-        continue-on-error: false
-
-      - name: 🗑️ Clean pip cache again
-        run: pip cache purge
+          cd src/cofounder_agent
+          poetry install --no-root
+          cd ../..
 
       - name: 🔄 Load development environment
         run: cp .env.example .env.local
 
       - name: 🧪 Run tests
         run: npm run test:ci
-        continue-on-error: true
+        # fix #167: removed continue-on-error — test failures should be visible
 
       - name: 🧪 Run Python tests
         run: npm run test:python
-        continue-on-error: true
-
-      - name: 🧪 Run Python smoke tests
-        run: npm run test:python:smoke
-        continue-on-error: true
+        # fix #167: removed continue-on-error — test failures should be visible
 
       - name: 🔍 Run linting
         run: npm run lint:fix
-        continue-on-error: true
+        continue-on-error: true  # linting is advisory on feature branches
 
       - name: 🏗️ Build check (all workspaces)
         run: npm run build --if-present

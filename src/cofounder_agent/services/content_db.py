@@ -12,7 +12,7 @@ Handles all content-related database operations including:
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -140,7 +140,7 @@ class ContentDatabase(DatabaseServiceMixin):
                     tag_ids,
                     post_data.get("status", "draft"),
                     # published_at: Set to NOW() if published, None if draft
-                    datetime.utcnow() if is_published else None,
+                    datetime.now(timezone.utc) if is_published else None,
                     post_data.get("seo_title"),
                     post_data.get("seo_description"),
                     seo_keywords,

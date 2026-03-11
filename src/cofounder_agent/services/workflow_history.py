@@ -12,7 +12,7 @@ Responsibilities:
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -86,7 +86,7 @@ class WorkflowHistoryService:
             raise ValueError("workflow_id, workflow_type, user_id, status are required")
 
         execution_id = str(uuid4())
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # Use provided times or defaults
         start_time = start_time or now
@@ -278,7 +278,7 @@ class WorkflowHistoryService:
         """
         try:
             async with self.pool.acquire() as conn:
-                cutoff_date = datetime.utcnow() - timedelta(days=days)
+                cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
 
                 # Get overall stats
                 stats = await conn.fetchrow(
@@ -385,7 +385,7 @@ class WorkflowHistoryService:
         values = []
         param_count = 1
 
-        updates["updated_at"] = datetime.utcnow()
+        updates["updated_at"] = datetime.now(timezone.utc)
 
         for key, value in updates.items():
             set_clauses.append(f"{key} = ${param_count}")
@@ -439,7 +439,7 @@ class WorkflowHistoryService:
         """
         try:
             async with self.pool.acquire() as conn:
-                cutoff_date = datetime.utcnow() - timedelta(days=days)
+                cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
 
                 # Query condition
                 where = "user_id = $1 AND created_at >= $2"

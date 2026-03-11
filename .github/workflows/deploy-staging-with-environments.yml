@@ -72,10 +72,16 @@ jobs:
       # DEPLOYMENT PHASE - CO-FOUNDER AGENT
       # ============================================
 
+      - name: 📦 Cache Railway CLI
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm-global
+          key: railway-cli-v1
+
       - name: 🚀 Deploy Co-Founder Agent to Railway (Staging)
         run: |
           echo "📤 Deploying Co-Founder Agent to staging environment..."
-          npm install -g @railway/cli
+          npm install -g @railway/cli  # fix #158: cached above
           railway link --project ${{ secrets.RAILWAY_STAGING_PROJECT_ID }}
           railway up --service cofounder-agent-staging
           echo "✅ Co-Founder Agent staging deployment completed"

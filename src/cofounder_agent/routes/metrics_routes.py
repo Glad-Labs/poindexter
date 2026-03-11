@@ -8,7 +8,7 @@ Integrates with UsageTracker service for real-time metrics collection.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import asyncpg
@@ -85,7 +85,7 @@ async def get_usage_metrics(
 
         if not completed_ops:
             return {
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "period": period,
                 "total_operations": 0,
                 "tokens": {"total": 0, "input": 0, "output": 0, "avg_per_operation": 0.0},
@@ -133,12 +133,12 @@ async def get_usage_metrics(
         # Projections
         days_active = max(
             1,
-            (datetime.utcnow() - datetime.fromisoformat(completed_ops[0].created_at)).days or 1,
+            (datetime.now(timezone.utc) - datetime.fromisoformat(completed_ops[0].created_at)).days or 1,
         )
         projected_monthly = (total_cost / days_active * 30) if days_active > 0 else 0
 
         return {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "period": period,
             "total_operations": total_ops,
             "tokens": {
@@ -591,9 +591,9 @@ async def get_kpi_analytics(
         cost_service = CostAggregationService(db_service=db_service)
 
         # Calculate date range
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # Validate range parameter
         valid_ranges = {"1d", "7d", "30d", "90d", "all"}
@@ -725,7 +725,7 @@ async def get_kpi_analytics(
                     "data_source": "unavailable",
                 },
             },
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "range": range,
         }
     except (asyncpg.PostgresError, ValueError, ZeroDivisionError, AttributeError) as e:
@@ -838,7 +838,7 @@ async def get_performance_metrics(
                 "top_endpoint": "/api/health",
                 "model_usage_leader": "ollama",
             },
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
     except Exception as e:
         logger.error(f"Error getting performance metrics: {str(e)}", exc_info=True)
@@ -856,5 +856,5 @@ async def get_performance_metrics(
                 "model_usage_leader": "N/A",
             },
             "error": str(e),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }

@@ -12,7 +12,7 @@ This service provides:
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -83,7 +83,7 @@ class ComplianceService:
                 "content_type": content_type,
                 "jurisdictions": jurisdictions or ["US"],
                 "result": result,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "source": "compliance_agent",
             }
 
@@ -190,7 +190,7 @@ class ComplianceService:
                 "risk_level": (
                     "low" if overall_risk < 0.3 else "medium" if overall_risk < 0.7 else "high"
                 ),
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
 
         except Exception as e:

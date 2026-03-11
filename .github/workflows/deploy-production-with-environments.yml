@@ -42,6 +42,38 @@ jobs:
       # INSTALL PHASE
       # ============================================
 
+      # ============================================
+      # PRE-FLIGHT VALIDATION (#150)
+      # ============================================
+
+      - name: 🔍 Validate required secrets
+        # fix #150: fail fast if any required secret is missing before wasting CI minutes
+        run: |
+          MISSING=""
+          check_secret() {
+            if [ -z "$1" ]; then
+              echo "❌ Missing required secret: $2"
+              MISSING="$MISSING $2"
+            fi
+          }
+          check_secret "${{ secrets.RAILWAY_TOKEN }}"                       "RAILWAY_TOKEN"
+          check_secret "${{ secrets.RAILWAY_PROD_PROJECT_ID }}"             "RAILWAY_PROD_PROJECT_ID"
+          check_secret "${{ secrets.DATABASE_PROD_URL }}"                   "DATABASE_PROD_URL"
+          check_secret "${{ secrets.COFOUNDER_PROD_JWT_SECRET }}"           "COFOUNDER_PROD_JWT_SECRET"
+          check_secret "${{ secrets.COFOUNDER_PROD_ANTHROPIC_API_KEY }}"    "COFOUNDER_PROD_ANTHROPIC_API_KEY"
+          check_secret "${{ secrets.VERCEL_TOKEN }}"                        "VERCEL_TOKEN"
+          check_secret "${{ secrets.VERCEL_ORG_ID }}"                       "VERCEL_ORG_ID"
+          check_secret "${{ secrets.PUBLIC_SITE_PROD_PROJECT_ID }}"         "PUBLIC_SITE_PROD_PROJECT_ID"
+          check_secret "${{ secrets.OVERSIGHT_PROD_PROJECT_ID }}"           "OVERSIGHT_PROD_PROJECT_ID"
+          check_secret "${{ secrets.COFOUNDER_PROD_URL }}"                  "COFOUNDER_PROD_URL"
+
+          if [ -n "$MISSING" ]; then
+            echo ""
+            echo "❌ Production deployment blocked — configure the missing secrets above in the GitHub 'production' environment."
+            exit 1
+          fi
+          echo "✅ All required secrets are present"
+
       - name: 📦 Install Node dependencies
         run: npm ci  # fix #145: root npm ci handles all workspaces automatically
 

@@ -7,7 +7,7 @@ import asyncio
 import json
 import logging
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Optional, Set
 
 logger = logging.getLogger(__name__)
@@ -24,7 +24,7 @@ class WebSocketMessage:
 
     def __post_init__(self):
         if self.timestamp is None:
-            self.timestamp = datetime.utcnow().isoformat()
+            self.timestamp = datetime.now(timezone.utc).isoformat()
 
     def to_json(self) -> str:
         """Convert message to JSON string"""

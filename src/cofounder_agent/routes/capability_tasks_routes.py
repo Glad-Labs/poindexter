@@ -14,7 +14,7 @@ Endpoints:
 - GET /api/tasks/capability/{id}/executions - List execution history
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -685,7 +685,7 @@ async def execute_capability_task_endpoint(
             total_duration_ms=0,
             progress_percent=0,
             error=str(e),
-            started_at=datetime.utcnow().isoformat(),
+            started_at=datetime.now(timezone.utc).isoformat(),
         )
 
 

@@ -10,7 +10,7 @@ import logging
 import re
 import uuid
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from .capability_registry import get_registry
@@ -269,7 +269,7 @@ class CapabilityTaskExecutor:
 
         finally:
             result.total_duration_ms = (time.time() - start_time) * 1000
-            result.completed_at = datetime.utcnow()
+            result.completed_at = datetime.now(timezone.utc)
 
         return result
 
@@ -358,7 +358,7 @@ class CapabilityTaskExecutor:
 
         finally:
             result.total_duration_ms = (time.time() - start_time) * 1000
-            result.completed_at = datetime.utcnow()
+            result.completed_at = datetime.now(timezone.utc)
 
         return result
 

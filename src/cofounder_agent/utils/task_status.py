@@ -294,7 +294,7 @@ def transition_with_validation(
 # ============================================================================
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, List, Tuple
 
 logger = logging.getLogger(__name__)
@@ -361,7 +361,7 @@ class StatusTransitionValidator:
                 "task_id": task_id,
                 "from_status": current_status,
                 "to_status": new_status,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "is_valid": len(errors) == 0,
                 "errors": errors,
             }

@@ -268,7 +268,7 @@ class TasksDatabase(DatabaseServiceMixin):
                             **metadata,
                             "retry_count": new_retry_count,
                             "last_reset_reason": "stale_timeout",
-                            "last_reset_at": datetime.utcnow().isoformat(),
+                            "last_reset_at": datetime.now(timezone.utc).isoformat(),
                         },
                     },
                 )
@@ -290,7 +290,7 @@ class TasksDatabase(DatabaseServiceMixin):
                             **metadata,
                             "permanently_failed": True,
                             "failed_reason": "stale_timeout_max_retries_exceeded",
-                            "failed_at": datetime.utcnow().isoformat(),
+                            "failed_at": datetime.now(timezone.utc).isoformat(),
                         },
                     },
                 )
@@ -356,7 +356,7 @@ class TasksDatabase(DatabaseServiceMixin):
         try:
             # Use UTC datetime - note asyncpg prefers naive UTC which PostgreSQL auto-converts
             # The column is TIMESTAMP WITH TIME ZONE, so PostgreSQL handles timezone conversion
-            utc_now = datetime.utcnow()
+            utc_now = datetime.now(timezone.utc)
 
             # Build insert columns dict
             insert_data = {
@@ -533,7 +533,7 @@ class TasksDatabase(DatabaseServiceMixin):
             Updated task dict or None if task not found
         """
         # Use naive UTC datetime to avoid asyncpg timezone mismatch
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         try:
             builder = ParameterizedQueryBuilder()
@@ -1068,7 +1068,7 @@ class TasksDatabase(DatabaseServiceMixin):
             """
 
             # Use naive UTC datetime to avoid asyncpg timezone mismatch
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             metadata_json = json.dumps(metadata or {})
 
             async with self.pool.acquire() as conn:

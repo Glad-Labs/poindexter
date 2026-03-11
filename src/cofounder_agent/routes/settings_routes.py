@@ -19,7 +19,7 @@ All endpoints require:
 5. Audit logging of all changes
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request, status
@@ -32,7 +32,6 @@ from schemas.settings_schemas import (
     SettingCreate,
     SettingDataTypeEnum,
     SettingEnvironmentEnum,
-    SettingHistoryResponse,
     SettingListResponse,
     SettingResponse,
     SettingUpdate,
@@ -124,7 +123,7 @@ DEFAULT_SETTING_VALUES: Dict[str, Dict[str, Any]] = {
 def _build_default_setting_response(setting_id: str) -> SettingResponse:
     """Create a typed response object for a known default setting key."""
     default = DEFAULT_SETTING_VALUES[setting_id]
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     value = str(default["value"])
 
     return SettingResponse(
@@ -252,8 +251,8 @@ async def list_settings(
                 is_encrypted=False,
                 is_read_only=False,
                 tags=[],
-                created_at=setting.get("created_at") or datetime.utcnow(),
-                updated_at=setting.get("updated_at") or datetime.utcnow(),
+                created_at=setting.get("created_at") or datetime.now(timezone.utc),
+                updated_at=setting.get("updated_at") or datetime.now(timezone.utc),
                 created_by_id=1,
                 updated_by_id=None,
                 value_preview=setting.get("value", "")[:50],
@@ -323,8 +322,8 @@ async def get_setting(
             is_encrypted=False,
             is_read_only=False,
             tags=[],
-            created_at=setting.get("created_at") or datetime.utcnow(),
-            updated_at=setting.get("updated_at") or datetime.utcnow(),
+            created_at=setting.get("created_at") or datetime.now(timezone.utc),
+            updated_at=setting.get("updated_at") or datetime.now(timezone.utc),
             created_by_id=1,
             updated_by_id=None,
             value_preview=setting.get("value", "")[:50],
@@ -424,8 +423,8 @@ async def create_setting(
             is_encrypted=False,
             is_read_only=False,
             tags=setting_data.tags or [],
-            created_at=created_setting.get("created_at") or datetime.utcnow(),
-            updated_at=created_setting.get("updated_at") or datetime.utcnow(),
+            created_at=created_setting.get("created_at") or datetime.now(timezone.utc),
+            updated_at=created_setting.get("updated_at") or datetime.now(timezone.utc),
             created_by_id=1,
             updated_by_id=None,
             value_preview=created_setting.get("value", "")[:50],
@@ -483,8 +482,8 @@ async def batch_update_settings(
             is_encrypted=False,
             is_read_only=False,
             tags=update_data.tags or [],
-            created_at=updated.get("created_at") or datetime.utcnow(),
-            updated_at=updated.get("updated_at") or datetime.utcnow(),
+            created_at=updated.get("created_at") or datetime.now(timezone.utc),
+            updated_at=updated.get("updated_at") or datetime.now(timezone.utc),
             created_by_id=1,
             updated_by_id=1,
             value_preview=(updated.get("value") or new_value)[:50],
@@ -602,8 +601,8 @@ async def update_setting(
             is_encrypted=False,
             is_read_only=False,
             tags=update_data.tags or [],
-            created_at=updated.get("created_at") or datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=updated.get("created_at") or datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
             created_by_id=1,
             updated_by_id=1,
             value_preview=(updated.get("value") or new_value)[:50],
@@ -682,11 +681,10 @@ async def delete_setting(
 
 @router.get(
     "/{setting_id}/history",
-    response_model=List[SettingHistoryResponse],
-    status_code=status.HTTP_200_OK,
-    summary="Get setting change history",
+    status_code=status.HTTP_501_NOT_IMPLEMENTED,
+    summary="Get setting change history (not yet implemented)",
     responses={
-        200: {"description": "List of audit log entries"},
+        501: {"description": "Not implemented — setting_audit_log table not yet created"},
         401: {"description": "Unauthorized - invalid or missing token"},
         403: {"description": "Forbidden - insufficient permissions"},
         404: {"description": "Setting not found"},
@@ -700,40 +698,21 @@ async def get_setting_history(
     """
     Get change history for a specific setting.
 
-    **Audit Trail:**
-    - Returns all changes made to the setting
-    - Shows old and new values (encrypted values masked)
-    - Includes who made the change and when
-    - Sorted by timestamp (newest first)
-
-    **Permission:**
-    - Admin/Editor: Can view full history
-    - Viewer: Can view history for non-sensitive settings only
-
-    **Response:**
-    - List of audit log entries sorted by timestamp (DESC)
-    - Limited to specified number of entries
-    - Maximum 500 entries per request
+    **Not yet implemented.** Requires a `setting_audit_log` table (migration pending).
     """
-    # Setting history requires a dedicated audit/history table (setting_audit_log).
-    # That table has not been created yet — returning 501 until implemented.
+    # fix #166: setting_audit_log table not yet created — honest 501
     raise HTTPException(
         status_code=501,
-        detail=(
-            f"Setting history is not yet implemented. "
-            f"A setting_audit_log table is required to track change history. "
-            f"Requested setting_id={setting_id}, limit={limit}."
-        ),
+        detail="Setting history is not yet implemented. Requires a setting_audit_log migration.",
     )
 
 
 @router.post(
     "/{setting_id}/rollback",
-    response_model=SettingResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Rollback setting to previous value",
+    status_code=status.HTTP_501_NOT_IMPLEMENTED,
+    summary="Rollback setting to previous value (not yet implemented)",
     responses={
-        200: {"description": "Setting rolled back successfully"},
+        501: {"description": "Not implemented — setting_audit_log table not yet created"},
         401: {"description": "Unauthorized - invalid or missing token"},
         403: {"description": "Forbidden - admin only"},
         404: {"description": "Setting or history entry not found"},
@@ -747,32 +726,12 @@ async def rollback_setting(
     """
     Rollback a setting to a previous value (admin only).
 
-    **Functionality:**
-    - Reverts setting to a specific previous value
-    - Creates new audit log entry documenting the rollback
-    - Includes reference to original change
-
-    **Query Parameters:**
-    - `setting_id`: ID of the setting to rollback
-    - `history_id`: ID of the audit log entry to rollback to
-
-    **Audit Logging:**
-    - Creates new SettingAuditLog entry
-    - Description: "Rolled back to version from [timestamp]"
-    - References original change ID
-
-    **Response:**
-    - Updated setting details with new value
+    **Not yet implemented.** Requires a `setting_audit_log` table (migration pending).
     """
-    # Rollback requires a setting_audit_log table to retrieve previous values.
-    # That table has not been created yet — returning 501 until implemented.
+    # fix #166: setting_audit_log table not yet created — honest 501
     raise HTTPException(
         status_code=501,
-        detail=(
-            f"Setting rollback is not yet implemented. "
-            f"A setting_audit_log table is required to store previous values. "
-            f"Requested setting_id={setting_id}, history_id={history_id}."
-        ),
+        detail="Setting rollback is not yet implemented. Requires a setting_audit_log migration.",
     )
 
 
@@ -932,7 +891,7 @@ async def export_settings(
             "format": format,
             "include_secrets": include_secrets,
             "total_settings": len(settings_to_export),
-            "exported_at": datetime.utcnow().isoformat(),
+            "exported_at": datetime.now(timezone.utc).isoformat(),
             "settings": settings_to_export,
         }
     except HTTPException:

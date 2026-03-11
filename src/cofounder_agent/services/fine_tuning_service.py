@@ -20,6 +20,12 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+# Fine-tuning APIs require exact model IDs — these are intentional exceptions to the
+# model-router-first principle (fix #157). The model router cannot abstract fine-tune base models
+# because the fine-tuning API validates the model ID against a whitelist of tunable checkpoints.
+_CLAUDE_FINETUNE_BASE = "claude-3-5-sonnet-20241022"
+_GPT4_FINETUNE_BASE = "gpt-4o-mini-2024-07-18"  # gpt-4 fine-tune deprecated; use mini variant
+
 
 class FineTuneTarget(str, Enum):
     """Target model for fine-tuning"""
@@ -259,7 +265,7 @@ PARAMETER learning_rate {learning_rate}
 
             # Start fine-tuning job
             job_response = client.beta.fine_tuning.jobs.create(  # type: ignore
-                model="claude-3-5-sonnet-20241022",
+                model=_CLAUDE_FINETUNE_BASE,
                 training_data={"type": "file", "file_id": file_id},
             )
 
@@ -328,7 +334,7 @@ PARAMETER learning_rate {learning_rate}
             file_id = file_response.id
 
             # Start fine-tuning job
-            job_response = openai.FineTuningJob.create(training_file=file_id, model="gpt-4")  # type: ignore
+            job_response = openai.FineTuningJob.create(training_file=file_id, model=_GPT4_FINETUNE_BASE)  # type: ignore
 
             job_id_api = job_response.id
             self.jobs[job_id] = {

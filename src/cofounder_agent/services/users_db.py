@@ -9,7 +9,7 @@ Handles all user-related database operations including:
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -102,7 +102,7 @@ class UsersDatabase(DatabaseServiceMixin):
             UserResponse model with all fields
         """
         user_id = user_data.get("id") or str(uuid4())
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         builder = ParameterizedQueryBuilder()
         insert_data = {

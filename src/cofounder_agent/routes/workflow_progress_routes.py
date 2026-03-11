@@ -10,7 +10,7 @@ Provides REST endpoints and WebSocket integration for:
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket
@@ -341,7 +341,7 @@ async def broadcast_workflow_progress(execution_id: str, progress: dict) -> None
         {
             "type": "progress_update",
             "execution_id": execution_id,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "progress": progress,
         }
     )

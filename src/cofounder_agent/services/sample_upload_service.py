@@ -11,7 +11,7 @@ import io
 import json
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -340,8 +340,8 @@ class SampleUploadService:
                     char_count=char_count,
                     metadata=sample_metadata,
                     is_active=False,
-                    created_at=datetime.utcnow(),
-                    updated_at=datetime.utcnow(),
+                    created_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(timezone.utc),
                 )
                 .returning(WritingSample.id)
             )
