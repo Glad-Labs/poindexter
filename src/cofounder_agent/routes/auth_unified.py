@@ -338,8 +338,14 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
         token: Optional[str] = None
 
         # DEVELOPMENT MODE: If no auth token provided, allow access with dev user
-        # This allows frontend development/testing without authentication
+        # Only active when DEVELOPMENT_MODE=true — never bypass auth in production
         if not auth_header and not cookie_token:
+            if os.getenv("DEVELOPMENT_MODE", "false").lower() != "true":
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Authentication required",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
             logger.info("[get_current_user] No auth header - allowing development access")
             return {
                 "id": "dev-user-123",
@@ -371,8 +377,8 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
             )
 
         # DEVELOPMENT MODE: Allow dev tokens without JWT validation
-        # This allows frontend development/testing with mock tokens
-        if token.lower().startswith("dev-") or token == "dev-token":
+        # Only active when DEVELOPMENT_MODE=true
+        if (token.lower().startswith("dev-") or token == "dev-token") and os.getenv("DEVELOPMENT_MODE", "false").lower() == "true":
             logger.info(f"[get_current_user] Development token accepted: {token[:20]}...")
             return {
                 "id": "dev-user-123",
@@ -664,8 +670,8 @@ async def unified_logout(
         if raw_token and raw_token not in ("dev-token",) and not raw_token.lower().startswith("dev-"):
             try:
                 import time as _time
-                payload = jwt.decode(raw_token, options={"verify_signature": False})
-                exp = payload.get("exp", _time.time() + 3600)
+                claims = JWTTokenValidator.verify_token(raw_token)
+                exp = claims.get("exp", _time.time() + 3600) if claims else _time.time() + 3600
                 await blocklist_add(raw_token, float(exp))
             except Exception as _e:
                 logger.warning("[logout] Could not extract token expiry for blocklist: %s", _e)

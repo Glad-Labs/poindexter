@@ -20,7 +20,8 @@ from datetime import datetime
 from io import BytesIO
 from typing import List, Optional
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query, Request
+from routes.auth_unified import get_current_user
 from pydantic import BaseModel, Field
 
 # Cloud storage imports
@@ -360,7 +361,7 @@ def build_enhanced_search_prompt(
     summary="Generate or search for featured image",
     description="Search Pexels for free stock images, with optional SDXL fallback",
 )
-async def generate_featured_image(request: ImageGenerationRequest):
+async def generate_featured_image(request: ImageGenerationRequest, current_user: dict = Depends(get_current_user)):
     """
     Generate or search for a featured image.
     
@@ -602,6 +603,7 @@ async def generate_featured_image(request: ImageGenerationRequest):
 async def search_images(
     query: str = Query(..., min_length=3, description="Search query"),
     count: int = Query(1, ge=1, le=20, description="Number of images (1-20)"),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Search for images by query.
