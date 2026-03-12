@@ -229,7 +229,18 @@ class ContentGenerationService:
         preferred_provider: Optional[str] = None,
     ) -> tuple:
         """
-        Generate blog post content
+        Generate blog post content using a strategy selected by `enhanced`.
+
+        Strategy routing:
+        - enhanced=False (default): Delegates to AIContentGenerator.generate_blog_post()
+          which uses the standard LLM pipeline with model router cost tiers.
+        - enhanced=True: Delegates to SEOContentGenerator.generate_complete_blog_post()
+          which adds SEO validation, quality scoring, and structured output.
+
+        Note: AIContentGenerator also exposes generate_blog_post() directly.
+        Callers that always want the standard path can use AIContentGenerator
+        directly. This method exists as a strategy router for callers that
+        need the enhanced/standard toggle.
 
         Args:
             topic: Blog post topic
@@ -237,8 +248,8 @@ class ContentGenerationService:
             tone: Content tone
             target_length: Target word count
             tags: Tags for categorization
-            enhanced: Whether to use SEO enhancement
-            preferred_model: User-selected model name (e.g., 'gpt-4', 'gemini-pro')
+            enhanced: Strategy selection — False=standard LLM, True=SEO-enhanced
+            preferred_model: User-selected model name (cost tier preferred)
             preferred_provider: User-selected provider ('openai', 'anthropic', 'gemini', 'ollama')
 
         Returns:
