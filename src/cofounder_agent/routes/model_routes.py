@@ -12,8 +12,9 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from routes.auth_unified import get_current_user
 from schemas.models_schemas import (
     ModelInfo,
     ModelsListResponse,
@@ -25,11 +26,19 @@ from services.model_constants import PROVIDER_ICONS
 
 logger = logging.getLogger(__name__)
 
-# Router for all model-related endpoints
-models_router = APIRouter(prefix="/api/v1/models", tags=["models-v1"])
+# Router for all model-related endpoints — requires authentication
+models_router = APIRouter(
+    prefix="/api/v1/models",
+    tags=["models-v1"],
+    dependencies=[Depends(get_current_user)],
+)
 
-# Additional router for /api/models endpoint (legacy support)
-models_list_router = APIRouter(prefix="/api/models", tags=["models"])
+# Additional router for /api/models endpoint (legacy support) — requires authentication
+models_list_router = APIRouter(
+    prefix="/api/models",
+    tags=["models"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 # ============================================================================
