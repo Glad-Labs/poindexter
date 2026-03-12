@@ -12,7 +12,7 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from routes.auth_unified import get_current_user
 from schemas.models_schemas import (
@@ -49,22 +49,55 @@ models_list_router = APIRouter(
 @models_router.get(
     "/available", response_model=ModelsListResponse, description="Get list of available AI models"
 )
-async def get_available_models():
+async def get_available_models(
+    vram_gb: Optional[int] = Query(
+        None,
+        description="Filter models that fit within this VRAM budget (GB). "
+        "Local models are limited to fit within budget; cloud models are always included.",
+        ge=1,
+        le=128,
+    ),
+):
     """
     Get all currently available models from the unified model consolidation service.
 
     Returns all models across all providers (Ollama, HuggingFace, Google, Anthropic, OpenAI)
     with unified interface and automatic fallback chain support.
+
+    When vram_gb is specified, local (Ollama) models are limited to those that fit
+    within the given VRAM budget, while cloud models are always included.
     """
     try:
         service = get_model_consolidation_service()
         models_dict = service.list_models()
 
-        # Flatten models from all providers
+        # When VRAM filtering is active, prioritize local models then cloud
+        if vram_gb is not None:
+            provider_order = ["ollama", "huggingface", "google", "anthropic", "openai"]
+        else:
+            provider_order = list(models_dict.keys())
+
         models_list = []
 
-        for provider, model_names in models_dict.items():
+        for provider in provider_order:
+            model_names = models_dict.get(provider, [])
             icon = PROVIDER_ICONS.get(provider, "🤖")
+
+            # When VRAM filtering, limit local models to fit within budget
+            if vram_gb is not None and provider == "ollama":
+                # Rough estimate: limit to 2 models for <= 12GB, 4 for > 12GB
+                local_limit = 2 if vram_gb <= 12 else 4
+                model_names = model_names[:local_limit]
+                estimated_vram = min(vram_gb, 8)
+                size_label = "7B-13B" if vram_gb <= 12 else "13B-30B"
+            elif vram_gb is not None:
+                model_names = model_names[:3]  # Limit cloud models per provider
+                estimated_vram = 0
+                size_label = "unknown"
+            else:
+                estimated_vram = 0
+                size_label = "unknown"
+
             for model_name in model_names:
                 models_list.append(
                     ModelInfo(
@@ -72,8 +105,8 @@ async def get_available_models():
                         displayName=f"{model_name} ({provider})",
                         provider=provider,
                         isFree=provider in ["ollama", "huggingface"],
-                        size="unknown",
-                        estimatedVramGb=0,
+                        size=size_label,
+                        estimatedVramGb=estimated_vram,
                         description=f"Model from {provider}",
                         icon=icon,
                         requiresInternet=provider != "ollama",
@@ -168,56 +201,18 @@ async def get_recommended_models():
 
 @models_router.get(
     "/rtx5070",
-    response_model=ModelsListResponse,
-    description="Get models optimized for RTX 5070 (12GB VRAM)",
+    response_model=None,
+    description="Deprecated — use /available?vram_gb=12 instead",
+    deprecated=True,
 )
 async def get_rtx5070_models():
     """
-    Get models that fit within RTX 5070's 12GB VRAM.
-
-    RTX 5070 can efficiently run 7B-13B parameter models.
-    Falls back to cloud providers if local models exhausted.
+    Deprecated: redirects to /api/v1/models/available?vram_gb=12.
+    Use the vram_gb query parameter on /available for hardware-agnostic filtering.
     """
-    try:
-        service = get_model_consolidation_service()
-        models_dict = service.list_models()
+    from fastapi.responses import RedirectResponse
 
-        models_list = []
-
-        # Ollama models first (local, use VRAM), then cloud models
-        provider_order = ["ollama", "huggingface", "google", "anthropic", "openai"]
-
-        for provider in provider_order:
-            model_names = models_dict.get(provider, [])
-            icon = PROVIDER_ICONS.get(provider, "🤖")
-
-            # Limit Ollama to 2 models to respect VRAM
-            limit = 2 if provider == "ollama" else 3
-
-            for model_name in model_names[:limit]:
-                models_list.append(
-                    ModelInfo(
-                        name=model_name,
-                        displayName=f"{model_name} (RTX5070 compatible)",
-                        provider=provider,
-                        isFree=provider in ["ollama", "huggingface"],
-                        size="7B-13B" if provider == "ollama" else "unknown",
-                        estimatedVramGb=8 if provider == "ollama" else 0,
-                        description=f"Optimized for RTX 5070 from {provider}",
-                        icon=icon,
-                        requiresInternet=provider != "ollama",
-                    )
-                )
-
-        return ModelsListResponse(
-            models=models_list,
-            total=len(models_list),
-            timestamp=datetime.now(timezone.utc).isoformat(),
-        )
-
-    except Exception as e:
-        logger.error(f"Error getting RTX5070 models: {e}")
-        raise HTTPException(status_code=500, detail="Error getting RTX5070 models")
+    return RedirectResponse(url="/api/v1/models/available?vram_gb=12", status_code=301)
 
 
 # ========== ADDITIONAL ENDPOINTS FOR /api/models (legacy support) ==========
