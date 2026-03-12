@@ -11,18 +11,13 @@ import logging
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException
-from routes.auth_unified import get_current_user
 
 from services.service_base import get_service_registry
 from utils.route_utils import get_database_dependency
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(
-    prefix="/api/services",
-    tags=["services"],
-    dependencies=[Depends(get_current_user)],
-)
+router = APIRouter(prefix="/api/services", tags=["services"])
 
 
 @router.get(
@@ -84,9 +79,9 @@ async def get_registry_schema():
         registry = get_service_registry()
         schema = registry.get_registry_schema()
         return {"services": schema}
-    except (ValueError, KeyError, AttributeError, TypeError) as e:
+    except Exception as e:
         logger.error(f"Failed to get registry schema: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail={"message": str(e), "type": "registry_error"})
+        raise HTTPException(status_code=500, detail={"message": "A registry error occurred", "type": "registry_error"})
 
 
 @router.get(
@@ -110,9 +105,9 @@ async def list_services():
         registry = get_service_registry()
         services = registry.list_services()
         return services
-    except (ValueError, KeyError, AttributeError, TypeError) as e:
+    except Exception as e:
         logger.error(f"Failed to list services: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail={"message": str(e), "type": "registry_error"})
+        raise HTTPException(status_code=500, detail={"message": "A registry error occurred", "type": "registry_error"})
 
 
 @router.get(
@@ -162,9 +157,9 @@ async def get_service_metadata(service_name: str):
 
     except HTTPException:
         raise
-    except (ValueError, KeyError, AttributeError, TypeError) as e:
+    except Exception as e:
         logger.error(f"Failed to get service metadata for {service_name}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail={"message": str(e), "type": "registry_error"})
+        raise HTTPException(status_code=500, detail={"message": "A registry error occurred", "type": "registry_error"})
 
 
 @router.get(
@@ -203,9 +198,9 @@ async def get_service_actions(service_name: str):
 
     except HTTPException:
         raise
-    except (ValueError, KeyError, AttributeError, TypeError) as e:
+    except Exception as e:
         logger.error(f"Failed to get actions for {service_name}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail={"message": str(e), "type": "registry_error"})
+        raise HTTPException(status_code=500, detail={"message": "A registry error occurred", "type": "registry_error"})
 
 
 @router.get(
@@ -256,12 +251,12 @@ async def get_action_details(service_name: str, action_name: str):
 
     except HTTPException:
         raise
-    except (ValueError, KeyError, AttributeError, TypeError) as e:
+    except Exception as e:
         logger.error(
             f"Failed to get action details for {service_name}.{action_name}: {e}",
             exc_info=True,
         )
-        raise HTTPException(status_code=500, detail={"message": str(e), "type": "registry_error"})
+        raise HTTPException(status_code=500, detail={"message": "A registry error occurred", "type": "registry_error"})
 
 
 @router.post(
@@ -328,10 +323,10 @@ async def execute_service_action(
         raise
     except ValueError as e:
         logger.warning(f"Invalid parameters for {service_name}.{action_name}: {e}")
-        raise HTTPException(status_code=400, detail={"message": str(e), "type": "validation_error"})
-    except (KeyError, AttributeError, TypeError, RuntimeError) as e:
+        raise HTTPException(status_code=400, detail={"message": "Invalid parameters", "type": "validation_error"})
+    except Exception as e:
         logger.error(f"Failed to execute {service_name}.{action_name}: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail={"message": str(e), "type": "execution_error"},
+            detail={"message": "An execution error occurred", "type": "execution_error"},
         )

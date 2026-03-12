@@ -131,9 +131,7 @@ async def upload_writing_sample(
             )
 
         # Create the writing sample
-        user_id: str = (
-            str(current_user.get("id", "")) if isinstance(current_user, dict) else str(current_user)
-        )
+        user_id = current_user.get("id") if isinstance(current_user, dict) else current_user
         sample = await db_service.writing_style.create_writing_sample(
             user_id=user_id,
             title=title,
@@ -147,8 +145,8 @@ async def upload_writing_sample(
 
     except HTTPException:
         raise
-    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
-        logger.error(f"❌ Error uploading writing sample: {e}", exc_info=True)
+    except Exception as e:
+        logger.error(f"❌ Error uploading writing sample: {e}")
         raise HTTPException(status_code=500, detail="Failed to upload sample")
 
 
@@ -164,9 +162,7 @@ async def list_writing_samples(
         List of WritingSampleResponse objects
     """
     try:
-        user_id: str = (
-            str(current_user.get("id", "")) if isinstance(current_user, dict) else str(current_user)
-        )
+        user_id = current_user.get("id") if isinstance(current_user, dict) else current_user
         samples = await db_service.writing_style.get_user_writing_samples(user_id)
 
         # Find active sample if any
@@ -182,8 +178,8 @@ async def list_writing_samples(
             active_sample_id=active_sample_id,
         )
 
-    except (ValueError, KeyError, AttributeError, TypeError) as e:
-        logger.error(f"❌ Error listing writing samples: {e}", exc_info=True)
+    except Exception as e:
+        logger.error(f"❌ Error listing writing samples: {e}")
         raise HTTPException(status_code=500, detail="Failed to list samples")
 
 
@@ -199,9 +195,7 @@ async def get_active_writing_sample(
         Active WritingSampleResponse or null if no active sample
     """
     try:
-        user_id: str = (
-            str(current_user.get("id", "")) if isinstance(current_user, dict) else str(current_user)
-        )
+        user_id = current_user.get("id") if isinstance(current_user, dict) else current_user
         sample = await db_service.writing_style.get_active_writing_sample(user_id)
 
         if not sample:
@@ -209,14 +203,14 @@ async def get_active_writing_sample(
 
         return WritingSampleResponse(**sample)
 
-    except (ValueError, KeyError, AttributeError, TypeError) as e:
-        logger.error(f"❌ Error getting active writing sample: {e}", exc_info=True)
+    except Exception as e:
+        logger.error(f"❌ Error getting active writing sample: {e}")
         raise HTTPException(status_code=500, detail="Failed to get active sample")
 
 
 @router.put("/{sample_id}/set-active", response_model=WritingSampleResponse)
 async def set_active_writing_sample(
-    sample_id: int,
+    sample_id: str,
     current_user: str = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
@@ -230,11 +224,9 @@ async def set_active_writing_sample(
         Updated WritingSampleResponse
     """
     try:
-        user_id: str = (
-            str(current_user.get("id", "")) if isinstance(current_user, dict) else str(current_user)
-        )
+        user_id = current_user.get("id") if isinstance(current_user, dict) else current_user
         # Verify sample belongs to user
-        sample = await db_service.writing_style.get_writing_sample(str(sample_id))
+        sample = await db_service.writing_style.get_writing_sample(sample_id)
         if not sample:
             raise HTTPException(status_code=404, detail="Writing sample not found")
 
@@ -242,21 +234,21 @@ async def set_active_writing_sample(
             raise HTTPException(status_code=403, detail="Unauthorized")
 
         # Set as active
-        updated = await db_service.writing_style.set_active_writing_sample(user_id, str(sample_id))
+        updated = await db_service.writing_style.set_active_writing_sample(user_id, sample_id)
 
         logger.info(f"✅ User {user_id} set writing sample {sample_id} as active")
         return WritingSampleResponse(**updated)
 
     except HTTPException:
         raise
-    except (ValueError, KeyError, AttributeError, TypeError) as e:
-        logger.error(f"❌ Error setting active writing sample: {e}", exc_info=True)
+    except Exception as e:
+        logger.error(f"❌ Error setting active writing sample: {e}")
         raise HTTPException(status_code=500, detail="Failed to set active sample")
 
 
 @router.put("/{sample_id}", response_model=WritingSampleResponse)
 async def update_writing_sample(
-    sample_id: int,
+    sample_id: str,
     request: WritingSampleRequest,
     current_user: str = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
@@ -272,11 +264,9 @@ async def update_writing_sample(
         Updated WritingSampleResponse
     """
     try:
-        user_id: str = (
-            str(current_user.get("id", "")) if isinstance(current_user, dict) else str(current_user)
-        )
+        user_id = current_user.get("id") if isinstance(current_user, dict) else current_user
         # Verify sample belongs to user
-        sample = await db_service.writing_style.get_writing_sample(str(sample_id))
+        sample = await db_service.writing_style.get_writing_sample(sample_id)
         if not sample:
             raise HTTPException(status_code=404, detail="Writing sample not found")
 
@@ -285,7 +275,7 @@ async def update_writing_sample(
 
         # Update the sample
         updated = await db_service.writing_style.update_writing_sample(
-            sample_id=str(sample_id),
+            sample_id=sample_id,
             user_id=user_id,
             title=request.title,
             description=request.description,
@@ -297,14 +287,14 @@ async def update_writing_sample(
 
     except HTTPException:
         raise
-    except (ValueError, KeyError, AttributeError, TypeError) as e:
-        logger.error(f"❌ Error updating writing sample: {e}", exc_info=True)
+    except Exception as e:
+        logger.error(f"❌ Error updating writing sample: {e}")
         raise HTTPException(status_code=500, detail="Failed to update sample")
 
 
 @router.delete("/{sample_id}")
 async def delete_writing_sample(
-    sample_id: int,
+    sample_id: str,
     current_user: str = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
@@ -318,11 +308,9 @@ async def delete_writing_sample(
         Success message
     """
     try:
-        user_id: str = (
-            str(current_user.get("id", "")) if isinstance(current_user, dict) else str(current_user)
-        )
+        user_id = current_user.get("id") if isinstance(current_user, dict) else current_user
         # Verify sample belongs to user
-        sample = await db_service.writing_style.get_writing_sample(str(sample_id))
+        sample = await db_service.writing_style.get_writing_sample(sample_id)
         if not sample:
             raise HTTPException(status_code=404, detail="Writing sample not found")
 
@@ -330,7 +318,7 @@ async def delete_writing_sample(
             raise HTTPException(status_code=403, detail="Unauthorized")
 
         # Delete the sample
-        success = await db_service.writing_style.delete_writing_sample(str(sample_id), user_id)
+        success = await db_service.writing_style.delete_writing_sample(sample_id, user_id)
 
         if not success:
             raise HTTPException(status_code=404, detail="Writing sample not found")
@@ -340,8 +328,8 @@ async def delete_writing_sample(
 
     except HTTPException:
         raise
-    except (ValueError, KeyError, AttributeError, TypeError) as e:
-        logger.error(f"❌ Error deleting writing sample: {e}", exc_info=True)
+    except Exception as e:
+        logger.error(f"❌ Error deleting writing sample: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete sample")
 
 
@@ -465,8 +453,8 @@ async def retrieve_relevant_samples(
             "message": f"{len(top_samples)} sample(s) found matching your topic",
         }
 
-    except (ValueError, KeyError, AttributeError, TypeError) as e:
-        logger.error(f"❌ Error retrieving samples: {e}", exc_info=True)
+    except Exception as e:
+        logger.error(f"❌ Error retrieving samples: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve samples")
 
 
@@ -536,8 +524,8 @@ async def retrieve_by_style(
 
         return {"style": style, "found_samples": len(matching), "samples": matching}
 
-    except (ValueError, KeyError, AttributeError, TypeError) as e:
-        logger.error(f"❌ Error retrieving samples by style: {e}", exc_info=True)
+    except Exception as e:
+        logger.error(f"❌ Error retrieving samples by style: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve samples")
 
 
@@ -604,6 +592,6 @@ async def retrieve_by_tone(
 
         return {"tone": tone, "found_samples": len(matching), "samples": matching}
 
-    except (ValueError, KeyError, AttributeError, TypeError) as e:
-        logger.error(f"❌ Error retrieving samples by tone: {e}", exc_info=True)
+    except Exception as e:
+        logger.error(f"❌ Error retrieving samples by tone: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve samples")

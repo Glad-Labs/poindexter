@@ -12,7 +12,6 @@ Endpoints:
 """
 
 import logging
-import os
 from typing import Any, Dict, List, Optional
 
 import jwt
@@ -84,12 +83,10 @@ def get_user_id(request: Request) -> str:
             logger.warning(f"Error extracting user ID from JWT: {e}")
             raise HTTPException(status_code=401, detail="Authentication failed")
 
-    # Development fallback (no token provided) — only when DEVELOPMENT_MODE is enabled
+    # Development fallback (no token provided)
     if not auth_header:
-        if os.getenv("DEVELOPMENT_MODE", "").lower() == "true":
-            logger.debug("No authorization header provided, using test user for development")
-            return "test-user-123"
-        raise HTTPException(status_code=401, detail="Authorization header required")
+        logger.debug("No authorization header provided, using test user for development")
+        return "test-user-123"
 
     # Authorization header present but invalid format
     logger.warning(f"Invalid authorization header format: {auth_header[:20]}...")
@@ -122,10 +119,10 @@ async def create_custom_workflow(
         return created
     except ValueError as e:
         logger.warning(f"Invalid workflow: {str(e)}")
-        raise HTTPException(status_code=400, detail=f"Invalid workflow: {str(e)}")
+        raise HTTPException(status_code=400, detail="Invalid workflow")
     except Exception as e:
         logger.error(f"Error creating workflow: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to create workflow: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to create workflow")
 
 
 @router.get("/custom", response_model=WorkflowListPageResponse, name="List Custom Workflows")
@@ -175,7 +172,7 @@ async def list_custom_workflows(
         )
     except Exception as e:
         logger.error(f"Error listing workflows: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to list workflows: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to list workflows")
 
 
 @router.get("/custom/{workflow_id}", response_model=CustomWorkflow, name="Get Custom Workflow")
@@ -210,7 +207,7 @@ async def get_custom_workflow(
         raise
     except Exception as e:
         logger.error(f"Error retrieving workflow: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve workflow: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve workflow")
 
 
 @router.put("/custom/{workflow_id}", response_model=CustomWorkflow, name="Update Custom Workflow")
@@ -249,7 +246,7 @@ async def update_custom_workflow(
         raise HTTPException(status_code=400, detail=f"Invalid workflow: {error_msg}")
     except Exception as e:
         logger.error(f"Error updating workflow: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to update workflow: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update workflow")
 
 
 @router.delete("/custom/{workflow_id}", name="Delete Custom Workflow")
@@ -283,10 +280,10 @@ async def delete_custom_workflow(
         raise HTTPException(status_code=404, detail=f"Workflow '{workflow_id}' not found")
     except ValueError as e:
         logger.warning(f"Access denied or not found: {str(e)}")
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail="An internal error occurred")
     except Exception as e:
         logger.error(f"Error deleting workflow: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to delete workflow: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete workflow")
 
 
 @router.post(
@@ -401,7 +398,7 @@ async def execute_custom_workflow(
         raise
     except Exception as e:
         logger.error(f"Error executing workflow: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to execute workflow: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to execute workflow")
 
 
 @router.get("/executions/{execution_id}", name="Get Workflow Execution Status")
@@ -473,7 +470,7 @@ async def get_workflow_execution_status(
         )
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to get execution status: {str(e)}",
+            detail="Failed to get execution status",
         )
 
 
@@ -510,7 +507,7 @@ async def list_workflow_executions(
         }
     except Exception as e:
         logger.error(f"Error listing workflow executions for {workflow_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to list workflow executions: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to list workflow executions")
 
 
 @router.get(
@@ -531,4 +528,4 @@ async def get_available_phases(
         return AvailablePhasesResponse(phases=phases, total_count=len(phases))
     except Exception as e:
         logger.error(f"Error getting available phases: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to get available phases: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get available phases")

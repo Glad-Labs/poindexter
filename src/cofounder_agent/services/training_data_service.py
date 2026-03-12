@@ -13,6 +13,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+import aiofiles
 import asyncpg
 
 logger = logging.getLogger(__name__)
@@ -469,8 +470,8 @@ class TrainingDataService:
         else:
             data = await self.get_all_training_data(limit=10000)
 
-        # Write JSONL
-        with open(output_path, "w") as f:
+        # Write JSONL asynchronously to avoid blocking the event loop
+        async with aiofiles.open(output_path, "w") as f:
             for example in data:
                 # Prepare for fine-tuning (format works with most providers)
                 training_obj = {
@@ -499,7 +500,7 @@ class TrainingDataService:
                         "patterns": example.patterns_discovered,
                     },
                 }
-                f.write(json.dumps(training_obj) + "\n")
+                await f.write(json.dumps(training_obj) + "\n")
 
         file_size = os.path.getsize(output_path)
 
@@ -662,7 +663,7 @@ class TrainingDataService:
             quality_score=float(row["quality_score"] or 0),
             success=row["success"],
             tags=row["tags"] or [],
-            created_at=row["created_at"].isoformat() if row["created_at"] else None,  # type: ignore[arg-type]
+            created_at=row["created_at"].isoformat() if row["created_at"] else None,
             post_publication_metrics=row.get("post_publication_metrics"),
             patterns_discovered=row.get("patterns_discovered"),
         )
