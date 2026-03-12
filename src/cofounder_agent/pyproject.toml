@@ -17,7 +17,7 @@ opencv-python-headless = "^4.8.0"
 # Web Framework
 fastapi = "^0.100"
 uvicorn = { version = "^0.24", extras = ["standard"] }
-pydantic = "^2.0"
+pydantic = {extras = ["email"], version = "^2.12.5"}
 pydantic-settings = "^2.0"
 
 # Database
