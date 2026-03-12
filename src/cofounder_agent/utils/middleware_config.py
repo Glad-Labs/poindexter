@@ -14,9 +14,10 @@ import logging
 import os
 from typing import List, Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,7 @@ class MiddlewareConfig:
         self._setup_input_validation(app)
         self._setup_rate_limiting(app)
         self._setup_token_validation(app)
+        self._setup_security_headers(app)
         self._setup_cors(app)
         self._setup_profiling(app)
 
@@ -169,6 +171,30 @@ class MiddlewareConfig:
         )
 
         logger.info("✅ CORS middleware initialized")
+
+    def _setup_security_headers(self, app: FastAPI) -> None:
+        """
+        Setup HTTP security response headers.
+
+        Adds defense-in-depth headers to all API responses:
+        - X-Content-Type-Options: nosniff — prevents MIME-sniffing
+        - X-Frame-Options: DENY — prevents clickjacking
+        - Referrer-Policy: strict-origin-when-cross-origin
+        - X-XSS-Protection: 0 — disable legacy XSS auditors (CSP is preferred)
+        """
+
+        class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+            async def dispatch(self, request: Request, call_next):
+                response: Response = await call_next(request)
+                response.headers["X-Content-Type-Options"] = "nosniff"
+                response.headers["X-Frame-Options"] = "DENY"
+                response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+                # Disable legacy XSS auditor; CSP is the modern protection
+                response.headers["X-XSS-Protection"] = "0"
+                return response
+
+        app.add_middleware(SecurityHeadersMiddleware)
+        logger.info("✅ Security headers middleware initialized")
 
     def _setup_rate_limiting(self, app: FastAPI) -> None:
         """
