@@ -13,8 +13,9 @@ from datetime import datetime, timezone
 from typing import Any, Dict
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from routes.auth_unified import get_current_user
 from schemas.ollama_schemas import (
     OllamaHealthResponse,
     OllamaModelSelection,
@@ -23,7 +24,12 @@ from schemas.ollama_schemas import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/ollama", tags=["ollama"])
+# All Ollama endpoints require authentication — model config must not be publicly accessible
+router = APIRouter(
+    prefix="/api/ollama",
+    tags=["ollama"],
+    dependencies=[Depends(get_current_user)],
+)
 
 OLLAMA_HOST = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_TIMEOUT = 5.0
