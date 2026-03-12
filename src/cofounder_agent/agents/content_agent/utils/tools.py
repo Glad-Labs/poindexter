@@ -2,6 +2,8 @@ import logging
 import os
 from typing import Optional
 
+logger = logging.getLogger(__name__)
+
 # Try to import crewai_tools, fall back to mock if not available
 try:
     from crewai_tools import (  # type: ignore
@@ -13,8 +15,8 @@ try:
     )
 
     CREWAI_TOOLS_AVAILABLE = True
+    logger.info("[crewai_tools] Real crewai_tools package loaded successfully")
 except ImportError:
-    # crewai_tools not available, using mock implementations instead
     from .crewai_tools_mock import (
         CodeInterpreterTool,
         DirectoryReadTool,
@@ -24,8 +26,11 @@ except ImportError:
     )
 
     CREWAI_TOOLS_AVAILABLE = False
-
-logger = logging.getLogger(__name__)
+    logger.warning(
+        "[crewai_tools] crewai_tools package not installed — using STUB implementations. "
+        "Web search, file reading, and code execution tools will return placeholder strings "
+        "instead of real results. Install crewai-tools to enable real tool functionality."
+    )
 
 
 class WebSearchTool(SerperDevTool):  # type: ignore[misc]

@@ -1,7 +1,9 @@
 """
-Mock CrewAI Tools - Provides stub implementations when crewai_tools is not available.
-This allows the content agent pipeline to run without explicit CrewAI tool dependencies
-while crewai_tools is being installed or available.
+Mock CrewAI Tools - Provides stub implementations when crewai_tools is not installed.
+
+WARNING: These stubs return placeholder strings, NOT real data. Any pipeline stage
+that relies on web search, file reading, or code execution will produce degraded
+output when running against these mocks. Install crewai-tools for real functionality.
 """
 
 import logging
@@ -11,14 +13,19 @@ logger = logging.getLogger(__name__)
 
 
 class BaseTool:
-    """Base class for mock tools."""
+    """Base class for mock tools. Logs a warning on every call."""
 
     def __init__(self, name: str = "", description: str = ""):
         self.name = name
         self.description = description
 
     def __call__(self, *args, **kwargs):
-        return f"Tool '{self.name}' would execute with args: {args}, kwargs: {kwargs}"
+        logger.warning(
+            "[MOCK] %s called — returning placeholder. "
+            "Install crewai-tools for real results.",
+            self.name,
+        )
+        return f"[MOCK] Tool '{self.name}' is not available (crewai_tools not installed)"
 
 
 class SerperDevTool(BaseTool):
@@ -31,8 +38,8 @@ class SerperDevTool(BaseTool):
         )
 
     def __call__(self, query: str) -> str:
-        logger.info(f"SerperDevTool mocked search: {query}")
-        return f"Search results for: {query}"
+        logger.warning("[MOCK] SerperDevTool search called for: %s — returning placeholder", query)
+        return f"[MOCK] No real search results available (crewai_tools not installed). Query: {query}"
 
 
 class WebsiteSearchTool(BaseTool):
@@ -44,8 +51,8 @@ class WebsiteSearchTool(BaseTool):
         )
 
     def __call__(self, website: str, query: str) -> str:
-        logger.info(f"WebsiteSearchTool mocked search on {website}: {query}")
-        return f"Results from {website} for: {query}"
+        logger.warning("[MOCK] WebsiteSearchTool called for %s: %s — returning placeholder", website, query)
+        return f"[MOCK] No real website search results available (crewai_tools not installed). Site: {website}, Query: {query}"
 
 
 class FileReadTool(BaseTool):
@@ -55,8 +62,8 @@ class FileReadTool(BaseTool):
         super().__init__(name="FileReadTool", description="Read and process file contents")
 
     def __call__(self, file_path: str) -> str:
-        logger.info(f"FileReadTool mocked read: {file_path}")
-        return f"File contents of: {file_path}"
+        logger.warning("[MOCK] FileReadTool called for: %s — returning placeholder", file_path)
+        return f"[MOCK] File read not available (crewai_tools not installed). Path: {file_path}"
 
 
 class DirectoryReadTool(BaseTool):
@@ -68,8 +75,8 @@ class DirectoryReadTool(BaseTool):
 
     def __call__(self, directory_path: Optional[str] = None) -> str:
         path = directory_path or self.directory
-        logging.getLogger(__name__).info(f"DirectoryReadTool mocked read: {path}")
-        return f"Directory contents of: {path}"
+        logger.warning("[MOCK] DirectoryReadTool called for: %s — returning placeholder", path)
+        return f"[MOCK] Directory read not available (crewai_tools not installed). Path: {path}"
 
 
 class CodeInterpreterTool(BaseTool):
@@ -81,5 +88,5 @@ class CodeInterpreterTool(BaseTool):
         )
 
     def __call__(self, code: str) -> str:
-        logging.getLogger(__name__).info(f"CodeInterpreterTool mocked execution: {code[:100]}")
-        return f"Code execution result: {code[:50]}..."
+        logger.warning("[MOCK] CodeInterpreterTool called — returning placeholder")
+        return f"[MOCK] Code execution not available (crewai_tools not installed)"
