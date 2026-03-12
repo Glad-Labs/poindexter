@@ -90,7 +90,7 @@ class PostgreSQLPublishingAgent:
             return post
 
         except Exception as e:
-            logger.error(f"❌ Publishing preparation failed: {e}")
+            logger.error(f"❌ Publishing preparation failed: {e}", exc_info=True)
             raise
 
     async def run_async(self, post: BlogPost) -> Tuple[str, str]:
@@ -117,7 +117,7 @@ class PostgreSQLPublishingAgent:
             return post_id, post_slug
 
         except Exception as e:
-            logger.error(f"❌ Failed to publish post: {e}")
+            logger.error(f"❌ Failed to publish post: {e}", exc_info=True)
             raise
 
     async def close(self):

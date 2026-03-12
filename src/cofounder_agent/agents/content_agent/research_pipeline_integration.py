@@ -87,7 +87,7 @@ class ResearchStage:
             return result
 
         except Exception as e:
-            logger.error(f"[RESEARCH] Failed: {e}")
+            logger.error(f"[RESEARCH] Failed: {e}", exc_info=True)
             return {
                 "stage": "research",
                 "topic": topic,

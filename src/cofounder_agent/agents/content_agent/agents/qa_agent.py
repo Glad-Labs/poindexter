@@ -48,7 +48,7 @@ class QAAgent:
         try:
             response_data = await self.llm_client.generate_json(prompt)
         except Exception as e:
-            logger.error(f"QAAgent: Failed to get JSON from LLM: {e}")
+            logger.error(f"QAAgent: Failed to get JSON from LLM: {e}", exc_info=True)
             # Fallback: return generic rejection with error message
             return (
                 False,
@@ -105,7 +105,7 @@ class QAAgent:
             if not feedback or feedback == "null" or feedback == "None":
                 feedback = "QA review completed. Content ready for approval decision."
         except Exception as e:
-            logger.error(f"QAAgent: Error parsing response data: {e}")
+            logger.error(f"QAAgent: Error parsing response data: {e}", exc_info=True)
             return False, "QA feedback parsing error. Content requires manual review."
 
         logger.info(

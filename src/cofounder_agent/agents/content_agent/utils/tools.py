@@ -91,7 +91,7 @@ class DocumentAccessTool(FileReadTool):  # type: ignore[misc]
             logger.error(f"File not found: {file_path}")
             return None
         except Exception as e:
-            logger.error(f"Error reading file {file_path}: {str(e)}")
+            logger.error(f"Error reading file {file_path}: {str(e)}", exc_info=True)
             return None
 
 
@@ -133,7 +133,7 @@ class DataProcessingTool(CodeInterpreterTool):  # type: ignore[misc]
             logger.info("Data processing completed successfully")
             return result
         except Exception as e:
-            logger.error(f"Error during data processing: {str(e)}")
+            logger.error(f"Error during data processing: {str(e)}", exc_info=True)
             return None
 
 

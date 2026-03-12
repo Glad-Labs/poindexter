@@ -181,7 +181,7 @@ Only return the JSON array, no other text."""
                         return result
                     return [parsed] if isinstance(parsed, dict) else []
                 except json.JSONDecodeError as e:
-                    logger.error(f"❌ Failed to parse JSON from extracted text: {e}")
+                    logger.error(f"❌ Failed to parse JSON from extracted text: {e}", exc_info=True)
                     logger.debug(f"Extracted JSON was: {metadata_json[:200]}...")
                     return []
             else:
@@ -200,12 +200,12 @@ Only return the JSON array, no other text."""
                         ]
                     return [parsed] if isinstance(parsed, dict) else []
                 except json.JSONDecodeError as e:
-                    logger.error(f"❌ Raw JSON parse also failed: {e}")
+                    logger.error(f"❌ Raw JSON parse also failed: {e}", exc_info=True)
                     logger.debug(f"Raw response was: {metadata_text[:300]}...")
                     return []
 
         except (json.JSONDecodeError, TypeError) as e:
-            logger.error(f"❌ Failed to parse image metadata from LLM response: {e}")
+            logger.error(f"❌ Failed to parse image metadata from LLM response: {e}", exc_info=True)
             logger.debug(f"LLM response was: {metadata_text if metadata_text else 'unknown'}")
             return []
         except Exception as e:
@@ -309,6 +309,6 @@ Only return the JSON array, no other text."""
             return None
 
         except Exception as e:
-            logger.error(f"Error processing image at index {index}: {e}")
+            logger.error(f"Error processing image at index {index}: {e}", exc_info=True)
             # Return None instead of fallback image
             return None

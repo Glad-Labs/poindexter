@@ -101,7 +101,7 @@ class SearXNGResearchService:
             }
 
         except Exception as e:
-            logger.error(f"SearXNG search failed: {e}")
+            logger.error(f"SearXNG search failed: {e}", exc_info=True)
             return {
                 "query": query,
                 "error": str(e),
@@ -277,7 +277,7 @@ class SearXNGResearchService:
                 }
 
             except Exception as e:
-                logger.error(f"Feed aggregation error for {keyword}: {e}")
+                logger.error(f"Feed aggregation error for {keyword}: {e}", exc_info=True)
                 feeds_data[keyword] = {"error": str(e), "entries": []}
 
         return {

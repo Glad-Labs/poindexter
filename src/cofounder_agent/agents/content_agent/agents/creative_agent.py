@@ -238,7 +238,8 @@ class CreativeAgent:
                     seo_assets = json.loads(normalized_json)
                 except json.JSONDecodeError:
                     logger.error(
-                        f"CreativeAgent: Failed to decode JSON from SEO assets response: {seo_assets_json}"
+                        f"CreativeAgent: Failed to decode JSON from SEO assets response: {seo_assets_json}",
+                        exc_info=True,
                     )
                     seo_assets = None
 
