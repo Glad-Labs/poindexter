@@ -1,10 +1,15 @@
+# ============================================================
 # IDE & OS
+# ============================================================
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+nul
 
+# ============================================================
 # Node.js
+# ============================================================
 node_modules/
 .next/
 build/
@@ -13,7 +18,9 @@ dist/
 npm-debug.log*
 yarn-error.log*
 
+# ============================================================
 # Python
+# ============================================================
 __pycache__/
 *.pyc
 .venv/
@@ -23,13 +30,32 @@ __pycache__/
 .mypy_cache/
 .pytest_cache/
 
-# Log files
+# ============================================================
+# Test artifacts & coverage
+# ============================================================
+test-results/
+playwright-report/
+oversight-report/
+htmlcov/
+coverage/
+*.coverage
+.coverage*
+
+# ============================================================
+# Log files (including rotated logs)
+# ============================================================
 logs/
+*.log
+*.log.[0-9]*
 
-# Temporary files
-.tmp/
+# ============================================================
+# Screenshots (generated, not source)
+# ============================================================
+screenshots/
 
-# Environment variables
+# ============================================================
+# Environment variables & secrets
+# ============================================================
 .env
 .env.local
 .env.*.local
@@ -37,25 +63,25 @@ logs/
 .env.development
 .env.test
 .env.staging
-
-# Environment & Credentials
+.env.old
+.env.local.mstr
 credentials.json
 service-account-key.json
 token.json
-*.log
-.env.old
-nul
 
-# AI/ML libraries and tools
+# ============================================================
+# AI & dev tooling state
+# ============================================================
 .agents/
-.continue/skills
-test-results/
-screenshots/
-.playwright-mcp/
-playwright/.auth/
-.env.local.mstr
 .continue/
-.playwright-mcp/
 .claude/
 .roo/
-.vscode/
+.playwright-mcp/
+playwright/.auth/
+.vercel/
+
+# ============================================================
+# Temporary / scratch files
+# ============================================================
+.tmp/
+tmpclaude*
