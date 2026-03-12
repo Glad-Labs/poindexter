@@ -1,11 +1,13 @@
 """
 Unit tests for WritingStyleService.
 
-Tests the sanitization and formatting helpers which are pure class methods —
-no database required.
+Tests the sanitization and formatting helpers (pure class methods) and the
+three async service methods (get_active_style_prompt, get_style_prompt_for_generation,
+get_style_prompt_for_specific_sample), all exercised against a mock DatabaseService.
 """
 
 import pytest
+from unittest.mock import AsyncMock, MagicMock
 
 from services.writing_style_service import WritingStyleService
 
@@ -171,3 +173,169 @@ class TestFormatSampleForPrompt:
         result = WritingStyleService._format_sample_for_prompt(self._make_sample())
         assert isinstance(result, str)
         assert len(result) > 0
+
+
+# ---------------------------------------------------------------------------
+# Helper — build a WritingStyleService with a mock DatabaseService
+# ---------------------------------------------------------------------------
+
+
+def _make_svc(sample=None, sample_by_id=None):
+    """Return a WritingStyleService backed by a mock DB."""
+    db = MagicMock()
+    db.writing_style = MagicMock()
+    db.writing_style.get_active_writing_sample = AsyncMock(return_value=sample)
+    db.writing_style.get_writing_sample = AsyncMock(return_value=sample_by_id)
+    return WritingStyleService(database_service=db)
+
+
+SAMPLE_STUB = {
+    "id": "sample-uuid-001",
+    "title": "My Blog Voice",
+    "content": "I write in a conversational, engaging tone.",
+    "description": "Personal voice sample",
+    "word_count": 8,
+}
+
+
+# ---------------------------------------------------------------------------
+# get_active_style_prompt
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestGetActiveStylePrompt:
+    async def test_returns_empty_string_when_no_active_sample(self):
+        svc = _make_svc(sample=None)
+        result = await svc.get_active_style_prompt("user-1")
+        assert result == ""
+
+    async def test_returns_empty_string_when_content_is_empty(self):
+        svc = _make_svc(sample={"id": "x", "content": ""})
+        result = await svc.get_active_style_prompt("user-1")
+        assert result == ""
+
+    async def test_returns_formatted_string_when_sample_has_content(self):
+        svc = _make_svc(sample=SAMPLE_STUB)
+        result = await svc.get_active_style_prompt("user-1")
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    async def test_returns_empty_string_when_writing_style_is_none(self):
+        db = MagicMock()
+        db.writing_style = None
+        svc = WritingStyleService(database_service=db)
+        result = await svc.get_active_style_prompt("user-1")
+        assert result == ""
+
+    async def test_returns_empty_string_on_db_exception(self):
+        db = MagicMock()
+        db.writing_style = MagicMock()
+        db.writing_style.get_active_writing_sample = AsyncMock(side_effect=RuntimeError("DB err"))
+        svc = WritingStyleService(database_service=db)
+        result = await svc.get_active_style_prompt("user-1")
+        assert result == ""
+
+    async def test_result_contains_sample_content(self):
+        svc = _make_svc(sample=SAMPLE_STUB)
+        result = await svc.get_active_style_prompt("user-1")
+        assert "I write in a conversational" in result
+
+
+# ---------------------------------------------------------------------------
+# get_style_prompt_for_generation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestGetStylePromptForGeneration:
+    async def test_returns_none_when_no_active_sample(self):
+        svc = _make_svc(sample=None)
+        result = await svc.get_style_prompt_for_generation("user-2")
+        assert result is None
+
+    async def test_returns_dict_when_sample_exists(self):
+        svc = _make_svc(sample=SAMPLE_STUB)
+        result = await svc.get_style_prompt_for_generation("user-2")
+        assert result is not None
+        assert isinstance(result, dict)
+
+    async def test_result_has_required_keys(self):
+        svc = _make_svc(sample=SAMPLE_STUB)
+        result = await svc.get_style_prompt_for_generation("user-2")
+        assert result is not None
+        for key in ("sample_id", "sample_title", "sample_text", "writing_style_guidance"):
+            assert key in result
+
+    async def test_sample_text_matches_content_field(self):
+        svc = _make_svc(sample=SAMPLE_STUB)
+        result = await svc.get_style_prompt_for_generation("user-2")
+        assert result is not None
+        assert result["sample_text"] == SAMPLE_STUB["content"]
+
+    async def test_returns_none_when_writing_style_is_none(self):
+        db = MagicMock()
+        db.writing_style = None
+        svc = WritingStyleService(database_service=db)
+        result = await svc.get_style_prompt_for_generation("user-2")
+        assert result is None
+
+    async def test_returns_none_on_db_exception(self):
+        db = MagicMock()
+        db.writing_style = MagicMock()
+        db.writing_style.get_active_writing_sample = AsyncMock(side_effect=RuntimeError("DB err"))
+        svc = WritingStyleService(database_service=db)
+        result = await svc.get_style_prompt_for_generation("user-2")
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# get_style_prompt_for_specific_sample
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestGetStylePromptForSpecificSample:
+    async def test_returns_none_when_sample_not_found(self):
+        svc = _make_svc(sample_by_id=None)
+        result = await svc.get_style_prompt_for_specific_sample("nonexistent-id")
+        assert result is None
+
+    async def test_returns_dict_when_sample_found(self):
+        svc = _make_svc(sample_by_id=SAMPLE_STUB)
+        result = await svc.get_style_prompt_for_specific_sample("sample-uuid-001")
+        assert result is not None
+        assert isinstance(result, dict)
+
+    async def test_result_has_required_keys(self):
+        svc = _make_svc(sample_by_id=SAMPLE_STUB)
+        result = await svc.get_style_prompt_for_specific_sample("sample-uuid-001")
+        assert result is not None
+        for key in ("sample_id", "sample_title", "sample_text", "writing_style_guidance"):
+            assert key in result
+
+    async def test_sample_id_matches(self):
+        svc = _make_svc(sample_by_id=SAMPLE_STUB)
+        result = await svc.get_style_prompt_for_specific_sample("sample-uuid-001")
+        assert result is not None
+        assert result["sample_id"] == SAMPLE_STUB["id"]
+
+    async def test_returns_none_when_writing_style_is_none(self):
+        db = MagicMock()
+        db.writing_style = None
+        svc = WritingStyleService(database_service=db)
+        result = await svc.get_style_prompt_for_specific_sample("some-id")
+        assert result is None
+
+    async def test_returns_none_on_db_exception(self):
+        db = MagicMock()
+        db.writing_style = MagicMock()
+        db.writing_style.get_writing_sample = AsyncMock(side_effect=RuntimeError("DB err"))
+        svc = WritingStyleService(database_service=db)
+        result = await svc.get_style_prompt_for_specific_sample("some-id")
+        assert result is None
+
+    async def test_get_writing_sample_called_with_correct_id(self):
+        svc = _make_svc(sample_by_id=SAMPLE_STUB)
+        await svc.get_style_prompt_for_specific_sample("my-style-id")
+        svc.db.writing_style.get_writing_sample.assert_awaited_once_with("my-style-id")  # type: ignore[union-attr,attr-defined]

@@ -15,7 +15,7 @@ Single source of truth for all metadata operations with:
 - Featured image prompt generation
 """
 
-import logging
+from services.logger_config import get_logger
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -24,9 +24,9 @@ from typing import Any, Dict, List, Optional, Tuple
 from .model_consolidation_service import get_model_consolidation_service
 from .prompt_manager import get_prompt_manager
 from .provider_checker import ProviderChecker
+from utils.text_utils import extract_keywords_from_text, extract_keywords_from_title
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 # Legacy provider checks are kept for backward compatibility during migration
 # but new code should use unified model_router and prompt_manager
 
@@ -561,25 +561,11 @@ class UnifiedMetadataService:
             return None
 
     def _extract_keywords_fallback(self, title: str) -> List[str]:
-        """Fallback keyword extraction from title"""
-        words = title.lower().split()
-        common_words = {
-            "a",
-            "an",
-            "the",
-            "and",
-            "or",
-            "but",
-            "is",
-            "are",
-            "to",
-            "of",
-            "in",
-            "on",
-            "for",
-        }
-        keywords = [w.strip(".,;:") for w in words if w not in common_words and len(w) > 3]
-        return keywords[:7] if keywords else [title[:20]]
+        """Fallback keyword extraction from title only.
+
+        Delegates to ``utils.text_utils.extract_keywords_from_title`` (issue #288).
+        """
+        return extract_keywords_from_title(title)
 
     # ========================================================================
     # SLUG GENERATION
@@ -902,19 +888,11 @@ class UnifiedMetadataService:
         return reading_time
 
     def _extract_keywords_from_content(self, content: str, count: int = 5) -> List[str]:
-        """Extract keywords by word frequency from content"""
-        # Remove markdown and common words
-        clean_content = re.sub(r"[#*`_\-\[\]()]", "", content).lower()
-        words = re.findall(r"\b[a-z]{4,}\b", clean_content)
+        """Extract keywords by word frequency from content.
 
-        # Count frequencies
-        word_freq = {}
-        for word in words:
-            word_freq[word] = word_freq.get(word, 0) + 1
-
-        # Get top words
-        keywords = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)
-        return [word for word, _ in keywords[:count]]
+        Delegates to ``utils.text_utils.extract_keywords_from_text`` (issue #288).
+        """
+        return extract_keywords_from_text(content, count=count)
 
 
 # ============================================================================

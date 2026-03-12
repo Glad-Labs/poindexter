@@ -12,7 +12,7 @@ Metrics are stored in the admin_logs table with structured JSONB format.
 """
 
 import json
-import logging
+from services.logger_config import get_logger
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -20,7 +20,7 @@ from uuid import uuid4
 
 from config import get_config
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 config = get_config()
 
 

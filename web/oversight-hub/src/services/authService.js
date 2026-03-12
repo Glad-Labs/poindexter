@@ -4,28 +4,12 @@ import logger from '@/lib/logger';
  * Handles OAuth flow and cookie-based session verification.
  */
 
-import { getApiUrl } from '../config/apiConfig';
+import { getApiUrl, getEnv } from '../config/apiConfig';
 import { authClient } from '../lib/authClient';
 
 const API_BASE_URL = getApiUrl();
 
-const getEnv = (...keys) => {
-  const viteEnv =
-    typeof import.meta !== 'undefined' && import.meta.env
-      ? import.meta.env
-      : {};
-  const procEnv =
-    typeof process !== 'undefined' && process.env ? process.env : {};
-
-  for (const key of keys) {
-    if (viteEnv[key] !== undefined && viteEnv[key] !== '') return viteEnv[key];
-    if (procEnv[key] !== undefined && procEnv[key] !== '') return procEnv[key];
-  }
-  return undefined;
-};
-
-const isMockAuthEnabled = () =>
-  getEnv('VITE_USE_MOCK_AUTH') === 'true';
+const isMockAuthEnabled = () => getEnv('REACT_APP_USE_MOCK_AUTH') === 'true';
 
 const isMockCode = (code) =>
   typeof code === 'string' && code.startsWith('mock_auth_code_');
@@ -405,6 +389,18 @@ export async function validateAndGetCurrentUser() {
       return storedUser;
     }
 
+    // Only attempt API validation if there is some session indicator:
+    // either a non-dev in-memory token or a stored user profile (which suggests
+    // a prior successful session that may still have a valid HttpOnly cookie).
+    // Skipping this check avoids a guaranteed 401 + cascading noisy errors on
+    // cold page loads where neither token nor user are present.
+    if (!storedToken && !storedUser) {
+      logger.log(
+        '[authService] No session indicators, skipping /api/auth/me check'
+      );
+      return null;
+    }
+
     const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
       method: 'GET',
       headers: {
@@ -415,8 +411,11 @@ export async function validateAndGetCurrentUser() {
 
     if (!response.ok) {
       if (response.status === 401) {
-        // Token expired
-        await logout();
+        // Session has expired — clear local state only.
+        // Do NOT call the logout API: if the session is already invalid on the
+        // server there is nothing to invalidate, and the POST to /api/auth/logout
+        // would itself return 401, triggering another round of cascading errors.
+        authClient.logout();
         return null;
       }
       throw new Error(`Failed to validate user: ${response.statusText}`);

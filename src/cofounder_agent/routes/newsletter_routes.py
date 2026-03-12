@@ -4,9 +4,9 @@ Newsletter & Email Campaign Routes
 Endpoints for managing email campaign subscriptions and newsletter signups.
 """
 
-import logging
-import re
-from datetime import datetime
+import json
+
+from services.logger_config import get_logger
 from typing import List, Optional
 
 import asyncpg
@@ -17,8 +17,7 @@ from routes.auth_unified import get_current_user
 from utils.rate_limiter import limiter
 from utils.route_utils import get_database_dependency
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 router = APIRouter(prefix="/api/newsletter", tags=["newsletter"])
 
 
@@ -96,12 +95,9 @@ async def subscribe_to_newsletter(
         client_ip = request.client.host if request.client else None
         user_agent = request.headers.get("user-agent", "")
 
-        # Prepare interest categories as JSON string
-        interest_str = None
-        if payload.interest_categories:
-            import json
-
-            interest_str = json.dumps(payload.interest_categories)
+        # Prepare interest categories as JSON string — asyncpg accepts a JSON string for JSONB columns.
+        # After migration 0033 the column is JSONB; the json.dumps() value passes through correctly.
+        interest_str = json.dumps(payload.interest_categories) if payload.interest_categories else None
 
         # Insert new subscriber
         subscriber_id = await db.pool.fetchval(

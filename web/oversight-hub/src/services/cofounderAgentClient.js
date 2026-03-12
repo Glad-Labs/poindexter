@@ -294,7 +294,11 @@ export async function refreshAccessToken() {
   }
 }
 
-export async function getTasks(limit = 50, offset = 0, { status, search } = {}) {
+export async function getTasks(
+  limit = 50,
+  offset = 0,
+  { status, search } = {}
+) {
   const params = new URLSearchParams({ limit, offset });
   if (status) params.set('status', status);
   if (search) params.set('search', search);
@@ -436,7 +440,7 @@ export async function createBlogPost(
 }
 
 export async function getMetrics() {
-  return makeRequest('/api/metrics', 'GET');
+  return makeRequest('/api/metrics/summary', 'GET');
 }
 
 export async function publishBlogDraft(postId, environment = 'production') {
@@ -951,7 +955,14 @@ export async function bulkUpdateTasks(taskIds, action) {
 }
 
 export async function duplicateTask(taskId) {
-  return makeRequest(`/api/tasks/${taskId}/duplicate`, 'POST', null, true, null, 30000);
+  return makeRequest(
+    `/api/tasks/${taskId}/duplicate`,
+    'POST',
+    null,
+    true,
+    null,
+    30000
+  );
 }
 
 /**

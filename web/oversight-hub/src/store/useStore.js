@@ -274,20 +274,29 @@ const useStore = create(
       messages: [], // Unified message stream for CommandPane integration
 
       /**
-       * Add message to stream (command, status, result, or error)
+       * Add message to stream (command, status, result, or error).
+       * Capped at MAX_MESSAGES to prevent unbounded memory growth in long-running sessions.
        * @param {Object} message - Message object with type, content, metadata
        */
       addMessage: (message) =>
-        set((state) => ({
-          messages: [
+        set((state) => {
+          const MAX_MESSAGES = 200;
+          const updated = [
             ...state.messages,
             {
               ...message,
               timestamp: new Date().toISOString(),
               id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
             },
-          ],
-        })),
+          ];
+          // Evict oldest entries when over the cap (keep the most recent MAX_MESSAGES)
+          return {
+            messages:
+              updated.length > MAX_MESSAGES
+                ? updated.slice(-MAX_MESSAGES)
+                : updated,
+          };
+        }),
 
       /**
        * Update existing message in stream (e.g., update progress)

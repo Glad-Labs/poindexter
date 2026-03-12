@@ -2,34 +2,54 @@ import React, { useRef, useCallback, useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import './Sidebar.css';
 
+const MIN_SIDEBAR_WIDTH = 200;
+const MAX_SIDEBAR_WIDTH = 400;
+const DEFAULT_SIDEBAR_WIDTH = 250;
+const KEYBOARD_STEP = 10;
+
 const Sidebar = () => {
   const sidebarRef = useRef(null);
   const isResizing = useRef(false);
   const [isCompressed, setIsCompressed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
 
   // Ensure layout is properly initialized
   useEffect(() => {
     // Just ensure CSS variables are set, let CSS handle the layout
-    const sidebarWidth = getComputedStyle(document.documentElement)
+    const currentWidth = getComputedStyle(document.documentElement)
       .getPropertyValue('--sidebar-width')
       .trim();
 
-    if (!sidebarWidth || sidebarWidth === '') {
-      document.documentElement.style.setProperty('--sidebar-width', '250px');
-    }
-  }, []);
-
-  const handleResize = useCallback((e) => {
-    if (!isResizing.current) return;
-
-    const newWidth = e.clientX;
-    if (newWidth >= 200 && newWidth <= 400) {
+    if (!currentWidth || currentWidth === '') {
       document.documentElement.style.setProperty(
         '--sidebar-width',
-        `${newWidth}px`
+        `${DEFAULT_SIDEBAR_WIDTH}px`
       );
+    } else {
+      const parsed = parseInt(currentWidth, 10);
+      if (!isNaN(parsed)) setSidebarWidth(parsed);
     }
   }, []);
+
+  const applyWidth = useCallback((newWidth) => {
+    const clamped = Math.max(
+      MIN_SIDEBAR_WIDTH,
+      Math.min(MAX_SIDEBAR_WIDTH, newWidth)
+    );
+    document.documentElement.style.setProperty(
+      '--sidebar-width',
+      `${clamped}px`
+    );
+    setSidebarWidth(clamped);
+  }, []);
+
+  const handleResize = useCallback(
+    (e) => {
+      if (!isResizing.current) return;
+      applyWidth(e.clientX);
+    },
+    [applyWidth]
+  );
 
   const stopResize = useCallback(() => {
     isResizing.current = false;
@@ -50,13 +70,30 @@ const Sidebar = () => {
     [handleResize, stopResize]
   );
 
+  // Keyboard handler for the resize handle — WCAG 2.1.1 compliance
+  const handleResizeKeyDown = useCallback(
+    (e) => {
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        applyWidth(sidebarWidth + KEYBOARD_STEP);
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        applyWidth(sidebarWidth - KEYBOARD_STEP);
+      }
+    },
+    [applyWidth, sidebarWidth]
+  );
+
   return (
     <nav
       className={`sidebar ${isCompressed ? 'compressed' : ''}`}
       ref={sidebarRef}
     >
       <div className="sidebar-header">
-        <h2 className="sidebar-title">{isCompressed ? 'GL' : 'Glad Labs'}</h2>
+        {/* span not h2 — heading levels in the sidebar should not precede the page h1 (WCAG 1.3.1) */}
+        <span className="sidebar-title">
+          {isCompressed ? 'GL' : 'Glad Labs'}
+        </span>
         <button
           className="sidebar-toggle-btn"
           onClick={() => setIsCompressed(!isCompressed)}
@@ -72,7 +109,9 @@ const Sidebar = () => {
               to="/"
               className={({ isActive }) => (isActive ? 'active' : '')}
             >
-              <span className="sidebar-icon">📊</span>
+              <span className="sidebar-icon" aria-hidden="true">
+                📊
+              </span>
               <span className="sidebar-label">Dashboard</span>
             </NavLink>
           </li>
@@ -81,7 +120,9 @@ const Sidebar = () => {
               to="/tasks"
               className={({ isActive }) => (isActive ? 'active' : '')}
             >
-              <span className="sidebar-icon">✅</span>
+              <span className="sidebar-icon" aria-hidden="true">
+                ✅
+              </span>
               <span className="sidebar-label">Tasks</span>
             </NavLink>
           </li>
@@ -90,7 +131,9 @@ const Sidebar = () => {
               to="/models"
               className={({ isActive }) => (isActive ? 'active' : '')}
             >
-              <span className="sidebar-icon">🤖</span>
+              <span className="sidebar-icon" aria-hidden="true">
+                🤖
+              </span>
               <span className="sidebar-label">Models</span>
             </NavLink>
           </li>
@@ -99,7 +142,9 @@ const Sidebar = () => {
               to="/social"
               className={({ isActive }) => (isActive ? 'active' : '')}
             >
-              <span className="sidebar-icon">📱</span>
+              <span className="sidebar-icon" aria-hidden="true">
+                📱
+              </span>
               <span className="sidebar-label">Social</span>
             </NavLink>
           </li>
@@ -108,7 +153,9 @@ const Sidebar = () => {
               to="/content"
               className={({ isActive }) => (isActive ? 'active' : '')}
             >
-              <span className="sidebar-icon">📝</span>
+              <span className="sidebar-icon" aria-hidden="true">
+                📝
+              </span>
               <span className="sidebar-label">Content</span>
             </NavLink>
           </li>
@@ -117,7 +164,9 @@ const Sidebar = () => {
               to="/workflows"
               className={({ isActive }) => (isActive ? 'active' : '')}
             >
-              <span className="sidebar-icon">🔄</span>
+              <span className="sidebar-icon" aria-hidden="true">
+                🔄
+              </span>
               <span className="sidebar-label">Workflows</span>
             </NavLink>
           </li>
@@ -126,7 +175,9 @@ const Sidebar = () => {
               to="/cost-metrics"
               className={({ isActive }) => (isActive ? 'active' : '')}
             >
-              <span className="sidebar-icon">💰</span>
+              <span className="sidebar-icon" aria-hidden="true">
+                💰
+              </span>
               <span className="sidebar-label">Costs</span>
             </NavLink>
           </li>
@@ -135,7 +186,9 @@ const Sidebar = () => {
               to="/analytics"
               className={({ isActive }) => (isActive ? 'active' : '')}
             >
-              <span className="sidebar-icon">📈</span>
+              <span className="sidebar-icon" aria-hidden="true">
+                📈
+              </span>
               <span className="sidebar-label">Analytics</span>
             </NavLink>
           </li>
@@ -144,15 +197,26 @@ const Sidebar = () => {
               to="/settings"
               className={({ isActive }) => (isActive ? 'active' : '')}
             >
-              <span className="sidebar-icon">⚙️</span>
+              <span className="sidebar-icon" aria-hidden="true">
+                ⚙️
+              </span>
               <span className="sidebar-label">Settings</span>
             </NavLink>
           </li>
         </ul>
       </div>
+      {/* Keyboard-accessible resize handle (WCAG 2.1.1) */}
       <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize sidebar. Use Arrow Left and Arrow Right keys to adjust width."
+        aria-valuenow={sidebarWidth}
+        aria-valuemin={MIN_SIDEBAR_WIDTH}
+        aria-valuemax={MAX_SIDEBAR_WIDTH}
+        tabIndex={0}
         className="resize-handle sidebar-resize-handle"
         onMouseDown={startResize}
+        onKeyDown={handleResizeKeyDown}
       />
     </nav>
   );

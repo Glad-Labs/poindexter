@@ -1,7 +1,17 @@
 #!/usr/bin/env python3
 """
-Database Migration Runner
-Applies SQL migrations from the migrations/ directory to the PostgreSQL database.
+DEPRECATED — do not use for new deployments.
+
+This script applied the base SQL schema (migrations 001–014) using psycopg2.
+Those tables are now assumed to exist in all environments.
+
+The canonical migration runner is services/migrations/__init__.py (asyncpg,
+idempotent, tracks applied migrations in schema_migrations table). Run it via:
+
+    poetry run python run_migrations.py
+
+This file is kept for reference and for emergency recovery of legacy environments
+that may not have the base schema. It will be removed in a future cleanup pass.
 """
 
 import glob

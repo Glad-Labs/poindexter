@@ -8,7 +8,7 @@ Provides endpoints for:
 - Smart fallback to multiple AI providers
 """
 
-import logging
+from services.logger_config import get_logger
 import os
 import time
 from datetime import datetime
@@ -27,8 +27,7 @@ from services.ollama_client import OllamaClient
 from services.gemini_client import GeminiClient
 from services.usage_tracker import get_usage_tracker
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 # Initialize services
 ollama_client = OllamaClient()
 gemini_client = GeminiClient()  # Initialize with API key from env
@@ -116,7 +115,12 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
                 # Check if model is available
                 try:
-                    available_models = await ollama_client.list_models()
+                    raw_models = await ollama_client.list_models()
+                    # list_models() returns List[Dict[str,Any]] — extract the "name" field
+                    available_models: list[str] = [
+                        m.get("name", "") if isinstance(m, dict) else str(m)
+                        for m in raw_models
+                    ]
                     logger.debug(f"[Chat] Available Ollama models: {available_models}")
 
                     if actual_ollama_model not in available_models:

@@ -413,6 +413,31 @@ header h1 {
   box-shadow: var(--shadow-light);
 }
 
+/* --- Skip-to-content link (WCAG 2.4.1 — Bypass Blocks) --- */
+.skip-to-main {
+  position: absolute;
+  top: -100%;
+  left: 0;
+  z-index: 9999;
+  padding: 0.75rem 1.5rem;
+  background: var(--neon-cyan);
+  color: #000;
+  font-weight: 700;
+  text-decoration: none;
+  border-radius: 0 0 4px 0;
+  transition: top 0.1s;
+}
+.skip-to-main:focus {
+  top: 0;
+}
+
+/* --- App-title span styled to match the original h1 appearance --- */
+.oversight-hub-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--neon-cyan);
+}
+
 /* --- Root Container for LayoutWrapper --- */
 .oversight-hub-container {
   display: flex;
@@ -421,7 +446,9 @@ header h1 {
   height: 100vh;
   background: var(--bg-primary);
   color: var(--text-primary);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
+    Arial, sans-serif;
   overflow: hidden;
 }
 
@@ -570,7 +597,11 @@ header h1 {
 .chat-resize-handle {
   width: 100%;
   height: 8px;
-  background: linear-gradient(180deg, var(--accent-secondary) 0%, transparent 100%);
+  background: linear-gradient(
+    180deg,
+    var(--accent-secondary) 0%,
+    transparent 100%
+  );
   cursor: ns-resize;
   display: flex;
   align-items: center;
@@ -585,7 +616,11 @@ header h1 {
 }
 
 .chat-resize-handle:hover {
-  background: linear-gradient(180deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
+  background: linear-gradient(
+    180deg,
+    var(--accent-primary) 0%,
+    var(--accent-secondary) 100%
+  );
   height: 10px;
 }
 
@@ -593,7 +628,9 @@ header h1 {
   color: var(--accent-secondary);
   font-size: 0.75rem;
   opacity: 0.7;
-  transition: opacity 0.2s, color 0.2s;
+  transition:
+    opacity 0.2s,
+    color 0.2s;
 }
 
 .chat-resize-handle:hover .drag-indicator {
@@ -602,7 +639,12 @@ header h1 {
 }
 
 .chat-resize-handle.resizing {
-  background: linear-gradient(180deg, var(--accent-primary) 0%, var(--accent-secondary) 50%, var(--accent-primary) 100%);
+  background: linear-gradient(
+    180deg,
+    var(--accent-primary) 0%,
+    var(--accent-secondary) 50%,
+    var(--accent-primary) 100%
+  );
   height: 12px;
   box-shadow: 0 0 12px rgba(0, 217, 255, 0.5);
 }
@@ -626,7 +668,12 @@ body.resizing-chat {
   transform: translateX(-50%);
   width: 40px;
   height: 4px;
-  background: linear-gradient(90deg, transparent, var(--accent-secondary), transparent);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--accent-secondary),
+    transparent
+  );
   opacity: 0;
   transition: opacity 0.2s;
   pointer-events: none;
@@ -654,7 +701,11 @@ body.resizing-chat {
   display: flex;
   gap: 0.5rem;
   align-items: center;
-  background: linear-gradient(135deg, rgba(0, 100, 255, 0.08) 0%, rgba(0, 212, 255, 0.08) 100%);
+  background: linear-gradient(
+    135deg,
+    rgba(0, 100, 255, 0.08) 0%,
+    rgba(0, 212, 255, 0.08) 100%
+  );
   padding: 0.4rem;
   border-radius: 6px;
   border: 1px solid rgba(0, 212, 255, 0.3);
@@ -801,7 +852,7 @@ body.resizing-chat {
 }
 
 .agent-selector-chat option:checked {
-  background: linear-gradient(#0084FF, #0084FF);
+  background: linear-gradient(#0084ff, #0084ff);
   background-color: var(--accent-primary);
   color: var(--bg-primary);
 }

@@ -9,14 +9,12 @@ Provides accurate readability metrics including:
 - Passive voice detection
 """
 
-import logging
+from services.logger_config import get_logger
 import re
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 @dataclass
 class ReadabilityMetrics:
     """Complete readability analysis"""

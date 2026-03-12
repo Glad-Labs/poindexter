@@ -3,33 +3,18 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { generateGitHubAuthURL } from '../services/authService';
 import useAuth from '../hooks/useAuth';
+import { getEnv } from '../config/apiConfig';
 import './Login.css';
-
-const getEnv = (...keys) => {
-  const viteEnv =
-    typeof import.meta !== 'undefined' && import.meta.env
-      ? import.meta.env
-      : {};
-  const procEnv =
-    typeof process !== 'undefined' && process.env ? process.env : {};
-
-  for (const key of keys) {
-    if (viteEnv[key] !== undefined && viteEnv[key] !== '') return viteEnv[key];
-    if (procEnv[key] !== undefined && procEnv[key] !== '') return procEnv[key];
-  }
-  return undefined;
-};
 
 const Login = () => {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
-  const clientId = getEnv('VITE_GH_OAUTH_CLIENT_ID');
+  const clientId = getEnv('REACT_APP_GH_OAUTH_CLIENT_ID');
   // Mock auth ONLY allowed in development
   const mode = getEnv('MODE', 'NODE_ENV') || 'development';
   const isDevelopment = mode === 'development';
   const useMockAuth =
-    isDevelopment &&
-    getEnv('VITE_USE_MOCK_AUTH') === 'true';
+    isDevelopment && getEnv('REACT_APP_USE_MOCK_AUTH') === 'true';
   const [debugInfo, setDebugInfo] = useState('');
 
   useEffect(() => {
@@ -42,10 +27,7 @@ const Login = () => {
     setDebugInfo(JSON.stringify(info, null, 2));
 
     // Warn if mock auth is enabled in production
-    if (
-      !isDevelopment &&
-      getEnv('VITE_USE_MOCK_AUTH') === 'true'
-    ) {
+    if (!isDevelopment && getEnv('REACT_APP_USE_MOCK_AUTH') === 'true') {
       logger.error('❌ SECURITY: Mock auth enabled in non-development mode!');
     }
   }, [clientId, useMockAuth, isDevelopment, mode]);
@@ -63,7 +45,7 @@ const Login = () => {
     } else {
       if (!clientId) {
         alert(
-          'GitHub Client ID not configured. Set VITE_GH_OAUTH_CLIENT_ID in web/oversight-hub/.env.local'
+          'GitHub Client ID not configured. Set REACT_APP_GH_OAUTH_CLIENT_ID in web/oversight-hub/.env.local'
         );
         return;
       }

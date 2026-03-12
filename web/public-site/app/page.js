@@ -32,7 +32,7 @@ async function getPosts() {
       return [];
     }
 
-    const url = `${FASTAPI_URL}/api/posts?skip=0&limit=20&published_only=true`;
+    const url = `${FASTAPI_URL}/api/posts?offset=0&limit=20&published_only=true`;
     logger.log('📡 Fetching posts from:', url);
 
     const response = await fetch(url, {
@@ -54,10 +54,10 @@ async function getPosts() {
     const data = await response.json();
     logger.log(
       '✅ Posts fetched successfully, got',
-      data.data?.length || 0,
+      (data.posts || data.data)?.length || 0,
       'posts'
     );
-    return data.data || [];
+    return data.posts || data.data || [];
   } catch (error) {
     logger.error('❌ Error fetching posts for homepage:', error.message);
     return [];
@@ -100,8 +100,15 @@ export default async function HomePage() {
           </div>
         </section>
       ) : (
-        <section className="py-12 px-4 md:px-0">
+        <section
+          className="py-12 px-4 md:px-0"
+          aria-labelledby="featured-post-heading"
+        >
           <div className="container mx-auto max-w-6xl">
+            {/* Visually-hidden section heading keeps heading outline: h1 > h2(Featured) > h3(article title) */}
+            <h2 id="featured-post-heading" className="sr-only">
+              Featured Post
+            </h2>
             {/* Main Featured Post Card */}
             <div className="bg-gradient-to-b from-slate-800/50 to-slate-900/50 rounded-2xl overflow-hidden border border-cyan-500/20 hover:border-cyan-400/40 transition-colors">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 p-8">
@@ -135,10 +142,10 @@ export default async function HomePage() {
                       </div>
                     )}
 
-                    {/* Title */}
-                    <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4 leading-tight">
+                    {/* Title — h3 because it's article content under the h2 "Featured Post" section heading */}
+                    <h3 className="text-3xl sm:text-4xl font-bold text-white mb-4 leading-tight">
                       {currentPost?.title}
-                    </h2>
+                    </h3>
 
                     {/* Excerpt */}
                     <p className="text-lg text-slate-300 mb-6 leading-relaxed">

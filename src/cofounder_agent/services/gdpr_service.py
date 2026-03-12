@@ -3,7 +3,7 @@
 import csv
 import io
 import json
-import logging
+from services.logger_config import get_logger
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
@@ -11,9 +11,7 @@ from uuid import uuid4
 
 from services.database_service import DatabaseService
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class GDPRService:
     """Handles GDPR request persistence, verification, export, and audit logging."""
 

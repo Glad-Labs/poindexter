@@ -89,18 +89,20 @@ export async function getPaginatedPosts(
   pageSize = 10,
   excludeId = null
 ) {
-  const skip = (page - 1) * pageSize;
+  const offset = (page - 1) * pageSize;
 
-  // Build endpoint: FastAPI uses skip/limit
-  let endpoint = `/posts?skip=${skip}&limit=${pageSize}&published_only=true`;
+  // Build endpoint: FastAPI uses offset/limit
+  let endpoint = `/posts?offset=${offset}&limit=${pageSize}&published_only=true`;
 
   const response = await fetchAPI(endpoint);
 
-  // Filter out excludeId if provided
-  let data = response.data || [];
+  // Support both standard envelope (posts) and legacy Strapi envelope (data)
+  let data = response.posts || response.data || [];
   if (excludeId) {
     data = data.filter((post) => post.id !== excludeId);
   }
+
+  const total = response.total ?? response.meta?.pagination?.total ?? 0;
 
   // Return in format expected by pages
   return {
@@ -109,10 +111,8 @@ export async function getPaginatedPosts(
       pagination: {
         page: page,
         pageSize: pageSize,
-        total: response.meta?.pagination?.total || 0,
-        pageCount: Math.ceil(
-          (response.meta?.pagination?.total || 0) / pageSize
-        ),
+        total: total,
+        pageCount: Math.ceil(total / pageSize),
       },
     },
   };
@@ -125,13 +125,14 @@ export async function getPaginatedPosts(
  */
 export async function getFeaturedPost() {
   try {
-    // Get the most recent post (skip=0, limit=1, published_only=true)
+    // Get the most recent post (offset=0, limit=1, published_only=true)
     const response = await fetchAPI(
-      '/posts?skip=0&limit=1&published_only=true'
+      '/posts?offset=0&limit=1&published_only=true'
     );
 
-    if (response.data && response.data.length > 0) {
-      return response.data[0];
+    const posts = response.posts || response.data || [];
+    if (posts.length > 0) {
+      return posts[0];
     }
     return null;
   } catch (error) {
@@ -246,21 +247,22 @@ export async function getAllPosts() {
     // Fetch all posts in batches
     while (true) {
       const response = await fetchAPI(
-        `/posts?skip=${skip}&limit=${limit}&published_only=true`
+        `/posts?offset=${skip}&limit=${limit}&published_only=true`
       );
 
-      if (!response.data || response.data.length === 0) {
+      const batch = response.posts || response.data || [];
+      if (batch.length === 0) {
         break; // No more posts
       }
 
       allPosts.push(
-        ...response.data.map((post) => ({
+        ...batch.map((post) => ({
           slug: post.slug,
         }))
       );
 
       // Check if we got fewer posts than requested (end of results)
-      if (response.data.length < limit) {
+      if (batch.length < limit) {
         break;
       }
 
@@ -505,7 +507,7 @@ export async function getTaskById(taskId) {
  * @returns {Promise<Object>}
  */
 export async function getTaskMetrics() {
-  return fetchAPI('/tasks/metrics');
+  return fetchAPI('/tasks/metrics/summary');
 }
 
 // ============================================================================

@@ -16,7 +16,7 @@ Import guide:
 """
 
 import asyncio
-import logging
+from services.logger_config import get_logger
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -35,7 +35,7 @@ except ImportError:
     sentry_sdk = None  # type: ignore[assignment]
     SENTRY_AVAILABLE = False
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 T = TypeVar("T")
 
 

@@ -86,10 +86,6 @@ export function NotificationCenter() {
     }
   };
 
-  const getConnectionStatus = () => {
-    return isConnected ? '🟢 Connected' : '🔴 Disconnected';
-  };
-
   return (
     <>
       {/* Connection Status Indicator */}
@@ -111,7 +107,18 @@ export function NotificationCenter() {
             color: isConnected ? '#4caf50' : '#f44336',
           }}
         >
-          <span>{getConnectionStatus()}</span>
+          {/* Use role=status + aria-live so status changes are announced.
+              The emoji dot is aria-hidden — the text label provides the accessible name. */}
+          <span
+            role="status"
+            aria-live="polite"
+            aria-label={
+              isConnected ? 'WebSocket connected' : 'WebSocket disconnected'
+            }
+          >
+            <span aria-hidden="true">{isConnected ? '🟢' : '🔴'}</span>{' '}
+            {isConnected ? 'Connected' : 'Disconnected'}
+          </span>
         </Box>
 
         {/* Current Notification Snackbar */}
@@ -122,6 +129,10 @@ export function NotificationCenter() {
           anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         >
           <Alert
+            role="alert"
+            aria-live={
+              currentNotification?.type === 'error' ? 'assertive' : 'polite'
+            }
             onClose={handleCloseNotification}
             severity={getAlertSeverity(currentNotification?.type)}
             sx={{ minWidth: 300 }}
@@ -168,7 +179,11 @@ export function NotificationCenter() {
               <NotificationsIcon />
               <span>Notification History</span>
             </Box>
-            <IconButton onClick={() => setShowHistory(false)} size="small">
+            <IconButton
+              onClick={() => setShowHistory(false)}
+              size="small"
+              aria-label="Close notification history"
+            >
               <CloseIcon />
             </IconButton>
           </Box>

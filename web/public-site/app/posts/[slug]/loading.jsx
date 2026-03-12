@@ -1,7 +1,14 @@
 export default function Loading() {
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-20 animate-pulse">
+    <div
+      className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900"
+      role="status"
+    >
+      <span className="sr-only">Loading article...</span>
+      <div
+        className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-20 animate-pulse"
+        aria-hidden="true"
+      >
         {/* Header skeleton */}
         <div className="mb-8">
           <div className="h-4 bg-slate-700 rounded w-24 mb-6"></div>

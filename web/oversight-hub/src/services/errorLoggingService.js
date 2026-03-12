@@ -6,6 +6,7 @@ import logger from '@/lib/logger';
  * Integrates with error monitoring services (Sentry, etc.) and backend aggregation.
  */
 
+import * as Sentry from '@sentry/react';
 import { makeRequest } from './cofounderAgentClient';
 
 /**
@@ -42,23 +43,26 @@ export const logErrorToBackend = async (error, context = {}) => {
 };
 
 /**
- * Log an error to Sentry if available
+ * Log an error to Sentry.
+ *
+ * Uses the @sentry/react SDK directly — no window.__SENTRY__ sentinel needed.
+ * captureException() is a no-op when Sentry was not initialized (i.e. when
+ * REACT_APP_SENTRY_DSN is unset), so this is always safe to call.
+ *
  * @param {Error} error - The error object
  * @param {Object} context - Additional context
  */
 export const logErrorToSentry = (error, context = {}) => {
   try {
-    if (window.__SENTRY__) {
-      window.__SENTRY__.captureException(error, {
-        contexts: {
-          react: {
-            componentStack: context.componentStack,
-            severity: context.severity,
-          },
-          custom: context.customContext,
+    Sentry.captureException(error, {
+      contexts: {
+        react: {
+          componentStack: context.componentStack,
+          severity: context.severity,
         },
-      });
-    }
+        custom: context.customContext,
+      },
+    });
   } catch (err) {
     logger.error('Failed to log error to Sentry:', err);
   }

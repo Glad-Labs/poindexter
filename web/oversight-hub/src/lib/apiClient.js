@@ -401,7 +401,7 @@ export const getHealth = async () => {
  */
 export const getMetrics = async () => {
   try {
-    const response = await apiClient.get('/api/metrics');
+    const response = await apiClient.get('/api/metrics/summary');
     return response.data;
   } catch (error) {
     logger.error('Error getting metrics:', error);
@@ -415,7 +415,7 @@ export const getMetrics = async () => {
  */
 export const getTaskMetrics = async () => {
   try {
-    const response = await apiClient.get('/api/tasks/metrics');
+    const response = await apiClient.get('/api/tasks/metrics/summary');
     return response.data;
   } catch (error) {
     logger.error('Error getting task metrics:', error);
@@ -429,7 +429,7 @@ export const getTaskMetrics = async () => {
  */
 export const getContentMetrics = async () => {
   try {
-    const response = await apiClient.get('/api/metrics');
+    const response = await apiClient.get('/api/metrics/summary');
     return response.data;
   } catch (error) {
     logger.error('Error getting metrics:', error);

@@ -16,7 +16,7 @@ Setup:
    - GOOGLE_CLIENT_SECRET
 """
 
-import logging
+from services.logger_config import get_logger
 import os
 from typing import Optional
 
@@ -24,9 +24,7 @@ import httpx
 
 from .oauth_provider import OAuthException, OAuthProvider, OAuthUser
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class GoogleOAuthProvider(OAuthProvider):
     """Google OAuth 2.0 provider implementation"""
 

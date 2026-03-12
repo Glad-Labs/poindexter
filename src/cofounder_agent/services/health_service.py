@@ -5,12 +5,11 @@ This module provides centralized health check functionality.
 """
 
 import asyncio
-import logging
+from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 from fastapi import FastAPI
 
 # Import configuration

@@ -6,20 +6,45 @@ import logger from '@/lib/logger';
  * Manages connection lifecycle and provides hooks for components
  */
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { websocketService } from '../services/websocketService';
+import { AuthContext } from './AuthContext';
 
 const WebSocketContext = createContext(null);
 
 /**
  * WebSocketProvider Component
- * Wraps app to provide WebSocket connection
+ * Wraps app to provide WebSocket connection.
+ *
+ * Waits for AuthContext initialization before attempting to connect so that:
+ *  1. The auth token is available in memory before the WS handshake.
+ *  2. Unauthenticated page loads do not produce noisy "Not authenticated"
+ *     errors in the console.
+ *  3. The connection is torn down automatically when the user logs out.
  */
 export function WebSocketProvider({ children }) {
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState(null);
 
+  // Consume auth state — WebSocketProvider is always rendered inside AuthProvider.
+  const auth = useContext(AuthContext);
+  const authLoading = auth?.loading ?? true;
+  const isAuthenticated = auth?.isAuthenticated ?? false;
+
   useEffect(() => {
+    // Do not attempt to connect while auth is still initializing or when the
+    // user is not authenticated.  This prevents "Not authenticated" errors on
+    // cold page loads and avoids opening a WS connection for anonymous visitors.
+    if (authLoading || !isAuthenticated) {
+      return;
+    }
+
     // Connect to WebSocket on mount
     const connectWebSocket = async () => {
       try {
@@ -51,13 +76,13 @@ export function WebSocketProvider({ children }) {
 
     connectWebSocket();
 
-    // Cleanup on unmount
+    // Cleanup on unmount or when auth state changes (e.g., logout)
     return () => {
       unsubscribeConnected();
       unsubscribeDisconnected();
       unsubscribeError();
     };
-  }, []);
+  }, [authLoading, isAuthenticated]);
 
   const value = {
     isConnected,
@@ -85,17 +110,28 @@ export function useWebSocket() {
 }
 
 /**
- * Hook to subscribe to specific events
+ * Hook to subscribe to specific events.
+ *
+ * Uses a stable ref for the callback so that callers can pass inline functions
+ * without causing the effect to re-run (and re-subscribe) on every render.
+ * The subscription is only re-created when the eventName or service changes.
+ *
  * @param {string} eventName - Event name
- * @param {Function} callback - Callback function
+ * @param {Function} callback - Callback function (may be an inline function)
  */
 export function useWebSocketEvent(eventName, callback) {
   const { service } = useWebSocket();
+  // Keep a stable ref to the latest callback so we don't need it in the dep array
+  const callbackRef = useRef(callback);
+  useEffect(() => {
+    callbackRef.current = callback;
+  });
 
   useEffect(() => {
-    const unsubscribe = service.subscribe(eventName, callback);
+    const stableCallback = (...args) => callbackRef.current(...args);
+    const unsubscribe = service.subscribe(eventName, stableCallback);
     return unsubscribe;
-  }, [service, eventName, callback]);
+  }, [service, eventName]);
 }
 
 /**

@@ -83,6 +83,7 @@ const FormFields = ({ fields = [], values = {}, onChange, errors = {} }) => {
         }
 
         if (field.type === 'select') {
+          const labelId = `${field.name}-label`;
           return (
             <FormControl
               fullWidth
@@ -90,8 +91,9 @@ const FormFields = ({ fields = [], values = {}, onChange, errors = {} }) => {
               error={!!error}
               size="small"
             >
-              <InputLabel>{field.label}</InputLabel>
+              <InputLabel id={labelId}>{field.label}</InputLabel>
               <Select
+                labelId={labelId}
                 value={value}
                 label={field.label}
                 onChange={(e) => handleChange(field.name, e.target.value)}

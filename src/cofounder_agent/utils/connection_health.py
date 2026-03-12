@@ -6,13 +6,11 @@ for stale connections and pool exhaustion.
 """
 
 import asyncio
-import logging
+from services.logger_config import get_logger
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class ConnectionPoolHealth:
     """Monitor and report on connection pool health."""
 

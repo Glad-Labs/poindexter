@@ -14,7 +14,7 @@ Requirements:
   - SMTP_USE_TLS: true/false (default: true)
 """
 
-import logging
+from services.logger_config import get_logger
 import os
 from email import encoders
 from email.mime.base import MIMEBase
@@ -25,9 +25,7 @@ from typing import Any, Dict, List, Optional, cast
 import aiosmtplib  # type: ignore
 import html2text  # type: ignore
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class EmailPublisher:
     """Email content publisher"""
 

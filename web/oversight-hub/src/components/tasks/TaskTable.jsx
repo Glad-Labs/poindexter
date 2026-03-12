@@ -58,8 +58,8 @@ const TaskTable = ({
 }) => {
   if (loading && tasks.length === 0) {
     return (
-      <Box sx={loadingContainer}>
-        <CircularProgress />
+      <Box sx={loadingContainer} role="status" aria-label="Loading tasks">
+        <CircularProgress aria-label="Loading tasks" />
       </Box>
     );
   }
@@ -137,7 +137,11 @@ const TaskTable = ({
                 </TableCell>
                 <TableCell align="right">
                   <Tooltip title="View Details">
-                    <IconButton size="small" onClick={() => onSelectTask(task)}>
+                    <IconButton
+                      size="small"
+                      aria-label="View task details"
+                      onClick={() => onSelectTask(task)}
+                    >
                       <ViewIcon fontSize="small" />
                     </IconButton>
                   </Tooltip>
@@ -149,6 +153,7 @@ const TaskTable = ({
                       <Tooltip title="Pause">
                         <IconButton
                           size="small"
+                          aria-label="Pause task"
                           onClick={() => onPauseTask(task.id)}
                         >
                           <PauseIcon fontSize="small" />
@@ -162,6 +167,7 @@ const TaskTable = ({
                       <IconButton
                         size="small"
                         color="success"
+                        aria-label="Resume task"
                         onClick={() => onResumeTask(task.id)}
                       >
                         <PlayIcon fontSize="small" />
@@ -176,6 +182,7 @@ const TaskTable = ({
                         <IconButton
                           size="small"
                           color="warning"
+                          aria-label="Cancel task"
                           onClick={() => onCancelTask(task.id)}
                         >
                           <StopIcon fontSize="small" />

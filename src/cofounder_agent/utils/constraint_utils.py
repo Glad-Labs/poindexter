@@ -9,14 +9,12 @@ This module provides utilities for enforcing content constraints throughout the
 generation pipeline, from prompt injection to output validation.
 """
 
-import logging
+from services.logger_config import get_logger
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 # ============================================================================
 # DATA STRUCTURES
 # ============================================================================

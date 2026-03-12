@@ -17,7 +17,7 @@ Setup:
    - FACEBOOK_CLIENT_SECRET (App Secret)
 """
 
-import logging
+from services.logger_config import get_logger
 import os
 from typing import Optional
 
@@ -25,9 +25,7 @@ import httpx
 
 from .oauth_provider import OAuthException, OAuthProvider, OAuthUser
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class FacebookOAuthProvider(OAuthProvider):
     """Facebook OAuth 2.0 provider implementation"""
 

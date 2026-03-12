@@ -1,5 +1,5 @@
 import json
-import logging
+from services.logger_config import get_logger
 import os
 from typing import Optional
 
@@ -8,9 +8,7 @@ import httpx
 from ..config import config
 from ..utils.data_models import BlogPost, StrapiPost
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class StrapiClient:
     """
     A client for interacting with the Strapi CMS API.
@@ -33,7 +31,7 @@ class StrapiClient:
         token_preview = (
             f"{self.api_token[:5]}...{self.api_token[-4:]}" if self.api_token else "None"
         )
-        logging.info(f"Strapi client initialized. Using token: {token_preview}")
+        logger.info(f"Strapi client initialized. Using token: {token_preview}")
 
     async def upload_image(self, file_path: str, alt_text: str, caption: str) -> Optional[int]:
         """
@@ -122,7 +120,7 @@ class StrapiClient:
             tuple[Optional[int], Optional[str]]: The ID and URL of the created post, or (None, None) on failure.
         """
         if not self.api_token:
-            logging.error("Strapi API token is not set. Cannot create post.")
+            logger.error("Strapi API token is not set. Cannot create post.")
             return None, None
 
         endpoint = f"{self.api_url}/api/posts"
@@ -154,11 +152,11 @@ class StrapiClient:
                 f"{self.api_url}/api/posts/{post_id}"  # This is the API URL, not the frontend URL
             )
 
-            logging.info(f"Successfully created post in Strapi with ID: {post_id}")
+            logger.info(f"Successfully created post in Strapi with ID: {post_id}")
             return post_id, post_url
 
         except httpx.HTTPError as e:
-            logging.error(f"Error creating post in Strapi: {str(e)}")
+            logger.error(f"Error creating post in Strapi: {str(e)}")
             return None, None
 
     async def get_all_published_posts(self) -> dict[str, str]:
@@ -182,10 +180,10 @@ class StrapiClient:
                 if title and slug:
                     published_posts[title] = f"/posts/{slug}"  # Assuming this URL structure
 
-            logging.info(f"Fetched {len(published_posts)} published posts from Strapi.")
+            logger.info(f"Fetched {len(published_posts)} published posts from Strapi.")
             return published_posts
         except Exception as e:
-            logging.error(f"Failed to get published posts from Strapi: {e}")
+            logger.error(f"Failed to get published posts from Strapi: {e}")
             return {}
 
 
@@ -195,7 +193,7 @@ if __name__ == "__main__":
 
     async def main():
         # This is a simple test block. For a real application, this should be in a separate test file.
-        logging.info("Running StrapiClient test...")
+        logger.info("Running StrapiClient test...")
         strapi_client = StrapiClient()
 
         # Create a sample BlogPost object for testing

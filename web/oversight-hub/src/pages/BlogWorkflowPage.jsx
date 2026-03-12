@@ -574,6 +574,7 @@ function BlogWorkflowPage() {
                               .output.url
                           }
                           target="_blank"
+                          rel="noopener noreferrer"
                         >
                           View Post
                         </Button>

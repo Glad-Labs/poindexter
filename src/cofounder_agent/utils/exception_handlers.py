@@ -14,7 +14,7 @@ All handlers include:
 - Proper logging with context
 """
 
-import logging
+from services.logger_config import get_logger
 import uuid
 from typing import Callable
 
@@ -33,9 +33,7 @@ except ImportError:
 
 from services.error_handler import AppError, NotFoundError, ValidationError, create_error_response
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 async def app_error_handler(request, exc: AppError):
     """
     Handle application-specific errors with structured response.

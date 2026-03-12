@@ -11,7 +11,7 @@ Responsibilities:
 - Track execution patterns for optimization
 """
 
-import logging
+from services.logger_config import get_logger
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
@@ -19,9 +19,7 @@ from uuid import uuid4
 # Import WebSocket event broadcaster (Phase 4 - Real-time updates)
 from .websocket_event_broadcaster import emit_workflow_status
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class WorkflowHistoryService:
     """
     Service for managing workflow execution history in PostgreSQL.

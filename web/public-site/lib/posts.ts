@@ -44,10 +44,10 @@ const POSTS_PER_PAGE = 10;
  */
 export async function getPosts(page: number = 1): Promise<PostsResponse> {
   try {
-    const skip = (page - 1) * POSTS_PER_PAGE;
+    const offset = (page - 1) * POSTS_PER_PAGE;
 
     const response = await fetch(
-      `${API_BASE_URL}/api/posts?skip=${skip}&limit=${POSTS_PER_PAGE}&status=published`,
+      `${API_BASE_URL}/api/posts?offset=${offset}&limit=${POSTS_PER_PAGE}&status=published`,
       {
         next: { revalidate: 3600 }, // ISR: revalidate every hour
       }
@@ -60,7 +60,7 @@ export async function getPosts(page: number = 1): Promise<PostsResponse> {
     const data = await response.json();
 
     return {
-      posts: data.items || [],
+      posts: data.posts || data.items || [],
       total: data.total || 0,
       page,
       pageSize: POSTS_PER_PAGE,
@@ -122,7 +122,7 @@ export async function getRelatedPosts(
     }
 
     const data = await response.json();
-    return data.items || [];
+    return data.posts || data.items || [];
   } catch (error) {
     logger.error('Error fetching related posts:', error);
     return [];
@@ -137,10 +137,10 @@ export async function getPostsByCategory(
   page: number = 1
 ): Promise<PostsResponse> {
   try {
-    const skip = (page - 1) * POSTS_PER_PAGE;
+    const offset = (page - 1) * POSTS_PER_PAGE;
 
     const response = await fetch(
-      `${API_BASE_URL}/api/posts?category_id=${categoryId}&skip=${skip}&limit=${POSTS_PER_PAGE}&status=published`,
+      `${API_BASE_URL}/api/posts?category_id=${categoryId}&offset=${offset}&limit=${POSTS_PER_PAGE}&status=published`,
       {
         next: { revalidate: 3600 }, // ISR: revalidate every hour
       }
@@ -153,7 +153,7 @@ export async function getPostsByCategory(
     const data = await response.json();
 
     return {
-      posts: data.items || [],
+      posts: data.posts || data.items || [],
       total: data.total || 0,
       page,
       pageSize: POSTS_PER_PAGE,
@@ -189,7 +189,7 @@ export async function getAllPublishedPosts(): Promise<Post[]> {
     }
 
     const data = await response.json();
-    const posts = data.data || data.items || [];
+    const posts = data.posts || data.data || data.items || [];
 
     // Sort by published_at descending (newest first)
     return posts.sort(
@@ -205,6 +205,9 @@ export async function getAllPublishedPosts(): Promise<Post[]> {
 
 /**
  * Get the next post in chronological order (older post)
+ *
+ * Prefer getAdjacentPosts() when both neighbors are needed — that function
+ * fetches the post list only once instead of twice.
  */
 export async function getNextPost(currentSlug: string): Promise<Post | null> {
   try {
@@ -224,6 +227,9 @@ export async function getNextPost(currentSlug: string): Promise<Post | null> {
 
 /**
  * Get the previous post in chronological order (newer post)
+ *
+ * Prefer getAdjacentPosts() when both neighbors are needed — that function
+ * fetches the post list only once instead of twice.
  */
 export async function getPreviousPost(
   currentSlug: string
@@ -240,5 +246,37 @@ export async function getPreviousPost(
   } catch (error) {
     logger.error('Error fetching previous post:', error);
     return null;
+  }
+}
+
+/**
+ * Get both the previous and next posts in a single fetch.
+ *
+ * Use this instead of calling getNextPost() + getPreviousPost() independently
+ * to avoid fetching the full post list twice per page render.
+ *
+ * @param currentSlug - Slug of the currently displayed post
+ * @returns Object with `previous` (newer) and `next` (older) post or null
+ */
+export async function getAdjacentPosts(currentSlug: string): Promise<{
+  previous: Post | null;
+  next: Post | null;
+}> {
+  try {
+    const allPosts = await getAllPublishedPosts();
+    const currentIndex = allPosts.findIndex((p) => p.slug === currentSlug);
+
+    if (currentIndex === -1) {
+      return { previous: null, next: null };
+    }
+
+    return {
+      previous: currentIndex > 0 ? allPosts[currentIndex - 1] : null,
+      next:
+        currentIndex < allPosts.length - 1 ? allPosts[currentIndex + 1] : null,
+    };
+  } catch (error) {
+    logger.error('Error fetching adjacent posts:', error);
+    return { previous: null, next: null };
   }
 }

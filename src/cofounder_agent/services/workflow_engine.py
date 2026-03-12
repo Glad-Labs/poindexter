@@ -19,7 +19,7 @@ Architecture:
 
 import asyncio
 import json
-import logging
+from services.logger_config import get_logger
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -27,9 +27,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from services.websocket_event_broadcaster import WebSocketEventBroadcaster
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class PhaseStatus(str, Enum):
     """Execution status of a phase"""
 

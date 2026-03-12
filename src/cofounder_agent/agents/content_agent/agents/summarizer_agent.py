@@ -1,11 +1,8 @@
-import logging
-
+from services.logger_config import get_logger
 from ..services.llm_client import LLMClient
 from ..utils.tools import CrewAIToolsFactory
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class SummarizerAgent:
     """An agent dedicated to summarizing text."""
 

@@ -20,6 +20,7 @@ export function ModelSelectDropdown({
   modelsByProvider = {},
   className = '',
   disabled = false,
+  'aria-label': ariaLabel = 'Select AI model',
 }) {
   if (!modelsByProvider || Object.keys(modelsByProvider).length === 0) {
     return (
@@ -28,6 +29,7 @@ export function ModelSelectDropdown({
         onChange={(e) => onChange(e.target.value)}
         disabled
         className={className}
+        aria-label={ariaLabel}
       >
         <option value="">No models available</option>
       </select>
@@ -40,6 +42,7 @@ export function ModelSelectDropdown({
       onChange={(e) => onChange(e.target.value)}
       disabled={disabled}
       className={className}
+      aria-label={ariaLabel}
     >
       <option value="">-- Select Model --</option>
 

@@ -64,7 +64,7 @@ async function fetchPublishedContent() {
 
     while (hasMore) {
       const postsResponse = await fetch(
-        `${API_BASE}/posts?skip=${skip}&limit=${limit}&published_only=true`,
+        `${API_BASE}/posts?offset=${skip}&limit=${limit}&published_only=true`,
         {
           headers: {
             'Content-Type': 'application/json',
@@ -74,7 +74,8 @@ async function fetchPublishedContent() {
 
       if (!postsResponse.ok) break;
 
-      const pageData = (await postsResponse.json()).data || [];
+      const pageJson = await postsResponse.json();
+      const pageData = pageJson.posts || pageJson.data || [];
       if (pageData.length === 0) {
         hasMore = false;
       } else {
@@ -89,9 +90,10 @@ async function fetchPublishedContent() {
         'Content-Type': 'application/json',
       },
     });
-    const allCategories = categoriesResponse.ok
-      ? (await categoriesResponse.json()).data || []
-      : [];
+    const catJson = categoriesResponse.ok
+      ? await categoriesResponse.json()
+      : {};
+    const allCategories = catJson.categories || catJson.data || [];
 
     // Fetch all tags
     const tagsResponse = await fetch(`${API_BASE}/tags`, {
@@ -99,9 +101,8 @@ async function fetchPublishedContent() {
         'Content-Type': 'application/json',
       },
     });
-    const allTags = tagsResponse.ok
-      ? (await tagsResponse.json()).data || []
-      : [];
+    const tagJson = tagsResponse.ok ? await tagsResponse.json() : {};
+    const allTags = tagJson.tags || tagJson.data || [];
 
     return { allPosts, allCategories, allTags };
   } catch (error) {

@@ -25,7 +25,10 @@ async function globalSetup(config: FullConfig) {
     };
 
     localStorage.setItem('user', JSON.stringify(mockUser));
-    localStorage.setItem('auth_token', 'dev-token'); // Backend recognizes this
+    localStorage.setItem(
+      'auth_token',
+      process.env.E2E_DEV_TOKEN ?? 'dev-token'
+    ); // Backend recognizes this
   });
 
   // Save storage state

@@ -14,7 +14,7 @@ Provides centralized blog post generation with:
 - Comprehensive task tracking
 """
 
-import logging
+from services.logger_config import get_logger
 import uuid
 from datetime import datetime
 from enum import Enum
@@ -30,9 +30,7 @@ from .quality_service import EvaluationMethod, UnifiedQualityService
 from .seo_content_generator import get_seo_content_generator
 from .seo_validator import SEOValidator
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 # ============================================================================
 # ENUMS
 # ============================================================================
@@ -117,7 +115,7 @@ class ContentTaskStore:
             # Generate task_name from topic
             task_name = f"{topic[:50]}" if len(topic) <= 50 else f"{topic[:47]}..."
 
-            task_id = await self.database_service.add_task(
+            task_result = await self.database_service.add_task(
                 {
                     "task_name": task_name,  # REQUIRED: must be provided
                     "topic": topic,
@@ -130,6 +128,8 @@ class ContentTaskStore:
                     "metadata": metadata or {},
                 }
             )
+            # add_task returns a dict; extract the string ID
+            task_id: str = str(task_result.get("id", task_result)) if isinstance(task_result, dict) else str(task_result)
 
             logger.info(f"✅ [CONTENT_TASK_STORE] Task CREATED and PERSISTED (async)")
             logger.info(f"   Task ID: {task_id}")
@@ -147,10 +147,10 @@ class ContentTaskStore:
             return None
         return await self.database_service.get_task(task_id)
 
-    async def update_task(self, task_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    async def update_task(self, task_id: str, updates: Dict[str, Any]) -> bool:
         """Update task data in persistent storage (async, non-blocking)"""
         if not self.database_service:
-            return None
+            return False
 
         # Handle metadata updates by converting to JSON
         import json
@@ -178,10 +178,10 @@ class ContentTaskStore:
         )
         return tasks
 
-    async def get_drafts(self, limit: int = 20, offset: int = 0) -> tuple:
+    async def get_drafts(self, limit: int = 20, offset: int = 0) -> List[Dict[str, Any]]:
         """Get list of drafts from persistent storage (async, non-blocking)"""
         if not self.database_service:
-            return ([], 0)
+            return []
         return await self.database_service.get_drafts(limit=limit, offset=offset)
 
 

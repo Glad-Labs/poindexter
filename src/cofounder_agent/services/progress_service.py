@@ -5,14 +5,12 @@ Provides callbacks and storage for tracking generation progress
 to be streamed to WebSocket clients in real-time.
 """
 
-import logging
+from services.logger_config import get_logger
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 @dataclass
 class GenerationProgress:
     """Represents the current state of a generation task"""

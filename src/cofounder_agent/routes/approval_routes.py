@@ -18,13 +18,14 @@ Workflow:
 """
 
 import json
-import logging
+from services.logger_config import get_logger
 import re as re_module
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4 as uuid_lib_uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from routes.auth_unified import get_current_user
@@ -33,9 +34,9 @@ from services.database_service import DatabaseService
 from services.error_handler import AppError
 from utils.json_encoder import convert_decimals, safe_json_dumps
 from utils.route_utils import get_database_dependency
+from utils.text_utils import extract_title_from_content, normalize_seo_keywords
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 router = APIRouter(prefix="/api/tasks", tags=["approval"])
 
 
@@ -204,18 +205,6 @@ async def approve_task(
             },
         )
 
-        # Audit: log awaiting_approval → approved
-        try:
-            await db_service.log_status_change(
-                task_id,
-                current_status,
-                "approved",
-                reason=f"Approved by user {approver_id}",
-                metadata={"approved_by": approver_id, "feedback": request.feedback},
-            )
-        except (ValueError, KeyError, AttributeError, TypeError, RuntimeError):
-            logger.error("[APPROVAL] Failed to log status change to approved", exc_info=True)
-
         logger.info(f"[OK] [APPROVAL] Task {task_id} approved by {approver_id}")
 
         # Handle auto-publish if requested
@@ -282,20 +271,7 @@ async def approve_task(
                 )
                 metadata = merged_result.get("metadata", {})
 
-                # Extract title from content
-                def extract_title_from_content(content: str) -> tuple:
-                    if not content:
-                        return None, content
-                    match = re_module.match(r"^#+\s+(.+?)(?:\n|$)", content.strip())
-                    if match:
-                        title = match.group(1).strip()
-                        cleaned_content = re_module.sub(
-                            r"^#+\s+.+?(?:\n|$)", "", content.strip(), count=1
-                        )
-                        return title, cleaned_content.strip()
-                    return None, content
-
-                # Extract title
+                # Extract title (shared utility — see utils/text_utils.py)
                 extracted_title, cleaned_content = extract_title_from_content(draft_content)
                 post_title = extracted_title or merged_result.get("title") or topic
 
@@ -303,20 +279,6 @@ async def approve_task(
                     # Create slug
                     slug = re_module.sub(r"[^\w\s-]", "", post_title).lower().replace(" ", "-")[:50]
                     slug = f"{slug}-{task_id[:8]}"
-
-                    # Helper to parse SEO keywords
-                    def parse_seo_keywords(keywords):
-                        if isinstance(keywords, str):
-                            try:
-                                kw_list = json.loads(keywords)
-                                if isinstance(kw_list, list):
-                                    return ", ".join(str(kw).strip() for kw in kw_list if kw)
-                                return keywords
-                            except (json.JSONDecodeError, TypeError):
-                                return keywords
-                        elif isinstance(keywords, list):
-                            return ", ".join(str(kw).strip() for kw in keywords if kw)
-                        return ""
 
                     # Get or create author and category
                     from services.content_router_service import (
@@ -340,18 +302,18 @@ async def approve_task(
                             "status": "published",
                             "seo_title": post_title,
                             "seo_description": seo_description,
-                            "seo_keywords": parse_seo_keywords(seo_keywords),
+                            "seo_keywords": normalize_seo_keywords(seo_keywords),
                             "metadata": metadata,
                             "created_by": approver_id,
                             "updated_by": approver_id,
                         }
                     )
                     logger.info(
-                        f"[OK] Post created: {post.id if hasattr(post, 'id') else post.get('id')}"
+                        f"[OK] Post created: {post.id if hasattr(post, 'id') else post.get('id')}"  # type: ignore[attr-defined]
                     )
 
                     # Update task status to published and save post_id
-                    post_id = str(post.id) if hasattr(post, "id") else str(post.get("id"))
+                    post_id = str(post.id) if hasattr(post, "id") else str(post.get("id"))  # type: ignore[attr-defined]
                     publish_metadata = {
                         "published_at": datetime.now(timezone.utc).isoformat(),
                         "published_by": approver_id,
@@ -370,18 +332,6 @@ async def approve_task(
                     await db_service.update_task_status(
                         task_id, "published", result=safe_json_dumps(final_result)
                     )
-
-                    # Audit: log approved → published
-                    try:
-                        await db_service.log_status_change(
-                            task_id,
-                            "approved",
-                            "published",
-                            reason=f"Auto-published by user {approver_id}",
-                            metadata={"post_id": post_id, "post_slug": slug, "published_by": approver_id},
-                        )
-                    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError):
-                        logger.error("[APPROVAL] Failed to log status change to published", exc_info=True)
 
                     logger.info(f"[OK] Task {task_id} published with post_id: {post_id}")
             except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
@@ -430,6 +380,8 @@ async def approve_task(
         if request.auto_publish:
             try:
                 updated_task = await db_service.get_task(task_id)
+                if updated_task is None:
+                    updated_task = {}
                 task_result = updated_task.get("result", {})
                 if isinstance(task_result, str):
                     task_result = json.loads(task_result) if task_result else {}
@@ -457,7 +409,7 @@ async def approve_task(
         logger.error(f"❌ [APPROVAL] Failed to approve task {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail={"message": "Failed to approve task", "type": "internal_error"},
+            detail="Failed to approve task",
         )
 
 
@@ -604,7 +556,7 @@ async def reject_task(
         logger.error(f"❌ [REJECTION] Failed to reject task {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail={"message": "Failed to reject task", "type": "internal_error"},
+            detail="Failed to reject task",
         )
 
 
@@ -713,7 +665,7 @@ async def bulk_approve_tasks(
 
         logger.info(f"✅ [BULK_APPROVAL] Approved {approved_count} tasks, {failed_count} failed")
 
-        return {
+        body = {
             "approved_count": approved_count,
             "failed_count": failed_count,
             "total": len(request.task_ids),
@@ -721,12 +673,15 @@ async def bulk_approve_tasks(
             "failed_task_ids": failed_ids,
             "message": f"{approved_count} tasks approved, {failed_count} failed",
         }
+        # 207 Multi-Status when some tasks failed; 200 when all succeeded
+        status_code = 207 if failed_count > 0 else 200
+        return JSONResponse(content=body, status_code=status_code)
 
     except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"❌ [BULK_APPROVAL] Failed: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail={"message": "Bulk approval failed", "type": "internal_error"},
+            detail="Bulk approval failed",
         )
 
 
@@ -834,7 +789,7 @@ async def bulk_reject_tasks(
 
         logger.info(f"✅ [BULK_REJECTION] Rejected {rejected_count} tasks, {failed_count} failed")
 
-        return {
+        body = {
             "rejected_count": rejected_count,
             "failed_count": failed_count,
             "total": len(request.task_ids),
@@ -842,12 +797,14 @@ async def bulk_reject_tasks(
             "failed_task_ids": failed_ids,
             "message": f"{rejected_count} tasks rejected, {failed_count} failed",
         }
+        status_code = 207 if failed_count > 0 else 200
+        return JSONResponse(content=body, status_code=status_code)
 
     except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"❌ [BULK_REJECTION] Failed: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail={"message": "Bulk rejection failed", "type": "internal_error"},
+            detail="Bulk rejection failed",
         )
 
 
@@ -936,7 +893,6 @@ async def get_pending_approvals(
                 limit=limit,
                 status="awaiting_approval",
                 category=task_type,  # task_type is stored as category in database
-                user_id=user_id,
             )
             # get_tasks_paginated returns tuple of (tasks, total)
             if isinstance(result, tuple):

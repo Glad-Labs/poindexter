@@ -12,7 +12,7 @@ Purpose:
 Phase 3 of Unified Task Orchestration System.
 """
 
-import logging
+from services.logger_config import get_logger
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -21,9 +21,7 @@ from .model_router import ModelRouter
 from .task_intent_router import TaskIntentRequest
 from .unified_orchestrator import UnifiedOrchestrator
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 # ============================================================================
 # DATA STRUCTURES FOR EXECUTION PLANNING
 # ============================================================================

@@ -28,12 +28,10 @@ except (ImportError, AttributeError) as e:
         exc_info=True,
     )
 
-# Suppress verbose OTLP exporter logs in development
-logging.getLogger("opentelemetry.exporter.otlp.proto.http.trace_exporter").setLevel(
-    logging.CRITICAL
-)
-logging.getLogger("opentelemetry.sdk._shared_internal").setLevel(logging.CRITICAL)
-logging.getLogger("urllib3.connectionpool").setLevel(logging.CRITICAL)
+# Suppress connection-pool spam from urllib3 (connection refused to OTLP endpoint is a known
+# startup warning, not an error that should fill logs).  The OTLP exporter itself is left at
+# WARNING so that genuine export failures are visible (reverted from CRITICAL — see Issue #430).
+logging.getLogger("urllib3.connectionpool").setLevel(logging.WARNING)
 
 # Try to import OpenAI instrumentation if available
 try:
@@ -93,31 +91,41 @@ def setup_telemetry(app, service_name="cofounder-agent"):
         # Set up the TracerProvider
         provider = TracerProvider(resource=resource)
 
-        # Configure the OTLP exporter (HTTP) with error handling
-        # AI Toolkit's OTLP endpoint is http://localhost:4318
-        otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318/v1/traces")
+        # Configure the OTLP exporter only when an explicit endpoint is provided.
+        # Defaulting to localhost is not safe in production (Railway has no local OTLP
+        # collector) — it causes a silent export-failure cycle that wastes CPU/memory.
+        # Set OTEL_EXPORTER_OTLP_ENDPOINT to point at Grafana Tempo, Honeycomb, etc.
+        otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 
-        try:
-            otlp_exporter = OTLPSpanExporter(
-                endpoint=otlp_endpoint, timeout=5  # 5-second timeout to fail fast if unavailable
+        if not otlp_endpoint:
+            logging.warning(
+                "[setup_telemetry] OTEL_EXPORTER_OTLP_ENDPOINT not set — "
+                "ENABLE_TRACING=true but traces will NOT be exported. "
+                "Set OTEL_EXPORTER_OTLP_ENDPOINT to a reachable OTLP collector "
+                "(e.g. Grafana Tempo, Honeycomb, or a local Jaeger instance)."
             )
+            # Continue with a no-op provider so spans are created but not exported.
+        else:
+            try:
+                otlp_exporter = OTLPSpanExporter(
+                    endpoint=otlp_endpoint, timeout=5  # 5-second timeout to fail fast
+                )
 
-            # Add the BatchSpanProcessor to the provider
-            processor = BatchSpanProcessor(otlp_exporter)
-            provider.add_span_processor(processor)
+                # Add the BatchSpanProcessor to the provider
+                processor = BatchSpanProcessor(otlp_exporter)
+                provider.add_span_processor(processor)
 
-            logging.info(
-                "[setup_telemetry] OpenTelemetry tracing enabled for %s (Endpoint: %s)",
-                service_name, otlp_endpoint,
-            )
+                logging.info(
+                    "[setup_telemetry] OpenTelemetry tracing enabled for %s (Endpoint: %s)",
+                    service_name, otlp_endpoint,
+                )
 
-        except Exception as e:
-            # If OTLP endpoint is not available, log warning but continue with no-op provider
-            logging.error(
-                f"[setup_telemetry] OTLP exporter not available ({otlp_endpoint}): {e}. "
-                f"Spans will not be exported but application will continue.",
-                exc_info=True,
-            )
+            except Exception as e:
+                logging.error(
+                    f"[setup_telemetry] OTLP exporter setup failed ({otlp_endpoint}): {e}. "
+                    f"Spans will not be exported.",
+                    exc_info=True,
+                )
 
         # Set the global TracerProvider (only once, will override if already set)
         try:

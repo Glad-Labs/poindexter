@@ -1,11 +1,9 @@
 """Central agent registry for runtime discovery and composition."""
 
-import logging
+from services.logger_config import get_logger
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class AgentRegistry:
     """
     Central registry for all available agents.

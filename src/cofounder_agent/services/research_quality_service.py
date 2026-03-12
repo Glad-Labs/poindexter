@@ -5,15 +5,13 @@ Provides filtering, deduplication, and scoring of research sources
 from Serper API results to improve research quality.
 """
 
-import logging
+from services.logger_config import get_logger
 import re
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import Dict, List, Optional
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 @dataclass
 class ScoredSource:
     """A research source with quality score"""
@@ -346,8 +344,11 @@ class ResearchQualityService:
             if similar_idx is not None:
                 # Keep the higher-scoring one, remove the other
                 if source_a.overall_score >= sources[similar_idx].overall_score:
+                    # source_a wins: discard the duplicate, keep source_a
                     removed_indices.add(similar_idx)
+                    kept.append(source_a)
                 else:
+                    # source_b wins: discard source_a
                     removed_indices.add(i)
                     continue
             else:

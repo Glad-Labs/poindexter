@@ -10,8 +10,8 @@ Handles all task-related database operations including:
 
 import asyncio
 import json
-import logging
-from datetime import datetime, timedelta
+from services.logger_config import get_logger
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
@@ -20,12 +20,12 @@ from asyncpg import Pool
 from schemas.database_response_models import TaskCountsResponse, TaskResponse
 from schemas.model_converter import ModelConverter
 from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
+from utils.json_encoder import safe_json_load
 
 from .database_mixin import DatabaseServiceMixin
+from .decorators import log_query_performance
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 def serialize_value_for_postgres(value: Any) -> Any:
     """Serialize Python value for PostgreSQL."""
     if value is None:
@@ -66,6 +66,7 @@ class TasksDatabase(DatabaseServiceMixin):
         """
         self.pool = pool
 
+    @log_query_performance(operation="get_pending_tasks", category="task_retrieval")
     async def get_pending_tasks(self, limit: int = 10) -> List[dict]:
         """
         Get pending tasks from content_tasks.
@@ -130,6 +131,7 @@ class TasksDatabase(DatabaseServiceMixin):
             logger.error(f"Error fetching all tasks: {e}")
             return []
 
+    @log_query_performance(operation="add_task", category="task_write")
     async def add_task(self, task_data: Dict[str, Any]) -> str:
         """
         Add a new task to the database using content_tasks table.
@@ -148,8 +150,7 @@ class TasksDatabase(DatabaseServiceMixin):
 
         # Extract metadata for normalization
         metadata = task_data.get("task_metadata") or task_data.get("metadata", {})
-        if isinstance(metadata, str):
-            metadata = json.loads(metadata)
+        metadata = safe_json_load(metadata, fallback={})
 
         # Ensure task_name is preserved in metadata since there is no column for it
         if "task_name" in task_data and "task_name" not in metadata:
@@ -157,7 +158,7 @@ class TasksDatabase(DatabaseServiceMixin):
 
         try:
             # Use naive UTC datetime for PostgreSQL 'timestamp without time zone' columns
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
 
             # Build insert columns dict
             insert_data = {
@@ -231,6 +232,7 @@ class TasksDatabase(DatabaseServiceMixin):
             logger.error(f"❌ Failed to add task: {e}")
             raise
 
+    @log_query_performance(operation="get_task", category="task_retrieval")
     async def get_task(self, task_id: str) -> Optional[dict]:
         """
         Get a task from content_tasks by ID.
@@ -245,25 +247,9 @@ class TasksDatabase(DatabaseServiceMixin):
         Returns:
             Task dict or None if not found
         """
-        # First, try to find by numeric ID if the task_id looks numeric
-        if task_id.isdigit():
-            builder = ParameterizedQueryBuilder()
-            sql, params = builder.select(
-                columns=["*"],
-                table="content_tasks",
-                where_clauses=[("id", SQLOperator.EQ, int(task_id))],
-            )
-
-            try:
-                async with self.pool.acquire() as conn:
-                    row = await conn.fetchrow(sql, *params)
-                    if row:
-                        task_response = ModelConverter.to_task_response(row)
-                        return ModelConverter.to_dict(task_response)
-            except Exception as e:
-                logger.debug(f"Numeric ID lookup failed for {task_id}: {e}")
-
-        # Try UUID lookup
+        # Always look up by task_id (the actual primary key, VARCHAR/UUID).
+        # The legacy numeric id path was removed: content_tasks.id is UUID not INTEGER,
+        # so int(task_id) always raised a DataError. (See issue #301)
         builder = ParameterizedQueryBuilder()
         sql, params = builder.select(
             columns=["*"],
@@ -282,6 +268,7 @@ class TasksDatabase(DatabaseServiceMixin):
             logger.error(f"❌ Failed to get task {task_id}: {e}")
             return None
 
+    @log_query_performance(operation="update_task_status", category="task_write")
     async def update_task_status(
         self,
         task_id: str,
@@ -301,13 +288,11 @@ class TasksDatabase(DatabaseServiceMixin):
         Returns:
             Updated task dict or None
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         try:
-            # Determine which column to update (id for numeric, task_id for UUID)
-            where_column = "id" if task_id.isdigit() else "task_id"
-            where_value = int(task_id) if task_id.isdigit() else str(task_id)
-
+            # Always look up by task_id (the actual primary key). Numeric id fallback
+            # removed: content_tasks.id is UUID not INTEGER. (See issue #301)
             builder = ParameterizedQueryBuilder()
 
             updates = {"status": status, "updated_at": now}
@@ -318,7 +303,7 @@ class TasksDatabase(DatabaseServiceMixin):
             sql, params = builder.update(
                 table="content_tasks",
                 updates=updates,
-                where_clauses=[(where_column, SQLOperator.EQ, where_value)],
+                where_clauses=[("task_id", SQLOperator.EQ, str(task_id))],
                 return_columns=["*"],
             )
 
@@ -332,6 +317,7 @@ class TasksDatabase(DatabaseServiceMixin):
             logger.error(f"❌ Failed to update task status {task_id}: {e}")
             return None
 
+    @log_query_performance(operation="update_task", category="task_write")
     async def update_task(self, task_id: str, updates: Dict[str, Any]) -> Optional[dict]:
         """
         Update task fields in content_tasks.
@@ -357,14 +343,7 @@ class TasksDatabase(DatabaseServiceMixin):
 
         # Extract task_metadata for normalization
         logger.info(f"🔍 Extracting task_metadata for normalization...")
-        task_metadata = updates.get("task_metadata", {})
-        if isinstance(task_metadata, str):
-            try:
-                task_metadata = json.loads(task_metadata)
-            except (json.JSONDecodeError, TypeError):
-                task_metadata = {}
-        elif task_metadata is None:
-            task_metadata = {}
+        task_metadata = safe_json_load(updates.get("task_metadata"), fallback={})
 
         # Prepare normalized updates
         normalized_updates = dict(updates)
@@ -435,15 +414,13 @@ class TasksDatabase(DatabaseServiceMixin):
             )
 
         try:
-            # Determine which column to update (id for numeric, task_id for UUID)
-            where_column = "id" if task_id.isdigit() else "task_id"
-            where_value = int(task_id) if task_id.isdigit() else str(task_id)
-
+            # Always look up by task_id (the actual primary key). Numeric id fallback
+            # removed: content_tasks.id is UUID not INTEGER. (See issue #301)
             builder = ParameterizedQueryBuilder()
             sql, params = builder.update(
                 table="content_tasks",
                 updates=serialized_updates,
-                where_clauses=[(where_column, SQLOperator.EQ, where_value)],
+                where_clauses=[("task_id", SQLOperator.EQ, str(task_id))],
                 return_columns=["*"],
             )
 
@@ -471,6 +448,7 @@ class TasksDatabase(DatabaseServiceMixin):
         limit: int = 20,
         status: Optional[str] = None,
         category: Optional[str] = None,
+        search: Optional[str] = None,
     ) -> tuple[List[Dict[str, Any]], int]:
         """
         Get paginated tasks from content_tasks with optional filtering.
@@ -480,44 +458,62 @@ class TasksDatabase(DatabaseServiceMixin):
             limit: Maximum results per page
             status: Filter by status
             category: Filter by category
+            search: Optional keyword search across task_name/title, topic, and category.
+                    Uses ILIKE with trigram index (pg_trgm) for efficient leading-wildcard
+                    matching.  See migration 0027_add_trgm_indexes.py for the index.
 
         Returns:
             Tuple of (tasks list, total count)
         """
-        builder = ParameterizedQueryBuilder()
+        # Build WHERE clause and params for a single round-trip using COUNT(*) OVER ()
+        conditions = []
+        params: list = []
+        param_idx = 1
 
-        # Build WHERE clauses
-        where_clauses = []
         if status:
-            where_clauses.append(("status", SQLOperator.EQ, status))
+            conditions.append(f"status = ${param_idx}")
+            params.append(status)
+            param_idx += 1
         if category:
-            where_clauses.append(("category", SQLOperator.EQ, category))
+            conditions.append(f"category = ${param_idx}")
+            params.append(category)
+            param_idx += 1
+        if search:
+            # Sanitize: keep alphanumeric, spaces, hyphens, underscores only
+            safe_search = (
+                "%"
+                + "".join(c for c in search if c.isalnum() or c in " -_")
+                + "%"
+            )
+            # ILIKE across task display name (title), topic, and category columns.
+            # The trigram GIN indexes on these columns (migration 0027) allow
+            # PostgreSQL to avoid a full sequential scan for '%term%' patterns.
+            conditions.append(
+                f"(title ILIKE ${param_idx} OR topic ILIKE ${param_idx} OR category ILIKE ${param_idx})"
+            )
+            params.append(safe_search)
+            param_idx += 1
 
-        # Build count query
-        count_sql, count_params = builder.select(
-            columns=["COUNT(*) as count"],
-            table="content_tasks",
-            where_clauses=where_clauses if where_clauses else None,
-        )
+        where_sql = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
-        # Reset builder for main query
-        builder = ParameterizedQueryBuilder()
-        sql_list, list_params = builder.select(
-            columns=["*"],
-            table="content_tasks",
-            where_clauses=where_clauses if where_clauses else None,
-            order_by=[("created_at", "DESC")],
-            limit=limit,
-            offset=offset,
-        )
+        # LIMIT and OFFSET are always the last two params
+        params.extend([limit, offset])
+        limit_param = param_idx
+        offset_param = param_idx + 1
+
+        # Single round-trip: window function COUNT(*) OVER () returns total alongside rows
+        sql_list = f"""
+            SELECT *, COUNT(*) OVER () AS total_count
+            FROM content_tasks
+            {where_sql}
+            ORDER BY created_at DESC
+            LIMIT ${limit_param} OFFSET ${offset_param}
+        """
 
         try:
             async with self.pool.acquire() as conn:
-                count_result = await conn.fetchval(count_sql, *count_params)
-                total = count_result or 0
-
-                rows = await conn.fetch(sql_list, *list_params)
-
+                rows = await conn.fetch(sql_list, *params)
+                total = rows[0]["total_count"] if rows else 0
                 tasks = [self._convert_row_to_dict(row) for row in rows]
                 logger.info(f"✅ Listed {len(tasks)} tasks (total: {total})")
                 return tasks, total
@@ -525,6 +521,7 @@ class TasksDatabase(DatabaseServiceMixin):
             logger.error(f"❌ Failed to list tasks: {e}")
             return [], 0
 
+    @log_query_performance(operation="get_task_counts", category="task_retrieval")
     async def get_task_counts(self) -> TaskCountsResponse:
         """
         Get task counts by status from content_tasks.
@@ -633,9 +630,9 @@ class TasksDatabase(DatabaseServiceMixin):
         """
         # Default to last 30 days — callers wanting broader ranges must be explicit
         if end_date is None:
-            end_date = datetime.utcnow()
+            end_date = datetime.now(timezone.utc)
         if start_date is None:
-            start_date = datetime.utcnow() - timedelta(days=30)
+            start_date = datetime.now(timezone.utc) - timedelta(days=30)
 
         # Cap limit to prevent unbounded result sets
         limit = min(limit, 500)
@@ -648,7 +645,7 @@ class TasksDatabase(DatabaseServiceMixin):
             ]
 
             if status:
-                where_clauses.append(("status", SQLOperator.EQ, status))
+                where_clauses.append(("status", SQLOperator.EQ, status))  # type: ignore[arg-type]
 
             sql, params = builder.select(
                 columns=self.ANALYTICS_COLUMNS,
@@ -683,13 +680,11 @@ class TasksDatabase(DatabaseServiceMixin):
             True if deleted, False if error
         """
         try:
-            # Determine which column to check (id for numeric, task_id for UUID)
-            where_column = "id" if task_id.isdigit() else "task_id"
-            where_value = int(task_id) if task_id.isdigit() else str(task_id)
-
+            # Always look up by task_id (the actual primary key). Numeric id fallback
+            # removed: content_tasks.id is UUID not INTEGER. (See issue #301)
             builder = ParameterizedQueryBuilder()
             sql, params = builder.delete(
-                table="content_tasks", where_clauses=[(where_column, SQLOperator.EQ, where_value)]
+                table="content_tasks", where_clauses=[("task_id", SQLOperator.EQ, str(task_id))]
             )
 
             async with self.pool.acquire() as conn:
@@ -714,25 +709,18 @@ class TasksDatabase(DatabaseServiceMixin):
             Tuple of (drafts list, total count)
         """
         try:
-            # OR conditions require manual SQL - use parameterized queries
+            # Single round-trip: window function COUNT(*) OVER () returns total alongside rows
             sql = """
-                SELECT * FROM content_tasks
+                SELECT *, COUNT(*) OVER () AS total_count FROM content_tasks
                 WHERE status = $1 OR approval_status = $2
                 ORDER BY created_at DESC
                 LIMIT $3 OFFSET $4
             """
             params = ["pending", "pending", limit, offset]
 
-            count_sql = """
-                SELECT COUNT(*) FROM content_tasks
-                WHERE status = $1 OR approval_status = $2
-            """
-            count_params = ["pending", "pending"]
-
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(sql, *params)
-                total = await conn.fetchval(count_sql, *count_params)
-
+                total = rows[0]["total_count"] if rows else 0
                 drafts = [self._convert_row_to_dict(row) for row in rows]
                 return (drafts, total or 0)
         except Exception as e:
@@ -762,11 +750,11 @@ class TasksDatabase(DatabaseServiceMixin):
         """
         try:
             sql = """
-                INSERT INTO task_status_history (task_id, old_status, new_status, reason, metadata, timestamp)
+                INSERT INTO task_status_history (task_id, old_status, new_status, reason, metadata, created_at)
                 VALUES ($1, $2, $3, $4, $5, $6)
             """
 
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             metadata_json = json.dumps(metadata or {})
 
             async with self.pool.acquire() as conn:
@@ -792,10 +780,10 @@ class TasksDatabase(DatabaseServiceMixin):
         """
         try:
             sql = """
-                SELECT id, task_id, old_status, new_status, reason, metadata, timestamp
+                SELECT id, task_id, old_status, new_status, reason, metadata, created_at
                 FROM task_status_history
                 WHERE task_id = $1
-                ORDER BY timestamp DESC
+                ORDER BY created_at DESC
                 LIMIT $2
             """
 
@@ -812,7 +800,7 @@ class TasksDatabase(DatabaseServiceMixin):
                             "new_status": row["new_status"],
                             "reason": row["reason"],
                             "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
-                            "timestamp": row["timestamp"].isoformat() if row["timestamp"] else None,
+                            "timestamp": row["created_at"].isoformat() if row["created_at"] else None,
                         }
                     )
 
@@ -835,11 +823,11 @@ class TasksDatabase(DatabaseServiceMixin):
         """
         try:
             sql = """
-                SELECT id, task_id, old_status, new_status, reason, metadata, timestamp
+                SELECT id, task_id, old_status, new_status, reason, metadata, created_at
                 FROM task_status_history
                 WHERE task_id = $1
                 AND new_status IN ('validation_failed', 'validation_error')
-                ORDER BY timestamp DESC
+                ORDER BY created_at DESC
                 LIMIT $2
             """
 
@@ -852,7 +840,7 @@ class TasksDatabase(DatabaseServiceMixin):
                     failures.append(
                         {
                             "id": row["id"],
-                            "timestamp": row["timestamp"].isoformat() if row["timestamp"] else None,
+                            "timestamp": row["created_at"].isoformat() if row["created_at"] else None,
                             "reason": row["reason"],
                             "errors": metadata.get("validation_errors", []),
                             "context": metadata.get("context", {}),
@@ -865,6 +853,7 @@ class TasksDatabase(DatabaseServiceMixin):
             logger.error(f"❌ Failed to get validation failures: {e}")
             return []
 
+    @log_query_performance(operation="sweep_stale_tasks", category="task_write")
     async def sweep_stale_tasks(
         self,
         stale_threshold_minutes: int = 60,
@@ -884,7 +873,7 @@ class TasksDatabase(DatabaseServiceMixin):
         Returns:
             Dict with 'reset' and 'failed' counts
         """
-        cutoff = datetime.utcnow() - timedelta(minutes=stale_threshold_minutes)
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=stale_threshold_minutes)
 
         try:
             async with self.pool.acquire() as conn:
@@ -916,7 +905,7 @@ class TasksDatabase(DatabaseServiceMixin):
                         else:
                             fail_ids.append(task_id)
 
-                    now = datetime.utcnow()
+                    now = datetime.now(timezone.utc)
 
                     # Batch reset: set back to pending with incremented retry count
                     if reset_ids:
@@ -1002,7 +991,7 @@ class TasksDatabase(DatabaseServiceMixin):
                             RETURNING task_id
                             """,
                             new_status,
-                            datetime.utcnow(),
+                            datetime.now(timezone.utc),
                             list(existing_ids),
                         )
                         updated_ids = [row["task_id"] for row in updated_rows]

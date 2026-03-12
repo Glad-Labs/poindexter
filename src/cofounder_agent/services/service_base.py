@@ -17,7 +17,7 @@ This layer allows LLMs to:
 
 import asyncio
 import json
-import logging
+from services.logger_config import get_logger
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
@@ -26,9 +26,7 @@ from typing import Any, Callable, Coroutine, Dict, List, Optional, Type
 
 from pydantic import BaseModel, Field
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 # ============================================================================
 # SERVICE ACTION DEFINITIONS
 # ============================================================================
@@ -163,19 +161,24 @@ class ServiceBase(ABC):
             service_registry: Reference to global ServiceRegistry for calling other services
         """
         self.service_registry = service_registry
-        self.logger = logging.getLogger(f"{self.__class__.__module__}.{self.__class__.__name__}")
+        self.logger = get_logger(f"{self.__class__.__module__}.{self.__class__.__name__}")
         self._actions: Dict[str, ServiceAction] = {}
         self._load_actions()
 
-    @abstractmethod
     def get_actions(self) -> List[ServiceAction]:
         """
         Define all actions this service provides.
 
+        Override in subclasses to expose discoverable actions to the
+        ServiceRegistry and LLM-agent tooling.  The default implementation
+        returns an empty list so that domain services (ContentService,
+        FinancialService, etc.) can extend ServiceBase without being
+        forced to implement the full action-schema pattern immediately.
+
         Returns:
-            List of ServiceAction objects
+            List of ServiceAction objects (empty by default)
         """
-        pass
+        return []
 
     def _load_actions(self):
         """Load and register actions from get_actions()"""
@@ -304,6 +307,25 @@ class ServiceBase(ABC):
         """Get all actions provided by this service"""
         return list(self._actions.values())
 
+    def get_service_metadata(self) -> Dict[str, Any]:
+        """
+        Return a dict describing this service for registry discovery.
+
+        Subclasses should override this to provide richer metadata
+        (capabilities, model tiers used, etc.).  The base implementation
+        returns the minimum required by ServiceRegistry.
+
+        Returns:
+            Dict with at least: name, version, description, action_count
+        """
+        return {
+            "name": self.name,
+            "version": self.version,
+            "description": self.description,
+            "action_count": len(self._actions),
+            "actions": [a.name for a in self._actions.values()],
+        }
+
 
 # ============================================================================
 # SERVICE REGISTRY
@@ -323,7 +345,7 @@ class ServiceRegistry:
 
     def __init__(self):
         self.services: Dict[str, ServiceBase] = {}
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger(__name__)
 
     def register(self, service: ServiceBase) -> None:
         """Register a service"""

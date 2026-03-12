@@ -7,15 +7,14 @@ and runtime agent selection based on workflow requirements.
 This follows the same pattern as service_registry_routes.py but for agents instead of services.
 """
 
-import logging
+from services.logger_config import get_logger
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
 from agents.registry import get_agent_registry
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 router = APIRouter(
     prefix="/api/agents",
     tags=["agents"],
@@ -133,6 +132,63 @@ async def list_agents():
     except Exception as e:
         logger.error(f"Error listing agents: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to list agents")
+
+
+@router.get("/search", response_model=List[Dict[str, Any]], name="Search Agents")
+async def search_agents(
+    capability: Optional[str] = Query(None, description="Filter by capability"),
+    phase: Optional[str] = Query(None, description="Filter by phase"),
+    category: Optional[str] = Query(None, description="Filter by category"),
+):
+    """
+    Search for agents by optional filters.
+
+    Allows combining multiple filters (AND logic) to find agents matching specific criteria.
+
+    Query Parameters:
+        capability: Optional capability to filter by
+        phase: Optional phase to filter by
+        category: Optional category to filter by
+
+    Returns:
+        List of agent metadata dicts matching all specified filters
+
+    Example:
+        ```
+        GET /api/agents/search?phase=draft&category=content
+
+        [
+            {
+                "name": "creative_agent",
+                "category": "content",
+                "phases": ["draft", "refine"],
+                "capabilities": ["content_generation", "writing", "style_adaptation"],
+                "description": "Generates and refines creative content with style guidance",
+                "version": "1.0"
+            }
+        ]
+        ```
+    """
+    try:
+        registry = get_agent_registry()
+        all_agents = registry.list_all_with_metadata()
+
+        # Filter by capability if specified
+        if capability:
+            all_agents = [a for a in all_agents if capability in a.get("capabilities", [])]
+
+        # Filter by phase if specified
+        if phase:
+            all_agents = [a for a in all_agents if phase in a.get("phases", [])]
+
+        # Filter by category if specified
+        if category:
+            all_agents = [a for a in all_agents if a.get("category") == category]
+
+        return all_agents
+    except Exception as e:
+        logger.error(f"Error searching agents: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to search agents")
 
 
 @router.get("/{agent_name}", response_model=Dict[str, Any], name="Get Agent Metadata")
@@ -402,60 +458,3 @@ async def get_agents_by_category(category: str):
         raise HTTPException(
             status_code=500, detail="Failed to retrieve agents for category"
         )
-
-
-@router.get("/search", response_model=List[Dict[str, Any]], name="Search Agents")
-async def search_agents(
-    capability: Optional[str] = Query(None, description="Filter by capability"),
-    phase: Optional[str] = Query(None, description="Filter by phase"),
-    category: Optional[str] = Query(None, description="Filter by category"),
-):
-    """
-    Search for agents by optional filters.
-
-    Allows combining multiple filters (AND logic) to find agents matching specific criteria.
-
-    Query Parameters:
-        capability: Optional capability to filter by
-        phase: Optional phase to filter by
-        category: Optional category to filter by
-
-    Returns:
-        List of agent metadata dicts matching all specified filters
-
-    Example:
-        ```
-        GET /api/agents/search?phase=draft&category=content
-
-        [
-            {
-                "name": "creative_agent",
-                "category": "content",
-                "phases": ["draft", "refine"],
-                "capabilities": ["content_generation", "writing", "style_adaptation"],
-                "description": "Generates and refines creative content with style guidance",
-                "version": "1.0"
-            }
-        ]
-        ```
-    """
-    try:
-        registry = get_agent_registry()
-        all_agents = registry.list_all_with_metadata()
-
-        # Filter by capability if specified
-        if capability:
-            all_agents = [a for a in all_agents if capability in a.get("capabilities", [])]
-
-        # Filter by phase if specified
-        if phase:
-            all_agents = [a for a in all_agents if phase in a.get("phases", [])]
-
-        # Filter by category if specified
-        if category:
-            all_agents = [a for a in all_agents if a.get("category") == category]
-
-        return all_agents
-    except Exception as e:
-        logger.error(f"Error searching agents: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to search agents")

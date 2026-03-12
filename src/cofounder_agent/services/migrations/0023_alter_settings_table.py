@@ -8,14 +8,12 @@ This migration adds the columns needed by admin_db.py:
 - modified_at: TIMESTAMP for modification tracking
 """
 
-import logging
+from services.logger_config import get_logger
 import os
 
 import asyncpg
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 async def up(pool) -> None:
     """
     Apply migration: add missing columns to settings table.

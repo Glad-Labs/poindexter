@@ -11,7 +11,7 @@ Provides endpoints for the ExecutiveDashboard to display metrics:
 All endpoints aggregate real data from PostgreSQL database.
 """
 
-import logging
+from services.logger_config import get_logger
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -24,8 +24,7 @@ from services.database_service import DatabaseService
 from utils.error_handler import handle_route_error
 from utils.route_utils import get_database_dependency
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 analytics_router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
 
@@ -282,6 +281,8 @@ async def get_kpi_metrics(
                         metadata = json.loads(metadata)
                     except (json.JSONDecodeError, ValueError):
                         metadata = {}
+                if not isinstance(metadata, dict):
+                    metadata = {}
 
                 # Extract phase costs from metadata.cost_breakdown if present
                 phase_costs = metadata.get("cost_breakdown", {})
@@ -293,7 +294,7 @@ async def get_kpi_metrics(
                         cost_by_phase[phase] = phase_cost
 
         avg_cost_per_task = (total_cost / total_tasks) if total_tasks > 0 else 0.0
-        primary_model = max(models_used, key=models_used.get) if models_used else "none"
+        primary_model = max(models_used, key=models_used.get) if models_used else "none"  # type: ignore[arg-type]
 
         logger.debug(f"  💰 Total cost: ${total_cost:.6f}, Avg/task: ${avg_cost_per_task:.6f}")
         logger.debug(f"  🤖 Primary model: {primary_model}")
@@ -310,6 +311,8 @@ async def get_kpi_metrics(
             created = task.get("created_at")
             if isinstance(created, str):
                 created = datetime.fromisoformat(created.replace("Z", "+00:00"))
+            if not isinstance(created, datetime):
+                continue
 
             day_key = created.date().isoformat()
 
@@ -441,7 +444,7 @@ async def get_task_distributions(
             start_time = None
 
         # Query task distribution
-        distributions_raw = await db.query(
+        distributions_raw = await db.query(  # type: ignore[attr-defined]
             """
             SELECT task_type, status, COUNT(*) as count
             FROM tasks

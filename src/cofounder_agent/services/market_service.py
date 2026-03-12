@@ -12,16 +12,18 @@ This service provides:
 - Customer sentiment analysis
 """
 
-import logging
+from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-logger = logging.getLogger(__name__)
+from services.service_base import ServiceBase
 
-
-class MarketService:
+logger = get_logger(__name__)
+class MarketService(ServiceBase):
     """
     Market analysis and trend research service.
+
+    Extends ServiceBase to participate in service-registry discovery.
 
     Provides methods for:
     - Market trend analysis
@@ -30,6 +32,10 @@ class MarketService:
     - Opportunity identification
     - Customer sentiment analysis
     """
+
+    name: str = "market_service"
+    version: str = "1.0.0"
+    description: str = "Market trend analysis, competitor research, and industry insights"
 
     def __init__(
         self,
@@ -43,6 +49,7 @@ class MarketService:
             database_service: PostgreSQL database service
             model_router: Model router
         """
+        super().__init__()
         self.database_service = database_service
         self.model_router = model_router
         logger.info("MarketService initialized")

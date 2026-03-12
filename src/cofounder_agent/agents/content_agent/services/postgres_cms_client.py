@@ -5,7 +5,7 @@ Replaces Strapi with direct PostgreSQL storage for posts, categories, tags, and 
 """
 
 import json
-import logging
+from services.logger_config import get_logger
 from typing import Any, Dict, Optional
 from uuid import uuid4
 
@@ -14,9 +14,7 @@ import asyncpg
 from ..config import config
 from ..utils.data_models import BlogPost, ImageDetails
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class PostgresCMSClient:
     """
     Direct PostgreSQL CMS client for storing and retrieving content.
@@ -35,7 +33,7 @@ class PostgresCMSClient:
         Args:
             database_url: PostgreSQL connection string. If not provided, uses config.DATABASE_URL
         """
-        self.database_url = database_url or config.DATABASE_URL
+        self.database_url: str = database_url or config.DATABASE_URL or ""
         self.pool: Optional[asyncpg.Pool] = None
         logger.info(
             f"PostgresCMSClient initialized (Database: {self._mask_url(self.database_url)})"

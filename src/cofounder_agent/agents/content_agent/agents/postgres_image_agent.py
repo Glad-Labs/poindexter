@@ -5,7 +5,7 @@ Replaces Strapi image upload with direct database storage of image metadata and 
 """
 
 import json
-import logging
+from services.logger_config import get_logger
 from pathlib import Path
 from typing import List, Optional
 
@@ -15,9 +15,7 @@ from ..services.pexels_client import PexelsClient
 from ..utils.data_models import BlogPost, ImageDetails
 from ..utils.helpers import extract_json_from_string, load_prompts_from_file
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class PostgreSQLImageAgent:
     """
     PostgreSQL-based image agent that stores image metadata directly to the database.

@@ -9,7 +9,7 @@ import logger from '@/lib/logger';
  * - Consistent styling across all pages
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as cofounderAgentClient from '../services/cofounderAgentClient';
 import { modelService } from '../services/modelService';
@@ -395,8 +395,26 @@ const LayoutWrapper = ({ children }) => {
     document.addEventListener('touchend', handleMouseUp);
   };
 
+  // Keyboard handler for chat panel resize handle — WCAG 2.1.1 compliance
+  const handleChatResizeKeyDown = useCallback((e) => {
+    const CHAT_KEYBOARD_STEP = 20;
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setChatHeight((h) =>
+        Math.min(h + CHAT_KEYBOARD_STEP, window.innerHeight * 0.8)
+      );
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setChatHeight((h) => Math.max(h - CHAT_KEYBOARD_STEP, 150));
+    }
+  }, []);
+
   return (
     <div className="oversight-hub-container">
+      {/* Skip-to-content link — first focusable element; visually hidden until focused (WCAG 2.4.1) */}
+      <a href="#main-content" className="skip-to-main">
+        Skip to main content
+      </a>
       <BackendStatusBanner />
       {/* Header with Navigation */}
       <header className="oversight-header">
@@ -408,10 +426,20 @@ const LayoutWrapper = ({ children }) => {
           >
             ☰
           </button>
-          <h1>🎛️ Oversight Hub</h1>
+          {/* Use span not h1 — page route components define the single h1 (WCAG 1.3.1) */}
+          <span className="oversight-hub-title" aria-label="Oversight Hub">
+            <span aria-hidden="true">🎛️</span> Oversight Hub
+          </span>
         </div>
         <div className="header-status">
-          {ollamaConnected ? '🟢 Ollama Ready' : '🔴 Ollama Offline'}
+          <span
+            role="status"
+            aria-live="polite"
+            aria-label={ollamaConnected ? 'Ollama connected' : 'Ollama offline'}
+          >
+            <span aria-hidden="true">{ollamaConnected ? '🟢' : '🔴'}</span>{' '}
+            {ollamaConnected ? 'Ollama Ready' : 'Ollama Offline'}
+          </span>
         </div>
       </header>
 
@@ -441,7 +469,9 @@ const LayoutWrapper = ({ children }) => {
                 borderLeft: '3px solid var(--border-secondary)',
               }}
             >
-              <span className="nav-menu-icon">{item.icon}</span>
+              <span className="nav-menu-icon" aria-hidden="true">
+                {item.icon}
+              </span>
               <span className="nav-menu-label">{item.label}</span>
             </button>
           ))}
@@ -449,13 +479,23 @@ const LayoutWrapper = ({ children }) => {
 
       {/* Main Content Area */}
       <div className="oversight-hub-layout">
-        <main className="main-panel">{children}</main>
+        <main id="main-content" className="main-panel">
+          {children}
+        </main>
 
-        {/* Chat Panel Resize Handle */}
+        {/* Chat Panel Resize Handle — keyboard-accessible (WCAG 2.1.1) */}
         <div
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize chat panel. Use Arrow Up and Arrow Down keys to adjust height."
+          aria-valuenow={Math.round(chatHeight)}
+          aria-valuemin={150}
+          aria-valuemax={Math.round(window.innerHeight * 0.8)}
+          tabIndex={0}
           className={`chat-resize-handle ${isResizing ? 'resizing' : ''}`}
           onMouseDown={handleResizeStart}
           onTouchStart={handleResizeStart}
+          onKeyDown={handleChatResizeKeyDown}
           title="Drag to resize chat panel"
         >
           <span className="drag-indicator">⋮⋮</span>
@@ -475,12 +515,14 @@ const LayoutWrapper = ({ children }) => {
               <button
                 className={`mode-btn ${chatMode === 'conversation' ? 'active' : ''}`}
                 onClick={() => setChatMode('conversation')}
+                aria-pressed={chatMode === 'conversation'}
               >
                 💭 Conversation
               </button>
               <button
                 className={`mode-btn ${chatMode === 'agent' ? 'active' : ''}`}
                 onClick={() => setChatMode('agent')}
+                aria-pressed={chatMode === 'agent'}
               >
                 🔄 Agent
               </button>
@@ -495,6 +537,7 @@ const LayoutWrapper = ({ children }) => {
               <select
                 value={selectedAgent}
                 onChange={(e) => setSelectedAgent(e.target.value)}
+                aria-label="Select agent"
               >
                 {agents.map((a) => (
                   <option key={a.id} value={a.id}>
@@ -608,6 +651,11 @@ const LayoutWrapper = ({ children }) => {
               className="chat-input"
               type="text"
               value={chatInput}
+              aria-label={
+                chatMode === 'agent'
+                  ? 'Describe a task for the agent'
+                  : 'Ask Poindexter a question'
+              }
               onChange={(e) => setChatInput(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !isLoading) {
@@ -624,7 +672,7 @@ const LayoutWrapper = ({ children }) => {
             <button
               onClick={handleSendMessage}
               disabled={!chatInput.trim() || isLoading}
-              title={
+              aria-label={
                 chatMode === 'agent'
                   ? 'Compose and execute task'
                   : 'Send message'
@@ -632,7 +680,10 @@ const LayoutWrapper = ({ children }) => {
             >
               {chatMode === 'agent' ? '⚡' : '📤'}
             </button>
-            <button onClick={handleClearHistory} title="Clear history">
+            <button
+              onClick={handleClearHistory}
+              aria-label="Clear chat history"
+            >
               🗑️
             </button>
           </div>

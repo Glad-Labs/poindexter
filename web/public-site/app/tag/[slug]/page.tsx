@@ -35,7 +35,7 @@ async function getTagPosts(tag: string): Promise<Post[]> {
     }
 
     const data = await response.json();
-    return data.items || data.data || [];
+    return data.posts || data.items || data.data || [];
   } catch (error) {
     logger.error(`Error fetching posts for tag "${tag}":`, error);
     return [];

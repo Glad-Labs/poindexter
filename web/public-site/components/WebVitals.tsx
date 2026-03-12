@@ -62,6 +62,25 @@ export default function WebVitals() {
     }
 
     sendToGoogleAnalytics({ name, value, id });
+
+    // Alert Sentry for poor Core Web Vitals so on-call engineers get notified
+    // when real users experience degraded performance. Uses dynamic import to
+    // avoid bundling Sentry in non-Sentry deployments that omit @sentry/nextjs.
+    if (rating === 'poor' && typeof window !== 'undefined') {
+      import('@sentry/nextjs')
+        .then((Sentry) => {
+          Sentry.captureMessage(
+            `Web Vital degraded: ${name}=${Math.round(value)}ms`,
+            {
+              level: 'warning',
+              tags: { vital: name, rating },
+            }
+          );
+        })
+        .catch(() => {
+          // Sentry not installed — silently skip
+        });
+    }
   });
 
   return null;

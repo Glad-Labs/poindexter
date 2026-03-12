@@ -1,5 +1,4 @@
-import logging
-
+from services.logger_config import get_logger
 from services.prompt_manager import get_prompt_manager
 
 from ..config import config
@@ -7,9 +6,7 @@ from ..services.llm_client import LLMClient
 from ..utils.data_models import BlogPost
 from ..utils.tools import CrewAIToolsFactory
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class QAAgent:
     def __init__(self, llm_client: LLMClient):
         logger.info("Initializing QAAgent (v2 - Using centralized prompt manager)")

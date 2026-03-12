@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useCallback } from 'react';
+import ErrorBoundary from '../ErrorBoundary';
 import {
   Card,
   CardContent,
@@ -256,4 +257,17 @@ export function LiveTaskMonitor({ taskId, taskName = 'Task' }) {
   );
 }
 
-export default LiveTaskMonitor;
+/**
+ * LiveTaskMonitorWithBoundary — default export wraps the component in its own
+ * ErrorBoundary so a crash in the monitor card does not propagate up to the
+ * page-level boundary (which would tear down the entire dashboard).
+ */
+function LiveTaskMonitorWithBoundary(props) {
+  return (
+    <ErrorBoundary name="LiveTaskMonitor">
+      <LiveTaskMonitor {...props} />
+    </ErrorBoundary>
+  );
+}
+
+export default LiveTaskMonitorWithBoundary;

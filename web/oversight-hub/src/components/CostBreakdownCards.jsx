@@ -104,7 +104,7 @@ const CostBreakdownCards = ({ costByPhase = {}, costByModel = {} }) => {
       >
         {/* Cost by Phase */}
         {phaseItems.length > 0 && (
-          <Grid item xs={12} sm={6}>
+          <Grid size={{ xs: 12, sm: 6 }}>
             <Card
               sx={{
                 backgroundColor: theme.palette.background.paper,
@@ -195,7 +195,7 @@ const CostBreakdownCards = ({ costByPhase = {}, costByModel = {} }) => {
                       </Box>
                       <LinearProgress
                         variant="determinate"
-                        value={item.percentage}
+                        value={Number(item.percentage)}
                         sx={{
                           backgroundColor: 'rgba(255, 255, 255, 0.1)',
                           '& .MuiLinearProgress-bar': {
@@ -225,7 +225,7 @@ const CostBreakdownCards = ({ costByPhase = {}, costByModel = {} }) => {
 
         {/* Cost by Model */}
         {modelItems.length > 0 && (
-          <Grid item xs={12} sm={6}>
+          <Grid size={{ xs: 12, sm: 6 }}>
             <Card
               sx={{
                 backgroundColor: theme.palette.background.paper,
@@ -316,7 +316,7 @@ const CostBreakdownCards = ({ costByPhase = {}, costByModel = {} }) => {
                       </Box>
                       <LinearProgress
                         variant="determinate"
-                        value={item.percentage}
+                        value={Number(item.percentage)}
                         sx={{
                           backgroundColor: 'rgba(255, 255, 255, 0.1)',
                           '& .MuiLinearProgress-bar': {
@@ -347,7 +347,7 @@ const CostBreakdownCards = ({ costByPhase = {}, costByModel = {} }) => {
 
       {/* Cost Summary Stats */}
       <Grid container spacing={2}>
-        <Grid item xs={12} sm={4}>
+        <Grid size={{ xs: 12, sm: 4 }}>
           <Card sx={{ backgroundColor: theme.palette.background.paper }}>
             <CardContent>
               <Typography
@@ -369,7 +369,7 @@ const CostBreakdownCards = ({ costByPhase = {}, costByModel = {} }) => {
             </CardContent>
           </Card>
         </Grid>
-        <Grid item xs={12} sm={4}>
+        <Grid size={{ xs: 12, sm: 4 }}>
           <Card sx={{ backgroundColor: theme.palette.background.paper }}>
             <CardContent>
               <Typography
@@ -391,7 +391,7 @@ const CostBreakdownCards = ({ costByPhase = {}, costByModel = {} }) => {
             </CardContent>
           </Card>
         </Grid>
-        <Grid item xs={12} sm={4}>
+        <Grid size={{ xs: 12, sm: 4 }}>
           <Card sx={{ backgroundColor: theme.palette.background.paper }}>
             <CardContent>
               <Typography

@@ -5,13 +5,11 @@ Validates that selected LLM models are available before tasks are created.
 Ensures users can't select models that don't exist or aren't properly configured.
 """
 
-import logging
+from services.logger_config import get_logger
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Set
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 @dataclass
 class ModelInfo:
     """Information about an available model"""

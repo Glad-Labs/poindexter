@@ -62,8 +62,11 @@ cd src/cofounder_agent && poetry run pytest tests/unit/routes/test_task_routes.p
 cd web/oversight-hub && npx vitest run src/components/__tests__/MyComponent.test.jsx
 
 # Browser E2E
-npm run test:playwright       # Playwright (headless)
-npm run test:playwright:headed # With visible browser
+npm run test:e2e              # All Playwright tests (headless)
+npm run test:e2e:headed       # With visible browser
+npm run test:e2e:debug        # Debug mode
+npm run test:public           # Public site tests only
+npm run test:admin            # Admin UI tests only
 ```
 
 ### Code Quality
@@ -148,6 +151,7 @@ npm workspaces cover `web/public-site` and `web/oversight-hub`. `npm install` at
 - **PostgreSQL as source of truth:** All task results, agent memories, and content stored there
 - **Model router first:** Use cost tiers (`ultra_cheap`/`cheap`/`balanced`/`premium`) not hardcoded model names
 - **Monorepo with workspaces:** `npm install` once at root covers everything
+- **API versioning policy:** All 160+ endpoints live at `/api/{resource}` (no `/v1/` prefix). This is the current v1 surface, documented via `version="3.0.x"` in `main.py` and OpenAPI at `/api/openapi.json`. **Policy:** Breaking changes to any public endpoint (field renames, status code changes, required field additions) MUST introduce a new URL version prefix (`/api/v2/`). Non-breaking additions (new optional fields, new endpoints) do not require a new version. Document breaking changes in `CHANGELOG.md`.
 
 ## Reference Documentation
 

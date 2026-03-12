@@ -6,12 +6,10 @@ and broadcast updates to connected WebSocket clients.
 """
 
 import asyncio
-import logging
+from services.logger_config import get_logger
 from typing import Callable, Dict, Optional
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class WorkflowEventEmitter:
     """Emits workflow execution events for progress tracking and broadcasting"""
 

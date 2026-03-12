@@ -46,34 +46,23 @@ import httpx
 from agents.content_agent.config import config
 from agents.content_agent.utils.helpers import extract_json_from_string
 
-# Now try to import google-genai (new package, replaces deprecated google.generativeai)
-# With the sys.path fix above, this should work even with poetry run
+# Import google-genai (official SDK — google-generativeai removed, see Issue #404)
 genai = None
 try:
     import google.genai as genai_module
 
     genai = genai_module
-    logging.info("✅ google.genai successfully imported")
+    logging.info("google.genai successfully imported")
 except (ImportError, ModuleNotFoundError) as e:
-    # Fallback to old deprecated package if new one not available
-    try:
-        import google.generativeai as genai_module
-
-        genai = genai_module
-        logging.warning(
-            f"⚠️  Using deprecated google.generativeai. Please upgrade to google.genai: {e}"
-        )
-    except (ImportError, ModuleNotFoundError) as e2:
-        logging.warning(
-            f"⚠️ Could not import google.genai or google.generativeai: {e2}. Will fall back to Ollama."
-        )
-        genai = None
+    logging.warning(
+        f"google.genai not available: {e}. Gemini provider will fall back to Ollama."
+    )
 
 
 class LLMClient:
     """Client for interacting with a configured Large Language Model."""
 
-    def __init__(self, model_name: str = None):
+    def __init__(self, model_name: "str | None" = None):
         """
         Initializes the LLM client based on the provider specified in the config.
 
@@ -110,8 +99,8 @@ class LLMClient:
 
                     # Use override model if provided, otherwise use config default
                     model_to_use = model_name if model_name else config.GEMINI_MODEL
-                    self.model = genai.GenerativeModel(model_to_use)
-                    self.summarizer_model = genai.GenerativeModel(config.SUMMARIZER_MODEL)
+                    self.model = genai.GenerativeModel(model_to_use)  # type: ignore[attr-defined]
+                    self.summarizer_model = genai.GenerativeModel(config.SUMMARIZER_MODEL)  # type: ignore[attr-defined]
                     logging.info(f"✅ Initialized Gemini client with model: {model_to_use}")
 
             if self.provider == "local" or self.provider == "ollama":
@@ -168,7 +157,7 @@ class LLMClient:
 
     def _generate_json_gemini(self, prompt: str) -> dict:
         try:
-            response = self.model.generate_content(prompt)
+            response = self.model.generate_content(prompt)  # type: ignore[union-attr]
             return json.loads(response.text)
         except json.JSONDecodeError:
             logging.error("Failed to decode JSON from Gemini response.")
@@ -245,7 +234,7 @@ class LLMClient:
 
     def _generate_text_gemini(self, prompt: str) -> str:
         try:
-            response = self.model.generate_content(prompt)
+            response = self.model.generate_content(prompt)  # type: ignore[union-attr]
             return response.text
         except Exception as e:
             logging.error(f"Error generating text content from Gemini: {e}")
@@ -310,7 +299,7 @@ class LLMClient:
 
     def _generate_summary_gemini(self, prompt: str) -> str:
         try:
-            response = self.summarizer_model.generate_content(prompt)
+            response = self.summarizer_model.generate_content(prompt)  # type: ignore[union-attr]
             return response.text
         except Exception as e:
             logging.error(f"Error generating summary from Gemini: {e}")

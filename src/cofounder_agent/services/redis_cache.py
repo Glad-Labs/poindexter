@@ -24,6 +24,7 @@ The system will work normally but without cache benefits.
 import asyncio
 import json
 import logging
+from services.logger_config import get_logger
 import os
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
@@ -49,9 +50,7 @@ except ImportError:
         "Redis SDK not installed. Caching disabled. Install with: pip install redis aioredis"
     )
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class CacheConfig:
     """Configuration for cache behavior."""
 

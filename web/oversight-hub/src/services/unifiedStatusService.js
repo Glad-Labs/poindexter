@@ -275,7 +275,7 @@ export const unifiedStatusService = {
       }
 
       const response = await makeRequest(
-        `/api/tasks/metrics?${query.toString()}`,
+        `/api/tasks/metrics/summary?${query.toString()}`,
         'GET'
       );
       return response;

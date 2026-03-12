@@ -1,5 +1,5 @@
 import json
-import logging
+from services.logger_config import get_logger
 import re
 from typing import Optional
 
@@ -11,9 +11,7 @@ from ..utils.data_models import BlogPost
 from ..utils.helpers import extract_json_from_string, slugify
 from ..utils.tools import CrewAIToolsFactory
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class CreativeAgent:
     def _extract_asset(self, text: str, asset_name: str) -> str:
         """

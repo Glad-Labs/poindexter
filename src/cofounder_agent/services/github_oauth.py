@@ -17,7 +17,7 @@ Setup:
    Note: Use GH_OAUTH_ prefix instead of GITHUB_ because GitHub Actions blocks secrets starting with GITHUB_
 """
 
-import logging
+from services.logger_config import get_logger
 import os
 from typing import Optional
 
@@ -25,9 +25,7 @@ import httpx
 
 from .oauth_provider import OAuthException, OAuthProvider, OAuthUser
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class GitHubOAuthProvider(OAuthProvider):
     """GitHub OAuth 2.0 provider implementation"""
 

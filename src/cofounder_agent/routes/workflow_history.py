@@ -16,7 +16,7 @@ Error Handling: Comprehensive with proper HTTP status codes
 Async: Full async/await support
 """
 
-import logging
+from services.logger_config import get_logger
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -31,8 +31,7 @@ from schemas.workflow_history_schemas import (
 )
 from services.workflow_history import WorkflowHistoryService
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 # Initialize router - using /api/workflow prefix
 # NOTE: Also creates alias /api/workflows for backward compatibility
 router = APIRouter(prefix="/api/workflow", tags=["workflow-history"])

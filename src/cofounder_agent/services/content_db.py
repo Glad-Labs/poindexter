@@ -11,7 +11,7 @@ Handles all content-related database operations including:
 """
 
 import json
-import logging
+from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
@@ -36,9 +36,7 @@ from .database_mixin import DatabaseServiceMixin
 from .decorators import log_query_performance
 from .error_handler import DatabaseError
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class ContentDatabase(DatabaseServiceMixin):
     """Content-related database operations (posts, quality, metrics)."""
 
@@ -94,7 +92,7 @@ class ContentDatabase(DatabaseServiceMixin):
         logger.info(f"   - status: {post_data.get('status', 'draft')}")
         logger.info(f"   - author_id: {post_data.get('author_id')}")
         logger.info(f"   - category_id: {post_data.get('category_id')}")
-        logger.info(f"   - tag_ids: {tag_ids}")
+        logger.info(f"   - tag_ids (post_tags): {tag_ids}")
 
         async with self.pool.acquire() as conn:
             try:
@@ -104,29 +102,28 @@ class ContentDatabase(DatabaseServiceMixin):
                 row = await conn.fetchrow(
                     """
                     INSERT INTO posts (
-                        id, 
-                        title, 
-                        slug, 
-                        content, 
-                        excerpt, 
+                        id,
+                        title,
+                        slug,
+                        content,
+                        excerpt,
                         featured_image_url,
                         cover_image_url,
                         author_id,
                         category_id,
-                        tag_ids,
-                        status, 
+                        status,
                         published_at,
                         seo_title,
                         seo_description,
                         seo_keywords,
                         created_by,
                         updated_by,
-                        created_at, 
+                        created_at,
                         updated_at
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW(), NOW())
-                    RETURNING id, title, slug, content, excerpt, featured_image_url, cover_image_url, 
-                              author_id, category_id, tag_ids, status, published_at, created_at, updated_at
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), NOW())
+                    RETURNING id, title, slug, content, excerpt, featured_image_url, cover_image_url,
+                              author_id, category_id, status, published_at, created_at, updated_at
                     """,
                     post_id,
                     post_data.get("title"),
@@ -137,7 +134,6 @@ class ContentDatabase(DatabaseServiceMixin):
                     post_data.get("cover_image_url"),
                     post_data.get("author_id"),
                     post_data.get("category_id"),
-                    tag_ids,
                     post_data.get("status", "draft"),
                     # published_at: Set to NOW() if published, None if draft
                     datetime.now(timezone.utc) if is_published else None,
@@ -149,6 +145,22 @@ class ContentDatabase(DatabaseServiceMixin):
                 )
                 if not row:
                     raise DatabaseError("Insert query returned no row - post creation failed")
+
+                # Also write to the post_tags junction table (authoritative source per migration 014).
+                # tag_ids on posts is kept in sync for backward compat but post_tags is canonical.
+                if tag_ids:
+                    for tid in tag_ids:
+                        if tid:
+                            await conn.execute(
+                                """
+                                INSERT INTO post_tags (post_id, tag_id)
+                                VALUES ($1, $2)
+                                ON CONFLICT (post_id, tag_id) DO NOTHING
+                                """,
+                                post_id,
+                                str(tid),
+                            )
+                    logger.info(f"   - Inserted {len(tag_ids)} tag(s) into post_tags for post {post_id}")
 
                 logger.info(f"✅ POST CREATED SUCCESSFULLY in database with ID: {post_id}")
                 logger.info(f"   - Status: {post_data.get('status', 'draft')}")
@@ -210,52 +222,42 @@ class ContentDatabase(DatabaseServiceMixin):
             True if updated, False otherwise
         """
         try:
-            # Build SET clause dynamically
-            set_clauses = []
-            values = []
-            param_count = 1
+            # Allowlist of columns that may be updated via this method
+            _ALLOWED_POST_COLUMNS = frozenset(
+                ["title", "slug", "content", "excerpt", "featured_image_url", "status", "tags"]
+            )
 
-            for key, value in updates.items():
-                # Validate column exists
-                if key not in [
-                    "title",
-                    "slug",
-                    "content",
-                    "excerpt",
-                    "featured_image_url",
-                    "status",
-                    "tags",
-                ]:
-                    logger.warning(f"Skipping invalid column for update: {key}")
-                    continue
+            # Filter to only allowed fields; ParameterizedQueryBuilder will also
+            # run SQLIdentifierValidator.safe_identifier() on each column name.
+            filtered: Dict[str, Any] = {
+                k: v for k, v in updates.items() if k in _ALLOWED_POST_COLUMNS
+            }
+            for skipped in set(updates) - _ALLOWED_POST_COLUMNS:
+                logger.warning("Skipping invalid column for update: %s", skipped)
 
-                set_clauses.append(f"{key} = ${param_count}")
-                values.append(value)
-                param_count += 1
-
-            if not set_clauses:
-                logger.warning(f"No valid columns to update for post {post_id}")
+            if not filtered:
+                logger.warning("No valid columns to update for post %s", post_id)
                 return False
 
-            # Add post_id as final parameter
-            values.append(post_id)
-            param_count += 1
+            # Always refresh updated_at using a Python datetime
+            filtered["updated_at"] = datetime.now(timezone.utc)
 
-            query = f"""
-                UPDATE posts
-                SET {', '.join(set_clauses)}, updated_at = NOW()
-                WHERE id = ${param_count - 1}
-                RETURNING id, title, slug, featured_image_url, status
-            """
+            builder = ParameterizedQueryBuilder()
+            sql, params = builder.update(
+                table="posts",
+                updates=filtered,
+                where_clauses=[("id", SQLOperator.EQ, post_id)],
+                return_columns=["id", "title", "slug", "featured_image_url", "status"],
+            )
 
             async with self.pool.acquire() as conn:
-                result = await conn.fetchrow(query, *values)
+                result = await conn.fetchrow(sql, *params)
 
                 if result:
-                    logger.info(f"✅ Updated post {post_id}: {dict(result)}")
+                    logger.info("Updated post %s: %s", post_id, dict(result))
                     return True
                 else:
-                    logger.warning(f"⚠️ Post not found for update: {post_id}")
+                    logger.warning("Post not found for update: %s", post_id)
                     return False
 
         except Exception as e:
@@ -450,14 +452,6 @@ class ContentDatabase(DatabaseServiceMixin):
                     "SELECT COUNT(*) FROM content_tasks WHERE status = $1", "failed"
                 )
 
-                # Get pending/in-progress tasks
-                pending_tasks = await conn.fetchval(
-                    "SELECT COUNT(*) FROM content_tasks WHERE status IN ($1, $2, $3)",
-                    "pending",
-                    "in_progress",
-                    "queued",
-                )
-
                 # Calculate rates
                 success_rate = (
                     (completed_tasks / (completed_tasks + failed_tasks) * 100)
@@ -486,7 +480,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 # Calculate total cost from financial tracking (if implemented)
                 total_cost = 0
                 try:
-                    cost_query = "SELECT SUM(cost_usd) as total FROM task_costs WHERE created_at >= NOW() - INTERVAL '30 days'"
+                    cost_query = "SELECT SUM(cost_usd) as total FROM cost_logs WHERE created_at >= NOW() - INTERVAL '30 days'"
                     cost_result = await conn.fetchrow(cost_query)
                     if cost_result and cost_result["total"]:
                         total_cost = round(float(cost_result["total"]), 2)

@@ -5,15 +5,13 @@ Service layer for managing and retrieving writing samples for LLM prompt integra
 Handles retrieval of active writing sample and formatting for inclusion in system prompts.
 """
 
-import logging
+from services.logger_config import get_logger
 import re
 from typing import Any, Dict, Optional
 
 from services.database_service import DatabaseService
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class WritingStyleService:
     """Service for managing writing samples and style guidance"""
 
@@ -37,6 +35,8 @@ class WritingStyleService:
             Formatted prompt guidance string, or empty string if no active sample
         """
         try:
+            if self.db.writing_style is None:
+                return ""
             sample = await self.db.writing_style.get_active_writing_sample(user_id)
 
             if not sample or not sample.get("content"):
@@ -66,6 +66,8 @@ class WritingStyleService:
             Dict with sample info, or None if no active sample
         """
         try:
+            if self.db.writing_style is None:
+                return None
             sample = await self.db.writing_style.get_active_writing_sample(user_id)
 
             if not sample:
@@ -100,6 +102,8 @@ class WritingStyleService:
             Dict with sample info, or None if sample not found
         """
         try:
+            if self.db.writing_style is None:
+                return None
             sample = await self.db.writing_style.get_writing_sample(writing_style_id)
 
             if not sample:

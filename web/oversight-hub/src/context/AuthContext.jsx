@@ -34,6 +34,11 @@ export const AuthProvider = ({ children }) => {
         );
         const startTime = Date.now();
 
+        // Optimistically clear stale Zustand-persisted auth state so ProtectedRoute
+        // doesn't render protected pages using a cached isAuthenticated=true before
+        // the async session check completes.
+        setStoreIsAuthenticated(false);
+
         // Validate active cookie-based session first.
         const currentUser = await validateAndGetCurrentUser();
         if (currentUser) {

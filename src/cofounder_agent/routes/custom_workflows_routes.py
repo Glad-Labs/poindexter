@@ -11,7 +11,7 @@ Endpoints:
 - GET /api/workflows/available-phases - List available phases for building
 """
 
-import logging
+from services.logger_config import get_logger
 from typing import Any, Dict, List, Optional
 
 import jwt
@@ -28,8 +28,7 @@ from schemas.custom_workflow_schemas import (
 from services.custom_workflows_service import CustomWorkflowsService
 from services.token_validator import JWTTokenValidator
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 router = APIRouter(
     prefix="/api/workflows",
     tags=["custom-workflows"],
@@ -278,6 +277,8 @@ async def delete_custom_workflow(
             return {"message": f"Workflow '{workflow_id}' deleted successfully"}
 
         raise HTTPException(status_code=404, detail=f"Workflow '{workflow_id}' not found")
+    except HTTPException:
+        raise
     except ValueError as e:
         logger.warning(f"Access denied or not found: {str(e)}")
         raise HTTPException(status_code=404, detail="An internal error occurred")
@@ -352,7 +353,6 @@ async def execute_custom_workflow(
             custom_workflow=workflow,
             input_data=input_data,
             database_service=database_service,
-            execution_owner_id=owner_id,
             queue_async=True,  # Execute in background
         )
 
@@ -386,7 +386,7 @@ async def execute_custom_workflow(
 
         logger.info(f"Workflow execution started: {result['execution_id']}")
 
-        return WorkflowExecutionResponse(
+        return WorkflowExecutionResponse(  # type: ignore[call-arg]
             workflow_id=str(result["workflow_id"]),
             execution_id=result["execution_id"],
             status=result["status"],
@@ -525,7 +525,7 @@ async def get_available_phases(
     try:
         phases = await service.get_available_phases()
 
-        return AvailablePhasesResponse(phases=phases, total_count=len(phases))
+        return AvailablePhasesResponse(phases=phases, total_count=len(phases))  # type: ignore[arg-type]
     except Exception as e:
         logger.error(f"Error getting available phases: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get available phases")

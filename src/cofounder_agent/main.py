@@ -426,7 +426,7 @@ async def api_health(
             if getattr(model_router, "_gemini_client", None):
                 providers_available.append("gemini")
             provider_health = {}
-            if hasattr(model_router, "get_provider_health"):
+            if model_router is not None and hasattr(model_router, "get_provider_health"):
                 provider_health = model_router.get_provider_health()
             llm_info: dict = {
                 "available": providers_available,

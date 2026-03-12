@@ -660,6 +660,8 @@ const TaskDetailModal = ({ onClose, onUpdate }) => {
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
         <Alert
+          role="alert"
+          aria-live={snackbar.severity === 'error' ? 'assertive' : 'polite'}
           onClose={handleSnackbarClose}
           severity={snackbar.severity}
           variant="filled"

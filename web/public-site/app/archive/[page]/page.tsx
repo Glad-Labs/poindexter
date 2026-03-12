@@ -28,8 +28,8 @@ const FASTAPI_URL =
 
 async function getArchivePosts(page: number) {
   try {
-    const skip = (page - 1) * POSTS_PER_PAGE;
-    const url = `${FASTAPI_URL}/api/posts?skip=${skip}&limit=${POSTS_PER_PAGE}&published_only=true`;
+    const offset = (page - 1) * POSTS_PER_PAGE;
+    const url = `${FASTAPI_URL}/api/posts?offset=${offset}&limit=${POSTS_PER_PAGE}&published_only=true`;
 
     const response = await fetch(url, {
       next: { revalidate: 3600 }, // ISR: revalidate every hour
@@ -42,9 +42,12 @@ async function getArchivePosts(page: number) {
 
     const data = await response.json();
     const posts: Post[] =
-      data?.data || data?.items || (Array.isArray(data) ? data : []);
+      data?.posts ||
+      data?.data ||
+      data?.items ||
+      (Array.isArray(data) ? data : []);
     const total =
-      data?.meta?.pagination?.total || data?.total || posts.length || 0;
+      data?.total ?? data?.meta?.pagination?.total ?? posts.length ?? 0;
 
     return { posts, total };
   } catch {
@@ -127,7 +130,12 @@ export default async function ArchivePage({ params }: ArchivePageProps) {
                     <div className="flex flex-col justify-between flex-1 p-6">
                       <div>
                         <h2 className="text-xl font-bold text-white mb-2 group-hover:text-cyan-400 transition-colors line-clamp-2">
-                          {post.title}
+                          <Link
+                            href={`/posts/${post.slug}`}
+                            className="hover:text-cyan-400 transition-colors"
+                          >
+                            {post.title}
+                          </Link>
                         </h2>
                         {post.excerpt && (
                           <p className="text-slate-400 line-clamp-3 mb-4 text-sm">

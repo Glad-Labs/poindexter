@@ -9,14 +9,12 @@ Provides validation for:
 - Content flow and structure
 """
 
-import logging
+from services.logger_config import get_logger
 import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 @dataclass
 class ParagraphValidation:
     """Validation for a paragraph"""

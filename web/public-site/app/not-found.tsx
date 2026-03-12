@@ -25,7 +25,8 @@ export default function NotFound() {
     const fetchSuggestedPosts = async () => {
       try {
         const data = await getPaginatedPosts(1, 3);
-        setSuggestedPosts(data?.data?.slice(0, 3) || []);
+        const posts = data?.data || [];
+        setSuggestedPosts(posts.slice(0, 3));
       } catch (error) {
         console.error('Failed to fetch suggested posts:', error);
       } finally {

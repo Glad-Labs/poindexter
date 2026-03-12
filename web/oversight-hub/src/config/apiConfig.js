@@ -11,25 +11,17 @@ import logger from '@/lib/logger';
  */
 
 /**
- * Read environment variables, supporting both CRA (REACT_APP_*) and Vite (VITE_*).
- * Priority:
- * 1) process.env — CRA exposes REACT_APP_* vars here at build time
- * 2) import.meta.env — Vite exposes VITE_* vars here (kept for compatibility)
+ * Read environment variables from process.env (CRA inlines REACT_APP_* at build time).
  */
-function getEnv(...keys) {
-  const viteEnv =
-    typeof import.meta !== 'undefined' && import.meta.env
-      ? import.meta.env
-      : {};
-  const procEnv =
-    typeof process !== 'undefined' && process.env ? process.env : {};
+export function getEnv(...keys) {
+  // In CRA builds, `process.env` is compile-time inlined into a plain object.
+  // Do not guard on runtime `typeof process` in the browser or the injected vars
+  // become unreachable.
+  const procEnv = process.env || {};
 
   for (const key of keys) {
     if (procEnv[key] !== undefined && procEnv[key] !== '') {
       return procEnv[key];
-    }
-    if (viteEnv[key] !== undefined && viteEnv[key] !== '') {
-      return viteEnv[key];
     }
   }
 
@@ -89,9 +81,9 @@ function validateUrl(url, envVarName, allowLocalhost = false) {
  * Gets the FastAPI backend URL with strict validation
  *
  * Checks multiple environment variables in priority order:
- * - VITE_API_URL (canonical)
- * - VITE_API_BASE_URL (alias)
- * - VITE_AGENT_URL (legacy)
+ * - REACT_APP_API_URL (canonical)
+ * - REACT_APP_API_BASE_URL (alias)
+ * - REACT_APP_AGENT_URL (legacy)
  *
  * @throws {Error} If no valid URL is configured
  * @returns {string} Validated backend API URL
@@ -100,10 +92,7 @@ export function getApiUrl() {
   const url =
     getEnv('REACT_APP_API_URL') ||
     getEnv('REACT_APP_API_BASE_URL') ||
-    getEnv('REACT_APP_AGENT_URL') ||
-    getEnv('VITE_API_URL') ||
-    getEnv('VITE_API_BASE_URL') ||
-    getEnv('VITE_AGENT_URL');
+    getEnv('REACT_APP_AGENT_URL');
 
   try {
     return validateUrl(url, 'REACT_APP_API_URL', false);
@@ -131,10 +120,7 @@ export function getApiUrl() {
  */
 export function getOllamaUrl(required = false) {
   const url =
-    getEnv('REACT_APP_OLLAMA_URL') ||
-    getEnv('REACT_APP_OLLAMA_BASE_URL') ||
-    getEnv('VITE_OLLAMA_URL') ||
-    getEnv('VITE_OLLAMA_BASE_URL');
+    getEnv('REACT_APP_OLLAMA_URL') || getEnv('REACT_APP_OLLAMA_BASE_URL');
 
   // If not configured and not required, return null
   if (!url && !required) {
@@ -155,7 +141,7 @@ export function getOllamaUrl(required = false) {
           'To use local Ollama models:\n' +
           '1. Install Ollama: https://ollama.ai\n' +
           '2. Start Ollama: ollama serve\n' +
-          '3. Optionally set VITE_OLLAMA_URL=http://localhost:11434 in web/oversight-hub/.env.local\n'
+          '3. Optionally set REACT_APP_OLLAMA_URL=http://localhost:11434 in web/oversight-hub/.env.local\n'
       );
       throw error;
     }
@@ -180,17 +166,16 @@ export function getWebSocketUrl() {
  */
 export function getPublicSiteUrl() {
   const url =
-    getEnv('REACT_APP_PUBLIC_SITE_URL') ||
-    getEnv('REACT_APP_SITE_URL') ||
-    getEnv('VITE_PUBLIC_SITE_URL') ||
-    getEnv('VITE_SITE_URL');
+    getEnv('REACT_APP_PUBLIC_SITE_URL') || getEnv('REACT_APP_SITE_URL');
 
   try {
-    return validateUrl(url, 'VITE_PUBLIC_SITE_URL', false);
+    return validateUrl(url, 'REACT_APP_PUBLIC_SITE_URL', false);
   } catch (error) {
     // Fallback to localhost in development only
     if (getRuntimeMode() === 'development') {
-      logger.warn('⚠️  VITE_PUBLIC_SITE_URL not set, using localhost:3000');
+      logger.warn(
+        '⚠️  REACT_APP_PUBLIC_SITE_URL not set, using localhost:3000'
+      );
       return 'http://localhost:3000';
     }
     throw error;

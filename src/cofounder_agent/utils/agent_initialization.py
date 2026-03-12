@@ -5,14 +5,12 @@ This module registers agents from the agents/ folder with the central
 AgentRegistry, making them discoverable and selectable at runtime.
 """
 
-import logging
+from services.logger_config import get_logger
 from typing import Optional
 
 from agents.registry import AgentRegistry, get_agent_registry
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 def register_all_agents(registry: Optional[AgentRegistry] = None) -> AgentRegistry:
     """
     Register all agents with the AgentRegistry.

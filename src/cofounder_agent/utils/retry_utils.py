@@ -6,12 +6,11 @@ in database connections and external API calls.
 """
 
 import asyncio
-import logging
+from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Optional, TypeVar
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 T = TypeVar("T")
 
 

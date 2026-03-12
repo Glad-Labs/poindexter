@@ -271,8 +271,9 @@ const nextConfig = {
   // Trailing slashes (set to false for clean URLs)
   trailingSlash: false,
 
-  // React strict mode - disabled for smoother dev experience
-  reactStrictMode: false,
+  // React strict mode enabled — catches data mutation bugs and unsafe lifecycle patterns.
+  // Double-render warnings should be fixed, not suppressed globally.
+  reactStrictMode: true,
 };
 
 // Only apply Sentry wrapping if DSN is configured; otherwise pass through unchanged.

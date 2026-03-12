@@ -20,17 +20,21 @@ import logger from '@/lib/logger';
  *    - Capabilities Browser: Browse and filter available capabilities
  *    - Service Explorer: Discover and inspect services
  *
+ * Data-fetching and local state are delegated to three focused hooks:
+ *   useWorkflowStudio, useWorkflowMonitor, useServiceDiscovery
+ *
  * @component
  */
 
 import React, { useState, useEffect } from 'react';
-import phase4Client from '../../services/phase4Client';
 import WorkflowCanvas from '../WorkflowCanvas';
 import CapabilityComposer from '../CapabilityComposer';
+import ErrorBoundary from '../ErrorBoundary';
 import CapabilitiesBrowser from '../marketplace/CapabilitiesBrowser';
 import ServiceExplorer from '../marketplace/ServiceExplorer';
-import * as workflowBuilderService from '../../services/workflowBuilderService';
-import * as workflowManagementService from '../../services/workflowManagementService';
+import useWorkflowStudio from '../../hooks/useWorkflowStudio';
+import useWorkflowMonitor from '../../hooks/useWorkflowMonitor';
+import useServiceDiscovery from '../../hooks/useServiceDiscovery';
 import {
   Box,
   Tabs,
@@ -439,236 +443,54 @@ const WorkflowMonitorTabs = ({
  * 1. Workflow Studio (create, manage workflows)
  * 2. Workflow Monitor (execution history, stats, metrics) - DEFAULT EXPANDED
  * 3. Service Discovery (browse services and capabilities)
+ *
+ * Each section's state lives in its own hook; this component is a thin
+ * accordion coordinator (#304).
  */
 const UnifiedServicesPanel = () => {
-  // Accordion state
-  const [expandedSection, setExpandedSection] = useState('monitor'); // Monitor is default expanded
+  // Accordion state — shared across all three sections
+  const [expandedSection, setExpandedSection] = useState('monitor');
 
-  // Services tab state (for Service Discovery section)
-  const [services, setServices] = useState([]);
-  const [loadingServices, setLoadingServices] = useState(true);
-  const [error, setError] = useState(null);
-  const [selectedCapabilities, setSelectedCapabilities] = useState([]);
-  const [selectedPhases, setSelectedPhases] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [healthStatus, setHealthStatus] = useState(null);
+  // Shared error banner (surfaced by hooks via onError)
+  const [sharedError, setSharedError] = useState(null);
 
-  // Workflow builder state (for Workflow Studio section)
-  const [studioTab, setStudioTab] = useState(0);
+  // Section-specific hooks
+  const studio = useWorkflowStudio({ onError: setSharedError });
+  const monitor = useWorkflowMonitor({ onError: setSharedError });
+  const discovery = useServiceDiscovery({ onError: setSharedError });
+
+  // Discovery tab (Phase 4 Services / Capabilities Browser / Service Explorer)
   const [discoveryTab, setDiscoveryTab] = useState(0);
-  const [availablePhases, setAvailablePhases] = useState([]);
-  const [workflows, setWorkflows] = useState([]);
-  const [templates, setTemplates] = useState([]);
-  const [loadingWorkflows, setLoadingWorkflows] = useState(false);
-  const [selectedWorkflow, setSelectedWorkflow] = useState(null);
-  const [selectedTemplate, setSelectedTemplate] = useState(null);
-  const [templateModalOpen, setTemplateModalOpen] = useState(false);
 
-  // Workflow monitor state (for Workflow Monitor section)
-  const [monitorLoading, setMonitorLoading] = useState(false);
-  const [monitorError, setMonitorError] = useState(null);
-  const [executionHistory, setExecutionHistory] = useState([]);
-  const [statistics, setStatistics] = useState(null);
-  const [performanceMetrics, setPerformanceMetrics] = useState(null);
-
-  // Fetch services on mount
+  // Fetch service discovery data on mount (always loaded)
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoadingServices(true);
-        setError(null);
-
-        // Get health check
-        const health = await phase4Client.healthCheck();
-        setHealthStatus(health);
-
-        // Get service registry (using agents registry since services are indexed as agents)
-        const response =
-          await phase4Client.serviceRegistryClient.listServices();
-
-        // Extract agents from response - { agents: [...], categories: {...}, phases: {...} }
-        const agentsList = response.agents || [];
-
-        // Transform agent data to service format
-        const transformedServices = agentsList.map((agent) => ({
-          id: agent.name,
-          name: agent.name,
-          category: agent.category || 'general',
-          description: agent.description || 'No description',
-          phases: agent.phases || [],
-          capabilities: agent.capabilities || [],
-          version: agent.version || '1.0.0',
-          actions: agent.actions || [],
-        }));
-
-        setServices(transformedServices);
-      } catch (err) {
-        const errorMessage = err.message || 'Failed to load services';
-        setError(`Error loading services: ${errorMessage}`);
-        logger.error('UnifiedServicesPanel error:', err);
-      } finally {
-        setLoadingServices(false);
-      }
-    };
-
-    fetchData();
+    discovery.loadServices();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load workflow and monitor data when Workflow Studio or Workflow Monitor sections expand
+  // Load section data when the accordion expands
   useEffect(() => {
     if (expandedSection === 'studio') {
-      loadWorkflowStudioData();
+      studio.loadWorkflowStudioData();
     } else if (expandedSection === 'monitor') {
-      loadWorkflowMonitorData();
+      monitor.loadWorkflowMonitorData();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expandedSection]);
 
-  const loadWorkflowStudioData = async () => {
-    setLoadingWorkflows(true);
-    try {
-      logger.log('[UnifiedServicesPanel] Loading workflow studio data...');
-
-      // Load available phases
-      const phasesRes = await workflowBuilderService.getAvailablePhases();
-      setAvailablePhases(phasesRes.phases || []);
-
-      // Load user workflows
-      const workflowsRes = await workflowBuilderService.listWorkflows({
-        limit: 100,
-      });
-      setWorkflows(workflowsRes.workflows || []);
-
-      // Load templates
-      const templatesList = [
-        {
-          id: 'blog_post',
-          name: 'Blog Post',
-          description:
-            'Full blog post generation with research, drafting, assessment, refinement',
-          phase_count: 7,
-          is_template: true,
-        },
-        {
-          id: 'social_media',
-          name: 'Social Media',
-          description: 'Quick social media content generation',
-          phase_count: 5,
-          is_template: true,
-        },
-        {
-          id: 'email',
-          name: 'Email',
-          description: 'Email content generation with assessment',
-          phase_count: 4,
-          is_template: true,
-        },
-      ];
-      setTemplates(templatesList);
-
-      setError(null);
-    } catch (err) {
-      const errorMsg =
-        err?.message || String(err) || 'Unknown error loading workflow data';
-      logger.error('[UnifiedServicesPanel] Error loading workflow data:', err);
-      setError(`Workflow Error: ${errorMsg}`);
-    } finally {
-      setLoadingWorkflows(false);
-    }
-  };
-
-  const loadWorkflowMonitorData = async () => {
-    setMonitorLoading(true);
-    try {
-      logger.log('[UnifiedServicesPanel] Loading workflow monitor data...');
-
-      // Load execution history
-      const historyRes = await workflowManagementService.getWorkflowHistory({
-        limit: 20,
-      });
-      setExecutionHistory(historyRes.executions || historyRes || []);
-
-      // Load statistics
-      const statsRes = await workflowManagementService.getWorkflowStatistics();
-      setStatistics(statsRes.statistics || statsRes || {});
-
-      // Load performance metrics
-      const metricsRes =
-        await workflowManagementService.getPerformanceMetrics();
-      setPerformanceMetrics(metricsRes.metrics || metricsRes || {});
-
-      setMonitorError(null);
-    } catch (err) {
-      const errorMsg =
-        err?.message || String(err) || 'Unknown error loading monitor data';
-      logger.error('[UnifiedServicesPanel] Error loading monitor data:', err);
-      setMonitorError(`Monitor Error: ${errorMsg}`);
-    } finally {
-      setMonitorLoading(false);
-    }
-  };
-
-  // Get all unique capabilities and phases for filtering
-  const allCapabilities = Array.from(
-    new Set(services.flatMap((s) => s.capabilities))
-  ).sort();
-
-  const allPhases = Array.from(
-    new Set(services.flatMap((s) => s.phases))
-  ).sort();
-
-  // Filter services based on selected filters and search
-  const filteredServices = services.filter((service) => {
-    const matchesSearch =
-      searchQuery === '' ||
-      service.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      service.description.toLowerCase().includes(searchQuery.toLowerCase());
-
-    const matchesCapabilities =
-      selectedCapabilities.length === 0 ||
-      selectedCapabilities.some((cap) => service.capabilities.includes(cap));
-
-    const matchesPhases =
-      selectedPhases.length === 0 ||
-      selectedPhases.some((phase) => service.phases.includes(phase));
-
-    return matchesSearch && matchesCapabilities && matchesPhases;
-  });
-
-  // Handle action execution
-  const handleExecuteAction = async (serviceName) => {
-    logger.log(`Execute action for service: ${serviceName}`);
-  };
-
-  const handleDeleteWorkflow = async (workflowId) => {
-    if (!window.confirm('Are you sure you want to delete this workflow?'))
-      return;
-
-    try {
-      await workflowBuilderService.deleteWorkflow(workflowId);
-      setWorkflows((w) => w.filter((wf) => wf.id !== workflowId));
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-
-  const handleWorkflowSaved = (newWorkflow) => {
-    setWorkflows((w) => [...w, newWorkflow]);
-    setStudioTab(1); // Switch to My Workflows tab
-  };
-
-  const handleAccordionChange = (section) => (event, isExpanded) => {
+  const handleAccordionChange = (section) => (_event, isExpanded) => {
     setExpandedSection(isExpanded ? section : null);
   };
 
-  const handleStudioTabChange = (event, newValue) => {
-    setStudioTab(newValue);
-  };
-
-  const handleDiscoveryTabChange = (event, newValue) => {
+  const handleDiscoveryTabChange = (_event, newValue) => {
     setDiscoveryTab(newValue);
   };
 
-  if (loadingServices && services.length === 0) {
+  const handleExecuteAction = (serviceName) => {
+    logger.log(`Execute action for service: ${serviceName}`);
+  };
+
+  if (discovery.loadingServices && discovery.services.length === 0) {
     return (
       <Box
         sx={{
@@ -689,9 +511,13 @@ const UnifiedServicesPanel = () => {
         Unified Services & Workflows
       </Typography>
 
-      {error && (
-        <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 3 }}>
-          {error}
+      {sharedError && (
+        <Alert
+          severity="error"
+          onClose={() => setSharedError(null)}
+          sx={{ mb: 3 }}
+        >
+          {sharedError}
         </Alert>
       )}
 
@@ -713,7 +539,7 @@ const UnifiedServicesPanel = () => {
         </AccordionSummary>
         <AccordionDetails>
           <Box sx={{ width: '100%' }}>
-            {loadingWorkflows && expandedSection === 'studio' ? (
+            {studio.loadingWorkflows && expandedSection === 'studio' ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
                 <CircularProgress />
               </Box>
@@ -721,8 +547,8 @@ const UnifiedServicesPanel = () => {
               <>
                 {/* Studio Nested Tabs */}
                 <Tabs
-                  value={studioTab}
-                  onChange={handleStudioTabChange}
+                  value={studio.studioTab}
+                  onChange={studio.handleStudioTabChange}
                   aria-label="studio tabs"
                   sx={{ mb: 2, borderBottom: '1px solid #e0e0e0' }}
                 >
@@ -733,13 +559,13 @@ const UnifiedServicesPanel = () => {
                 </Tabs>
 
                 {/* Create Workflow Tab */}
-                {studioTab === 0 && (
+                {studio.studioTab === 0 && (
                   <Box>
-                    {availablePhases.length > 0 ? (
+                    {studio.availablePhases.length > 0 ? (
                       <WorkflowCanvas
-                        availablePhases={availablePhases}
-                        onSave={handleWorkflowSaved}
-                        workflow={selectedWorkflow}
+                        availablePhases={studio.availablePhases}
+                        onSave={studio.handleWorkflowSaved}
+                        workflow={studio.selectedWorkflow}
                       />
                     ) : (
                       <Alert severity="warning">
@@ -750,9 +576,9 @@ const UnifiedServicesPanel = () => {
                 )}
 
                 {/* My Workflows Tab */}
-                {studioTab === 1 && (
+                {studio.studioTab === 1 && (
                   <Box>
-                    {workflows.length === 0 ? (
+                    {studio.workflows.length === 0 ? (
                       <Typography
                         color="textSecondary"
                         align="center"
@@ -774,7 +600,7 @@ const UnifiedServicesPanel = () => {
                             </TableRow>
                           </TableHead>
                           <TableBody>
-                            {workflows.map((workflow) => (
+                            {studio.workflows.map((workflow) => (
                               <TableRow key={workflow.id}>
                                 <TableCell>
                                   <Typography
@@ -821,33 +647,22 @@ const UnifiedServicesPanel = () => {
                                     <IconButton
                                       size="small"
                                       title="Edit"
-                                      onClick={() => {
-                                        setSelectedWorkflow(workflow);
-                                        setStudioTab(0);
-                                      }}
+                                      onClick={() =>
+                                        studio.handleSelectWorkflowForEdit(
+                                          workflow
+                                        )
+                                      }
                                     >
                                       <FileText size={18} />
                                     </IconButton>
                                     <IconButton
                                       size="small"
                                       title="Execute"
-                                      onClick={async () => {
-                                        try {
-                                          await workflowManagementService.executeWorkflow(
-                                            workflow.id
-                                          );
-                                          logger.log(
-                                            'Workflow execution started:',
-                                            workflow.id
-                                          );
-                                        } catch (err) {
-                                          logger.error(
-                                            'Failed to execute workflow:',
-                                            err
-                                          );
-                                          setError(err.message);
-                                        }
-                                      }}
+                                      onClick={() =>
+                                        studio.handleExecuteWorkflow(
+                                          workflow.id
+                                        )
+                                      }
                                     >
                                       <Play size={18} />
                                     </IconButton>
@@ -856,7 +671,7 @@ const UnifiedServicesPanel = () => {
                                       title="Delete"
                                       color="error"
                                       onClick={() =>
-                                        handleDeleteWorkflow(workflow.id)
+                                        studio.handleDeleteWorkflow(workflow.id)
                                       }
                                     >
                                       <Trash size={18} />
@@ -873,10 +688,10 @@ const UnifiedServicesPanel = () => {
                 )}
 
                 {/* Templates Tab */}
-                {studioTab === 2 && (
+                {studio.studioTab === 2 && (
                   <Box>
                     <Stack spacing={2}>
-                      {templates.map((template) => (
+                      {studio.templates.map((template) => (
                         <Paper
                           key={template.id}
                           sx={{
@@ -905,10 +720,9 @@ const UnifiedServicesPanel = () => {
                             <Button
                               variant="contained"
                               size="small"
-                              onClick={() => {
-                                setSelectedTemplate(template);
-                                setTemplateModalOpen(true);
-                              }}
+                              onClick={() =>
+                                studio.handleOpenTemplateModal(template)
+                              }
                             >
                               View
                             </Button>
@@ -916,23 +730,9 @@ const UnifiedServicesPanel = () => {
                               variant="contained"
                               color="success"
                               size="small"
-                              onClick={async () => {
-                                try {
-                                  await workflowManagementService.executeWorkflow(
-                                    template.id
-                                  );
-                                  logger.log(
-                                    'Template execution started:',
-                                    template.id
-                                  );
-                                } catch (err) {
-                                  logger.error(
-                                    'Failed to execute template:',
-                                    err
-                                  );
-                                  setError(err.message);
-                                }
-                              }}
+                              onClick={() =>
+                                studio.handleExecuteWorkflow(template.id)
+                              }
                             >
                               Execute
                             </Button>
@@ -944,7 +744,11 @@ const UnifiedServicesPanel = () => {
                 )}
 
                 {/* Capability Composer Tab */}
-                {studioTab === 3 && <CapabilityComposer />}
+                {studio.studioTab === 3 && (
+                  <ErrorBoundary name="CapabilityComposer">
+                    <CapabilityComposer />
+                  </ErrorBoundary>
+                )}
               </>
             )}
           </Box>
@@ -970,11 +774,11 @@ const UnifiedServicesPanel = () => {
         <AccordionDetails>
           <Box sx={{ width: '100%' }}>
             <WorkflowMonitorTabs
-              executionHistory={executionHistory}
-              statistics={statistics}
-              performanceMetrics={performanceMetrics}
-              loading={monitorLoading}
-              error={monitorError}
+              executionHistory={monitor.executionHistory}
+              statistics={monitor.statistics}
+              performanceMetrics={monitor.performanceMetrics}
+              loading={monitor.monitorLoading}
+              error={monitor.monitorError}
             />
           </Box>
         </AccordionDetails>
@@ -1027,7 +831,7 @@ const UnifiedServicesPanel = () => {
                     execution
                   </Typography>
 
-                  {healthStatus && (
+                  {discovery.healthStatus && (
                     <Box
                       sx={{
                         display: 'flex',
@@ -1036,13 +840,13 @@ const UnifiedServicesPanel = () => {
                         py: 1,
                         px: 2,
                         borderRadius: 1,
-                        backgroundColor: healthStatus.healthy
+                        backgroundColor: discovery.healthStatus.healthy
                           ? '#e8f5e9'
                           : '#ffebee',
                       }}
                     >
                       <span style={{ fontSize: '12px' }}>
-                        {healthStatus.healthy
+                        {discovery.healthStatus.healthy
                           ? '✓ All systems operational'
                           : '⚠ Service issues detected'}
                       </span>
@@ -1055,8 +859,8 @@ const UnifiedServicesPanel = () => {
                   <TextField
                     fullWidth
                     placeholder="Search services by name or description..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    value={discovery.searchQuery}
+                    onChange={(e) => discovery.setSearchQuery(e.target.value)}
                     variant="outlined"
                     size="small"
                     sx={{ mb: 2 }}
@@ -1068,31 +872,31 @@ const UnifiedServicesPanel = () => {
                     sx={{ mb: 2, overflowX: 'auto' }}
                   >
                     <CapabilityFilter
-                      allCapabilities={allCapabilities}
-                      selectedCapabilities={selectedCapabilities}
-                      onFilterChange={setSelectedCapabilities}
+                      allCapabilities={discovery.allCapabilities}
+                      selectedCapabilities={discovery.selectedCapabilities}
+                      onFilterChange={discovery.setSelectedCapabilities}
                     />
                     <PhaseFilter
-                      allPhases={allPhases}
-                      selectedPhases={selectedPhases}
-                      onFilterChange={setSelectedPhases}
+                      allPhases={discovery.allPhases}
+                      selectedPhases={discovery.selectedPhases}
+                      onFilterChange={discovery.setSelectedPhases}
                     />
                   </Stack>
                 </Box>
 
                 {/* Services Display */}
-                {filteredServices.length > 0 ? (
+                {discovery.filteredServices.length > 0 ? (
                   <>
                     <Typography
                       variant="body2"
                       color="textSecondary"
                       sx={{ mb: 2 }}
                     >
-                      Showing {filteredServices.length} of {services.length}{' '}
-                      services
+                      Showing {discovery.filteredServices.length} of{' '}
+                      {discovery.services.length} services
                     </Typography>
                     <Stack spacing={2}>
-                      {filteredServices.map((service) => (
+                      {discovery.filteredServices.map((service) => (
                         <ServiceCard
                           key={service.id}
                           service={service}
@@ -1124,21 +928,23 @@ const UnifiedServicesPanel = () => {
 
       {/* Template Viewer Modal */}
       <Dialog
-        open={templateModalOpen}
-        onClose={() => setTemplateModalOpen(false)}
+        open={studio.templateModalOpen}
+        onClose={studio.handleCloseTemplateModal}
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle>{selectedTemplate?.name} Template Details</DialogTitle>
+        <DialogTitle>
+          {studio.selectedTemplate?.name} Template Details
+        </DialogTitle>
         <DialogContent>
-          {selectedTemplate && (
+          {studio.selectedTemplate && (
             <Stack spacing={2} sx={{ mt: 2 }}>
               <Box>
                 <Typography variant="subtitle2" color="textSecondary">
                   Description
                 </Typography>
                 <Typography variant="body2">
-                  {selectedTemplate.description}
+                  {studio.selectedTemplate.description}
                 </Typography>
               </Box>
               <Box>
@@ -1146,7 +952,7 @@ const UnifiedServicesPanel = () => {
                   Template ID
                 </Typography>
                 <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                  {selectedTemplate.id}
+                  {studio.selectedTemplate.id}
                 </Typography>
               </Box>
               <Box>
@@ -1158,16 +964,16 @@ const UnifiedServicesPanel = () => {
                   spacing={1}
                   sx={{ flexWrap: 'wrap', gap: 1 }}
                 >
-                  {Array.from({ length: selectedTemplate.phase_count }).map(
-                    (_, i) => (
-                      <Chip
-                        key={i}
-                        label={`Phase ${i + 1}`}
-                        size="small"
-                        variant="outlined"
-                      />
-                    )
-                  )}
+                  {Array.from({
+                    length: studio.selectedTemplate.phase_count,
+                  }).map((_, i) => (
+                    <Chip
+                      key={i}
+                      label={`Phase ${i + 1}`}
+                      size="small"
+                      variant="outlined"
+                    />
+                  ))}
                 </Stack>
               </Box>
               <Box>
@@ -1176,33 +982,27 @@ const UnifiedServicesPanel = () => {
                 </Typography>
                 <Chip
                   label={
-                    selectedTemplate.is_template
+                    studio.selectedTemplate.is_template
                       ? 'Built-in Template'
                       : 'Custom'
                   }
                   size="small"
-                  color={selectedTemplate.is_template ? 'default' : 'primary'}
+                  color={
+                    studio.selectedTemplate.is_template ? 'default' : 'primary'
+                  }
                 />
               </Box>
             </Stack>
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setTemplateModalOpen(false)}>Close</Button>
+          <Button onClick={studio.handleCloseTemplateModal}>Close</Button>
           <Button
             variant="contained"
             color="success"
             onClick={async () => {
-              try {
-                await workflowManagementService.executeWorkflow(
-                  selectedTemplate.id
-                );
-                logger.log('Template execution started:', selectedTemplate.id);
-                setTemplateModalOpen(false);
-              } catch (err) {
-                logger.error('Failed to execute template:', err);
-                setError(err.message);
-              }
+              await studio.handleExecuteWorkflow(studio.selectedTemplate?.id);
+              studio.handleCloseTemplateModal();
             }}
           >
             Execute Template

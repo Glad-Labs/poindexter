@@ -7,7 +7,7 @@ Provides endpoints for:
 - Model recommendations
 """
 
-import logging
+from services.logger_config import get_logger
 import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -24,8 +24,7 @@ from schemas.models_schemas import (
 from services.model_consolidation_service import get_model_consolidation_service
 from services.model_constants import PROVIDER_ICONS
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 # Router for all model-related endpoints — requires authentication
 models_router = APIRouter(
     prefix="/api/v1/models",
@@ -124,7 +123,7 @@ async def get_available_models(
         raise HTTPException(status_code=500, detail="Error getting available models")
 
 
-@models_router.get("/status", description="Get status of all model providers")
+@models_router.get("/status", response_model=Dict[str, Any], description="Get status of all model providers")
 async def get_provider_status():
     """
     Get availability status of all model providers in the consolidation service.

@@ -60,7 +60,7 @@ export const getActiveWritingSample = async () => {
  * @returns {Promise<Object>} Updated sample data
  */
 export const setActiveWritingSample = async (sampleId) => {
-  return makeRequest(`${API_BASE}/${sampleId}/set-active`, 'PUT');
+  return makeRequest(`${API_BASE}/${sampleId}/activate`, 'POST');
 };
 
 /**

@@ -2,12 +2,16 @@
 Unit tests for routes/task_routes.py.
 
 Tests cover:
-- GET /api/tasks          — list_tasks (pagination, filter, empty)
-- GET /api/tasks/{id}     — get_task (found, 404)
-- GET /api/tasks/{id}/status — get_task_status (found, 404)
-- GET /api/tasks/metrics  — get_metrics (static response)
-- POST /api/tasks         — create_task (blog_post happy path, validation error)
-- Helper function         — _normalize_seo_keywords_in_task
+- GET /api/tasks              — list_tasks (pagination, filter, empty)
+- GET /api/tasks/{id}         — get_task (found, 404)
+- GET /api/tasks/{id}/status  — get_task_status_info (found, 404)
+- GET /api/tasks/metrics      — get_metrics (static response)
+- POST /api/tasks             — create_task (blog_post happy path, validation error)
+- PUT /api/tasks/{id}/status  — update_task_status_enterprise (valid/invalid transitions)
+- PATCH /api/tasks/{id}       — update_task (status update, 404, invalid UUID)
+- DELETE /api/tasks/{id}      — delete_task (success 204, 404)
+- Helper function             — _normalize_seo_keywords_in_task
+- Helper function             — _check_task_ownership (raises 403 on mismatch)
 
 Auth and DB are overridden via FastAPI dependency_overrides so no real I/O occurs.
 """
@@ -380,3 +384,275 @@ class TestCreateTask:
         assert task_data_arg["topic"] == "Quantum Computing"
         assert task_data_arg["status"] == "pending"
         assert task_data_arg["task_type"] == "blog_post"
+
+
+# ---------------------------------------------------------------------------
+# Helper — _check_task_ownership
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestCheckTaskOwnership:
+    def test_same_user_does_not_raise(self):
+        from routes.task_routes import _check_task_ownership
+        from fastapi import HTTPException
+
+        task = {"user_id": "user-abc"}
+        user = {"id": "user-abc"}
+        # Should not raise
+        _check_task_ownership(task, user)
+
+    def test_different_user_raises_403(self):
+        from routes.task_routes import _check_task_ownership
+        from fastapi import HTTPException
+
+        task = {"user_id": "user-abc"}
+        user = {"id": "user-xyz"}
+        with pytest.raises(HTTPException) as exc_info:
+            _check_task_ownership(task, user)
+        assert exc_info.value.status_code == 403
+
+    def test_missing_task_user_id_does_not_raise(self):
+        """Legacy tasks without user_id are accessible by all users."""
+        from routes.task_routes import _check_task_ownership
+
+        task = {}  # no user_id
+        user = {"id": "user-xyz"}
+        _check_task_ownership(task, user)
+
+    def test_missing_request_user_id_does_not_raise(self):
+        """If current_user has no id, the check is skipped."""
+        from routes.task_routes import _check_task_ownership
+
+        task = {"user_id": "user-abc"}
+        user = {}  # no id
+        _check_task_ownership(task, user)
+
+
+# ---------------------------------------------------------------------------
+# PUT /api/tasks/{task_id}/status  (update_task_status_enterprise)
+# ---------------------------------------------------------------------------
+
+VALID_UUID = "550e8400-e29b-41d4-a716-446655440000"
+
+
+def _make_task_stub(status: str = "pending") -> dict:
+    return {
+        "id": VALID_UUID,
+        "task_id": VALID_UUID,
+        "task_type": "blog_post",
+        "status": status,
+        "topic": "Test topic",
+        "task_name": "Test task",
+        "user_id": TEST_USER["id"],
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": "2026-01-01T00:00:00Z",
+    }
+
+
+@pytest.mark.unit
+class TestUpdateTaskStatusEnterprise:
+    def test_valid_transition_returns_200(self):
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=_make_task_stub("pending"))
+        mock_db.update_task = AsyncMock(return_value=True)
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.put(
+            f"/api/tasks/{VALID_UUID}/status",
+            json={"status": "in_progress"},
+        )
+        assert resp.status_code == 200
+
+    def test_response_contains_old_and_new_status(self):
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=_make_task_stub("pending"))
+        mock_db.update_task = AsyncMock(return_value=True)
+        client = TestClient(_build_app(mock_db))
+
+        data = client.put(
+            f"/api/tasks/{VALID_UUID}/status",
+            json={"status": "in_progress"},
+        ).json()
+        assert data["old_status"] == "pending"
+        assert data["new_status"] == "in_progress"
+
+    def test_invalid_uuid_returns_400(self):
+        client = TestClient(_build_app())
+        resp = client.put("/api/tasks/not-a-uuid/status", json={"status": "in_progress"})
+        assert resp.status_code == 400
+
+    def test_task_not_found_returns_404(self):
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=None)
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.put(
+            f"/api/tasks/{VALID_UUID}/status",
+            json={"status": "in_progress"},
+        )
+        assert resp.status_code == 404
+
+    def test_invalid_transition_returns_422(self):
+        """pending → published is not a valid transition."""
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=_make_task_stub("pending"))
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.put(
+            f"/api/tasks/{VALID_UUID}/status",
+            json={"status": "published"},
+        )
+        assert resp.status_code == 422
+
+    def test_invalid_target_status_value_returns_422(self):
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=_make_task_stub("pending"))
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.put(
+            f"/api/tasks/{VALID_UUID}/status",
+            json={"status": "not_a_real_status"},
+        )
+        assert resp.status_code == 422
+
+    def test_update_task_called_on_success(self):
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=_make_task_stub("pending"))
+        mock_db.update_task = AsyncMock(return_value=True)
+        client = TestClient(_build_app(mock_db))
+
+        client.put(
+            f"/api/tasks/{VALID_UUID}/status",
+            json={"status": "in_progress"},
+        )
+        mock_db.update_task.assert_called_once()
+
+    def test_ownership_mismatch_returns_403(self):
+        task = {**_make_task_stub("pending"), "user_id": "other-user"}
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=task)
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.put(
+            f"/api/tasks/{VALID_UUID}/status",
+            json={"status": "in_progress"},
+        )
+        assert resp.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# PATCH /api/tasks/{task_id}  (update_task legacy endpoint)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestUpdateTask:
+    def test_invalid_uuid_returns_400(self):
+        client = TestClient(_build_app())
+        resp = client.patch("/api/tasks/not-a-uuid", json={"status": "running"})
+        assert resp.status_code == 400
+
+    def test_task_not_found_returns_404(self):
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=None)
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.patch(
+            f"/api/tasks/{VALID_UUID}",
+            json={"status": "running"},
+        )
+        assert resp.status_code == 404
+
+    def test_valid_status_update_returns_200(self):
+        stub = _make_task_stub("pending")
+        updated_stub = {**stub, "status": "running"}
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(side_effect=[stub, updated_stub])
+        mock_db.update_task_status = AsyncMock(return_value=True)
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.patch(
+            f"/api/tasks/{VALID_UUID}",
+            json={"status": "running"},
+        )
+        assert resp.status_code == 200
+
+    def test_update_task_status_called_with_correct_args(self):
+        stub = _make_task_stub("pending")
+        updated_stub = {**stub, "status": "running"}
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(side_effect=[stub, updated_stub])
+        mock_db.update_task_status = AsyncMock(return_value=True)
+        client = TestClient(_build_app(mock_db))
+
+        client.patch(f"/api/tasks/{VALID_UUID}", json={"status": "running"})
+        mock_db.update_task_status.assert_called_once()
+        args = mock_db.update_task_status.call_args
+        assert args[0][0] == VALID_UUID
+        assert args[0][1] == "running"
+
+    def test_ownership_mismatch_returns_403(self):
+        task = {**_make_task_stub("pending"), "user_id": "other-user"}
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=task)
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.patch(f"/api/tasks/{VALID_UUID}", json={"status": "running"})
+        assert resp.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# DELETE /api/tasks/{task_id}  (delete_task)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestDeleteTask:
+    def test_returns_204_on_success(self):
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=_make_task_stub("pending"))
+        mock_db.update_task_status = AsyncMock(return_value=True)
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.delete(f"/api/tasks/{VALID_UUID}")
+        assert resp.status_code == 204
+
+    def test_task_not_found_returns_404(self):
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=None)
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.delete(f"/api/tasks/{VALID_UUID}")
+        assert resp.status_code == 404
+
+    def test_update_task_status_called_with_cancelled(self):
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=_make_task_stub("pending"))
+        mock_db.update_task_status = AsyncMock(return_value=True)
+        client = TestClient(_build_app(mock_db))
+
+        client.delete(f"/api/tasks/{VALID_UUID}")
+        mock_db.update_task_status.assert_called_once()
+        args = mock_db.update_task_status.call_args
+        # First positional arg is task_id, second is "cancelled"
+        assert args[0][0] == VALID_UUID
+        assert args[0][1] == "cancelled"
+
+    def test_ownership_mismatch_returns_403(self):
+        task = {**_make_task_stub("pending"), "user_id": "other-user"}
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=task)
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.delete(f"/api/tasks/{VALID_UUID}")
+        assert resp.status_code == 403
+
+    def test_db_error_returns_500(self):
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=_make_task_stub("pending"))
+        mock_db.update_task_status = AsyncMock(side_effect=RuntimeError("DB error"))
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.delete(f"/api/tasks/{VALID_UUID}")
+        assert resp.status_code == 500

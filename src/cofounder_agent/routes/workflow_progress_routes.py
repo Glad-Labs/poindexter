@@ -9,7 +9,7 @@ Provides REST endpoints and WebSocket integration for:
 """
 
 import json
-import logging
+from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -21,7 +21,7 @@ from services.workflow_progress_service import (
     get_workflow_progress_service,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 router = APIRouter(
     prefix="/api/workflow-progress",
     tags=["workflow-progress"],

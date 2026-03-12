@@ -15,13 +15,15 @@ const API_BASE =
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const skip = parseInt(searchParams.get('skip') || '0');
+    const offset = parseInt(
+      searchParams.get('offset') || searchParams.get('skip') || '0'
+    );
     const limit = parseInt(searchParams.get('limit') || '10');
     const status = searchParams.get('status') || 'published';
 
     // Forward to backend API
     const response = await fetch(
-      `${API_BASE}/api/posts?skip=${skip}&limit=${limit}&published_only=${status === 'published'}`,
+      `${API_BASE}/api/posts?offset=${offset}&limit=${limit}&published_only=${status === 'published'}`,
       {
         next: { revalidate: 3600 }, // ISR: revalidate every hour
       }
@@ -34,11 +36,12 @@ export async function GET(request: NextRequest) {
     const data = await response.json();
 
     return NextResponse.json({
-      items: data.data || data.items || [],
-      total: data.meta?.pagination?.total || data.total || 0,
+      items: data.posts || data.data || data.items || [],
+      total: data.total ?? data.meta?.pagination?.total ?? 0,
     });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error';
     const errorStack = error instanceof Error ? error.stack : undefined;
     logger.error('Error in posts API route', {
       message: errorMessage,

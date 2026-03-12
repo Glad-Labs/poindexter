@@ -94,8 +94,8 @@ class AdminDatabase(DatabaseServiceMixin):
                 RETURNING *
             """
             params = [
-                str(cost_log["task_id"]),
-                str(cost_log["user_id"]) if cost_log.get("user_id") else None,
+                cost_log["task_id"],
+                cost_log.get("user_id"),
                 cost_log["phase"],
                 cost_log["model"],
                 cost_log["provider"],

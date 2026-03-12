@@ -1,9 +1,8 @@
-import logging
+from services.logger_config import get_logger
 import os
 from typing import Optional
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 # Try to import crewai_tools, fall back to mock if not available
 try:
     from crewai_tools import (  # type: ignore

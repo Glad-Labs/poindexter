@@ -3,6 +3,7 @@ import { Container, Box, Tabs, Tab, Paper } from '@mui/material';
 import CapabilitiesBrowser from '../components/marketplace/CapabilitiesBrowser';
 import ServiceExplorer from '../components/marketplace/ServiceExplorer';
 import WorkflowBuilder from '../components/marketplace/WorkflowBuilder';
+import ErrorBoundary from '../components/ErrorBoundary';
 
 function TabPanel(props) {
   const { children, value, index, ...other } = props;
@@ -62,7 +63,9 @@ function Marketplace() {
         </TabPanel>
 
         <TabPanel value={activeTab} index={2}>
-          <WorkflowBuilder />
+          <ErrorBoundary name="WorkflowBuilder">
+            <WorkflowBuilder />
+          </ErrorBoundary>
         </TabPanel>
       </Paper>
     </Container>

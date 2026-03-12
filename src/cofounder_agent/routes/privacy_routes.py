@@ -1,6 +1,6 @@
 """GDPR Data Subject Rights Routes."""
 
-import logging
+from services.logger_config import get_logger
 import os
 import re
 from datetime import datetime, timezone
@@ -14,8 +14,7 @@ from services.database_service import DatabaseService
 from services.gdpr_service import GDPRService
 from utils.route_utils import get_database_dependency
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 router = APIRouter(prefix="/api/privacy", tags=["privacy"])
 
 

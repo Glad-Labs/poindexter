@@ -135,13 +135,15 @@ const PostCard = ({ post }) => {
         </p>
 
         {/* Read More Link - Premium style */}
-        <div className="inline-flex">
+        {/* aria-hidden: the title link above already links to the same URL; this
+            is a visual affordance only so we hide it from screen readers to
+            avoid announcing two links with the same destination per card. */}
+        <div className="inline-flex" aria-hidden="true">
           <Link
             href={href}
             className="inline-flex items-center gap-2 text-sm font-semibold text-cyan-400 hover:text-cyan-300 group/link focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:rounded-lg px-2 py-1 transition-all duration-300"
-            tabIndex={isClickable ? 0 : -1}
-            aria-disabled={!isClickable}
-            aria-label={`Read full article: ${title}`}
+            tabIndex={-1}
+            aria-hidden="true"
           >
             Read Article
             <svg

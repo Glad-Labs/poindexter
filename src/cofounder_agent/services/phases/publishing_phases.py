@@ -4,7 +4,7 @@ Publishing Phases
 Handle post creation, publication, and metadata updates.
 """
 
-import logging
+from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
@@ -60,9 +60,7 @@ def _extract_field(payload: Any, field: str, default: Any = None) -> Any:
     return getattr(payload, field, default)
 
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class CreatePostPhase(BasePhase):
     """
     Create a post record in the database (draft status).

@@ -111,12 +111,14 @@ const OrchestratorCommandMessage = ({ message, onExecute, onCancel }) => {
   );
 
   // Footer action buttons
+  // NOTE: icon values must be JSX elements (e.g. <PlayArrowIcon />), not
+  // component references — MUI Button.startIcon expects a React element.
   const footerActions = [
     {
       label: editMode ? 'Confirm' : 'Execute',
       onClick: handleExecute,
       variant: 'contained',
-      icon: PlayArrowIcon,
+      icon: <PlayArrowIcon />,
       sx: { backgroundColor: '#22c55e' },
     },
     ...(editMode
@@ -125,7 +127,7 @@ const OrchestratorCommandMessage = ({ message, onExecute, onCancel }) => {
             label: 'Cancel Edit',
             onClick: handleCancel,
             variant: 'outlined',
-            icon: CloseIcon,
+            icon: <CloseIcon />,
           },
         ]
       : [
@@ -133,13 +135,13 @@ const OrchestratorCommandMessage = ({ message, onExecute, onCancel }) => {
             label: 'Edit',
             onClick: () => setEditMode(true),
             variant: 'outlined',
-            icon: EditIcon,
+            icon: <EditIcon />,
           },
           {
             label: 'Cancel',
             onClick: handleCancel,
             variant: 'outlined',
-            icon: CloseIcon,
+            icon: <CloseIcon />,
           },
         ]),
   ];
