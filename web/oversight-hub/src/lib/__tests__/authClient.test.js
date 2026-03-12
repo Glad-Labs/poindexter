@@ -321,21 +321,19 @@ describe('AuthClient', () => {
 
   describe('Edge Cases', () => {
     test('should handle null token', () => {
-      // localStorage.setItem converts null to string "null"
+      // In-memory storage: null is falsy, getToken returns null
       authClient.setToken(null);
 
       const token = authClient.getToken();
-      // Returns "null" string, not null (this is localStorage behavior)
-      expect(token).toBe('null');
+      expect(token).toBeNull();
     });
 
     test('should handle undefined token', () => {
-      // localStorage.setItem converts undefined to string "undefined"
+      // In-memory storage: undefined is falsy, getToken returns null
       authClient.setToken(undefined);
 
       const token = authClient.getToken();
-      // Returns "undefined" string (this is localStorage behavior)
-      expect(token).toBe('undefined');
+      expect(token).toBeNull();
     });
 
     test('should handle empty string token', () => {

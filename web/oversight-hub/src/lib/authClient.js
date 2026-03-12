@@ -37,9 +37,20 @@ const DEFAULT_OAUTH_STATE_MAX_AGE_MS = 10 * 60 * 1000;
 class AuthClient {
   constructor() {
     this.listeners = [];
+    // SECURITY: Token stored in memory only — not localStorage/sessionStorage.
+    // This prevents XSS from stealing JWT tokens (CWE-312/CWE-313).
+    // Tokens do not survive page refresh; cookie-based auth handles persistence.
+    this._token = null;
+    this._tokenExpiry = null;
     this._storage = typeof window !== 'undefined' ? window.localStorage : null;
     this._sessionStorage =
       typeof window !== 'undefined' ? window.sessionStorage : null;
+
+    // Migrate: clear any legacy token from localStorage
+    if (this._storage) {
+      this._storage.removeItem(STORAGE_KEYS.AUTH_TOKEN);
+      this._storage.removeItem(STORAGE_KEYS.TOKEN_EXPIRY);
+    }
   }
 
   /**
@@ -47,11 +58,7 @@ class AuthClient {
    * @returns {string|null} JWT token or null if not authenticated
    */
   getToken() {
-    if (!this._storage) return null;
-
-    const token = this._storage.getItem(STORAGE_KEYS.AUTH_TOKEN);
-
-    if (!token) {
+    if (!this._token) {
       return null;
     }
 
@@ -62,23 +69,22 @@ class AuthClient {
       return null;
     }
 
-    return token;
+    return this._token;
   }
 
   /**
-   * Store authentication token
+   * Store authentication token (in memory only — never persisted to disk)
    * @param {string} token - JWT token
    * @param {number} expiresIn - Token lifetime in seconds (optional)
    */
   setToken(token, expiresIn = null) {
-    if (!this._storage) return;
-
-    this._storage.setItem(STORAGE_KEYS.AUTH_TOKEN, token);
+    this._token = token;
 
     // Calculate expiry if provided
     if (expiresIn) {
-      const expiryTime = Date.now() + expiresIn * 1000;
-      this._storage.setItem(STORAGE_KEYS.TOKEN_EXPIRY, expiryTime.toString());
+      this._tokenExpiry = Date.now() + expiresIn * 1000;
+    } else {
+      this._tokenExpiry = null;
     }
 
     this._notifyListeners('token_set');
@@ -88,10 +94,8 @@ class AuthClient {
    * Clear authentication token
    */
   clearToken() {
-    if (!this._storage) return;
-
-    this._storage.removeItem(STORAGE_KEYS.AUTH_TOKEN);
-    this._storage.removeItem(STORAGE_KEYS.TOKEN_EXPIRY);
+    this._token = null;
+    this._tokenExpiry = null;
     this._notifyListeners('token_cleared');
   }
 
@@ -100,19 +104,15 @@ class AuthClient {
    * @returns {boolean} True if token is expired or will expire soon
    */
   isTokenExpired() {
-    if (!this._storage) return true;
-
-    const expiryStr = this._storage.getItem(STORAGE_KEYS.TOKEN_EXPIRY);
-    if (!expiryStr) {
+    if (!this._tokenExpiry) {
       // No expiry set, assume token is valid (cookies handle expiry)
       return false;
     }
 
-    const expiryTime = parseInt(expiryStr, 10);
     const now = Date.now();
 
     // Consider expired if within buffer window
-    return now >= expiryTime - TOKEN_EXPIRY_BUFFER_MS;
+    return now >= this._tokenExpiry - TOKEN_EXPIRY_BUFFER_MS;
   }
 
   /**
