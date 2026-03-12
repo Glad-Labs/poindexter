@@ -7,7 +7,7 @@ Using pure asyncpg for non-blocking database access.
 
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -250,12 +250,12 @@ async def list_posts(
 
             # Sort by published_at (newest first), fallback to created_at if not published
             query += " ORDER BY COALESCE(published_at, created_at) DESC NULLS LAST"
-            query += f" OFFSET {skip} LIMIT {limit}"
+            # Parameterize OFFSET/LIMIT to prevent SQL injection
+            params.append(limit)
+            params.append(skip)
+            query += f" LIMIT ${len(params) - 1} OFFSET ${len(params)}"
 
-            if params:
-                rows = await conn.fetch(query, *params)
-            else:
-                rows = await conn.fetch(query)
+            rows = await conn.fetch(query, *params)
 
             posts = [dict(row) for row in rows]
 
@@ -465,8 +465,10 @@ async def cms_status():
     try:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
+            # Allowlist of tables — never interpolate user-controlled values into SQL
+            CMS_TABLES = frozenset(["posts", "categories", "tags", "post_tags"])
             tables = {}
-            for table_name in ["posts", "categories", "tags", "post_tags"]:
+            for table_name in CMS_TABLES:
                 # Check if table exists
                 exists_row = await conn.fetchrow(
                     """
@@ -491,7 +493,7 @@ async def cms_status():
             return {
                 "status": "healthy" if all_exist else "degraded",
                 "tables": tables,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
     except Exception as e:
         logger.error(f"Error checking CMS status: {str(e)}", exc_info=True)
@@ -499,7 +501,7 @@ async def cms_status():
             "status": "error",
             "detail": str(e),
             "tables": {},
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
 
