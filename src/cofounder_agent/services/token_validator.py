@@ -11,15 +11,12 @@ This is a standalone validator that:
 - No user creation or session management
 """
 
-import logging
 import os
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, Optional, Tuple
 
 import jwt
-
-logger = logging.getLogger(__name__)
 
 
 class TokenType(str, Enum):
@@ -41,18 +38,22 @@ class AuthConfig:
         import sys
 
         if os.getenv("ENVIRONMENT", "development") == "production":
-            logger.error("JWT_SECRET_KEY or JWT_SECRET environment variable is required")
+            print(
+                "[ERROR] JWT_SECRET_KEY or JWT_SECRET environment variable is required",
+                file=sys.stderr,
+            )
             sys.exit(1)  # Exit if JWT secret is missing in production
         else:
             # Development fallback - MUST MATCH .env.local JWT_SECRET value
             _from_env = "development-secret-key-change-in-production"
-            logger.warning(
-                "Using development JWT secret - SET JWT_SECRET in .env for production"
+            print(
+                "[WARNING] Using development JWT secret - SET JWT_SECRET in .env for production",
+                flush=True,
             )
             _secret_source = "FALLBACK (hardcoded development)"
     else:
         _secret_source = "JWT_SECRET_KEY" if os.getenv("JWT_SECRET_KEY") else "JWT_SECRET"
-        logger.debug("JWT Secret loaded from %s", _secret_source)
+        print(f"[INFO] JWT Secret loaded from {_secret_source}", flush=True)
 
     SECRET_KEY = _from_env
     ALGORITHM = "HS256"
@@ -82,8 +83,11 @@ class JWTTokenValidator:
         """
         import sys
 
-        # Development: Allow disabling auth for testing
-        if os.getenv("DISABLE_AUTH_FOR_DEV") == "true":
+        # Development: Allow disabling auth for testing — ONLY in non-production environments
+        if (
+            os.getenv("DISABLE_AUTH_FOR_DEV") == "true"
+            and os.getenv("ENVIRONMENT", "development") != "production"
+        ):
             return {
                 "sub": "dev-user",
                 "user_id": "dev-user-id",
@@ -113,10 +117,14 @@ class JWTTokenValidator:
 
             return payload
         except jwt.ExpiredSignatureError as e:
-            logger.debug("Token expired: %s", e)
+            import sys
+
+            print(f"[DEBUG] Token expired: {str(e)}", file=sys.stderr, flush=True)
             raise jwt.ExpiredSignatureError("Token has expired")
         except jwt.InvalidTokenError as e:
-            logger.debug("Invalid token error: %s", e)
+            import sys
+
+            print(f"[DEBUG] Invalid token error: {str(e)}", file=sys.stderr, flush=True)
             raise jwt.InvalidTokenError(f"Invalid token: {str(e)}")
 
     @staticmethod

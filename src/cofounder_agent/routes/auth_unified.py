@@ -24,7 +24,7 @@ from typing import Any, Dict, Optional
 
 import httpx
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel
 
 from schemas.auth_schemas import (
@@ -32,21 +32,11 @@ from schemas.auth_schemas import (
     LogoutResponse,
     UserProfile,
 )
-from services.database_service import DatabaseService
-from services.token_blocklist import add_token as blocklist_add, is_revoked as blocklist_is_revoked
-from services.token_manager import TokenManager
 from services.token_validator import AuthConfig, JWTTokenValidator
-from utils.rate_limiter import limiter
-from utils.route_utils import get_database_dependency
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
-
-AUTH_COOKIE_NAME = os.getenv("AUTH_COOKIE_NAME", "gladlabs_auth")
-_is_dev = os.getenv("ENVIRONMENT", "production") == "development"
-AUTH_COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", "false" if _is_dev else "true").lower() == "true"
-AUTH_COOKIE_MAX_AGE_SECONDS = AuthConfig.ACCESS_TOKEN_EXPIRE_MINUTES * 60
 
 # GitHub Configuration
 # Note: Using GH_OAUTH_ prefix instead of GITHUB_ because GitHub Actions
@@ -54,90 +44,50 @@ AUTH_COOKIE_MAX_AGE_SECONDS = AuthConfig.ACCESS_TOKEN_EXPIRE_MINUTES * 60
 GITHUB_CLIENT_ID = os.getenv("GH_OAUTH_CLIENT_ID", "")
 GITHUB_CLIENT_SECRET = os.getenv("GH_OAUTH_CLIENT_SECRET", "")
 
-# CSRF State Store — Redis-backed with in-memory fallback (fix #159)
-_CSRF_STATES: Dict[str, datetime] = {}  # in-memory fallback only
+# CSRF State Store - stores valid states with expiration
+# In production, replace with Redis or session store for distributed deployments
+_CSRF_STATES: Dict[str, datetime] = {}
 CSRF_STATE_EXPIRY_SECONDS = 600  # 10 minutes
-
-# Redis connection for CSRF state persistence (lazy-initialised)
-_csrf_redis: Optional[Any] = None
-_csrf_redis_checked: bool = False
-
-
-async def _get_csrf_redis() -> Optional[Any]:
-    """Return a Redis connection for CSRF state, or None if unavailable."""
-    global _csrf_redis, _csrf_redis_checked
-    if _csrf_redis_checked:
-        return _csrf_redis
-    _csrf_redis_checked = True
-    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-    redis_enabled = os.getenv("REDIS_ENABLED", "true").lower() in ("true", "1", "yes")
-    if not redis_enabled:
-        return None
-    try:
-        import redis.asyncio as _aioredis  # type: ignore[import-untyped]
-        conn = await _aioredis.from_url(redis_url, encoding="utf-8", decode_responses=True, socket_connect_timeout=3)
-        await conn.ping()
-        _csrf_redis = conn
-        logger.info("[csrf_state] Redis connected — CSRF state will persist across restarts")
-    except Exception as exc:
-        logger.warning("[csrf_state] Redis unavailable (%s) — using in-memory fallback", exc)
-        _csrf_redis = None
-    return _csrf_redis
 
 # ============================================================================
 # Helper Functions
 # ============================================================================
 
 
-async def generate_csrf_state() -> str:
-    """Generate a cryptographically secure CSRF state token and persist it."""
+def generate_csrf_state() -> str:
+    """Generate a cryptographically secure CSRF state token."""
     state = secrets.token_urlsafe(32)
-    r = await _get_csrf_redis()
-    if r is not None:
-        try:
-            await r.setex(f"csrf_state:{state}", CSRF_STATE_EXPIRY_SECONDS, "1")
-            logger.debug("Generated CSRF state token in Redis (TTL %ds)", CSRF_STATE_EXPIRY_SECONDS)
-            return state
-        except Exception as exc:
-            logger.warning("[csrf_state] Redis write failed (%s) — falling back to memory", exc)
-    # in-memory fallback
-    _CSRF_STATES[state] = datetime.now(timezone.utc) + timedelta(seconds=CSRF_STATE_EXPIRY_SECONDS)
-    logger.debug("Generated CSRF state token in memory (expires in %ds)", CSRF_STATE_EXPIRY_SECONDS)
+    expiry = datetime.now(timezone.utc) + timedelta(seconds=CSRF_STATE_EXPIRY_SECONDS)
+    _CSRF_STATES[state] = expiry
+    logger.debug(f"Generated CSRF state token (expires in {CSRF_STATE_EXPIRY_SECONDS}s)")
     return state
 
 
-async def validate_csrf_state(state: str) -> bool:
+def validate_csrf_state(state: str) -> bool:
     """
-    Validate CSRF state token (one-time use).  Returns True if valid, False otherwise.
-    Removes the state from the store on first successful validation.
+    Validate CSRF state token.
+
+    Checks:
+    - State exists in store
+    - State has not expired
+    - Removes state from store after validation (one-time use)
+
+    Returns:
+        True if state is valid, False otherwise
     """
-    if not state:
-        logger.warning("CSRF state validation failed: empty state")
+    if not state or state not in _CSRF_STATES:
+        logger.warning("CSRF state validation failed: state not found in store")
         return False
 
-    r = await _get_csrf_redis()
-    if r is not None:
-        try:
-            # GETDEL is atomic: returns the value and deletes the key in one operation
-            result = await r.getdel(f"csrf_state:{state}")
-            if result is None:
-                logger.warning("CSRF state validation failed: not found or already used (Redis)")
-                return False
-            logger.debug("CSRF state validation successful (Redis)")
-            return True
-        except Exception as exc:
-            logger.warning("[csrf_state] Redis read failed (%s) — falling back to memory", exc)
-
-    # in-memory fallback
-    if state not in _CSRF_STATES:
-        logger.warning("CSRF state validation failed: state not found in store (memory)")
-        return False
     expiry = _CSRF_STATES[state]
-    del _CSRF_STATES[state]  # one-time use
     if datetime.now(timezone.utc) > expiry:
-        logger.warning("CSRF state validation failed: state expired (memory)")
+        logger.warning("CSRF state validation failed: state expired")
+        del _CSRF_STATES[state]
         return False
-    logger.debug("CSRF state validation successful (memory)")
+
+    # Remove state after successful validation (one-time use only)
+    del _CSRF_STATES[state]
+    logger.debug("CSRF state validation successful")
     return True
 
 
@@ -169,24 +119,35 @@ async def exchange_code_for_token(code: str) -> Dict[str, Any]:
                 timeout=10.0,
             )
 
+            logger.debug(f"GitHub token exchange response status: {response.status_code}")
+
             if response.status_code != 200:
-                logger.error(f"GitHub token exchange failed: {response.status_code}")
-                raise HTTPException(status_code=401, detail="GitHub authentication failed")
-
-            data = response.json()
-
-            if "error" in data:
-                logger.error(f"GitHub error: {data.get('error_description', 'Unknown error')}")
+                response_text = response.text
+                logger.error(
+                    f"GitHub token exchange failed with status {response.status_code}: {response_text}"
+                )
                 raise HTTPException(
                     status_code=401,
-                    detail=data.get("error_description", "GitHub authentication failed"),
+                    detail="GitHub authentication failed - invalid code or credentials",
+                )
+
+            data = response.json()
+            logger.debug(f"GitHub response keys: {data.keys()}")
+
+            if "error" in data:
+                error_description = data.get("error_description", "Unknown error")
+                logger.error(f"GitHub error: {data.get('error')} - {error_description}")
+                raise HTTPException(
+                    status_code=401,
+                    detail=f"GitHub rejected request: {error_description}",
                 )
 
             access_token = data.get("access_token", "")
             if not access_token:
-                logger.error("No access token returned from GitHub")
+                logger.error(f"No access token in GitHub response. Keys: {list(data.keys())}")
                 raise HTTPException(status_code=401, detail="Invalid token response from GitHub")
 
+            logger.info("Successfully obtained GitHub access token")
             # Return full response with expiration info
             return {
                 "access_token": access_token,
@@ -223,11 +184,18 @@ async def get_github_user(access_token: str) -> Dict[str, Any]:
             timeout=10.0,
         )
 
-        if response.status_code != 200:
-            logger.error(f"GitHub API error: {response.status_code}")
-            raise HTTPException(status_code=401, detail="Failed to fetch GitHub user")
+        logger.debug(f"GitHub user API response status: {response.status_code}")
 
-        return response.json()
+        if response.status_code != 200:
+            response_text = response.text
+            logger.error(f"GitHub API error: {response.status_code} - {response_text}")
+            raise HTTPException(
+                status_code=401, detail=f"Failed to fetch GitHub user: {response.status_code}"
+            )
+
+        user_data = response.json()
+        logger.info(f"Successfully fetched GitHub user: {user_data.get('login')}")
+        return user_data
 
 
 def create_jwt_token(user_data: Dict[str, Any]) -> str:
@@ -251,54 +219,9 @@ def create_jwt_token(user_data: Dict[str, Any]) -> str:
     return token
 
 
-def set_auth_cookie(response: Response, token: str) -> None:
-    """Attach the short-lived auth token as an HttpOnly cookie."""
-    response.set_cookie(
-        key=AUTH_COOKIE_NAME,
-        value=token,
-        max_age=AUTH_COOKIE_MAX_AGE_SECONDS,
-        httponly=True,
-        secure=AUTH_COOKIE_SECURE,
-        samesite="lax",
-        path="/",
-    )
-
-
-def clear_auth_cookie(response: Response) -> None:
-    """Remove the auth cookie during logout/cleanup."""
-    response.delete_cookie(key=AUTH_COOKIE_NAME, path="/")
-
-
 # ============================================================================
 # Dependency: Get Current User (Auth-Agnostic)
 # ============================================================================
-
-
-async def get_current_user_optional(request: Request) -> Dict[str, Any]:
-    """
-    Optional authentication - returns dev user if no auth header present.
-    Useful for development/testing.
-
-    Returns mock user if DEVELOPMENT_MODE=true and no auth provided.
-    """
-    auth_header = request.headers.get("Authorization", "")
-
-    # No auth header - return dev user (allows testing without real token)
-    if not auth_header:
-        logger.debug(
-            "[get_current_user_optional] No auth header - returning dev user for development"
-        )
-        return {
-            "id": "dev-user-123",
-            "email": "dev@example.com",
-            "username": "dev-user",
-            "auth_provider": "development",
-            "is_active": True,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "token": "dev-token",
-        }
-    # Auth header provided - validate normally
-    return await get_current_user(request)
 
 
 async def get_current_user(request: Request) -> Dict[str, Any]:
@@ -307,8 +230,6 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
 
     Works for all auth types (traditional JWT, OAuth, GitHub OAuth).
     Auto-detects auth provider from token claims.
-
-    In development mode (DEVELOPMENT_MODE=true), allows unauthenticated access with a mock user.
 
     Args:
         request: FastAPI request object
@@ -335,76 +256,22 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
     """
     try:
         auth_header = request.headers.get("Authorization", "")
-        cookie_token = request.cookies.get(AUTH_COOKIE_NAME)
-        token: Optional[str] = None
 
-        # DEVELOPMENT MODE: If no auth token provided, allow access with dev user
-        # Only active when DEVELOPMENT_MODE=true — never bypass auth in production
-        if not auth_header and not cookie_token:
-            if os.getenv("DEVELOPMENT_MODE", "false").lower() != "true":
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Authentication required",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-            logger.info("[get_current_user] No auth header - allowing development access")
-            return {
-                "id": "dev-user-123",
-                "email": "dev@example.com",
-                "username": "dev-user",
-                "auth_provider": "development",
-                "is_active": True,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "token": "dev-token",
-            }
-
-        if auth_header:
-            if not auth_header.startswith("Bearer "):
-                logger.warning("[get_current_user] Invalid auth header format")
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Missing or invalid authorization header",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-            token = auth_header[7:]  # Remove "Bearer " prefix
-        elif cookie_token:
-            token = cookie_token
-
-        if not token:
+        if not auth_header.startswith("Bearer "):
+            logger.warning(f"[get_current_user] Invalid auth header format")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication token missing",
+                detail="Missing or invalid authorization header",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # DEVELOPMENT MODE: Allow dev tokens without JWT validation
-        # Only active when DEVELOPMENT_MODE=true
-        if (token.lower().startswith("dev-") or token == "dev-token") and os.getenv("DEVELOPMENT_MODE", "false").lower() == "true":
-            logger.info(f"[get_current_user] Development token accepted: {token[:20]}...")
-            return {
-                "id": "dev-user-123",
-                "email": "dev@example.com",
-                "username": "dev-user",
-                "auth_provider": "development",
-                "is_active": True,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "token": token,
-            }
-
-        # Reject tokens that have been explicitly revoked (logged out)
-        if await blocklist_is_revoked(token):
-            logger.warning("[get_current_user] Revoked token rejected")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token has been revoked. Please log in again.",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+        token = auth_header[7:]  # Remove "Bearer " prefix
 
         # Verify token
         try:
             claims = JWTTokenValidator.verify_token(token)
         except Exception as e:
-            logger.warning(f"[get_current_user] Token verification failed: {str(e)}", exc_info=True)
+            logger.warning(f"[get_current_user] Token verification failed")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired token",
@@ -448,42 +315,85 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
         )
 
 
+async def get_current_user_optional(request: Request) -> Optional[Dict[str, Any]]:
+    """
+    Optional authentication dependency.
+
+    Returns user dict if a valid token is present, None otherwise.
+    In development mode (DEVELOPMENT_MODE=true), returns a dev-user identity
+    for unauthenticated requests. In production, unauthenticated callers get None.
+
+    Use this for endpoints that behave differently for authenticated vs anonymous users
+    (e.g., showing personalized content when logged in).
+    """
+    try:
+        auth_header = request.headers.get("Authorization", "")
+
+        if not auth_header.startswith("Bearer "):
+            # No token provided — check for dev mode fallback
+            if os.getenv("DEVELOPMENT_MODE", "").lower() == "true":
+                logger.debug("[get_current_user_optional] No token, returning dev user (DEVELOPMENT_MODE=true)")
+                return {
+                    "id": "dev-user-id",
+                    "email": "dev@example.com",
+                    "username": "dev-user",
+                    "auth_provider": "development",
+                    "is_active": True,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                }
+            # Production: unauthenticated callers get None
+            return None
+
+        token = auth_header[7:]  # Remove "Bearer " prefix
+
+        try:
+            claims = JWTTokenValidator.verify_token(token)
+        except Exception:
+            logger.debug("[get_current_user_optional] Token verification failed, returning None")
+            return None
+
+        if not claims:
+            return None
+
+        user_id = claims.get("user_id")
+        if not user_id:
+            return None
+
+        return {
+            "id": str(user_id),
+            "email": claims.get("email", ""),
+            "username": claims.get("username") or claims.get("sub", ""),
+            "auth_provider": claims.get("auth_provider", "jwt"),
+            "is_active": claims.get("is_active", True),
+            "created_at": claims.get("created_at", datetime.now(timezone.utc).isoformat()),
+            "token": token,
+        }
+    except Exception as e:
+        logger.debug(f"[get_current_user_optional] Error: {type(e).__name__}", exc_info=True)
+        return None
+
+
 # ============================================================================
 # Unified Endpoints
 # ============================================================================
 
 
 @router.post("/github/callback")
-@limiter.limit("10/minute")
-async def github_callback(
-    request: Request,
-    request_data: GitHubCallbackRequest,
-    response: Response,
-    db: DatabaseService = Depends(get_database_dependency),
-) -> Dict[str, Any]:
+async def github_callback(request_data: GitHubCallbackRequest) -> Dict[str, Any]:
     """
     Handle GitHub OAuth callback.
 
     Receives authorization code from frontend, exchanges it for GitHub access token,
-    fetches user information, stores the token securely, and returns JWT token.
+    fetches user information, and returns JWT token.
 
-    Security checks:
+    Security notes:
+    - The state parameter is echoed back by GitHub and ensures the authorization
+      code came from the same browser that initiated the request
+    - GitHub acts as the CSRF validator in this flow
     - Validates code parameter is provided
-    - Validates state parameter is provided and matches server-side CSRF token
-    - Validates state has not expired (10-minute window)
-    - Validates state is used only once (one-time use)
+    - Validates state parameter is provided
     - Checks token expiration from GitHub response
     - Validates API response contains required fields
-    - Securely stores OAuth token in database via TokenManager
-
-    Flow:
-    1. Validate CSRF state
-    2. Exchange code for access token
-    3. Fetch user information from GitHub
-    4. Get/create user in database
-    5. Store OAuth token securely
-    6. Create JWT token
-    7. Return token and user info
     """
     code = request_data.code
     state = request_data.state
@@ -493,13 +403,8 @@ async def github_callback(
         raise HTTPException(status_code=400, detail="Missing authorization code")
 
     if not state:
-        logger.warning("GitHub callback missing state parameter (CSRF check)")
+        logger.warning("GitHub callback missing state parameter")
         raise HTTPException(status_code=400, detail="Missing state parameter")
-
-    # Validate CSRF state against server-side store
-    if not await validate_csrf_state(state):
-        logger.warning("GitHub callback CSRF validation failed - possible CSRF attack")
-        raise HTTPException(status_code=403, detail="Invalid or expired CSRF token")
 
     try:
         # Exchange code for GitHub access token
@@ -522,55 +427,8 @@ async def github_callback(
             logger.error("Failed to fetch GitHub user information")
             raise HTTPException(status_code=401, detail="Failed to fetch user information")
 
-        # Prepare user data for database
-        provider_data = {
-            "login": github_user.get("login"),
-            "email": github_user.get("email"),
-            "avatar_url": github_user.get("avatar_url"),
-            "name": github_user.get("name"),
-            "bio": github_user.get("bio"),
-            "company": github_user.get("company"),
-            "location": github_user.get("location"),
-        }
-
-        # Get or create user in database
-        user_response = await db.users.get_or_create_oauth_user(
-            provider="github",
-            provider_user_id=str(github_user.get("id", "")),
-            provider_data=provider_data,
-        )
-
-        if not user_response:
-            logger.error("Failed to create/retrieve user from database")
-            raise HTTPException(status_code=500, detail="User database operation failed")
-
-        user_id = user_response.id
-        logger.info(f"User {user_id} retrieved/created for GitHub OAuth")
-
-        # Store OAuth token securely
-        token_manager = TokenManager(db)
-        try:
-            await token_manager.store_oauth_token(
-                user_id=user_id,
-                provider="github",
-                oauth_response=github_response,
-            )
-            logger.info(f"OAuth token stored for user {user_id}")
-        except Exception as e:
-            logger.error(f"Failed to store OAuth token: {str(e)}", exc_info=True)
-            # Non-blocking error - token storage failure doesn't prevent login
-            # but is logged for audit purposes
-
         # Create JWT token for user
-        jwt_token = create_jwt_token(
-            {
-                "id": user_id,
-                "login": github_user.get("login", ""),
-                "email": github_user.get("email", ""),
-                "avatar_url": github_user.get("avatar_url", ""),
-                "name": github_user.get("name", ""),
-            }
-        )
+        jwt_token = create_jwt_token(github_user)
 
         # Return token and user info
         user_info = {
@@ -578,13 +436,11 @@ async def github_callback(
             "email": github_user.get("email", ""),
             "avatar_url": github_user.get("avatar_url", ""),
             "name": github_user.get("name", ""),
-            "user_id": str(user_id),
+            "user_id": str(github_user.get("id", "")),
             "auth_provider": "github",
         }
 
         logger.info(f"GitHub authentication successful for user: {user_info['username']}")
-
-        set_auth_cookie(response, jwt_token)
 
         return {
             "token": jwt_token,
@@ -599,13 +455,7 @@ async def github_callback(
 
 
 @router.post("/github-callback")
-@limiter.limit("10/minute")
-async def github_callback_fallback(
-    request: Request,
-    request_data: GitHubCallbackRequest,
-    response: Response,
-    db: DatabaseService = Depends(get_database_dependency),
-) -> Dict[str, Any]:
+async def github_callback_fallback(request_data: GitHubCallbackRequest) -> Dict[str, Any]:
     """
     Fallback endpoint for GitHub OAuth callback (old endpoint path).
 
@@ -618,13 +468,12 @@ async def github_callback_fallback(
     logger.warning(
         "Deprecated endpoint /api/auth/github-callback called. Use /api/auth/github/callback instead."
     )
-    # Forward to the main handler with database service
-    return await github_callback(request, request_data, response, db)
+    # Forward to the main handler
+    return await github_callback(request_data)
 
 
 @router.post("/logout", response_model=LogoutResponse)
 async def unified_logout(
-    response: Response,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> LogoutResponse:
     """
@@ -637,9 +486,8 @@ async def unified_logout(
     - **OAuth**: Revoke refresh token with OAuth provider
     - **GitHub OAuth**: Invalidate session with GitHub
 
-    The JWT is added to an in-memory blocklist so it is rejected on subsequent
-    requests even before its natural expiry. The blocklist is not persistent across
-    server restarts; for multi-instance deployments, replace with a Redis-backed store.
+    In current implementation (stub), simply acknowledges logout.
+    Token is invalidated on frontend by removing it from localStorage/cookies.
 
     Headers:
         Authorization: Bearer <JWT token>
@@ -666,18 +514,13 @@ async def unified_logout(
     logger.info(f"Logout request for user {user_id} (auth_provider: {auth_provider})")
 
     try:
-        # Revoke the JWT so it cannot be reused even before its natural expiry
-        raw_token = current_user.get("token")
-        if raw_token and raw_token not in ("dev-token",) and not raw_token.lower().startswith("dev-"):
-            try:
-                import time as _time
-                claims = JWTTokenValidator.verify_token(raw_token)
-                exp = claims.get("exp", _time.time() + 3600) if claims else _time.time() + 3600
-                await blocklist_add(raw_token, float(exp))
-            except Exception as _e:
-                logger.warning("[logout] Could not extract token expiry for blocklist: %s", _e)
-
-        clear_auth_cookie(response)
+        # In production, implement provider-specific logout:
+        # if auth_provider == "github":
+        #     await revoke_github_session(user_id)
+        # elif auth_provider == "oauth":
+        #     await revoke_oauth_refresh_token(current_user["token_id"])
+        # else:
+        #     await add_token_to_blacklist(current_user["token"])
 
         logger.info(f"User {user_id} logged out successfully ({auth_provider})")
 
@@ -686,7 +529,7 @@ async def unified_logout(
         )
 
     except Exception as e:
-        logger.error(f"Logout error for user {user_id}: {str(e)}", exc_info=True)
+        logger.error(f"Logout error for user {user_id}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Logout failed"
         )

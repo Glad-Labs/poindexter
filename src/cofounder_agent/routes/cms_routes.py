@@ -5,7 +5,6 @@ ASYNC REST endpoints for blog content, categories, and tags.
 Using pure asyncpg for non-blocking database access.
 """
 
-import asyncio
 import logging
 import os
 from datetime import datetime
@@ -16,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from routes.auth_unified import UserProfile, get_current_user
 from services.database_service import DatabaseService
 from utils.error_handler import handle_route_error
+from utils.route_utils import get_database_dependency
 
 logger = logging.getLogger(__name__)
 
@@ -58,17 +58,7 @@ def convert_markdown_to_html(markdown_content: str) -> str:
         html = re.sub(r"^\s*={3,}\s*$", "", html, flags=re.MULTILINE)
         html = re.sub(r"^\s*-{3,}\s*$", "", html, flags=re.MULTILINE)
 
-        # Convert images before links: ![alt](url)
-        html = re.sub(
-            r"!\[([^\]]*)\]\(([^)]+)\)",
-            r'<img src="\2" alt="\1" loading="lazy">',
-            html,
-        )
-
-        # Convert inline links: [text](url)
-        html = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', html)
-
-        # Convert bold (**, __)
+        # Convert bold (**, __, **text**, __text__)
         html = re.sub(r"\*\*(.*?)\*\*", r"<strong>\1</strong>", html)
         html = re.sub(r"__(.*?)__", r"<strong>\1</strong>", html)
 
@@ -89,7 +79,6 @@ def convert_markdown_to_html(markdown_content: str) -> str:
                 or p.startswith("<ol")
                 or p.startswith("<ul")
                 or p.startswith("<blockquote")
-                or p.startswith("<img")
             ):
                 converted_paragraphs.append(p)
             # Handle numbered lists
@@ -122,7 +111,7 @@ def convert_markdown_to_html(markdown_content: str) -> str:
 
         logger.info(f"Converted markdown to HTML (len={len(html)} chars)")
         return html
-    except (ValueError, AttributeError, TypeError) as e:
+    except Exception as e:
         logger.error(f"Error converting markdown: {e}", exc_info=True)
         # Fallback: return as-is
         return markdown_content
@@ -197,29 +186,15 @@ def map_featured_image_to_coverimage(post: dict) -> dict:
     return post
 
 
-# Global database service instance
-_db_service: Optional[DatabaseService] = None
-_db_service_init_lock = asyncio.Lock()
-
-
 async def get_db_pool():
-    """Get database pool from service"""
-    global _db_service
-    if _db_service is not None and _db_service.pool is not None:
-        return _db_service.pool
+    """Get database pool from the shared DatabaseService (injected at startup).
 
-    # Guard initialization so concurrent requests cannot observe _db_service.pool as None.
-    async with _db_service_init_lock:
-        if _db_service is None:
-            _db_service = DatabaseService()
+    Uses the centralized service container instead of instantiating a new
+    DatabaseService mid-request, which would bypass the connection pool.
+    """
+    db_service = get_database_dependency()
+    return db_service.pool
 
-        if _db_service.pool is None:
-            await _db_service.initialize()
-
-        if _db_service.pool is None:
-            raise RuntimeError("Database pool initialization failed")
-
-    return _db_service.pool
 
 
 # ============================================================================
@@ -313,7 +288,7 @@ async def list_posts(
                     }
                 },
             }
-    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
+    except Exception as e:
         raise await handle_route_error(e, "list_posts", logger)
 
 
@@ -375,9 +350,9 @@ async def get_post_by_slug(
                     post_id,
                 )
                 tags = [dict(row) for row in tag_rows]
-            except (KeyError, AttributeError, TypeError, RuntimeError) as tag_error:
+            except Exception as tag_error:
                 # If tags table doesn't exist or query fails, just return empty tags
-                logger.warning(f"Could not fetch tags for post {post_id}: {str(tag_error)}", exc_info=True)
+                logger.warning(f"Could not fetch tags for post {post_id}: {str(tag_error)}")
                 tags = []
 
             # Get category
@@ -403,7 +378,7 @@ async def get_post_by_slug(
             }
     except HTTPException:
         raise
-    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
+    except Exception as e:
         raise await handle_route_error(e, "get_post_by_slug", logger)
 
 
@@ -437,7 +412,7 @@ async def list_categories():
                 categories.append(cat)
 
             return {"data": categories, "meta": {}}
-    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
+    except Exception as e:
         raise await handle_route_error(e, "list_categories", logger)
 
 
@@ -471,7 +446,7 @@ async def list_tags():
                 tags.append(tag)
 
             return {"data": tags, "meta": {}}
-    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
+    except Exception as e:
         raise await handle_route_error(e, "list_tags", logger)
 
 
@@ -518,7 +493,7 @@ async def cms_status():
                 "tables": tables,
                 "timestamp": datetime.now().isoformat(),
             }
-    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
+    except Exception as e:
         logger.error(f"Error checking CMS status: {str(e)}", exc_info=True)
         return {
             "status": "error",
@@ -574,5 +549,5 @@ async def populate_missing_excerpts(current_user: UserProfile = Depends(get_curr
             }
     except HTTPException:
         raise
-    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
+    except Exception as e:
         raise await handle_route_error(e, "populate_missing_excerpts", logger)

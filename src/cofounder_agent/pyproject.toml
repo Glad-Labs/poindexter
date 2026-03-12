@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "glad-labs-backend"
-version = "3.0.43"
+version = "0.2.0"
 description = "FastAPI backend with specialized AI agents for Glad Labs"
 authors = ["Matthew M. Gladding <mattg@gladlabs.io>"]
 readme = "README.md"
@@ -30,8 +30,7 @@ psycopg2-binary = "^2.9"
 anthropic = "^0.7"
 openai = "^1.0"
 requests = "^2.30"
-google-genai = ">=1.0"          # New official SDK (replaces google-generativeai)
-google-generativeai = "^0.8"   # Legacy fallback — kept until all call-sites are migrated
+google-generativeai = "^0.8"
 
 # Async/Concurrency
 aiohttp = "^3.9"
@@ -216,11 +215,7 @@ markers = [
     "slow: slow tests",
     "voice: voice interface tests",
     "websocket: websocket tests",
-    "approval: approval workflow tests",
-    "concurrent: concurrency tests",
-    "smoke: smoke tests",
 ]
-norecursedirs = ["needs_work", ".git", "__pycache__", ".pytest_cache", "node_modules"]
 filterwarnings = [
     "ignore::DeprecationWarning",
     "ignore::PendingDeprecationWarning",
