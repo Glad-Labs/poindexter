@@ -46,16 +46,15 @@ export const TaskControlPanel = ({ task, onTaskUpdated }) => {
     description: '',
   });
 
-  // Get loading/error state from Zustand using separate selectors
-  // Using separate hooks instead of object destructuring prevents infinite re-render loops
-  const taskActionLoading = useStore((state) => state.taskActionLoading);
-  const taskActionError = useStore((state) => state.taskActionError);
+  // Scope selectors to this task's ID — returns scalar, so Zustand only
+  // re-renders when THIS task's loading/error state changes (not all tasks)
+  const isLoading = useStore(
+    (state) => state.taskActionLoading[task.id] ?? false
+  );
+  const error = useStore((state) => state.taskActionError[task.id] ?? null);
   const setTaskActionLoading = useStore((state) => state.setTaskActionLoading);
   const setTaskActionError = useStore((state) => state.setTaskActionError);
   const clearTaskAction = useStore((state) => state.clearTaskAction);
-
-  const isLoading = taskActionLoading[task.id] || false;
-  const error = taskActionError[task.id] || null;
 
   // Determine which actions are valid based on task status
   const canPause = task.status === 'in_progress' || task.status === 'pending';
