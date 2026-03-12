@@ -41,7 +41,7 @@ BASE_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__))
 )  # This gets us to src/agents/content_agent/
 
-# The logger is configured in `logging_config.py` and used throughout the application.
+# Logging is configured centrally in services/logger_config.py
 logger = logging.getLogger(__name__)
 
 
