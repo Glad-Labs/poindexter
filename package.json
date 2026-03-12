@@ -107,7 +107,7 @@
     "docs:cleanup": "bash scripts/cleanup-docs.sh || powershell -ExecutionPolicy Bypass -File cleanup-docs.ps1",
     "docs:cleanup:ps": "powershell -ExecutionPolicy Bypass -File cleanup-docs.ps1",
     "docs:cleanup:sh": "bash scripts/cleanup-docs.sh",
-    "prepare": "husky",
+    "prepare": "node -e \"process.exit(process.env.CI || process.env.VERCEL ? 0 : 1)\" || husky",
     "// validation": "=== VALIDATION ===",
     "validate:env": "node scripts/validate-env.js",
     "validate:all": "npm run format:check && npm run lint && npm run validate:env && npm run type:check"
