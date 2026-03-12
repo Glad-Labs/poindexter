@@ -5,7 +5,7 @@ Provides REST endpoints for command dispatch and monitoring
 Replaces Pub/Sub topic subscriptions with HTTP API calls
 """
 
-import logging
+from services.logger_config import get_logger
 import os
 import sys
 from typing import Any, Dict, List, Optional
@@ -29,8 +29,7 @@ from services.command_queue import (
     get_command_queue,
 )
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 router = APIRouter(prefix="/api/commands", tags=["commands"])
 
 

@@ -21,7 +21,7 @@ Setup:
    - MICROSOFT_TENANT_ID (Directory ID, or 'common' for multi-tenant)
 """
 
-import logging
+from services.logger_config import get_logger
 import os
 from typing import Optional
 
@@ -29,9 +29,7 @@ import httpx
 
 from .oauth_provider import OAuthException, OAuthProvider, OAuthUser
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class MicrosoftOAuthProvider(OAuthProvider):
     """Microsoft OAuth 2.0 provider implementation"""
 

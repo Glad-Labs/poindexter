@@ -9,13 +9,11 @@ This agent:
 3. Returns results compatible with workflow executor
 """
 
-import logging
+from services.logger_config import get_logger
 from typing import Any, Dict, Optional
 from uuid import uuid4
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class BlogPublisherAgent:
     """
     Agent that creates and publishes blog posts to the database.

@@ -9,7 +9,7 @@ This module handles:
 5. Progress tracking
 """
 
-import logging
+from services.logger_config import get_logger
 import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -18,9 +18,7 @@ from schemas.custom_workflow_schemas import CustomWorkflow, InputTrace, PhaseRes
 from services.phase_mapper import PhaseMapper, PhaseMappingError, build_full_phase_pipeline
 from services.phase_registry import PhaseDefinition, PhaseRegistry
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class WorkflowExecutionError(Exception):
     """Raised when workflow execution fails"""
 

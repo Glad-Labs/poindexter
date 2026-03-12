@@ -10,16 +10,14 @@ ASYNC-FIRST: All operations use httpx async client (no blocking I/O)
 """
 
 import json
-import logging
+from services.logger_config import get_logger
 import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import httpx
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class SerperClient:
     """
     Serper API client for web search, news search, and shopping search.

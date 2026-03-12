@@ -5,15 +5,13 @@ Stores quality evaluation results in PostgreSQL and provides
 querying/analytics capabilities for quality metrics.
 """
 
-import logging
+from services.logger_config import get_logger
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from services.quality_service import QualityScore
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class QualityScorePersistence:
     """
     Persistence layer for quality evaluation scores.

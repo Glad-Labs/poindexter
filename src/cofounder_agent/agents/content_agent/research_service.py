@@ -7,7 +7,7 @@ This service integrates SearXNG for the research stage of content generation.
 
 import asyncio
 import json
-import logging
+from services.logger_config import get_logger
 from datetime import datetime
 from typing import Optional
 
@@ -28,9 +28,7 @@ try:
 except ImportError:
     BS4_AVAILABLE = False
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class SearXNGResearchService:
     """Privacy-respecting research service using SearXNG metasearch."""
 

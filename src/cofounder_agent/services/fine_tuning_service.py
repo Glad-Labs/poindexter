@@ -10,7 +10,7 @@ Supports fine-tuning with:
 
 import asyncio
 import json
-import logging
+from services.logger_config import get_logger
 import os
 import subprocess
 import tempfile
@@ -18,8 +18,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 # Fine-tuning APIs require exact model IDs — these are intentional exceptions to the
 # model-router-first principle (fix #157). The model router cannot abstract fine-tune base models
 # because the fine-tuning API validates the model ID against a whitelist of tunable checkpoints.

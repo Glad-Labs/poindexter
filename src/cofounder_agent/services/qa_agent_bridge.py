@@ -12,14 +12,12 @@ This module provides:
 4. Feedback synthesis from multiple evaluation sources
 """
 
-import logging
+from services.logger_config import get_logger
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 @dataclass
 class HybridQualityResult:
     """Combined evaluation result from QA Agent + Pattern-based evaluation"""

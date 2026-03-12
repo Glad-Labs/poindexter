@@ -5,15 +5,13 @@ This module handles connecting the output of one phase to the input of the next 
 It uses semantic matching to find appropriate field connections.
 """
 
-import logging
+from services.logger_config import get_logger
 from difflib import SequenceMatcher
 from typing import Any, Dict, List, Optional, Tuple
 
 from services.phase_registry import PhaseDefinition, PhaseRegistry
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class PhaseMappingError(Exception):
     """Raised when phase mapping fails"""
 

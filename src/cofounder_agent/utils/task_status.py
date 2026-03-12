@@ -293,13 +293,11 @@ def transition_with_validation(
 # STATUS TRANSITION VALIDATOR WITH HISTORY TRACKING
 # ============================================================================
 
-import logging
+from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Any, List, Tuple
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class StatusTransitionValidator:
     """Validates status transitions with comprehensive error tracking."""
 

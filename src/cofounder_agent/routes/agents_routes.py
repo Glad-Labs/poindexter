@@ -28,8 +28,10 @@ from schemas.agent_schemas import (
     AgentLog,
     AgentLogs,
     AgentStatus,
+    AgentStatusEnum,
     AllAgentsStatus,
     MemoryStats,
+    SystemHealthEnum,
 )
 from services.logger_config import get_logger
 
@@ -188,8 +190,8 @@ async def get_agent_status(agent_name: str, orchestrator=Depends(get_orchestrato
     """
     if agent_name.lower() not in get_agent_names():
         raise HTTPException(
-            status_code=400,
-            detail=f"Invalid agent name: {agent_name}. Must be one of: {', '.join(get_agent_names())}",
+            status_code=404,
+            detail=f"Agent '{agent_name}' not found",
         )
 
     try:
@@ -241,8 +243,8 @@ async def send_agent_command(
     """
     if agent_name.lower() not in get_agent_names():
         raise HTTPException(
-            status_code=400,
-            detail=f"Invalid agent name: {agent_name}. Must be one of: {', '.join(get_agent_names())}",
+            status_code=404,
+            detail=f"Agent '{agent_name}' not found",
         )
 
     try:
@@ -271,7 +273,7 @@ async def get_agent_logs(
     level: Optional[str] = Query(
         None, description="Filter by log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)"
     ),
-    limit: int = Query(50, ge=1, le=500, description="Maximum number of logs to return"),
+    limit: int = Query(50, ge=1, le=200, description="Maximum number of logs to return (max 200)"),
     offset: int = Query(0, ge=0, description="Number of logs to skip"),
 ):
     """

@@ -13,14 +13,12 @@ New phases only require:
 The registry is extensible and supports dynamic phase addition.
 """
 
-import logging
+from services.logger_config import get_logger
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class ContentType(str, Enum):
     """Output content types for mapping purposes"""
 

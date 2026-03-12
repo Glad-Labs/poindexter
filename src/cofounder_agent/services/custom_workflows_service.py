@@ -9,7 +9,7 @@ Provides:
 """
 
 import json
-import logging
+from services.logger_config import get_logger
 import uuid
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -29,10 +29,9 @@ from services.phase_registry import PhaseRegistry
 from services.workflow_executor import WorkflowExecutor
 from services.workflow_validator import WorkflowValidator
 from utils.error_handler import handle_service_error
+from utils.json_encoder import safe_json_load
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class CustomWorkflowsService:
     """Service for managing custom workflows"""
 
@@ -752,8 +751,8 @@ class CustomWorkflowsService:
 
     def _row_to_workflow(self, row) -> CustomWorkflow:
         """Convert database row to CustomWorkflow object"""
-        phases_data = json.loads(row["phases"]) if isinstance(row["phases"], str) else row["phases"]
-        tags = json.loads(row["tags"]) if isinstance(row["tags"], str) else row.get("tags", [])
+        phases_data = safe_json_load(row["phases"], fallback=[])
+        tags = safe_json_load(row.get("tags"), fallback=[])
 
         # Convert phase data to WorkflowPhase objects (new format) if possible
         phases = []
@@ -1049,15 +1048,15 @@ class CustomWorkflowsService:
             "started_at": row["started_at"].isoformat() if row["started_at"] else None,
             "completed_at": row["completed_at"].isoformat() if row["completed_at"] else None,
             "duration_ms": row["duration_ms"],
-            "initial_input": json.loads(row["initial_input"]) if row["initial_input"] else None,
-            "phase_results": json.loads(row["phase_results"]) if row["phase_results"] else {},
-            "final_output": json.loads(row["final_output"]) if row["final_output"] else None,
+            "initial_input": safe_json_load(row["initial_input"]),
+            "phase_results": safe_json_load(row["phase_results"], fallback={}),
+            "final_output": safe_json_load(row["final_output"]),
             "error_message": row["error_message"],
             "progress_percent": row["progress_percent"],
             "completed_phases": row["completed_phases"],
             "total_phases": row["total_phases"],
-            "tags": json.loads(row["tags"]) if row["tags"] else [],
-            "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
+            "tags": safe_json_load(row["tags"], fallback=[]),
+            "metadata": safe_json_load(row["metadata"], fallback={}),
         }
 
     # Alias used in get_all_executions and get_execution_details

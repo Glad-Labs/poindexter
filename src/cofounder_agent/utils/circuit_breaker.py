@@ -6,13 +6,12 @@ and allowing them time to recover.
 """
 
 import asyncio
-import logging
+from services.logger_config import get_logger
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Awaitable, Callable, Dict, Optional, TypeVar
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 T = TypeVar("T")
 
 

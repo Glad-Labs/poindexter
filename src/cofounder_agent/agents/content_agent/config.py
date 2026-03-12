@@ -29,7 +29,7 @@ def _fix_sys_path():
 _fix_sys_path()
 del _fix_sys_path, _PathType
 
-import logging
+from services.logger_config import get_logger
 import os
 from pathlib import Path
 
@@ -42,9 +42,7 @@ BASE_DIR = os.path.join(
 )  # This gets us to src/agents/content_agent/
 
 # Logging is configured centrally in services/logger_config.py
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class Config:
     """
     Central configuration class for the content agent.

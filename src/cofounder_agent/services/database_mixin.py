@@ -6,14 +6,12 @@ Provides common functionality like row-to-dict conversion and error handling.
 """
 
 import json
-import logging
+from services.logger_config import get_logger
 from datetime import datetime
 from typing import Any, Dict
 from uuid import UUID
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class DatabaseServiceMixin:
     """Shared methods and utilities for database service modules."""
 

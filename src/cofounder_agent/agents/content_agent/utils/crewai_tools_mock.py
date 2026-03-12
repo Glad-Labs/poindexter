@@ -6,12 +6,10 @@ that relies on web search, file reading, or code execution will produce degraded
 output when running against these mocks. Install crewai-tools for real functionality.
 """
 
-import logging
+from services.logger_config import get_logger
 from typing import List, Optional
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class BaseTool:
     """Base class for mock tools. Logs a warning on every call."""
 

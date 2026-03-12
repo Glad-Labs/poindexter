@@ -7,13 +7,11 @@ Prevents webhook spoofing and ensures integrity of webhook payloads.
 
 import hashlib
 import hmac
-import logging
+from services.logger_config import get_logger
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class WebhookSignatureError(Exception):
     """Exception raised when webhook signature verification fails"""
 

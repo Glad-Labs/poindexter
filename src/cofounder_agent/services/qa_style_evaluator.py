@@ -14,15 +14,13 @@ This service extends the existing QA system to ensure generated content
 matches the user's selected writing style and tone preferences.
 """
 
-import logging
+from services.logger_config import get_logger
 import re
 from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 @dataclass
 class StyleConsistencyResult:
     """Result of style consistency evaluation"""

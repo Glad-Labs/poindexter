@@ -19,13 +19,12 @@ Usage:
 """
 
 import functools
-import logging
+from services.logger_config import get_logger
 import os
 import time
 from typing import Any, Callable, Optional
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 # Configuration from environment
 SLOW_QUERY_THRESHOLD_MS = int(os.getenv("SLOW_QUERY_THRESHOLD_MS", "100"))
 LOG_ALL_QUERIES = os.getenv("LOG_ALL_QUERIES", "false").lower() == "true"

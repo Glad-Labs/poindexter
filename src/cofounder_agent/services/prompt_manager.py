@@ -22,14 +22,12 @@ Version History:
 """
 
 import json
-import logging
+from services.logger_config import get_logger
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class PromptVersion(str, Enum):
     """Prompt versions for A/B testing and rollouts"""
 

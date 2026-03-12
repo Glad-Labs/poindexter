@@ -35,16 +35,14 @@ Usage:
 
 import asyncio
 import json
-import logging
+from services.logger_config import get_logger
 from datetime import datetime
 from typing import Any, Callable, Dict, Optional
 
 import aiohttp
 import websockets
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class WorkflowProgressClient:
     """Client for interacting with Workflow Progress Tracking API"""
 

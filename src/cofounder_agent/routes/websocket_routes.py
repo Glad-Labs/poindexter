@@ -7,7 +7,7 @@ in real-time with live progress bars and status updates.
 
 import asyncio
 import json
-import logging
+from services.logger_config import get_logger
 import os
 from typing import Dict, Optional, Set
 
@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 from services.progress_service import get_progress_service
 from services.websocket_manager import websocket_manager
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 websocket_router = APIRouter(prefix="/api/ws", tags=["WebSocket"])
 
 

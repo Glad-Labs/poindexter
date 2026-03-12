@@ -5,14 +5,12 @@ Provides progress tracking and callbacks for streaming workflow execution
 progress to WebSocket clients in real-time.
 """
 
-import logging
+from services.logger_config import get_logger
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 @dataclass
 class WorkflowProgress:
     """Represents the current state of a workflow execution"""

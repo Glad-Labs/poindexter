@@ -8,7 +8,7 @@ Handles all user-related database operations including:
 """
 
 import json
-import logging
+from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
@@ -22,9 +22,7 @@ from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 from .database_mixin import DatabaseServiceMixin
 from .decorators import log_query_performance
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class UsersDatabase(DatabaseServiceMixin):
     """User-related database operations."""
 

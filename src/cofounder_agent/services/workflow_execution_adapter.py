@@ -15,16 +15,14 @@ Architecture:
 
 import asyncio
 import json
-import logging
+from services.logger_config import get_logger
 import re
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 PHASE_TO_AGENT_MAP = {
     "research": "research_agent",
     "draft": "creative_agent",

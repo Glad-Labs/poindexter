@@ -10,7 +10,7 @@ Configures:
 All middleware can be optionally enabled/disabled and configured via environment variables.
 """
 
-import logging
+from services.logger_config import get_logger
 import os
 from typing import List, Optional
 
@@ -19,9 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class MiddlewareConfig:
     """Manages middleware configuration and registration"""
 
@@ -62,9 +60,30 @@ class MiddlewareConfig:
         self._setup_token_validation(app)
         self._setup_security_headers(app)
         self._setup_cors(app)
+        # Request ID must execute before profiling so the ID is available when
+        # the profiling middleware logs request completion.
+        self._setup_request_id(app)
         self._setup_profiling(app)
 
         logger.info("✅ All middleware registered successfully")
+
+    def _setup_request_id(self, app: FastAPI) -> None:
+        """
+        Setup request ID middleware and logging filter.
+
+        - Generates / propagates X-Request-ID for every request.
+        - Injects request_id into every log record via a stdlib logging.Filter.
+        """
+        import logging
+
+        from middleware.request_id import RequestIDFilter, RequestIDMiddleware
+
+        # Apply the filter to the root logger so ALL loggers inherit it.
+        # Using addFilter on root ensures it propagates to every child logger.
+        logging.getLogger().addFilter(RequestIDFilter())
+
+        app.add_middleware(RequestIDMiddleware)
+        logger.info("Request ID middleware initialized")
 
     def _setup_profiling(self, app: FastAPI) -> None:
         """

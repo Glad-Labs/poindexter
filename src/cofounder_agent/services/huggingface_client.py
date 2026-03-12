@@ -6,7 +6,7 @@ Supports open-source models for blog post generation
 """
 
 import asyncio
-import logging
+from services.logger_config import get_logger
 import os
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
@@ -14,9 +14,7 @@ import aiohttp
 
 from .error_handler import ServiceError
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class HuggingFaceClient:
     """Client for HuggingFace Inference API"""
 

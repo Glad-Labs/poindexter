@@ -9,14 +9,12 @@ This agent:
 3. Returns results compatible with workflow executor
 """
 
-import logging
+from services.logger_config import get_logger
 from typing import Any, Dict, List, Optional
 
 from services.image_service import get_image_service
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class BlogImageAgent:
     """
     Agent that searches for featured images for blog posts.

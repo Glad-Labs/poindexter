@@ -47,6 +47,40 @@ def safe_json_dumps(data: Any, **kwargs) -> str:
     return json.dumps(data, cls=DecimalEncoder, **kwargs)
 
 
+def safe_json_load(value: Any, fallback: Any = None) -> Any:
+    """
+    Safely deserialize a JSON string to a Python object.
+
+    Handles the common pattern ``if isinstance(x, str): x = json.loads(x)``
+    that appears throughout service files where PostgreSQL may return a JSON
+    column as a pre-parsed object or as a raw string depending on the driver
+    version / column type.
+
+    Args:
+        value: The value to deserialize.  If it is already a non-string type
+               (dict, list, int, etc.) it is returned unchanged.
+        fallback: Value to return when ``value`` is a string but cannot be
+                  parsed as JSON.  Defaults to ``None``.
+
+    Returns:
+        Parsed Python object, or *fallback* on parse error.
+
+    Examples:
+        >>> safe_json_load('{"k": 1}')
+        {'k': 1}
+        >>> safe_json_load({'k': 1})   # already parsed
+        {'k': 1}
+        >>> safe_json_load('bad json', fallback=[])
+        []
+    """
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            return fallback
+    return value
+
+
 def convert_decimals(obj: Any) -> Any:
     """
     Recursively convert all Decimal objects to float in a data structure.

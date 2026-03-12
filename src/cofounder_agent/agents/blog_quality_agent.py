@@ -9,14 +9,12 @@ This agent:
 3. Returns results compatible with workflow executor
 """
 
-import logging
+from services.logger_config import get_logger
 from typing import Any, Dict, Optional
 
 from services.quality_service import EvaluationMethod, get_quality_service
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class BlogQualityAgent:
     """
     Agent that evaluates blog post quality using unified quality service.

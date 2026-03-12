@@ -5,15 +5,13 @@ Provides semantic search and retrieval of system knowledge about Glad Labs.
 Uses similarity scoring to find relevant knowledge base sections.
 """
 
-import logging
+from services.logger_config import get_logger
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 @dataclass
 class KnowledgeResult:
     """Result from knowledge base retrieval"""

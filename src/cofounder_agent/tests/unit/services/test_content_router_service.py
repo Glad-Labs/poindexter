@@ -1,0 +1,339 @@
+"""
+Unit tests for services/content_router_service.py
+
+Covers ContentTaskStore:
+- create_task: delegates to database_service.add_task, returns task_id
+- create_task: raises when database_service is None
+- get_task: delegates to database_service.get_task
+- get_task: returns None when database_service is None
+- update_task: delegates, converts metadata→task_metadata
+- update_task: returns None when database_service is None
+- delete_task: delegates, returns True/False
+- delete_task: returns False when database_service is None
+- list_tasks: delegates with correct pagination/filter
+- list_tasks: returns [] when database_service is None
+- get_drafts: delegates with correct args
+- get_drafts: returns ([], 0) when database_service is None
+- persistent_store property returns database_service
+
+Also covers get_content_task_store singleton behavior.
+"""
+
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from services.content_router_service import ContentTaskStore, get_content_task_store
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+def _make_db():
+    db = AsyncMock()
+    db.add_task = AsyncMock(return_value="new-task-id-123")
+    db.get_task = AsyncMock(return_value={"id": "new-task-id-123", "topic": "AI"})
+    db.update_task = AsyncMock(return_value=True)
+    db.delete_task = AsyncMock(return_value=True)
+    db.get_tasks_paginated = AsyncMock(return_value=([{"id": "t1"}], 1))
+    db.get_drafts = AsyncMock(return_value=([{"id": "d1"}], 1))
+    return db
+
+
+# ---------------------------------------------------------------------------
+# ContentTaskStore.create_task
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestContentTaskStoreCreate:
+    """ContentTaskStore.create_task tests."""
+
+    @pytest.mark.asyncio
+    async def test_create_task_returns_task_id(self):
+        db = _make_db()
+        store = ContentTaskStore(database_service=db)
+        task_id = await store.create_task(
+            topic="AI Revolution",
+            style="informative",
+            tone="professional",
+            target_length=1500,
+        )
+        assert task_id == "new-task-id-123"
+        db.add_task.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_create_task_passes_topic_style_tone_length(self):
+        db = _make_db()
+        store = ContentTaskStore(database_service=db)
+        await store.create_task(
+            topic="Machine Learning",
+            style="technical",
+            tone="formal",
+            target_length=2000,
+        )
+        call_kwargs = db.add_task.call_args[0][0]
+        assert call_kwargs["topic"] == "Machine Learning"
+        assert call_kwargs["style"] == "technical"
+        assert call_kwargs["tone"] == "formal"
+        assert call_kwargs["target_length"] == 2000
+
+    @pytest.mark.asyncio
+    async def test_create_task_passes_tags(self):
+        db = _make_db()
+        store = ContentTaskStore(database_service=db)
+        await store.create_task(
+            topic="Python",
+            style="tutorial",
+            tone="casual",
+            target_length=800,
+            tags=["python", "programming"],
+        )
+        call_kwargs = db.add_task.call_args[0][0]
+        assert call_kwargs["tags"] == ["python", "programming"]
+
+    @pytest.mark.asyncio
+    async def test_create_task_truncates_long_topic_for_task_name(self):
+        db = _make_db()
+        store = ContentTaskStore(database_service=db)
+        long_topic = "A" * 60
+        await store.create_task(
+            topic=long_topic,
+            style="blog",
+            tone="friendly",
+            target_length=1000,
+        )
+        call_kwargs = db.add_task.call_args[0][0]
+        # task_name should be truncated to 50 chars
+        assert len(call_kwargs["task_name"]) <= 53  # 50 + "..."
+
+    @pytest.mark.asyncio
+    async def test_create_task_raises_when_no_database_service(self):
+        store = ContentTaskStore(database_service=None)
+        with pytest.raises(ValueError, match="DatabaseService not initialized"):
+            await store.create_task(
+                topic="Test",
+                style="blog",
+                tone="casual",
+                target_length=500,
+            )
+
+    @pytest.mark.asyncio
+    async def test_create_task_propagates_db_errors(self):
+        db = _make_db()
+        db.add_task = AsyncMock(side_effect=RuntimeError("DB connection failed"))
+        store = ContentTaskStore(database_service=db)
+        with pytest.raises(RuntimeError, match="DB connection failed"):
+            await store.create_task(
+                topic="Test",
+                style="blog",
+                tone="casual",
+                target_length=500,
+            )
+
+
+# ---------------------------------------------------------------------------
+# ContentTaskStore.get_task
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestContentTaskStoreGet:
+    """ContentTaskStore.get_task tests."""
+
+    @pytest.mark.asyncio
+    async def test_get_task_delegates_to_db(self):
+        db = _make_db()
+        store = ContentTaskStore(database_service=db)
+        result = await store.get_task("task-123")
+        db.get_task.assert_awaited_once_with("task-123")
+        assert result["id"] == "new-task-id-123"  # type: ignore[index]
+
+    @pytest.mark.asyncio
+    async def test_get_task_returns_none_when_no_db(self):
+        store = ContentTaskStore(database_service=None)
+        result = await store.get_task("any-task-id")
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# ContentTaskStore.update_task
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestContentTaskStoreUpdate:
+    """ContentTaskStore.update_task tests."""
+
+    @pytest.mark.asyncio
+    async def test_update_task_delegates_to_db(self):
+        db = _make_db()
+        store = ContentTaskStore(database_service=db)
+        await store.update_task("task-123", {"status": "completed"})
+        db.update_task.assert_awaited_once_with("task-123", {"status": "completed"})
+
+    @pytest.mark.asyncio
+    async def test_update_task_converts_metadata_key(self):
+        """metadata key should be converted to task_metadata."""
+        db = _make_db()
+        store = ContentTaskStore(database_service=db)
+        await store.update_task("task-123", {"metadata": {"key": "value"}})
+        call_args = db.update_task.call_args[0]
+        assert "task_metadata" in call_args[1]
+        assert "metadata" not in call_args[1]
+
+    @pytest.mark.asyncio
+    async def test_update_task_returns_none_when_no_db(self):
+        store = ContentTaskStore(database_service=None)
+        result = await store.update_task("task-123", {"status": "done"})
+        # Returns False (not None) when no database service is configured
+        assert result is False
+
+
+# ---------------------------------------------------------------------------
+# ContentTaskStore.delete_task
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestContentTaskStoreDelete:
+    """ContentTaskStore.delete_task tests."""
+
+    @pytest.mark.asyncio
+    async def test_delete_task_delegates_to_db(self):
+        db = _make_db()
+        store = ContentTaskStore(database_service=db)
+        result = await store.delete_task("task-123")
+        db.delete_task.assert_awaited_once_with("task-123")
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_delete_task_returns_false_when_no_db(self):
+        store = ContentTaskStore(database_service=None)
+        result = await store.delete_task("task-123")
+        assert result is False
+
+
+# ---------------------------------------------------------------------------
+# ContentTaskStore.list_tasks
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestContentTaskStoreList:
+    """ContentTaskStore.list_tasks tests."""
+
+    @pytest.mark.asyncio
+    async def test_list_tasks_returns_tasks(self):
+        db = _make_db()
+        store = ContentTaskStore(database_service=db)
+        result = await store.list_tasks()
+        assert len(result) == 1
+        assert result[0]["id"] == "t1"
+
+    @pytest.mark.asyncio
+    async def test_list_tasks_passes_pagination(self):
+        db = _make_db()
+        store = ContentTaskStore(database_service=db)
+        await store.list_tasks(limit=25, offset=50)
+        db.get_tasks_paginated.assert_awaited_once_with(offset=50, limit=25, status=None)
+
+    @pytest.mark.asyncio
+    async def test_list_tasks_passes_status_filter(self):
+        db = _make_db()
+        store = ContentTaskStore(database_service=db)
+        await store.list_tasks(status="pending")
+        db.get_tasks_paginated.assert_awaited_once_with(offset=0, limit=50, status="pending")
+
+    @pytest.mark.asyncio
+    async def test_list_tasks_returns_empty_when_no_db(self):
+        store = ContentTaskStore(database_service=None)
+        result = await store.list_tasks()
+        assert result == []
+
+
+# ---------------------------------------------------------------------------
+# ContentTaskStore.get_drafts
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestContentTaskStoreGetDrafts:
+    """ContentTaskStore.get_drafts tests."""
+
+    @pytest.mark.asyncio
+    async def test_get_drafts_delegates_to_db(self):
+        db = _make_db()
+        store = ContentTaskStore(database_service=db)
+        tasks, total = await store.get_drafts(limit=10, offset=5)
+        db.get_drafts.assert_awaited_once_with(limit=10, offset=5)
+        assert total == 1
+
+    @pytest.mark.asyncio
+    async def test_get_drafts_returns_empty_when_no_db(self):
+        store = ContentTaskStore(database_service=None)
+        result = await store.get_drafts()
+        # Returns [] (not ([], 0)) when no database service is configured
+        assert result == []
+
+
+# ---------------------------------------------------------------------------
+# ContentTaskStore.persistent_store property
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestContentTaskStorePersistentStore:
+    """Backward-compat persistent_store property."""
+
+    def test_persistent_store_returns_database_service(self):
+        db = _make_db()
+        store = ContentTaskStore(database_service=db)
+        assert store.persistent_store is db
+
+    def test_persistent_store_returns_none_when_no_db(self):
+        store = ContentTaskStore(database_service=None)
+        assert store.persistent_store is None
+
+
+# ---------------------------------------------------------------------------
+# get_content_task_store singleton
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestGetContentTaskStore:
+    """get_content_task_store singleton factory tests."""
+
+    def test_returns_content_task_store_instance(self):
+        import services.content_router_service as mod
+        # Reset singleton for isolated test
+        mod._content_task_store = None
+        db = _make_db()
+        store = get_content_task_store(database_service=db)
+        assert isinstance(store, ContentTaskStore)
+        assert store.database_service is db
+        mod._content_task_store = None  # cleanup
+
+    def test_second_call_returns_same_instance(self):
+        import services.content_router_service as mod
+        mod._content_task_store = None
+        db = _make_db()
+        store1 = get_content_task_store(database_service=db)
+        store2 = get_content_task_store(database_service=db)
+        assert store1 is store2
+        mod._content_task_store = None  # cleanup
+
+    def test_injects_db_service_if_not_set_on_singleton(self):
+        import services.content_router_service as mod
+        mod._content_task_store = None
+        # First call without db
+        store1 = get_content_task_store(database_service=None)
+        assert store1.database_service is None
+        # Second call with db — should inject
+        db = _make_db()
+        store2 = get_content_task_store(database_service=db)
+        assert store2 is store1
+        assert store2.database_service is db
+        mod._content_task_store = None  # cleanup

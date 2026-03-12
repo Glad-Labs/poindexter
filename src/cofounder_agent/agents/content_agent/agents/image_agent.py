@@ -1,5 +1,5 @@
 import json
-import logging
+from services.logger_config import get_logger
 import os
 
 import httpx
@@ -12,9 +12,7 @@ from ..utils.data_models import BlogPost, ImageDetails
 from ..utils.helpers import extract_json_from_string, load_prompts_from_file, slugify
 from ..utils.tools import CrewAIToolsFactory
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class ImageAgent:
     """
     Generates and/or fetches images for a blog post and uploads them to GCS.
@@ -27,7 +25,7 @@ class ImageAgent:
         strapi_client: StrapiClient,
         api_url: str = "http://localhost:8000",
     ):
-        logging.info("Initializing Image Agent (REST API mode - no GCS)...")
+        logger.info("Initializing Image Agent (REST API mode - no GCS)...")
         self.llm_client = llm_client
         self.pexels_client = pexels_client
         self.strapi_client = strapi_client
@@ -42,18 +40,18 @@ class ImageAgent:
         and then uploads them to Strapi (async).
         """
         if not post.title or not post.raw_content:
-            logging.warning(
+            logger.warning(
                 "ImageAgent: Post title or content is missing, skipping image processing."
             )
             return post
 
-        logging.info(f"ImageAgent: Starting image processing for '{post.title}'.")
+        logger.info(f"ImageAgent: Starting image processing for '{post.title}'.")
 
         try:
             # Generate metadata for all images first
             image_metadata = await self._generate_image_metadata(post)
             if not image_metadata:
-                logging.warning("No image metadata was generated.")
+                logger.warning("No image metadata was generated.")
                 return post
 
             # Process each image
@@ -65,9 +63,9 @@ class ImageAgent:
                     post.images.append(image_details)
 
         except Exception as e:
-            logging.error(f"An error occurred during image processing: {e}", exc_info=True)
+            logger.error(f"An error occurred during image processing: {e}", exc_info=True)
 
-        logging.info(f"ImageAgent: Finished image processing for '{post.title}'.")
+        logger.info(f"ImageAgent: Finished image processing for '{post.title}'.")
         return post
 
     async def _generate_image_metadata(self, post: BlogPost) -> list[dict[str, str]]:
@@ -75,7 +73,7 @@ class ImageAgent:
         metadata_prompt = self.prompts["image_metadata_generation"].format(
             title=post.title, num_images=config.DEFAULT_IMAGE_PLACEHOLDERS
         )
-        logging.info("Generating image metadata...")
+        logger.info("Generating image metadata...")
         try:
             metadata_text = await self.llm_client.generate_text(metadata_prompt)
             # The response is expected to be a JSON list of objects
@@ -85,7 +83,7 @@ class ImageAgent:
             # Fallback: try parsing the raw text if extract failed (e.g. no markdown)
             return json.loads(metadata_text)
         except (json.JSONDecodeError, TypeError) as e:
-            logging.error(f"Failed to parse image metadata from LLM response: {e}")
+            logger.error(f"Failed to parse image metadata from LLM response: {e}")
             return []
 
     async def _process_single_image(
@@ -98,7 +96,7 @@ class ImageAgent:
         try:
             query = metadata.get("query")
             if not query:
-                logging.warning(f"No query found in image metadata at index {index}.")
+                logger.warning(f"No query found in image metadata at index {index}.")
                 return None
 
             slug_title = slugify(post.title)
@@ -107,7 +105,7 @@ class ImageAgent:
 
             # Download the image
             if not await self.pexels_client.search_and_download(query, local_path):
-                logging.warning(f"Failed to download image for query: {query}")
+                logger.warning(f"Failed to download image for query: {query}")
                 return None
 
             # Upload image via REST API (GCS deprecated, using REST API instead)
@@ -124,7 +122,7 @@ class ImageAgent:
                     result = upload_response.json()
                     signed_url = result.get("url", local_path)
             except Exception as e:
-                logging.warning(f"REST API upload failed ({e}), using local path")
+                logger.warning(f"REST API upload failed ({e}), using local path")
                 signed_url = local_path
 
             # Create ImageDetails object
@@ -146,7 +144,7 @@ class ImageAgent:
             return image_details
 
         except Exception as e:
-            logging.error(
+            logger.error(
                 f"Error processing image for query '{metadata.get('query')}': {e}",
                 exc_info=True,
             )

@@ -28,7 +28,7 @@ router = APIRouter(
 )
 
 
-@router.post("/templates", name="List Workflow Templates")
+@router.post("/templates", response_model=Dict[str, Any], name="List Workflow Templates")
 async def list_workflow_templates():
     """
     Get available workflow templates/pipelines.
@@ -116,7 +116,7 @@ async def list_workflow_templates():
                 },
             },
         ]
-        return templates
+        return {"templates": templates, "total": len(templates)}
     except Exception as e:
         logger.error(f"Error listing workflow templates: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to list templates")
@@ -170,7 +170,7 @@ async def get_workflow_status(
         raise HTTPException(status_code=500, detail="Failed to retrieve workflow status")
 
 
-@router.post("/pause/{workflow_id}", name="Pause Workflow")
+@router.post("/{workflow_id}/pause", name="Pause Workflow")
 async def pause_workflow(
     workflow_id: str,
     db_service: Any = Depends(get_database_dependency),
@@ -225,7 +225,7 @@ async def pause_workflow(
         raise HTTPException(status_code=500, detail="Failed to pause workflow")
 
 
-@router.post("/resume/{workflow_id}", name="Resume Workflow")
+@router.post("/{workflow_id}/resume", name="Resume Workflow")
 async def resume_workflow(
     workflow_id: str,
     db_service: Any = Depends(get_database_dependency),
@@ -280,7 +280,7 @@ async def resume_workflow(
         raise HTTPException(status_code=500, detail="Failed to resume workflow")
 
 
-@router.post("/cancel/{workflow_id}", name="Cancel Workflow")
+@router.post("/{workflow_id}/cancel", name="Cancel Workflow")
 async def cancel_workflow(
     workflow_id: str,
     db_service: Any = Depends(get_database_dependency),
@@ -353,7 +353,7 @@ async def list_workflow_executions(
         # Stub: full implementation requires WorkflowHistoryService.list_executions()
         return {
             "executions": [],
-            "total_count": 0,
+            "total": 0,
             "limit": limit,
             "offset": offset,
         }

@@ -7,7 +7,7 @@ Exposes the ServiceRegistry via HTTP for:
 - Runtime service querying
 """
 
-import logging
+from services.logger_config import get_logger
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -15,8 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from services.service_base import get_service_registry
 from utils.route_utils import get_database_dependency
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 router = APIRouter(prefix="/api/services", tags=["services"])
 
 

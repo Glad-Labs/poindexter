@@ -6,7 +6,7 @@ inputs of the next step (pipeline data flow).
 """
 
 import asyncio
-import logging
+from services.logger_config import get_logger
 import re
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -15,9 +15,7 @@ from typing import Any, Dict, List, Optional
 
 from .capability_registry import get_registry
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 @dataclass
 class CapabilityStep:
     """A single step in a capability task."""

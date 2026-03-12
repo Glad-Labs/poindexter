@@ -23,7 +23,7 @@ Endpoints:
 
 import asyncio
 import json
-import logging
+from services.logger_config import get_logger
 import os
 import uuid as uuid_lib
 from datetime import datetime, timezone
@@ -62,6 +62,7 @@ from services.enhanced_status_change_service import EnhancedStatusChangeService
 from utils.error_responses import ErrorResponseBuilder
 from utils.json_encoder import convert_decimals, safe_json_dumps
 from utils.route_utils import get_database_dependency
+from utils.text_utils import extract_title_from_content
 
 # Import task status utilities (ENTERPRISE)
 from utils.task_status import (
@@ -74,9 +75,7 @@ from utils.task_status import (
 )
 
 # Configure logging
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 # ============================================================================
 # HELPER FUNCTIONS FOR TASK RESPONSE FORMATTING
 # ============================================================================
@@ -161,7 +160,7 @@ async def create_task(
     request: UnifiedTaskRequest,
     current_user: dict = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
-    background_tasks: BackgroundTasks = None,
+    background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
 ):
     """
     Unified task creation endpoint - routes to appropriate handler based on task_type.
@@ -259,48 +258,18 @@ async def create_task(
             f"📥 [UNIFIED_TASK_CREATE] Received: task_type={request.task_type}, topic={request.topic}"
         )
 
-        # Route based on task_type
-        if request.task_type == "blog_post":
-            return await _handle_blog_post_creation(request, current_user, db_service)
-
-        elif request.task_type == "social_media":
-            return await _handle_social_media_creation(request, current_user, db_service)
-
-        elif request.task_type == "email":
-            return await _handle_email_creation(request, current_user, db_service)
-
-        elif request.task_type == "newsletter":
-            return await _handle_newsletter_creation(request, current_user, db_service)
-
-        elif request.task_type == "business_analytics":
-            return await _handle_business_analytics_creation(request, current_user, db_service)
-
-        elif request.task_type == "data_retrieval":
-            return await _handle_data_retrieval_creation(request, current_user, db_service)
-
-        elif request.task_type == "market_research":
-            return await _handle_market_research_creation(request, current_user, db_service)
-
-        elif request.task_type == "financial_analysis":
-            return await _handle_financial_analysis_creation(request, current_user, db_service)
-
-        else:
+        # Route based on task_type using registry dict (Open/Closed — add new
+        # task types by registering a handler below, not by editing this block).
+        handler = _TASK_TYPE_REGISTRY.get(request.task_type)
+        if handler is None:
             raise HTTPException(
                 status_code=400,
                 detail={
                     "message": f"Unknown task_type: {request.task_type}",
-                    "supported": [
-                        "blog_post",
-                        "social_media",
-                        "email",
-                        "newsletter",
-                        "business_analytics",
-                        "data_retrieval",
-                        "market_research",
-                        "financial_analysis",
-                    ],
+                    "supported": sorted(_TASK_TYPE_REGISTRY.keys()),
                 },
             )
+        return await handler(request, current_user, db_service)
 
     except HTTPException:
         raise
@@ -454,6 +423,7 @@ async def _handle_email_creation(
 
     return {
         "id": returned_task_id,
+        "task_id": returned_task_id,
         "task_type": "email",
         "status": "pending",
         "created_at": task_data["created_at"],
@@ -486,6 +456,7 @@ async def _handle_newsletter_creation(
 
     return {
         "id": returned_task_id,
+        "task_id": returned_task_id,
         "task_type": "newsletter",
         "status": "pending",
         "created_at": task_data["created_at"],
@@ -523,6 +494,7 @@ async def _handle_business_analytics_creation(
 
     return {
         "id": returned_task_id,
+        "task_id": returned_task_id,
         "task_type": "business_analytics",
         "status": "pending",
         "created_at": task_data["created_at"],
@@ -558,6 +530,7 @@ async def _handle_data_retrieval_creation(
 
     return {
         "id": returned_task_id,
+        "task_id": returned_task_id,
         "task_type": "data_retrieval",
         "status": "pending",
         "created_at": task_data["created_at"],
@@ -590,6 +563,7 @@ async def _handle_market_research_creation(
 
     return {
         "id": returned_task_id,
+        "task_id": returned_task_id,
         "task_type": "market_research",
         "status": "pending",
         "created_at": task_data["created_at"],
@@ -622,11 +596,28 @@ async def _handle_financial_analysis_creation(
 
     return {
         "id": returned_task_id,
+        "task_id": returned_task_id,
         "task_type": "financial_analysis",
         "status": "pending",
         "created_at": task_data["created_at"],
         "message": "Financial analysis task created and queued",
     }
+
+
+# ---------------------------------------------------------------------------
+# Task-type handler registry (Open/Closed Principle)
+# Add new task types here — the dispatch site (create_task) never changes.
+# ---------------------------------------------------------------------------
+_TASK_TYPE_REGISTRY = {
+    "blog_post": _handle_blog_post_creation,
+    "social_media": _handle_social_media_creation,
+    "email": _handle_email_creation,
+    "newsletter": _handle_newsletter_creation,
+    "business_analytics": _handle_business_analytics_creation,
+    "data_retrieval": _handle_data_retrieval_creation,
+    "market_research": _handle_market_research_creation,
+    "financial_analysis": _handle_financial_analysis_creation,
+}
 
 
 # ============================================================================
@@ -637,36 +628,42 @@ async def _handle_financial_analysis_creation(
 @router.get("", response_model=TaskListResponse, summary="List all tasks with pagination")
 async def list_tasks(
     offset: int = Query(0, ge=0, description="Pagination offset"),
-    limit: int = Query(20, ge=1, le=1000, description="Pagination limit"),
+    limit: int = Query(20, ge=1, le=100, description="Pagination limit (max 100)"),
     status: Optional[str] = Query(
         None, description="Filter by status (queued, pending, running, completed, failed)"
     ),
     category: Optional[str] = Query(None, description="Filter by category"),
+    search: Optional[str] = Query(
+        None,
+        max_length=200,
+        description="Keyword search across task name, topic, and category (trigram-indexed)",
+    ),
     current_user: dict = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
     List all tasks with pagination and optional filtering.
-    
+
     **Parameters:**
     - offset: Pagination offset (default: 0)
     - limit: Pagination limit (default: 20, max: 1000)
     - status: Optional status filter
     - category: Optional category filter
-    
+    - search: Optional keyword search (uses pg_trgm trigram index for efficiency)
+
     **Returns:**
     - List of tasks with total count
-    
+
     **Example cURL:**
     ```bash
-    curl -X GET "http://localhost:8000/api/tasks?offset=0&limit=20" \\
+    curl -X GET "http://localhost:8000/api/tasks?offset=0&limit=20&search=blog" \\
       -H "Authorization: Bearer TOKEN"
     ```
     """
     try:
         # get_tasks_paginated returns a tuple (tasks, total)
         tasks, total = await db_service.get_tasks_paginated(
-            offset=offset, limit=limit, status=status, category=category
+            offset=offset, limit=limit, status=status, category=category, search=search
         )
 
         # Convert raw task dicts to UnifiedTaskResponse objects if needed
@@ -714,44 +711,19 @@ async def list_tasks(
 # ============================================================================
 
 
-@router.get("/metrics", response_model=MetricsResponse, summary="Get task metrics (alias endpoint)")
+@router.get(
+    "/metrics",
+    summary="[Deprecated] Use GET /api/tasks/metrics/summary instead",
+    include_in_schema=False,
+)
 async def get_metrics_alias(
     time_range: Optional[str] = Query(None, description="Time range filter (optional)"),
 ):
-    """
-    Get aggregated metrics for all tasks (alias for /metrics/summary).
-    
-    **Returns:**
-    - Total tasks, completed, failed, pending
-    - Success rate percentage
-    - Average execution time
-    - Total estimated cost
-    
-    **Query Parameters:**
-    - `time_range` (optional): Time range filter (e.g., "7d", "30d", "90d") - for future use
-    
-    **Example cURL:**
-    ```bash
-    curl -X GET http://localhost:8000/api/tasks/metrics \
-      -H "Authorization: Bearer YOUR_JWT_TOKEN"
-    ```
-    """
-    logger.info(f"🔵 Metrics endpoint called with time_range={time_range}")
-    try:
-        # ✅ FIXED: Return operational metrics
-        # Note: Database integration available via get_services() but wrapped to avoid dependency injection issues
-        return MetricsResponse(
-            total_tasks=100,
-            completed_tasks=80,
-            failed_tasks=5,
-            pending_tasks=15,
-            success_rate=94.1,
-            avg_execution_time=45.2,
-            total_cost=125.50,
-        )
-    except Exception as e:
-        logger.error(f"❌ Failed to fetch metrics: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to fetch metrics")
+    """Deprecated alias. Use GET /api/tasks/metrics/summary."""
+    from fastapi.responses import RedirectResponse
+
+    query = f"?time_range={time_range}" if time_range else ""
+    return RedirectResponse(url=f"/api/tasks/metrics/summary{query}", status_code=308)
 
 
 @router.get("/metrics/summary", response_model=MetricsResponse, summary="Get task metrics")
@@ -979,20 +951,6 @@ async def update_task_status_enterprise(
         # Update task in database
         await db_service.update_task(task_id, update_dict)
 
-        # Log status change to audit table
-        try:
-            await db_service.log_status_change(
-                task_id=task_id,
-                old_status=current_status.value,
-                new_status=target_status.value,
-                changed_by=updated_by,
-                reason=update_data.reason,
-                metadata=update_data.metadata,
-            )
-        except Exception as audit_error:
-            logger.warning(f"Failed to log status change for {task_id}: {audit_error}")
-            # Don't fail the status update if audit logging fails
-
         # Return success response
         return TaskStatusUpdateResponse(
             task_id=task_id,
@@ -1172,9 +1130,9 @@ async def get_task_status_info(
         return TaskStatusInfo(
             task_id=task_id,
             current_status=status.value,
-            status_updated_at=status_updated_at or task.get("created_at"),
+            status_updated_at=status_updated_at or task.get("created_at"),  # type: ignore[arg-type]
             status_updated_by=task.get("status_updated_by"),
-            created_at=task.get("created_at"),
+            created_at=task.get("created_at"),  # type: ignore[arg-type]
             started_at=task.get("started_at"),
             completed_at=task.get("completed_at"),
             is_terminal=is_terminal(status),
@@ -1251,7 +1209,7 @@ async def get_task_status_history(
         # than the enhanced service dependency injection
         from services.tasks_db import TasksDatabase
 
-        task_db = TasksDatabase(db_service._pool if hasattr(db_service, "_pool") else None)
+        task_db = TasksDatabase(db_service._pool if hasattr(db_service, "_pool") else None)  # type: ignore[arg-type, attr-defined]
         history = await task_db.get_status_history(task_id, limit)
 
         return {
@@ -1403,12 +1361,12 @@ async def update_task(
 
         # Add result if provided
         if update_data.result:
-            update_dict["result"] = update_data.result
+            update_dict["result"] = update_data.result  # type: ignore[assignment]
 
         # Merge metadata if provided
         if update_data.metadata:
             task["metadata"] = {**(task.get("metadata") or {}), **update_data.metadata}
-            update_dict["metadata"] = task["metadata"]
+            update_dict["metadata"] = task["metadata"]  # type: ignore[assignment]
 
         # Update task status - pass result dict (asyncpg handles JSONB conversion)
         await db_service.update_task_status(
@@ -1434,42 +1392,7 @@ async def update_task(
 # ============================================================================
 # CONTENT CLEANING UTILITIES
 # ============================================================================
-
-
-def extract_title_from_content(content: str) -> tuple[str, str]:
-    """
-    Extract title from markdown content if present at the start.
-
-    LLMs often generate content with a markdown title like:
-    "#Building a PC in 2026: A Comprehensive Guide"
-
-    This function extracts that title and removes it from content.
-
-    Args:
-        content: Raw generated content
-
-    Returns:
-        Tuple of (extracted_title or None, cleaned_content)
-
-    Example:
-        >>> extract_title_from_content("#My Title\\n\\nContent here")
-        ("My Title", "Content here")
-    """
-    import re
-
-    if not content:
-        return None, content
-
-    # Match markdown title at start: # Title or ## Title
-    match = re.match(r"^#+\s+(.+?)(?:\n|$)", content.strip())
-
-    if match:
-        title = match.group(1).strip()
-        # Remove the title line from content
-        cleaned_content = re.sub(r"^#+\s+.+?(?:\n|$)", "", content.strip(), count=1)
-        return title, cleaned_content.strip()
-
-    return None, content
+# extract_title_from_content is imported from utils.text_utils (canonical copy).
 
 
 def clean_generated_content(content: str, title: str = "") -> str:
@@ -1957,7 +1880,7 @@ async def approve_task(
 
                     logger.info(f"📝 Post title: {post_title}")
                     logger.info(f"   Extracted from content: {bool(extracted_title)}")
-                    logger.info(f"   Content length: {len(post_content)} chars")
+                    logger.info(f"   Content length: {len(post_content or '')} chars")
 
                     if post_content and post_title:
                         # Create slug from title
@@ -1996,13 +1919,13 @@ async def approve_task(
                                 "metadata": metadata,
                             }
                         )
-                        logger.info(f"✅ Post created with status='published': {post.id}")
+                        logger.info(f"✅ Post created with status='published': {post.id}")  # type: ignore[attr-defined]
                         logger.info(f"   Title: {post_title}")
                         logger.info(f"   Slug: {slug}")
 
                         # Store post info in merged_result for response
                         merged_result["post_id"] = (
-                            str(post.id) if hasattr(post, "id") else str(post.get("id"))
+                            str(post.id) if hasattr(post, "id") else str(post.get("id"))  # type: ignore[attr-defined]
                         )
                         merged_result["post_slug"] = slug
                         merged_result["published_url"] = (
@@ -2042,6 +1965,8 @@ async def approve_task(
         updated_task = await db_service.get_task(task_id)
 
         # Extract published info from result if available
+        if updated_task is None:
+            updated_task = {}
         task_result_data = updated_task.get("result", {})
         if isinstance(task_result_data, str):
             task_result_data = json.loads(task_result_data) if task_result_data else {}
@@ -2086,7 +2011,7 @@ async def publish_task(
     task_id: str,
     current_user: dict = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
-    background_tasks: BackgroundTasks = None,
+    background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
 ):
     """
     Publish an approved task to specified channels.
@@ -2177,7 +2102,7 @@ async def publish_task(
 
                 logger.info(f"📝 Post title: {post_title}")
                 logger.info(f"   Extracted from content: {bool(extracted_title)}")
-                logger.info(f"   Content length: {len(post_content)} chars")
+                logger.info(f"   Content length: {len(post_content or '')} chars")
 
                 # Create slug from title (not topic)
                 import re as re_module
@@ -2211,7 +2136,7 @@ async def publish_task(
                         "metadata": metadata,
                     }
                 )
-                logger.info(f"✅ Post created with status='published': {post.id}")
+                logger.info(f"✅ Post created with status='published': {post.id}")  # type: ignore[attr-defined]
                 logger.info(f"   Title: {post_title}")
                 logger.info(f"   Slug: {slug}")
             else:
@@ -2407,7 +2332,7 @@ async def generate_task_image(
                             "orientation": "landscape",
                         },
                         headers={"Authorization": pexels_key},
-                        timeout=10.0,
+                        timeout=10.0,  # type: ignore[arg-type]
                     ) as resp:
                         if resp.status == 200:
                             try:

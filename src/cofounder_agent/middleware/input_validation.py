@@ -6,16 +6,14 @@ Provides request size limits, content-type validation, and payload inspection.
 """
 
 import json
-import logging
+from services.logger_config import get_logger
 from typing import Callable
 
 from fastapi import HTTPException, Request, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class InputValidationMiddleware(BaseHTTPMiddleware):
     """
     Middleware for validating all incoming requests.

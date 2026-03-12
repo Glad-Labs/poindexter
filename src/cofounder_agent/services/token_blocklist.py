@@ -10,13 +10,12 @@ recommended for production (fix #162).
 """
 
 import hashlib
-import logging
+from services.logger_config import get_logger
 import os
 import time
 from typing import Dict, Optional
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 # ── in-memory fallback ────────────────────────────────────────────────────────
 # {token_sha256_hex: expiry_epoch_float}
 _revoked: Dict[str, float] = {}

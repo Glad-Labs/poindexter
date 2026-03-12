@@ -4,14 +4,12 @@ Provides convenient functions for other services to emit WebSocket events
 """
 
 import asyncio
-import logging
+from services.logger_config import get_logger
 from typing import Any, Dict, Optional
 
 from services.websocket_manager import websocket_manager
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class WebSocketEventBroadcaster:
     """
     Broadcasts WebSocket events from various services

@@ -14,16 +14,14 @@ Handles all startup and shutdown operations for the Glad Labs AI Co-Founder:
 - Graceful shutdown
 """
 
-import logging
+from services.logger_config import get_logger
 import os
 from datetime import datetime
 from typing import Any, Dict, Optional
 
 # Import global service container for DI-4
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class StartupManager:
     """Manages all startup and shutdown operations for the FastAPI application"""
 

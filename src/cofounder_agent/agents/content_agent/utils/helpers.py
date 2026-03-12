@@ -1,9 +1,10 @@
 import json
-import logging  # Add logging import
 import re
 from typing import Any, Dict, Optional
 
-logger = logging.getLogger(__name__)  # Add logger
+from services.logger_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def load_prompts_from_file(file_path: str) -> Dict[str, str]:

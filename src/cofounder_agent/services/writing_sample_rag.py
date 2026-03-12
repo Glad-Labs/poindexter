@@ -12,16 +12,14 @@ This service enhances content generation by automatically selecting the most
 relevant writing samples based on the task topic and user preferences.
 """
 
-import logging
+from services.logger_config import get_logger
 import re
 from typing import Any, Dict, List, Optional
 
 from services.database_service import DatabaseService
 from services.writing_style_integration import WritingStyleIntegrationService
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class WritingSampleRAGService:
     """RAG service for semantic similarity-based sample retrieval"""
 
@@ -58,6 +56,9 @@ class WritingSampleRAGService:
         """
         try:
             # Get all user's samples
+            if self.db.writing_style is None:
+                logger.warning("[retrieve] writing_style service not initialized")
+                return []
             samples = await self.db.writing_style.get_user_writing_samples(user_id)
 
             if not samples:
@@ -145,6 +146,9 @@ class WritingSampleRAGService:
             List of samples matching the style
         """
         try:
+            if self.db.writing_style is None:
+                logger.warning("[retrieve] writing_style service not initialized")
+                return []
             samples = await self.db.writing_style.get_user_writing_samples(user_id)
 
             matched_samples = []
@@ -191,6 +195,9 @@ class WritingSampleRAGService:
             List of samples matching the tone
         """
         try:
+            if self.db.writing_style is None:
+                logger.warning("[retrieve] writing_style service not initialized")
+                return []
             samples = await self.db.writing_style.get_user_writing_samples(user_id)
 
             matched_samples = []

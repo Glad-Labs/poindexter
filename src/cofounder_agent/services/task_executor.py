@@ -16,13 +16,14 @@ import asyncio
 import json
 from services.logger_config import get_logger
 import time
-from dataclasses import asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 # Import constraint utilities (Task 3 - Unified constraint gating)
 from utils.constraint_utils import ContentConstraints, validate_constraints
 from utils.error_handler import handle_service_error
+from utils.task_status import TaskStatus
 
 # Import AI content generator for fallback
 from .ai_content_generator import AIContentGenerator
@@ -61,6 +62,50 @@ from .websocket_event_broadcaster import (
 )
 
 logger = get_logger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Phase-result dataclasses — carry outputs between the three pipeline phases
+# ---------------------------------------------------------------------------
+
+@dataclass
+class _GenerationResult:
+    """Output of Phase 1: content generation via orchestrator (or fallback)."""
+
+    generated_content: Optional[str]
+    orchestrator_error: Optional[str]
+    model_used: str
+    execution_trace: Dict[str, Any]
+    fallback_info: Dict[str, Any]
+
+
+@dataclass
+class _QualityResult:
+    """Output of Phase 2: quality validation (and optional refinement)."""
+
+    generated_content: Optional[str]  # may be the refined version
+    quality_score: float
+    approved: bool
+    feedback_text: str
+    suggestions_list: list
+    needs_refine: bool
+
+
+@dataclass
+class _ValidationGateResult:
+    """Output of Phase 3: lazy-AI-proof validation gates."""
+
+    content_is_valid: bool
+    base_content_valid: bool
+    length_gate_passes: bool
+    style_gate_passes: bool
+    seo_gate_passes: bool
+    style_feedback: str
+    seo_feedback: str
+    constraint_result: Any  # ContentConstraintResult | None
+    error_msg: Optional[str]
+
+
 # ---------------------------------------------------------------------------
 # Stale-task recovery configuration
 # ---------------------------------------------------------------------------
@@ -469,9 +514,9 @@ class TaskExecutor:
 
             # 3. Update task status (awaiting_approval or failed based on result)
             final_status = (
-                result.get("status", "awaiting_approval")
+                result.get("status", TaskStatus.AWAITING_APPROVAL)
                 if isinstance(result, dict)
-                else "awaiting_approval"
+                else TaskStatus.AWAITING_APPROVAL
             )
             logger.info(f"💾 [TASK_SINGLE] Updating task status to '{final_status}'...")
 
@@ -531,7 +576,7 @@ class TaskExecutor:
             # 1. User visibility into what was generated
             # 2. Analysis of why validation failed
             # 3. Potential for refinement/resubmission workflows
-            if final_status == "failed" or final_status == "rejected":
+            if final_status in (TaskStatus.FAILED, TaskStatus.REJECTED):
                 logger.warning(
                     f"⚠️  Task status is '{final_status}' - PRESERVING all content in task_metadata for audit trail"
                 )
@@ -556,7 +601,7 @@ class TaskExecutor:
                 )
 
             # For failed tasks always populate error_message column so it is never "unknown"
-            if final_status == "failed":
+            if final_status == TaskStatus.FAILED:
                 raw_orch_error = (
                     task_metadata_updates.get("orchestrator_error")
                     if isinstance(task_metadata_updates, dict)
@@ -574,7 +619,7 @@ class TaskExecutor:
             try:
                 audit_reason = (
                     "Content generation complete — awaiting human approval"
-                    if final_status not in ("failed", "cancelled")
+                    if final_status not in (TaskStatus.FAILED, TaskStatus.CANCELLED)
                     else update_payload.get("error_message", "Task failed during processing")
                 )
                 await self.database_service.log_status_change(
@@ -589,7 +634,7 @@ class TaskExecutor:
                     exc_info=True,
                 )
 
-            if final_status == "failed":
+            if final_status == TaskStatus.FAILED:
                 # Extract error message for better logging
                 error_msg = (
                     result.get("orchestrator_error") or "Task failed during processing"
@@ -665,9 +710,14 @@ class TaskExecutor:
 
     async def _execute_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Execute task through production pipeline:
-        1. Generate content via orchestrator
-        2. Validate through critique loop
+        Execute task through the 3-phase production pipeline.
+
+        Thin coordinator — delegates to three focused private coroutines:
+          _phase1_generate_content  — orchestrator call + fallback
+          _phase2_validate_quality  — quality evaluation + optional refinement
+          _phase3_validation_gates  — lazy-AI-proof length / style / SEO gates
+
+        Returns the assembled result dict consumed by _process_single_task.
         """
         task_id = task.get("id")
         task_name = task.get("task_name", "")
@@ -691,16 +741,272 @@ class TaskExecutor:
         if writing_style_id:
             logger.info(f"   Writing Style ID: {writing_style_id}")
 
-        # Extract model selections and preferences from task
         model_selections = task.get("model_selections", {})
         quality_preference = task.get("quality_preference", "balanced")
         logger.info(f"   Model selections: {model_selections}")
         logger.info(f"   Quality preference: {quality_preference}")
 
-        # Determine which model will be used for this task (for tracking purposes)
         model_used = get_model_for_phase("draft", model_selections, quality_preference)
         logger.info(f"   Determined model for execution: {model_used}")
 
+        # Initialize metrics for the whole task
+        task_metrics = TaskMetrics(str(task_id))
+        metrics_service = get_metrics_service(self.database_service)
+        logger.info(f"📊 [METRICS] Initialized metrics collection for task {task_id}")
+
+        self.usage_tracker.start_operation(
+            f"task_execution_{task_id}", "content_generation", "multi-agent-orchestrator"
+        )
+
+        # ----------------------------------------------------------------
+        # Phase 1: content generation
+        # ----------------------------------------------------------------
+        gen = await self._phase1_generate_content(
+            task=task,
+            task_id=task_id,
+            topic=topic,
+            primary_keyword=primary_keyword,
+            target_audience=target_audience,
+            category=category,
+            style=style,
+            tone=tone,
+            target_length=target_length,
+            writing_style_id=writing_style_id,
+            model_selections=model_selections,
+            quality_preference=quality_preference,
+            model_used=model_used,
+            task_metrics=task_metrics,
+        )
+
+        # ----------------------------------------------------------------
+        # Phase 2: quality validation + optional refinement
+        # ----------------------------------------------------------------
+        qual = await self._phase2_validate_quality(
+            task_id=task_id,
+            topic=topic,
+            primary_keyword=primary_keyword,
+            target_audience=target_audience,
+            category=category,
+            style=style,
+            tone=tone,
+            target_length=target_length,
+            generated_content=gen.generated_content,
+            model_selections=model_selections,
+            task_metrics=task_metrics,
+        )
+
+        # ----------------------------------------------------------------
+        # Phase 3: lazy-AI-proof validation gates
+        # ----------------------------------------------------------------
+        _task_meta = task.get("task_metadata") or {}
+        if isinstance(_task_meta, str):
+            try:
+                import json as _json
+                _task_meta = _json.loads(_task_meta)
+            except (ValueError, TypeError):
+                _task_meta = {}
+        enforce_constraints = (
+            _task_meta.get("enforce_constraints", True)
+            if isinstance(_task_meta, dict)
+            else True
+        )
+
+        gates = await self._phase3_validation_gates(
+            task=task,
+            generated_content=qual.generated_content,
+            style=style,
+            tone=tone,
+            target_length=target_length,
+            enforce_constraints=enforce_constraints,
+        )
+
+        # ----------------------------------------------------------------
+        # Assemble final result
+        # ----------------------------------------------------------------
+        orchestrator_error = gen.orchestrator_error
+        if not gates.content_is_valid and gates.error_msg and not orchestrator_error:
+            orchestrator_error = gates.error_msg
+
+        word_count = len(qual.generated_content.split()) if qual.generated_content else 0
+
+        effective_target_length = target_length
+        if not isinstance(effective_target_length, int) or effective_target_length <= 0:
+            _type_defaults = {
+                "blog_post": 1200,
+                "newsletter": 600,
+                "email": 300,
+                "social_media": 150,
+            }
+            effective_target_length = _type_defaults.get(task.get("task_type", ""), 1200)
+
+        final_status = TaskStatus.AWAITING_APPROVAL if gates.content_is_valid else TaskStatus.FAILED
+
+        validation_details = {
+            "base_content_valid": gates.base_content_valid,
+            "length_gate_passes": gates.length_gate_passes,
+            "length_gate_detail": {
+                "word_count": word_count,
+                "target": effective_target_length,
+                "minimum": int(effective_target_length * 0.85) if effective_target_length else 0,
+                "tolerance_percent": 15,
+            },
+            "style_gate_passes": gates.style_gate_passes,
+            "style_gate_detail": gates.style_feedback,
+            "seo_gate_passes": gates.seo_gate_passes,
+            "seo_gate_detail": gates.seo_feedback,
+        }
+
+        result: Dict[str, Any] = {
+            "task_id": str(task_id),
+            "task_name": task_name,
+            "topic": topic,
+            "primary_keyword": primary_keyword,
+            "target_audience": target_audience,
+            "category": category,
+            "status": final_status,
+            "stage": (
+                "complete"
+                if gates.content_is_valid
+                else "generation_failed"
+                if not gates.base_content_valid
+                else "validation_failed"
+            ),
+            "percentage": 100,
+            "message": (
+                "Ready for approval"
+                if gates.content_is_valid
+                else "Content generation failed — no content produced"
+                if not gates.base_content_valid
+                else f"Validation failed: {orchestrator_error or 'see validation_details'}"
+            ),
+            "content": qual.generated_content,
+            "generated_content": qual.generated_content,
+            "content_length": len(qual.generated_content) if qual.generated_content else 0,
+            "orchestrator_error": orchestrator_error,
+            "validation_details": validation_details,
+            "model_used": gen.model_used,
+            "fallback_info": gen.fallback_info,
+            "execution_trace": gen.execution_trace,
+            "quality_score": qual.quality_score,
+            "content_approved": qual.approved,
+            "critique_feedback": qual.feedback_text,
+            "critique_suggestions": qual.suggestions_list,
+            "word_count": word_count,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "pipeline_summary": {
+                "phase_1_generation": "✅" if qual.generated_content else "❌",
+                "phase_2_critique": f"{'✅' if qual.approved else '⚠️'} ({qual.quality_score}/100)",
+                "phase_3_validation": "✅" if gates.content_is_valid else "❌ (see validation_details)",
+            },
+        }
+
+        # Usage tracking + cost persistence
+        content_tokens_estimate = (
+            len(qual.generated_content.split()) * 1.3 if qual.generated_content else 0
+        )
+        self.usage_tracker.add_tokens(
+            f"task_execution_{task_id}",
+            input_tokens=int(len(f"{topic} {primary_keyword} {target_audience}".split()) * 1.3),
+            output_tokens=int(content_tokens_estimate),
+        )
+        operation_metrics = self.usage_tracker.end_operation(
+            f"task_execution_{task_id}", success=True, error=None
+        )
+
+        if operation_metrics and self.database_service:
+            try:
+                operation_metrics_dict = asdict(operation_metrics)
+                normalized_quality_score = (
+                    (qual.quality_score / 20.0) if qual.quality_score is not None else None
+                )
+                cost_log = {
+                    "task_id": str(task_id),
+                    "user_id": task.get("user_id"),
+                    "phase": "content_generation",
+                    "model": operation_metrics_dict.get("model_name", "unknown"),
+                    "provider": operation_metrics_dict.get("model_provider", "unknown"),
+                    "input_tokens": operation_metrics_dict.get("input_tokens", 0),
+                    "output_tokens": operation_metrics_dict.get("output_tokens", 0),
+                    "total_tokens": (
+                        operation_metrics_dict.get("input_tokens", 0)
+                        + operation_metrics_dict.get("output_tokens", 0)
+                    ),
+                    "cost_usd": operation_metrics_dict.get("total_cost_usd", 0.0),
+                    "quality_score": normalized_quality_score,
+                    "duration_ms": int(operation_metrics_dict.get("duration_ms", 0)),
+                    "success": True,
+                }
+                await self.database_service.log_cost(cost_log)
+                logger.debug(f"✅ Logged task cost: ${cost_log['cost_usd']:.6f} to database")
+
+                actual_cost_usd = operation_metrics_dict.get("total_cost_usd", 0.0)
+                result["actual_cost"] = actual_cost_usd
+                result["cost_breakdown"] = {
+                    "content_generation": {
+                        "model": cost_log["model"],
+                        "provider": cost_log["provider"],
+                        "input_tokens": cost_log["input_tokens"],
+                        "output_tokens": cost_log["output_tokens"],
+                        "cost_usd": actual_cost_usd,
+                    }
+                }
+                logger.debug(
+                    f"✅ Injected actual_cost=${actual_cost_usd:.6f} into result for DB persistence"
+                )
+            except Exception as e:
+                logger.error(f"[_execute_task] Failed to persist cost metrics: {e}", exc_info=True)
+
+        # Build models_used_by_phase / model_selection_log for DB persistence
+        models_used_by_phase: Dict[str, str] = {}
+        model_selection_log: Dict[str, Any] = {}
+        if gen.model_used:
+            draft_phase_model = (
+                gen.fallback_info.get("model_used") or gen.model_used
+                if gen.fallback_info.get("used_fallback")
+                else gen.model_used
+            )
+            models_used_by_phase["draft"] = draft_phase_model
+            model_selection_log["draft"] = {
+                "requested": gen.execution_trace.get("draft_model_requested"),
+                "actual": draft_phase_model,
+                "fallback_used": gen.fallback_info.get("used_fallback", False),
+                "fallback_reason": gen.fallback_info.get("reason"),
+            }
+
+        result["models_used_by_phase"] = models_used_by_phase
+        result["model_selection_log"] = model_selection_log
+        logger.debug(f"✅ Injected models_used_by_phase={models_used_by_phase} into result")
+
+        return result
+
+    # ========================================================================
+    # PIPELINE PHASE HELPERS — called exclusively by _execute_task
+    # ========================================================================
+
+    async def _phase1_generate_content(
+        self,
+        *,
+        task: Dict[str, Any],
+        task_id: Any,
+        topic: str,
+        primary_keyword: str,
+        target_audience: str,
+        category: str,
+        style: str,
+        tone: str,
+        target_length: Any,
+        writing_style_id: Any,
+        model_selections: Dict[str, Any],
+        quality_preference: str,
+        model_used: str,
+        task_metrics: Any,
+    ) -> "_GenerationResult":
+        """
+        Phase 1: Generate content via the orchestrator (or fallback to AIContentGenerator).
+
+        Returns a _GenerationResult with the generated text, error info, and
+        tracking dicts (execution_trace, fallback_info, model_used).
+        """
         execution_trace: Dict[str, Any] = {
             "orchestrator_attempted": False,
             "orchestrator_available": self.orchestrator is not None,
@@ -718,17 +1024,6 @@ class TaskExecutor:
             "timestamp": None,
         }
 
-        # ===== SPRINT 5: Initialize metrics collection =====
-        task_metrics = TaskMetrics(str(task_id))
-        metrics_service = get_metrics_service(self.database_service)
-        logger.info(f"📊 [METRICS] Initialized metrics collection for task {task_id}")
-
-        # Start usage tracking for entire task execution
-        self.usage_tracker.start_operation(
-            f"task_execution_{task_id}", "content_generation", "multi-agent-orchestrator"
-        )
-
-        # ===== PHASE 1: Generate Content via Orchestrator =====
         generated_content = None
         orchestrator_error = None
         phase_1_start = task_metrics.record_phase_start("content_generation")
@@ -746,9 +1041,7 @@ class TaskExecutor:
                     f"draft_model_requested={model_used}"
                 )
 
-                # Using UnifiedOrchestrator (IntelligentOrchestrator is deprecated)
                 logger.info(f"   🚀 Using UnifiedOrchestrator (unified system)")
-                # Construct natural language request using centralized prompt manager
                 pm = get_prompt_manager()
                 prompt = pm.get_prompt(
                     "blog_generation.blog_generation_request",
@@ -761,23 +1054,19 @@ class TaskExecutor:
                     target_length=target_length,
                 )
 
-                # Build execution context with model information
                 execution_context = {
                     "task_id": str(task_id),
                     "model_selections": model_selections,
                     "quality_preference": quality_preference,
-                    "user_id": task.get("user_id"),  # Include user_id for writing sample retrieval
-                    "writing_style_id": writing_style_id,  # Include writing_style_id for style guidance
+                    "user_id": task.get("user_id"),
+                    "writing_style_id": writing_style_id,
                 }
 
-                # Call orchestrator with proper method
                 if hasattr(self.orchestrator, "process_request"):
-                    # UnifiedOrchestrator has process_request
                     result = await self.orchestrator.process_request(
                         user_input=prompt, context=execution_context
                     )
                 else:
-                    # Fallback to process_command_async for basic Orchestrator
                     result = await self.orchestrator.process_command_async(
                         command=prompt, context=execution_context
                     )
@@ -787,18 +1076,13 @@ class TaskExecutor:
                     f"   [MODEL_TRACE] Orchestrator returned in {orchestration_elapsed_ms}ms for task {task_id}"
                 )
 
-                # Extract content from result
-                # Result can be either an object with attributes or a dict
                 final_formatting = None
                 outputs = None
 
-                # Log the actual result structure for debugging
                 logger.info(f"   Raw orchestrator result type: {type(result).__name__}")
                 if isinstance(result, dict):
                     logger.info(f"   Result keys: {list(result.keys())}")
-                    # Log first 300 chars of result for debugging
-                    result_str = str(result)[:300]
-                    logger.info(f"   Result sample: {result_str}")
+                    logger.info(f"   Result sample: {str(result)[:300]}")
                 elif hasattr(result, "__dict__"):
                     logger.info(f"   Result attributes: {list(result.__dict__.keys())}")
 
@@ -808,11 +1092,8 @@ class TaskExecutor:
                         f"   Found final_formatting attribute: {len(str(final_formatting)) if final_formatting else 0} chars"
                     )
                 elif isinstance(result, dict):
-                    # Check multiple possible fields for content
-                    # First check the ExecutionResult fields
                     execution_output = result.get("output")
                     if isinstance(execution_output, dict):
-                        # ExecutionResult wraps the actual output, drill down
                         logger.debug(
                             f"   Found ExecutionResult wrapper, drilling down into 'output' field"
                         )
@@ -821,7 +1102,6 @@ class TaskExecutor:
                         ) or execution_output.get("content")
                         outputs = execution_output.get("outputs")
                     else:
-                        # Direct result dict or error response
                         final_formatting = (
                             result.get("final_formatting")
                             or result.get("output")
@@ -829,9 +1109,7 @@ class TaskExecutor:
                         )
                         outputs = result.get("outputs")
 
-                        # Check if this is an error result (e.g., from UnifiedOrchestrator exception)
                         if result.get("status") == "failed" or result.get("feedback"):
-                            # This might be an error from UnifiedOrchestrator
                             orchestrator_error = (
                                 result.get("feedback") or result.get("output") or "Unknown error"
                             )
@@ -862,7 +1140,6 @@ class TaskExecutor:
                         f"   Using outputs field, type: {type(result_outputs).__name__}, len: {len(str(result_outputs))}"
                     )
                     if isinstance(result_outputs, dict):
-                        # Try to find content in outputs
                         for key, val in result_outputs.items():
                             if isinstance(val, dict) and "content" in val:
                                 generated_content = val["content"]
@@ -890,7 +1167,6 @@ class TaskExecutor:
                     generated_content = None
                     logger.debug(f"   No content found in result, setting to None")
 
-                # Debug logging for content generation
                 logger.info(
                     f"   Generated content length: {len(generated_content) if generated_content else 0} chars"
                 )
@@ -899,7 +1175,6 @@ class TaskExecutor:
                         f"   ⚠️  Generated content is short ({len(generated_content)} chars): {generated_content[:100]}..."
                     )
 
-                # Validate that content was actually generated
                 if not generated_content or (
                     isinstance(generated_content, str) and len(generated_content.strip()) < 50
                 ):
@@ -908,10 +1183,8 @@ class TaskExecutor:
                     logger.warning(f"      Content is None: {generated_content is None}")
                     if generated_content:
                         logger.warning(f"      Content length: {len(generated_content)}")
-                        content_preview = str(generated_content)[:200]
-                        logger.warning(f"      FULL content: {content_preview}")
+                        logger.warning(f"      FULL content: {str(generated_content)[:200]}")
 
-                    # Try fallback content generation instead of retrying orchestrator
                     fallback_reason = (
                         "orchestrator_content_below_threshold"
                         if generated_content is not None
@@ -937,10 +1210,13 @@ class TaskExecutor:
                         )
                     except Exception as fallback_err:
                         logger.error(
-                            f"[_execute_task] Fallback generation also failed: {fallback_err}",
+                            f"[_phase1_generate_content] Fallback generation also failed: {fallback_err}",
                             exc_info=True,
                         )
-                        orchestrator_error = f"Orchestrator failed with: {orchestrator_error or 'Unknown error'}. Fallback also failed: {fallback_err}"
+                        orchestrator_error = (
+                            f"Orchestrator failed with: {orchestrator_error or 'Unknown error'}. "
+                            f"Fallback also failed: {fallback_err}"
+                        )
                         generated_content = None
 
                 logger.info(
@@ -950,10 +1226,7 @@ class TaskExecutor:
 
             except ServiceError as e:
                 orchestrator_error = str(e)
-                logger.error(
-                    f"Service error in content generation",
-                    exc_info=True,
-                )
+                logger.error(f"Service error in content generation", exc_info=True)
                 generated_content = f"Error in content generation: {orchestrator_error}"
                 task_metrics.record_phase_end(
                     "content_generation", phase_1_start, status="error", error=orchestrator_error
@@ -982,7 +1255,6 @@ class TaskExecutor:
                 f"⚠️  [FALLBACK_TRACE] Fallback triggered for task {task_id}: "
                 f"reason=orchestrator_unavailable, requested_draft_model={model_used}"
             )
-            # Fallback: Simple template-based generation
             generated_content, fallback_model = await self._fallback_generate_content(task)
             fallback_info["model_used"] = fallback_model
             execution_trace["fallback_model"] = fallback_model
@@ -992,14 +1264,40 @@ class TaskExecutor:
             )
             task_metrics.record_phase_end("content_generation", phase_1_start, status="success")
 
-        # ===== PHASE 2: Quality Validation =====
+        return _GenerationResult(
+            generated_content=generated_content,
+            orchestrator_error=orchestrator_error,
+            model_used=model_used,
+            execution_trace=execution_trace,
+            fallback_info=fallback_info,
+        )
+
+    async def _phase2_validate_quality(
+        self,
+        *,
+        task_id: Any,
+        topic: str,
+        primary_keyword: str,
+        target_audience: str,
+        category: str,
+        style: str,
+        tone: str,
+        target_length: Any,
+        generated_content: Optional[str],
+        model_selections: Dict[str, Any],
+        task_metrics: Any,
+    ) -> "_QualityResult":
+        """
+        Phase 2: Run quality evaluation on generated content and optionally refine it.
+
+        Returns a _QualityResult with scores, flags, and the (possibly refined) content.
+        """
         phase_2_start = task_metrics.record_phase_start("quality_assessment")
         logger.info(f"🔍 [TASK_EXECUTE] PHASE 2: Validating content quality...")
         logger.info(
             f"   Input content length: {len(generated_content) if generated_content else 0} chars"
         )
 
-        # Only validate if we have content
         quality_result = None
         if generated_content:
             try:
@@ -1016,12 +1314,12 @@ class TaskExecutor:
                     },
                 )
             except Exception as e:
-                logger.error(f"[_execute_task] Quality evaluation failed: {e}", exc_info=True)
+                logger.error(
+                    f"[_phase2_validate_quality] Quality evaluation failed: {e}", exc_info=True
+                )
                 quality_result = None
 
-        # Handle None result (evaluation failed or no content)
         if quality_result is None:
-            # Create default QualityAssessment for failed evaluation
             from .quality_service import EvaluationMethod, QualityDimensions
 
             quality_result = QualityAssessment(
@@ -1042,20 +1340,26 @@ class TaskExecutor:
                 ),
             )
 
-        # Handle both QualityAssessment objects and fallback dicts
-        if isinstance(quality_result, QualityAssessment):
-            quality_score = quality_result.overall_score  # 0-100
-            approved = quality_result.passing  # boolean
-            feedback_text = quality_result.feedback
-            suggestions_list = quality_result.suggestions
-            needs_refine = quality_result.needs_refinement
-        else:
-            # Fallback for dict (line 721)
-            quality_score = quality_result.get("score", 0)
-            approved = quality_result.get("approved", False)
-            feedback_text = quality_result.get("feedback", "")
-            suggestions_list = quality_result.get("suggestions", [])
-            needs_refine = quality_result.get("needs_refinement", False)
+        def _unpack_quality(qr: Any):
+            if isinstance(qr, QualityAssessment):
+                return (
+                    qr.overall_score,
+                    qr.passing,
+                    qr.feedback,
+                    qr.suggestions,
+                    qr.needs_refinement,
+                )
+            return (
+                qr.get("score", 0),
+                qr.get("approved", False),
+                qr.get("feedback", ""),
+                qr.get("suggestions", []),
+                qr.get("needs_refinement", False),
+            )
+
+        quality_score, approved, feedback_text, suggestions_list, needs_refine = _unpack_quality(
+            quality_result
+        )
 
         _quality_threshold = 70
         logger.info(
@@ -1074,7 +1378,6 @@ class TaskExecutor:
             logger.warning(f"⚠️ [TASK_EXECUTE] PHASE 2 Complete: Content needs improvement")
             logger.debug(f"   Feedback: {feedback_text}")
 
-            # If not approved but can refine, attempt refinement
             if needs_refine and self.orchestrator:
                 logger.info(
                     f"🔄 [TASK_EXECUTE] Attempting refinement based on critique feedback..."
@@ -1083,7 +1386,6 @@ class TaskExecutor:
                     f"   Original content length: {len(generated_content) if generated_content else 0} chars"
                 )
                 try:
-                    # Use orchestrator to refine
                     if hasattr(self.orchestrator, "process_request") and not hasattr(
                         self.orchestrator, "process_command_async"
                     ):
@@ -1120,7 +1422,6 @@ class TaskExecutor:
                         f"   Refinement completed, result type: {type(refinement_result).__name__}"
                     )
 
-                    # Extract content from refinement result
                     refined_content = None
                     if isinstance(refinement_result, dict):
                         logger.debug(f"   Refinement result keys: {list(refinement_result.keys())}")
@@ -1138,24 +1439,20 @@ class TaskExecutor:
                         ):
                             refined_content = refinement_result["output"]["content"]
                         else:
-                            # Fallback: If refinement didn't return content, keep original
                             logger.warning(f"⚠️  Refinement result missing expected content fields")
                             refined_content = None
                     elif isinstance(refinement_result, str):
-                        # If result is just a string, use it as content
                         refined_content = refinement_result
                         logger.info(
                             f"   Refinement returned string content ({len(refinement_result)} chars)"
                         )
                     else:
-                        # Unknown format
                         logger.warning(
                             f"⚠️  Unexpected refinement result type: {type(refinement_result).__name__}"
                         )
                         refined_content = None
 
                     if refined_content and len(str(refined_content).strip()) > 50:
-                        # Use refined content
                         generated_content = (
                             str(refined_content)
                             if not isinstance(refined_content, str)
@@ -1163,7 +1460,6 @@ class TaskExecutor:
                         )
                         logger.info(f"   ✅ Using refined content ({len(generated_content)} chars)")
 
-                        # RE-EVALUATE REFINED CONTENT USING QUALITY SERVICE
                         quality_result = await self.quality_service.evaluate(
                             content=generated_content,
                             context={
@@ -1176,21 +1472,9 @@ class TaskExecutor:
                                 "target_length": target_length,
                             },
                         )
-
-                        # Extract new quality scores
-                        if isinstance(quality_result, QualityAssessment):
-                            quality_score = quality_result.overall_score
-                            approved = quality_result.passing
-                            feedback_text = quality_result.feedback
-                            suggestions_list = quality_result.suggestions
-                            needs_refine = quality_result.needs_refinement
-                        else:
-                            quality_score = quality_result.get("score", 0)
-                            approved = quality_result.get("approved", False)
-                            feedback_text = quality_result.get("feedback", "")
-                            suggestions_list = quality_result.get("suggestions", [])
-                            needs_refine = quality_result.get("needs_refinement", False)
-
+                        quality_score, approved, feedback_text, suggestions_list, needs_refine = (
+                            _unpack_quality(quality_result)
+                        )
                         logger.info(f"   Refined Quality Score: {quality_score}/100")
                     else:
                         logger.warning(f"   ⚠️  Refined content too short, keeping original")
@@ -1205,30 +1489,43 @@ class TaskExecutor:
                     )
 
                 logger.info(
-                    f"🔄 Refinement complete: approved={approved}, score={quality_score}/100, content_len={len(generated_content) if generated_content else 0}"
+                    f"🔄 Refinement complete: approved={approved}, score={quality_score}/100, "
+                    f"content_len={len(generated_content) if generated_content else 0}"
                 )
 
-        # Record Phase 2 completion
         logger.debug(f"📊 [METRICS] Recording Phase 2 completion...")
         task_metrics.record_phase_end(
             "quality_assessment", phase_2_start, status="success", error=None
         )
         logger.info(f"✅ [TASK_EXECUTE] PHASE 2 Complete: Quality assessment recorded")
 
-        # ===== LAZY-AI-PROOF VALIDATION PIPELINE =====
-        # Respect enforce_constraints flag (stored in task_metadata at creation time).
-        # When False, word count / style / SEO gates are bypassed — content goes straight
-        # to awaiting_approval regardless of length or style issues.
-        _task_meta = task.get("task_metadata") or {}
-        if isinstance(_task_meta, str):
-            try:
-                import json as _json
-                _task_meta = _json.loads(_task_meta)
-            except (ValueError, TypeError):
-                _task_meta = {}
-        enforce_constraints = _task_meta.get("enforce_constraints", True) if isinstance(_task_meta, dict) else True
+        return _QualityResult(
+            generated_content=generated_content,
+            quality_score=quality_score,
+            approved=approved,
+            feedback_text=feedback_text,
+            suggestions_list=suggestions_list,
+            needs_refine=needs_refine,
+        )
 
-        # Gate 1: Content generation validity
+    async def _phase3_validation_gates(
+        self,
+        *,
+        task: Dict[str, Any],
+        generated_content: Optional[str],
+        style: str,
+        tone: str,
+        target_length: Any,
+        enforce_constraints: bool,
+    ) -> "_ValidationGateResult":
+        """
+        Phase 3: Lazy-AI-proof validation gates (length, style, SEO).
+
+        When enforce_constraints is False all three gates are bypassed and the
+        content always passes through to awaiting_approval.
+
+        Returns a _ValidationGateResult summarising which gates passed.
+        """
         base_content_valid = (
             generated_content is not None
             and isinstance(generated_content, str)
@@ -1236,6 +1533,7 @@ class TaskExecutor:
         )
 
         word_count = len(generated_content.split()) if generated_content else 0
+
         effective_target_length = target_length
         if not isinstance(effective_target_length, int) or effective_target_length <= 0:
             _type_defaults = {
@@ -1246,13 +1544,15 @@ class TaskExecutor:
             }
             effective_target_length = _type_defaults.get(task.get("task_type", ""), 1200)
 
-        # Gate 1: Length constraint validation (using unified constraint system)
+        # Gate 1: Length constraint
+        constraint_result = None
+        length_gate_passes = False
         try:
             constraints = ContentConstraints(
                 word_count=effective_target_length or 1500,
                 writing_style=style or "educational",
-                word_count_tolerance=15,  # Allow 85-115% of target (was 90-110%)
-                strict_mode=True,  # Enforce strictly for lazy-AI-proof
+                word_count_tolerance=15,
+                strict_mode=True,
             )
             constraint_result = validate_constraints(
                 content=generated_content or "",  # type: ignore[arg-type]
@@ -1278,7 +1578,7 @@ class TaskExecutor:
             length_gate_passes = False
             constraint_result = None
 
-        # Gate 2: Style consistency validation (Task 2 - Wire style gate)
+        # Gate 2: Style consistency
         style_gate_passes = True
         style_feedback = ""
         try:
@@ -1293,7 +1593,6 @@ class TaskExecutor:
                 style_feedback = (
                     "; ".join(style_result.issues) if style_result.issues else "style consistent"
                 )
-
                 logger.info(
                     f"🎨 [STYLE_GATE] style={style}, tone={tone}, "
                     f"score={style_result.style_consistency_score:.2f}, pass={style_gate_passes}"
@@ -1302,14 +1601,12 @@ class TaskExecutor:
                     logger.warning(f"⚠️  Style inconsistencies detected: {style_feedback}")
         except Exception as e:
             logger.warning(f"[STYLE_GATE] Validation error (non-blocking): {e}", exc_info=True)
-            # Non-blocking - continue even if style validation fails
 
-        # Gate 3: SEO validation (Task 5 - Make SEO block approval)
+        # Gate 3: SEO validation
         seo_gate_passes = True
         seo_feedback = ""
         try:
             if generated_content:
-                # Normalize optional SEO fields to avoid NoneType len() errors inside validator.
                 seo_title = (task.get("seo_title") or task.get("topic") or "Untitled").strip()
                 seo_description = (task.get("seo_description") or "").strip()
                 raw_keywords = task.get("seo_keywords")
@@ -1320,7 +1617,6 @@ class TaskExecutor:
                 else:
                     seo_keywords = []
 
-                # Derive primary keyword from topic if not explicitly set
                 primary_kw = str(task.get("primary_keyword") or "").strip()
                 if not primary_kw:
                     topic_words = str(task.get("topic") or "").split()
@@ -1347,7 +1643,6 @@ class TaskExecutor:
                 seo_feedback = (
                     "; ".join(seo_result.errors) if seo_result.errors else "SEO compliant"
                 )
-
                 logger.info(
                     f"🔎 [SEO_GATE] valid={seo_gate_passes}, "
                     f"errors={len(seo_result.errors)}, warnings={len(seo_result.warnings)}"
@@ -1356,9 +1651,8 @@ class TaskExecutor:
                     logger.warning(f"⚠️  SEO violations: {seo_feedback}")
         except Exception as e:
             logger.warning(f"[SEO_GATE] Validation error (non-blocking): {e}", exc_info=True)
-            # Non-blocking - continue even if SEO validation fails
 
-        # If enforce_constraints is disabled, bypass length/style/SEO gates
+        # Bypass gates when enforce_constraints is disabled
         if not enforce_constraints:
             logger.info(
                 "⚙️  [VALIDATION] enforce_constraints=False — bypassing length/style/SEO gates"
@@ -1367,13 +1661,11 @@ class TaskExecutor:
             style_gate_passes = True
             seo_gate_passes = True
 
-        # Consolidated gating logic: LAZY-AI-PROOF requires ALL gates to pass
         content_is_valid = (
             base_content_valid and length_gate_passes and style_gate_passes and seo_gate_passes
         )
 
-        final_status = "awaiting_approval" if content_is_valid else "failed"
-
+        error_msg: Optional[str] = None
         if not content_is_valid:
             failure_reasons = []
             if not base_content_valid:
@@ -1381,20 +1673,18 @@ class TaskExecutor:
                     f"content too short or empty ({len(generated_content) if generated_content else 0} chars)"
                 )
             if not length_gate_passes:
-                # Use the detailed violation message from constraint_result
                 if constraint_result and constraint_result.violation_message:
                     failure_reasons.append(constraint_result.violation_message)
                 else:
-                    # Fallback: determine if too short or too long
-                    min_required = int(effective_target_length * 0.85) if effective_target_length else 0
-                    max_allowed = int(effective_target_length * 1.15) if effective_target_length else 0
-                    if word_count < min_required:
+                    min_req = int(effective_target_length * 0.85) if effective_target_length else 0
+                    max_all = int(effective_target_length * 1.15) if effective_target_length else 0
+                    if word_count < min_req:
                         failure_reasons.append(
-                            f"word count too short ({word_count} < {min_required}, target: {effective_target_length} ±15%)"
+                            f"word count too short ({word_count} < {min_req}, target: {effective_target_length} ±15%)"
                         )
-                    elif word_count > max_allowed:
+                    elif word_count > max_all:
                         failure_reasons.append(
-                            f"word count too long ({word_count} > {max_allowed}, target: {effective_target_length} ±15%)"
+                            f"word count too long ({word_count} > {max_all}, target: {effective_target_length} ±15%)"
                         )
                     else:
                         failure_reasons.append(
@@ -1407,165 +1697,20 @@ class TaskExecutor:
 
             error_msg = f"Content validation failed: {'; '.join(failure_reasons)}"
             logger.error(f"❌ [LAZY_AI_PROOF_GATE] {error_msg}")
-            if not orchestrator_error:
-                orchestrator_error = error_msg
         else:
             logger.info(f"✅ [LAZY_AI_PROOF_GATE] All validation gates passed (length, style, SEO)")
 
-        # ===== Build Final Result =====
-        # IMPORTANT: Always store generated_content, even on validation failure
-        validation_details = {
-            "base_content_valid": base_content_valid,
-            "length_gate_passes": length_gate_passes,
-            "length_gate_detail": {
-                "word_count": word_count,
-                "target": effective_target_length,
-                "minimum": int(effective_target_length * 0.85) if effective_target_length else 0,
-                "tolerance_percent": 15,
-            },
-            "style_gate_passes": style_gate_passes,
-            "style_gate_detail": style_feedback,
-            "seo_gate_passes": seo_gate_passes,
-            "seo_gate_detail": seo_feedback,
-        }
-        result = {
-            "task_id": str(task_id),
-            "task_name": task_name,
-            "topic": topic,
-            "primary_keyword": primary_keyword,
-            "target_audience": target_audience,
-            "category": category,
-            "status": final_status,
-            "stage": (
-                "complete"
-                if content_is_valid
-                else "generation_failed"
-                if not base_content_valid
-                else "validation_failed"
-            ),
-            "percentage": 100,
-            "message": (
-                "Ready for approval"
-                if content_is_valid
-                else "Content generation failed — no content produced"
-                if not base_content_valid
-                else f"Validation failed: {orchestrator_error or 'see validation_details'}"
-            ),
-            "content": generated_content,  # Always store for preservation
-            "generated_content": generated_content,
-            "content_length": len(generated_content) if generated_content else 0,
-            "orchestrator_error": orchestrator_error,
-            "validation_details": validation_details,
-            "model_used": model_used,
-            "fallback_info": fallback_info,
-            "execution_trace": execution_trace,
-            "quality_score": quality_score,
-            "content_approved": approved,
-            "critique_feedback": feedback_text,
-            "critique_suggestions": suggestions_list,
-            "word_count": word_count,
-            "completed_at": datetime.now(timezone.utc).isoformat(),
-            "pipeline_summary": {
-                "phase_1_generation": "✅" if generated_content else "❌",
-                "phase_2_critique": f"{'✅' if approved else '⚠️'} ({quality_score}/100)",
-                "phase_3_validation": "✅" if content_is_valid else "❌ (see validation_details)",
-            },
-        }
-
-        # End usage tracking with actual metrics
-        content_tokens_estimate = (
-            len(generated_content.split()) * 1.3 if generated_content else 0
-        )  # Estimate ~1.3 tokens per word
-
-        # Track tokens via add_tokens
-        self.usage_tracker.add_tokens(
-            f"task_execution_{task_id}",
-            input_tokens=int(len(f"{topic} {primary_keyword} {target_audience}".split()) * 1.3),
-            output_tokens=int(content_tokens_estimate),
+        return _ValidationGateResult(
+            content_is_valid=content_is_valid,
+            base_content_valid=base_content_valid,
+            length_gate_passes=length_gate_passes,
+            style_gate_passes=style_gate_passes,
+            seo_gate_passes=seo_gate_passes,
+            style_feedback=style_feedback,
+            seo_feedback=seo_feedback,
+            constraint_result=constraint_result,
+            error_msg=error_msg,
         )
-
-        # End operation with correct signature
-        operation_metrics = self.usage_tracker.end_operation(
-            f"task_execution_{task_id}", success=True, error=None
-        )
-
-        # Persist cost metrics to database for historical reporting
-        if operation_metrics and self.database_service:
-            try:
-                # Convert UsageMetrics dataclass to dict for .get() access
-                operation_metrics_dict = asdict(operation_metrics)
-
-                # Normalize quality_score from 0-100 scale to 0-5 scale for schema
-                normalized_quality_score = (
-                    (quality_score / 20.0) if quality_score is not None else None
-                )
-
-                cost_log = {
-                    "task_id": str(task_id),
-                    "user_id": task.get("user_id"),
-                    "phase": "content_generation",  # Single phase for overall task
-                    "model": operation_metrics_dict.get("model_name", "unknown"),
-                    "provider": operation_metrics_dict.get("model_provider", "unknown"),
-                    "input_tokens": operation_metrics_dict.get("input_tokens", 0),
-                    "output_tokens": operation_metrics_dict.get("output_tokens", 0),
-                    "total_tokens": operation_metrics_dict.get("input_tokens", 0)
-                    + operation_metrics_dict.get("output_tokens", 0),
-                    "cost_usd": operation_metrics_dict.get("total_cost_usd", 0.0),
-                    "quality_score": normalized_quality_score,
-                    "duration_ms": int(operation_metrics_dict.get("duration_ms", 0)),
-                    "success": True,
-                }
-                await self.database_service.log_cost(cost_log)
-                logger.debug(f"✅ Logged task cost: ${cost_log['cost_usd']:.6f} to database")
-
-                # Write actual_cost and cost_breakdown back to result so they
-                # are persisted in content_tasks by _process_single_task (issues #111).
-                actual_cost_usd = operation_metrics_dict.get("total_cost_usd", 0.0)
-                if isinstance(result, dict):
-                    result["actual_cost"] = actual_cost_usd
-                    result["cost_breakdown"] = {
-                        "content_generation": {
-                            "model": cost_log["model"],
-                            "provider": cost_log["provider"],
-                            "input_tokens": cost_log["input_tokens"],
-                            "output_tokens": cost_log["output_tokens"],
-                            "cost_usd": actual_cost_usd,
-                        }
-                    }
-                    logger.debug(
-                        f"✅ Injected actual_cost=${actual_cost_usd:.6f} into result for DB persistence"
-                    )
-            except Exception as e:
-                logger.error(f"[_execute_task] Failed to persist cost metrics: {e}", exc_info=True)
-
-        # Build models_used_by_phase and model_selection_log from execution data
-        # and write them into result so _process_single_task can persist them (issue #112).
-        models_used_by_phase: Dict[str, str] = {}
-        model_selection_log: Dict[str, Any] = {}
-
-        if model_used:
-            # Record the draft phase model (primary generation phase)
-            draft_phase_model = (
-                fallback_info.get("model_used") or model_used
-                if fallback_info.get("used_fallback")
-                else model_used
-            )
-            models_used_by_phase["draft"] = draft_phase_model
-            model_selection_log["draft"] = {
-                "requested": execution_trace.get("draft_model_requested"),
-                "actual": draft_phase_model,
-                "fallback_used": fallback_info.get("used_fallback", False),
-                "fallback_reason": fallback_info.get("reason"),
-            }
-
-        if isinstance(result, dict):
-            result["models_used_by_phase"] = models_used_by_phase
-            result["model_selection_log"] = model_selection_log
-            logger.debug(
-                f"✅ Injected models_used_by_phase={models_used_by_phase} into result"
-            )
-
-        return result
 
     async def _fallback_generate_content(self, task: Dict[str, Any]) -> tuple[str, str]:
         """

@@ -7,7 +7,7 @@ Provides endpoints for:
 - Getting Ollama system status
 """
 
-import logging
+from services.logger_config import get_logger
 import os
 from datetime import datetime, timezone
 from typing import Any, Dict
@@ -22,8 +22,7 @@ from schemas.ollama_schemas import (
     OllamaWarmupResponse,
 )
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 # All Ollama endpoints require authentication — model config must not be publicly accessible
 router = APIRouter(
     prefix="/api/ollama",

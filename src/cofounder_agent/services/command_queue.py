@@ -11,16 +11,14 @@ Features:
 
 import asyncio
 import json
-import logging
+from services.logger_config import get_logger
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 from uuid import uuid4
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class CommandStatus(str, Enum):
     """Command execution status"""
 

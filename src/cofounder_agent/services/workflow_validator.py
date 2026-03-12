@@ -8,16 +8,14 @@ This module checks that:
 4. No circular dependencies
 """
 
-import logging
+from services.logger_config import get_logger
 from typing import Any, Dict, List, Optional, Tuple
 
 from schemas.custom_workflow_schemas import CustomWorkflow, WorkflowPhase
 from services.phase_mapper import PhaseMapper, PhaseMappingError
 from services.phase_registry import PhaseRegistry
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class WorkflowValidationError(Exception):
     """Raised when workflow validation fails"""
 
@@ -39,6 +37,8 @@ class WorkflowValidator:
         """
         Validate a workflow definition.
 
+        Delegates each concern to a focused sub-validator and aggregates results.
+
         Args:
             workflow: The workflow to validate
             initial_inputs: Optional initial input values (used for execution-time validation)
@@ -56,134 +56,192 @@ class WorkflowValidator:
             errors.append("Workflow must have at least one phase")
             return False, errors, warnings
 
-        # Convert phases to WorkflowPhase objects if needed
         workflow_phases = self._normalize_phases(workflow.phases)
-        phase_names = [p.name for p in workflow_phases]
 
-        # Check all phases exist
+        # Each sub-validator returns (errors, warnings) for its concern
+        phase_errors, phase_warnings = self._validate_phase_registry(workflow_phases)
+        errors.extend(phase_errors)
+        warnings.extend(phase_warnings)
+        if errors:
+            return False, errors, warnings
+
+        index_errors, _ = self._validate_phase_indices(workflow_phases)
+        errors.extend(index_errors)
+        if errors:
+            return False, errors, warnings
+
+        dup_errors, _ = self._validate_no_duplicate_names(workflow_phases)
+        errors.extend(dup_errors)
+        if errors:
+            return False, errors, warnings
+
+        mapping_errors, mapping_warnings = self._validate_phase_mappings(
+            workflow_phases, initial_inputs
+        )
+        errors.extend(mapping_errors)
+        warnings.extend(mapping_warnings)
+
+        timeout_errors, timeout_warnings = self._validate_timeout_and_retries(workflow_phases)
+        errors.extend(timeout_errors)
+        warnings.extend(timeout_warnings)
+
+        return len(errors) == 0, errors, warnings
+
+    # ---------------------------------------------------------------------------
+    # Sub-validators — each covers one validation concern
+    # ---------------------------------------------------------------------------
+
+    def _validate_phase_registry(
+        self, workflow_phases: List[WorkflowPhase]
+    ) -> Tuple[List[str], List[str]]:
+        """Check that all phases exist in the registry and flag skipped phases."""
+        errors: List[str] = []
+        warnings: List[str] = []
         for phase in workflow_phases:
             if not self.registry.phase_exists(phase.name):
                 errors.append(f"Phase '{phase.name}' not found in registry")
             elif phase.skip:
                 warnings.append(f"Phase '{phase.name}' is marked to skip")
+        return errors, warnings
 
-        if errors:
-            return False, errors, warnings
-
-        # Check phase ordering is correctly indexed
+    def _validate_phase_indices(
+        self, workflow_phases: List[WorkflowPhase]
+    ) -> Tuple[List[str], List[str]]:
+        """Check that phase indices are sequential starting from zero."""
+        errors: List[str] = []
         indices = sorted([p.index for p in workflow_phases])
-        expected_indices = list(range(len(workflow_phases)))
-        if indices != expected_indices:
+        expected = list(range(len(workflow_phases)))
+        if indices != expected:
             errors.append(
-                f"Phase indices are not sequential. " f"Expected {expected_indices}, got {indices}"
+                f"Phase indices are not sequential. Expected {expected}, got {indices}"
             )
-            return False, errors, warnings
+        return errors, []
 
-        # Check for duplicate phase names
-        unique_names = len(set(phase_names))
-        if unique_names != len(phase_names):
-            errors.append("Duplicate phase names in workflow")
-            return False, errors, warnings
+    def _validate_no_duplicate_names(
+        self, workflow_phases: List[WorkflowPhase]
+    ) -> Tuple[List[str], List[str]]:
+        """Check that no two phases share the same name."""
+        phase_names = [p.name for p in workflow_phases]
+        if len(set(phase_names)) != len(phase_names):
+            return ["Duplicate phase names in workflow"], []
+        return [], []
 
-        # Check phase compatibility and input requirements
-        for i in range(len(workflow_phases)):
-            phase = workflow_phases[i]
+    def _validate_phase_mappings(
+        self,
+        workflow_phases: List[WorkflowPhase],
+        initial_inputs: Optional[Dict[str, Any]],
+    ) -> Tuple[List[str], List[str]]:
+        """Validate input/output mappings between consecutive phases."""
+        errors: List[str] = []
+        warnings: List[str] = []
+
+        for i, phase in enumerate(workflow_phases):
             phase_def = self.registry.get_phase(phase.name)
-
             if not phase_def:
-                continue  # Already caught above
+                continue  # Already caught by _validate_phase_registry
 
-            # Check required inputs for first phase
             if i == 0:
-                # Phase 0 inputs are checked at execution time in validate_for_execution
-                # Or they must be present in user_inputs if this is a strict validation context
-                # For now, we only warn if missing
+                # Phase 0: required inputs must be provided at runtime — only warn
                 for input_key, input_field in phase_def.input_schema.items():
-                    if input_field.required:
-                        if input_key not in phase.user_inputs:
-                            warnings.append(
-                                f"Phase 0 ({phase.name}) required input "
-                                f"'{input_key}' not provided in definition (must be provided at runtime)"
-                            )
-
-            # Check phase compatibility with previous phase output
-            if i > 0:
-                prev_phase = workflow_phases[i - 1]
-                prev_phase_def = self.registry.get_phase(prev_phase.name)
-
-                if prev_phase_def:
-                    logger.debug("Validating phase %s (prev: %s)", phase.name, prev_phase.name)
-                    logger.debug("Input mapping: %s", phase.input_mapping)
-
-                    try:
-                        mapping = self.mapper.map_phases(
-                            prev_phase.name, phase.name, user_overrides=phase.input_mapping
+                    if input_field.required and input_key not in phase.user_inputs:
+                        warnings.append(
+                            f"Phase 0 ({phase.name}) required input '{input_key}' "
+                            f"not provided in definition (must be provided at runtime)"
                         )
-                        logger.debug("Generated mapping: %s", mapping)
+                continue
 
-                        # When validating, account for user-provided inputs
-                        # User inputs satisfy required input requirements without auto-mapping
-                        adjusted_is_valid = True
-                        adjusted_issues = []
+            # Phases 1+: validate mapping from previous phase output
+            prev_phase = workflow_phases[i - 1]
+            prev_phase_def = self.registry.get_phase(prev_phase.name)
+            if not prev_phase_def:
+                continue
 
-                        # Check mapped fields are valid
-                        for target_key, source_key in mapping.items():
-                            if target_key not in phase_def.input_schema:
-                                adjusted_issues.append(
-                                    f"Target input '{target_key}' not found in {phase_def.name}"
-                                )
-                            if source_key not in prev_phase_def.output_schema:
-                                adjusted_issues.append(
-                                    f"Source output '{source_key}' not found in {prev_phase_def.name}"
-                                )
+            logger.debug("Validating phase %s (prev: %s)", phase.name, prev_phase.name)
+            phase_errors, phase_warnings = self._validate_single_phase_mapping(
+                phase_index=i,
+                phase=phase,
+                phase_def=phase_def,
+                prev_phase=prev_phase,
+                prev_phase_def=prev_phase_def,
+                initial_inputs=initial_inputs,
+            )
+            errors.extend(phase_errors)
+            warnings.extend(phase_warnings)
 
-                        # Check required inputs - can be satisfied by user input, initial_inputs, OR auto-mapping
-                        for target_key, target_input in phase_def.input_schema.items():
-                            if target_input.required:
-                                # Phase user input provided? OK
-                                if target_key in phase.user_inputs:
-                                    continue
-                                # In initial_inputs (shared across all phases)? OK
-                                if initial_inputs and target_key in initial_inputs:
-                                    continue
-                                # Can auto-map from previous phase? OK
-                                if target_key in mapping:
-                                    continue
-                                # Otherwise: error
-                                adjusted_issues.append(
-                                    f"Required input '{target_key}' in {phase_def.name} "
-                                    f"not provided and cannot be auto-mapped"
-                                )
+        return errors, warnings
 
-                        if adjusted_issues:
-                            for issue in adjusted_issues:
-                                errors.append(f"Phase {i} ({phase.name}): {issue}")
+    def _validate_single_phase_mapping(
+        self,
+        phase_index: int,
+        phase: WorkflowPhase,
+        phase_def: Any,
+        prev_phase: WorkflowPhase,
+        prev_phase_def: Any,
+        initial_inputs: Optional[Dict[str, Any]],
+    ) -> Tuple[List[str], List[str]]:
+        """Validate that one phase can receive inputs from the previous phase."""
+        errors: List[str] = []
+        warnings: List[str] = []
+        prefix = f"Phase {phase_index} ({phase.name})"
 
-                    except PhaseMappingError as e:
-                        errors.append(f"Phase {i} ({phase.name}): {str(e)}")
-                    except Exception as e:
-                        logger.error(
-                            f"[validate_workflow] Could not validate mapping for phase_index={i}, phase_name='{phase.name}': {str(e)}",
-                            exc_info=True,
-                        )
-                        warnings.append(f"Could not validate mapping for phase {i}: {str(e)}")
+        try:
+            mapping = self.mapper.map_phases(
+                prev_phase.name, phase.name, user_overrides=phase.input_mapping
+            )
+            logger.debug("Generated mapping: %s", mapping)
 
-        # Check timeout and retry sanity
+            # Check mapped field names are valid in both schemas
+            for target_key, source_key in mapping.items():
+                if target_key not in phase_def.input_schema:
+                    errors.append(f"{prefix}: Target input '{target_key}' not found in {phase_def.name}")
+                if source_key not in prev_phase_def.output_schema:
+                    errors.append(f"{prefix}: Source output '{source_key}' not found in {prev_phase_def.name}")
+
+            # Check all required inputs can be satisfied
+            for target_key, target_input in phase_def.input_schema.items():
+                if not target_input.required:
+                    continue
+                satisfied = (
+                    target_key in phase.user_inputs
+                    or (initial_inputs is not None and target_key in initial_inputs)
+                    or target_key in mapping
+                )
+                if not satisfied:
+                    errors.append(
+                        f"{prefix}: Required input '{target_key}' in {phase_def.name} "
+                        f"not provided and cannot be auto-mapped"
+                    )
+
+        except PhaseMappingError as e:
+            errors.append(f"{prefix}: {str(e)}")
+        except Exception as e:
+            logger.error(
+                "[validate_workflow] Could not validate mapping for phase_index=%d, phase_name=%r: %s",
+                phase_index,
+                phase.name,
+                str(e),
+                exc_info=True,
+            )
+            warnings.append(f"Could not validate mapping for phase {phase_index}: {str(e)}")
+
+        return errors, warnings
+
+    def _validate_timeout_and_retries(
+        self, workflow_phases: List[WorkflowPhase]
+    ) -> Tuple[List[str], List[str]]:
+        """Warn on phases with suspiciously short timeouts or high retry counts."""
+        warnings: List[str] = []
         for phase in workflow_phases:
             phase_def = self.registry.get_phase(phase.name)
-            if phase_def:
-                if phase_def.timeout_seconds < 10:
-                    warnings.append(
-                        f"Phase '{phase.name}' timeout may be too short: "
-                        f"{phase_def.timeout_seconds}s"
-                    )
-                if phase_def.max_retries > 5:
-                    warnings.append(
-                        f"Phase '{phase.name}' max_retries is high: " f"{phase_def.max_retries}"
-                    )
-
-        is_valid = len(errors) == 0
-        return is_valid, errors, warnings
+            if not phase_def:
+                continue
+            if phase_def.timeout_seconds < 10:
+                warnings.append(
+                    f"Phase '{phase.name}' timeout may be too short: {phase_def.timeout_seconds}s"
+                )
+            if phase_def.max_retries > 5:
+                warnings.append(f"Phase '{phase.name}' max_retries is high: {phase_def.max_retries}")
+        return [], warnings
 
     def validate_for_execution(
         self, workflow: CustomWorkflow, initial_inputs: Optional[Dict[str, Any]] = None

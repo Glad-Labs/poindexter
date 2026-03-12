@@ -24,17 +24,14 @@ async def generate_content(
 ```
 """
 
-import logging
-
+from services.logger_config import get_logger
 from fastapi import HTTPException, Request
 
 from services.database_service import DatabaseService
 from services.quality_service import UnifiedQualityService
 from services.unified_orchestrator import UnifiedOrchestrator
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 def get_unified_orchestrator(request: Request) -> UnifiedOrchestrator:
     """Get UnifiedOrchestrator from app state"""
     orchestrator = getattr(request.app.state, "unified_orchestrator", None)

@@ -3,7 +3,7 @@ Social Media Management Routes
 Handles integration with social media platforms, content generation, posting, and analytics
 """
 
-import logging
+from services.logger_config import get_logger
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -20,9 +20,7 @@ from schemas.social_schemas import (
     ToneEnum,
 )
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 # ============================================================================
 # Router and Storage
 # ============================================================================
@@ -169,31 +167,22 @@ async def create_post(
     }
 
 
-@social_router.delete("/posts/{post_id}")
+@social_router.delete("/posts/{post_id}", status_code=204)
 async def delete_post(
     post_id: str,
     current_user: dict = Depends(get_current_user),
-) -> Dict[str, Any]:
+) -> None:
     """
-    Delete a social media post
+    Delete a social media post.
 
-    Args:
-        post_id: Post identifier
-
-    Returns:
-        Deletion status
+    Returns 204 No Content on success, 404 if not found.
     """
     if post_id not in _posts_store:
-        raise HTTPException(status_code=404, detail=f"Post not found: {post_id}")
+        raise HTTPException(status_code=404, detail="Post not found")
 
     del _posts_store[post_id]
-    logger.info(f"✅ Post deleted: {post_id}")
-
-    return {
-        "success": True,
-        "post_id": post_id,
-        "message": "Post deleted successfully",
-    }
+    logger.info(f"Post deleted: {post_id}")
+    return None  # 204 No Content
 
 
 @social_router.get("/posts/{post_id}/analytics")

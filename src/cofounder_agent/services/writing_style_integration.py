@@ -12,7 +12,7 @@ This service bridges the gap between the sample upload system (Phase 3.1/3.2)
 and content generation (Phase 3.3).
 """
 
-import logging
+from services.logger_config import get_logger
 import re
 from collections import Counter
 from typing import Any, Dict, Optional
@@ -20,9 +20,7 @@ from typing import Any, Dict, Optional
 from services.database_service import DatabaseService
 from services.writing_style_service import WritingStyleService
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class WritingStyleIntegrationService:
     """Service for integrating writing samples into content generation"""
 

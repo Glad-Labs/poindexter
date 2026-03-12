@@ -12,7 +12,7 @@ Cost:
 """
 
 import base64
-import logging
+from services.logger_config import get_logger
 import os
 import time
 import uuid
@@ -47,7 +47,7 @@ except ImportError:
 
 from services.image_service import FeaturedImageMetadata, ImageService
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 media_router = APIRouter(prefix="/api/media", tags=["Media"])
 
 

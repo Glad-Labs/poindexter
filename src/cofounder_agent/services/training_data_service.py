@@ -6,7 +6,7 @@ Supports organizing data by quality, date, intent, and custom tags.
 """
 
 import json
-import logging
+from services.logger_config import get_logger
 import os
 from dataclasses import dataclass
 from datetime import datetime
@@ -16,9 +16,7 @@ from typing import Any, Dict, List, Optional
 import aiofiles
 import asyncpg
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class DataTag(str, Enum):
     """Tags for training data"""
 
@@ -663,7 +661,7 @@ class TrainingDataService:
             quality_score=float(row["quality_score"] or 0),
             success=row["success"],
             tags=row["tags"] or [],
-            created_at=row["created_at"].isoformat() if row["created_at"] else None,
+            created_at=row["created_at"].isoformat() if row["created_at"] else None,  # type: ignore[arg-type]
             post_publication_metrics=row.get("post_publication_metrics"),
             patterns_discovered=row.get("patterns_discovered"),
         )

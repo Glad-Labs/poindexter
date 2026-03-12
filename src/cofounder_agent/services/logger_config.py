@@ -132,18 +132,29 @@ def configure_standard_logging() -> None:
     """
     # Define format based on environment
     if LOG_FORMAT == "json":
-        # JSON format for production
+        # JSON format for production — includes request_id for log correlation.
+        # request_id is injected by middleware.request_id.RequestIDFilter;
+        # it defaults to '-' when no request is active (e.g., startup/shutdown).
         log_format = (
             '{"timestamp": "%(asctime)s", '
             '"level": "%(levelname)s", '
             '"logger": "%(name)s", '
+            '"request_id": "%(request_id)s", '
             '"message": "%(message)s"}'
         )
     else:
         # Human-readable format for development
-        log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        log_format = "%(asctime)s [%(request_id)s] %(name)s %(levelname)s - %(message)s"
 
-    handlers = [logging.StreamHandler(sys.stdout)]
+    class _RequestIDFormatter(logging.Formatter):
+        """Formatter that supplies a '-' request_id when the filter hasn't run."""
+
+        def format(self, record: logging.LogRecord) -> str:
+            if not hasattr(record, "request_id"):
+                record.request_id = "-"
+            return super().format(record)
+
+    handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
 
     if LOG_TO_FILE:
         try:
@@ -158,13 +169,18 @@ def configure_standard_logging() -> None:
         except Exception as e:
             print(f"Warning: Failed to configure rotating file logging: {e}", file=sys.stderr)
 
+    # Apply the request-ID-aware formatter to every handler
+    formatter = _RequestIDFormatter(log_format)
+    for handler in handlers:
+        handler.setFormatter(formatter)
+
     # Configure root logger
-    logging.basicConfig(
-        level=getattr(logging, LOG_LEVEL),
-        format=log_format,
-        handlers=handlers,
-        force=True,
-    )
+    root = logging.getLogger()
+    root.setLevel(getattr(logging, LOG_LEVEL))
+    # Remove any handlers added by previous basicConfig calls
+    root.handlers.clear()
+    for handler in handlers:
+        root.addHandler(handler)
 
 
 # ============================================================================

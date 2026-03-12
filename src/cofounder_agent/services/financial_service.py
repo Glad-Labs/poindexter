@@ -11,16 +11,18 @@ This service provides:
 - Cost optimization recommendations
 """
 
-import logging
+from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-logger = logging.getLogger(__name__)
+from services.service_base import ServiceBase
 
-
-class FinancialService:
+logger = get_logger(__name__)
+class FinancialService(ServiceBase):
     """
     Financial analysis and cost tracking service.
+
+    Extends ServiceBase to participate in service-registry discovery.
 
     Provides methods for:
     - Tracking AI model costs
@@ -28,6 +30,10 @@ class FinancialService:
     - Budget forecasting
     - Cost optimization recommendations
     """
+
+    name: str = "financial_service"
+    version: str = "1.0.0"
+    description: str = "Financial analysis and cost tracking for AI-driven content workflows"
 
     def __init__(
         self,
@@ -41,6 +47,7 @@ class FinancialService:
             database_service: PostgreSQL database service
             model_router: Model router for cost tracking
         """
+        super().__init__()
         self.database_service = database_service
         self.model_router = model_router
         logger.info("FinancialService initialized")

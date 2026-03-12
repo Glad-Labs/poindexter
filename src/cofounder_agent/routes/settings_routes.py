@@ -23,6 +23,9 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request, status
+from services.logger_config import get_logger
+
+logger = get_logger(__name__)
 
 from schemas.settings_schemas import (
     SettingBase,
@@ -97,8 +100,10 @@ async def list_settings(
     ),
     tags: Optional[str] = Query(None, description="Comma-separated tag filter"),
     search: Optional[str] = Query(None, description="Search in key and description"),
-    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
-    per_page: int = Query(20, ge=1, le=100, description="Items per page"),
+    offset: int = Query(0, ge=0, description="Number of items to skip (project-standard)"),
+    limit: int = Query(20, ge=1, le=100, description="Items to return (project-standard)"),
+    page: int = Query(1, ge=1, description="Page number — deprecated, use offset/limit"),
+    per_page: int = Query(0, ge=0, le=100, description="Items per page — deprecated, use limit"),
     current_user=Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
@@ -129,13 +134,18 @@ async def list_settings(
             category=category.value if category else None
         )
 
+        # Resolve offset/limit: support legacy page/per_page for backwards compat.
+        # If explicit offset was provided (non-zero) or limit was explicitly set, use them.
+        # Otherwise fall back to page/per_page if those were explicitly passed.
+        resolved_limit = per_page if per_page > 0 else limit
+        resolved_offset = offset if offset != 0 else (page - 1) * resolved_limit
+
         # Apply pagination
         total = len(all_settings)
-        offset = (page - 1) * per_page
-        pages = (total + per_page - 1) // per_page if per_page > 0 else 1
+        pages = (total + resolved_limit - 1) // resolved_limit if resolved_limit > 0 else 1
 
         # Slice for pagination
-        paginated_items = all_settings[offset : offset + per_page]
+        paginated_items = all_settings[resolved_offset : resolved_offset + resolved_limit]
 
         # Convert to SettingResponse objects
         items = [
@@ -160,7 +170,11 @@ async def list_settings(
         ]
 
         return SettingListResponse(
-            total=total, page=page, per_page=per_page, pages=pages, items=items
+            total=total,
+            page=(resolved_offset // resolved_limit) + 1 if resolved_limit > 0 else 1,
+            per_page=resolved_limit,
+            pages=pages,
+            items=items,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail="Failed to retrieve settings")
@@ -307,13 +321,15 @@ async def create_setting(
 
         # Fetch created setting
         created_setting = await db_service.get_setting(setting_data.key)
+        if created_setting is None:
+            raise HTTPException(status_code=500, detail="Failed to fetch created setting")
 
         return SettingResponse(
             id=created_setting.get("id") or 1,
             key=created_setting.get("key", setting_data.key),
             value=created_setting.get("value", ""),
             data_type=setting_data.data_type or SettingDataTypeEnum.STRING,
-            category=setting_data.category or SettingCategoryEnum.SYSTEM,
+            category=setting_data.category or SettingCategoryEnum.GENERAL,
             environment=setting_data.environment or SettingEnvironmentEnum.PRODUCTION,
             description=created_setting.get("description", ""),
             is_encrypted=False,
@@ -331,11 +347,11 @@ async def create_setting(
         raise HTTPException(status_code=500, detail="Failed to create setting")
 
 
-@router.put(
+@router.patch(
     "",
     response_model=SettingResponse,
     status_code=status.HTTP_200_OK,
-    summary="Batch update user settings",
+    summary="Batch update user settings (partial)",
     responses={
         200: {"description": "Settings updated successfully"},
         400: {"description": "Invalid request body"},
@@ -353,7 +369,7 @@ async def batch_update_settings(
         key="user_preferences",
         value=update_data.value or "updated_value",
         data_type=SettingDataTypeEnum.STRING,
-        category=SettingCategoryEnum.SYSTEM,
+        category=SettingCategoryEnum.GENERAL,
         environment=SettingEnvironmentEnum.ALL,
         description="Batch updated user settings",
         is_encrypted=False,
@@ -384,11 +400,11 @@ async def batch_delete_settings(
     return None
 
 
-@router.put(
+@router.patch(
     "/{setting_id}",
     response_model=SettingResponse,
     status_code=status.HTTP_200_OK,
-    summary="Update existing setting",
+    summary="Partially update an existing setting",
     responses={
         200: {"description": "Setting updated successfully"},
         400: {"description": "Invalid request body"},
@@ -401,7 +417,7 @@ async def update_setting(
     setting_id: int = Path(..., gt=0, description="Setting ID"),
     update_data: SettingUpdate = Body(...),
     current_user=Depends(get_current_user),
-    request: Request = None,
+    request: Request = None,  # type: ignore[assignment]
 ):
     """
     Update an existing setting (admin/editor).
@@ -440,16 +456,17 @@ async def update_setting(
     old_value = f"old_value_{setting_id}"
     new_value = update_data.value if update_data.value else f"value_{setting_id}"
 
-    log_audit(
-        action=SettingsAuditLogger.ACTION_UPDATE,
-        setting_id=str(setting_id),
-        user_id=current_user.get("user_id", "unknown"),
-        old_value=old_value,
-        new_value=new_value,
-        user_email=current_user.get("email", "unknown"),
-        change_description=f"Updated setting {setting_id}: {update_data.description or 'no description'}",
-        ip_address=request.client.host if request else None,
-        user_agent=request.headers.get("user-agent") if request else None,
+    logger.info(
+        "[update_setting] audit: action=UPDATE setting_id=%s user_id=%s old_value=%r new_value=%r "
+        "user_email=%s change_description=%r ip=%s ua=%s",
+        setting_id,
+        current_user.get("user_id", "unknown"),
+        old_value,
+        new_value,
+        current_user.get("email", "unknown"),
+        f"Updated setting {setting_id}: {update_data.description or 'no description'}",
+        request.client.host if request and request.client else None,
+        request.headers.get("user-agent") if request else None,
     )
 
     return SettingResponse(
@@ -488,7 +505,7 @@ async def delete_setting(
     setting_id: str = Path(..., description="Setting ID or key name"),
     current_user=Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
-    request: Request = None,
+    request: Request = None,  # type: ignore[assignment]
 ):
     """
     Delete a setting (admin only).

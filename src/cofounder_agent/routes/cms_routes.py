@@ -5,7 +5,7 @@ ASYNC REST endpoints for blog content, categories, and tags.
 Using pure asyncpg for non-blocking database access.
 """
 
-import logging
+from services.logger_config import get_logger
 import os
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -17,8 +17,7 @@ from services.database_service import DatabaseService
 from utils.error_handler import handle_route_error
 from utils.route_utils import get_database_dependency
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 router = APIRouter(tags=["cms"])
 
 
@@ -204,14 +203,19 @@ async def get_db_pool():
 
 @router.get("/api/posts")
 async def list_posts(
-    skip: int = Query(0, ge=0, le=10000),
+    offset: int = Query(0, ge=0, le=10000, description="Number of posts to skip"),
+    skip: int = Query(0, ge=0, le=10000, description="Alias for offset (deprecated — use offset)"),
     limit: int = Query(20, ge=1, le=100),
     published_only: bool = Query(True),
 ):
     """
     List all blog posts with pagination (ASYNC).
-    Returns: {data: [...], meta: {pagination: {...}}}
+    Returns: {posts: [...], total: N, offset: N, limit: N}
+
+    Note: 'skip' is accepted as a deprecated alias for 'offset' for backwards compatibility.
     """
+    # Resolve offset: explicit 'offset' param wins; fall back to legacy 'skip'
+    offset = offset if offset != 0 else skip
     try:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
@@ -252,7 +256,7 @@ async def list_posts(
             query += " ORDER BY COALESCE(published_at, created_at) DESC NULLS LAST"
             # Parameterize OFFSET/LIMIT to prevent SQL injection
             params.append(limit)
-            params.append(skip)
+            params.append(offset)
             query += f" LIMIT ${len(params) - 1} OFFSET ${len(params)}"
 
             rows = await conn.fetch(query, *params)
@@ -278,15 +282,10 @@ async def list_posts(
                 map_featured_image_to_coverimage(post)
 
             return {
-                "data": posts,
-                "meta": {
-                    "pagination": {
-                        "page": skip // limit + 1,
-                        "pageSize": limit,
-                        "total": total,
-                        "pageCount": (total + limit - 1) // limit,
-                    }
-                },
+                "posts": posts,
+                "total": total,
+                "offset": offset,
+                "limit": limit,
             }
     except Exception as e:
         raise await handle_route_error(e, "list_posts", logger)
@@ -388,10 +387,13 @@ async def get_post_by_slug(
 
 
 @router.get("/api/categories")
-async def list_categories():
+async def list_categories(
+    offset: int = Query(0, ge=0, description="Number of categories to skip"),
+    limit: int = Query(100, ge=1, le=500, description="Maximum categories to return"),
+):
     """
-    List all categories (ASYNC).
-    Returns: {data: [...], meta: {}}
+    List categories with optional pagination (ASYNC).
+    Returns: {categories: [...], total: N, offset: N, limit: N}
     """
     try:
         pool = await get_db_pool()
@@ -404,14 +406,16 @@ async def list_categories():
             """
             )
 
-            categories = []
+            all_categories = []
             for row in rows:
                 cat = dict(row)
                 cat["created_at"] = cat["created_at"].isoformat() if cat["created_at"] else None
                 cat["updated_at"] = cat["updated_at"].isoformat() if cat["updated_at"] else None
-                categories.append(cat)
+                all_categories.append(cat)
 
-            return {"data": categories, "meta": {}}
+            total = len(all_categories)
+            categories = all_categories[offset : offset + limit]
+            return {"categories": categories, "total": total, "offset": offset, "limit": limit}
     except Exception as e:
         raise await handle_route_error(e, "list_categories", logger)
 
@@ -422,10 +426,13 @@ async def list_categories():
 
 
 @router.get("/api/tags")
-async def list_tags():
+async def list_tags(
+    offset: int = Query(0, ge=0, description="Number of tags to skip"),
+    limit: int = Query(100, ge=1, le=500, description="Maximum tags to return"),
+):
     """
-    List all tags (ASYNC).
-    Returns: {data: [...], meta: {}}
+    List tags with optional pagination (ASYNC).
+    Returns: {tags: [...], total: N, offset: N, limit: N}
     """
     try:
         pool = await get_db_pool()
@@ -438,14 +445,16 @@ async def list_tags():
             """
             )
 
-            tags = []
+            all_tags = []
             for row in rows:
                 tag = dict(row)
                 tag["created_at"] = tag["created_at"].isoformat() if tag["created_at"] else None
                 tag["updated_at"] = tag["updated_at"].isoformat() if tag["updated_at"] else None
-                tags.append(tag)
+                all_tags.append(tag)
 
-            return {"data": tags, "meta": {}}
+            total = len(all_tags)
+            tags = all_tags[offset : offset + limit]
+            return {"tags": tags, "total": total, "offset": offset, "limit": limit}
     except Exception as e:
         raise await handle_route_error(e, "list_tags", logger)
 
@@ -496,7 +505,7 @@ async def cms_status():
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
     except Exception as e:
-        logger.error(f"Error checking CMS status: {str(e)}", exc_info=True)
+        logger.error("[cms_status] CMS status check failed", exc_info=True)
         return {
             "status": "error",
             "detail": "CMS status check failed",

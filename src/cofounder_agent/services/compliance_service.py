@@ -11,16 +11,18 @@ This service provides:
 - Compliance reporting
 """
 
-import logging
+from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-logger = logging.getLogger(__name__)
+from services.service_base import ServiceBase
 
-
-class ComplianceService:
+logger = get_logger(__name__)
+class ComplianceService(ServiceBase):
     """
     Legal and risk compliance service.
+
+    Extends ServiceBase to participate in service-registry discovery.
 
     Provides methods for:
     - Checking legal compliance of content
@@ -28,6 +30,10 @@ class ComplianceService:
     - Regulatory requirement verification
     - Compliance reporting and documentation
     """
+
+    name: str = "compliance_service"
+    version: str = "1.0.0"
+    description: str = "Legal compliance checking, risk assessment, and regulatory verification"
 
     def __init__(
         self,
@@ -41,6 +47,7 @@ class ComplianceService:
             database_service: PostgreSQL database service
             model_router: Model router
         """
+        super().__init__()
         self.database_service = database_service
         self.model_router = model_router
         logger.info("ComplianceService initialized")

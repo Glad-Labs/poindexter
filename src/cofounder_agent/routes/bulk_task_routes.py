@@ -7,7 +7,7 @@ Provides endpoints for performing bulk operations on multiple tasks such as:
 - Rejecting multiple tasks (for audit tracking)
 """
 
-import logging
+from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import List, Optional
 from uuid import UUID
@@ -26,8 +26,7 @@ from services.database_service import DatabaseService
 from utils.error_responses import ErrorResponseBuilder
 from utils.route_utils import get_database_dependency
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 router = APIRouter(prefix="/api/tasks", tags=["tasks-bulk"])
 
 
@@ -190,7 +189,7 @@ async def bulk_create_tasks(
         for i, task in enumerate(request.tasks):
             try:
                 # Create task in database
-                result = await db_service.create_task(
+                result = await db_service.create_task(  # type: ignore[attr-defined]
                     title=task.task_name,
                     description=task.description or task.topic,
                     status="pending",

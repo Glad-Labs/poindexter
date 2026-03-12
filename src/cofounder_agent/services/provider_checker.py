@@ -5,13 +5,11 @@ Centralized utility to check which AI providers are available and configured.
 Eliminates duplicate environment variable checks across the codebase.
 """
 
-import logging
+from services.logger_config import get_logger
 import os
 from typing import Dict, Set
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class ProviderChecker:
     """
     Utility class for checking provider availability.

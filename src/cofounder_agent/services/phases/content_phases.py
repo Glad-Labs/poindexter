@@ -5,7 +5,7 @@ Extracted from process_content_generation_task in content_router_service.py
 Each phase is a discrete, composable step in content creation.
 """
 
-import logging
+from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -17,9 +17,7 @@ from .base_phase import (
     PhaseOutputSpec,
 )
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class GenerateContentPhase(BasePhase):
     """
     Generate blog post content from a topic.

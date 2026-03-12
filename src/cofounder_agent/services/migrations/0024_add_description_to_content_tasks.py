@@ -5,11 +5,8 @@ Adds a human-written task description field (distinct from the AI-generated
 excerpt) to support campaign briefs and task context (#116).
 """
 
-import logging
-
-logger = logging.getLogger(__name__)
-
-
+from services.logger_config import get_logger
+logger = get_logger(__name__)
 async def up(pool) -> None:
     """Add description column to content_tasks if it doesn't already exist."""
     async with pool.acquire() as conn:

@@ -16,15 +16,19 @@ This service consolidates:
 - PublishingAgent (agents/content_agent/agents/postgres_publishing_agent.py)
 """
 
-import logging
+from services.logger_config import get_logger
 from typing import Any, Dict, Optional
 
-logger = logging.getLogger(__name__)
+from services.service_base import ServiceBase
 
-
-class ContentService:
+logger = get_logger(__name__)
+class ContentService(ServiceBase):
     """
     Unified content generation service with phase-based execution.
+
+    Extends ServiceBase to participate in service-registry discovery.
+    The action-schema registry (get_actions) is intentionally empty;
+    capabilities are surfaced via get_service_metadata() instead.
 
     Provides methods for each phase of content generation, enabling
     dynamic phase selection and custom LLM routing per phase.
@@ -63,6 +67,14 @@ class ContentService:
         ```
     """
 
+    # ServiceBase metadata — used by ServiceRegistry and get_service_metadata()
+    name: str = "content_service"
+    version: str = "1.0.0"
+    description: str = (
+        "Unified content generation service with research, draft, assess, "
+        "refine, image, and finalize phases"
+    )
+
     def __init__(
         self,
         database_service: Optional[Any] = None,
@@ -79,6 +91,7 @@ class ContentService:
             writing_style_service: Writing style adaptation service
             quality_service: Quality assessment service for refinement loops
         """
+        super().__init__()
         self.database_service = database_service
         self.model_router = model_router
         self.writing_style_service = writing_style_service

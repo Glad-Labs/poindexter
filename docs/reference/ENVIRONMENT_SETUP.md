@@ -65,6 +65,34 @@ VITE_GH_OAUTH_CLIENT_ID=
 
 ---
 
+## Frontend Variable Prefix Conventions
+
+Each frontend service uses a different build-tool-mandated prefix. This is a framework constraint,
+not a project choice. All three prefixes serve the same role: they tell the build tool which
+variables are safe to embed into client-side bundles.
+
+| Service             | Build Tool | Required Prefix | Access Pattern              |
+| ------------------- | ---------- | --------------- | --------------------------- |
+| `web/public-site`   | Next.js 15 | `NEXT_PUBLIC_`  | `process.env.NEXT_PUBLIC_*` |
+| `web/oversight-hub` | Vite       | `VITE_`         | `import.meta.env.VITE_*`    |
+
+**Why the difference?** Next.js statically replaces `process.env.NEXT_PUBLIC_*` at build time.
+Vite statically replaces `import.meta.env.VITE_*` at build time. Variables without the required
+prefix are stripped from the client bundle entirely — they are server-only (Next.js) or not
+exposed at all (Vite).
+
+**REACT*APP*?** This prefix was used by Create React App (CRA). The oversight-hub previously
+used CRA but was migrated to Vite. `REACT_APP_` keys are NOT supported by Vite unless manually
+mapped. Do not introduce new `REACT_APP_` variables; use `VITE_` instead.
+
+**Each app reads its own `.env.local`:**
+
+- `web/public-site/.env.local` — read by Next.js (not the root `.env.local`)
+- `web/oversight-hub/.env.local` — read by Vite (not the root `.env.local`)
+- Root `.env.local` — read only by the FastAPI backend via Python's `dotenv` loader
+
+---
+
 ## Compatibility Aliases (Supported, Deprecated for New Use)
 
 These exist for backward compatibility and should not be introduced in new code/docs.

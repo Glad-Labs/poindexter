@@ -7,17 +7,17 @@ Handles all writing sample operations including:
 - Retrieve writing samples for style matching
 """
 
-import logging
+from services.logger_config import get_logger
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from asyncpg import Pool
 
 from .database_mixin import DatabaseServiceMixin
 from .decorators import log_query_performance
+from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class WritingStyleDatabase(DatabaseServiceMixin):
     """Writing style/sample-related database operations."""
 
@@ -249,51 +249,42 @@ class WritingStyleDatabase(DatabaseServiceMixin):
             Updated sample dict
         """
         try:
-            # Build dynamic update query
-            updates = []
-            params = [int(sample_id), user_id]
-            param_count = 2
-
+            # Collect only the fields being changed
+            update_dict: Dict[str, Any] = {}
             if title is not None:
-                param_count += 1
-                updates.append(f"title = ${param_count}")
-                params.append(title)
-
+                update_dict["title"] = title
             if description is not None:
-                param_count += 1
-                updates.append(f"description = ${param_count}")
-                params.append(description)
-
+                update_dict["description"] = description
             if content is not None:
-                word_count = len(content.split())
-                char_count = len(content)
-                param_count += 1
-                updates.append(f"content = ${param_count}")
-                params.append(content)
-                param_count += 1
-                updates.append(f"word_count = ${param_count}")
-                params.append(word_count)  # type: ignore[arg-type]
-                param_count += 1
-                updates.append(f"char_count = ${param_count}")
-                params.append(char_count)  # type: ignore[arg-type]
+                update_dict["content"] = content
+                update_dict["word_count"] = len(content.split())
+                update_dict["char_count"] = len(content)
 
-            if not updates:
+            if not update_dict:
                 raise ValueError("No fields to update")
 
-            updates.append("updated_at = NOW()")
-            update_clause = ", ".join(updates)
+            # Always refresh updated_at with a Python datetime (not raw NOW())
+            update_dict["updated_at"] = datetime.now(timezone.utc)
+
+            # Use ParameterizedQueryBuilder so every column name passes
+            # through SQLIdentifierValidator.safe_identifier() before execution.
+            builder = ParameterizedQueryBuilder()
+            sql, params = builder.update(
+                table="writing_samples",
+                updates=update_dict,
+                where_clauses=[
+                    ("id", SQLOperator.EQ, int(sample_id)),
+                    ("user_id", SQLOperator.EQ, user_id),
+                ],
+                return_columns=[
+                    "id", "user_id", "title", "description", "content",
+                    "is_active", "word_count", "char_count", "metadata",
+                    "created_at", "updated_at",
+                ],
+            )
 
             async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    f"""
-                    UPDATE writing_samples 
-                    SET {update_clause}
-                    WHERE id = $1 AND user_id = $2
-                    RETURNING id, user_id, title, description, content, is_active, 
-                              word_count, char_count, metadata, created_at, updated_at
-                    """,
-                    *params,
-                )
+                row = await conn.fetchrow(sql, *params)
 
                 if not row:
                     raise ValueError(f"Writing sample {sample_id} not found for user {user_id}")
