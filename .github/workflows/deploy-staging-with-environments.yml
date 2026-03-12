@@ -82,20 +82,12 @@ jobs:
         run: |
           echo "📤 Deploying Co-Founder Agent to staging environment..."
           npm install -g @railway/cli  # fix #158: cached above
-          railway link --project ${{ secrets.RAILWAY_STAGING_PROJECT_ID }}
-          railway up --service cofounder-agent-staging
+          railway link --project ${{ secrets.RAILWAY_STAGING_PROJECT_ID }} --environment staging
+          railway up --service cofounder
           echo "✅ Co-Founder Agent staging deployment completed"
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          DATABASE_URL: ${{ secrets.DATABASE_STAGING_URL }}
-          JWT_SECRET_KEY: ${{ secrets.COFOUNDER_STAGING_JWT_SECRET }}
-          OPENAI_API_KEY: ${{ secrets.COFOUNDER_STAGING_OPENAI_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.COFOUNDER_STAGING_ANTHROPIC_API_KEY }}
-          GOOGLE_API_KEY: ${{ secrets.COFOUNDER_STAGING_GOOGLE_API_KEY }}
-          REDIS_HOST: ${{ secrets.COFOUNDER_STAGING_REDIS_HOST }}
-          REDIS_PORT: "6379"
-          REDIS_PASSWORD: ${{ secrets.COFOUNDER_STAGING_REDIS_PASSWORD }}
-          SENTRY_DSN: ${{ secrets.COFOUNDER_STAGING_SENTRY_DSN }}
+          # Note: API keys, DB URL, JWT secret are managed in Railway dashboard directly
           ENVIRONMENT: staging
 
       # ============================================
@@ -133,12 +125,9 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_PROJECT_ID: ${{ secrets.OVERSIGHT_STAGING_PROJECT_ID }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          # fix #143: use VITE_* prefix (app migrated from CRA to Vite)
-          VITE_API_URL: ${{ secrets.OVERSIGHT_STAGING_API_URL }}
-          VITE_AGENT_URL: ${{ secrets.OVERSIGHT_STAGING_AGENT_URL }}
-          VITE_AUTH_SECRET: ${{ secrets.OVERSIGHT_STAGING_AUTH_SECRET }}
-          VITE_GH_OAUTH_CLIENT_ID: ${{ secrets.OVERSIGHT_STAGING_GH_OAUTH_CLIENT_ID }}
-          SENTRY_DSN: ${{ secrets.OVERSIGHT_STAGING_SENTRY_DSN }}
+          # Oversight Hub uses CRA (REACT_APP_* prefix); env vars also managed in Vercel dashboard
+          REACT_APP_API_URL: ${{ secrets.OVERSIGHT_STAGING_API_URL }}
+          REACT_APP_GH_OAUTH_CLIENT_ID: ${{ secrets.OVERSIGHT_STAGING_GH_OAUTH_CLIENT_ID }}
 
       # ============================================
       # VERIFICATION PHASE

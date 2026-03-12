@@ -77,10 +77,7 @@ class StartupManager:
             # Step 5: Initialize workflow history service
             await self._initialize_workflow_history()
 
-            # Step 6: Initialize content critique loop
-            await self._initialize_content_critique()
-
-            # Step 7: Initialize background task executor
+            # Step 6: Initialize background task executor
             await self._initialize_task_executor()
 
             # Step 8: Initialize training data services
@@ -276,12 +273,6 @@ class StartupManager:
             error_msg = f"Workflow history service initialization failed: {str(e)}"
             logger.warning(f"   {error_msg}", exc_info=True)
             self.workflow_history_service = None
-
-    async def _initialize_content_critique(self) -> None:
-        """DEPRECATED: Content critique is now handled by UnifiedQualityService in TaskExecutor"""
-        logger.debug(
-            "⏭️  Skipping _initialize_content_critique (now handled by UnifiedQualityService)"
-        )
 
     async def _initialize_task_executor(self) -> None:
         """Initialize background task executor (WITHOUT starting it yet)
