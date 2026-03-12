@@ -45,7 +45,7 @@ class PostgreSQLImageAgent:
         try:
             self.prompts = load_prompts_from_file(config.PROMPTS_PATH)
         except Exception as e:
-            logger.warning(f"Could not load prompts: {e}. Using defaults.")
+            logger.warning(f"[load_prompts] Could not load prompts: {e}. Using defaults.", exc_info=True)
             self.prompts = {}
 
         # Create local image storage if needed
@@ -262,7 +262,7 @@ Only return the JSON array, no other text."""
                     return image_details
                 logger.warning(f"⚠️  No images found on Pexels for '{query}'")
             except Exception as e:
-                logger.warning(f"⚠️  Pexels search failed for '{query}': {e}")
+                logger.warning(f"[search_images] Pexels search failed for query={query!r}: {e}", exc_info=True)
 
             # No fallback placeholder - return None instead
             logger.info(f"ℹ️  No image available for '{query}' - skipping")

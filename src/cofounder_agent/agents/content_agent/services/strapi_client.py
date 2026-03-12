@@ -66,7 +66,7 @@ class StrapiClient:
                 logger.info(f"Successfully uploaded image {file_path} to Strapi.")
                 return response.json()[0]["id"]
         except httpx.HTTPError as e:
-            logger.error(f"Error uploading image to Strapi: {e}")
+            logger.error(f"[upload_image] Error uploading image to Strapi: {e}", exc_info=True)
             return None
 
     async def _make_request(
@@ -105,7 +105,7 @@ class StrapiClient:
                 return response.json()
 
         except httpx.HTTPError as e:
-            logger.error(f"Error making {method} request to {endpoint}: {e}")
+            logger.error(f"[make_request] Error making {method} request to {endpoint}: {e}", exc_info=True)
             if hasattr(e, "response") and e.response is not None:  # type: ignore
                 logger.error(f"Response status: {e.response.status_code}")  # type: ignore
                 logger.error(f"Response text: {e.response.text}")  # type: ignore
