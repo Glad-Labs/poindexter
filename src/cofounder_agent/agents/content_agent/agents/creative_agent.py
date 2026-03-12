@@ -34,7 +34,7 @@ class CreativeAgent:
             self.tools = CrewAIToolsFactory.get_content_agent_tools()
             logger.info("CreativeAgent: Initialized with all content agent tools")
         except Exception as e:
-            logger.warning(f"CreativeAgent: Failed to initialize tools: {e}")
+            logger.warning(f"[init_tools] CreativeAgent: Failed to initialize tools: {e}", exc_info=True)
             logger.warning("CreativeAgent will continue without some tools")
             # Initialize with empty tools list - LLMClient can still generate content
             self.tools = []

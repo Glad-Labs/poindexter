@@ -209,7 +209,7 @@ class SearXNGResearchService:
             return text[:5000]  # Return first 5000 chars
 
         except Exception as e:
-            logger.warning(f"Failed to fetch article from {url}: {e}")
+            logger.warning(f"[fetch_article] Failed to fetch article from {url}: {e}", exc_info=True)
             return None
 
     async def get_news_feeds(self, keywords: list[str], limit: int = 5) -> dict:
