@@ -9,7 +9,7 @@ Provides endpoints for:
 
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
@@ -74,7 +74,7 @@ async def get_available_models():
         return ModelsListResponse(
             models=models_list,
             total=len(models_list),
-            timestamp=datetime.now().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
         )
 
     except Exception as e:
@@ -97,7 +97,7 @@ async def get_provider_status():
         service = get_model_consolidation_service()
         status = service.get_status()
 
-        return {"timestamp": datetime.now().isoformat(), "providers": status}
+        return {"timestamp": datetime.now(timezone.utc).isoformat(), "providers": status}
 
     except Exception as e:
         logger.error(f"Error getting provider status: {e}")
@@ -149,7 +149,7 @@ async def get_recommended_models():
         return ModelsListResponse(
             models=models_list,
             total=len(models_list),
-            timestamp=datetime.now().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
         )
 
     except Exception as e:
@@ -203,7 +203,7 @@ async def get_rtx5070_models():
         return ModelsListResponse(
             models=models_list,
             total=len(models_list),
-            timestamp=datetime.now().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
         )
 
     except Exception as e:
@@ -247,7 +247,7 @@ async def get_models_list():
         return {
             "models": models_list,
             "total": len(models_list),
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     except Exception as e:

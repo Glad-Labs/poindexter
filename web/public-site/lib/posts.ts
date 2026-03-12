@@ -84,23 +84,17 @@ export async function getPosts(page: number = 1): Promise<PostsResponse> {
  */
 export async function getPostBySlug(slug: string): Promise<Post | null> {
   try {
-    // Fetch all published posts and filter by slug (backend doesn't have /by-slug endpoint)
-    const response = await fetch(
-      `${API_BASE_URL}/api/posts?populate=*&status=published`,
-      {
-        next: { revalidate: 3600 }, // ISR: revalidate every hour
-      }
-    );
+    // Use direct slug endpoint for O(1) lookup instead of fetching all posts
+    const response = await fetch(`${API_BASE_URL}/api/posts/${slug}`, {
+      next: { revalidate: 3600 }, // ISR: revalidate every hour
+    });
 
     if (!response.ok) {
       return null;
     }
 
     const data = await response.json();
-    const posts = data.data || data || [];
-    const post = posts.find((p: Post) => p.slug === slug);
-
-    return post || null;
+    return data.data || data || null;
   } catch (error) {
     logger.error(`Error fetching post with slug ${slug}:`, error);
     return null;

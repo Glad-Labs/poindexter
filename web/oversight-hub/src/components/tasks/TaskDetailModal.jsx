@@ -58,12 +58,20 @@ const TaskDetailModal = ({ onClose, onUpdate }) => {
   const [imageSource, setImageSource] = useState('pexels');
   const [selectedImageUrl, setSelectedImageUrl] = useState('');
   const [imageGenerating, setImageGenerating] = useState(false);
-  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: '',
+    severity: 'success',
+  });
 
-  const showSuccess = (message) => setSnackbar({ open: true, message, severity: 'success' });
-  const showError = (message) => setSnackbar({ open: true, message, severity: 'error' });
-  const showInfo = (message) => setSnackbar({ open: true, message, severity: 'info' });
-  const handleSnackbarClose = () => setSnackbar((prev) => ({ ...prev, open: false }));
+  const showSuccess = (message) =>
+    setSnackbar({ open: true, message, severity: 'success' });
+  const showError = (message) =>
+    setSnackbar({ open: true, message, severity: 'error' });
+  const showInfo = (message) =>
+    setSnackbar({ open: true, message, severity: 'info' });
+  const handleSnackbarClose = () =>
+    setSnackbar((prev) => ({ ...prev, open: false }));
 
   const handleTabChange = (event, newValue) => {
     setTabValue(newValue);
@@ -117,7 +125,9 @@ const TaskDetailModal = ({ onClose, onUpdate }) => {
           approvalFeedback || 'Approved from oversight hub'
         );
 
-        showSuccess(`Task approved (${result.status}). Ready to publish when you are.`);
+        showSuccess(
+          `Task approved (${result.status}). Ready to publish when you are.`
+        );
         // Reset form state
         setApprovalFeedback('');
         setReviewerId('oversight_hub_user');
@@ -170,7 +180,9 @@ const TaskDetailModal = ({ onClose, onUpdate }) => {
 
         if (latestStatus && latestStatus !== 'awaiting_approval') {
           handleTaskUpdate(latestTask);
-          showInfo(`Task is already '${latestTask.status}'. Reject is only available when status is 'awaiting_approval'.`);
+          showInfo(
+            `Task is already '${latestTask.status}'. Reject is only available when status is 'awaiting_approval'.`
+          );
           return;
         }
 
@@ -370,6 +382,7 @@ const TaskDetailModal = ({ onClose, onUpdate }) => {
               >
                 <Box
                   component="span"
+                  aria-live="polite"
                   sx={{
                     fontSize: '0.8rem',
                     color: '#aaa',
@@ -390,6 +403,11 @@ const TaskDetailModal = ({ onClose, onUpdate }) => {
                 </Box>
               </Box>
               <Box
+                role="progressbar"
+                aria-valuenow={taskPercentage}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label={`Task progress: ${taskMessage || taskStage || 'Processing'}`}
                 sx={{
                   width: '100%',
                   height: '6px',
