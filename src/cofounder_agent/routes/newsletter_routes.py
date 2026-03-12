@@ -85,9 +85,10 @@ async def subscribe_to_newsletter(
         )
 
         if existing and not existing["unsubscribed_at"]:
+            # Idempotent: re-subscribing an active email is treated as success
             return NewsletterSubscribeResponse(
-                success=False,
-                message=f"Email {payload.email} is already subscribed",
+                success=True,
+                message="Already subscribed",
                 subscriber_id=existing["id"],
             )
 
@@ -171,8 +172,9 @@ async def unsubscribe_from_newsletter(
         )
 
         if result == "UPDATE 0":
-            return NewsletterSubscribeResponse(
-                success=False, message=f"Email {payload.email} not found or already unsubscribed"
+            raise HTTPException(
+                status_code=404,
+                detail="Email not found or already unsubscribed",
             )
 
         logger.info(f"✅ Unsubscribed from newsletter: {payload.email}")
