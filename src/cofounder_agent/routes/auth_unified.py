@@ -27,6 +27,8 @@ import jwt
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel
 
+from utils.rate_limiter import limiter
+
 from schemas.auth_schemas import (
     GitHubCallbackRequest,
     LogoutResponse,
@@ -379,7 +381,8 @@ async def get_current_user_optional(request: Request) -> Optional[Dict[str, Any]
 
 
 @router.post("/github/callback")
-async def github_callback(request_data: GitHubCallbackRequest) -> Dict[str, Any]:
+@limiter.limit("10/minute")
+async def github_callback(request: Request, request_data: GitHubCallbackRequest) -> Dict[str, Any]:
     """
     Handle GitHub OAuth callback.
 
@@ -455,7 +458,9 @@ async def github_callback(request_data: GitHubCallbackRequest) -> Dict[str, Any]
 
 
 @router.post("/logout", response_model=LogoutResponse)
+@limiter.limit("20/minute")
 async def unified_logout(
+    request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> LogoutResponse:
     """
@@ -518,7 +523,9 @@ async def unified_logout(
 
 
 @router.get("/me", response_model=UserProfile)
+@limiter.limit("60/minute")
 async def get_current_user_profile(
+    request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> UserProfile:
     """

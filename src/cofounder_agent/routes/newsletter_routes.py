@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr
 
 from routes.auth_unified import get_current_user
+from utils.rate_limiter import limiter
 from utils.route_utils import get_database_dependency
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,7 @@ class NewsletterUnsubscribeRequest(BaseModel):
 
 
 @router.post("/subscribe")
+@limiter.limit("5/minute")
 async def subscribe_to_newsletter(
     request: Request, payload: NewsletterSubscribeRequest, db=Depends(get_database_dependency)
 ):
