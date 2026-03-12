@@ -131,14 +131,37 @@ function bumpVersion(versionStr, bumpType) {
 }
 
 function getCurrentBranch() {
+  // In GitHub Actions, checkout is often detached (branch appears as HEAD),
+  // so prefer CI-provided refs first.
+  const envBranch =
+    process.env.GITHUB_HEAD_REF ||
+    process.env.GITHUB_REF_NAME ||
+    process.env.BRANCH_NAME;
+
+  if (envBranch && envBranch !== 'HEAD') {
+    return envBranch.replace(/^refs\/heads\//, '');
+  }
+
   try {
-    return execSync('git rev-parse --abbrev-ref HEAD', {
+    const gitBranch = execSync('git rev-parse --abbrev-ref HEAD', {
       cwd: ROOT,
       encoding: 'utf8',
     }).trim();
-  } catch (error) {
+
+    if (gitBranch && gitBranch !== 'HEAD') {
+      return gitBranch;
+    }
+
+    // Final fallback for detached HEAD: derive from full ref if available.
+    const fullRef = process.env.GITHUB_REF;
+    if (fullRef && fullRef.startsWith('refs/heads/')) {
+      return fullRef.replace('refs/heads/', '');
+    }
+
+    throw new Error('Branch is detached (HEAD) and no CI ref is available');
+  } catch {
     throw new Error(
-      'Could not detect git branch. Are you in a git repository?'
+      'Could not detect git branch. Provide GITHUB_REF_NAME/BRANCH_NAME or run from a named branch.'
     );
   }
 }
@@ -146,7 +169,7 @@ function getCurrentBranch() {
 function determineBumpType(branch, forceBump = null) {
   if (forceBump) return forceBump;
 
-  for (const [tierName, tier] of Object.entries(BRANCH_TIERS)) {
+  for (const [, tier] of Object.entries(BRANCH_TIERS)) {
     if (tier.pattern.test(branch)) {
       return tier.bumpType;
     }
@@ -274,8 +297,6 @@ function main() {
   const isDryRun = args.includes('--dry-run');
   const skipGit =
     args.includes('--skip-git') || process.env.SKIP_GIT === 'true';
-  const isCI = process.env.CI === 'true';
-
   try {
     logSection('🚀 Glad Labs Automated Version Bump');
 

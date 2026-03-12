@@ -33,6 +33,7 @@ jobs:
               uses: actions/checkout@v4
               with:
                   fetch-depth: 0
+                  ref: ${{ github.ref_name }}
 
             - name: 🔧 Setup Node.js
               uses: actions/setup-node@v4
@@ -72,5 +73,5 @@ jobs:
 
             - name: 📤 Push version bump commit and tag
               run: |
-                  git push origin ${{ github.ref }}
+                  git push origin HEAD:${{ github.ref_name }}
                   git push origin --tags
