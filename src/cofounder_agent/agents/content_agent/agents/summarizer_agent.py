@@ -35,5 +35,5 @@ class SummarizerAgent:
             summary = self.llm_client.generate_summary(prompt)
             return summary  # type: ignore[return-value]
         except Exception as e:
-            logger.error(f"SummarizerAgent: An error occurred during summarization: {e}")
+            logger.error(f"SummarizerAgent: An error occurred during summarization: {e}", exc_info=True)
             return ""  # Return empty string on failure

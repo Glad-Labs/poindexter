@@ -81,10 +81,10 @@ class ResearchAgent:
             )
             return context
         except httpx.HTTPError as e:
-            logger.error(f"An error occurred during research request: {e}")
+            logger.error(f"An error occurred during research request: {e}", exc_info=True)
             return ""
         except Exception as e:
-            logger.error(f"An unexpected error occurred during research: {e}")
+            logger.error(f"An unexpected error occurred during research: {e}", exc_info=True)
             return ""
 
 
