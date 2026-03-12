@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Glad Labs is an AI orchestration system (v3.0.39) — a monorepo with three integrated services:
+Glad Labs is an AI orchestration system (v3.0.43) — a monorepo with three integrated services:
 
 - **Backend:** Python FastAPI orchestrator with 118 service modules (port 8000)
 - **Admin UI:** React 18 + Material-UI dashboard for agent monitoring (port 3001)
@@ -56,7 +56,7 @@ npm run test                  # Jest for all workspaces
 npm run test:ci               # CI mode (coverage, no watch)
 
 # Single test file (Python):
-cd src/cofounder_agent && poetry run pytest tests/integration/test_task_routes.py -v
+cd src/cofounder_agent && poetry run pytest tests/unit/routes/test_task_routes.py -v
 
 # Single test file (JS — from workspace root):
 cd web/oversight-hub && npx vitest run src/components/__tests__/MyComponent.test.jsx
@@ -117,6 +117,7 @@ npm run build                 # Build all workspaces
 ### Configuration
 
 Each service reads from its own `.env.local` file:
+
 - **Backend:** Reads `.env.local` from project root (configured in `src/cofounder_agent/config/__init__.py`)
 - **Public Site (Next.js):** Reads `.env.local` from `web/public-site/`
 - **Admin Hub (Vite):** Reads `.env.local` from `web/oversight-hub/`

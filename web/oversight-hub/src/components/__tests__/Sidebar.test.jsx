@@ -68,14 +68,14 @@ describe('Sidebar', () => {
 
   it('shows collapse button (←) when expanded', () => {
     renderSidebar();
-    const toggleBtn = screen.getByTitle('Collapse sidebar');
+    const toggleBtn = screen.getByLabelText('Collapse sidebar');
     expect(toggleBtn).toBeInTheDocument();
     expect(toggleBtn).toHaveTextContent('←');
   });
 
   it('toggles to compressed state when collapse button is clicked', () => {
     renderSidebar();
-    const toggleBtn = screen.getByTitle('Collapse sidebar');
+    const toggleBtn = screen.getByLabelText('Collapse sidebar');
     fireEvent.click(toggleBtn);
 
     // After collapse: title becomes 'GL' and button text changes to expand arrow
@@ -85,19 +85,19 @@ describe('Sidebar', () => {
 
   it('shows expand button (→) after sidebar is collapsed', () => {
     renderSidebar();
-    const collapseBtn = screen.getByTitle('Collapse sidebar');
+    const collapseBtn = screen.getByLabelText('Collapse sidebar');
     fireEvent.click(collapseBtn);
 
-    const expandBtn = screen.getByTitle('Expand sidebar');
+    const expandBtn = screen.getByLabelText('Expand sidebar');
     expect(expandBtn).toBeInTheDocument();
     expect(expandBtn).toHaveTextContent('→');
   });
 
   it('restores expanded state after clicking expand', () => {
     renderSidebar();
-    const collapseBtn = screen.getByTitle('Collapse sidebar');
+    const collapseBtn = screen.getByLabelText('Collapse sidebar');
     fireEvent.click(collapseBtn);
-    const expandBtn = screen.getByTitle('Expand sidebar');
+    const expandBtn = screen.getByLabelText('Expand sidebar');
     fireEvent.click(expandBtn);
 
     expect(screen.getByText('Glad Labs')).toBeInTheDocument();

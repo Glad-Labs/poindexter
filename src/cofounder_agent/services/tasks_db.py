@@ -737,6 +737,10 @@ class TasksDatabase(DatabaseServiceMixin):
                     json.dumps(sel_log) if isinstance(sel_log, dict) else sel_log
                 )
 
+        # Always set updated_at so stale-sweep can track executor progress
+        if "updated_at" not in normalized_updates:
+            normalized_updates["updated_at"] = datetime.now(timezone.utc).replace(tzinfo=None)
+
         # Serialize values for PostgreSQL
         serialized_updates = {}
         for key, value in normalized_updates.items():
@@ -1067,8 +1071,8 @@ class TasksDatabase(DatabaseServiceMixin):
                 VALUES ($1, $2, $3, $4, $5, $6)
             """
 
-            # Use naive UTC datetime to avoid asyncpg timezone mismatch
-            now = datetime.now(timezone.utc)
+            # Use naive UTC datetime to avoid asyncpg timezone mismatch with TIMESTAMP WITHOUT TIME ZONE
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
             metadata_json = json.dumps(metadata or {})
 
             async with self.pool.acquire() as conn:

@@ -44,7 +44,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 AUTH_COOKIE_NAME = os.getenv("AUTH_COOKIE_NAME", "gladlabs_auth")
-AUTH_COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", "false").lower() == "true"
+_is_dev = os.getenv("ENVIRONMENT", "production") == "development"
+AUTH_COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", "false" if _is_dev else "true").lower() == "true"
 AUTH_COOKIE_MAX_AGE_SECONDS = AuthConfig.ACCESS_TOKEN_EXPIRE_MINUTES * 60
 
 # GitHub Configuration

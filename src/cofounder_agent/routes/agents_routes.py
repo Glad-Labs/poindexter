@@ -33,12 +33,17 @@ from schemas.agent_schemas import (
     MemoryStats,
     SystemHealthEnum,
 )
+from routes.auth_unified import get_current_user
 from services.logger_config import get_logger
 from utils.route_utils import get_orchestrator_dependency
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/api/agents", tags=["agents"])
+router = APIRouter(
+    prefix="/api/agents",
+    tags=["agents"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 # ============================================================================

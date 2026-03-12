@@ -14,7 +14,7 @@ High-performance public website built with Next.js 15, featuring static site gen
 The Glad Labs public site serves as the primary content distribution platform, consuming content from the postgres database and presenting it through a fast, SEO-optimized interface.
 
 **Status:** ✅ Production Ready
-**Version:** 3.0.39
+**Version:** 3.0.43
 **Last Updated:** March 10, 2026
 **Technology:** Next.js 15.1.0 + React 18.3.1
 

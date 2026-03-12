@@ -30,8 +30,6 @@ export default function AdSenseScript() {
       src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${adSenseId}`}
       strategy="afterInteractive"
       onLoad={() => {
-        // eslint-disable-next-line no-console
-        console.log('[AdSense] Script loaded successfully');
         // Push any queued ads
         const w = window as unknown as { adsbygoogle?: object[] };
         if (w.adsbygoogle) {

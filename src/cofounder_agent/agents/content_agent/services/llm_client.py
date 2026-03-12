@@ -1,4 +1,5 @@
 import asyncio
+import logging as _logging
 import sys
 from pathlib import Path
 
@@ -29,7 +30,7 @@ def _fix_sys_path_for_venv():
             site.main()  # Reinitialize site package processing
     except Exception as e:
         # If sys.path fixing fails, log but continue - fallback imports may still work
-        print(f"[WARNING] Failed to fix sys.path for venv: {e}")
+        _logging.warning("Failed to fix sys.path for venv: %s", e)
 
 
 # Execute the fix immediately when this module is imported
@@ -140,7 +141,7 @@ class LLMClient:
                 return json.load(f)
 
         if self.provider == "gemini":
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(None, self._generate_json_gemini, prompt)
         elif self.provider == "local" or self.provider == "ollama":
             result = await self._generate_json_local(prompt)
@@ -220,7 +221,7 @@ class LLMClient:
             return cache_path.read_text(encoding="utf-8")
 
         if self.provider == "gemini":
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(None, self._generate_text_gemini, prompt)
         elif self.provider == "local" or self.provider == "ollama":
             result = await self._generate_text_local(prompt)
@@ -273,7 +274,7 @@ class LLMClient:
             return cache_path.read_text()
 
         if self.provider == "gemini":
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(None, self._generate_summary_gemini, prompt)
         elif self.provider == "local" or self.provider == "ollama":
             # For local/ollama provider, we can reuse the text generation with the summarizer model if needed

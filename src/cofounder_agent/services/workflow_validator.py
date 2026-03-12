@@ -112,14 +112,14 @@ class WorkflowValidator:
                 prev_phase_def = self.registry.get_phase(prev_phase.name)
 
                 if prev_phase_def:
-                    logger.info(f"DEBUG: Validating phase {phase.name} (prev: {prev_phase.name})")
-                    logger.info(f"DEBUG: Input mapping: {phase.input_mapping}")
+                    logger.debug("Validating phase %s (prev: %s)", phase.name, prev_phase.name)
+                    logger.debug("Input mapping: %s", phase.input_mapping)
 
                     try:
                         mapping = self.mapper.map_phases(
                             prev_phase.name, phase.name, user_overrides=phase.input_mapping
                         )
-                        logger.info(f"DEBUG: Generated mapping: {mapping}")
+                        logger.debug("Generated mapping: %s", mapping)
 
                         # When validating, account for user-provided inputs
                         # User inputs satisfy required input requirements without auto-mapping

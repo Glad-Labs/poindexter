@@ -1,6 +1,6 @@
 """Tests for UsersDatabase module with correct method signatures."""
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 
 from src.cofounder_agent.schemas.database_response_models import UserResponse
@@ -22,7 +22,7 @@ class TestUsersDatabaseRetrieval:
         mock_conn = AsyncMock()
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         mock_conn.fetchrow.return_value = {
             "id": "user_1",
             "email": "user@example.com",
@@ -55,7 +55,7 @@ class TestUsersDatabaseRetrieval:
         mock_conn = AsyncMock()
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         mock_conn.fetchrow.return_value = {
             "id": "user_2",
             "email": "user@example.com",
@@ -92,7 +92,7 @@ class TestUsersDatabaseCreation:
         mock_conn = AsyncMock()
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         mock_conn.fetchrow.return_value = {
             "id": "user_3",
             "email": "newuser@example.com",
@@ -121,7 +121,7 @@ class TestUsersDatabaseCreation:
         mock_conn = AsyncMock()
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         mock_conn.fetchrow.return_value = {
             "id": "user_4",
             "email": "admin@example.com",

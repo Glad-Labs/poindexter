@@ -1,7 +1,7 @@
 # 02 - Architecture & Design
 
 **Last Updated:** March 10, 2026
-**Version:** 3.0.39
+**Version:** 3.0.43
 **Status:** ✅ Production Ready | Multi-Agent System | Fast API Backend
 
 ---
@@ -139,7 +139,7 @@ The backend is built with FastAPI and handles all asynchronous task execution an
 
 | Component         | Technology                       | Port | Status        |
 | ----------------- | -------------------------------- | ---- | ------------- |
-| **Public Site**   | Next.js 15 + React 19 + Tailwind | 3000 | ✅ Production |
+| **Public Site**   | Next.js 15 + React 18 + Tailwind | 3000 | ✅ Production |
 | **Oversight Hub** | React 18 + Material-UI + Zustand | 3001 | ✅ Production |
 
 **Frontend Features:**
@@ -161,7 +161,7 @@ The backend is built with FastAPI and handles all asynchronous task execution an
 
 **Backend Features:**
 
-- RESTful API (50+ endpoints)
+- RESTful API (160+ endpoints)
 - WebSocket support (planned)
 - Multi-agent orchestration
 - Model routing and fallback

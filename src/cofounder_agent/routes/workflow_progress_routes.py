@@ -15,13 +15,18 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 
+from routes.auth_unified import get_current_user
 from services.workflow_progress_service import (
     WorkflowProgressService,
     get_workflow_progress_service,
 )
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/workflow-progress", tags=["workflow-progress"])
+router = APIRouter(
+    prefix="/api/workflow-progress",
+    tags=["workflow-progress"],
+    dependencies=[Depends(get_current_user)],
+)
 
 # Global WebSocket connections for broadcasting
 active_connections: dict[str, list[WebSocket]] = {}

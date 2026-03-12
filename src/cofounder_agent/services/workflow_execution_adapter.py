@@ -587,7 +587,7 @@ async def _execute_agent_method(
             result = await execute_method(input_data, phase_name=phase_name)
         else:
             logger.debug(f"Calling sync execute() on {agent_name} in executor")
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(
                 None, lambda: execute_method(input_data, phase_name=phase_name)
             )
@@ -600,7 +600,7 @@ async def _execute_agent_method(
             result = await run_method(input_data)
         else:
             logger.debug(f"Calling sync run() on {agent_name} in executor")
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(None, lambda: run_method(input_data))
 
     # Try process() method
@@ -611,7 +611,7 @@ async def _execute_agent_method(
             result = await process_method(input_data)
         else:
             logger.debug(f"Calling sync process() on {agent_name} in executor")
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(None, lambda: process_method(input_data))
 
     else:

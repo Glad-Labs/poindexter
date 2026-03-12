@@ -109,9 +109,6 @@ export default function CookieConsentBanner() {
     if (typeof window !== 'undefined') {
       window.__cookieConsent = newConsent;
 
-      // Log consent choice
-      console.log('🍪 Cookie consent saved:', newConsent);
-
       // If analytics enabled, load Google Analytics
       if (newConsent.analytics) {
         loadGoogleAnalytics();
@@ -122,7 +119,7 @@ export default function CookieConsentBanner() {
         try {
           window.adsbygoogle.push({});
         } catch {
-          console.log('AdSense not yet loaded');
+          // AdSense script not yet loaded -- will be pushed on next load
         }
       }
     }
@@ -303,11 +300,8 @@ function loadGoogleAnalytics() {
 
   const gaId = process.env.NEXT_PUBLIC_GA_ID || process.env.NEXT_PUBLIC_GA4_ID;
   if (!gaId) {
-    console.log('No GA ID found');
     return;
   }
-
-  console.log('📊 Loading Google Analytics:', gaId);
 
   const script = document.createElement('script');
   script.src = `https://www.googletagmanager.com/gtag/js?id=${gaId}`;
@@ -320,7 +314,6 @@ function loadGoogleAnalytics() {
     window.gtag = gtag;
     gtag('js', new Date());
     gtag('config', gaId);
-    console.log('✅ Google Analytics loaded');
   };
   document.head.appendChild(script);
 }

@@ -60,7 +60,7 @@ const Sidebar = () => {
         <button
           className="sidebar-toggle-btn"
           onClick={() => setIsCompressed(!isCompressed)}
-          title={isCompressed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={isCompressed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           {isCompressed ? '→' : '←'}
         </button>

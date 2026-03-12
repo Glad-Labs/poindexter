@@ -34,7 +34,8 @@ const TaskApprovalForm = ({
   const isAwaitingApproval = task.status === 'awaiting_approval';
   const isApproved = task.status === 'approved';
   // Backend sets 'failed' (no revisions) or 'failed_revisions_requested' (revisions allowed)
-  const isRejected = task.status === 'failed' || task.status === 'failed_revisions_requested';
+  const isRejected =
+    task.status === 'failed' || task.status === 'failed_revisions_requested';
   const isRevisionsRequested = task.status === 'failed_revisions_requested';
 
   return (
@@ -50,7 +51,9 @@ const TaskApprovalForm = ({
             marginBottom: 2,
           }}
         >
-          <h3 style={{ marginTop: 0, color: '#ff6b6b' }}>📝 Approval Notes</h3>
+          <h3 style={{ marginTop: 0, color: '#ff6b6b' }}>
+            <span aria-hidden="true">📝 </span>Approval Notes
+          </h3>
           <TextField
             fullWidth
             multiline
@@ -119,7 +122,7 @@ const TaskApprovalForm = ({
           }}
         >
           <h3 style={{ marginTop: 0, color: '#4ade80' }}>
-            ✅ Step 1: Review & Approve
+            <span aria-hidden="true">✅ </span>Step 1: Review &amp; Approve
           </h3>
           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
             <Button
@@ -165,7 +168,7 @@ const TaskApprovalForm = ({
           }}
         >
           <h3 style={{ marginTop: 0, color: '#0ea5e9' }}>
-            📤 Step 2: Publish to Site
+            <span aria-hidden="true">📤 </span>Step 2: Publish to Site
           </h3>
           <p style={{ marginTop: '0', color: '#e0e0e0', fontSize: '0.95rem' }}>
             Content approved! Ready to publish to the public site.
@@ -200,7 +203,7 @@ const TaskApprovalForm = ({
           }}
         >
           <h3 style={{ marginTop: 0, color: '#ef4444' }}>
-            ⚠️ Content Rejected
+            <span aria-hidden="true">⚠️ </span>Content Rejected
           </h3>
           <p style={{ marginTop: '0', color: '#e0e0e0', marginBottom: '12px' }}>
             This content was rejected and cannot be published as-is.

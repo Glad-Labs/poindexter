@@ -575,7 +575,7 @@ class CaptureTrainingDataPhase(BasePhase):
                     "quality_scores": scores,
                 },
                 "execution_result": "success",
-                "quality_score": float(overall_score) / 10 if overall_score is not None else None,
+                "quality_score": float(overall_score) / 100 if overall_score is not None else None,
                 "success": (overall_score or 0) >= 70,
                 "tags": [topic] if topic else [],
                 "source_agent": "capture_training_data_phase",

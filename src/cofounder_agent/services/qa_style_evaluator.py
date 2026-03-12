@@ -162,7 +162,7 @@ class StyleConsistencyValidator:
                 "code",
                 "function",
             ],
-            "narrative": ["story", "journey", "experience", "character", "plot", "describe"],
+            "narrative": ["story", "journey", "experience", "character", "plot", "describe", "explore", "examine", "consider", "discover"],
             "listicle": ["steps", "reasons", "tips", "ways", "secrets", "rules"],
             "educational": ["learn", "understand", "explain", "concept", "principle", "theory"],
             "thought-leadership": [
@@ -370,9 +370,11 @@ class StyleConsistencyValidator:
             style_scores["listicle"] += 4
 
         # Multiple headings + prose paragraphs = narrative or educational
+        # Narrative gets higher structural boost because blog posts with headings + prose
+        # are more likely narrative than educational (educational needs explicit learning markers)
         if heading_count >= 3 and paragraph_count >= 3:
-            style_scores["narrative"] += 2
-            style_scores["educational"] += 2
+            style_scores["narrative"] += 3
+            style_scores["educational"] += 1
 
         return (
             max(style_scores, key=lambda k: style_scores[k])

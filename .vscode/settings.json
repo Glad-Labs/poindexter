@@ -1,5 +1,5 @@
 {
-  "python.defaultInterpreterPath": "",
+  "python.defaultInterpreterPath": "C:\\Users\\mattm\\AppData\\Local\\pypoetry\\Cache\\virtualenvs\\glad-labs-backend-YHugfB---py3.12\\Scripts\\python",
   "python.terminal.activateEnvironment": true,
   "task.autoDetect": "on",
   "task.allowAutomaticTasks": "on",

@@ -1,6 +1,6 @@
 """Tests for AdminDatabase module with correct method signatures."""
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -28,7 +28,7 @@ class TestAdminDatabaseCostLogging:
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         
         # Mock return row with all required fields
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         mock_conn.fetchrow.return_value = {
             "id": "cost_123",
             "task_id": "task_456",
@@ -76,7 +76,7 @@ class TestAdminDatabaseCostLogging:
         mock_conn = AsyncMock()
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         mock_conn.fetchrow.return_value = {
             "id": "cost_124",
             "task_id": "task_789",
@@ -119,7 +119,7 @@ class TestAdminDatabaseCostRetrieval:
         mock_conn = AsyncMock()
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         mock_conn.fetch.return_value = [
             {
                 "id": "cost_1",
@@ -191,7 +191,7 @@ class TestAdminDatabaseHealthCheck:
         """Test health check returns dict with status, service, and timestamp."""
         mock_conn = AsyncMock()
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.fetchval.return_value = datetime.utcnow()
+        mock_conn.fetchval.return_value = datetime.now(timezone.utc)
         
         health = await admin_db.health_check()
         
@@ -206,7 +206,7 @@ class TestAdminDatabaseHealthCheck:
         """Test health check with custom service parameter."""
         mock_conn = AsyncMock()
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.fetchval.return_value = datetime.utcnow()
+        mock_conn.fetchval.return_value = datetime.now(timezone.utc)
         
         health = await admin_db.health_check(service="custom_service")
         
@@ -236,7 +236,7 @@ class TestAdminDatabaseSettings:
         mock_conn = AsyncMock()
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         mock_conn.fetchrow.return_value = {
             "id": "setting_1",
             "key": "api_key_rotation",
@@ -303,7 +303,7 @@ class TestAdminDatabaseSettings:
         mock_conn = AsyncMock()
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         mock_conn.fetch.return_value = [
             {
                 "id": "setting_1",
@@ -342,7 +342,7 @@ class TestAdminDatabaseSettings:
         mock_conn = AsyncMock()
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         mock_conn.fetch.return_value = [
             {
                 "id": "setting_3",

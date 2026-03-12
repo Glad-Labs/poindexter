@@ -19,8 +19,6 @@ from config import get_config
 # Load configuration
 config = get_config()
 
-from services.auth import AuthService
-
 # Import services
 from services.logger_config import get_logger
 from services.quality_service import UnifiedQualityService
@@ -92,10 +90,8 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             "[LIFESPAN] NOTE: Application-level services are now injected via ServiceContainer + Depends()"
         )
 
-        # Initialize auth service
-        logger.info("[LIFESPAN] Initializing authentication service. ..")
-        auth_service = AuthService()
-        logger.info("[LIFESPAN] ✅ Authentication service initialized")
+        # Auth is handled by routes/auth_unified.py (GitHub OAuth + JWT)
+        # No stub AuthService needed — see services/github_oauth.py
 
         # Initialize capability system
         logger.info("[LIFESPAN] Initializing capability system. ..")

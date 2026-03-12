@@ -43,13 +43,13 @@ class ConnectionPoolHealth:
 
         try:
             # Try to acquire and release a connection
-            start_time = asyncio.get_event_loop().time()
+            start_time = asyncio.get_running_loop().time()
             async with asyncio.timeout(5):  # 5-second timeout for health check
                 async with self.pool.acquire() as conn:
                     # Simple query to verify connection works
                     result = await conn.fetchval("SELECT 1")
 
-            check_duration = asyncio.get_event_loop().time() - start_time
+            check_duration = asyncio.get_running_loop().time() - start_time
 
             # Get pool stats
             pool_size = self.pool.get_size()
