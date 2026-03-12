@@ -8,13 +8,19 @@ Exposes WorkflowEngine capabilities via HTTP for:
 - Retrieving workflow results and execution metrics
 """
 
-import logging
+from services.logger_config import get_logger
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-logger = logging.getLogger(__name__)
+from services.workflow_history import WorkflowHistoryService
+from utils.route_utils import (
+    get_database_dependency,
+    get_workflow_engine_dependency,
+    get_template_execution_service_dependency as get_template_service_dependency,
+)
 
+logger = get_logger(__name__)
 router = APIRouter(
     prefix="/api/workflows",
     tags=["workflows"],
@@ -36,21 +42,6 @@ async def list_workflow_templates():
 
     Returns:
         List of workflow templates with their phase composition
-
-    Example:
-        ```
-        GET /api/workflows/templates
-
-        [
-            {
-                "name": "blog_post",
-                "description": "Full blog post generation pipeline",
-                "phases": ["research", "draft", "assess", "refine", "finalize", "image_selection", "publish"],
-                "estimated_duration_seconds": 900
-            },
-            ...
-        ]
-        ```
     """
     try:
         templates = [
@@ -132,7 +123,10 @@ async def list_workflow_templates():
 
 
 @router.get("/status/{workflow_id}", response_model=Dict[str, Any], name="Get Workflow Status")
-async def get_workflow_status(workflow_id: str):
+async def get_workflow_status(
+    workflow_id: str,
+    db_service: Any = Depends(get_database_dependency),
+):
     """
     Get the current status of a workflow.
 
@@ -142,35 +136,33 @@ async def get_workflow_status(workflow_id: str):
     Returns:
         Workflow status with phase results and metadata
 
-    Example:
-        ```
-        GET /api/workflows/status/550e8400-e29b-41d4-a716-446655440000
-
-        {
-            "workflow_id": "550e8400-e29b-41d4-a716-446655440000",
-            "request_id": "req-123",
-            "status": "running",
-            "current_phase": "draft",
-            "phases_executed": ["research"],
-            "progress_percent": 30,
-            "results": {
-                "research": {
-                    "status": "completed",
-                    "duration_ms": 45230,
-                    "error": null
-                }
-            },
-            "started_at": "2026-02-11T14:30:00Z"
-        }
-        ```
-
     Errors:
         - 404: Workflow not found
     """
     try:
-        # TODO: Implement workflow status retrieval from storage/engine
-        # This is a placeholder that would integrate with WorkflowEngine
-        raise HTTPException(status_code=404, detail=f"Workflow '{workflow_id}' not found")
+        if db_service and db_service.pool:
+            history_svc = WorkflowHistoryService(db_service.pool)
+            execution = await history_svc.get_workflow_execution(workflow_id)
+        else:
+            execution = None
+
+        if execution is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Workflow '{workflow_id}' not found",
+            )
+
+        return {
+            "workflow_id": execution.get("id", workflow_id),
+            "status": execution.get("status", "unknown"),
+            "current_phase": execution.get("current_phase", ""),
+            "phases_executed": execution.get("task_results", []),
+            "progress_percent": execution.get("progress_percent", 0),
+            "results": execution.get("output_data", {}),
+            "started_at": execution.get("start_time"),
+            "completed_at": execution.get("end_time"),
+            "duration_seconds": execution.get("duration_seconds"),
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -179,7 +171,11 @@ async def get_workflow_status(workflow_id: str):
 
 
 @router.post("/pause/{workflow_id}", name="Pause Workflow")
-async def pause_workflow(workflow_id: str):
+async def pause_workflow(
+    workflow_id: str,
+    db_service: Any = Depends(get_database_dependency),
+    workflow_engine: Any = Depends(get_workflow_engine_dependency),
+):
     """
     Pause a currently executing workflow.
 
@@ -189,24 +185,39 @@ async def pause_workflow(workflow_id: str):
     Returns:
         Success confirmation and new workflow status
 
-    Example:
-        ```
-        POST /api/workflows/pause/550e8400-e29b-41d4-a716-446655440000
-
-        {
-            "success": true,
-            "workflow_id": "550e8400-e29b-41d4-a716-446655440000",
-            "status": "paused"
-        }
-        ```
-
     Errors:
         - 404: Workflow not found
         - 400: Workflow not in running state
     """
     try:
-        # TODO: Implement pause functionality via WorkflowEngine
-        raise HTTPException(status_code=404, detail=f"Workflow '{workflow_id}' not found")
+        history_svc = WorkflowHistoryService(db_service.pool)
+        execution = await history_svc.get_workflow_execution(workflow_id)
+
+        if execution is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Workflow '{workflow_id}' not found",
+            )
+
+        current_status = execution.get("status", "")
+        if current_status != "running":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Workflow '{workflow_id}' must be running to pause (current: {current_status})",
+            )
+
+        # Attempt to pause via engine (may already be evicted from memory)
+        if workflow_engine:
+            workflow_engine.pause_workflow(workflow_id)
+
+        # Always persist the status change to the DB regardless of engine result
+        await history_svc.update_workflow_execution(workflow_id, status="paused")
+
+        return {
+            "success": True,
+            "workflow_id": workflow_id,
+            "status": "paused",
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -215,7 +226,11 @@ async def pause_workflow(workflow_id: str):
 
 
 @router.post("/resume/{workflow_id}", name="Resume Workflow")
-async def resume_workflow(workflow_id: str):
+async def resume_workflow(
+    workflow_id: str,
+    db_service: Any = Depends(get_database_dependency),
+    workflow_engine: Any = Depends(get_workflow_engine_dependency),
+):
     """
     Resume a paused workflow.
 
@@ -225,24 +240,39 @@ async def resume_workflow(workflow_id: str):
     Returns:
         Success confirmation and new workflow status
 
-    Example:
-        ```
-        POST /api/workflows/resume/550e8400-e29b-41d4-a716-446655440000
-
-        {
-            "success": true,
-            "workflow_id": "550e8400-e29b-41d4-a716-446655440000",
-            "status": "running"
-        }
-        ```
-
     Errors:
         - 404: Workflow not found
         - 400: Workflow not in paused state
     """
     try:
-        # TODO: Implement resume functionality via WorkflowEngine
-        raise HTTPException(status_code=404, detail=f"Workflow '{workflow_id}' not found")
+        history_svc = WorkflowHistoryService(db_service.pool)
+        execution = await history_svc.get_workflow_execution(workflow_id)
+
+        if execution is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Workflow '{workflow_id}' not found",
+            )
+
+        current_status = execution.get("status", "")
+        if current_status != "paused":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Workflow '{workflow_id}' must be paused to resume (current: {current_status})",
+            )
+
+        # Attempt to resume via engine
+        if workflow_engine:
+            workflow_engine.resume_workflow(workflow_id)
+
+        # Always persist the status change
+        await history_svc.update_workflow_execution(workflow_id, status="running")
+
+        return {
+            "success": True,
+            "workflow_id": workflow_id,
+            "status": "running",
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -251,7 +281,11 @@ async def resume_workflow(workflow_id: str):
 
 
 @router.post("/cancel/{workflow_id}", name="Cancel Workflow")
-async def cancel_workflow(workflow_id: str):
+async def cancel_workflow(
+    workflow_id: str,
+    db_service: Any = Depends(get_database_dependency),
+    workflow_engine: Any = Depends(get_workflow_engine_dependency),
+):
     """
     Cancel a workflow (cannot be resumed).
 
@@ -261,24 +295,40 @@ async def cancel_workflow(workflow_id: str):
     Returns:
         Success confirmation and final workflow status
 
-    Example:
-        ```
-        POST /api/workflows/cancel/550e8400-e29b-41d4-a716-446655440000
-
-        {
-            "success": true,
-            "workflow_id": "550e8400-e29b-41d4-a716-446655440000",
-            "status": "cancelled"
-        }
-        ```
-
     Errors:
         - 404: Workflow not found
         - 400: Workflow not in running/paused state
     """
     try:
-        # TODO: Implement cancel functionality via WorkflowEngine
-        raise HTTPException(status_code=404, detail=f"Workflow '{workflow_id}' not found")
+        history_svc = WorkflowHistoryService(db_service.pool)
+        execution = await history_svc.get_workflow_execution(workflow_id)
+
+        if execution is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Workflow '{workflow_id}' not found",
+            )
+
+        current_status = execution.get("status", "")
+        cancellable_statuses = {"running", "paused"}
+        if current_status not in cancellable_statuses:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Workflow '{workflow_id}' must be running or paused to cancel (current: {current_status})",
+            )
+
+        # Attempt to cancel via engine
+        if workflow_engine:
+            workflow_engine.cancel_workflow(workflow_id)
+
+        # Always persist the final status
+        await history_svc.update_workflow_execution(workflow_id, status="cancelled")
+
+        return {
+            "success": True,
+            "workflow_id": workflow_id,
+            "status": "cancelled",
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -286,84 +336,242 @@ async def cancel_workflow(workflow_id: str):
         raise HTTPException(status_code=500, detail="Failed to cancel workflow")
 
 
+@router.get("/executions", name="List Workflow Executions")
+async def list_workflow_executions(
+    request: Request,
+    limit: int = Query(20, ge=1, le=100, description="Maximum executions to return"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+    status: Optional[str] = Query(None, description="Filter by status"),
+):
+    """
+    List workflow executions with optional status filtering.
+
+    Returns:
+        Paginated list of workflow executions
+    """
+    try:
+        # Stub: full implementation requires WorkflowHistoryService.list_executions()
+        return {
+            "executions": [],
+            "total_count": 0,
+            "limit": limit,
+            "offset": offset,
+        }
+    except Exception as e:
+        logger.error(f"Error listing workflow executions: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to list workflow executions")
+
+
 @router.post("/execute/{template_name}", name="Execute Workflow Template")
 async def execute_workflow_template(
     template_name: str,
-    request_body: Dict[str, Any],
+    task_input: Dict[str, Any],
     skip_phases: Optional[List[str]] = Query(None, description="Phases to skip"),
     quality_threshold: float = Query(
         0.7, ge=0.0, le=1.0, description="Quality threshold for assessment"
     ),
     tags: Optional[List[str]] = Query(None, description="Tags for workflow"),
+    template_service: Any = Depends(get_template_service_dependency),
 ):
     """
     Execute a workflow template with custom parameters.
 
     Args:
         template_name: Name of the template (blog_post, social_media, email, etc.)
-        request_body: Input data for the workflow
+        task_input: Input data for the workflow
         skip_phases: Optional list of phases to skip
         quality_threshold: Quality threshold for assessment phases (0.0-1.0)
         tags: Optional tags for categorization
+        template_service: Injected TemplateExecutionService
 
     Returns:
-        Workflow context with execution ID and initial status
-
-    Example:
-        ```
-        POST /api/workflows/execute/blog_post
-
-        request_body = {
-            "topic": "The Future of AI",
-            "keywords": ["artificial intelligence", "machine learning"],
-            "target_audience": "Technical professionals",
-            "tone": "Professional"
-        }
-
-        Response:
-        {
-            "workflow_id": "550e8400-e29b-41d4-a716-446655440000",
-            "request_id": "req-123",
-            "template": "blog_post",
-            "status": "running",
-            "started_at": "2026-02-11T14:30:00Z",
-            "phases": ["research", "draft", "assess", "refine", "finalize", "image_selection", "publish"],
-            "progress_percent": 0
-        }
-        ```
+        Execution result with ID and status
 
     Errors:
         - 404: Template not found
-        - 400: Invalid input parameters
+        - 500: Execution failed
     """
     try:
-        # TODO: Implement workflow execution with:
-        # 1. Template validation
-        # 2. Phase pipeline construction
-        # 3. WorkflowContext creation
-        # 4. WorkflowEngine.execute_workflow() call
-        # 5. Async background execution
-        # 6. Return workflow_id for status tracking
-
-        valid_templates = [
-            "blog_post",
-            "social_media",
-            "email",
-            "newsletter",
-            "market_analysis",
-        ]
-
-        if template_name not in valid_templates:
+        try:
+            template_service.validate_template_name(template_name)
+        except (ValueError, KeyError) as e:
             raise HTTPException(
                 status_code=404,
-                detail=f"Template '{template_name}' not found. Valid templates: {valid_templates}",
+                detail=f"Template '{template_name}' not found: {e}",
             )
 
-        # Placeholder for workflow execution
-        raise HTTPException(status_code=501, detail="Workflow execution not yet implemented")
+        result = await template_service.execute_template(
+            template_name=template_name,
+            task_input=task_input,
+            skip_phases=skip_phases or [],
+            quality_threshold=quality_threshold,
+            tags=tags or [],
+        )
+
+        return result
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error executing workflow template: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to execute workflow")
+
+
+@router.get("/templates/history", name="Get Workflow Execution History")
+async def get_workflow_history(
+    limit: int = Query(50, ge=1, le=200, description="Maximum history entries to return"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+    template_name: Optional[str] = Query(None, description="Filter by template name"),
+    template_service: Any = Depends(get_template_service_dependency),
+):
+    """
+    Get workflow execution history.
+
+    Args:
+        limit: Maximum records to return (1-200)
+        offset: Pagination offset
+        template_name: Optional filter by template name
+        template_service: Injected TemplateExecutionService
+
+    Returns:
+        Paginated execution history
+
+    Errors:
+        - 500: Failed to retrieve history
+    """
+    try:
+        result = await template_service.get_execution_history(
+            owner_id="system",
+            template_name=template_name,
+            limit=limit,
+            offset=offset,
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Error retrieving workflow history: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve workflow history")
+
+
+@router.post("/executions/{execution_id}/cancel", name="Cancel Workflow Execution")
+async def cancel_workflow_execution(
+    execution_id: str,
+    db_service: Any = Depends(get_database_dependency),
+):
+    """
+    Cancel a specific workflow execution by its execution ID.
+
+    Args:
+        execution_id: ID of the workflow execution to cancel
+
+    Returns:
+        Cancellation confirmation with previous status
+
+    Errors:
+        - 404: Execution not found
+        - 409: Execution already in terminal state
+        - 503: Database unavailable
+    """
+    try:
+        if not db_service or not db_service.pool:
+            raise HTTPException(
+                status_code=503,
+                detail="Database service unavailable",
+            )
+
+        history_svc = WorkflowHistoryService(db_service.pool)
+        execution = await history_svc.get_workflow_execution(execution_id)
+
+        if execution is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Workflow execution '{execution_id}' not found",
+            )
+
+        previous_status = execution.get("status", "unknown")
+        terminal_statuses = {"completed", "failed", "cancelled"}
+        if previous_status in terminal_statuses:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Workflow execution '{execution_id}' is already in terminal state: {previous_status}",
+            )
+
+        await history_svc.update_workflow_execution(execution_id, status="cancelled")
+
+        return {
+            "execution_id": execution_id,
+            "status": "cancelled",
+            "previous_status": previous_status,
+            "message": "Workflow execution cancelled successfully",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error cancelling workflow execution: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to cancel workflow execution")
+
+
+@router.get("/executions/{execution_id}/progress", name="Get Workflow Execution Progress")
+async def get_workflow_execution_progress(
+    execution_id: str,
+    db_service: Any = Depends(get_database_dependency),
+):
+    """
+    Get detailed progress for a specific workflow execution.
+
+    Args:
+        execution_id: ID of the workflow execution
+
+    Returns:
+        Detailed progress including phases completed and remaining
+
+    Errors:
+        - 404: Execution not found
+        - 503: Database unavailable
+    """
+    try:
+        if not db_service or not db_service.pool:
+            raise HTTPException(
+                status_code=503,
+                detail="Database service unavailable",
+            )
+
+        history_svc = WorkflowHistoryService(db_service.pool)
+        execution = await history_svc.get_workflow_execution(execution_id)
+
+        if execution is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Workflow execution '{execution_id}' not found",
+            )
+
+        status = execution.get("status", "unknown")
+        current_phase = execution.get("current_phase") or ""
+        completed_phases = execution.get("completed_phases") or []
+        remaining_phases = execution.get("remaining_phases") or []
+
+        # Calculate progress percentage
+        if status == "completed":
+            progress_percent = 100
+        else:
+            total_phases = len(completed_phases) + len(remaining_phases)
+            if total_phases > 0:
+                progress_percent = int((len(completed_phases) / total_phases) * 100)
+            else:
+                progress_percent = 0
+
+        return {
+            "execution_id": execution_id,
+            "status": status,
+            "current_phase": current_phase,
+            "phases_completed": completed_phases,
+            "phases_remaining": remaining_phases,
+            "progress_percent": progress_percent,
+            "error_message": execution.get("error_message"),
+            "started_at": execution.get("created_at"),
+            "updated_at": execution.get("updated_at"),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving workflow execution progress: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve execution progress")

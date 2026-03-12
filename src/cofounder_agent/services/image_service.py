@@ -23,6 +23,7 @@ Cost Optimization:
 
 import asyncio
 import logging
+from services.logger_config import get_logger
 import os
 import time
 from datetime import datetime, timezone
@@ -74,7 +75,7 @@ except ImportError:
     OVModelForFeatureExtraction = None  # type: ignore[assignment,misc]
     OPTIMUM_AVAILABLE = False
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 from utils.error_handler import handle_service_error
 
 
