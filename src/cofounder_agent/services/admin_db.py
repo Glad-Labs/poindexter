@@ -11,6 +11,7 @@ Handles administrative database operations including:
 
 import json
 import logging
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
@@ -37,6 +38,9 @@ logger = logging.getLogger(__name__)
 class AdminDatabase(DatabaseServiceMixin):
     """Administrative database operations (logs, financial, settings, health)."""
 
+    # In-memory TTL cache for settings (rarely changed, frequently read)
+    _SETTINGS_CACHE_TTL = 60  # seconds
+
     def __init__(self, pool: Pool):
         """
         Initialize admin database module.
@@ -45,6 +49,13 @@ class AdminDatabase(DatabaseServiceMixin):
             pool: asyncpg connection pool
         """
         self.pool = pool
+        self._settings_cache: Dict[str, Any] = {}  # key -> {"value": ..., "ts": monotonic}
+        self._all_settings_cache: Dict[str, Any] = {}  # category_key -> {"value": ..., "ts": ...}
+
+    def _invalidate_settings_cache(self) -> None:
+        """Clear all settings caches (call after set/delete)."""
+        self._settings_cache.clear()
+        self._all_settings_cache.clear()
 
     # ========================================================================
     # COST LOGGING
@@ -224,7 +235,7 @@ class AdminDatabase(DatabaseServiceMixin):
 
     async def get_setting(self, key: str) -> Optional[SettingResponse]:
         """
-        Get a setting by key.
+        Get a setting by key (with 60s in-memory TTL cache).
 
         Args:
             key: Setting key identifier
@@ -232,14 +243,19 @@ class AdminDatabase(DatabaseServiceMixin):
         Returns:
             Setting dict or None if not found
         """
+        # Check cache first
+        cached = self._settings_cache.get(key)
+        if cached and (time.monotonic() - cached["ts"]) < self._SETTINGS_CACHE_TTL:
+            return cached["value"]
+
         sql = "SELECT * FROM settings WHERE key = $1 AND is_active = true"
 
         try:
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(sql, key)
-                if row:
-                    return ModelConverter.to_setting_response(row)
-                return None
+                result = ModelConverter.to_setting_response(row) if row else None
+                self._settings_cache[key] = {"value": result, "ts": time.monotonic()}
+                return result
         except Exception as e:
             logger.error(
                 f"[get_setting] Failed to get setting key={key}: {str(e)}",
@@ -249,7 +265,7 @@ class AdminDatabase(DatabaseServiceMixin):
 
     async def get_all_settings(self, category: Optional[str] = None) -> List[SettingResponse]:
         """
-        Get all active settings, optionally filtered by category.
+        Get all active settings, optionally filtered by category (with 60s TTL cache).
 
         Args:
             category: Optional category filter
@@ -257,6 +273,11 @@ class AdminDatabase(DatabaseServiceMixin):
         Returns:
             List of setting dicts
         """
+        cache_key = category or "__all__"
+        cached = self._all_settings_cache.get(cache_key)
+        if cached and (time.monotonic() - cached["ts"]) < self._SETTINGS_CACHE_TTL:
+            return cached["value"]
+
         if category:
             sql = "SELECT * FROM settings WHERE category = $1 AND is_active = true ORDER BY key"
             params = [category]
@@ -267,7 +288,9 @@ class AdminDatabase(DatabaseServiceMixin):
         try:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(sql, *params)
-                return [ModelConverter.to_setting_response(row) for row in rows]
+                result = [ModelConverter.to_setting_response(row) for row in rows]
+                self._all_settings_cache[cache_key] = {"value": result, "ts": time.monotonic()}
+                return result
         except Exception as e:
             logger.error(
                 f"[get_all_settings] Failed to get settings for category={category}: {str(e)}",
@@ -317,6 +340,7 @@ class AdminDatabase(DatabaseServiceMixin):
                     display_name,
                     description,
                 )
+                self._invalidate_settings_cache()
                 logger.info(f"✅ Setting saved: {key} = {value_str[:50]}")
                 return True
         except Exception as e:
@@ -341,6 +365,7 @@ class AdminDatabase(DatabaseServiceMixin):
                 await conn.execute(
                     "UPDATE settings SET is_active = false, modified_at = NOW() WHERE key = $1", key
                 )
+                self._invalidate_settings_cache()
                 logger.info(f"✅ Setting deleted: {key}")
                 return True
         except Exception as e:
