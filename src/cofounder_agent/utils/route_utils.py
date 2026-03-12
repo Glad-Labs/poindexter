@@ -49,7 +49,7 @@ class ServiceContainer:
         @app.get("/tasks")
         async def list_tasks(request: Request):
             db = request.state.services.get_database()
-            tasks = await db.pool.fetch("SELECT * FROM tasks")
+            tasks = await db.tasks.get_all_tasks(limit=100)
             return tasks
     """
 
@@ -196,7 +196,7 @@ def get_services() -> ServiceContainer:
         async def list_tasks():
             services = get_services()
             db = services.get_database()
-            tasks = await db.pool.fetch("SELECT * FROM tasks")
+            tasks = await db.tasks.get_all_tasks(limit=100)
             return tasks
     """
     return _services
@@ -214,7 +214,7 @@ def get_database_dependency() -> Any:
     Usage:
         @app.get("/tasks")
         async def list_tasks(db = Depends(get_database_dependency)):
-            tasks = await db.pool.fetch("SELECT * FROM tasks")
+            tasks = await db.tasks.get_all_tasks(limit=100)
             return tasks
     """
     db = _services.get_database()
@@ -461,7 +461,7 @@ In task_routes.py:
     
     @app.get("/tasks")
     async def list_tasks():
-        tasks = await db_service.pool.fetch("SELECT * FROM tasks")
+        tasks = await db_service.tasks.get_all_tasks(limit=100)
         return tasks
 
 PROBLEMS:
@@ -491,7 +491,7 @@ In task_routes.py:
     @app.get("/tasks")
     async def list_tasks():
         db = get_services().get_database()
-        tasks = await db.pool.fetch("SELECT * FROM tasks")
+        tasks = await db.tasks.get_all_tasks(limit=100)
         return tasks
 
 BENEFITS:
@@ -515,7 +515,7 @@ In task_routes.py:
     
     @app.get("/tasks")
     async def list_tasks(db = Depends(get_database_dependency)):
-        tasks = await db.pool.fetch("SELECT * FROM tasks")
+        tasks = await db.tasks.get_all_tasks(limit=100)
         return tasks
 
 BENEFITS:
@@ -538,7 +538,7 @@ In task_routes.py:
     @app.get("/tasks")
     async def list_tasks(request: Request):
         db = get_db_from_request(request)
-        tasks = await db.pool.fetch("SELECT * FROM tasks")
+        tasks = await db.tasks.get_all_tasks(limit=100)
         return tasks
 
 BENEFITS:
