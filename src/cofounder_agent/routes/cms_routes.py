@@ -499,7 +499,7 @@ async def cms_status():
         logger.error(f"Error checking CMS status: {str(e)}", exc_info=True)
         return {
             "status": "error",
-            "detail": str(e),
+            "detail": "CMS status check failed",
             "tables": {},
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }

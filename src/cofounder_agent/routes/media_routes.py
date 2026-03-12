@@ -475,10 +475,17 @@ async def generate_featured_image(request: Request, body: ImageGenerationRequest
                 os.makedirs(downloads_path, exist_ok=True)
 
                 # Create filename with timestamp and task_id for traceability
+                # Sanitize task_id to prevent path traversal (CWE-22)
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                task_id_str = body.task_id if body.task_id else "no-task"
+                raw_task_id = body.task_id if body.task_id else "no-task"
+                task_id_str = "".join(c for c in raw_task_id if c.isalnum() or c in "-_")
                 output_file = f"sdxl_{timestamp}_{task_id_str}.png"
                 output_path = os.path.join(downloads_path, output_file)
+                # Verify resolved path stays within downloads_path
+                base_dir = Path(downloads_path).resolve()
+                resolved_output = Path(output_path).resolve()
+                if not str(resolved_output).startswith(str(base_dir)):
+                    raise ValueError("Path traversal detected in task_id")
 
                 logger.info(f"📁 Will save generated image to: {output_path}")
 

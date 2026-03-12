@@ -112,7 +112,7 @@ async def check_ollama_health() -> OllamaHealthResponse:
             connected=False,
             status="error",
             models=None,
-            message=f"❌ Ollama health check failed: {str(e)}",
+            message="Ollama health check failed",
             timestamp=datetime.now(timezone.utc).isoformat(),
         )
 
@@ -282,7 +282,7 @@ async def warmup_ollama(model: str = "mistral:latest") -> OllamaWarmupResponse:
         return OllamaWarmupResponse(
             status="error",
             model=model,
-            message=f"❌ Warm-up error: {str(e)}",
+            message="Model warm-up failed",
             generation_time=None,
             timestamp=datetime.now(timezone.utc).isoformat(),
         )
@@ -331,7 +331,7 @@ async def get_ollama_status() -> Dict[str, Any]:
             "models_available": 0,
             "models": [],
             "last_check": datetime.now(timezone.utc).isoformat(),
-            "error": str(e),
+            "error": "Failed to check Ollama status",
         }
 
 
@@ -406,7 +406,7 @@ async def select_ollama_model(request: OllamaModelSelection) -> Dict[str, Any]:
         return {
             "success": False,
             "selected_model": None,
-            "message": f"❌ Model selection error: {str(e)}",
+            "message": "Model selection failed",
             "available_models": [],
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }

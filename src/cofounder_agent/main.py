@@ -565,7 +565,7 @@ async def process_command(
         )
     except Exception as e:  # pylint: disable=broad-except
         logger.error(f"Error processing command: {str(e)} | command={command.command}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"An internal error occurred: {str(e)}") from e
+        raise HTTPException(status_code=500, detail="An internal error occurred") from e
 
 
 @app.get("/")
