@@ -10,6 +10,7 @@
     "eject": "react-scripts eject",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "dev": "cross-env PORT=3001 NODE_OPTIONS=--no-deprecation react-scripts start",
     "start": "cross-env PORT=3001 NODE_OPTIONS=--no-deprecation react-scripts start",
     "test": "react-scripts test --passWithNoTests",
     "test:coverage": "react-scripts test --coverage --passWithNoTests"
