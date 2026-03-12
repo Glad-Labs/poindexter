@@ -1,8 +1,20 @@
 """
-Unified error handling utilities for API routes and services.
+Error handling utilities for API routes and services.
 
-Provides consistent error handling patterns across the application,
-reducing code duplication and improving maintainability.
+This module provides route/service-level error handling helpers:
+- handle_route_error(): Maps exceptions to HTTPException for route handlers
+- handle_service_error(): Logs errors and returns fallback values for services
+- create_error_response(): Creates standardized error response dicts
+- Convenience functions: not_found(), bad_request(), forbidden(), etc.
+
+For domain exception classes (AppError, DatabaseError, ServiceError, etc.),
+circuit breaker, retry logic, and error codes, import from:
+    from services.error_handler import AppError, DatabaseError, ...
+
+Import guide:
+    - Routes importing error helpers: from utils.error_handler import handle_route_error
+    - Routes importing exception classes: from services.error_handler import AppError
+    - Services (same package): from .error_handler import DatabaseError
 """
 
 import logging
@@ -183,8 +195,8 @@ def handle_service_error(
         )
         return fallback_value
 
-    # If no fallback, re-raise as HTTPException
-    raise HTTPException(status_code=500, detail=f"Error during {operation}: {str(error)}")
+    # If no fallback, re-raise as HTTPException (generic message — no internal details)
+    raise HTTPException(status_code=500, detail=f"Error during {operation}")
 
 
 def create_error_response(

@@ -1,21 +1,18 @@
 """
-Comprehensive Error Handling and Recovery System
+Domain Error Classes and Recovery System
 
-Provides:
-- StandardError codes and error classification
-- AppError base exception class with full context
-- Domain-specific exception classes for all error scenarios
-- Retry logic with exponential backoff for resilience
-- Circuit breaker pattern for external service protection
-- Graceful error handling with structured context
-- Request error tracking and correlation
-- Database connection recovery
-- Timeout management
-- Validation utilities with field-level error reporting
-- Standardized error response formatting
+Provides domain exception classes, error codes, retry logic, and circuit breaker:
+- AppError base class + subclasses: ValidationError, NotFoundError, DatabaseError, etc.
+- ErrorCode/ErrorCategory enums for classification
+- CircuitBreaker for external service protection
+- retry_with_backoff decorator for resilience
+- Validation helpers (validate_string_field, validate_integer_field, etc.)
 
-All routes should use AppError classes for consistent error responses.
-Integrate retry_with_backoff and CircuitBreaker for resilience.
+Import guide:
+    - Routes: from services.error_handler import AppError, NotFoundError
+    - Services (same package): from .error_handler import DatabaseError, ServiceError
+    - For route/service error handling helpers (handle_route_error, handle_service_error):
+      from utils.error_handler import handle_route_error, handle_service_error
 """
 
 import asyncio
