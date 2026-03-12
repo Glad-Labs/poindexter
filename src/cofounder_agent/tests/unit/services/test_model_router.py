@@ -329,3 +329,43 @@ class TestGlobalSingleton:
         instance = initialize_model_router()
         retrieved = get_model_router()
         assert retrieved is instance
+
+
+# ---------------------------------------------------------------------------
+# Provider failure tracking (#428)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestProviderFailureTracking:
+    def test_record_failure_increments_count(self, router):
+        router.record_provider_failure("anthropic")
+        health = router.get_provider_health()
+        assert health["anthropic"]["consecutive_failures"] == 1
+
+    def test_record_success_resets_count(self, router):
+        for _ in range(3):
+            router.record_provider_failure("openai")
+        router.record_provider_success("openai")
+        health = router.get_provider_health()
+        assert health["openai"]["consecutive_failures"] == 0
+
+    def test_critical_threshold_at_five_failures(self, router, caplog):
+        import logging
+
+        with caplog.at_level(logging.CRITICAL):
+            for _ in range(5):
+                router.record_provider_failure("gemini")
+        assert any("5 consecutive" in r.message for r in caplog.records)
+
+    def test_get_provider_health_empty_on_fresh_router(self, router):
+        # No failures recorded yet — no keys in health dict
+        assert router.get_provider_health() == {}
+
+    def test_multiple_providers_tracked_independently(self, router):
+        router.record_provider_failure("anthropic")
+        router.record_provider_failure("anthropic")
+        router.record_provider_failure("openai")
+        health = router.get_provider_health()
+        assert health["anthropic"]["consecutive_failures"] == 2
+        assert health["openai"]["consecutive_failures"] == 1

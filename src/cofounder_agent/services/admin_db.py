@@ -10,7 +10,7 @@ Handles administrative database operations including:
 """
 
 import json
-import logging
+from services.logger_config import get_logger
 import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -32,9 +32,7 @@ from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 
 from .database_mixin import DatabaseServiceMixin
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class AdminDatabase(DatabaseServiceMixin):
     """Administrative database operations (logs, financial, settings, health)."""
 
@@ -212,12 +210,31 @@ class AdminDatabase(DatabaseServiceMixin):
             async with self.pool.acquire() as conn:
                 result = await conn.fetchval("SELECT NOW()")
 
-                return {
-                    "status": "healthy",
-                    "service": service,
-                    "database": "postgresql",
-                    "timestamp": result.isoformat() if result else None,
-                }
+            # Report connection pool utilization alongside connectivity result
+            pool_size = self.pool.get_size()
+            pool_idle = self.pool.get_idle_size()
+            pool_used = pool_size - pool_idle
+            pool_utilization = pool_used / pool_size if pool_size > 0 else 0.0
+
+            if pool_utilization > 0.8:
+                logger.warning(
+                    f"[db_pool] Connection pool near exhaustion: "
+                    f"used={pool_used} total={pool_size} "
+                    f"utilization={pool_utilization:.1%}"
+                )
+
+            return {
+                "status": "healthy",
+                "service": service,
+                "database": "postgresql",
+                "timestamp": result.isoformat() if result else None,
+                "pool": {
+                    "size": pool_size,
+                    "used": pool_used,
+                    "idle": pool_idle,
+                    "utilization": round(pool_utilization, 3),
+                },
+            }
         except Exception as e:
             logger.error(
                 f"[health_check] Health check failed for service={service}: {str(e)}",

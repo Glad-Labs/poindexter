@@ -357,7 +357,14 @@ async def api_health(
         if database_service:
             try:
                 db_health = await database_service.health_check()
-                health_data["components"]["database"] = db_health.get("status", "unknown")
+                db_status = db_health.get("status", "unknown")
+                db_info: dict = {"status": db_status}
+                if "pool" in db_health:
+                    db_info["pool"] = db_health["pool"]
+                    if db_health["pool"].get("utilization", 0) > 0.8:
+                        db_info["alert"] = "pool_near_exhaustion"
+                        health_data["status"] = "degraded"
+                health_data["components"]["database"] = db_info
             except Exception as e:  # pylint: disable=broad-except
                 logger.warning("Database health check failed in /api/health: %s", str(e))
                 health_data["components"]["database"] = "degraded"
@@ -371,14 +378,24 @@ async def api_health(
             from utils.route_utils import _services
             executor = _services.get_task_executor()
             if executor is not None:
-                health_data["components"]["task_executor"] = {
+                import time as _time
+                last_poll_age_s = None
+                if executor.last_poll_at is not None:
+                    last_poll_age_s = round(_time.monotonic() - executor.last_poll_at, 1)
+                executor_info: dict = {
                     "running": executor.running,
                     "task_count": executor.task_count,
                     "error_count": executor.error_count,
+                    "last_poll_age_s": last_poll_age_s,
                 }
+                health_data["components"]["task_executor"] = executor_info
                 if not executor.running and startup_complete:
                     health_data["status"] = "degraded"
-                    health_data["components"]["task_executor"]["alert"] = "executor_not_running"
+                    executor_info["alert"] = "executor_not_running"
+                elif last_poll_age_s is not None and last_poll_age_s > executor.poll_interval * 2:
+                    # Loop is running but hasn't polled recently — possible stall
+                    health_data["status"] = "degraded"
+                    executor_info["alert"] = "executor_stall_suspected"
             else:
                 health_data["components"]["task_executor"] = "unavailable"
 
@@ -408,13 +425,23 @@ async def api_health(
                 providers_available.append("ollama")
             if getattr(model_router, "_gemini_client", None):
                 providers_available.append("gemini")
-            health_data["components"]["llm_providers"] = {
+            provider_health = {}
+            if hasattr(model_router, "get_provider_health"):
+                provider_health = model_router.get_provider_health()
+            llm_info: dict = {
                 "available": providers_available,
                 "count": len(providers_available),
+                "runtime_failures": provider_health,
             }
+            health_data["components"]["llm_providers"] = llm_info
             if not providers_available:
                 health_data["status"] = "degraded"
-                health_data["components"]["llm_providers"]["alert"] = "no_providers_available"
+                llm_info["alert"] = "no_providers_available"
+            elif any(
+                v.get("consecutive_failures", 0) >= 5
+                for v in provider_health.values()
+            ):
+                llm_info["alert"] = "provider_consecutive_failures"
         except Exception as e:  # pylint: disable=broad-except
             logger.warning("LLM provider health check failed: %s", str(e))
             health_data["components"]["llm_providers"] = "unavailable"

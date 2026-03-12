@@ -16,7 +16,7 @@ Routes:
 - GET  /api/auth/me             -> Get current user profile
 """
 
-import logging
+from services.logger_config import get_logger
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -36,8 +36,7 @@ from schemas.auth_schemas import (
 )
 from services.token_validator import AuthConfig, JWTTokenValidator
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 # GitHub Configuration
@@ -443,7 +442,11 @@ async def github_callback(request: Request, request_data: GitHubCallbackRequest)
             "auth_provider": "github",
         }
 
-        logger.info(f"GitHub authentication successful for user: {user_info['username']}")
+        logger.info(
+            f"[oauth_callback] User authenticated: user_id={user_info['user_id']} "
+            f"username={user_info['username']!r} provider=github "
+            f"ip={request.client.host if request.client else 'unknown'}"
+        )
 
         return {
             "token": jwt_token,

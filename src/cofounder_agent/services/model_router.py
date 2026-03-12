@@ -272,9 +272,54 @@ class ModelRouter:
             "ollama_uses": 0,  # Track zero-cost local inference usage
         }
 
+        # Runtime provider failure tracking.
+        # Keyed by provider name; value is count of consecutive failures.
+        # Reset to 0 on any success from that provider.
+        self._provider_consecutive_failures: Dict[str, int] = {}
+        self._FAILURE_ALERT_THRESHOLD = 5  # logger.critical fires at this count
+
         logger.info(
             "Model router initialized", default_model=default_model, use_ollama=self.use_ollama
         )
+
+    def record_provider_failure(self, provider: str) -> None:
+        """
+        Record a runtime LLM call failure for a provider.
+
+        Increments the consecutive failure counter. When the counter reaches
+        _FAILURE_ALERT_THRESHOLD, emits a logger.critical so that log-based
+        alerting can fire without requiring database queries.
+
+        Call this from LLM client code after a failed API call.
+        """
+        count = self._provider_consecutive_failures.get(provider, 0) + 1
+        self._provider_consecutive_failures[provider] = count
+        if count >= self._FAILURE_ALERT_THRESHOLD:
+            logger.critical(
+                f"[llm_provider] Provider {provider!r} has failed {count} consecutive times — "
+                f"possible outage or quota exhaustion"
+            )
+
+    def record_provider_success(self, provider: str) -> None:
+        """
+        Record a successful LLM call for a provider.
+
+        Resets the consecutive failure counter so that a single success clears
+        a prior alert state.
+        """
+        if self._provider_consecutive_failures.get(provider, 0) > 0:
+            logger.info(
+                f"[llm_provider] Provider {provider!r} recovered after "
+                f"{self._provider_consecutive_failures[provider]} consecutive failures"
+            )
+        self._provider_consecutive_failures[provider] = 0
+
+    def get_provider_health(self) -> Dict[str, Any]:
+        """Return a dict of provider names to their current failure counts."""
+        return {
+            provider: {"consecutive_failures": count}
+            for provider, count in self._provider_consecutive_failures.items()
+        }
 
     def route_request(
         self, task_type: str, context: Optional[Dict[str, Any]] = None, estimated_tokens: int = 1000

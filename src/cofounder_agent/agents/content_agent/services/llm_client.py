@@ -38,6 +38,7 @@ import hashlib
 import json
 import logging
 import os
+import time
 
 import aiofiles
 import httpx
@@ -139,13 +140,25 @@ class LLMClient:
                 content = await f.read()
                 return json.loads(content)
 
-        if self.provider == "gemini":
-            result = self._generate_json_gemini(prompt)
-        elif self.provider == "local" or self.provider == "ollama":
-            result = await self._generate_json_local(prompt)
-        else:
-            logging.error(f"Unsupported LLM provider: {self.provider}")
-            return {}
+        _llm_start = time.perf_counter()
+        _status = "success"
+        try:
+            if self.provider == "gemini":
+                result = self._generate_json_gemini(prompt)
+            elif self.provider == "local" or self.provider == "ollama":
+                result = await self._generate_json_local(prompt)
+            else:
+                logging.error(f"Unsupported LLM provider: {self.provider}")
+                return {}
+        except Exception:
+            _status = "error"
+            raise
+        finally:
+            _llm_latency_ms = int((time.perf_counter() - _llm_start) * 1000)
+            logging.info(
+                f"[llm_call] provider={self.provider} method=generate_json "
+                f"latency_ms={_llm_latency_ms} status={_status}"
+            )
 
         if result:
             async with aiofiles.open(cache_path, "w") as f:
@@ -201,13 +214,25 @@ class LLMClient:
             logging.info(f"Returning cached text response for prompt.")
             return cache_path.read_text(encoding="utf-8")
 
-        if self.provider == "gemini":
-            result = self._generate_text_gemini(prompt)
-        elif self.provider == "local" or self.provider == "ollama":
-            result = await self._generate_text_local(prompt)
-        else:
-            logging.error(f"Unsupported LLM provider: {self.provider}")
-            return ""
+        _llm_start = time.perf_counter()
+        _status = "success"
+        try:
+            if self.provider == "gemini":
+                result = self._generate_text_gemini(prompt)
+            elif self.provider == "local" or self.provider == "ollama":
+                result = await self._generate_text_local(prompt)
+            else:
+                logging.error(f"Unsupported LLM provider: {self.provider}")
+                return ""
+        except Exception:
+            _status = "error"
+            raise
+        finally:
+            _llm_latency_ms = int((time.perf_counter() - _llm_start) * 1000)
+            logging.info(
+                f"[llm_call] provider={self.provider} method=generate_text "
+                f"latency_ms={_llm_latency_ms} status={_status}"
+            )
 
         if result:
             try:
@@ -253,18 +278,30 @@ class LLMClient:
             logging.info(f"Returning cached summary for prompt.")
             return cache_path.read_text()
 
-        if self.provider == "gemini":
-            result = self._generate_summary_gemini(prompt)
-        elif self.provider == "local" or self.provider == "ollama":
-            # For local/ollama provider, we can reuse the text generation with the summarizer model if needed
-            # or use a specific endpoint if available. For now, we use the main model.
-            logging.warning(
-                "Summarization with local/ollama provider falls back to the main model."
+        _llm_start = time.perf_counter()
+        _status = "success"
+        try:
+            if self.provider == "gemini":
+                result = self._generate_summary_gemini(prompt)
+            elif self.provider == "local" or self.provider == "ollama":
+                # For local/ollama provider, we can reuse the text generation with the summarizer model if needed
+                # or use a specific endpoint if available. For now, we use the main model.
+                logging.warning(
+                    "Summarization with local/ollama provider falls back to the main model."
+                )
+                result = await self._generate_text_local(prompt)
+            else:
+                logging.error(f"Unsupported LLM provider: {self.provider}")
+                return ""
+        except Exception:
+            _status = "error"
+            raise
+        finally:
+            _llm_latency_ms = int((time.perf_counter() - _llm_start) * 1000)
+            logging.info(
+                f"[llm_call] provider={self.provider} method=generate_summary "
+                f"latency_ms={_llm_latency_ms} status={_status}"
             )
-            result = await self._generate_text_local(prompt)
-        else:
-            logging.error(f"Unsupported LLM provider: {self.provider}")
-            return ""
 
         if result:
             cache_path.write_text(result)

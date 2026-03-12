@@ -4,15 +4,13 @@ PostgreSQL-based Publishing Agent - Stores content directly to PostgreSQL.
 Replaces Strapi publishing with direct database inserts to posts table.
 """
 
-import logging
+from services.logger_config import get_logger
 from typing import Optional, Tuple
 
 from ..services.postgres_cms_client import PostgresCMSClient
 from ..utils.data_models import BlogPost
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class PostgreSQLPublishingAgent:
     """
     PostgreSQL-based publishing agent that stores content directly to the database.
@@ -110,9 +108,11 @@ class PostgreSQLPublishingAgent:
             # Create post in PostgreSQL
             post_id, post_slug = await self.cms_client.create_post(post)
 
-            logger.info(f"✅ Post published to PostgreSQL: {post_slug}")
-            logger.info(f"   ID: {post_id}")
-            logger.info(f"   URL: /posts/{post_slug}")
+            task_id = getattr(post, "task_id", None) or "unknown"
+            logger.info(
+                f"[publish_post] Content published: task_id={task_id} "
+                f"post_id={post_id} slug={post_slug} url=/posts/{post_slug}"
+            )
 
             return post_id, post_slug
 

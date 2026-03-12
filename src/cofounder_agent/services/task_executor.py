@@ -14,11 +14,11 @@ Production-ready for full blog automation!
 
 import asyncio
 import json
-import logging
+from services.logger_config import get_logger
 import time
 from dataclasses import asdict
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 # Import constraint utilities (Task 3 - Unified constraint gating)
 from utils.constraint_utils import ContentConstraints, validate_constraints
@@ -60,8 +60,7 @@ from .websocket_event_broadcaster import (
     emit_task_progress,
 )
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 # ---------------------------------------------------------------------------
 # Stale-task recovery configuration
 # ---------------------------------------------------------------------------
@@ -108,6 +107,8 @@ class TaskExecutor:
         self.published_count = 0
         self._processor_task = None
         self.usage_tracker = get_usage_tracker()  # Initialize usage tracking
+        self.last_poll_at: Optional[float] = None  # time.monotonic() of most recent poll
+        self._poll_cycle: int = 0  # counter for heartbeat cadence
 
         logger.info(
             f"TaskExecutor initialized: orchestrator={'✅' if orchestrator else '❌'}, "
@@ -179,6 +180,19 @@ class TaskExecutor:
                 if now - last_sweep_at >= SWEEP_INTERVAL_SECONDS:
                     await self._sweep_stale_tasks()
                     last_sweep_at = time.monotonic()
+
+                # Update last_poll_at on every cycle for liveness tracking
+                self.last_poll_at = time.monotonic()
+                self._poll_cycle += 1
+
+                # Emit heartbeat log every 12 cycles (~60 s at default 5 s poll interval)
+                # so that absence of heartbeat is detectable in log aggregators.
+                if self._poll_cycle % 12 == 0:
+                    logger.info(
+                        f"[executor_loop] heartbeat: cycle={self._poll_cycle} "
+                        f"processed={self.task_count} success={self.success_count} "
+                        f"errors={self.error_count}"
+                    )
 
                 # Get pending tasks from database
                 logger.debug(f"🔍 [TASK_EXEC_LOOP] Polling for pending tasks...")
@@ -346,11 +360,12 @@ class TaskExecutor:
         task_name = task.get("task_name", "Untitled")
         topic = task.get("topic", "")
         category = task.get("category", "general")
+        user_id = task.get("user_id", "unknown")
 
-        logger.info(f"⏳ [TASK_SINGLE] Processing task: {task_id}")
-        logger.info(f"   Name: {task_name}")
-        logger.info(f"   Topic: {topic}")
-        logger.info(f"   Category: {category}")
+        logger.info(
+            f"[_process_single_task] Starting: task_id={task_id} user_id={user_id} "
+            f"task_name={task_name!r} category={category}"
+        )
 
         # Task data available at DEBUG level for troubleshooting
         logger.debug("[TASK_SINGLE] Raw task data: %s", json.dumps(task, default=str))
@@ -428,6 +443,7 @@ class TaskExecutor:
             logger.info(
                 f"🚀 [TASK_SINGLE] Executing task through pipeline (timeout: {TASK_TIMEOUT_SECONDS}s)..."
             )
+            _task_start = time.perf_counter()
             try:
                 result = await asyncio.wait_for(
                     self._execute_task(task), timeout=TASK_TIMEOUT_SECONDS
@@ -441,7 +457,10 @@ class TaskExecutor:
                     "orchestrator_error": f"Task execution timeout ({TASK_TIMEOUT_SECONDS}s exceeded)",
                 }
 
-            logger.info(f"✅ [TASK_SINGLE] Task execution completed")
+            _task_duration_ms = int((time.perf_counter() - _task_start) * 1000)
+            logger.info(
+                f"[_process_single_task] Pipeline completed: task_id={task_id} duration_ms={_task_duration_ms}"
+            )
             logger.debug(f"   Result type: {type(result).__name__}")
             if isinstance(result, dict):
                 logger.debug(f"   Result keys: {list(result.keys())}")
@@ -571,14 +590,16 @@ class TaskExecutor:
                 )
 
             if final_status == "failed":
-                logger.error(f"❌ [TASK_SINGLE] Task failed: {task_id}")
                 # Extract error message for better logging
                 error_msg = (
                     result.get("orchestrator_error") or "Task failed during processing"
                     if isinstance(result, dict)
                     else "Task failed during processing"
                 )
-                logger.error(f"   Error: {error_msg}")
+                logger.error(
+                    f"[_process_single_task] Task failed: task_id={task_id} user_id={user_id} "
+                    f"error={error_msg!r}"
+                )
 
                 # Emit WebSocket event for failure (Phase 4)
                 try:
@@ -1036,8 +1057,11 @@ class TaskExecutor:
             suggestions_list = quality_result.get("suggestions", [])
             needs_refine = quality_result.get("needs_refinement", False)
 
-        logger.info(f"   Quality Score: {quality_score}/100")
-        logger.info(f"   Approved: {approved}")
+        _quality_threshold = 70
+        logger.info(
+            f"[quality_gate] task_id={task_id} score={quality_score:.0f} "
+            f"threshold={_quality_threshold} approved={approved} needs_refinement={needs_refine}"
+        )
         if isinstance(quality_result, QualityAssessment):
             logger.debug(
                 f"   Quality dimensions: clarity={quality_result.dimensions.clarity:.0f}, "
@@ -1601,6 +1625,9 @@ class TaskExecutor:
 
     def get_stats(self) -> Dict[str, Any]:
         """Get performance statistics for the executor"""
+        last_poll_age_s: Optional[float] = None
+        if self.last_poll_at is not None:
+            last_poll_age_s = round(time.monotonic() - self.last_poll_at, 1)
         return {
             "running": self.running,
             "task_count": self.task_count,
@@ -1609,4 +1636,5 @@ class TaskExecutor:
             "published_count": self.published_count,
             "orchestrator_available": self.orchestrator is not None,
             "quality_service_available": self.quality_service is not None,
+            "last_poll_age_s": last_poll_age_s,
         }
