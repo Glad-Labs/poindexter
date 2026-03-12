@@ -160,9 +160,7 @@ ADD COLUMN IF NOT EXISTS task_metadata JSONB DEFAULT '{}'::jsonb;
 ALTER TABLE content_tasks
 ADD COLUMN IF NOT EXISTS error_message TEXT;
 
--- Add actual_cost column (cost of processing the task)
-ALTER TABLE content_tasks
-ADD COLUMN IF NOT EXISTS actual_cost NUMERIC(10, 4) DEFAULT 0.0;
+-- NOTE: actual_cost already added above (line 111-113) with DEFAULT 0.0000
 
 -- Create indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_content_tasks_topic ON content_tasks(topic);
