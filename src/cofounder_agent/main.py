@@ -323,23 +323,13 @@ async def api_health(
     Returns comprehensive status of all critical services:
     - Startup status (starting/degraded/healthy)
     - Database connectivity and health
-    - Orchestrator initialization and status
-    - LLM providers availability
-    - Timestamp for monitoring systems
+    - Task executor liveness and queue depth
+    - LLM provider availability
+    - Redis connectivity
 
     Used by: Railway load balancers, monitoring systems, external health checks
     Authentication: Not required (critical for load balancers)
-
-    DI-5: Now uses Depends() injection for services instead of app.state
     """
-    # Try to get from cache first (note: health checks may be called very frequently)
-    cache_key = "database_health_check"
-    if redis_cache is not None:
-        cached_result = await redis_cache.get(cache_key)
-        if cached_result is not None:
-            logger.debug(f"Database health check cache hit for key: {cache_key}")
-            return cached_result
-
     try:
         # Build comprehensive health response
         health_data = {
@@ -358,12 +348,12 @@ async def api_health(
             health_data["status"] = "degraded"
             health_data["startup_error"] = startup_error
             health_data["startup_complete"] = startup_complete
-            logger.warning(f"Health check returning degraded status: {startup_error}")
+            logger.warning("Health check returning degraded status: %s", startup_error)
         elif not startup_complete:
             health_data["status"] = "starting"
             health_data["startup_complete"] = False
 
-        # Include database status if available (now via Depends injection)
+        # Database
         if database_service:
             try:
                 db_health = await database_service.health_check()
@@ -371,18 +361,74 @@ async def api_health(
             except Exception as e:  # pylint: disable=broad-except
                 logger.warning("Database health check failed in /api/health: %s", str(e))
                 health_data["components"]["database"] = "degraded"
+                health_data["status"] = "degraded"
         else:
             health_data["components"]["database"] = "unavailable"
+            health_data["status"] = "degraded"
 
-        # Cache the result with 30s TTL (using injected redis_cache)
-        if redis_cache:
-            await redis_cache.set("database_health_check", health_data, ttl=30)
-            logger.debug(f"Database health check cached with TTL 30s")
+        # Task executor liveness + queue depth
+        try:
+            from utils.route_utils import _services
+            executor = _services.get_task_executor()
+            if executor is not None:
+                health_data["components"]["task_executor"] = {
+                    "running": executor.running,
+                    "task_count": executor.task_count,
+                    "error_count": executor.error_count,
+                }
+                if not executor.running and startup_complete:
+                    health_data["status"] = "degraded"
+                    health_data["components"]["task_executor"]["alert"] = "executor_not_running"
+            else:
+                health_data["components"]["task_executor"] = "unavailable"
+
+            # Queue depth (pending task count)
+            if database_service:
+                try:
+                    pending = await database_service.get_pending_tasks(limit=1000)
+                    health_data["components"]["task_queue"] = {"pending_count": len(pending)}
+                    if len(pending) > 100:
+                        health_data["components"]["task_queue"]["alert"] = "queue_depth_high"
+                except Exception:  # pylint: disable=broad-except
+                    health_data["components"]["task_queue"] = "unavailable"
+        except Exception as e:  # pylint: disable=broad-except
+            logger.warning("Task executor health check failed: %s", str(e))
+            health_data["components"]["task_executor"] = "unavailable"
+
+        # LLM provider availability (fast check — no actual LLM call)
+        try:
+            from services.model_router import get_model_router
+            model_router = get_model_router()
+            providers_available = []
+            if getattr(model_router, "_anthropic_client", None):
+                providers_available.append("anthropic")
+            if getattr(model_router, "_openai_client", None):
+                providers_available.append("openai")
+            if getattr(model_router, "_ollama_client", None):
+                providers_available.append("ollama")
+            if getattr(model_router, "_gemini_client", None):
+                providers_available.append("gemini")
+            health_data["components"]["llm_providers"] = {
+                "available": providers_available,
+                "count": len(providers_available),
+            }
+            if not providers_available:
+                health_data["status"] = "degraded"
+                health_data["components"]["llm_providers"]["alert"] = "no_providers_available"
+        except Exception as e:  # pylint: disable=broad-except
+            logger.warning("LLM provider health check failed: %s", str(e))
+            health_data["components"]["llm_providers"] = "unavailable"
+
+        # Redis
+        if redis_cache is not None:
+            health_data["components"]["redis"] = "healthy"
+        else:
+            health_data["components"]["redis"] = "unavailable"
 
         return health_data
     except Exception as e:  # pylint: disable=broad-except
         logger.error("Health check failed: %s", str(e), exc_info=True)
-        return {"status": "unhealthy", "service": "cofounder-agent", "error": str(e)}
+        return {"status": "unhealthy", "service": "cofounder-agent", "error": "internal error"}
 
 
 @app.get("/health")
