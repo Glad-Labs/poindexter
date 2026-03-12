@@ -185,12 +185,15 @@ async def emit_notification(**kwargs):
 def emit_task_progress_sync(task_id: str, **kwargs):
     """Emit task progress update from non-async context"""
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.create_task(emit_task_progress(task_id=task_id, **kwargs))
-        else:
-            loop.run_until_complete(emit_task_progress(task_id=task_id, **kwargs))
+        loop = asyncio.get_running_loop()
+        # Running loop exists -- schedule as a task (most common in FastAPI)
+        asyncio.create_task(emit_task_progress(task_id=task_id, **kwargs))
     except RuntimeError:
-        logger.error(
-            "[emit_task_progress_sync] Could not emit task progress: no event loop", exc_info=True
-        )
+        # No running loop -- try to create one and run synchronously
+        try:
+            asyncio.run(emit_task_progress(task_id=task_id, **kwargs))
+        except RuntimeError:
+            logger.error(
+                "[emit_task_progress_sync] Could not emit task progress: no event loop",
+                exc_info=True,
+            )

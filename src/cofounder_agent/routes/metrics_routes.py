@@ -612,7 +612,7 @@ async def get_kpi_analytics(
         elif range == "90d":
             start_date = now - timedelta(days=90)
         else:  # all
-            start_date = datetime.utcfromtimestamp(0)
+            start_date = datetime.fromtimestamp(0, tz=timezone.utc)
 
         # Get cost metrics using available method
         cost_summary = await cost_service.get_summary()

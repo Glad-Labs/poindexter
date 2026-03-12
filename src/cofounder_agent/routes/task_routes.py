@@ -2545,17 +2545,12 @@ async def generate_task_image(
                                     if current_image_url:
                                         excluded_urls.add(current_image_url)
 
-                                    logger.info(f"🔍 Image filtering debug:")
-                                    logger.info(
-                                        f"   - Pexels returned {len(data['photos'])} total photos"
+                                    logger.debug(
+                                        "[image_filter] Pexels returned %d photos, currently using: %s, "
+                                        "recently used: %d, total excluded: %d",
+                                        len(data['photos']), current_image_url,
+                                        len(recently_used), len(excluded_urls),
                                     )
-                                    logger.info(f"   - Currently using: {current_image_url}")
-                                    logger.info(
-                                        f"   - Recently used: {recently_used[:3]}..."
-                                        if len(recently_used) > 3
-                                        else f"   - Recently used: {recently_used}"
-                                    )
-                                    logger.info(f"   - Total excluded URLs: {len(excluded_urls)}")
 
                                     # Filter out any previously used images
                                     photos = [
@@ -2895,6 +2890,10 @@ async def duplicate_task(
             "writing_style_id": original.get("writing_style_id"),
             "agent_id": original.get("agent_id", "content-agent"),
             "tags": tags,
+            "user_id": original.get("user_id"),
+            "model_selections": original.get("model_selections"),
+            "quality_preference": original.get("quality_preference", "balanced"),
+            "enforce_constraints": original.get("enforce_constraints", False),
             "task_metadata": {"task_name": new_title, "source_task_id": task_id},
         }
 

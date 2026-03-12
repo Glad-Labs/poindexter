@@ -336,7 +336,7 @@ class UnifiedOrchestrator:
         Returns:
             Dictionary with result, task_id, status, etc.
         """
-        start_time = asyncio.get_event_loop().time()
+        start_time = asyncio.get_running_loop().time()
         request_id = str(uuid.uuid4())
 
         try:
@@ -370,7 +370,7 @@ class UnifiedOrchestrator:
                 result = await self._handle_unknown(request)
 
             # Step 3: Store result and training data
-            duration_ms = (asyncio.get_event_loop().time() - start_time) * 1000
+            duration_ms = (asyncio.get_running_loop().time() - start_time) * 1000
 
             if isinstance(result, ExecutionResult):
                 result.duration_ms = duration_ms

@@ -11,12 +11,15 @@ This is a standalone validator that:
 - No user creation or session management
 """
 
+import logging
 import os
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, Optional, Tuple
 
 import jwt
+
+logger = logging.getLogger(__name__)
 
 
 class TokenType(str, Enum):
@@ -38,22 +41,18 @@ class AuthConfig:
         import sys
 
         if os.getenv("ENVIRONMENT", "development") == "production":
-            print(
-                "[ERROR] JWT_SECRET_KEY or JWT_SECRET environment variable is required",
-                file=sys.stderr,
-            )
+            logger.error("JWT_SECRET_KEY or JWT_SECRET environment variable is required")
             sys.exit(1)  # Exit if JWT secret is missing in production
         else:
             # Development fallback - MUST MATCH .env.local JWT_SECRET value
             _from_env = "development-secret-key-change-in-production"
-            print(
-                "[WARNING] Using development JWT secret - SET JWT_SECRET in .env for production",
-                flush=True,
+            logger.warning(
+                "Using development JWT secret - SET JWT_SECRET in .env for production"
             )
             _secret_source = "FALLBACK (hardcoded development)"
     else:
         _secret_source = "JWT_SECRET_KEY" if os.getenv("JWT_SECRET_KEY") else "JWT_SECRET"
-        print(f"[INFO] JWT Secret loaded from {_secret_source}", flush=True)
+        logger.debug("JWT Secret loaded from %s", _secret_source)
 
     SECRET_KEY = _from_env
     ALGORITHM = "HS256"
@@ -114,14 +113,10 @@ class JWTTokenValidator:
 
             return payload
         except jwt.ExpiredSignatureError as e:
-            import sys
-
-            print(f"[DEBUG] Token expired: {str(e)}", file=sys.stderr, flush=True)
+            logger.debug("Token expired: %s", e)
             raise jwt.ExpiredSignatureError("Token has expired")
         except jwt.InvalidTokenError as e:
-            import sys
-
-            print(f"[DEBUG] Invalid token error: {str(e)}", file=sys.stderr, flush=True)
+            logger.debug("Invalid token error: %s", e)
             raise jwt.InvalidTokenError(f"Invalid token: {str(e)}")
 
     @staticmethod

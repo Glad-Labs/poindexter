@@ -176,7 +176,7 @@ async def broadcast_approval_status(
         "type": "approval_status",
         "task_id": task_id,
         "status": status,  # approved, rejected, pending_revision
-        "timestamp": asyncio.get_event_loop().time(),
+        "timestamp": asyncio.get_running_loop().time(),
     }
     if details:
         message.update(details)

@@ -143,6 +143,6 @@ class OAuthProvider(ABC):
 
         Example:
             user = provider.get_user_info("access_token_xyz")
-            print(user.email, user.display_name)
+            # user.email, user.display_name, user.provider_id available
         """
         pass

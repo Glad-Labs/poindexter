@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from agents.registry import get_agent_registry
+from routes.auth_unified import get_current_user
 from utils.route_utils import get_redis_cache_optional
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,7 @@ router = APIRouter(
     prefix="/api/agents",
     tags=["agents"],
     responses={404: {"description": "Agent not found"}},
+    dependencies=[Depends(get_current_user)],
 )
 
 

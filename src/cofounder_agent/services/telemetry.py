@@ -106,8 +106,9 @@ def setup_telemetry(app, service_name="cofounder-agent"):
             processor = BatchSpanProcessor(otlp_exporter)
             provider.add_span_processor(processor)
 
-            print(
-                f"[TELEMETRY] OpenTelemetry tracing enabled for {service_name} (Endpoint: {otlp_endpoint})"
+            logging.info(
+                "[setup_telemetry] OpenTelemetry tracing enabled for %s (Endpoint: %s)",
+                service_name, otlp_endpoint,
             )
 
         except Exception as e:

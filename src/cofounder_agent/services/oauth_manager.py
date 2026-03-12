@@ -141,7 +141,7 @@ class OAuthManager:
 
         Example:
             user = OAuthManager.get_user_info("github", token)
-            print(user.email, user.display_name)
+            # user.email, user.display_name, user.provider_id available
         """
         provider = cls.get_provider(provider_name)
         return provider.get_user_info(access_token)

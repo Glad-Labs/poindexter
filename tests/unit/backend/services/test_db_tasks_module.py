@@ -129,7 +129,7 @@ class TestTasksDatabaseRetrieval:
         mock_conn = AsyncMock()
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         mock_conn.fetchrow.return_value = {
             "task_id": "task_123",
             "title": "Blog Post",
@@ -307,7 +307,7 @@ class TestTasksDatabaseUpdates:
         """Test update_task_status changes task status."""
         mock_conn = AsyncMock()
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         mock_conn.fetchrow.return_value = {
             "task_id": "task_456",
             "status": "completed",
@@ -368,7 +368,7 @@ class TestTasksDatabaseMetrics:
         mock_conn = AsyncMock()
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         mock_conn.fetch.return_value = [
             {"task_id": "task_1", "created_at": now},
             {"task_id": "task_2", "created_at": now}

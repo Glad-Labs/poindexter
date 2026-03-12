@@ -275,7 +275,7 @@ class WorkflowEngine:
             Updated WorkflowContext with results and status
         """
         context.status = WorkflowStatus.RUNNING
-        start_time = asyncio.get_event_loop().time()
+        start_time = asyncio.get_running_loop().time()
 
         logger.info(
             "[%s] Starting workflow with %d phases: %s",
@@ -318,7 +318,7 @@ class WorkflowEngine:
                     )
 
         # Mark as completed
-        duration_ms = (asyncio.get_event_loop().time() - start_time) * 1000
+        duration_ms = (asyncio.get_running_loop().time() - start_time) * 1000
 
         if context.status == WorkflowStatus.RUNNING:
             if context.has_failures():
@@ -366,7 +366,7 @@ class WorkflowEngine:
         """
         context.current_phase = phase.name
         result = PhaseResult(phase_name=phase.name, status=PhaseStatus.PENDING)
-        start_time = asyncio.get_event_loop().time()
+        start_time = asyncio.get_running_loop().time()
 
         logger.info("[%s] Starting phase: %s", context.workflow_id, phase.name)
 
@@ -415,7 +415,7 @@ class WorkflowEngine:
                     context.results[phase.name] = result
 
                     # Set duration
-                    result.duration_ms = (asyncio.get_event_loop().time() - start_time) * 1000
+                    result.duration_ms = (asyncio.get_running_loop().time() - start_time) * 1000
 
                     try:
                         await WebSocketEventBroadcaster.broadcast_workflow_status(
@@ -437,7 +437,7 @@ class WorkflowEngine:
                     )
 
             except Exception as e:
-                result.duration_ms = (asyncio.get_event_loop().time() - start_time) * 1000
+                result.duration_ms = (asyncio.get_running_loop().time() - start_time) * 1000
                 result.error = f"{type(e).__name__}: {str(e)}"
 
                 if attempt < phase.max_retries:

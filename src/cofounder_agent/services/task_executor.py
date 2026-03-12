@@ -549,7 +549,7 @@ class TaskExecutor:
                 update_payload["error_message"] = error_msg_for_db
 
             await self.database_service.update_task(task_id, update_payload)
-            logger.info(f"✅ [DEBUG] update_task completed for {task_id}")
+            logger.debug("[update_task] completed for %s", task_id)
 
             # Audit: log the in_progress → final_status transition
             try:

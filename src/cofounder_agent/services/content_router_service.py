@@ -1023,7 +1023,7 @@ async def process_content_generation_task(
                     "featured_image": featured_image is not None,
                 },
                 "execution_result": "success",
-                "quality_score": quality_result.overall_score / 10,
+                "quality_score": quality_result.overall_score / 100,
                 "success": quality_result.passing,
                 "tags": tags or [],
                 "source_agent": "content_router_service",

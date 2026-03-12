@@ -18,6 +18,7 @@ ASYNC-FIRST: All I/O operations use httpx async client (no blocking calls)
 import asyncio
 import logging
 import os
+from datetime import datetime, timezone
 import re
 import time
 from typing import Any, Dict, Optional, Tuple
@@ -1331,7 +1332,7 @@ Take action today—the insights you gain will compound over time.
 ---
 
 *Tags: {tag_str}*
-*Last updated: {os.popen('date').read().strip()}*
+*Last updated: {datetime.now(timezone.utc).strftime('%Y-%m-%d')}*
 """
 
 

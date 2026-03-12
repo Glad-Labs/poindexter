@@ -3,6 +3,7 @@
 # Poetry sometimes breaks namespace package resolution (e.g., google.generativeai)
 # This MUST be done before any package imports
 # ============================================================================
+import logging as _logging
 import sys
 from pathlib import Path as _PathType
 
@@ -22,7 +23,7 @@ def _fix_sys_path():
 
             importlib.invalidate_caches()
     except Exception as e:
-        print(f"[WARNING] Failed to fix sys.path: {e}")
+        _logging.warning("Failed to fix sys.path: %s", e)
 
 
 _fix_sys_path()
@@ -77,7 +78,12 @@ class Config:
         self.PROMPTS_PATH = os.path.join(self.BASE_DIR, "prompts.json")
 
         # --- PostgreSQL Database for CMS ---
-        self.DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./tasks.db")
+        self.DATABASE_URL = os.getenv("DATABASE_URL")
+        if not self.DATABASE_URL:
+            raise ValueError(
+                "DATABASE_URL environment variable is required. "
+                "This project uses PostgreSQL only — SQLite is not supported."
+            )
         self.DATABASE_HOST = os.getenv("DATABASE_HOST", "localhost")
         self.DATABASE_PORT = os.getenv("DATABASE_PORT", "5432")
         self.DATABASE_NAME = os.getenv("DATABASE_NAME", "glad_labs")
