@@ -289,7 +289,7 @@ class CostLogResponse(BaseModel):
         "finalize",
         "content_generation",
     ] = Field(..., description="Execution phase")
-    model: str = Field(..., description="LLM model used (gpt-4, claude-3-opus, etc.)")
+    model: str = Field(..., description="LLM model or cost tier used (e.g., ultra_cheap, cheap, balanced, premium)")
     provider: Literal["ollama", "openai", "anthropic", "google", "gemini", "unknown"] = Field(
         ..., description="LLM provider"
     )

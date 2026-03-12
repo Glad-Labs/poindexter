@@ -59,7 +59,7 @@ class AdminDatabase(DatabaseServiceMixin):
                 - task_id (UUID or str)
                 - user_id (UUID or str, optional)
                 - phase (str): research, outline, draft, assess, refine, finalize
-                - model (str): ollama, gpt-3.5-turbo, gpt-4, claude-3-opus, etc.
+                - model (str): cost tier (ultra_cheap, cheap, balanced, premium) or resolved model name
                 - provider (str): ollama, openai, anthropic, google
                 - cost_usd (float): Cost in USD
                 - input_tokens (int, optional): Input token count
@@ -122,9 +122,9 @@ class AdminDatabase(DatabaseServiceMixin):
 
         Returns:
             {
-                "research": {"cost": 0.0, "model": "ollama", "count": 1},
-                "outline": {"cost": 0.00075, "model": "gpt-3.5-turbo", "count": 1},
-                "draft": {"cost": 0.0015, "model": "gpt-4", "count": 1},
+                "research": {"cost": 0.0, "model": "ultra_cheap", "count": 1},
+                "outline": {"cost": 0.00075, "model": "cheap", "count": 1},
+                "draft": {"cost": 0.0015, "model": "premium", "count": 1},
                 "total": 0.00225,
                 "entries": [...]
             }
