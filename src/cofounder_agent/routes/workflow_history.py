@@ -110,10 +110,10 @@ async def get_workflow_history(
 
     except HTTPException:
         raise
-    except (ValueError, KeyError, TypeError, AttributeError, ConnectionError) as e:
-        logger.error(f"❌ Failed to get workflow history: {e}", exc_info=True)
+    except Exception as e:
+        logger.error(f"❌ Failed to get workflow history: {e}")
         raise HTTPException(
-            status_code=500, detail=f"Failed to retrieve workflow history: {str(e)}"
+            status_code=500, detail="Failed to retrieve workflow history"
         )
 
 
@@ -151,10 +151,10 @@ async def get_execution_details(
 
     except HTTPException:
         raise
-    except (ValueError, KeyError, TypeError, AttributeError, ConnectionError) as e:
-        logger.error(f"❌ Failed to get execution details: {e}", exc_info=True)
+    except Exception as e:
+        logger.error(f"❌ Failed to get execution details: {e}")
         raise HTTPException(
-            status_code=500, detail=f"Failed to retrieve execution details: {str(e)}"
+            status_code=500, detail="Failed to retrieve execution details"
         )
 
 
@@ -189,9 +189,9 @@ async def get_workflow_statistics(
 
     except HTTPException:
         raise
-    except (ValueError, KeyError, TypeError, AttributeError, ConnectionError) as e:
-        logger.error(f"❌ Failed to get workflow statistics: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve statistics: {str(e)}")
+    except Exception as e:
+        logger.error(f"❌ Failed to get workflow statistics: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve statistics")
 
 
 @router.get("/performance-metrics", response_model=PerformanceMetrics)
@@ -228,10 +228,10 @@ async def get_performance_metrics(
 
     except HTTPException:
         raise
-    except (ValueError, KeyError, TypeError, AttributeError, ConnectionError) as e:
-        logger.error(f"❌ Failed to get performance metrics: {e}", exc_info=True)
+    except Exception as e:
+        logger.error(f"❌ Failed to get performance metrics: {e}")
         raise HTTPException(
-            status_code=500, detail=f"Failed to retrieve performance metrics: {str(e)}"
+            status_code=500, detail="Failed to retrieve performance metrics"
         )
 
 
@@ -283,10 +283,10 @@ async def get_workflow_type_history(
 
     except HTTPException:
         raise
-    except (ValueError, KeyError, TypeError, AttributeError, ConnectionError) as e:
-        logger.error(f"❌ Failed to get workflow history: {e}", exc_info=True)
+    except Exception as e:
+        logger.error(f"❌ Failed to get workflow history: {e}")
         raise HTTPException(
-            status_code=500, detail=f"Failed to retrieve workflow history: {str(e)}"
+            status_code=500, detail="Failed to retrieve workflow history"
         )
 
 

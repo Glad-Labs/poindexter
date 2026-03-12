@@ -12,7 +12,7 @@ All endpoints aggregate real data from PostgreSQL database.
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -21,8 +21,6 @@ from pydantic import BaseModel, Field
 from routes.auth_unified import get_current_user
 from schemas.auth_schemas import UserProfile
 from services.database_service import DatabaseService
-from services.error_handler import AppError
-from services.websocket_event_broadcaster import emit_analytics_update
 from utils.error_handler import handle_route_error
 from utils.route_utils import get_database_dependency
 
@@ -97,7 +95,7 @@ class KPIMetrics(BaseModel):
 async def get_kpi_metrics(
     range: str = Query("7d", description="Time range: 1d, 7d, 30d, 90d, all"),
     db: DatabaseService = Depends(get_database_dependency),
-    current_user: dict = Depends(get_current_user),
+    current_user: Optional[UserProfile] = Depends(lambda: None),  # Optional auth
 ):
     """
     Get comprehensive KPI metrics for the executive dashboard.
@@ -134,7 +132,7 @@ async def get_kpi_metrics(
             )
 
         # Calculate time window
-        now = datetime.now(timezone.utc)
+        now = datetime.utcnow()
         if range == "1d":
             start_time = now - timedelta(days=1)
         elif range == "7d":
@@ -152,7 +150,7 @@ async def get_kpi_metrics(
         logger.debug(f"  🔍 Querying task statistics from content_tasks...")
 
         # Query tasks from database for this date range
-        tasks = await db.get_tasks_by_date_range(start_date=start_time, end_date=now, limit=10000)
+        tasks = await db.get_tasks_by_date_range(start_date=start_time, end_date=now)
 
         logger.debug(f"  ✅ Retrieved {len(tasks)} tasks from database")
 
@@ -295,7 +293,7 @@ async def get_kpi_metrics(
                         cost_by_phase[phase] = phase_cost
 
         avg_cost_per_task = (total_cost / total_tasks) if total_tasks > 0 else 0.0
-        primary_model = max(models_used, key=lambda k: models_used[k]) if models_used else "none"
+        primary_model = max(models_used, key=models_used.get) if models_used else "none"
 
         logger.debug(f"  💰 Total cost: ${total_cost:.6f}, Avg/task: ${avg_cost_per_task:.6f}")
         logger.debug(f"  🤖 Primary model: {primary_model}")
@@ -358,20 +356,6 @@ async def get_kpi_metrics(
 
         logger.info(f"✅ KPI metrics calculated for range {range}")
 
-        # ===== EMIT WEBSOCKET EVENT =====
-        try:
-            await emit_analytics_update(
-                total_tasks=total_tasks,
-                completed_today=completed_tasks,
-                average_completion_time=avg_execution_time,
-                cost_today=total_cost,
-                success_rate=success_rate,
-                failed_today=failed_tasks,
-                running_now=pending_tasks,
-            )
-        except (OSError, RuntimeError, AttributeError, TypeError) as e:
-            logger.warning(f"⚠️ Failed to emit analytics update: {e}", exc_info=True)
-
         # ===== BUILD RESPONSE =====
         return KPIMetrics(
             timestamp=now.isoformat(),
@@ -401,9 +385,7 @@ async def get_kpi_metrics(
 
     except HTTPException:
         raise
-    except AppError:
-        raise
-    except (KeyError, ValueError, TypeError, ZeroDivisionError, AttributeError) as e:
+    except Exception as e:
         raise await handle_route_error(e, "get_kpi_metrics", logger)
 
 
@@ -432,7 +414,6 @@ class DistributionResponse(BaseModel):
 async def get_task_distributions(
     range: str = Query("7d", description="Time range: 1d, 7d, 30d, 90d, all"),
     db: DatabaseService = Depends(get_database_dependency),
-    current_user: dict = Depends(get_current_user),
 ):
     """
     Get task distribution breakdown by type and status for visualization.
@@ -447,7 +428,7 @@ async def get_task_distributions(
             raise HTTPException(status_code=400, detail=f"Invalid range '{range}'")
 
         # Calculate time window
-        now = datetime.now(timezone.utc)
+        now = datetime.utcnow()
         if range == "1d":
             start_time = now - timedelta(days=1)
         elif range == "7d":
@@ -460,7 +441,7 @@ async def get_task_distributions(
             start_time = None
 
         # Query task distribution
-        distributions_raw = await db.query(  # type: ignore[attr-defined]
+        distributions_raw = await db.query(
             """
             SELECT task_type, status, COUNT(*) as count
             FROM tasks
@@ -496,7 +477,5 @@ async def get_task_distributions(
 
     except HTTPException:
         raise
-    except AppError:
-        raise
-    except (KeyError, ValueError, TypeError, ZeroDivisionError, AttributeError) as e:
+    except Exception as e:
         raise await handle_route_error(e, "get_task_distributions", logger)

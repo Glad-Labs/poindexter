@@ -126,6 +126,23 @@ def _normalize_seo_keywords_in_task(task: Dict[str, Any]) -> Dict[str, Any]:
     return task
 
 
+def _check_task_ownership(task: dict, current_user: dict) -> None:
+    """
+    Verify the current user owns the task.
+
+    Compares the task's user_id against the authenticated user's id.
+    Raises 403 if the user does not own the task.
+
+    Note: When a role/permission system is added, this should also allow
+    admin users to bypass the ownership check.
+    """
+    task_owner = task.get("user_id")
+    request_user = current_user.get("id")
+    # Allow access if ownership can't be determined (legacy tasks without user_id)
+    if task_owner and request_user and str(task_owner) != str(request_user):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+
 # Configure router with prefix and tags
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
@@ -291,7 +308,7 @@ async def create_task(
         logger.error(f"❌ [UNIFIED_TASK_CREATE] Exception: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail={"message": f"Failed to create task: {str(e)}", "type": "internal_error"},
+            detail={"message": "Failed to create task", "type": "internal_error"},
         )
 
 
@@ -689,7 +706,7 @@ async def list_tasks(
         )
     except Exception as e:
         logger.error(f"Failed to list tasks: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to list tasks: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to list tasks")
 
 
 # ============================================================================
@@ -700,7 +717,6 @@ async def list_tasks(
 @router.get("/metrics", response_model=MetricsResponse, summary="Get task metrics (alias endpoint)")
 async def get_metrics_alias(
     time_range: Optional[str] = Query(None, description="Time range filter (optional)"),
-    current_user: dict = Depends(get_current_user),
 ):
     """
     Get aggregated metrics for all tasks (alias for /metrics/summary).
@@ -735,13 +751,12 @@ async def get_metrics_alias(
         )
     except Exception as e:
         logger.error(f"❌ Failed to fetch metrics: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to fetch metrics: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch metrics")
 
 
 @router.get("/metrics/summary", response_model=MetricsResponse, summary="Get task metrics")
 async def get_metrics(
     time_range: Optional[str] = Query(None, description="Time range filter (optional)"),
-    current_user: dict = Depends(get_current_user),
 ):
     """
     Get aggregated metrics for all tasks.
@@ -775,7 +790,7 @@ async def get_metrics(
         )
     except Exception as e:
         logger.error(f"Failed to fetch metrics: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to fetch metrics: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch metrics")
 
 
 # ============================================================================
@@ -809,6 +824,10 @@ async def get_task(
         if not task:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
+        # Ownership check: only the task owner can access their task
+        if isinstance(task, dict):
+            _check_task_ownership(task, current_user)
+
         # Convert task dict if needed, normalizing seo_keywords
         if isinstance(task, dict):
             task = _normalize_seo_keywords_in_task(task)
@@ -818,7 +837,7 @@ async def get_task(
         raise
     except Exception as e:
         logger.error(f"Failed to fetch task {task_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch task: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch task")
 
 
 @router.put(
@@ -900,6 +919,10 @@ async def update_task_status_enterprise(
                 detail=f"Task not found: {task_id}",
             )
 
+        # Ownership check
+        if isinstance(task, dict):
+            _check_task_ownership(task, current_user)
+
         # Get current and target status
         current_status_str = task.get("status", "pending")
         target_status_str = update_data.status
@@ -910,7 +933,7 @@ async def update_task_status_enterprise(
         except ValueError as e:
             raise HTTPException(
                 status_code=422,
-                detail=f"Invalid status value: {str(e)}",
+                detail="Invalid status value",
             )
 
         # Validate transition
@@ -986,7 +1009,7 @@ async def update_task_status_enterprise(
         logger.error(f"Error updating task status for {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to update task status: {str(e)}",
+            detail="Failed to update task status",
         )
 
 
@@ -1000,6 +1023,7 @@ async def update_task_status_validated(
     task_id: str,
     update_data: TaskStatusUpdateRequest,
     current_user: dict = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
     status_service: EnhancedStatusChangeService = Depends(
         lambda: (
             __import__(
@@ -1043,6 +1067,13 @@ async def update_task_status_validated(
     ```
     """
     try:
+        # Ownership check: verify user owns this task
+        task = await db_service.get_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        if isinstance(task, dict):
+            _check_task_ownership(task, current_user)
+
         # Get user ID
         user_id = current_user.get("email") if current_user else "system"
 
@@ -1068,7 +1099,7 @@ async def update_task_status_validated(
         logger.error(f"Error in enhanced status update for {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to update task status: {str(e)}",
+            detail="Failed to update task status",
         )
 
 
@@ -1116,6 +1147,10 @@ async def get_task_status_info(
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
 
+        # Ownership check
+        if isinstance(task, dict):
+            _check_task_ownership(task, current_user)
+
         # Parse status
         status_str = task.get("status", "pending")
         try:
@@ -1151,7 +1186,7 @@ async def get_task_status_info(
         raise
     except Exception as e:
         logger.error(f"Error fetching status info for {task_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch status info: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch status info")
 
 
 @router.get(
@@ -1205,6 +1240,13 @@ async def get_task_status_history(
     ```
     """
     try:
+        # Ownership check: verify user owns this task before returning history
+        task = await db_service.get_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        if isinstance(task, dict):
+            _check_task_ownership(task, current_user)
+
         # Get status history directly from database service which is more reliable
         # than the enhanced service dependency injection
         from services.tasks_db import TasksDatabase
@@ -1220,7 +1262,7 @@ async def get_task_status_history(
 
     except Exception as e:
         logger.error(f"Error fetching status history for {task_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to fetch status history: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch status history")
 
 
 @router.get(
@@ -1233,6 +1275,7 @@ async def get_task_validation_failures(
     task_id: str,
     limit: int = Query(50, ge=1, le=200, description="Maximum number of failure records"),
     current_user: dict = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
     status_service: EnhancedStatusChangeService = Depends(
         lambda: (
             __import__(
@@ -1274,6 +1317,13 @@ async def get_task_validation_failures(
     ```
     """
     try:
+        # Ownership check: verify user owns this task
+        task = await db_service.get_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        if isinstance(task, dict):
+            _check_task_ownership(task, current_user)
+
         # Get validation failures
         failures = await status_service.get_validation_failures(task_id, limit=limit)
 
@@ -1285,7 +1335,7 @@ async def get_task_validation_failures(
     except Exception as e:
         logger.error(f"Error fetching validation failures for {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Failed to fetch validation failures: {str(e)}"
+            status_code=500, detail="Failed to fetch validation failures"
         )
 
 
@@ -1335,6 +1385,10 @@ async def update_task(
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
 
+        # Ownership check
+        if isinstance(task, dict):
+            _check_task_ownership(task, current_user)
+
         # Prepare update data
         update_dict = {
             "status": update_data.status,
@@ -1374,7 +1428,7 @@ async def update_task(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to update task: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update task")
 
 
 # ============================================================================
@@ -1624,7 +1678,7 @@ async def create_task_from_intent(
 
     except Exception as e:
         logger.error(f"[INTENT] Intent parsing failed: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Intent parsing failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Intent parsing failed")
 
 
 @router.post("/confirm-intent", response_model=TaskConfirmResponse)
@@ -1680,10 +1734,7 @@ async def confirm_and_execute_task(
             }
         )
 
-        logger.info(f"[CONFIRM] Created task {task_id} from intent plan")
-
-        # Queue background execution
-        background_tasks.add_task(execute_task_background, task_id, current_user)
+        logger.info(f"[CONFIRM] Created task {task_id} from intent plan — TaskExecutor will pick up automatically")
 
         return TaskConfirmResponse(
             task_id=task_id,
@@ -1694,7 +1745,7 @@ async def confirm_and_execute_task(
 
     except Exception as e:
         logger.error(f"[CONFIRM] Task confirmation failed: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Task confirmation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Task confirmation failed")
 
 
 # ============================================================================
@@ -1764,6 +1815,10 @@ async def approve_task(
 
         if not task:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+        # Ownership check
+        if isinstance(task, dict):
+            _check_task_ownership(task, current_user)
 
         # Check if task is in a state that can be approved/rejected
         current_status = task.get("status", "unknown")
@@ -1846,7 +1901,7 @@ async def approve_task(
             )
         except Exception as e:
             logger.error(f"Failed to update task status to {new_status}: {str(e)}", exc_info=True)
-            raise HTTPException(status_code=500, detail=f"Failed to update task status: {str(e)}")
+            raise HTTPException(status_code=500, detail="Failed to update task status")
 
         # Auto-publish if approved and auto_publish=True
         if approved and auto_publish:
@@ -2016,12 +2071,12 @@ async def approve_task(
         logger.error(
             f"Data validation error in approve_task: {type(e).__name__}: {str(e)}", exc_info=True
         )
-        raise HTTPException(status_code=400, detail=f"Invalid task data: {str(e)}")
+        raise HTTPException(status_code=400, detail="Invalid task data")
     except Exception as e:
         logger.error(
             f"Failed to approve task {task_id}: {type(e).__name__}: {str(e)}", exc_info=True
         )
-        raise HTTPException(status_code=500, detail=f"Failed to approve task: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to approve task")
 
 
 @router.post(
@@ -2065,6 +2120,10 @@ async def publish_task(
 
         if not task:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+        # Ownership check
+        if isinstance(task, dict):
+            _check_task_ownership(task, current_user)
 
         # Check if task is approved
         current_status = task.get("status", "unknown")
@@ -2174,7 +2233,7 @@ async def publish_task(
         raise
     except Exception as e:
         logger.error(f"Failed to publish task {task_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to publish task: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to publish task")
 
 
 @router.post(
@@ -2218,6 +2277,10 @@ async def reject_task(
         if not task:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
+        # Ownership check
+        if isinstance(task, dict):
+            _check_task_ownership(task, current_user)
+
         # Check if task is in a state that can be rejected
         current_status = task.get("status", "unknown")
         if current_status not in ["completed", "approved", "awaiting_approval"]:
@@ -2248,7 +2311,7 @@ async def reject_task(
         raise
     except Exception as e:
         logger.error(f"Failed to reject task {task_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to reject task: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to reject task")
 
 
 class GenerateImageRequest(BaseModel):
@@ -2300,6 +2363,10 @@ async def generate_task_image(
         task = await db_service.get_task(task_id)
         if not task:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+        # Ownership check
+        if isinstance(task, dict):
+            _check_task_ownership(task, current_user)
 
         # Extract source from request for consistency
         source = request.source
@@ -2524,7 +2591,7 @@ async def generate_task_image(
                 )
                 raise HTTPException(
                     status_code=500,
-                    detail=f"SDXL image generation failed: {str(e)}. Ensure GPU available or use 'pexels' source.",
+                    detail="SDXL image generation failed. Ensure GPU available or use 'pexels' source.",
                 )
             except Exception as e:
                 logger.critical(
@@ -2584,7 +2651,7 @@ async def generate_task_image(
         raise
     except Exception as e:
         logger.error(f"Failed to generate image for task {task_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to generate image: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to generate image")
 
 
 @router.delete(
@@ -2628,6 +2695,10 @@ async def delete_task(
                 detail=f"Task not found: {task_id}",
             )
 
+        # Ownership check
+        if isinstance(task, dict):
+            _check_task_ownership(task, current_user)
+
         # Soft delete: mark task as deleted with timestamp
         logger.info(f"Deleting task {task_id} (user: {current_user.get('id')})")
 
@@ -2648,4 +2719,4 @@ async def delete_task(
         raise
     except Exception as e:
         logger.error(f"Failed to delete task {task_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to delete task: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete task")

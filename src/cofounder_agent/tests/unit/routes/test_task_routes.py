@@ -7,7 +7,7 @@ Tests cover:
 - GET /api/tasks/{id}/status — get_task_status (found, 404)
 - GET /api/tasks/metrics  — get_metrics (static response)
 - POST /api/tasks         — create_task (blog_post happy path, validation error)
-- Helper functions        — _normalize_seo_keywords_in_task, _parse_seo_keywords_for_db
+- Helper function         — _normalize_seo_keywords_in_task
 
 Auth and DB are overridden via FastAPI dependency_overrides so no real I/O occurs.
 """
@@ -15,7 +15,7 @@ Auth and DB are overridden via FastAPI dependency_overrides so no real I/O occur
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 from routes.auth_unified import get_current_user, get_current_user_optional
 from utils.route_utils import get_database_dependency
@@ -23,7 +23,6 @@ from utils.route_utils import get_database_dependency
 # Import helpers under test directly (pure functions, no I/O)
 from routes.task_routes import (
     _normalize_seo_keywords_in_task,
-    _parse_seo_keywords_for_db,
     router,
 )
 
@@ -93,43 +92,6 @@ class TestNormalizeSeoKeywordsInTask:
         task = {"topic": "AI Trends", "status": "pending"}
         result = _normalize_seo_keywords_in_task(task)
         assert result == {"topic": "AI Trends", "status": "pending"}
-
-
-@pytest.mark.unit
-class TestParseSeoKeywordsForDb:
-    def test_none_returns_empty_string(self):
-        assert _parse_seo_keywords_for_db(None) == ""
-
-    def test_empty_string_returns_empty_string(self):
-        assert _parse_seo_keywords_for_db("") == ""
-
-    def test_list_joins_with_commas(self):
-        result = _parse_seo_keywords_for_db(["ai", "ml", "python"])
-        assert result == "ai, ml, python"
-
-    def test_json_array_string_joins_with_commas(self):
-        result = _parse_seo_keywords_for_db('["ai", "ml"]')
-        assert result == "ai, ml"
-
-    def test_csv_string_returned_as_is(self):
-        result = _parse_seo_keywords_for_db("ai, ml, python")
-        assert result == "ai, ml, python"
-
-    def test_invalid_json_array_returned_as_is(self):
-        result = _parse_seo_keywords_for_db("[broken json")
-        assert result == "[broken json"
-
-    def test_non_string_non_list_converts_to_str(self):
-        result = _parse_seo_keywords_for_db(42)
-        assert result == "42"
-
-    def test_list_with_empty_values_skips_blanks(self):
-        # The implementation strips whitespace but empty strings are included as-is
-        # (join skips falsy items: "" is falsy, "  ".strip() is "" which is falsy
-        #  but "  " itself is truthy — so only "" entries are excluded)
-        result = _parse_seo_keywords_for_db(["ai", "", "ml"])
-        assert "ai" in result
-        assert "ml" in result
 
 
 # ---------------------------------------------------------------------------
@@ -268,46 +230,44 @@ class TestGetTask:
 
 @pytest.mark.unit
 class TestGetTaskStatus:
+    # Note: route validates UUID format — non-UUID IDs return 400, not 404
+    def test_returns_400_for_non_uuid_task_id(self):
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=None)
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.get("/api/tasks/not-a-uuid/status")
+        assert resp.status_code == 400
+
     def test_returns_404_when_task_not_found(self):
         mock_db = make_mock_db()
         mock_db.get_task = AsyncMock(return_value=None)
         client = TestClient(_build_app(mock_db))
 
-        resp = client.get("/api/tasks/missing-id/status")
+        # Must be a valid UUID to pass route validation
+        resp = client.get("/api/tasks/550e8400-e29b-41d4-a716-446655440001/status")
         assert resp.status_code == 404
 
     def test_returns_status_fields(self):
+        # TaskStatusInfo response uses current_status (not status) and no progress field
         task_stub = {
-            "id": "task-s1",
+            "id": "550e8400-e29b-41d4-a716-446655440002",
             "task_type": "blog_post",
             "status": "in_progress",
-            "percentage": 65,
-            "error_message": None,
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z",
         }
         mock_db = make_mock_db()
         mock_db.get_task = AsyncMock(return_value=task_stub)
         client = TestClient(_build_app(mock_db))
 
-        resp = client.get("/api/tasks/task-s1/status")
+        resp = client.get("/api/tasks/550e8400-e29b-41d4-a716-446655440002/status")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["status"] == "in_progress"
-        assert data["progress"] == 65
-        assert data["error_message"] is None
-
-    def test_returns_zero_progress_when_percentage_missing(self):
-        task_stub = {
-            "id": "task-s2",
-            "task_type": "blog_post",
-            "status": "pending",
-        }
-        mock_db = make_mock_db()
-        mock_db.get_task = AsyncMock(return_value=task_stub)
-        client = TestClient(_build_app(mock_db))
-
-        resp = client.get("/api/tasks/task-s2/status")
-        assert resp.status_code == 200
-        assert resp.json()["progress"] == 0
+        assert data["current_status"] == "in_progress"
+        assert "task_id" in data
+        assert "is_terminal" in data
+        assert "allowed_transitions" in data
 
 
 # ---------------------------------------------------------------------------
@@ -344,7 +304,7 @@ class TestGetMetrics:
 
 @pytest.mark.unit
 class TestCreateTask:
-    def test_blog_post_creation_returns_202(self):
+    def test_blog_post_creation_returns_201(self):
         mock_db = make_mock_db()
         mock_db.add_task = AsyncMock(return_value="new-blog-task-id")
         client = TestClient(_build_app(mock_db))
@@ -353,7 +313,7 @@ class TestCreateTask:
             "/api/tasks",
             json={"topic": "AI in Healthcare", "task_type": "blog_post"},
         )
-        assert resp.status_code == 202
+        assert resp.status_code == 201
 
     def test_blog_post_creation_returns_task_id(self):
         mock_db = make_mock_db()
@@ -364,12 +324,13 @@ class TestCreateTask:
             "/api/tasks",
             json={"topic": "Machine Learning Trends", "task_type": "blog_post"},
         )
+        assert resp.status_code == 201
         data = resp.json()
         assert data["task_id"] == "returned-task-id"
         assert data["status"] == "pending"
         assert data["task_type"] == "blog_post"
 
-    def test_social_media_creation_returns_202(self):
+    def test_social_media_creation_returns_201(self):
         mock_db = make_mock_db()
         mock_db.add_task = AsyncMock(return_value="social-task-id")
         client = TestClient(_build_app(mock_db))
@@ -382,7 +343,7 @@ class TestCreateTask:
                 "platforms": ["twitter", "linkedin"],
             },
         )
-        assert resp.status_code == 202
+        assert resp.status_code == 201
 
     def test_missing_topic_returns_422(self):
         client = TestClient(_build_app())

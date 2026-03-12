@@ -10,8 +10,7 @@ import os
 import sys
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from routes.auth_unified import get_current_user
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 # Add parent directory to path
@@ -32,11 +31,7 @@ from services.command_queue import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(
-    prefix="/api/commands",
-    tags=["commands"],
-    dependencies=[Depends(get_current_user)],
-)
+router = APIRouter(prefix="/api/commands", tags=["commands"])
 
 
 @router.post("/", response_model=CommandResponse)
@@ -61,9 +56,9 @@ async def dispatch_command(request: CommandRequest) -> Dict[str, Any]:
         logger.info(f"Command dispatched: {cmd.id} to {request.agent_type}")
 
         return cmd.to_dict()
-    except (ValueError, KeyError, TypeError, AttributeError) as e:
-        logger.error(f"Failed to dispatch command: {e}", exc_info=True)
-        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to dispatch command: {e}")
+        raise HTTPException(status_code=400, detail="An internal error occurred")
 
 
 @router.get("/{command_id}", response_model=CommandResponse)

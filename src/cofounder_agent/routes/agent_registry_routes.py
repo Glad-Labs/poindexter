@@ -10,11 +10,9 @@ This follows the same pattern as service_registry_routes.py but for agents inste
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query
 
 from agents.registry import get_agent_registry
-from routes.auth_unified import get_current_user
-from utils.route_utils import get_redis_cache_optional
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +20,11 @@ router = APIRouter(
     prefix="/api/agents",
     tags=["agents"],
     responses={404: {"description": "Agent not found"}},
-    dependencies=[Depends(get_current_user)],
 )
 
 
 @router.get("/registry", response_model=Dict[str, Any], name="Get Agent Registry")
-async def get_agent_registry_endpoint(redis_cache=Depends(get_redis_cache_optional)):
+async def get_agent_registry_endpoint():
     """
     Get the complete agent registry with all agents and their metadata.
 
@@ -71,15 +68,6 @@ async def get_agent_registry_endpoint(redis_cache=Depends(get_redis_cache_option
         }
         ```
     """
-    # Try to get from cache first
-    cache_key = "agent_registry_full"
-
-    if redis_cache:
-        cached_result = await redis_cache.get(cache_key)
-        if cached_result is not None:
-            logger.debug(f"Agent registry cache hit for key: {cache_key}")
-            return cached_result
-
     try:
         registry = get_agent_registry()
 
@@ -103,26 +91,19 @@ async def get_agent_registry_endpoint(redis_cache=Depends(get_redis_cache_option
                     phases[phase] = []
                 phases[phase].append(agent_metadata["name"])
 
-        result = {
+        return {
             "agents": agents,
             "total_agents": len(agents),
             "categories": categories,
             "phases": phases,
         }
-
-        # Cache the result with 300s TTL (5 minutes)
-        if redis_cache:
-            await redis_cache.set(cache_key, result, ttl=300)
-            logger.debug(f"Agent registry cached with TTL 300s")
-
-        return result
-    except (AttributeError, KeyError, TypeError, ValueError) as e:
+    except Exception as e:
         logger.error(f"Error retrieving agent registry: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve agent registry")
 
 
 @router.get("/list", response_model=List[str], name="List Agent Names")
-async def list_agents(request: Request):
+async def list_agents():
     """
     Get a simple list of all available agent names.
 
@@ -149,7 +130,7 @@ async def list_agents(request: Request):
         registry = get_agent_registry()
         agents = registry.list_agents()
         return agents
-    except (AttributeError, KeyError, TypeError, ValueError) as e:
+    except Exception as e:
         logger.error(f"Error listing agents: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to list agents")
 
@@ -198,7 +179,7 @@ async def get_agent_metadata(agent_name: str):
         return agent
     except HTTPException:
         raise
-    except (AttributeError, KeyError, TypeError, ValueError) as e:
+    except Exception as e:
         logger.error(f"Error retrieving agent '{agent_name}': {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve agent")
 
@@ -234,7 +215,7 @@ async def get_agent_phases(agent_name: str):
         return phases
     except HTTPException:
         raise
-    except (AttributeError, KeyError, TypeError, ValueError) as e:
+    except Exception as e:
         logger.error(f"Error retrieving phases for agent '{agent_name}': {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve agent phases")
 
@@ -270,7 +251,7 @@ async def get_agent_capabilities(agent_name: str):
         return capabilities
     except HTTPException:
         raise
-    except (AttributeError, KeyError, TypeError, ValueError) as e:
+    except Exception as e:
         logger.error(f"Error retrieving capabilities for agent '{agent_name}': {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail="Failed to retrieve agent capabilities"
@@ -319,7 +300,7 @@ async def get_agents_by_phase(phase: str):
                 agents.append(metadata)
 
         return agents
-    except (AttributeError, KeyError, TypeError, ValueError) as e:
+    except Exception as e:
         logger.error(f"Error retrieving agents for phase '{phase}': {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail="Failed to retrieve agents for phase"
@@ -367,7 +348,7 @@ async def get_agents_by_capability(capability: str):
                 agents.append(metadata)
 
         return agents
-    except (AttributeError, KeyError, TypeError, ValueError) as e:
+    except Exception as e:
         logger.error(f"Error retrieving agents for capability '{capability}': {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail="Failed to retrieve agents for capability"
@@ -416,7 +397,7 @@ async def get_agents_by_category(category: str):
                 agents.append(metadata)
 
         return agents
-    except (AttributeError, KeyError, TypeError, ValueError) as e:
+    except Exception as e:
         logger.error(f"Error retrieving agents in category '{category}': {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail="Failed to retrieve agents for category"
@@ -475,6 +456,6 @@ async def search_agents(
             all_agents = [a for a in all_agents if a.get("category") == category]
 
         return all_agents
-    except (AttributeError, KeyError, TypeError, ValueError) as e:
+    except Exception as e:
         logger.error(f"Error searching agents: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to search agents")

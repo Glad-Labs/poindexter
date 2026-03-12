@@ -9,55 +9,40 @@ Provides endpoints for:
 """
 
 import logging
+import os
 import time
-from collections import OrderedDict
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-
-from routes.auth_unified import get_current_user
-from utils.rate_limiter import limiter
 
 from schemas.chat_schemas import (
     ChatMessage,
     ChatRequest,
     ChatResponse,
 )
-from services.ai_cache import AIResponseCache
 from services.model_router import ModelRouter, TaskComplexity
 from services.ollama_client import OllamaClient
-from services.prompt_templates import PromptTemplates
-from services.system_knowledge_rag import get_system_knowledge_rag
+from services.gemini_client import GeminiClient
 from services.usage_tracker import get_usage_tracker
 
 logger = logging.getLogger(__name__)
 
 # Initialize services
 ollama_client = OllamaClient()
+gemini_client = GeminiClient()  # Initialize with API key from env
 model_router = ModelRouter(use_ollama=True)  # Prefer free local inference
 usage_tracker = get_usage_tracker()
-system_knowledge_rag = get_system_knowledge_rag()  # System knowledge base
-ai_cache = AIResponseCache()  # Response caching (uses Redis if available)
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
-# Store conversations in memory with bounded size (issue #214).
-# Uses OrderedDict to evict oldest conversations when the cap is reached.
-# In production, migrate to PostgreSQL for persistence across restarts.
-MAX_CONVERSATIONS = 500
-MAX_MESSAGES_PER_CONVERSATION = 100
-conversations: OrderedDict[str, list] = OrderedDict()
+# Store conversations in memory (in production, use database)
+conversations: Dict[str, list] = {}
 
 
 @router.post("", response_model=ChatResponse)
-@limiter.limit("20/minute")
-async def chat(
-    request: Request,
-    body: ChatRequest,
-    current_user: dict = Depends(get_current_user),
-) -> ChatResponse:
+async def chat(request: ChatRequest) -> ChatResponse:
     """
     Process a chat message and return AI response
 
@@ -88,12 +73,12 @@ async def chat(
     try:
         # Log incoming request details
         logger.info(
-            f"[Chat] Incoming request - model: '{body.model}', message length: {len(body.message)}"
+            f"[Chat] Incoming request - model: '{request.model}', message length: {len(request.message)}"
         )
 
         # Parse model specification (e.g., "ollama-mistral" -> provider="ollama", model_name="mistral")
         # Also accept generic names like "ollama", "openai", etc.
-        model_parts = body.model.split("-", 1)  # Split on first dash only
+        model_parts = request.model.split("-", 1)  # Split on first dash only
         provider = model_parts[0]  # First part is the provider (ollama, openai, claude, gemini)
         model_name = model_parts[1] if len(model_parts) > 1 else None  # Rest is specific model name
 
@@ -106,92 +91,27 @@ async def chat(
 
         logger.info(f"[Chat] PARSED MODEL - provider: '{provider}', model_name: '{model_name}'")
 
-        # Initialize conversation if needed; evict oldest if at capacity
-        if body.conversationId not in conversations:
-            if len(conversations) >= MAX_CONVERSATIONS:
-                evicted_id, _ = conversations.popitem(last=False)
-                logger.debug(f"[Chat] Evicted oldest conversation {evicted_id} (capacity: {MAX_CONVERSATIONS})")
-            conversations[body.conversationId] = []
-        else:
-            # Move to end so it's treated as most recently used
-            conversations.move_to_end(body.conversationId)
-
-        # Trim per-conversation message history
-        if len(conversations[body.conversationId]) >= MAX_MESSAGES_PER_CONVERSATION:
-            conversations[body.conversationId] = conversations[body.conversationId][
-                -MAX_MESSAGES_PER_CONVERSATION:
-            ]
+        # Initialize conversation if needed
+        if request.conversationId not in conversations:
+            conversations[request.conversationId] = []
 
         # Add user message to conversation history
-        conversations[body.conversationId].append(
-            {
-                "role": "user",
-                "content": body.message,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
+        conversations[request.conversationId].append(
+            {"role": "user", "content": request.message, "timestamp": datetime.utcnow().isoformat()}
         )
-
-        # Check cache first (before doing any heavy processing)
-        cache_params = {
-            "temperature": body.temperature or 0.7,
-            "max_tokens": body.max_tokens or 500,
-        }
-        cached_response = await ai_cache.get(body.message, body.model, cache_params)
-        if cached_response:
-            logger.info(f"[Chat] Cache hit for query (saved ~{body.max_tokens or 500} tokens)")
-            # Still add to conversation history
-            conversations[body.conversationId].append(
-                {
-                    "role": "assistant",
-                    "content": cached_response,
-                    "model": body.model,
-                    "provider": provider,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "cached": True,
-                }
-            )
-            return ChatResponse(
-                response=cached_response,
-                model=body.model,
-                conversationId=body.conversationId,
-                timestamp=datetime.now(timezone.utc).isoformat(),
-                tokens_used=len(cached_response.split()),
-                cached=True,
-            )
-
-        # Check if this is a system knowledge question
-        is_system_question = PromptTemplates.detect_system_question(body.message)
-        system_context = None
-        system_knowledge_used = False
-
-        if is_system_question:
-            logger.info("[Chat] System question detected, retrieving from knowledge base")
-            knowledge_result = system_knowledge_rag.retrieve(body.message)
-            if knowledge_result and knowledge_result.confidence > 0.5:
-                system_context = knowledge_result.content
-                system_knowledge_used = True
-                logger.info(
-                    f"[Chat] Using system knowledge (confidence: {knowledge_result.confidence:.2f}, "
-                    f"source: {knowledge_result.source_section})"
-                )
-            else:
-                logger.warning(
-                    "[Chat] System question detected but no high-confidence knowledge found"
-                )
 
         # Log the chat request
         logger.info(
             f"[Chat] Processing message with: provider={provider}, model={model_name or 'default'}"
         )
-        logger.debug(f"[Chat] Message: {body.message}")
+        logger.debug(f"[Chat] Message: {request.message}")
 
         # Get actual AI response based on provider selection
         if provider == "ollama":
             # Use local Ollama with specified model or default
             try:
-                # Use specified Ollama model or fall back to lightweight default
-                # Use llama2 instead of mistral - it's more stable with memory constraints
-                actual_ollama_model = model_name or "llama2"
+                # Use specified Ollama model or fall back to environment config or llama2
+                actual_ollama_model = model_name or os.getenv("DEFAULT_OLLAMA_CHAT_MODEL", "llama2")
                 logger.info(f"[Chat] Calling Ollama with model: {actual_ollama_model}")
 
                 # Check if model is available
@@ -204,7 +124,7 @@ async def chat(
                         alternatives = [
                             m
                             for m in available_models
-                            if "llama" in str(m).lower() or len(available_models) == 0
+                            if "llama" in m.lower() or len(available_models) == 0
                         ]
                         if not alternatives:
                             alternatives = available_models[:3] if available_models else ["llama2"]
@@ -214,50 +134,37 @@ async def chat(
                         )
                         response_text = (
                             f"❌ Model '{actual_ollama_model}' not available.\n\n"
-                            f"Available models: {', '.join(str(m) for m in alternatives[:5])}\n\n"
+                            f"Available models: {', '.join(alternatives[:5])}\n\n"
                             f"Pull a model with: ollama pull {alternatives[0] if alternatives else 'llama2'}"
                         )
                         tokens_used = len(response_text.split())
 
                         # Fall through to add response to history and return
-                        conversations[body.conversationId].append(
+                        conversations[request.conversationId].append(
                             {
                                 "role": "assistant",
                                 "content": response_text,
-                                "model": body.model,
+                                "model": request.model,
                                 "provider": provider,
-                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                                "timestamp": datetime.utcnow().isoformat(),
                             }
                         )
 
                         return ChatResponse(
                             response=response_text,
-                            model=body.model,
-                            conversationId=body.conversationId,
-                            timestamp=datetime.now(timezone.utc).isoformat(),
+                            model=request.model,
+                            conversationId=request.conversationId,
+                            timestamp=datetime.utcnow().isoformat(),
                             tokens_used=tokens_used,
                         )
-                except (ConnectionError, TimeoutError, AttributeError, KeyError) as e:
+                except Exception as e:
                     logger.debug(f"[Chat] Could not check available models: {str(e)}")
 
-                # Prepare messages for Ollama chat
-                messages_to_send = conversations[body.conversationId].copy()
-
-                # If we have system knowledge, create a system-aware prompt and prepend it
-                if system_knowledge_used:
-                    system_prompt = PromptTemplates.system_aware_chat_prompt(
-                        system_context=system_context,
-                        user_query=body.message,
-                    )
-                    # Insert system message at the beginning (before user messages)
-                    messages_to_send.insert(0, {"role": "system", "content": system_prompt})
-                    logger.debug("[Chat] System-aware prompt added to conversation")
-
                 chat_result = await ollama_client.chat(
-                    messages=messages_to_send,
+                    messages=conversations[request.conversationId],
                     model=actual_ollama_model,
-                    temperature=body.temperature or 0.7,
-                    max_tokens=body.max_tokens or 500,
+                    temperature=request.temperature or 0.7,
+                    max_tokens=request.max_tokens or 500,
                 )
                 # ollama_client.chat returns {"content": "...", "tokens": ...}
                 response_text = chat_result.get(
@@ -271,14 +178,7 @@ async def chat(
                     )
 
                 tokens_used = chat_result.get("tokens", len(response_text.split()))
-
-                # Cache the response for future similar queries
-                await ai_cache.set(
-                    body.message, body.model, cache_params, response_text
-                )  # 24 hour TTL for system questions
-                logger.debug(f"[Chat] Response cached (TTL: 24h)")
-
-            except (ConnectionError, TimeoutError, ValueError, KeyError, AttributeError, RuntimeError) as e:
+            except Exception as e:
                 logger.error(
                     f"[Chat] Ollama error with model {model_name or 'default'}: {str(e)}",
                     exc_info=True,
@@ -291,56 +191,91 @@ async def chat(
                     f"3. Check http://localhost:11434 is accessible"
                 )
                 tokens_used = 0
+        elif provider == "gemini":
+            # Use Google Gemini with specified model or default
+            try:
+                if not gemini_client.is_configured():
+                    raise Exception(
+                        "Gemini API key not configured. Set GOOGLE_API_KEY or GEMINI_API_KEY environment variable."
+                    )
+
+                # Use specified Gemini model or fall back to latest
+                actual_gemini_model = model_name or "gemini-2.5-flash"
+                logger.info(f"[Chat] Calling Gemini with model: {actual_gemini_model}")
+
+                # Check if model is available
+                available_models = await gemini_client.list_models()
+                if available_models and actual_gemini_model not in available_models:
+                    logger.warning(
+                        f"[Chat] Model '{actual_gemini_model}' not found in available models: {available_models}"
+                    )
+                    actual_gemini_model = available_models[0] if available_models else "gemini-2.5-flash"
+                    logger.info(f"[Chat] Falling back to: {actual_gemini_model}")
+
+                # Call Gemini API
+                response_text = await gemini_client.chat(
+                    messages=conversations[request.conversationId],
+                    model=actual_gemini_model,
+                    temperature=request.temperature or 0.7,
+                    max_tokens=request.max_tokens or 500,
+                )
+
+                # Validate response
+                if not response_text or len(response_text.strip()) < 5:
+                    response_text = f"✓ Processed by {actual_gemini_model} (generated short response)"
+
+                tokens_used = len(response_text.split())
+            except Exception as e:
+                logger.error(
+                    f"[Chat] Gemini error with model {model_name or 'default'}: {str(e)}",
+                    exc_info=True,
+                )
+                response_text = (
+                    f"⚠️ Gemini Error: {str(e)[:100]}\n\n"
+                    f"Troubleshooting:\n"
+                    f"1. Is GOOGLE_API_KEY set? Check: echo $GOOGLE_API_KEY\n"
+                    f"2. Is the API key valid? Check Google Cloud Console\n"
+                    f"3. Does your account have proper quota?"
+                )
+                tokens_used = 0
         else:
-            # Provider exists in the supported list (validated above) but lacks a
-            # real API integration. Return a clear error instead of a fake demo
-            # response that could mislead users (issue #100).
-            logger.error(
-                f"[Chat] Provider '{provider}' model '{model_name or 'default'}' has no "
-                f"real integration. Returning 503 instead of demo response."
+            # For other models (openai, claude), generate placeholder
+            logger.warning(
+                f"[Chat] Provider '{provider}' model '{model_name or 'default'}' not yet implemented, using demo response"
             )
-            raise HTTPException(
-                status_code=503,
-                detail=(
-                    f"Provider '{provider}' is not yet integrated for live chat. "
-                    f"Currently supported providers: ollama. "
-                    f"To use Ollama, ensure it is running (ollama serve) and a model is available (ollama pull llama2)."
-                ),
-            )
+            response_text = generate_demo_response(request.message, request.model)
+            tokens_used = len(response_text.split())
 
         # Add AI response to conversation history
-        conversations[body.conversationId].append(
+        conversations[request.conversationId].append(
             {
                 "role": "assistant",
                 "content": response_text,
-                "model": body.model,  # Keep original full model specification
+                "model": request.model,  # Keep original full model specification
                 "provider": provider,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.utcnow().isoformat(),
             }
         )
 
         return ChatResponse(
             response=response_text,
-            model=body.model,  # Return original full model specification
-            conversationId=body.conversationId,
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            model=request.model,  # Return original full model specification
+            conversationId=request.conversationId,
+            timestamp=datetime.utcnow().isoformat(),
             tokens_used=len(response_text.split()),  # Rough estimate
         )
 
     except ValueError as e:
         logger.error(f"[Chat] Validation error: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail="An internal error occurred")
 
-    except (ConnectionError, TimeoutError, TypeError, AttributeError, RuntimeError) as e:
+    except Exception as e:
         logger.error(f"[Chat] Error processing message: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Chat processing failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Chat processing failed")
 
 
 @router.get("/history/{conversation_id}")
-async def get_conversation(
-    conversation_id: str,
-    current_user: dict = Depends(get_current_user),
-) -> Dict[str, Any]:
+async def get_conversation(conversation_id: str) -> Dict[str, Any]:
     """
     Get the full conversation history for a conversation ID
 
@@ -373,16 +308,13 @@ async def get_conversation(
             "last_message": msgs[-1].get("timestamp") if msgs else None,
         }
 
-    except (KeyError, TypeError, AttributeError) as e:
-        logger.error(f"[Chat] Error retrieving conversation: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.error(f"[Chat] Error retrieving conversation: {str(e)}")
+        raise HTTPException(status_code=500, detail="An internal error occurred")
 
 
 @router.delete("/history/{conversation_id}")
-async def clear_conversation(
-    conversation_id: str,
-    current_user: dict = Depends(get_current_user),
-) -> Dict[str, str]:
+async def clear_conversation(conversation_id: str) -> Dict[str, str]:
     """
     Clear conversation history
 
@@ -403,9 +335,9 @@ async def clear_conversation(
             "message": f"Conversation cleared",
         }
 
-    except (KeyError, TypeError, AttributeError) as e:
-        logger.error(f"[Chat] Error clearing conversation: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.error(f"[Chat] Error clearing conversation: {str(e)}")
+        raise HTTPException(status_code=500, detail="An internal error occurred")
 
 
 @router.get("/models")
@@ -451,7 +383,7 @@ async def get_available_models() -> Dict[str, Any]:
     return {
         "models": models_list,
         "available_count": len(models_list),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.utcnow().isoformat(),
     }
 
 

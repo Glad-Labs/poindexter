@@ -1,5 +1,3 @@
-import asyncio
-import logging as _logging
 import sys
 from pathlib import Path
 
@@ -30,7 +28,7 @@ def _fix_sys_path_for_venv():
             site.main()  # Reinitialize site package processing
     except Exception as e:
         # If sys.path fixing fails, log but continue - fallback imports may still work
-        _logging.warning("Failed to fix sys.path for venv: %s", e)
+        print(f"[WARNING] Failed to fix sys.path for venv: {e}")
 
 
 # Execute the fix immediately when this module is imported
@@ -40,8 +38,8 @@ import hashlib
 import json
 import logging
 import os
-from typing import Optional
 
+import aiofiles
 import httpx
 
 from agents.content_agent.config import config
@@ -51,7 +49,7 @@ from agents.content_agent.utils.helpers import extract_json_from_string
 # With the sys.path fix above, this should work even with poetry run
 genai = None
 try:
-    import google.genai as genai_module  # type: ignore
+    import google.genai as genai_module
 
     genai = genai_module
     logging.info("✅ google.genai successfully imported")
@@ -74,7 +72,7 @@ except (ImportError, ModuleNotFoundError) as e:
 class LLMClient:
     """Client for interacting with a configured Large Language Model."""
 
-    def __init__(self, model_name: Optional[str] = None):
+    def __init__(self, model_name: str = None):
         """
         Initializes the LLM client based on the provider specified in the config.
 
@@ -111,8 +109,8 @@ class LLMClient:
 
                     # Use override model if provided, otherwise use config default
                     model_to_use = model_name if model_name else config.GEMINI_MODEL
-                    self.model = genai.GenerativeModel(model_to_use)  # type: ignore
-                    self.summarizer_model = genai.GenerativeModel(config.SUMMARIZER_MODEL)  # type: ignore
+                    self.model = genai.GenerativeModel(model_to_use)
+                    self.summarizer_model = genai.GenerativeModel(config.SUMMARIZER_MODEL)
                     logging.info(f"✅ Initialized Gemini client with model: {model_to_use}")
 
             if self.provider == "local" or self.provider == "ollama":
@@ -133,16 +131,16 @@ class LLMClient:
         return self.cache_dir / f"{prompt_hash}.{format}.cache"
 
     async def generate_json(self, prompt: str) -> dict:
-        """Generates JSON content using the configured LLM, with caching (async)."""
+        """Generates JSON content using the configured LLM, with async caching."""
         cache_path = self._get_cache_path(prompt, "json")
         if cache_path.exists():
-            logging.info(f"Returning cached JSON response for prompt.")
-            with open(cache_path, "r") as f:
-                return json.load(f)
+            logging.info("Returning cached JSON response for prompt.")
+            async with aiofiles.open(cache_path, "r") as f:
+                content = await f.read()
+                return json.loads(content)
 
         if self.provider == "gemini":
-            loop = asyncio.get_running_loop()
-            result = await loop.run_in_executor(None, self._generate_json_gemini, prompt)
+            result = self._generate_json_gemini(prompt)
         elif self.provider == "local" or self.provider == "ollama":
             result = await self._generate_json_local(prompt)
         else:
@@ -150,14 +148,14 @@ class LLMClient:
             return {}
 
         if result:
-            with open(cache_path, "w") as f:
-                json.dump(result, f)
+            async with aiofiles.open(cache_path, "w") as f:
+                await f.write(json.dumps(result))
 
         return result
 
     def _generate_json_gemini(self, prompt: str) -> dict:
         try:
-            response = self.model.generate_content(prompt)  # type: ignore[union-attr]
+            response = self.model.generate_content(prompt)
             return json.loads(response.text)
         except json.JSONDecodeError:
             logging.error("Failed to decode JSON from Gemini response.")
@@ -166,29 +164,12 @@ class LLMClient:
             logging.error(f"Error generating JSON content from Gemini: {e}")
             return {}
 
-    def _resolve_local_model_name(self) -> str:
-        """Get the model name to use for Ollama API calls.
-
-        Prefers model_name_override (passed at init) over the config default.
-        Strips the 'ollama/' provider prefix if present, since Ollama's own
-        API only wants the bare model name (e.g. 'gpt-oss:20b', not
-        'ollama/gpt-oss:20b').
-        """
-        model = self.model_name_override or config.LOCAL_LLM_MODEL_NAME
-        if model and model.startswith("ollama/"):
-            model = model[len("ollama/") :]
-        return model
-
     async def _generate_json_local(self, prompt: str) -> dict:
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 response = await client.post(
                     f"{config.LOCAL_LLM_API_URL}/api/generate",
-                    json={
-                        "model": self._resolve_local_model_name(),
-                        "prompt": prompt,
-                        "stream": False,
-                    },
+                    json={"model": config.LOCAL_LLM_MODEL_NAME, "prompt": prompt, "stream": False},
                 )
                 response.raise_for_status()
             response_json = response.json()
@@ -221,8 +202,7 @@ class LLMClient:
             return cache_path.read_text(encoding="utf-8")
 
         if self.provider == "gemini":
-            loop = asyncio.get_running_loop()
-            result = await loop.run_in_executor(None, self._generate_text_gemini, prompt)
+            result = self._generate_text_gemini(prompt)
         elif self.provider == "local" or self.provider == "ollama":
             result = await self._generate_text_local(prompt)
         else:
@@ -240,7 +220,7 @@ class LLMClient:
 
     def _generate_text_gemini(self, prompt: str) -> str:
         try:
-            response = self.model.generate_content(prompt)  # type: ignore[union-attr]
+            response = self.model.generate_content(prompt)
             return response.text
         except Exception as e:
             logging.error(f"Error generating text content from Gemini: {e}")
@@ -254,7 +234,7 @@ class LLMClient:
                 response = await client.post(
                     f"{config.LOCAL_LLM_API_URL}/api/generate",
                     json={
-                        "model": self._resolve_local_model_name(),
+                        "model": config.LOCAL_LLM_MODEL_NAME,
                         "prompt": prompt,
                         "stream": False,
                         "num_predict": 4096,  # Allow up to 4096 tokens (blog posts can be long)
@@ -274,8 +254,7 @@ class LLMClient:
             return cache_path.read_text()
 
         if self.provider == "gemini":
-            loop = asyncio.get_running_loop()
-            result = await loop.run_in_executor(None, self._generate_summary_gemini, prompt)
+            result = self._generate_summary_gemini(prompt)
         elif self.provider == "local" or self.provider == "ollama":
             # For local/ollama provider, we can reuse the text generation with the summarizer model if needed
             # or use a specific endpoint if available. For now, we use the main model.
@@ -294,7 +273,7 @@ class LLMClient:
 
     def _generate_summary_gemini(self, prompt: str) -> str:
         try:
-            response = self.summarizer_model.generate_content(prompt)  # type: ignore[union-attr]
+            response = self.summarizer_model.generate_content(prompt)
             return response.text
         except Exception as e:
             logging.error(f"Error generating summary from Gemini: {e}")

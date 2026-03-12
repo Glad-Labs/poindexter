@@ -44,7 +44,7 @@ async def bulk_task_operations(
 
     **Actions:**
     - `pause`: Set status to paused (pause execution)
-    - `resume`: Resume paused tasks (set to pending for queue pickup)
+    - `resume`: Resume paused tasks (set to in_progress)
     - `cancel`: Cancel pending/running tasks (set to cancelled)
     - `reject`: Mark tasks as rejected (set to rejected for audit tracking)
 
@@ -94,14 +94,14 @@ async def bulk_task_operations(
         )
         raise HTTPException(status_code=400, detail=error_response.model_dump())
 
-    if request.action not in ["pause", "resume", "cancel", "reject", "retry"]:
+    if request.action not in ["pause", "resume", "cancel", "reject"]:
         error_response = (
             ErrorResponseBuilder()
             .error_code("VALIDATION_ERROR")
             .message("Invalid action specified")
             .with_field_error(
                 "action",
-                f"Must be one of: pause, resume, cancel, reject, or retry. Got: {request.action}",
+                f"Must be one of: pause, resume, cancel, or reject. Got: {request.action}",
                 "INVALID_CHOICE",
             )
             .build()
@@ -111,10 +111,9 @@ async def bulk_task_operations(
     # Map actions to statuses
     status_map = {
         "pause": "paused",
-        "resume": "pending",
+        "resume": "in_progress",
         "cancel": "cancelled",
         "reject": "rejected",
-        "retry": "pending",
     }
     new_status = status_map[request.action]
 
@@ -147,10 +146,10 @@ async def bulk_task_operations(
         except HTTPException as e:
             errors.append({"task_id": task_id, "error": e.detail})
             failed_count += 1
-        except (ValueError, KeyError, TypeError, AttributeError, ConnectionError) as e:
+        except Exception as e:
             errors.append({"task_id": task_id, "error": str(e)})
             failed_count += 1
-            logger.error(f"Failed to update task {task_id}: {str(e)}", exc_info=True)
+            logger.error(f"Failed to update task {task_id}: {str(e)}")
 
     return BulkTaskResponse(
         message=f"Bulk {request.action} completed: {updated_count} updated, {failed_count} failed",
@@ -191,7 +190,7 @@ async def bulk_create_tasks(
         for i, task in enumerate(request.tasks):
             try:
                 # Create task in database
-                result = await db_service.create_task(  # type: ignore[attr-defined]
+                result = await db_service.create_task(
                     title=task.task_name,
                     description=task.description or task.topic,
                     status="pending",
@@ -212,8 +211,8 @@ async def bulk_create_tasks(
                         "status": "pending",
                     }
                 )
-            except (ValueError, KeyError, TypeError, AttributeError, ConnectionError) as e:
-                logger.error(f"Error creating task {i+1}: {str(e)}", exc_info=True)
+            except Exception as e:
+                logger.error(f"Error creating task {i+1}: {str(e)}")
                 errors.append({"index": i, "task_name": task.task_name, "error": str(e)})
 
         return BulkCreateTasksResponse(
@@ -223,6 +222,6 @@ async def bulk_create_tasks(
             tasks=created_tasks if created_tasks else None,
             errors=errors if errors else None,
         )
-    except (ValueError, KeyError, TypeError, AttributeError, ConnectionError) as e:
-        logger.error(f"Bulk create error: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Bulk create failed: {str(e)}")
+    except Exception as e:
+        logger.error(f"Bulk create error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Bulk create failed")
