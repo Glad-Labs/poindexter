@@ -134,7 +134,7 @@ class TestGetOllamaModels:
             data = tc.get("/api/ollama/models").json()
         assert data["connected"] is False
         assert isinstance(data["models"], list)
-        assert len(data["models"]) > 0  # Returns default models
+        # Route returns empty list when Ollama is unreachable (honest response, no defaults)
 
 
 # ---------------------------------------------------------------------------

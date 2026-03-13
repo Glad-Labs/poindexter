@@ -1027,7 +1027,11 @@ class AIContentGenerator:
                     extras={"attempts": [{"provider": p, "error": e} for p, e in attempts]},
                 )
         except Exception:  # pylint: disable=broad-except
-            pass  # Never let Sentry integration block content delivery
+            # Never let Sentry integration block content delivery, but do log the failure
+            logger.error(
+                "[ai_content_generator] Failed to capture all-models-failed event in Sentry",
+                exc_info=True,
+            )
 
         fallback_content = self._generate_fallback_content(topic, style, tone, tags)
         metrics["model_used"] = "Fallback (no AI models available)"

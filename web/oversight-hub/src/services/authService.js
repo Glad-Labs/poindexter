@@ -93,7 +93,12 @@ const validateTokenWithBackend = async (token) => {
 export const generateGitHubAuthURL = (clientId) => {
   const redirectUri = `${window.location.origin}/auth/callback`;
   const scope = 'user:email';
-  const state = Math.random().toString(36).substring(7); // Simple state for CSRF protection
+  // Use cryptographically secure random values for CSRF state (replaces Math.random())
+  const stateBytes = new Uint8Array(24);
+  crypto.getRandomValues(stateBytes);
+  const state = Array.from(stateBytes, (b) =>
+    b.toString(16).padStart(2, '0')
+  ).join('');
 
   // Store state in session storage for verification
   sessionStorage.setItem('oauth_state', state);

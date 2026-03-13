@@ -63,6 +63,7 @@ async def run_migrations(database_service) -> bool:
 
         applied_count = 0
         skipped_count = 0
+        failed_count = 0
 
         for migration_file in migration_files:
             migration_name = migration_file.name
@@ -102,13 +103,16 @@ async def run_migrations(database_service) -> bool:
                 applied_count += 1
 
             except Exception:
+                # Log and continue — do NOT halt on first failure so subsequent migrations can apply
                 logger.error(f"Migration failed: {migration_name}", exc_info=True)
-                return False
+                failed_count += 1
 
         logger.info(
-            f"Migrations finished — {applied_count} applied, {skipped_count} already up-to-date"
+            f"Migrations finished — {applied_count} applied, "
+            f"{skipped_count} already up-to-date, {failed_count} failed"
         )
-        return True
+        # Return False only if any migration failed, so callers know the DB may be in a partial state
+        return failed_count == 0
 
     except Exception:
         logger.error("Migration runner error", exc_info=True)

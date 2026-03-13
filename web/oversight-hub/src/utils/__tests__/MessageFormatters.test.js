@@ -316,35 +316,49 @@ describe('formatTimestamp', () => {
 // ---------------------------------------------------------------------------
 
 describe('formatRelativeTime', () => {
+  const FIXED_NOW = new Date('2026-01-15T12:00:00.000Z').getTime();
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(FIXED_NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('returns N/A for null', () => {
     expect(formatRelativeTime(null)).toBe('N/A');
   });
 
   it('returns just now for very recent timestamps', () => {
-    const result = formatRelativeTime(new Date().toISOString());
+    // 10 seconds ago
+    const result = formatRelativeTime(
+      new Date(FIXED_NOW - 10_000).toISOString()
+    );
     expect(result).toBe('just now');
   });
 
   it('returns minutes ago for timestamps ~5 min ago', () => {
-    const past = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const past = new Date(FIXED_NOW - 5 * 60 * 1000).toISOString();
     const result = formatRelativeTime(past);
     expect(result).toBe('5m ago');
   });
 
   it('returns hours ago for timestamps ~2h ago', () => {
-    const past = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    const past = new Date(FIXED_NOW - 2 * 60 * 60 * 1000).toISOString();
     const result = formatRelativeTime(past);
     expect(result).toBe('2h ago');
   });
 
   it('returns days ago for timestamps ~3d ago', () => {
-    const past = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+    const past = new Date(FIXED_NOW - 3 * 24 * 60 * 60 * 1000).toISOString();
     const result = formatRelativeTime(past);
     expect(result).toBe('3d ago');
   });
 
   it('returns locale date for timestamps > 7 days old', () => {
-    const past = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+    const past = new Date(FIXED_NOW - 10 * 24 * 60 * 60 * 1000).toISOString();
     const result = formatRelativeTime(past);
     // Should return a date string, not "Xd ago"
     expect(result).not.toMatch(/ago$/);
