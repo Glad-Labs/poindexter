@@ -659,3 +659,64 @@ class TestDeleteTask:
 
         resp = client.delete(f"/api/tasks/{VALID_UUID}")
         assert resp.status_code == 500
+
+
+# ---------------------------------------------------------------------------
+# Error-path coverage — issue #614
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestCreateTaskErrorPaths:
+    """POST /api/tasks DB failure and internal errors → 500, no detail leakage."""
+
+    def test_db_add_task_exception_returns_500(self):
+        """When db.add_task raises, the handler must return 500 (not propagate)."""
+        mock_db = make_mock_db()
+        mock_db.add_task = AsyncMock(side_effect=RuntimeError("DB connection refused"))
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.post(
+            "/api/tasks",
+            json={"topic": "AI Trends in 2025", "task_type": "blog_post"},
+        )
+        assert resp.status_code == 500
+
+    def test_db_error_detail_does_not_leak_db_message(self):
+        """500 response must not expose internal DB error text to the caller."""
+        mock_db = make_mock_db()
+        mock_db.add_task = AsyncMock(side_effect=RuntimeError("PG conn pool exhausted"))
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.post(
+            "/api/tasks",
+            json={"topic": "Safe topic text", "task_type": "blog_post"},
+        )
+        assert "PG conn pool exhausted" not in resp.text
+        assert "PG conn" not in resp.text
+
+
+@pytest.mark.unit
+class TestGetTaskErrorPaths:
+    """GET /api/tasks/{id} DB failure → 500 or 404."""
+
+    def test_db_get_task_exception_returns_500(self):
+        """DB error during get_task must return 500."""
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(side_effect=RuntimeError("timeout"))
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.get(f"/api/tasks/{VALID_UUID}")
+        assert resp.status_code == 500
+
+    def test_get_task_not_owned_returns_404_or_403(self):
+        """Task owned by another user — route must not return 200 to requesting user."""
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(
+            return_value={**_make_task_stub("pending"), "user_id": "different-user-id"}
+        )
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.get(f"/api/tasks/{VALID_UUID}")
+        # Route must return 403 or 404 (never 200) for tasks owned by others
+        assert resp.status_code in (403, 404)
