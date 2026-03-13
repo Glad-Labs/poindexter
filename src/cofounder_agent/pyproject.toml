@@ -65,7 +65,6 @@ accelerate = { version = ">=0.24.0", optional = true }
 structlog = "^24.0"
 pyjwt = "^2.8"
 redis = "^5.0"
-aioredis = "^2.0"
 langgraph = "^1.0.10"
 diffusers = "^0.36.0"
 

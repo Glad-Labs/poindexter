@@ -47,7 +47,7 @@ except ImportError:
     else:
         Redis = None  # type: ignore
     logging.warning(
-        "Redis SDK not installed. Caching disabled. Install with: pip install redis aioredis"
+        "Redis SDK not installed. Caching disabled. Install with: pip install redis"
     )
 
 logger = get_logger(__name__)
