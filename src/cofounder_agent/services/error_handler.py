@@ -397,12 +397,12 @@ def handle_error(
     if log_exception:
         logger.error(f"Unhandled exception: {error}", exc_info=True)
 
-    # Convert to ServiceError
+    # Convert to ServiceError — do not expose raw exception message in HTTP response
     details = context or {}
-    details["original_error"] = str(error)
+    details["error_type"] = type(error).__name__
 
     return ServiceError(
-        message=f"Service error: {str(error)}",
+        message="An internal service error occurred",
         error_code=default_code,
         details=details,
         cause=error,
@@ -652,6 +652,10 @@ def retry_with_backoff(
                     if on_error_callback:
                         on_error_callback(e, attempt + 1, max_retries + 1)
 
+                    # NOTE: sync_wrapper is for non-async functions only. If called from
+                    # an async FastAPI handler, use the async-decorated version instead to
+                    # avoid blocking the event loop. time.sleep is intentional here for
+                    # truly synchronous (non-event-loop) execution contexts.
                     time.sleep(delay)
                     delay = min(delay * exponential_base, max_delay)
 
@@ -688,7 +692,7 @@ class ErrorResponseFormatter:
         """
         error_dict = {
             "error": type(error).__name__,
-            "message": str(error),
+            "message": "An error occurred",
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 

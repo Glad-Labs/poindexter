@@ -39,6 +39,9 @@ class WorkflowExecutor:
     4. Return all results with lineage
     """
 
+    # Class-level cache for imported agent modules — avoids re-importing on every phase
+    _agent_module_cache: Dict[str, Any] = {}
+
     def __init__(
         self, registry: Optional[PhaseRegistry] = None, mapper: Optional[PhaseMapper] = None
     ):
@@ -415,10 +418,16 @@ class WorkflowExecutor:
             module_path, factory_func = agent_mapping[agent_type]
 
             try:
-                # Dynamically import the module
-                import importlib
+                # Check class-level cache before importing
+                if module_path not in WorkflowExecutor._agent_module_cache:
+                    import importlib
 
-                module = importlib.import_module(module_path)
+                    WorkflowExecutor._agent_module_cache[module_path] = (
+                        importlib.import_module(module_path)
+                    )
+                    logger.debug(f"Imported and cached agent module '{module_path}'")
+
+                module = WorkflowExecutor._agent_module_cache[module_path]
 
                 # Get the factory function
                 if hasattr(module, factory_func):

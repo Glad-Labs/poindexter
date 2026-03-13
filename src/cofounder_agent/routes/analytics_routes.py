@@ -28,6 +28,30 @@ logger = get_logger(__name__)
 analytics_router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
 
+def _coerce_cost_value(value: Any) -> float:
+    """Best-effort numeric conversion for heterogeneous cost payloads."""
+    if value is None:
+        return 0.0
+
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    if isinstance(value, dict):
+        # Common nested payload patterns: {"cost": 0.12}, {"total": 0.12}, {"usd": 0.12}
+        for key in ("cost", "total", "usd", "amount", "value"):
+            if key in value:
+                return _coerce_cost_value(value.get(key))
+        return 0.0
+
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return 0.0
+
+    return 0.0
+
+
 class KPIMetrics(BaseModel):
     """KPI data for the executive dashboard"""
 
@@ -248,7 +272,7 @@ async def get_kpi_metrics(
         for task in tasks:
             # Cost calculation (convert Decimal to float if needed)
             cost_raw = task.get("estimated_cost") or task.get("actual_cost") or 0.0
-            cost = float(cost_raw) if cost_raw else 0.0
+            cost = _coerce_cost_value(cost_raw)
             total_cost = float(total_cost) + cost
 
             # Model tracking
@@ -287,7 +311,7 @@ async def get_kpi_metrics(
                 # Extract phase costs from metadata.cost_breakdown if present
                 phase_costs = metadata.get("cost_breakdown", {})
                 for phase, phase_cost in phase_costs.items():
-                    phase_cost = float(phase_cost) if phase_cost else 0.0
+                    phase_cost = _coerce_cost_value(phase_cost)
                     if phase in cost_by_phase:
                         cost_by_phase[phase] = float(cost_by_phase[phase]) + phase_cost
                     else:
@@ -323,7 +347,7 @@ async def get_kpi_metrics(
 
             # Cost per day
             cost = task.get("estimated_cost") or task.get("actual_cost") or 0.0
-            cost = float(cost) if cost else 0.0
+            cost = _coerce_cost_value(cost)
             if day_key not in cost_by_day:
                 cost_by_day[day_key] = {"date": day_key, "cost": 0.0}
             cost_by_day[day_key]["cost"] = float(cost_by_day[day_key]["cost"]) + cost

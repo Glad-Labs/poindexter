@@ -128,7 +128,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 rows = await conn.fetch(sql, *params)
                 return [ModelConverter.to_task_response(row) for row in rows]
         except Exception as e:
-            logger.error(f"Error fetching all tasks: {e}")
+            logger.error(f"Error fetching all tasks: {e}", exc_info=True)
             return []
 
     @log_query_performance(operation="add_task", category="task_write")
@@ -229,7 +229,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 logger.info(f"✅ Task added: {task_id}")
                 return str(result)
         except Exception as e:
-            logger.error(f"❌ Failed to add task: {e}")
+            logger.error(f"❌ Failed to add task: {e}", exc_info=True)
             raise
 
     @log_query_performance(operation="get_task", category="task_retrieval")
@@ -265,7 +265,7 @@ class TasksDatabase(DatabaseServiceMixin):
                     return ModelConverter.to_dict(task_response)
                 return None
         except Exception as e:
-            logger.error(f"❌ Failed to get task {task_id}: {e}")
+            logger.error(f"❌ Failed to get task {task_id}: {e}", exc_info=True)
             return None
 
     @log_query_performance(operation="update_task_status", category="task_write")
@@ -314,7 +314,7 @@ class TasksDatabase(DatabaseServiceMixin):
                     return self._convert_row_to_dict(row)
                 return None
         except Exception as e:
-            logger.error(f"❌ Failed to update task status {task_id}: {e}")
+            logger.error(f"❌ Failed to update task status {task_id}: {e}", exc_info=True)
             return None
 
     @log_query_performance(operation="update_task", category="task_write")
@@ -518,7 +518,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 logger.info(f"✅ Listed {len(tasks)} tasks (total: {total})")
                 return tasks, total
         except Exception as e:
-            logger.error(f"❌ Failed to list tasks: {e}")
+            logger.error(f"❌ Failed to list tasks: {e}", exc_info=True)
             return [], 0
 
     @log_query_performance(operation="get_task_counts", category="task_retrieval")
@@ -548,7 +548,7 @@ class TasksDatabase(DatabaseServiceMixin):
                     approved=counts.get("approved", 0),
                 )
         except Exception as e:
-            logger.error(f"❌ Failed to get task counts: {e}")
+            logger.error(f"❌ Failed to get task counts: {e}", exc_info=True)
             return TaskCountsResponse(
                 total=0,
                 pending=0,
@@ -582,7 +582,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 rows = await conn.fetch(sql, *params)
                 return [ModelConverter.to_task_response(row) for row in rows]
         except Exception as e:
-            logger.error(f"❌ Failed to get queued tasks: {e}")
+            logger.error(f"❌ Failed to get queued tasks: {e}", exc_info=True)
             return []
 
     # Columns needed for analytics KPI calculations — excludes large content/JSONB blobs
@@ -694,7 +694,7 @@ class TasksDatabase(DatabaseServiceMixin):
                     logger.info(f"✅ Task deleted: {task_id}")
                 return deleted
         except Exception as e:
-            logger.error(f"❌ Error deleting task {task_id}: {e}")
+            logger.error(f"❌ Error deleting task {task_id}: {e}", exc_info=True)
             return False
 
     async def get_drafts(self, limit: int = 20, offset: int = 0) -> tuple:
@@ -724,7 +724,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 drafts = [self._convert_row_to_dict(row) for row in rows]
                 return (drafts, total or 0)
         except Exception as e:
-            logger.error(f"❌ Error getting drafts: {e}")
+            logger.error(f"❌ Error getting drafts: {e}", exc_info=True)
             return ([], 0)
 
     async def log_status_change(
@@ -764,7 +764,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 logger.info(f"✅ Status change logged: {task_id} {old_status} → {new_status}")
                 return True
         except Exception as e:
-            logger.error(f"❌ Failed to log status change: {e}")
+            logger.error(f"❌ Failed to log status change: {e}", exc_info=True)
             return False
 
     async def get_status_history(self, task_id: str, limit: int = 100) -> List[Dict[str, Any]]:
@@ -824,7 +824,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 logger.info(f"✅ Retrieved {len(history)} status changes for task {task_id}")
                 return history
         except Exception as e:
-            logger.error(f"❌ Failed to get status history: {e}")
+            logger.error(f"❌ Failed to get status history: {e}", exc_info=True)
             return []
 
     async def get_validation_failures(self, task_id: str, limit: int = 50) -> List[Dict[str, Any]]:
@@ -881,7 +881,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 logger.info(f"✅ Retrieved {len(failures)} validation failures for task {task_id}")
                 return failures
         except Exception as e:
-            logger.error(f"❌ Failed to get validation failures: {e}")
+            logger.error(f"❌ Failed to get validation failures: {e}", exc_info=True)
             return []
 
     @log_query_performance(operation="sweep_stale_tasks", category="task_write")

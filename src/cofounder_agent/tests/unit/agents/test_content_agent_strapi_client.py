@@ -81,12 +81,9 @@ class TestUploadImage:
         mock_resp.raise_for_status = MagicMock()
         mock_resp.json.return_value = [{"id": 42}]
 
-        with patch("agents.content_agent.services.strapi_client.httpx.AsyncClient") as mock_cls:
-            mock_http = AsyncMock()
-            mock_http.post = AsyncMock(return_value=mock_resp)
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_http = AsyncMock()
+        mock_http.post = AsyncMock(return_value=mock_resp)
+        with patch("agents.content_agent.services.strapi_client._get_client", return_value=mock_http):
             result = await client.upload_image(str(img_file), "alt text", "caption")
 
         assert result == 42
@@ -100,12 +97,9 @@ class TestUploadImage:
         img_file = tmp_path / "photo.jpg"
         img_file.write_bytes(b"fake")
 
-        with patch("agents.content_agent.services.strapi_client.httpx.AsyncClient") as mock_cls:
-            mock_http = AsyncMock()
-            mock_http.post = AsyncMock(side_effect=httpx.HTTPError("upload failed"))
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_http = AsyncMock()
+        mock_http.post = AsyncMock(side_effect=httpx.HTTPError("upload failed"))
+        with patch("agents.content_agent.services.strapi_client._get_client", return_value=mock_http):
             result = await client.upload_image(str(img_file), "alt", "cap")
 
         assert result is None
@@ -118,13 +112,10 @@ class TestUploadImage:
         img_file = tmp_path / "photo.jpg"
         img_file.write_bytes(b"fake")
 
-        with patch("agents.content_agent.services.strapi_client.httpx.AsyncClient") as mock_cls, \
+        mock_http = AsyncMock()
+        mock_http.post = AsyncMock(side_effect=httpx.HTTPError("error"))
+        with patch("agents.content_agent.services.strapi_client._get_client", return_value=mock_http), \
              patch("agents.content_agent.services.strapi_client.logger") as mock_logger:
-            mock_http = AsyncMock()
-            mock_http.post = AsyncMock(side_effect=httpx.HTTPError("error"))
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
             await client.upload_image(str(img_file), "alt", "cap")
             mock_logger.error.assert_called()
 
@@ -143,12 +134,9 @@ class TestMakeRequest:
         mock_resp.raise_for_status = MagicMock()
         mock_resp.json.return_value = {"data": [{"id": 1}]}
 
-        with patch("agents.content_agent.services.strapi_client.httpx.AsyncClient") as mock_cls:
-            mock_http = AsyncMock()
-            mock_http.get = AsyncMock(return_value=mock_resp)
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_http = AsyncMock()
+        mock_http.get = AsyncMock(return_value=mock_resp)
+        with patch("agents.content_agent.services.strapi_client._get_client", return_value=mock_http):
             result = await client._make_request("GET", "/posts")
 
         assert result == {"data": [{"id": 1}]}
@@ -159,12 +147,9 @@ class TestMakeRequest:
 
         client = _make_strapi_client()
 
-        with patch("agents.content_agent.services.strapi_client.httpx.AsyncClient") as mock_cls:
-            mock_http = AsyncMock()
-            mock_http.get = AsyncMock(side_effect=httpx.HTTPError("not found"))
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_http = AsyncMock()
+        mock_http.get = AsyncMock(side_effect=httpx.HTTPError("not found"))
+        with patch("agents.content_agent.services.strapi_client._get_client", return_value=mock_http):
             result = await client._make_request("GET", "/posts")
 
         assert result is None
@@ -177,12 +162,9 @@ class TestMakeRequest:
         mock_resp.raise_for_status = MagicMock()
         mock_resp.json.return_value = {"data": {"id": 5}}
 
-        with patch("agents.content_agent.services.strapi_client.httpx.AsyncClient") as mock_cls:
-            mock_http = AsyncMock()
-            mock_http.post = AsyncMock(return_value=mock_resp)
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_http = AsyncMock()
+        mock_http.post = AsyncMock(return_value=mock_resp)
+        with patch("agents.content_agent.services.strapi_client._get_client", return_value=mock_http):
             result = await client._make_request("POST", "/posts", data={"title": "Test"})
 
         assert result == {"data": {"id": 5}}

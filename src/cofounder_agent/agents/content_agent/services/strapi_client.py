@@ -9,6 +9,20 @@ from ..config import config
 from ..utils.data_models import BlogPost, StrapiPost
 
 logger = get_logger(__name__)
+
+# Module-level shared AsyncClient — avoids per-request connection overhead.
+# Timeout matches previous per-request defaults (30 s).
+_shared_client: Optional[httpx.AsyncClient] = None
+
+
+def _get_client() -> httpx.AsyncClient:
+    """Return the module-level shared httpx.AsyncClient, creating it on first call."""
+    global _shared_client
+    if _shared_client is None or _shared_client.is_closed:
+        _shared_client = httpx.AsyncClient(timeout=30)
+    return _shared_client
+
+
 class StrapiClient:
     """
     A client for interacting with the Strapi CMS API.
@@ -53,16 +67,16 @@ class StrapiClient:
             files = {"files": (os.path.basename(file_path), file_content, "image/jpeg")}
             data = {"fileInfo": json.dumps({"alternativeText": alt_text, "caption": caption})}
 
-            async with httpx.AsyncClient(timeout=30) as client:
-                response = await client.post(
-                    upload_url,
-                    headers={"Authorization": f"Bearer {self.api_token}"},
-                    files=files,
-                    data=data,
-                )
-                response.raise_for_status()
-                logger.info(f"Successfully uploaded image {file_path} to Strapi.")
-                return response.json()[0]["id"]
+            client = _get_client()
+            response = await client.post(
+                upload_url,
+                headers={"Authorization": f"Bearer {self.api_token}"},
+                files=files,
+                data=data,
+            )
+            response.raise_for_status()
+            logger.info(f"Successfully uploaded image {file_path} to Strapi.")
+            return response.json()[0]["id"]
         except httpx.HTTPError as e:
             logger.error(f"[upload_image] Error uploading image to Strapi: {e}", exc_info=True)
             return None
@@ -85,22 +99,22 @@ class StrapiClient:
         headers = self.headers.copy()
 
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                if method.upper() == "GET":
-                    response = await client.get(url, headers=headers)
-                elif method.upper() == "POST":
-                    headers["Content-Type"] = "application/json"
-                    response = await client.post(url, headers=headers, json=data if data else None)
-                elif method.upper() == "PUT":
-                    headers["Content-Type"] = "application/json"
-                    response = await client.put(url, headers=headers, json=data if data else None)
-                elif method.upper() == "DELETE":
-                    response = await client.delete(url, headers=headers)
-                else:
-                    raise ValueError(f"Unsupported HTTP method: {method}")
+            client = _get_client()
+            if method.upper() == "GET":
+                response = await client.get(url, headers=headers)
+            elif method.upper() == "POST":
+                headers["Content-Type"] = "application/json"
+                response = await client.post(url, headers=headers, json=data if data else None)
+            elif method.upper() == "PUT":
+                headers["Content-Type"] = "application/json"
+                response = await client.put(url, headers=headers, json=data if data else None)
+            elif method.upper() == "DELETE":
+                response = await client.delete(url, headers=headers)
+            else:
+                raise ValueError(f"Unsupported HTTP method: {method}")
 
-                response.raise_for_status()
-                return response.json()
+            response.raise_for_status()
+            return response.json()
 
         except httpx.HTTPError as e:
             logger.error(f"[make_request] Error making {method} request to {endpoint}: {e}", exc_info=True)
@@ -142,9 +156,9 @@ class StrapiClient:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                response = await client.post(endpoint, headers=self.headers, json=payload)
-                response.raise_for_status()
+            client = _get_client()
+            response = await client.post(endpoint, headers=self.headers, json=payload)
+            response.raise_for_status()
 
             data = response.json()
             post_id = data.get("data", {}).get("id")

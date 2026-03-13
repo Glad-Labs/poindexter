@@ -152,10 +152,12 @@ class TestHandleError:
         result = handle_error(exc, log_exception=False)
         assert isinstance(result, ServiceError)
 
-    def test_original_error_message_is_preserved_in_details(self):
+    def test_error_type_is_preserved_in_details(self):
+        # Error messages are not exposed in HTTP responses to prevent information leakage;
+        # the error type is stored instead.
         exc = ValueError("invalid value")
         result = handle_error(exc, log_exception=False)
-        assert "invalid value" in result.details.get("original_error", "")
+        assert result.details.get("error_type") == "ValueError"
 
     def test_cause_is_linked_to_original(self):
         exc = KeyError("missing_key")

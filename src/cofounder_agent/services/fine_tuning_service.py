@@ -18,6 +18,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+import aiofiles
+
 logger = get_logger(__name__)
 # Fine-tuning APIs require exact model IDs — these are intentional exceptions to the
 # model-router-first principle (fix #157). The model router cannot abstract fine-tune base models
@@ -103,8 +105,8 @@ PARAMETER learning_rate {learning_rate}
             # Use TemporaryDirectory to ensure cleanup even if process fails
             with tempfile.TemporaryDirectory(prefix=f"ollama_finetune_{job_id}") as tmpdir:
                 modelfile_path = os.path.join(tmpdir, "Modelfile")
-                with open(modelfile_path, "w") as f:
-                    f.write(modelfile_content)
+                async with aiofiles.open(modelfile_path, "w") as f:
+                    await f.write(modelfile_content)
 
                 # Start background fine-tuning process
                 # Note: Using ollama run with dataset
@@ -263,11 +265,12 @@ PARAMETER learning_rate {learning_rate}
 
             client = anthropic.Anthropic(api_key=key)
 
-            # Upload training data
-            with open(dataset_path, "rb") as f:
-                file_response = client.beta.files.upload(  # type: ignore[attr-defined]
-                    file=(os.path.basename(dataset_path), f, "text/jsonl")
-                )
+            # Upload training data — read bytes async, then pass to sync client
+            async with aiofiles.open(dataset_path, "rb") as af:
+                file_bytes = await af.read()
+            file_response = client.beta.files.upload(  # type: ignore[attr-defined]
+                file=(os.path.basename(dataset_path), file_bytes, "text/jsonl")
+            )
 
             file_id = file_response.id
 
@@ -335,9 +338,12 @@ PARAMETER learning_rate {learning_rate}
 
             openai.api_key = key
 
-            # Upload training file
-            with open(dataset_path, "rb") as f:
-                file_response = openai.File.create(file=f, purpose="fine-tune")  # type: ignore
+            # Upload training file — read bytes async, then pass to sync client
+            async with aiofiles.open(dataset_path, "rb") as af:
+                file_bytes = await af.read()
+            file_response = openai.File.create(  # type: ignore
+                file=(os.path.basename(dataset_path), file_bytes), purpose="fine-tune"
+            )
 
             file_id = file_response.id
 

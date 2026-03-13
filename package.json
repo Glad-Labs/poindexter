@@ -151,7 +151,9 @@
     "undici": "^6.21.2",
     "esbuild": ">=0.24.4",
     "nth-check": ">=2.1.1",
-    "minimatch": ">=9.0.7"
+    "minimatch": ">=9.0.7",
+    "jsonpath": ">=1.1.2",
+    "underscore": ">=1.13.7"
   },
   "dependencies": {
     "@vercel/speed-insights": "^2.0.0",

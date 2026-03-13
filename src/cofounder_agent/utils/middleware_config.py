@@ -210,6 +210,10 @@ class MiddlewareConfig:
                 response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
                 # Disable legacy XSS auditor; CSP is the modern protection
                 response.headers["X-XSS-Protection"] = "0"
+                # HSTS: enforce HTTPS for 1 year, include subdomains
+                response.headers["Strict-Transport-Security"] = (
+                    "max-age=31536000; includeSubDomains"
+                )
                 return response
 
         app.add_middleware(SecurityHeadersMiddleware)

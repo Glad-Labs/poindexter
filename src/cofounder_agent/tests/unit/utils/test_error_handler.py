@@ -133,10 +133,13 @@ class TestHandleRouteError:
         result = self._run(handle_route_error(exc, "mystery_op", default_detail="Custom fallback"))
         assert "Custom fallback" in result.detail
 
-    def test_value_error_detail_uses_exception_message(self):
+    def test_value_error_detail_uses_generic_message(self):
+        # ValueError messages are not propagated to HTTP responses to prevent
+        # information leakage; a generic operation-scoped message is used instead.
         exc = ValueError("specific validation message")
         result = self._run(handle_route_error(exc, "validate"))
-        assert "specific validation message" in result.detail
+        assert result.status_code == 400
+        assert "validate" in result.detail
 
     def test_custom_logger_is_used(self):
         mock_logger = MagicMock(spec=logging.Logger)
@@ -215,10 +218,12 @@ class TestCreateErrorResponse:
         result = create_error_response(exc, "lookup")
         assert result["error"]["type"] == "KeyError"
 
-    def test_detail_contains_error_message(self):
+    def test_detail_is_generic_message(self):
+        # Error messages are not exposed in HTTP responses to prevent information
+        # leakage; create_error_response returns a generic "An error occurred" detail.
         exc = RuntimeError("something specific")
         result = create_error_response(exc, "run")
-        assert "something specific" in result["error"]["detail"]
+        assert result["error"]["detail"] == "An error occurred"
 
     def test_default_status_code_500(self):
         exc = RuntimeError("oops")

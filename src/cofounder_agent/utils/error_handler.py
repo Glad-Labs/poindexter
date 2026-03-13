@@ -116,15 +116,15 @@ async def handle_route_error(
     if isinstance(error, ValueError):
         status_code = 400
         error_type = "ValidationError"
-        detail = str(error) if str(error) else f"Invalid input for {operation}"
+        detail = default_detail or f"Invalid input for {operation}"
     elif isinstance(error, KeyError):
         status_code = 400
         error_type = "MissingFieldError"
-        detail = f"Missing required field: {str(error)}"
+        detail = default_detail or f"Missing required field for {operation}"
     elif isinstance(error, AttributeError):
         status_code = 400
         error_type = "InvalidAttributeError"
-        detail = f"Invalid attribute: {str(error)}"
+        detail = default_detail or f"Invalid request for {operation}"
     elif isinstance(error, TimeoutError):
         status_code = 504
         error_type = "TimeoutError"
@@ -231,7 +231,7 @@ def create_error_response(
     """
     error_response = ErrorResponse(
         status_code=status_code,
-        detail=str(error) or "An error occurred",
+        detail="An error occurred",
         operation=operation,
         error_type=type(error).__name__,
     )
