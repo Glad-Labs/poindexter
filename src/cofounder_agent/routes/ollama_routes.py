@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -21,7 +21,6 @@ from slowapi.util import get_remote_address
 from routes.auth_unified import get_current_user
 from schemas.ollama_schemas import (
     OllamaHealthResponse,
-    OllamaModelSelection,
     OllamaWarmupResponse,
 )
 
@@ -355,39 +354,29 @@ async def get_ollama_status(
         }
 
 
-@router.post("/select-model")
+@router.get("/select-model")
 async def select_ollama_model(
-    request: OllamaModelSelection,
+    model: str = Query(..., description="Model name to validate and select"),
     _current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """
-    Validate and select an Ollama model for use
+    Validate and select an Ollama model for use.
 
-    **Parameters:**
-    - model: Model name to select (will be validated against available models)
+    This is a read/query operation — it checks model availability without
+    mutating any state, so GET is the correct HTTP method.
+
+    **Query Parameters:**
+    - model: Model name to select (validated against available Ollama models)
+
+    **Example:**
+    GET /api/ollama/select-model?model=mistral:latest
 
     **Returns:**
     - success: Whether model selection was successful
     - selected_model: The selected model name
     - message: Human-readable status message
     - timestamp: When selection was made
-
-    **Example Request:**
-    ```json
-    {"model": "mistral:latest"}
-    ```
-
-    **Example Response:**
-    ```json
-    {
-      "success": true,
-      "selected_model": "mistral:latest",
-      "message": "✅ Model 'mistral:latest' selected successfully",
-      "timestamp": "2025-11-01T12:00:00.000Z"
-    }
-    ```
     """
-    model = request.model
     try:
         async with httpx.AsyncClient(timeout=OLLAMA_TIMEOUT) as client:
             # Get list of available models
