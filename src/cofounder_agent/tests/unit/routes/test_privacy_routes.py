@@ -2,16 +2,16 @@
 Unit tests for routes/privacy_routes.py.
 
 Tests cover:
-- POST /api/privacy/data-requests              — submit_data_request
-- GET  /api/privacy/data-requests/verify/{tok} — verify_data_request
-- GET  /api/privacy/data-requests/{id}         — get_data_request_status
-- GET  /api/privacy/data-requests/{id}/export  — export_data_request
-- POST /api/privacy/data-requests/{id}/process-deletion — process_deletion_request
-- GET  /api/privacy/gdpr-rights               — get_gdpr_rights (static)
-- GET  /api/privacy/data-processing           — get_data_processing_info (static)
+- POST /api/privacy/data-requests              — submit_data_request (public)
+- GET  /api/privacy/data-requests/verify/{tok} — verify_data_request (public)
+- GET  /api/privacy/data-requests/{id}         — get_data_request_status (requires auth)
+- GET  /api/privacy/data-requests/{id}/export  — export_data_request (requires auth)
+- POST /api/privacy/data-requests/{id}/process-deletion — process_deletion_request (requires auth)
+- GET  /api/privacy/gdpr-rights               — get_gdpr_rights (static, public)
+- GET  /api/privacy/data-processing           — get_data_processing_info (static, public)
 
 GDPRService is patched to avoid real DB/email I/O.
-No auth required on any endpoint.
+Admin endpoints require authentication — get_current_user overridden with TEST_USER.
 """
 
 import pytest
@@ -21,10 +21,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from routes.auth_unified import get_current_user
 from utils.route_utils import get_database_dependency
 from routes.privacy_routes import router
 
-from tests.unit.routes.conftest import make_mock_db
+from tests.unit.routes.conftest import make_mock_db, TEST_USER
 
 
 SAMPLE_REQUEST = {
@@ -75,6 +76,8 @@ def _build_app(gdpr_svc=None) -> Tuple[FastAPI, Any]:
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_database_dependency] = lambda: make_mock_db()
+    # Override auth for admin-facing endpoints (get_data_request_status, export, process-deletion)
+    app.dependency_overrides[get_current_user] = lambda: TEST_USER
     return app, gdpr_svc or _make_gdpr_svc()
 
 

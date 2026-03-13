@@ -9,6 +9,7 @@ Provides REST endpoints and WebSocket integration for:
 """
 
 import json
+import os
 from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Optional
@@ -64,7 +65,7 @@ async def initialize_progress(
         return {"success": True, "execution_id": execution_id, "progress": progress.to_dict()}
     except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to initialize progress: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="An internal error occurred")
 
 
 @router.post("/start/{execution_id}")
@@ -91,7 +92,7 @@ async def start_execution(
         return {"success": True, "progress": progress.to_dict()}  # type: ignore[union-attr]
     except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to start execution: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="An internal error occurred")
 
 
 @router.post("/phase/start/{execution_id}")
@@ -127,7 +128,7 @@ async def start_phase(
         return {"success": True, "progress": progress.to_dict()}  # type: ignore[union-attr]
     except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to start phase: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="An internal error occurred")
 
 
 @router.post("/phase/complete/{execution_id}")
@@ -163,7 +164,7 @@ async def complete_phase(
         return {"success": True, "progress": progress.to_dict()}  # type: ignore[union-attr]
     except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to complete phase: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="An internal error occurred")
 
 
 @router.post("/phase/fail/{execution_id}")
@@ -196,7 +197,7 @@ async def fail_phase(
         return {"success": True, "progress": progress.to_dict()}  # type: ignore[union-attr]
     except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to mark phase as failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="An internal error occurred")
 
 
 @router.post("/complete/{execution_id}")
@@ -232,7 +233,7 @@ async def mark_complete(
         return {"success": True, "progress": progress.to_dict()}  # type: ignore[union-attr]
     except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to mark execution as complete: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="An internal error occurred")
 
 
 @router.post("/fail/{execution_id}")
@@ -265,7 +266,7 @@ async def mark_failed(
         return {"success": True, "progress": progress.to_dict()}  # type: ignore[union-attr]
     except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to mark execution as failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="An internal error occurred")
 
 
 @router.get("/status/{execution_id}")
@@ -292,20 +293,42 @@ async def get_progress_status(
         raise
     except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to get progress status: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="An internal error occurred")
 
 
 @router.websocket("/ws/{execution_id}")
-async def websocket_workflow_progress(websocket: WebSocket, execution_id: str):
+async def websocket_workflow_progress(
+    websocket: WebSocket,
+    execution_id: str,
+    token: str = Query(..., description="JWT authentication token"),
+):
     """
     WebSocket endpoint for real-time workflow progress updates.
 
     Clients connect with execution_id and receive progress updates as they occur.
+    Authentication is required via a JWT token query parameter:
+      ws://localhost:8000/api/workflow-progress/ws/{execution_id}?token=<jwt>
 
     Args:
         websocket: WebSocket connection
         execution_id: Execution identifier to track
+        token: JWT token (required; router-level dependencies do not apply to WebSockets)
     """
+    # Validate token before accepting the connection (FastAPI router-level
+    # dependencies are NOT applied to WebSocket handlers — must be explicit here)
+    try:
+        if os.getenv("DEVELOPMENT_MODE", "false").lower() == "true" and token.lower().startswith("dev-"):
+            pass  # Dev bypass
+        else:
+            from services.token_validator import JWTTokenValidator
+            claims = JWTTokenValidator.verify_token(token)
+            if not claims:
+                await websocket.close(code=1008, reason="Invalid or expired token")
+                return
+    except Exception:
+        await websocket.close(code=1008, reason="Invalid or expired token")
+        return
+
     await websocket.accept()
     logger.info(f"WebSocket connected for execution {execution_id}")
 
@@ -388,4 +411,4 @@ async def cleanup_progress(
         return {"success": True, "message": f"Progress cleaned up for {execution_id}"}
     except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to clean up progress: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="An internal error occurred")

@@ -6,10 +6,11 @@ Tests cover:
 - GET /api/posts/{slug}               — get_post_by_slug
 - GET /api/categories                 — list_categories
 - GET /api/tags                       — list_tags
-- GET /api/cms/status                 — cms_status
+- GET /api/cms/status                 — cms_status (requires auth)
 
 All tests patch `routes.cms_routes.get_db_pool` to return an asyncpg-like
 mock pool so no real database connection is required.
+cms_status requires authentication — get_current_user overridden with TEST_USER.
 """
 
 import pytest
@@ -18,20 +19,23 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from routes.auth_unified import get_current_user
 from routes.cms_routes import router
 
 from tests.unit.routes.conftest import TEST_USER
 
 
 # ---------------------------------------------------------------------------
-# Helper: build a minimal app with no auth dependency overrides
-# (CMS routes are mostly public; cms_status has no auth guard at route level)
+# Helper: build a minimal app.
+# cms_status requires auth — get_current_user overridden to return TEST_USER.
 # ---------------------------------------------------------------------------
 
 
 def _build_app():
     app = FastAPI()
     app.include_router(router)
+    # Override auth for protected endpoints (cms_status)
+    app.dependency_overrides[get_current_user] = lambda: TEST_USER
     return app
 
 

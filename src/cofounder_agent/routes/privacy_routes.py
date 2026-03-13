@@ -10,6 +10,7 @@ import asyncpg
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from routes.auth_unified import get_current_user
 from services.database_service import DatabaseService
 from services.gdpr_service import GDPRService
 from utils.route_utils import get_database_dependency
@@ -189,8 +190,9 @@ async def verify_data_request(
 async def get_data_request_status(
     request_id: str,
     db: DatabaseService = Depends(get_database_dependency),
+    current_user: dict = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    """Get GDPR request status and 30-day SLA deadline."""
+    """Get GDPR request status and 30-day SLA deadline. Requires authentication (admin view)."""
     try:
         gdpr_service = GDPRService(db)
         request_data = await gdpr_service.get_request(request_id)
@@ -236,8 +238,9 @@ async def export_data_request(
     request_id: str,
     format: str = Query(default="json", pattern="^(json|csv)$"),
     db: DatabaseService = Depends(get_database_dependency),
+    current_user: dict = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    """Export data for verified access/portability GDPR requests."""
+    """Export data for verified access/portability GDPR requests. Requires authentication (admin)."""
     try:
         gdpr_service = GDPRService(db)
         payload = await gdpr_service.export_user_data(request_id=request_id, fmt=format)
@@ -255,8 +258,9 @@ async def export_data_request(
 async def process_deletion_request(
     request_id: str,
     db: DatabaseService = Depends(get_database_dependency),
+    current_user: dict = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    """Start deletion workflow and enforce 30-day deadline tracking."""
+    """Start deletion workflow and enforce 30-day deadline tracking. Requires authentication (admin)."""
     try:
         gdpr_service = GDPRService(db)
         updated = await gdpr_service.record_deletion_processing(request_id)

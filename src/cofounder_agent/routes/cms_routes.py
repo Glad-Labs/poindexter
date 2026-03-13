@@ -12,7 +12,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from routes.auth_unified import UserProfile, get_current_user
+from routes.auth_unified import UserProfile, get_current_user, get_current_user_optional
 from services.database_service import DatabaseService
 from utils.error_handler import handle_route_error
 from utils.route_utils import get_database_dependency
@@ -207,15 +207,20 @@ async def list_posts(
     skip: int = Query(0, ge=0, le=10000, description="Alias for offset (deprecated — use offset)"),
     limit: int = Query(20, ge=1, le=100),
     published_only: bool = Query(True),
+    current_user: Optional[UserProfile] = Depends(get_current_user_optional),
 ):
     """
     List all blog posts with pagination (ASYNC).
     Returns: {posts: [...], total: N, offset: N, limit: N}
 
     Note: 'skip' is accepted as a deprecated alias for 'offset' for backwards compatibility.
+    Unauthenticated callers always receive published posts only (published_only=True enforced).
     """
     # Resolve offset: explicit 'offset' param wins; fall back to legacy 'skip'
     offset = offset if offset != 0 else skip
+    # Unauthenticated callers cannot request draft/unpublished posts
+    if current_user is None:
+        published_only = True
     try:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
@@ -465,10 +470,10 @@ async def list_tags(
 
 
 @router.get("/api/cms/status")
-async def cms_status():
+async def cms_status(current_user: UserProfile = Depends(get_current_user)):
     """
     Check CMS database status and table existence (ASYNC).
-    Requires: Valid JWT authentication
+    Requires: Valid JWT authentication (admin health endpoint — not public)
     Returns: {status: "healthy"|"error", tables: {...}}
     """
     try:

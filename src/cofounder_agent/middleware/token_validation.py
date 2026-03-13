@@ -47,6 +47,7 @@ class TokenValidationMiddleware(BaseHTTPMiddleware):
         "/api/bulk-tasks",
         "/api/commands",
         "/api/services",
+        "/api/cms",
     }
 
     # Routes that don't require authentication

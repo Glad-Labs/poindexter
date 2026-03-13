@@ -495,7 +495,8 @@ class TaskExecutor:
                 )
             except asyncio.TimeoutError:
                 logger.error(
-                    f"⏱️  [TASK_SINGLE] Task execution timed out after {TASK_TIMEOUT_SECONDS}s: {task_id}"
+                    f"⏱️  [TASK_SINGLE] Task execution timed out after {TASK_TIMEOUT_SECONDS}s: {task_id}",
+                    exc_info=True,
                 )
                 result = {
                     "status": "failed",
