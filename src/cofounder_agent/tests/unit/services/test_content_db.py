@@ -64,8 +64,9 @@ def _make_pool(
     fetchval_values = list(fetchval_results or [])
     conn.fetchval = AsyncMock(side_effect=fetchval_values + [0] * 20)
 
-    # execute must be AsyncMock so it can be awaited (e.g., for tag_ids INSERT)
+    # execute and executemany must be AsyncMock so they can be awaited
     conn.execute = AsyncMock(return_value=None)
+    conn.executemany = AsyncMock(return_value=None)
 
     pool = MagicMock()
 
