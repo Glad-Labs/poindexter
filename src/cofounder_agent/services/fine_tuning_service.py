@@ -18,6 +18,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+import aiofiles
+
 logger = logging.getLogger(__name__)
 
 
@@ -255,18 +257,24 @@ PARAMETER learning_rate {learning_rate}
 
             client = anthropic.Anthropic(api_key=key)
 
-            # Upload training data
-            with open(dataset_path, "rb") as f:
-                file_response = client.beta.files.upload(
-                    file=(os.path.basename(dataset_path), f, "text/jsonl")
+            # Upload training data — read file async, then offload blocking SDK call
+            async with aiofiles.open(dataset_path, "rb") as f:
+                file_bytes = await f.read()
+
+            file_response = await asyncio.to_thread(
+                lambda: client.beta.files.upload(
+                    file=(os.path.basename(dataset_path), file_bytes, "text/jsonl")
                 )
+            )
 
             file_id = file_response.id
 
-            # Start fine-tuning job
-            job_response = client.beta.fine_tuning.jobs.create(
-                model="claude-3-5-sonnet-20241022",
-                training_data={"type": "file", "file_id": file_id},
+            # Start fine-tuning job — offload blocking SDK call to thread
+            job_response = await asyncio.to_thread(
+                lambda: client.beta.fine_tuning.jobs.create(
+                    model="claude-3-5-sonnet-20241022",
+                    training_data={"type": "file", "file_id": file_id},
+                )
             )
 
             job_id_api = job_response.id
@@ -295,7 +303,7 @@ PARAMETER learning_rate {learning_rate}
                 "error": "anthropic not installed. Run: pip install anthropic",
             }
         except Exception as e:
-            logger.error(f"Failed to start Claude fine-tuning: {e}")
+            logger.error(f"[fine_tune_claude] Failed to start Claude fine-tuning: {e}", exc_info=True)
             return {"job_id": job_id, "status": "failed", "error": str(e)}
 
     # ========================================================================
@@ -325,14 +333,20 @@ PARAMETER learning_rate {learning_rate}
 
             openai.api_key = key
 
-            # Upload training file
-            with open(dataset_path, "rb") as f:
-                file_response = openai.File.create(file=f, purpose="fine-tune")
+            # Upload training file — read async, offload blocking SDK call
+            async with aiofiles.open(dataset_path, "rb") as f:
+                file_bytes = await f.read()
+
+            file_response = await asyncio.to_thread(
+                lambda: openai.File.create(file=file_bytes, purpose="fine-tune")
+            )
 
             file_id = file_response.id
 
-            # Start fine-tuning job
-            job_response = openai.FineTuningJob.create(training_file=file_id, model="gpt-4")
+            # Start fine-tuning job — offload blocking SDK call
+            job_response = await asyncio.to_thread(
+                lambda: openai.FineTuningJob.create(training_file=file_id, model="gpt-4")
+            )
 
             job_id_api = job_response.id
             self.jobs[job_id] = {
@@ -361,7 +375,7 @@ PARAMETER learning_rate {learning_rate}
                 "error": "openai not installed. Run: pip install openai",
             }
         except Exception as e:
-            logger.error(f"Failed to start GPT-4 fine-tuning: {e}")
+            logger.error(f"[fine_tune_gpt4] Failed to start GPT-4 fine-tuning: {e}", exc_info=True)
             return {"job_id": job_id, "status": "failed", "error": str(e)}
 
     # ========================================================================
