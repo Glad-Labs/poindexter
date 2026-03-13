@@ -62,6 +62,8 @@ SAMPLE_POST_ROW = {
     "status": "published",
     "content": "# Hello\n\nThis is test content.",
     "author_id": "author-001",
+    # Window function column added by list_posts single-query path
+    "total_count": 1,
 }
 
 SAMPLE_CATEGORY_ROW = {
@@ -131,20 +133,15 @@ def _make_pool_mock(
 @pytest.mark.unit
 class TestListPosts:
     def test_returns_200_with_empty_posts(self):
-        pool, conn = _make_pool_mock(
-            fetchrow_return={"total": 0},
-            fetch_return=[],
-        )
+        # No rows → total_count comes from empty list (total=0 branch)
+        pool, conn = _make_pool_mock(fetch_return=[])
         with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.get("/api/posts")
         assert resp.status_code == 200
 
     def test_response_has_standard_envelope(self):
-        pool, conn = _make_pool_mock(
-            fetchrow_return={"total": 0},
-            fetch_return=[],
-        )
+        pool, conn = _make_pool_mock(fetch_return=[])
         with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/posts").json()
@@ -154,10 +151,7 @@ class TestListPosts:
         assert "limit" in data
 
     def test_default_pagination_values(self):
-        pool, conn = _make_pool_mock(
-            fetchrow_return={"total": 0},
-            fetch_return=[],
-        )
+        pool, conn = _make_pool_mock(fetch_return=[])
         with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/posts").json()
@@ -165,10 +159,7 @@ class TestListPosts:
         assert data["limit"] == 20
 
     def test_custom_offset_and_limit(self):
-        pool, conn = _make_pool_mock(
-            fetchrow_return={"total": 50},
-            fetch_return=[],
-        )
+        pool, conn = _make_pool_mock(fetch_return=[])
         with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/posts?offset=10&limit=5").json()
@@ -177,14 +168,30 @@ class TestListPosts:
 
     def test_deprecated_skip_falls_back_to_offset(self):
         """The skip param should be accepted as alias for offset."""
-        pool, conn = _make_pool_mock(
-            fetchrow_return={"total": 0},
-            fetch_return=[],
-        )
+        pool, conn = _make_pool_mock(fetch_return=[])
         with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             data = client.get("/api/posts?skip=5").json()
         assert data["offset"] == 5
+
+    def test_total_count_from_window_function(self):
+        """total in response comes from total_count window column, not a separate fetchrow."""
+        row = {**SAMPLE_POST_ROW, "total_count": 42}
+        pool, conn = _make_pool_mock(fetch_return=[row])
+        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+            client = TestClient(_build_app())
+            data = client.get("/api/posts").json()
+        assert data["total"] == 42
+
+    def test_total_count_not_in_post_fields(self):
+        """The internal total_count window column must be stripped from the post objects."""
+        row = {**SAMPLE_POST_ROW, "total_count": 7}
+        pool, conn = _make_pool_mock(fetch_return=[row])
+        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+            client = TestClient(_build_app())
+            data = client.get("/api/posts").json()
+        assert len(data["posts"]) == 1
+        assert "total_count" not in data["posts"][0]
 
     def test_db_error_returns_500(self):
         with patch(
