@@ -320,9 +320,12 @@ class TestCachedResponse:
     def test_expired_entry_returns_none(self):
         cache = CachedResponse(max_age=0)
         cache.set("k", "value")
-        import time
-        time.sleep(0.01)
-        # max_age=0 means everything is immediately expired
+        # Back-date the cache entry's timestamp so age > 0 without real sleep.
+        # cache stores (value, timestamp) tuples; move the timestamp 1 second into
+        # the past so the expiry condition (age > max_age=0) is deterministically met.
+        from datetime import timezone
+        value, _ts = cache.cache["k"]
+        cache.cache["k"] = (value, datetime.now(timezone.utc) - timedelta(seconds=1))
         assert cache.get("k") is None
 
     def test_clear_removes_all_entries(self):

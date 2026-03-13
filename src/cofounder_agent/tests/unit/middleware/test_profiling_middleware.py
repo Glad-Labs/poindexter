@@ -29,9 +29,10 @@ class TestProfileData:
 
     def test_complete_measures_duration(self):
         p = ProfileData("/api/tasks", "GET")
-        time.sleep(0.01)  # 10ms
+        # Back-date start_time instead of sleeping so the test is deterministic.
+        p.start_time = time.time() - 0.100  # 100ms in the past
         p.complete(200)
-        assert p.duration_ms >= 5  # at least 5ms
+        assert p.duration_ms >= 50  # at least 50ms
 
     def test_complete_marks_slow_when_exceeds_threshold(self):
         p = ProfileData("/api/tasks", "GET")
