@@ -16,6 +16,7 @@ Routes:
 - GET  /api/auth/me             -> Get current user profile
 """
 
+import hashlib
 import logging
 import os
 import secrets
@@ -26,7 +27,7 @@ import httpx
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-import hashlib
+from utils.rate_limiter import limiter
 
 from config import get_config
 from schemas.auth_schemas import (
@@ -356,7 +357,8 @@ async def get_current_user_optional(request: Request) -> Optional[Dict[str, Any]
 
 
 @router.post("/github/callback")
-async def github_callback(request_data: GitHubCallbackRequest) -> Dict[str, Any]:
+@limiter.limit("10/minute")
+async def github_callback(request: Request, request_data: GitHubCallbackRequest) -> Dict[str, Any]:
     """
     Handle GitHub OAuth callback.
 
@@ -437,7 +439,8 @@ async def github_callback(request_data: GitHubCallbackRequest) -> Dict[str, Any]
 
 
 @router.post("/github-callback")
-async def github_callback_fallback(request_data: GitHubCallbackRequest) -> Dict[str, Any]:
+@limiter.limit("10/minute")
+async def github_callback_fallback(request: Request, request_data: GitHubCallbackRequest) -> Dict[str, Any]:
     """
     Fallback endpoint for GitHub OAuth callback (old endpoint path).
 
@@ -450,12 +453,14 @@ async def github_callback_fallback(request_data: GitHubCallbackRequest) -> Dict[
     logger.warning(
         "Deprecated endpoint /api/auth/github-callback called. Use /api/auth/github/callback instead."
     )
-    # Forward to the main handler
-    return await github_callback(request_data)
+    # Forward to the main handler (pass request so rate limiter context is preserved)
+    return await github_callback(request, request_data)
 
 
 @router.post("/logout", response_model=LogoutResponse)
+@limiter.limit("30/minute")
 async def unified_logout(
+    request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> LogoutResponse:
     """
