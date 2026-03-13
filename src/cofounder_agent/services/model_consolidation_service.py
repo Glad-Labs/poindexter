@@ -32,12 +32,13 @@ import asyncio
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
 import structlog
 
+from .error_handler import ServiceError
 from .provider_checker import ProviderChecker
 
 logger = structlog.get_logger(__name__)
@@ -71,7 +72,8 @@ class ProviderStatus:
     @property
     def cache_expired(self) -> bool:
         """Check if cache should be refreshed (5 min TTL)"""
-        return datetime.utcnow() - self.last_checked > timedelta(minutes=5)
+        now = datetime.now(timezone.utc) if self.last_checked.tzinfo else datetime.utcnow()
+        return now - self.last_checked > timedelta(minutes=5)
 
 
 @dataclass
@@ -694,7 +696,7 @@ class ModelConsolidationService:
         self.metrics["failed_requests"] += 1
         error_msg = f"All model providers failed. Last error: {str(last_error)}"
         logger.error("🚨 All providers exhausted", error=error_msg)
-        raise Exception(error_msg)
+        raise ServiceError(error_msg)
 
     def get_status(self) -> Dict[str, Any]:
         """Get status of all providers"""

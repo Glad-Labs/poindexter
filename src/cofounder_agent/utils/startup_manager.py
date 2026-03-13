@@ -35,7 +35,30 @@ class StartupManager:
         self.training_data_service = None
         self.fine_tuning_service = None
         self.custom_workflows_service = None
+        self.template_execution_service = None
         self.startup_error = None
+
+    def _validate_secrets(self) -> None:
+        """Validate that default secret values are not used in production."""
+        _DEFAULTS = {
+            "JWT_SECRET_KEY": "development-secret-key-change-in-production",
+            "JWT_SECRET": "development-secret-key-change-in-production",
+            "SECRET_KEY": "your-secret-key-here",
+            "REVALIDATE_SECRET": "dev-secret-key",
+        }
+        env = os.getenv("ENVIRONMENT", "production")
+        is_production = env == "production"
+        violations = []
+        for var, default_value in _DEFAULTS.items():
+            actual = os.getenv(var, "")
+            if actual and actual == default_value:
+                violations.append(var)
+        if violations and is_production:
+            raise RuntimeError(
+                f"Refusing to start in production with default secret values: {', '.join(violations)}"
+            )
+        if violations:
+            logger.warning(f"[startup] Default secret values detected (non-production): {', '.join(violations)}")
 
     async def initialize_all_services(self) -> Dict[str, Any]:
         """
@@ -55,6 +78,9 @@ class StartupManager:
         try:
             logger.info("🚀 Starting Glad Labs AI Co-Founder application...")
             logger.info(f"  Environment: {os.getenv('ENVIRONMENT', 'production')}")
+
+            # Step 0: Validate secrets before any heavy initialization
+            self._validate_secrets()
 
             # Step 1: Initialize PostgreSQL database (MANDATORY)
             await self._initialize_database()
@@ -92,7 +118,10 @@ class StartupManager:
             # Step 12: Initialize custom workflows service
             await self._initialize_custom_workflows_service()
 
-            # Step 13: Warmup SDXL models (async, non-blocking)
+            # Step 13: Initialize template execution service
+            await self._initialize_template_execution_service()
+
+            # Step 14: Warmup SDXL models (async, non-blocking)
             # Only if GPU is available - this prevents timeout issues when users first request SDXL
             try:
                 await self._warmup_sdxl_models()
@@ -116,6 +145,7 @@ class StartupManager:
                 "training_data_service": self.training_data_service,
                 "fine_tuning_service": self.fine_tuning_service,
                 "custom_workflows_service": self.custom_workflows_service,
+                "template_execution_service": self.template_execution_service,
                 "startup_error": self.startup_error,
             }
 
@@ -397,6 +427,24 @@ class StartupManager:
                 f"   Custom workflows service initialization failed (non-critical): {type(e).__name__}: {e}"
             )
             self.custom_workflows_service = None
+
+    async def _initialize_template_execution_service(self) -> None:
+        """Initialize template execution service for workflow templates."""
+        logger.info("  🔧 Initializing template execution service...")
+        try:
+            from services.template_execution_service import TemplateExecutionService
+
+            if self.custom_workflows_service:
+                self.template_execution_service = TemplateExecutionService(self.custom_workflows_service)
+                logger.info("   Template execution service initialized")
+            else:
+                logger.warning("   Template execution service not available - custom workflows service required")
+                self.template_execution_service = None
+        except Exception as e:
+            logger.warning(
+                f"   Template execution service initialization failed (non-critical): {type(e).__name__}: {e}"
+            )
+            self.template_execution_service = None
 
     async def _warmup_sdxl_models(self) -> None:
         """Warmup SDXL models to avoid timeout on first request"""

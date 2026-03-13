@@ -67,14 +67,13 @@ class MarketService:
             Dictionary with trend analysis and insights
         """
         try:
-            from agents.market_insight_agent.agents.market_insight_agent import MarketInsightAgent
+            from agents.market_insight_agent.market_insight_agent import MarketInsightAgent
+            from agents.content_agent.services.llm_client import LLMClient
 
-            market_agent = MarketInsightAgent()
-            analysis = await market_agent.run(
-                topic=topic,
-                industry=industry,
-                timeframe_months=timeframe_months,
-            )
+            llm_client = LLMClient()
+            market_agent = MarketInsightAgent(llm_client=llm_client)
+            query = topic if not industry else f"{topic} in {industry}"
+            analysis = await market_agent.suggest_topics(base_query=query)
 
             logger.info(f"Market trend analysis completed for topic: {topic}")
 
@@ -94,6 +93,7 @@ class MarketService:
                 "phase": "market_trend_analysis",
                 "error": str(e),
                 "topic": topic,
+                "industry": industry,
             }
 
     async def research_competitors(
@@ -113,42 +113,14 @@ class MarketService:
         Returns:
             Dictionary with competitor analysis
         """
-        try:
-            competitors = []
-
-            # Placeholder competitor research structure
-            for i in range(min(top_n, 5)):
-                competitors.append(
-                    {
-                        "rank": i + 1,
-                        "name": f"Competitor {i + 1}",
-                        "market_share": 0.25 - (i * 0.05),
-                        "key_strengths": [
-                            "Feature A",
-                            "Feature B",
-                        ],
-                        "weaknesses": ["Area X", "Area Y"],
-                        "recent_moves": ["Action 1", "Action 2"],
-                    }
-                )
-
-            logger.info(f"Competitor research completed for segment: {market_segment}")
-
-            return {
-                "analysis_type": "competitor_research",
-                "market_segment": market_segment,
-                "competitors_analyzed": len(competitors),
-                "competitors": competitors,
-                "timestamp": datetime.utcnow().isoformat(),
-            }
-
-        except Exception as e:
-            logger.error(f"Competitor research failed: {e}", exc_info=True)
-            return {
-                "error": str(e),
-                "analysis_type": "competitor_research",
-                "market_segment": market_segment,
-            }
+        return {
+            "analysis_type": "competitor_research",
+            "market_segment": market_segment,
+            "competitors_analyzed": 0,
+            "competitors": [],
+            "data_source": "unavailable",
+            "timestamp": datetime.utcnow().isoformat(),
+        }
 
     async def identify_opportunities(
         self,
@@ -230,43 +202,17 @@ class MarketService:
         Returns:
             Dictionary with sentiment analysis results
         """
-        try:
-            sources = sources or ["social_media", "reviews"]
+        sources = sources or ["social_media", "reviews"]
 
-            # Mock sentiment analysis
-            sentiment_distribution = {
-                "positive": 0.65,
-                "neutral": 0.25,
-                "negative": 0.10,
-            }
-
-            key_themes = [
-                {"theme": "Value for money", "sentiment": 0.7},
-                {"theme": "Customer support", "sentiment": 0.6},
-                {"theme": "Product quality", "sentiment": 0.8},
-            ]
-
-            logger.info(f"Customer sentiment analysis completed for topic: {topic}")
-
-            return {
-                "analysis_type": "sentiment_analysis",
-                "topic": topic,
-                "sources": sources,
-                "overall_sentiment": "positive",
-                "sentiment_score": 0.65,
-                "sentiment_distribution": sentiment_distribution,
-                "key_themes": key_themes,
-                "total_mentions": 2500,
-                "timestamp": datetime.utcnow().isoformat(),
-            }
-
-        except Exception as e:
-            logger.error(f"Customer sentiment analysis failed: {e}", exc_info=True)
-            return {
-                "error": str(e),
-                "analysis_type": "sentiment_analysis",
-                "topic": topic,
-            }
+        return {
+            "analysis_type": "sentiment_analysis",
+            "topic": topic,
+            "sources": sources,
+            "overall_sentiment": "unavailable",
+            "sentiment_score": None,
+            "total_mentions": 0,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
 
     def get_service_metadata(self) -> Dict[str, Any]:
         """Get service metadata for discovery"""

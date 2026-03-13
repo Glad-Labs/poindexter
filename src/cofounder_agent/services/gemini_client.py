@@ -11,6 +11,12 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+try:
+    import google.generativeai  # noqa: F401
+    _GENAI_AVAILABLE = True
+except ImportError:
+    _GENAI_AVAILABLE = False
+
 
 class GeminiClient:
     """
@@ -81,33 +87,30 @@ class GeminiClient:
             Exception: If generation fails
         """
         if not self.is_configured():
-            raise Exception("Gemini API key not configured")
+            raise ValueError("GOOGLE_API_KEY not configured for Gemini")
 
-        try:
-            # Use google.generativeai SDK (stable, widely supported)
-            import google.generativeai as genai
-
-            genai.configure(api_key=self.api_key)
-            gemini_model = genai.GenerativeModel(model)
-
-            # Generate content using stable SDK
-            response = await gemini_model.generate_content_async(
-                prompt,
-                generation_config=genai.types.GenerationConfig(
-                    max_output_tokens=max_tokens, temperature=temperature, **kwargs
-                ),
-            )
-
-            return response.text
-
-        except ImportError:
-            raise Exception(
-                "google-generativeai library not installed. "
+        if not _GENAI_AVAILABLE:
+            raise ImportError(
+                "google-genai library not installed. "
                 "Install with: pip install google-generativeai"
             )
+
+        try:
+            import google.genai as genai
+
+            client = genai.Client(api_key=self.api_key)
+            response = await client.aio.models.generate_content(
+                model=model,
+                contents=prompt,
+            )
+
+            return response.text or ""
+
+        except (ValueError, ImportError):
+            raise
         except Exception as e:
             logger.error(f"Gemini generation failed: {e}")
-            raise Exception(f"Gemini generation error: {str(e)}")
+            raise RuntimeError(f"Gemini generation error: {str(e)}")
 
     async def chat(
         self,
@@ -131,41 +134,38 @@ class GeminiClient:
             Generated response text
         """
         if not self.is_configured():
-            raise Exception("Gemini API key not configured")
+            raise ValueError("GOOGLE_API_KEY not configured for Gemini")
 
-        try:
-            # Use google.generativeai SDK (stable, widely supported)
-            import google.generativeai as genai
-
-            genai.configure(api_key=self.api_key)
-            gemini_model = genai.GenerativeModel(model)
-
-            # Start chat session
-            chat = gemini_model.start_chat(history=[])
-
-            # Add previous messages to context
-            for msg in messages[:-1]:
-                if msg["role"] == "user":
-                    chat.send_message(msg["content"])
-
-            # Send final message and get response
-            response = await chat.send_message_async(
-                messages[-1]["content"],
-                generation_config=genai.types.GenerationConfig(
-                    max_output_tokens=max_tokens, temperature=temperature, **kwargs
-                ),
-            )
-
-            return response.text
-
-        except ImportError:
-            raise Exception(
-                "google-generativeai library not installed. "
+        if not _GENAI_AVAILABLE:
+            raise ImportError(
+                "google-genai library not installed. "
                 "Install with: pip install google-generativeai"
             )
+
+        try:
+            import google.genai as genai
+            import google.genai.types as genai_types
+
+            client = genai.Client(api_key=self.api_key)
+            contents = [
+                genai_types.Content(
+                    role=msg["role"],
+                    parts=[genai_types.Part.from_text(text=msg["content"])],
+                )
+                for msg in messages
+            ]
+            response = await client.aio.models.generate_content(
+                model=model,
+                contents=contents,
+            )
+
+            return response.text or ""
+
+        except (ValueError, ImportError):
+            raise
         except Exception as e:
             logger.error(f"Gemini chat failed: {e}")
-            raise Exception(f"Gemini chat error: {str(e)}")
+            raise RuntimeError(f"Gemini chat error: {str(e)}")
 
     async def check_health(self) -> Dict[str, Any]:
         """

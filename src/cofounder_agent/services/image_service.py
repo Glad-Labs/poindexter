@@ -149,6 +149,7 @@ class ImageService:
                 "Pexels API key not configured - featured image search will be unavailable"
             )
 
+        self.pexels_available = bool(self.pexels_api_key)
         self.pexels_base_url = "https://api.pexels.com/v1"
         self.pexels_headers = {"Authorization": self.pexels_api_key} if self.pexels_api_key else {}
 

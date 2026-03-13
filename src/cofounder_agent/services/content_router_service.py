@@ -149,7 +149,7 @@ class ContentTaskStore:
     async def update_task(self, task_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Update task data in persistent storage (async, non-blocking)"""
         if not self.database_service:
-            return None
+            return False
 
         # Handle metadata updates by converting to JSON
         import json
@@ -180,7 +180,7 @@ class ContentTaskStore:
     async def get_drafts(self, limit: int = 20, offset: int = 0) -> tuple:
         """Get list of drafts from persistent storage (async, non-blocking)"""
         if not self.database_service:
-            return ([], 0)
+            return []
         return await self.database_service.get_drafts(limit=limit, offset=offset)
 
 

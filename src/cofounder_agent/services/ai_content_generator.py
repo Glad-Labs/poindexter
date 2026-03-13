@@ -115,13 +115,17 @@ class AIContentGenerator:
 
         # 1. Check length
         word_count = len(content.split())
-        min_words = int(target_length * 0.7)
-        max_words = int(target_length * 1.3)
+        critical_min = int(target_length * 0.7)
+        soft_min = int(target_length * 0.9)
+        soft_max = int(target_length * 1.1)
 
-        if word_count < min_words:
+        if word_count < critical_min:
+            issues.append(f"CRITICAL: Content too short: {word_count} words (target: {target_length})")
+            score -= 3.0
+        elif word_count < soft_min:
             issues.append(f"Content too short: {word_count} words (target: {target_length})")
             score -= 2.0
-        elif word_count > max_words:
+        elif word_count > soft_max:
             issues.append(f"Content too long: {word_count} words (target: {target_length})")
             score -= 1.0
 

@@ -32,11 +32,14 @@ Architecture:
 import asyncio
 import json
 import logging
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, Optional
+
+from services.websocket_event_broadcaster import emit_task_progress
 
 logger = logging.getLogger(__name__)
 
@@ -524,25 +527,56 @@ class UnifiedOrchestrator:
             )
 
     def _extract_content_params(self, text: str) -> Dict[str, Any]:
-        """Extract content parameters from natural language"""
-        # Simple extraction - can be enhanced with LLM
-        params = {"topic": text}
+        """Extract content parameters from natural language or structured format."""
+        params: Dict[str, Any] = {}
 
-        if "professional" in text.lower():
-            params["style"] = "professional"
-        elif "casual" in text.lower():
-            params["style"] = "casual"
-        elif "technical" in text.lower():
-            params["style"] = "technical"
-        else:
-            params["style"] = "professional"
+        # Try structured format first: "Key: value\n..."
+        _FIELD_MAP = {
+            "topic": "topic",
+            "primary keyword": "primary_keyword",
+            "target audience": "target_audience",
+            "category": "category",
+            "style": "style",
+            "tone": "tone",
+        }
+        structured = False
+        for line in text.splitlines():
+            for label, key in _FIELD_MAP.items():
+                m = re.match(rf"^{label}\s*:\s*(.+)$", line, re.IGNORECASE)
+                if m:
+                    params[key] = m.group(1).strip()
+                    structured = True
+            # Target Length: 1500 words
+            m = re.match(r"^target length\s*:\s*(\d+)", line, re.IGNORECASE)
+            if m:
+                params["target_length"] = int(m.group(1))
+                structured = True
 
-        if "educational" in text.lower():
-            params["tone"] = "educational"
-        elif "entertaining" in text.lower():
-            params["tone"] = "entertaining"
-        else:
-            params["tone"] = "informative"
+        if not structured:
+            # Unstructured fallback — use full text as topic
+            params["topic"] = text
+
+        # Style detection for unstructured text
+        if "style" not in params:
+            lower = text.lower()
+            if "professional" in lower:
+                params["style"] = "professional"
+            elif "casual" in lower:
+                params["style"] = "casual"
+            elif "technical" in lower:
+                params["style"] = "technical"
+            else:
+                params["style"] = "professional"
+
+        # Tone detection
+        if "tone" not in params:
+            lower = text.lower()
+            if "educational" in lower:
+                params["tone"] = "educational"
+            elif "entertaining" in lower:
+                params["tone"] = "entertaining"
+            else:
+                params["tone"] = "informative"
 
         return params
 
@@ -652,11 +686,19 @@ class UnifiedOrchestrator:
             # STAGE 1: RESEARCH (10% → 25%)
             # ====================================================================
             logger.info("[%s] STAGE 1: Research", request.request_id)
+            try:
+                await emit_task_progress(task_id, stage="research", progress=10, status="running")
+            except Exception:
+                pass
 
             # Instantiate research agent (with registry fallback support)
             research_agent = self._get_agent_instance("research_agent")
-            research_data = await research_agent.run(topic, keywords[:5])
-            research_text = research_data if isinstance(research_data, str) else str(research_data)
+            try:
+                research_data = await research_agent.run(topic, keywords[:5])
+                research_text = research_data if isinstance(research_data, str) else str(research_data)
+            except (TimeoutError, asyncio.TimeoutError):
+                logger.warning("[%s] Research timed out, continuing with empty research", request.request_id)
+                research_text = ""
 
             research_compliance = validate_constraints(
                 research_text,
@@ -675,6 +717,10 @@ class UnifiedOrchestrator:
             # STAGE 2: CREATIVE DRAFT (25% → 45%)
             # ====================================================================
             logger.info("[%s] STAGE 2: Creative Draft", request.request_id)
+            try:
+                await emit_task_progress(task_id, stage="draft", progress=25, status="running")
+            except Exception:
+                pass
             from agents.content_agent.services.llm_client import (  # pylint: disable=import-outside-toplevel
                 LLMClient,
             )
@@ -776,6 +822,10 @@ class UnifiedOrchestrator:
             # STAGE 3: QA REVIEW LOOP (45% → 60%)
             # ====================================================================
             logger.info("[%s] STAGE 3: QA Review", request.request_id)
+            try:
+                await emit_task_progress(task_id, stage="qa", progress=45, status="running")
+            except Exception:
+                pass
             from services.quality_service import (  # pylint: disable=import-outside-toplevel
                 get_content_quality_service,
             )
@@ -864,6 +914,10 @@ class UnifiedOrchestrator:
             # STAGE 4: IMAGE SELECTION (60% → 75%)
             # ====================================================================
             logger.info("[%s] STAGE 4: Image Selection", request.request_id)
+            try:
+                await emit_task_progress(task_id, stage="images", progress=60, status="running")
+            except Exception:
+                pass
             featured_image_url = None
             try:
                 from services.image_service import (  # pylint: disable=import-outside-toplevel
@@ -882,6 +936,10 @@ class UnifiedOrchestrator:
             # STAGE 5: FORMATTING (75% → 90%)
             # ====================================================================
             logger.info("[%s] STAGE 5: Formatting", request.request_id)
+            try:
+                await emit_task_progress(task_id, stage="formatting", progress=75, status="running")
+            except Exception:
+                pass
 
             # Instantiate publishing agent (with registry fallback support)
             publishing_agent = self._get_agent_instance("publishing_agent")

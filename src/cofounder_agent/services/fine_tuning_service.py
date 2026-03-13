@@ -76,9 +76,14 @@ class FineTuningService:
 
         try:
             # Check if Ollama is running
-            result = subprocess.run(["ollama", "list"], capture_output=True, text=True, timeout=5)
+            check_proc = await asyncio.create_subprocess_exec(
+                "ollama", "list",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            await check_proc.communicate()
 
-            if result.returncode != 0:
+            if check_proc.returncode != 0:
                 return {
                     "job_id": job_id,
                     "status": "failed",

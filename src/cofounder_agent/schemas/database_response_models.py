@@ -280,11 +280,11 @@ class CostLogResponse(BaseModel):
     id: str = Field(..., description="Cost log UUID")
     task_id: str = Field(..., description="Associated task UUID")
     user_id: Optional[str] = Field(None, description="Associated user UUID")
-    phase: Literal["research", "outline", "draft", "assess", "refine", "finalize"] = Field(
+    phase: Literal["research", "outline", "draft", "assess", "refine", "finalize", "content_generation"] = Field(
         ..., description="Execution phase"
     )
     model: str = Field(..., description="LLM model used (gpt-4, claude-3-opus, etc.)")
-    provider: Literal["ollama", "openai", "anthropic", "google"] = Field(
+    provider: Literal["ollama", "openai", "anthropic", "google", "gemini", "unknown"] = Field(
         ..., description="LLM provider"
     )
     input_tokens: int = Field(default=0, ge=0, description="Input token count")
