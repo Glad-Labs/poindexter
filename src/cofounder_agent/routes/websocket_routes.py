@@ -13,6 +13,7 @@ from typing import Dict, Optional, Set
 
 from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 
+from routes.auth_unified import get_current_user
 from services.progress_service import get_progress_service
 from services.websocket_manager import websocket_manager
 
@@ -441,7 +442,7 @@ async def websocket_approval_updates(websocket: WebSocket, task_id: str, token: 
 
 
 @websocket_router.get("/stats")
-async def websocket_stats():
+async def websocket_stats(current_user: dict = Depends(get_current_user)):
     """
     Get WebSocket connection statistics
 

@@ -423,6 +423,44 @@ class TestExchangeCodeForToken:
         assert result["expires_in"] == 28800
         assert result["token_type"] == "bearer"
 
+    def test_mock_auth_code_rejected_when_development_mode_not_set(self):
+        """Mock auth codes are rejected when DEVELOPMENT_MODE != 'true', even if env=development."""
+        import asyncio
+        import os
+        from fastapi import HTTPException
+        from routes.auth_unified import exchange_code_for_token
+        with patch.dict(os.environ, {"DEVELOPMENT_MODE": "false"}):
+            with pytest.raises(HTTPException) as exc_info:
+                asyncio.get_event_loop().run_until_complete(
+                    exchange_code_for_token("mock_auth_code_abc123")
+                )
+        assert exc_info.value.status_code == 401
+        assert "Mock authentication" in exc_info.value.detail
+
+    def test_mock_auth_code_rejected_when_development_mode_empty(self):
+        """Mock auth codes are rejected when DEVELOPMENT_MODE is empty string."""
+        import asyncio
+        import os
+        from fastapi import HTTPException
+        from routes.auth_unified import exchange_code_for_token
+        with patch.dict(os.environ, {"DEVELOPMENT_MODE": ""}):
+            with pytest.raises(HTTPException) as exc_info:
+                asyncio.get_event_loop().run_until_complete(
+                    exchange_code_for_token("mock_auth_code_test123")
+                )
+        assert exc_info.value.status_code == 401
+
+    def test_mock_auth_code_accepted_when_development_mode_true(self):
+        """Mock auth codes are accepted when DEVELOPMENT_MODE=true and env=development."""
+        import asyncio
+        import os
+        from routes.auth_unified import exchange_code_for_token
+        with patch.dict(os.environ, {"DEVELOPMENT_MODE": "true", "ENVIRONMENT": "development"}):
+            result = asyncio.get_event_loop().run_until_complete(
+                exchange_code_for_token("mock_auth_code_abc123")
+            )
+        assert result["access_token"] == "mock_github_token_dev"
+
 
 # ---------------------------------------------------------------------------
 # get_github_user

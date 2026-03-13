@@ -11,7 +11,10 @@ Capabilities are automatically discovered and registered via the introspection l
 """
 
 import asyncio
+import logging
 from typing import Any, Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 from services.capability_registry import (
     Capability,
@@ -439,4 +442,4 @@ def register_example_capabilities():
     registry.register(FinancialAnalysisCapability())
     registry.register(ComplianceCheckCapability())
 
-    print(f"✅ Registered {len(registry.list_capabilities())} example capabilities")
+    logger.info("[capability_examples] Registered %d example capabilities", len(registry.list_capabilities()))
