@@ -6,7 +6,7 @@
  */
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import Footer from '../components/Footer';
+import Footer from '../Footer';
 
 // Mock Next.js Link
 jest.mock('next/link', () => {
@@ -182,5 +182,41 @@ describe('Footer Component', () => {
     expect(
       screen.getByText(new RegExp(currentYear.toString()))
     ).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// a11y — issue #791: Footer Legal nav has aria-label (issue #791)
+// ---------------------------------------------------------------------------
+
+describe('Footer — a11y: Legal nav has aria-label (issue #791)', () => {
+  it('Legal nav has aria-label="Legal navigation"', () => {
+    render(<Footer />);
+    const legalNav = screen.getByRole('navigation', {
+      name: 'Legal navigation',
+    });
+    expect(legalNav).toBeInTheDocument();
+  });
+
+  it('Explore nav has aria-label="Explore navigation"', () => {
+    render(<Footer />);
+    const exploreNav = screen.getByRole('navigation', {
+      name: 'Explore navigation',
+    });
+    expect(exploreNav).toBeInTheDocument();
+  });
+
+  it('multiple nav landmarks each have distinct aria-labels', () => {
+    const { container } = render(<Footer />);
+    const navs = container.querySelectorAll('nav');
+    const labelled = Array.from(navs).filter((nav) =>
+      nav.hasAttribute('aria-label')
+    );
+    // At least 2 navs should be labelled (Explore + Legal)
+    expect(labelled.length).toBeGreaterThanOrEqual(2);
+    // All labels should be unique
+    const labels = labelled.map((nav) => nav.getAttribute('aria-label'));
+    const uniqueLabels = new Set(labels);
+    expect(uniqueLabels.size).toBe(labels.length);
   });
 });

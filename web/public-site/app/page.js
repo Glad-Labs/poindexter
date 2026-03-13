@@ -91,7 +91,7 @@ export default async function HomePage() {
   const currentPost = posts[0];
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
+    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
       {/* Animated Background Elements */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-cyan-500/10 rounded-full blur-3xl animate-pulse" />
@@ -276,6 +276,6 @@ export default async function HomePage() {
           </Link>
         </div>
       </section>
-    </main>
+    </div>
   );
 }

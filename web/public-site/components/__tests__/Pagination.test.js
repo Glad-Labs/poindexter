@@ -5,7 +5,7 @@
  * Verifies: Page navigation, disabled states, link generation
  */
 import { render, screen } from '@testing-library/react';
-import Pagination from './Pagination';
+import Pagination from '../Pagination';
 
 // Mock Next.js Link
 jest.mock('next/link', () => {
@@ -154,5 +154,34 @@ describe('Pagination Component', () => {
     render(<Pagination {...slugProps} />);
     const links = screen.queryAllByRole('link');
     expect(links.length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// a11y — issue #794: Pagination ol does not have role=menubar
+// ---------------------------------------------------------------------------
+
+describe('Pagination — a11y: ol must not have role=menubar (issue #794)', () => {
+  const validProps = { pagination: { page: 2, pageCount: 5 } };
+
+  it('renders a nav landmark with aria-label="Pagination navigation"', () => {
+    render(<Pagination {...validProps} />);
+    const nav = screen.getByRole('navigation', {
+      name: 'Pagination navigation',
+    });
+    expect(nav).toBeInTheDocument();
+  });
+
+  it('inner ol does not have role="menubar"', () => {
+    const { container } = render(<Pagination {...validProps} />);
+    const ol = container.querySelector('ol');
+    expect(ol).toBeInTheDocument();
+    expect(ol).not.toHaveAttribute('role', 'menubar');
+  });
+
+  it('inner ol does not have any ARIA role override', () => {
+    const { container } = render(<Pagination {...validProps} />);
+    const ol = container.querySelector('ol');
+    expect(ol).not.toHaveAttribute('role');
   });
 });

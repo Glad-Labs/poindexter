@@ -87,7 +87,10 @@ const Footer = () => {
               <span className="w-2 h-2 rounded-full bg-gradient-to-r from-cyan-400 to-blue-500" />
               Legal
             </h3>
-            <nav className="flex flex-col space-y-3">
+            <nav
+              aria-label="Legal navigation"
+              className="flex flex-col space-y-3"
+            >
               <Link
                 href="/legal/privacy"
                 className="text-sm text-slate-400 hover:text-cyan-300 transition-colors duration-200 font-medium group inline-flex items-center gap-2"

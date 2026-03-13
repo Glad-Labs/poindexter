@@ -30,7 +30,6 @@ export default function Pagination({
     >
       <ol
         className="flex flex-wrap justify-center items-center gap-2"
-        role="menubar"
         aria-label={`Current page ${page} of ${pageCount}`}
       >
         {/* Previous Page Button */}
