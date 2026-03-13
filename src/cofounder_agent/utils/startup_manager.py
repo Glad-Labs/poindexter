@@ -235,6 +235,17 @@ class StartupManager:
         except Exception as e:
             logger.warning(f"   [WARNING] Content task store setup failed: {str(e)}")
 
+        # Initialize JWT blocklist service (issue #721 — server-side token invalidation)
+        try:
+            from services.jwt_blocklist_service import jwt_blocklist
+
+            await jwt_blocklist.initialize(self.database_service.pool)
+            # Purge any expired rows carried over from previous runs
+            await jwt_blocklist.cleanup()
+            logger.info("   [OK] JWT blocklist service initialized")
+        except Exception as e:
+            logger.warning(f"   [WARNING] JWT blocklist init failed: {str(e)}")
+
     async def _setup_redis_cache(self) -> None:
         """Initialize Redis cache for query optimization"""
         logger.info("  [INFO] Initializing Redis cache for query optimization...")

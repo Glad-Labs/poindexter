@@ -26,12 +26,15 @@ import httpx
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+import hashlib
+
 from config import get_config
 from schemas.auth_schemas import (
     GitHubCallbackRequest,
     LogoutResponse,
     UserProfile,
 )
+from services.jwt_blocklist_service import jwt_blocklist
 from services.token_validator import AuthConfig, JWTTokenValidator
 
 logger = logging.getLogger(__name__)
@@ -293,6 +296,16 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
+        # Check JWT blocklist — reject tokens that were explicitly logged out
+        jti = claims.get("jti") or hashlib.sha256(token.encode()).hexdigest()[:16]
+        if await jwt_blocklist.is_blocked(jti):
+            logger.warning("[get_current_user] Blocked token presented (jti=%s)", jti)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has been revoked",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
         user_id = claims.get("user_id")
         if not user_id:
             raise HTTPException(
@@ -479,17 +492,37 @@ async def unified_logout(
     """
     auth_provider = current_user.get("auth_provider", "jwt")
     user_id = current_user.get("id", "unknown")
+    token = current_user.get("token", "")
 
     logger.info(f"Logout request for user {user_id} (auth_provider: {auth_provider})")
 
     try:
-        # In production, implement provider-specific logout:
-        # if auth_provider == "github":
-        #     await revoke_github_session(user_id)
-        # elif auth_provider == "oauth":
-        #     await revoke_oauth_refresh_token(current_user["token_id"])
-        # else:
-        #     await add_token_to_blacklist(current_user["token"])
+        # Server-side token invalidation — prevents session replay after logout (#721).
+        # Derive the JTI from the token claims; fall back to a hash of the raw token
+        # when the token does not carry a 'jti' claim (e.g. tokens issued before this
+        # change was deployed).
+        if token:
+            try:
+                claims = JWTTokenValidator.verify_token(token)
+                if claims:
+                    jti = claims.get("jti") or hashlib.sha256(token.encode()).hexdigest()[:16]
+                    exp_ts = claims.get("exp")
+                    if exp_ts:
+                        expires_at = datetime.fromtimestamp(exp_ts, tz=timezone.utc)
+                    else:
+                        # Fallback: treat as expiring in ACCESS_TOKEN_EXPIRE_MINUTES
+                        expires_at = datetime.now(timezone.utc) + timedelta(
+                            minutes=AuthConfig.ACCESS_TOKEN_EXPIRE_MINUTES
+                        )
+                    await jwt_blocklist.add_token(jti, user_id, expires_at)
+            except Exception:
+                # Token may already be expired; still mark logout as successful
+                logger.warning(
+                    "[unified_logout] Could not extract claims for blocklisting "
+                    "(token may already be expired) — user_id=%s",
+                    user_id,
+                    exc_info=True,
+                )
 
         logger.info(f"User {user_id} logged out successfully ({auth_provider})")
 
@@ -498,7 +531,7 @@ async def unified_logout(
         )
 
     except Exception as e:
-        logger.error(f"Logout error for user {user_id}: {str(e)}")
+        logger.error(f"[unified_logout] Logout error for user {user_id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Logout failed"
         )

@@ -199,6 +199,90 @@ class TestUnifiedLogout:
         assert "message" in body
         assert len(body["message"]) > 0
 
+    def test_logout_calls_blocklist_add_token(self):
+        """Logout should call jwt_blocklist.add_token with the token's JTI."""
+        import asyncio
+        from routes.auth_unified import unified_logout, get_current_user
+
+        # Build a user dict as if returned by get_current_user
+        with patch.object(AuthConfig, "SECRET_KEY", _SECRET):
+            token = _make_valid_token()
+        user_with_token = {**TEST_USER, "token": token}
+
+        mock_add = AsyncMock()
+        with patch("routes.auth_unified.jwt_blocklist.add_token", mock_add), \
+             patch.object(AuthConfig, "SECRET_KEY", _SECRET):
+            app = _make_app(override_auth=lambda: user_with_token)
+            client = TestClient(app)
+            response = client.post(
+                "/api/auth/logout", headers={"Authorization": f"Bearer {token}"}
+            )
+
+        assert response.status_code == 200
+        mock_add.assert_awaited_once()
+
+    def test_logout_succeeds_even_when_blocklist_add_fails(self):
+        """Logout response must be 200 even if blocklist DB write fails."""
+        with patch.object(AuthConfig, "SECRET_KEY", _SECRET):
+            token = _make_valid_token()
+        user_with_token = {**TEST_USER, "token": token}
+
+        mock_add = AsyncMock(side_effect=Exception("DB error"))
+        with patch("routes.auth_unified.jwt_blocklist.add_token", mock_add), \
+             patch.object(AuthConfig, "SECRET_KEY", _SECRET):
+            app = _make_app(override_auth=lambda: user_with_token)
+            client = TestClient(app)
+            response = client.post(
+                "/api/auth/logout", headers={"Authorization": f"Bearer {token}"}
+            )
+
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+
+
+# ---------------------------------------------------------------------------
+# Blocklist rejection (issue #721)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestBlocklistedToken:
+    def test_blocklisted_token_returns_401(self):
+        """A token on the JWT blocklist must be rejected with 401."""
+        with patch.object(AuthConfig, "SECRET_KEY", _SECRET):
+            token = _make_valid_token()
+
+        # Mock is_blocked to say this jti is blocklisted
+        mock_is_blocked = AsyncMock(return_value=True)
+        with patch("routes.auth_unified.jwt_blocklist.is_blocked", mock_is_blocked), \
+             patch.object(AuthConfig, "SECRET_KEY", _SECRET):
+            app = _make_app()
+            client = TestClient(app, raise_server_exceptions=False)
+            response = client.get(
+                "/api/auth/me", headers={"Authorization": f"Bearer {token}"}
+            )
+
+        assert response.status_code == 401
+        assert "revoked" in response.json().get("detail", "").lower()
+
+    def test_non_blocklisted_token_passes_through(self):
+        """A valid token NOT on the blocklist must succeed."""
+        with patch.object(AuthConfig, "SECRET_KEY", _SECRET):
+            token = _make_valid_token()
+
+        mock_is_blocked = AsyncMock(return_value=False)
+        with patch("routes.auth_unified.jwt_blocklist.is_blocked", mock_is_blocked), \
+             patch.object(AuthConfig, "SECRET_KEY", _SECRET):
+            app = _make_app()
+            client = TestClient(app, raise_server_exceptions=False)
+            response = client.get(
+                "/api/auth/me", headers={"Authorization": f"Bearer {token}"}
+            )
+
+        # Should not be rejected by the blocklist — may still fail on
+        # user_id lookup but will not be 401 due to "revoked"
+        assert "revoked" not in response.json().get("detail", "").lower()
+
 
 # ---------------------------------------------------------------------------
 # DEVELOPMENT_MODE dev-bypass (get_current_user_optional)
