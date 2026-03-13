@@ -2403,17 +2403,11 @@ async def generate_task_image(
                                     if current_image_url:
                                         excluded_urls.add(current_image_url)
 
-                                    logger.info(f"🔍 Image filtering debug:")
-                                    logger.info(
-                                        f"   - Pexels returned {len(data['photos'])} total photos"
+                                    logger.debug(
+                                        f"Image filtering: Pexels returned {len(data['photos'])} photos, "
+                                        f"currently using: {current_image_url}, "
+                                        f"excluded: {len(excluded_urls)} URLs"
                                     )
-                                    logger.info(f"   - Currently using: {current_image_url}")
-                                    logger.info(
-                                        f"   - Recently used: {recently_used[:3]}..."
-                                        if len(recently_used) > 3
-                                        else f"   - Recently used: {recently_used}"
-                                    )
-                                    logger.info(f"   - Total excluded URLs: {len(excluded_urls)}")
 
                                     # Filter out any previously used images
                                     photos = [

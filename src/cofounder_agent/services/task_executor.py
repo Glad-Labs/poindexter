@@ -361,7 +361,7 @@ class TaskExecutor:
                 task_metadata_updates["output"] = str(result)
 
             # DEBUG: Log all extracted metadata
-            logger.debug(f"🔍 [DEBUG] Extracted metadata for task {task_id}:")
+            logger.debug(f"🔍 Extracted metadata for task {task_id}:")
             logger.info(f"   - Fields extracted: {list(task_metadata_updates.keys())}")
             logger.info(f"   - Has 'content': {'content' in task_metadata_updates}")
             if "content" in task_metadata_updates:
@@ -388,7 +388,7 @@ class TaskExecutor:
 
             # Use update_task to ensure normalization of content into columns
             logger.debug(
-                f"📝 [DEBUG] Calling update_task with status={final_status}, metadata keys={list(task_metadata_updates.keys())}"
+                f"📝 Calling update_task with status={final_status}, metadata keys={list(task_metadata_updates.keys())}"
             )
 
             # Also store model_used in the normalized column if it's in the result
@@ -396,11 +396,11 @@ class TaskExecutor:
             if isinstance(result, dict) and "model_used" in result:
                 update_payload["model_used"] = result["model_used"]
                 logger.debug(
-                    f"📝 [DEBUG] Including model_used in database update: {result['model_used']}"
+                    f"📝 Including model_used in database update: {result['model_used']}"
                 )
 
             await self.database_service.update_task(task_id, update_payload)
-            logger.debug(f"✅ [DEBUG] update_task completed for {task_id}")
+            logger.debug(f"✅ update_task completed for {task_id}")
 
             if final_status == "failed":
                 logger.error(f"❌ [TASK_SINGLE] Task failed: {task_id}")

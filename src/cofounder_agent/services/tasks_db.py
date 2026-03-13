@@ -452,7 +452,7 @@ class TasksDatabase(DatabaseServiceMixin):
             serialized_updates[key] = serialize_value_for_postgres(value)
 
         # DEBUG: Log normalized updates
-        logger.debug(f"🔍 [DEBUG] Normalized updates for task {task_id}:")
+        logger.debug(f"🔍 Normalized updates for task {task_id}:")
         logger.info(f"   - Keys: {list(normalized_updates.keys())}")
         logger.info(f"   - Has 'content' in normalized: {'content' in normalized_updates}")
         if "content" in normalized_updates:
@@ -475,7 +475,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 row = await conn.fetchrow(sql, *params)
                 if row:
                     # DEBUG: Verify content was persisted
-                    logger.debug(f"✅ [DEBUG] Update returned row for task {task_id}")
+                    logger.debug(f"✅ Update returned row for task {task_id}")
                     logger.info(f"   - Row has 'content': {row.get('content') is not None}")
                     if row.get("content"):
                         logger.info(
@@ -483,7 +483,7 @@ class TasksDatabase(DatabaseServiceMixin):
                         )
                     task_response = ModelConverter.to_task_response(row)
                     return ModelConverter.to_dict(task_response)
-                logger.warning(f"⚠️  [DEBUG] Update returned no row for task {task_id}")
+                logger.warning(f"⚠️  Update returned no row for task {task_id}")
                 return None
         except Exception as e:
             logger.error(f"❌ Failed to update task {task_id}: {e}", exc_info=True)
