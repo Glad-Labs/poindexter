@@ -306,18 +306,21 @@ Labels: tech-debt:P3-medium, performance, database
 
 ## P4 Low Priority
 
-### Issue #14: [P4] Migrate public-site to Vite
+### Issue #14: [P4] Migrate public-site to modern build tooling
 
 ```
-Title: [P4] Migrate public-site to Vite (mirrors Phase 3B)
+Title: [P4] Public Site build tooling optimization
 
 Description:
-Oversight Hub successfully migrated to Vite with 90% vulnerability reduction. Public Site should follow same pattern.
+Oversight Hub uses Create React App (CRA) with CRACO for dependency management and bundling. Public Site is Next.js which is already modern.
+Note: Previous Vite migration of Oversight Hub was found to be over-engineered and reverted to CRA for maintainability and ecosystem stability.
 
 Files Affected:
 - web/public-site/
 
-Effort Estimate: 6-8 hours
+Priority: Low (not blocking, Next.js is already well-optimized)
+
+Effort Estimate: Research only
 
 Expected Benefits:
 - Reduce vulnerabilities from 33+ to ~6

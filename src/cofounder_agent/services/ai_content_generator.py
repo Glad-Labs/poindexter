@@ -1016,6 +1016,19 @@ class AIContentGenerator:
         )
         logger.error(f"{'='*80}\n")
 
+        # Capture in Sentry as a distinct message so alert rules can target it.
+        # Generated content will be a stub template, not AI output (issue #556).
+        try:
+            import sentry_sdk  # pylint: disable=import-outside-toplevel
+            if sentry_sdk.is_initialized():  # type: ignore[attr-defined]
+                sentry_sdk.capture_message(  # type: ignore[attr-defined]
+                    "ALL AI MODELS FAILED — serving fallback template content",
+                    level="error",
+                    extras={"attempts": [{"provider": p, "error": e} for p, e in attempts]},
+                )
+        except Exception:  # pylint: disable=broad-except
+            pass  # Never let Sentry integration block content delivery
+
         fallback_content = self._generate_fallback_content(topic, style, tone, tags)
         metrics["model_used"] = "Fallback (no AI models available)"
         metrics["models_used_by_phase"]["draft"] = metrics["model_used"]  # Track phase
