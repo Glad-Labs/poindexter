@@ -95,7 +95,7 @@ class ProfilingMiddleware(BaseHTTPMiddleware):
             profile.complete(500)
             profile.is_slow = True
             self._store_profile(profile)
-            logger.error(f"Request failed: {profile.endpoint} - {str(e)}")
+            logger.error(f"Request failed: {profile.endpoint} - {str(e)}", exc_info=True)
             raise
 
     def _store_profile(self, profile: ProfileData):

@@ -208,17 +208,17 @@ async def with_circuit_breaker(
 
     except asyncio.TimeoutError:
         breaker.record_failure()
-        logger.error(f"❌ [{service_name}] Timeout")
+        logger.error(f"❌ [{service_name}] Timeout", exc_info=True)
         return fallback_value
 
     except ConnectionError as e:
         breaker.record_failure()
-        logger.error(f"❌ [{service_name}] Connection error: {e}")
+        logger.error(f"❌ [{service_name}] Connection error: {e}", exc_info=True)
         return fallback_value
 
     except Exception as e:
         breaker.record_failure()
-        logger.error(f"❌ [{service_name}] Error: {type(e).__name__}: {e}")
+        logger.error(f"❌ [{service_name}] Error: {type(e).__name__}: {e}", exc_info=True)
         return fallback_value
 
 
@@ -334,7 +334,7 @@ async def get_with_fallback(
 
         except Exception as e:
             breaker.record_failure()
-            logger.warning(f"⚠️  [{service_name}] Failed: {type(e).__name__}")
+            logger.warning(f"⚠️  [{service_name}] Failed: {type(e).__name__}", exc_info=True)
 
     # Circuit is open or operation failed - try cache
     if cache_key:

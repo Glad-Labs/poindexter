@@ -59,7 +59,7 @@ class SocialResearchTask(PureTask):
 
             research = json.loads(response)
         except (json.JSONDecodeError, ValueError, TypeError) as e:
-            logger.warning(f"Failed to parse social research data: {e}")
+            logger.warning(f"Failed to parse social research data: {e}", exc_info=True)
             research = {
                 "trends_by_platform": {},
                 "hashtags": [topic.lower()],
@@ -148,7 +148,7 @@ class SocialCreativeTask(PureTask):
 
             result = json.loads(response)
         except (json.JSONDecodeError, ValueError, TypeError) as e:
-            logger.warning(f"Failed to parse social post data: {e}")
+            logger.warning(f"Failed to parse social post data: {e}", exc_info=True)
             result = {
                 "post_text": response,
                 "hashtags": [topic.lower()],
@@ -321,7 +321,7 @@ class SocialPublishTask(PureTask):
                 "images_attached": len(images),
             }
         except Exception as e:
-            logger.error(f"Social publishing failed: {str(e)}")
+            logger.error(f"Social publishing failed: {str(e)}", exc_info=True)
             return {
                 "platform": platform,
                 "published": False,

@@ -88,7 +88,7 @@ class BlogQualityAgent:
             except ValueError:
                 logger.warning(
                     f"Unknown evaluation method '{evaluation_method_str}', using pattern-based"
-                )
+, exc_info=True)
                 evaluation_method = EvaluationMethod.PATTERN_BASED
 
             # Build context for evaluation

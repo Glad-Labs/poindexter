@@ -147,7 +147,7 @@ async def upload_writing_sample(
             try:
                 sample_content = file_content.decode("utf-8")
             except UnicodeDecodeError:
-                logger.warning("File upload rejected: file is not valid UTF-8 text")
+                logger.warning("File upload rejected: file is not valid UTF-8 text", exc_info=True)
                 raise HTTPException(status_code=422, detail="File must be valid UTF-8 text")
 
         if not sample_content or not sample_content.strip():
@@ -171,7 +171,7 @@ async def upload_writing_sample(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Error uploading writing sample: {e}")
+        logger.error(f"❌ Error uploading writing sample: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to upload sample")
 
 
@@ -213,7 +213,7 @@ async def list_writing_samples(
         )
 
     except Exception as e:
-        logger.error(f"❌ Error listing writing samples: {e}")
+        logger.error(f"❌ Error listing writing samples: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to list samples")
 
 
@@ -238,7 +238,7 @@ async def get_active_writing_sample(
         return WritingSampleResponse(**sample)
 
     except Exception as e:
-        logger.error(f"❌ Error getting active writing sample: {e}")
+        logger.error(f"❌ Error getting active writing sample: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get active sample")
 
 
@@ -279,7 +279,7 @@ async def activate_writing_sample(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Error setting active writing sample: {e}")
+        logger.error(f"❌ Error setting active writing sample: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to set active sample")
 
 
@@ -325,7 +325,7 @@ async def update_writing_sample(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Error updating writing sample: {e}")
+        logger.error(f"❌ Error updating writing sample: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to update sample")
 
 
@@ -366,7 +366,7 @@ async def delete_writing_sample(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Error deleting writing sample: {e}")
+        logger.error(f"❌ Error deleting writing sample: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to delete sample")
 
 
@@ -491,7 +491,7 @@ async def get_relevant_samples(
         }
 
     except Exception as e:
-        logger.error(f"❌ Error retrieving samples: {e}")
+        logger.error(f"❌ Error retrieving samples: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve samples")
 
 
@@ -562,7 +562,7 @@ async def retrieve_by_style(
         return {"style": style, "found_samples": len(matching), "samples": matching}
 
     except Exception as e:
-        logger.error(f"❌ Error retrieving samples by style: {e}")
+        logger.error(f"❌ Error retrieving samples by style: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve samples")
 
 
@@ -630,5 +630,5 @@ async def retrieve_by_tone(
         return {"tone": tone, "found_samples": len(matching), "samples": matching}
 
     except Exception as e:
-        logger.error(f"❌ Error retrieving samples by tone: {e}")
+        logger.error(f"❌ Error retrieving samples by tone: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve samples")

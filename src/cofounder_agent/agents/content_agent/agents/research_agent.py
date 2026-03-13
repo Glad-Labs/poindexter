@@ -30,8 +30,8 @@ class ResearchAgent:
             self.tools = CrewAIToolsFactory.get_research_agent_tools()
             logger.info("ResearchAgent: Initialized with all research agent tools")
         except Exception as e:
-            logger.warning(f"ResearchAgent: Failed to initialize tools: {e}")
-            logger.warning("ResearchAgent will continue without some tools")
+            logger.warning(f"ResearchAgent: Failed to initialize tools: {e}", exc_info=True)
+            logger.warning("ResearchAgent will continue without some tools", exc_info=True)
             self.tools = []
 
     async def run(self, topic: str, keywords: list[str]) -> str:

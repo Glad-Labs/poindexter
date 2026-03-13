@@ -109,7 +109,7 @@ class GeminiClient:
         except (ValueError, ImportError):
             raise
         except Exception as e:
-            logger.error(f"Gemini generation failed: {e}")
+            logger.error(f"Gemini generation failed: {e}", exc_info=True)
             raise RuntimeError(f"Gemini generation error: {str(e)}")
 
     async def chat(
@@ -164,7 +164,7 @@ class GeminiClient:
         except (ValueError, ImportError):
             raise
         except Exception as e:
-            logger.error(f"Gemini chat failed: {e}")
+            logger.error(f"Gemini chat failed: {e}", exc_info=True)
             raise RuntimeError(f"Gemini chat error: {str(e)}")
 
     async def check_health(self) -> Dict[str, Any]:

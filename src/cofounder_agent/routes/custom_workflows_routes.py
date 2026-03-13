@@ -74,13 +74,13 @@ def get_user_id(request: Request) -> str:
             if claims and "user_id" in claims:
                 return str(claims["user_id"])
         except jwt.ExpiredSignatureError:
-            logger.warning("JWT token expired in get_user_id()")
+            logger.warning("JWT token expired in get_user_id()", exc_info=True)
             raise HTTPException(status_code=401, detail="Token expired")
         except jwt.InvalidTokenError as e:
-            logger.warning(f"Invalid JWT token in get_user_id(): {e}")
+            logger.warning(f"Invalid JWT token in get_user_id(): {e}", exc_info=True)
             raise HTTPException(status_code=401, detail="Invalid token")
         except Exception as e:
-            logger.warning(f"Error extracting user ID from JWT: {e}")
+            logger.warning(f"Error extracting user ID from JWT: {e}", exc_info=True)
             raise HTTPException(status_code=401, detail="Authentication failed")
 
     # Development fallback (no token provided)
@@ -118,7 +118,7 @@ async def create_custom_workflow(
         logger.info(f"Created workflow: {created.id} for user {owner_id}")
         return created
     except ValueError as e:
-        logger.warning(f"Invalid workflow: {str(e)}")
+        logger.warning(f"Invalid workflow: {str(e)}", exc_info=True)
         raise HTTPException(status_code=400, detail="Invalid workflow definition")
     except Exception as e:
         logger.error(f"Error creating workflow: {str(e)}", exc_info=True)
@@ -239,7 +239,7 @@ async def update_custom_workflow(
         logger.info(f"Updated workflow: {workflow_id}")
         return updated
     except ValueError as e:
-        logger.warning(f"Invalid workflow or access denied: {str(e)}")
+        logger.warning(f"Invalid workflow or access denied: {str(e)}", exc_info=True)
         error_msg = str(e)
         if "not found" in error_msg.lower() or "access denied" in error_msg.lower():
             raise HTTPException(status_code=404, detail=error_msg)
@@ -281,7 +281,7 @@ async def delete_custom_workflow(
     except HTTPException:
         raise
     except ValueError as e:
-        logger.warning(f"Access denied or not found: {str(e)}")
+        logger.warning(f"Access denied or not found: {str(e)}", exc_info=True)
         raise HTTPException(status_code=404, detail="Workflow not found or access denied")
     except Exception as e:
         logger.error(f"Error deleting workflow: {str(e)}", exc_info=True)

@@ -458,7 +458,7 @@ class UnifiedQualityService:
             )
 
         except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
-            logger.warning(f"LLM evaluation parsing failed ({e}), falling back to pattern-based")
+            logger.warning(f"LLM evaluation parsing failed ({e}), falling back to pattern-based", exc_info=True)
             return await self._evaluate_pattern_based(content, context)
         except Exception as e:
             logger.error(f"[_evaluate_llm_based] LLM call failed: {e}", exc_info=True)

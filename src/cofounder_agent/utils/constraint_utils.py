@@ -555,11 +555,11 @@ def auto_expand_content(
         logger.warning(f"[AUTO_EXPAND] Failed to load dependencies: {e}", exc_info=True)
         logger.warning(
             "Using original content. Ensure model_router and prompt_manager are available."
-        )
+, exc_info=True)
         return content
     except Exception as e:
         logger.error(f"[AUTO_EXPAND] LLM expansion failed: {e}", exc_info=True)
-        logger.error("Falling back to original content.")
+        logger.error("Falling back to original content.", exc_info=True)
         return content
 
 

@@ -103,7 +103,7 @@ class MiddlewareConfig:
 
             logger.info("✅ Profiling middleware initialized")
         except ImportError as e:
-            logger.warning(f"⚠️  Profiling middleware not available: {e}")
+            logger.warning(f"⚠️  Profiling middleware not available: {e}", exc_info=True)
 
     def _setup_cache_control(self, app: FastAPI) -> None:
         """
@@ -142,7 +142,7 @@ class MiddlewareConfig:
 
             logger.info("✅ Input validation middleware initialized")
         except ImportError as e:
-            logger.warning(f"⚠️  Input validation middleware not available: {e}")
+            logger.warning(f"⚠️  Input validation middleware not available: {e}", exc_info=True)
 
     def _setup_cors(self, app: FastAPI) -> None:
         """
@@ -255,7 +255,7 @@ class MiddlewareConfig:
             logger.warning(
                 "⚠️  slowapi not installed - rate limiting disabled. "
                 "Install with: pip install slowapi"
-            )
+, exc_info=True)
             self.limiter = None
 
     def _setup_token_validation(self, app: FastAPI) -> None:
@@ -276,7 +276,7 @@ class MiddlewareConfig:
             app.add_middleware(TokenValidationMiddleware)
             logger.info("✅ Token validation middleware initialized")
         except ImportError as e:
-            logger.warning(f"⚠️  Token validation middleware not available: {e}")
+            logger.warning(f"⚠️  Token validation middleware not available: {e}", exc_info=True)
 
     def get_limiter(self):
         """

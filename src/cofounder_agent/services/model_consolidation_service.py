@@ -186,7 +186,7 @@ class OllamaAdapter(ProviderAdapter):
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
-            logger.warning("Ollama generation failed", error=str(e), model=model)
+            logger.warning("Ollama generation failed", error=str(e), model=model, exc_info=True)
             raise
 
     def list_models(self) -> List[str]:
@@ -248,7 +248,7 @@ class HuggingFaceAdapter(ProviderAdapter):
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
-            logger.warning("HuggingFace generation failed", error=str(e), model=model)
+            logger.warning("HuggingFace generation failed", error=str(e), model=model, exc_info=True)
             raise
 
     def list_models(self) -> List[str]:
@@ -316,7 +316,7 @@ class GoogleAdapter(ProviderAdapter):
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
-            logger.warning("Google Gemini generation failed", error=str(e), model=model)
+            logger.warning("Google Gemini generation failed", error=str(e), model=model, exc_info=True)
             raise
 
     def list_models(self) -> List[str]:
@@ -347,7 +347,7 @@ class AnthropicAdapter(ProviderAdapter):
                 self.api_key = ProviderChecker.get_anthropic_api_key()
                 self.client = Anthropic(api_key=self.api_key)
             except ImportError:
-                logger.warning("Anthropic SDK not installed. Install with: pip install anthropic")
+                logger.warning("Anthropic SDK not installed. Install with: pip install anthropic", exc_info=True)
                 self.client = None
 
         self.provider_type = ProviderType.ANTHROPIC
@@ -394,7 +394,7 @@ class AnthropicAdapter(ProviderAdapter):
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
-            logger.warning("Anthropic generation failed", error=str(e), model=model)
+            logger.warning("Anthropic generation failed", error=str(e), model=model, exc_info=True)
             raise
 
     def list_models(self) -> List[str]:
@@ -420,7 +420,7 @@ class OpenAIAdapter(ProviderAdapter):
                 self.api_key = ProviderChecker.get_openai_api_key()
                 self.client = OpenAI(api_key=self.api_key)
             except ImportError:
-                logger.warning("OpenAI SDK not installed. Install with: pip install openai")
+                logger.warning("OpenAI SDK not installed. Install with: pip install openai", exc_info=True)
                 self.client = None
 
         self.provider_type = ProviderType.OPENAI
@@ -467,7 +467,7 @@ class OpenAIAdapter(ProviderAdapter):
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
-            logger.warning("OpenAI generation failed", error=str(e), model=model)
+            logger.warning("OpenAI generation failed", error=str(e), model=model, exc_info=True)
             raise
 
     def list_models(self) -> List[str]:
@@ -544,7 +544,7 @@ class ModelConsolidationService:
             except Exception as e:
                 logger.warning(
                     "Failed to initialize adapter", provider=provider_type.value, error=str(e)
-                )
+, exc_info=True)
 
     async def _check_provider_availability(self, provider_type: ProviderType) -> bool:
         """Check and cache provider availability"""
@@ -572,7 +572,7 @@ class ModelConsolidationService:
 
             return is_available
         except Exception as e:
-            logger.warning("Provider check failed", provider=provider_type.value, error=str(e))
+            logger.warning("Provider check failed", provider=provider_type.value, error=str(e), exc_info=True)
 
             self.provider_status[provider_type] = ProviderStatus(
                 provider=provider_type,
@@ -689,7 +689,7 @@ class ModelConsolidationService:
                     f"❌ {provider_type.value} generation failed",
                     provider=provider_type.value,
                     error=str(e),
-                )
+, exc_info=True)
                 continue
 
         # All providers failed

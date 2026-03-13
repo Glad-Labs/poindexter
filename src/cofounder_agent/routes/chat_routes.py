@@ -277,7 +277,7 @@ async def chat(
         )
 
     except ValueError as e:
-        logger.error(f"[Chat] Validation error: {str(e)}")
+        logger.error(f"[Chat] Validation error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=400, detail="Invalid request parameters")
 
     except Exception as e:

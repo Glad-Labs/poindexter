@@ -125,7 +125,7 @@ class TransformTask(PureTask):
 
                 transformed = json.loads(response)
             except (json.JSONDecodeError, ValueError, TypeError) as e:
-                logger.warning(f"Failed to parse transformed content: {e}")
+                logger.warning(f"Failed to parse transformed content: {e}", exc_info=True)
                 transformed = {"content": content}
 
         elif to_format == "markdown" and isinstance(content, dict):

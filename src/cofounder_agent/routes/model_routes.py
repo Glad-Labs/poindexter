@@ -119,7 +119,7 @@ async def get_available_models(
         )
 
     except Exception as e:
-        logger.error(f"Error getting available models: {e}")
+        logger.error(f"Error getting available models: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error getting available models")
 
 
@@ -141,7 +141,7 @@ async def get_provider_status():
         return {"timestamp": datetime.now(timezone.utc).isoformat(), "providers": status}
 
     except Exception as e:
-        logger.error(f"Error getting provider status: {e}")
+        logger.error(f"Error getting provider status: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error getting provider status")
 
 
@@ -194,7 +194,7 @@ async def get_recommended_models():
         )
 
     except Exception as e:
-        logger.error(f"Error getting recommended models: {e}")
+        logger.error(f"Error getting recommended models: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error getting recommended models")
 
 
@@ -254,5 +254,5 @@ async def get_models_list():
         }
 
     except Exception as e:
-        logger.error(f"Error getting models: {e}")
+        logger.error(f"Error getting models: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error getting models")

@@ -101,7 +101,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             register_example_capabilities()
             logger.info("[LIFESPAN] ✅ Capability system initialized with example capabilities")
         except Exception as e:
-            logger.warning(f"[LIFESPAN] ⚠️ Failed to initialize capabilities: {e}")
+            logger.warning(f"[LIFESPAN] ⚠️ Failed to initialize capabilities: {e}", exc_info=True)
 
         # Initialize quality service
         logger.info("[LIFESPAN] Initializing quality service. ..")
@@ -132,9 +132,9 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
     except Exception as e:
         logger.error(f"Critical startup failure: {str(e)}", exc_info=True)
         try:
-            logger.error(f"[ERROR] EXCEPTION IN LIFESPAN: {str(e)}")
+            logger.error(f"[ERROR] EXCEPTION IN LIFESPAN: {str(e)}", exc_info=True)
         except UnicodeEncodeError:
-            logger.error(f"[ERROR] EXCEPTION IN LIFESPAN: {str(e)}")
+            logger.error(f"[ERROR] EXCEPTION IN LIFESPAN: {str(e)}", exc_info=True)
         app.state.startup_error = str(e)
         app.state.startup_complete = True
         raise
@@ -256,7 +256,7 @@ async def api_health():
                 db_health = await database_service.health_check()
                 health_data["components"]["database"] = db_health.get("status", "unknown")
             except Exception as e:  # pylint: disable=broad-except
-                logger.warning("Database health check failed in /api/health: %s", str(e))
+                logger.warning("Database health check failed in /api/health: %s", str(e), exc_info=True)
                 health_data["components"]["database"] = "degraded"
         else:
             health_data["components"]["database"] = "unavailable"
@@ -395,7 +395,7 @@ async def process_command(
             metadata=response.get("metadata"),
         )
     except Exception as e:  # pylint: disable=broad-except
-        logger.error(f"Error processing command: {str(e)} | command={command.command}")
+        logger.error(f"Error processing command: {str(e)} | command={command.command}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"An internal error occurred: {str(e)}") from e
 
 

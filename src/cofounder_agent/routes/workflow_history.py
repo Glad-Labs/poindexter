@@ -110,7 +110,7 @@ async def get_workflow_history(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Failed to get workflow history: {e}")
+        logger.error(f"❌ Failed to get workflow history: {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail="Failed to retrieve workflow history"
         )
@@ -151,7 +151,7 @@ async def get_execution_details(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Failed to get execution details: {e}")
+        logger.error(f"❌ Failed to get execution details: {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail="Failed to retrieve execution details"
         )
@@ -189,7 +189,7 @@ async def get_workflow_statistics(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Failed to get workflow statistics: {e}")
+        logger.error(f"❌ Failed to get workflow statistics: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve statistics")
 
 
@@ -228,7 +228,7 @@ async def get_performance_metrics(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Failed to get performance metrics: {e}")
+        logger.error(f"❌ Failed to get performance metrics: {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail="Failed to retrieve performance metrics"
         )
@@ -283,7 +283,7 @@ async def get_workflow_type_history(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Failed to get workflow history: {e}")
+        logger.error(f"❌ Failed to get workflow history: {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail="Failed to retrieve workflow history"
         )

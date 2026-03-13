@@ -84,7 +84,7 @@ class SerperClient:
             return data
 
         except httpx.HTTPError as e:
-            logger.error(f"Serper API request failed: {e}")
+            logger.error(f"Serper API request failed: {e}", exc_info=True)
             return {}
         except Exception as e:
             logger.error(f"[_search] Serper search error: {e}", exc_info=True)

@@ -164,10 +164,10 @@ async def exchange_code_for_token(code: str) -> Dict[str, Any]:
                 "scope": data.get("scope", ""),
             }
     except httpx.TimeoutException:
-        logger.error("GitHub token exchange timed out")
+        logger.error("GitHub token exchange timed out", exc_info=True)
         raise HTTPException(status_code=503, detail="GitHub authentication service unavailable")
     except httpx.HTTPError as e:
-        logger.error(f"GitHub token exchange HTTP error: {e}")
+        logger.error(f"GitHub token exchange HTTP error: {e}", exc_info=True)
         raise HTTPException(status_code=401, detail="Failed to exchange code for token")
 
 
@@ -283,7 +283,7 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
         try:
             claims = JWTTokenValidator.verify_token(token)
         except Exception as e:
-            logger.warning(f"[get_current_user] Token verification failed")
+            logger.warning(f"[get_current_user] Token verification failed", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired token",

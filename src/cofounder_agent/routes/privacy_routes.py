@@ -116,7 +116,7 @@ async def submit_data_request(request_data: DataSubjectRequest) -> Dict:
         }
 
     except Exception as e:
-        logger.error(f"❌ Error processing data request: {e}")
+        logger.error(f"❌ Error processing data request: {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail="Failed to process request. Please email privacy@gladlabs.ai"
         ) from e

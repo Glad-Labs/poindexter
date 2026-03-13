@@ -33,7 +33,7 @@ class CreativeAgent:
             logger.info("CreativeAgent: Initialized with all content agent tools")
         except Exception as e:
             logger.warning(f"[init_tools] CreativeAgent: Failed to initialize tools: {e}", exc_info=True)
-            logger.warning("CreativeAgent will continue without some tools")
+            logger.warning("CreativeAgent will continue without some tools", exc_info=True)
             # Initialize with empty tools list - LLMClient can still generate content
             self.tools = []
 

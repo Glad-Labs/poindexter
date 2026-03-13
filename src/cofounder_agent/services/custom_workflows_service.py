@@ -591,7 +591,7 @@ class CustomWorkflowsService:
             return self._row_to_execution(row)
 
         except Exception as e:
-            logger.error(f"Failed to get workflow execution {execution_id}: {e}")
+            logger.error(f"Failed to get workflow execution {execution_id}: {e}", exc_info=True)
             return None
 
     async def get_workflow_executions(

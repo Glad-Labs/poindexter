@@ -88,7 +88,7 @@ def register_all_agents(registry: Optional[AgentRegistry] = None) -> AgentRegist
         logger.info("✅ Registered 5 content agents")
 
     except ImportError as e:
-        logger.warning(f"⚠️  Could not import content agents: {e}")
+        logger.warning(f"⚠️  Could not import content agents: {e}", exc_info=True)
     except Exception as e:
         logger.error(f"❌ Failed to register content agents: {e}", exc_info=True)
 
@@ -109,7 +109,7 @@ def register_all_agents(registry: Optional[AgentRegistry] = None) -> AgentRegist
         logger.info("✅ Registered financial agent")
 
     except ImportError as e:
-        logger.warning(f"⚠️  Could not import financial agent: {e}")
+        logger.warning(f"⚠️  Could not import financial agent: {e}", exc_info=True)
     except Exception as e:
         logger.error(f"❌ Failed to register financial agent: {e}", exc_info=True)
 
@@ -130,7 +130,7 @@ def register_all_agents(registry: Optional[AgentRegistry] = None) -> AgentRegist
         logger.info("✅ Registered market insight agent")
 
     except ImportError as e:
-        logger.warning(f"⚠️  Could not import market insight agent: {e}")
+        logger.warning(f"⚠️  Could not import market insight agent: {e}", exc_info=True)
     except Exception as e:
         logger.error(f"❌ Failed to register market insight agent: {e}", exc_info=True)
 
@@ -151,7 +151,7 @@ def register_all_agents(registry: Optional[AgentRegistry] = None) -> AgentRegist
         logger.info("✅ Registered compliance agent")
 
     except ImportError as e:
-        logger.warning(f"⚠️  Could not import compliance agent: {e}")
+        logger.warning(f"⚠️  Could not import compliance agent: {e}", exc_info=True)
     except Exception as e:
         logger.error(f"❌ Failed to register compliance agent: {e}", exc_info=True)
 
@@ -184,7 +184,7 @@ def register_all_agents(registry: Optional[AgentRegistry] = None) -> AgentRegist
         logger.info("✅ Registered unified content_service")
 
     except ImportError as e:
-        logger.warning(f"⚠️  Could not import unified content_service: {e}")
+        logger.warning(f"⚠️  Could not import unified content_service: {e}", exc_info=True)
     except Exception as e:
         logger.error(f"❌ Failed to register unified content_service: {e}", exc_info=True)
 
@@ -211,7 +211,7 @@ def register_all_agents(registry: Optional[AgentRegistry] = None) -> AgentRegist
         logger.info("✅ Registered unified financial_service")
 
     except ImportError as e:
-        logger.warning(f"⚠️  Could not import unified financial_service: {e}")
+        logger.warning(f"⚠️  Could not import unified financial_service: {e}", exc_info=True)
     except Exception as e:
         logger.error(f"❌ Failed to register unified financial_service: {e}", exc_info=True)
 
@@ -239,7 +239,7 @@ def register_all_agents(registry: Optional[AgentRegistry] = None) -> AgentRegist
         logger.info("✅ Registered unified market_service")
 
     except ImportError as e:
-        logger.warning(f"⚠️  Could not import unified market_service: {e}")
+        logger.warning(f"⚠️  Could not import unified market_service: {e}", exc_info=True)
     except Exception as e:
         logger.error(f"❌ Failed to register unified market_service: {e}", exc_info=True)
 
@@ -266,7 +266,7 @@ def register_all_agents(registry: Optional[AgentRegistry] = None) -> AgentRegist
         logger.info("✅ Registered unified compliance_service")
 
     except ImportError as e:
-        logger.warning(f"⚠️  Could not import unified compliance_service: {e}")
+        logger.warning(f"⚠️  Could not import unified compliance_service: {e}", exc_info=True)
     except Exception as e:
         logger.error(f"❌ Failed to register unified compliance_service: {e}", exc_info=True)
 

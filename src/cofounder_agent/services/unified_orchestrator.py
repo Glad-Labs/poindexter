@@ -303,7 +303,7 @@ class UnifiedOrchestrator:
                     )
                     return agent_class()
             except (ImportError, AttributeError) as e:
-                logger.error(f"Failed to import agent '{agent_name}': {e}")
+                logger.error(f"Failed to import agent '{agent_name}': {e}", exc_info=True)
                 raise ValueError(
                     f"Agent '{agent_name}' not found in registry or importable via fallback"
                 )
@@ -697,7 +697,7 @@ class UnifiedOrchestrator:
                 research_data = await research_agent.run(topic, keywords[:5])
                 research_text = research_data if isinstance(research_data, str) else str(research_data)
             except (TimeoutError, asyncio.TimeoutError):
-                logger.warning("[%s] Research timed out, continuing with empty research", request.request_id)
+                logger.warning("[%s] Research timed out, continuing with empty research", request.request_id, exc_info=True)
                 research_text = ""
 
             research_compliance = validate_constraints(
@@ -782,7 +782,7 @@ class UnifiedOrchestrator:
                 except Exception as e:
                     logger.warning(
                         "[%s] Could not retrieve writing sample: %s", request.request_id, e
-                    )
+, exc_info=True)
 
             post = BlogPost(
                 topic=topic,
@@ -930,7 +930,7 @@ class UnifiedOrchestrator:
                     featured_image_url = featured_image.url
                     logger.info("[%s] Featured image selected", request.request_id)
             except Exception as e:
-                logger.warning("[%s] Image selection failed: %s", request.request_id, e)
+                logger.warning("[%s] Image selection failed: %s", request.request_id, e, exc_info=True)
 
             # ====================================================================
             # STAGE 5: FORMATTING (75% → 90%)
@@ -1055,7 +1055,7 @@ class UnifiedOrchestrator:
                 feedback="Financial analysis complete",
             )
         except Exception as e:  # pylint: disable=broad-except
-            logger.error("[%s] Financial analysis failed: %s", request.request_id, e)
+            logger.error("[%s] Financial analysis failed: %s", request.request_id, e, exc_info=True)
             return ExecutionResult(
                 request_id=request.request_id,
                 request_type=request.request_type,
@@ -1090,7 +1090,7 @@ class UnifiedOrchestrator:
                 feedback="Compliance audit complete",
             )
         except Exception as e:  # pylint: disable=broad-except
-            logger.error("[%s] Compliance check failed: %s", request.request_id, e)
+            logger.error("[%s] Compliance check failed: %s", request.request_id, e, exc_info=True)
             return ExecutionResult(
                 request_id=request.request_id,
                 request_type=request.request_type,
@@ -1200,7 +1200,7 @@ class UnifiedOrchestrator:
             logger.info("Storing execution result: %s", result.request_id)
             # Result storage is handled by TaskExecutor service after processing
         except Exception as e:  # pylint: disable=broad-except
-            logger.error("Failed to store execution result: %s", e)
+            logger.error("Failed to store execution result: %s", e, exc_info=True)
 
     def _result_to_dict(self, result: ExecutionResult) -> Dict[str, Any]:
         """Convert ExecutionResult to dictionary"""
