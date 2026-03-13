@@ -38,6 +38,7 @@ def make_mock_db() -> AsyncMock:
     db = AsyncMock()
     # Default return values that match typical DB responses
     db.get_task = AsyncMock(return_value=None)
+    db.get_tasks_by_ids = AsyncMock(return_value={})  # bulk fetch — default: empty dict
     db.add_task = AsyncMock(return_value="new-task-id-456")
     db.update_task = AsyncMock(return_value=True)
     db.update_task_status = AsyncMock(return_value=True)
