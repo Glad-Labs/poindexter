@@ -24,7 +24,9 @@ logger = get_logger(__name__)
 _CONTENT_TASKS_CONSTRAINTS = {
     "chk_content_tasks_status": (
         "status",
-        "('pending','queued','in_progress','completed','failed','cancelled')",
+        # awaiting_approval and approved are written by task_executor, unified_orchestrator,
+        # content_router_service, and approval_routes — must be included (issue #764).
+        "('pending','queued','in_progress','completed','failed','cancelled','awaiting_approval','approved')",
     ),
     "chk_content_tasks_approval_status": (
         "approval_status",
@@ -43,11 +45,12 @@ _CONTENT_TASKS_CONSTRAINTS = {
 _STATUS_HISTORY_CONSTRAINTS = {
     "chk_status_history_old_status": (
         "old_status",
-        "('pending','queued','in_progress','completed','failed','cancelled')",
+        # awaiting_approval and approved are written by log_status_change (issue #764).
+        "('pending','queued','in_progress','completed','failed','cancelled','awaiting_approval','approved')",
     ),
     "chk_status_history_new_status": (
         "new_status",
-        "('pending','queued','in_progress','completed','failed','cancelled')",
+        "('pending','queued','in_progress','completed','failed','cancelled','awaiting_approval','approved')",
     ),
 }
 
