@@ -1,5 +1,6 @@
 import logging
 
+import aiofiles
 import httpx
 
 from ..config import config
@@ -44,8 +45,8 @@ class PexelsClient:
                     img_response = await client.get(image_url)
                     img_response.raise_for_status()
 
-                    with open(file_path, "wb") as f:
-                        f.write(img_response.content)
+                    async with aiofiles.open(file_path, "wb") as f:
+                        await f.write(img_response.content)
                     logging.info(
                         f"Successfully downloaded image for query '{query}' to {file_path}."
                     )
