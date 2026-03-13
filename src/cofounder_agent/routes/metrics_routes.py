@@ -16,12 +16,6 @@ from pydantic import BaseModel, Field
 
 from routes.auth_unified import get_current_user
 from schemas.auth_schemas import UserProfile
-from schemas.metrics_schemas import (
-    CostMetric,
-    CostsResponse,
-    HealthMetrics,
-    PerformanceMetrics,
-)
 from services.cost_aggregation_service import CostAggregationService
 from services.database_service import DatabaseService
 from services.usage_tracker import get_usage_tracker

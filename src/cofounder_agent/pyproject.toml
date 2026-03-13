@@ -22,7 +22,7 @@ pydantic-settings = "^2.0"
 
 # Database
 sqlalchemy = "^2.0"
-alembic = "^1.0"
+# alembic removed — project uses raw SQL migrations in services/migrations/ (issue #840)
 asyncpg = "^0.31"
 psycopg2-binary = "^2.9"
 
@@ -43,7 +43,7 @@ python-dotenv = "^1.0"
 environs = "^10.0"
 
 # Data Processing
-pandas = "^2.0"
+# pandas removed — never imported in production code (issue #840)
 numpy = "^1.24"
 
 # Logging & Monitoring
