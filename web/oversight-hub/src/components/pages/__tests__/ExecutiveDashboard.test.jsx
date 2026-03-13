@@ -36,8 +36,14 @@ vi.mock('../../CostBreakdownCards', () => ({
   default: () => <div data-testid="cost-breakdown-cards" />,
 }));
 
+// Mock errorLoggingService (imported by ExecutiveDashboard after #839)
+vi.mock('../../../services/errorLoggingService', () => ({
+  logError: vi.fn(),
+  logErrorToSentry: vi.fn(),
+}));
+
 // Mock the cofounderAgentClient dynamic import
-const mockMakeRequest = vi.fn();
+const { mockMakeRequest } = vi.hoisted(() => ({ mockMakeRequest: vi.fn() }));
 vi.mock('../../../services/cofounderAgentClient', () => ({
   makeRequest: mockMakeRequest,
 }));
