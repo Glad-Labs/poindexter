@@ -12,6 +12,8 @@ const customJestConfig = {
     // Handle module aliases (this will be automatically configured for you based on your tsconfig.json paths)
     '^@/components/(.*)$': '<rootDir>/components/$1',
     '^@/pages/(.*)$': '<rootDir>/pages/$1',
+    // General catch-all for @/ → project root (matches jsconfig.json "paths")
+    '^@/(.*)$': '<rootDir>/$1',
   },
   testEnvironment: 'jest-environment-jsdom',
   // Enforce minimum coverage thresholds. Fail CI if any threshold is missed.
