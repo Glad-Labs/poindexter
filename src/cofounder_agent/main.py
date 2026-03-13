@@ -261,6 +261,39 @@ async def api_health():
         else:
             health_data["components"]["database"] = "unavailable"
 
+        # Include task executor liveness and queue depth (#580)
+        task_executor = getattr(app.state, "task_executor", None)
+        if task_executor is not None:
+            try:
+                executor_stats = task_executor.get_stats()
+                # Fetch pending/in-progress counts from DB for queue-depth monitoring
+                pending_count = 0
+                in_progress_count = 0
+                if database_service:
+                    try:
+                        task_counts = await database_service.tasks.get_task_counts()
+                        pending_count = getattr(task_counts, "pending", 0)
+                        in_progress_count = getattr(task_counts, "in_progress", 0)
+                    except Exception:  # pylint: disable=broad-except
+                        pass  # Non-critical — executor stats still returned
+                health_data["components"]["task_executor"] = {
+                    "running": executor_stats.get("running", False),
+                    "pending_task_count": pending_count,
+                    "in_progress_count": in_progress_count,
+                    "total_processed": executor_stats.get("task_count", 0),
+                    "success_count": executor_stats.get("success_count", 0),
+                    "error_count": executor_stats.get("error_count", 0),
+                }
+                # Degrade overall status if executor is not running
+                if not executor_stats.get("running", False) and health_data["status"] == "healthy":
+                    health_data["status"] = "degraded"
+                    health_data["components"]["task_executor"]["degraded_reason"] = "executor_not_running"
+            except Exception as e:  # pylint: disable=broad-except
+                logger.warning("Task executor health check failed: %s", str(e), exc_info=True)
+                health_data["components"]["task_executor"] = "unavailable"
+        else:
+            health_data["components"]["task_executor"] = "unavailable"
+
         return health_data
     except Exception as e:  # pylint: disable=broad-except
         logger.error("Health check failed: %s", str(e), exc_info=True)
