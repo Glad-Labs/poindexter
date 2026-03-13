@@ -224,49 +224,34 @@ async def list_posts(
     try:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
-            # Count total
-            count_query = "SELECT COUNT(*) as total FROM posts"
             where_clauses = []
             params = []
 
             if published_only:
                 where_clauses.append("status = 'published'")
 
-            # if featured is not None:
-            #     where_clauses.append(f"featured = ${len(params) + 1}")
-            #     params.append(featured)
+            where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
-            if where_clauses:
-                count_query += " WHERE " + " AND ".join(where_clauses)
-
-            if params:
-                total_row = await conn.fetchrow(count_query, *params)
-            else:
-                total_row = await conn.fetchrow(count_query)
-
-            total = total_row["total"] if total_row else 0
-
-            # Get paginated posts
-            query = """
-                SELECT id, title, slug, excerpt, featured_image_url, cover_image_url, 
-                       category_id, published_at, created_at, updated_at,
-                       seo_title, seo_description, seo_keywords, status, content, author_id
-                FROM posts
-            """
-
-            if where_clauses:
-                query += " WHERE " + " AND ".join(where_clauses)
-
-            # Sort by published_at (newest first), fallback to created_at if not published
-            query += " ORDER BY COALESCE(published_at, created_at) DESC NULLS LAST"
-            # Parameterize OFFSET/LIMIT to prevent SQL injection
+            # Single query: COUNT(*) OVER () avoids a separate COUNT round-trip.
+            # Same pattern used in tasks_db.py (line ~506).
             params.append(limit)
             params.append(offset)
-            query += f" LIMIT ${len(params) - 1} OFFSET ${len(params)}"
+            query = f"""
+                SELECT id, title, slug, excerpt, featured_image_url, cover_image_url,
+                       category_id, published_at, created_at, updated_at,
+                       seo_title, seo_description, seo_keywords, status, content, author_id,
+                       COUNT(*) OVER () AS total_count
+                FROM posts
+                {where_sql}
+                ORDER BY COALESCE(published_at, created_at) DESC NULLS LAST
+                LIMIT ${len(params) - 1} OFFSET ${len(params)}
+            """
 
             rows = await conn.fetch(query, *params)
+            total = rows[0]["total_count"] if rows else 0
 
-            posts = [dict(row) for row in rows]
+            # Exclude the internal window-function column from API output
+            posts = [{k: v for k, v in dict(row).items() if k != "total_count"} for row in rows]
 
             # Format timestamps, generate missing excerpts, and convert markdown to HTML
             for post in posts:
