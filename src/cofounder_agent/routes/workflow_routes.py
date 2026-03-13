@@ -419,7 +419,7 @@ async def execute_workflow_template(
 
 @router.get("/templates/history", name="Get Workflow Execution History")
 async def get_workflow_history(
-    limit: int = Query(50, ge=1, le=200, description="Maximum history entries to return"),
+    limit: int = Query(20, ge=1, le=100, description="Maximum history entries to return"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     template_name: Optional[str] = Query(None, description="Filter by template name"),
     template_service: Any = Depends(get_template_service_dependency),

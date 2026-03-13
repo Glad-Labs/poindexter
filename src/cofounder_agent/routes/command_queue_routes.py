@@ -92,16 +92,16 @@ async def get_command(command_id: str) -> Dict[str, Any]:
 @router.get("/", response_model=CommandListResponse)
 async def list_commands(
     status: Optional[str] = Query(None),
-    limit: int = Query(100, le=1000),
-    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
 ) -> Dict[str, Any]:
     """
     List commands with optional filtering
 
     Args:
         status: Filter by status (pending, processing, completed, failed)
-        limit: Number of results
-        skip: Number to skip
+        limit: Number of results (1-100, default: 20)
+        offset: Pagination offset
 
     Returns:
         List of commands
@@ -124,11 +124,13 @@ async def list_commands(
 
     # Apply pagination
     total = len(commands)
-    commands = commands[skip : skip + limit]
+    commands = commands[offset : offset + limit]
 
     return {
         "commands": [cmd.to_dict() for cmd in commands],
         "total": total,
+        "offset": offset,
+        "limit": limit,
         "status_filter": status,
     }
 
