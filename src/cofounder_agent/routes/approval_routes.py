@@ -180,11 +180,7 @@ async def approve_task(
             )
             raise HTTPException(
                 status_code=400,
-                detail={
-                    "message": f"Cannot approve task with status '{current_status}'",
-                    "current_status": current_status,
-                    "expected": "awaiting_approval",
-                },
+                detail=f"Cannot approve task with status '{current_status}' — expected 'awaiting_approval'",
             )
 
         # Update task status and approval fields
@@ -499,11 +495,7 @@ async def reject_task(
             )
             raise HTTPException(
                 status_code=400,
-                detail={
-                    "message": f"Cannot reject task with status '{current_status}'",
-                    "current_status": current_status,
-                    "expected": "awaiting_approval",
-                },
+                detail=f"Cannot reject task with status '{current_status}' — expected 'awaiting_approval'",
             )
 
         # Determine final status based on revision allowance
@@ -974,10 +966,7 @@ async def get_pending_approvals(
         )
         raise HTTPException(
             status_code=500,
-            detail={
-                "message": "Failed to fetch pending approvals",
-                "type": "internal_error",
-            },
+            detail="Failed to fetch pending approvals",
         )
 
 

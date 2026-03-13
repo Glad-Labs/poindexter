@@ -259,11 +259,7 @@ async def create_task(
             logger.error("❌ Task creation failed: topic is empty")
             raise HTTPException(
                 status_code=422,
-                detail={
-                    "field": "topic",
-                    "message": "topic is required and cannot be empty",
-                    "type": "validation_error",
-                },
+                detail="topic is required and cannot be empty",
             )
 
         logger.info(
@@ -276,10 +272,7 @@ async def create_task(
         if handler is None:
             raise HTTPException(
                 status_code=400,
-                detail={
-                    "message": f"Unknown task_type: {request.task_type}",
-                    "supported": sorted(_TASK_TYPE_REGISTRY.keys()),
-                },
+                detail=f"Unknown task_type: '{request.task_type}'. Supported: {', '.join(sorted(_TASK_TYPE_REGISTRY.keys()))}",
             )
         return await handler(request, current_user, db_service)
 
@@ -289,7 +282,7 @@ async def create_task(
         logger.error(f"❌ [UNIFIED_TASK_CREATE] Exception: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail={"message": "Failed to create task", "type": "internal_error"},
+            detail="Failed to create task",
         )
 
 
@@ -932,13 +925,10 @@ async def update_task_status_enterprise(
             allowed = get_allowed_transitions(current_status)
             raise HTTPException(
                 status_code=409,
-                detail={
-                    "error": "invalid_status_transition",
-                    "current_status": current_status.value,
-                    "target_status": target_status.value,
-                    "allowed_transitions": sorted(allowed),
-                    "message": f"Cannot transition from {current_status.value} to {target_status.value}",
-                },
+                detail=(
+                    f"Cannot transition from '{current_status.value}' to '{target_status.value}'. "
+                    f"Allowed transitions from '{current_status.value}': {', '.join(sorted(allowed)) or 'none'}"
+                ),
             )
 
         # Prepare update dictionary

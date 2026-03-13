@@ -112,7 +112,8 @@ class TestApproveTask:
             resp = client.post("/api/tasks/task-001/approve", json={"approved": True})
         assert resp.status_code == 400
         detail = resp.json()["detail"]
-        assert detail["current_status"] == "completed"
+        assert "completed" in detail
+        assert "awaiting_approval" in detail
 
     def test_approve_maps_human_feedback_to_feedback(self):
         mock_db = make_mock_db()

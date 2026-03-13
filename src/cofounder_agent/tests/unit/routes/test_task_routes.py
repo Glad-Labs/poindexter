@@ -493,8 +493,8 @@ class TestUpdateTaskStatusEnterprise:
         )
         assert resp.status_code == 404
 
-    def test_invalid_transition_returns_422(self):
-        """pending → published is not a valid transition."""
+    def test_invalid_transition_returns_409(self):
+        """pending → published is not a valid transition — should return 409 Conflict."""
         mock_db = make_mock_db()
         mock_db.get_task = AsyncMock(return_value=_make_task_stub("pending"))
         client = TestClient(_build_app(mock_db))
@@ -503,7 +503,10 @@ class TestUpdateTaskStatusEnterprise:
             f"/api/tasks/{VALID_UUID}/status",
             json={"status": "published"},
         )
-        assert resp.status_code == 422
+        assert resp.status_code == 409
+        detail = resp.json()["detail"]
+        assert "pending" in detail
+        assert "published" in detail
 
     def test_invalid_target_status_value_returns_422(self):
         mock_db = make_mock_db()
