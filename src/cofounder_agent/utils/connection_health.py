@@ -82,7 +82,7 @@ class ConnectionPoolHealth:
             logger.warning(
                 f"⚠️  Pool health check timeout "
                 f"(consecutive failures: {self.consecutive_failures})"
-            )
+, exc_info=True)
             return status
 
         except Exception as e:
@@ -97,7 +97,7 @@ class ConnectionPoolHealth:
             logger.error(
                 f"❌ Pool health check failed: {e} "
                 f"(consecutive failures: {self.consecutive_failures})"
-            )
+, exc_info=True)
             return status
 
     async def auto_health_check(self) -> None:
@@ -125,7 +125,7 @@ class ConnectionPoolHealth:
                 logger.info("🏥 Connection pool health checks stopped")
                 break
             except Exception as e:
-                logger.error(f"Error in health check loop: {e}")
+                logger.error(f"Error in health check loop: {e}", exc_info=True)
                 await asyncio.sleep(self.check_interval)
 
     def get_health_summary(self) -> Dict[str, Any]:

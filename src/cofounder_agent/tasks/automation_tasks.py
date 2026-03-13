@@ -69,7 +69,7 @@ class EmailGenerateTask(PureTask):
 
             email_data = json.loads(response)
         except (json.JSONDecodeError, ValueError, TypeError) as e:
-            logger.warning(f"Failed to parse email campaign data: {e}")
+            logger.warning(f"Failed to parse email campaign data: {e}", exc_info=True)
             email_data = {
                 "subject": topic,
                 "preview": topic[:100],
@@ -147,7 +147,7 @@ class EmailSendTask(PureTask):
                 "status": "scheduled" if send_time != "now" else "sent",
             }
         except Exception as e:
-            logger.error(f"Email sending failed: {str(e)}")
+            logger.error(f"Email sending failed: {str(e)}", exc_info=True)
             return {
                 "sent": False,
                 "error": str(e),
@@ -209,7 +209,7 @@ class SummarizeTask(PureTask):
 
             summary_data = json.loads(response)
         except (json.JSONDecodeError, ValueError, TypeError) as e:
-            logger.warning(f"Failed to parse summary data: {e}")
+            logger.warning(f"Failed to parse summary data: {e}", exc_info=True)
             summary_data = {
                 "summary": content[:200],
                 "key_points": [],

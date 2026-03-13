@@ -180,7 +180,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
                     )
 
         except Exception as e:  # pylint: disable=broad-except
-            self.logger.error("Error verifying memory tables: %s", e)
+            self.logger.error("Error verifying memory tables: %s", e, exc_info=True)
             raise
 
     def _init_embedding_model(self):
@@ -194,7 +194,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
                 self.embedding_model = None
                 self.logger.info("Sentence transformers not available, using fallback similarity")
         except Exception as e:  # pylint: disable=broad-except
-            self.logger.error("Failed to initialize embedding model: %s", e)
+            self.logger.error("Failed to initialize embedding model: %s", e, exc_info=True)
             self.embedding_model = None
 
     async def _load_persistent_memory(self) -> None:
@@ -245,7 +245,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
                 )
 
         except Exception as e:  # pylint: disable=broad-except
-            self.logger.error("Error loading persistent memory: %s", e)
+            self.logger.error("Error loading persistent memory: %s", e, exc_info=True)
 
     def _row_to_memory(self, row: asyncpg.Record) -> Memory:
         """Convert PostgreSQL row to Memory object"""
@@ -340,7 +340,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
             try:
                 embedding = self.embedding_model.encode([content])[0].tolist()
             except Exception as e:  # pylint: disable=broad-except
-                self.logger.error("Error generating embedding: %s", e)
+                self.logger.error("Error generating embedding: %s", e, exc_info=True)
 
         # Create memory object
         memory = Memory(
@@ -416,7 +416,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
                 )
 
         except Exception as e:
-            self.logger.error("Error persisting memory: %s", e)
+            self.logger.error("Error persisting memory: %s", e, exc_info=True)
             raise
 
     async def recall_memories(  # pylint: disable=too-many-locals
@@ -497,7 +497,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
             return result
 
         except Exception as e:  # pylint: disable=broad-except
-            self.logger.error("Error recalling memories: %s", e)
+            self.logger.error("Error recalling memories: %s", e, exc_info=True)
             return []
 
     async def _update_memory_access(self, memory: Memory) -> None:
@@ -515,7 +515,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
                     memory.id,
                 )
         except Exception as e:  # pylint: disable=broad-except
-            self.logger.error("Error updating memory access: %s", e)
+            self.logger.error("Error updating memory access: %s", e, exc_info=True)
 
     async def learn_user_preference(
         self,
@@ -550,7 +550,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
 
             self.logger.info("Learned user preference: %s = %s", preference_key, preference_value)
         except Exception as e:
-            self.logger.error("Error learning user preference: %s", e)
+            self.logger.error("Error learning user preference: %s", e, exc_info=True)
             raise
 
     async def get_user_preferences(self, category: Optional[str] = None) -> Dict[str, Any]:
@@ -644,7 +644,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
                 await self._store_learning_pattern(pattern)
 
         except Exception as e:  # pylint: disable=broad-except
-            self.logger.error("Error identifying learning patterns: %s", e)
+            self.logger.error("Error identifying learning patterns: %s", e, exc_info=True)
 
         return patterns
 
@@ -688,7 +688,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
                     pattern.discovered_at,
                 )
         except Exception as e:
-            self.logger.error("Error storing learning pattern: %s", e)
+            self.logger.error("Error storing learning pattern: %s", e, exc_info=True)
             raise
 
     async def _update_knowledge_clusters(self, memory: Memory):
@@ -754,7 +754,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
                     cluster.topics if cluster.topics else None,  # Pass list directly
                 )
         except Exception as e:
-            self.logger.error("Error persisting knowledge cluster: %s", e)
+            self.logger.error("Error persisting knowledge cluster: %s", e, exc_info=True)
             raise
 
     async def get_contextual_knowledge(
@@ -826,7 +826,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
 
                     self.logger.info("Forgot %s outdated memories", len(memory_ids))
         except Exception as e:
-            self.logger.error("Error forgetting outdated memories: %s", e)
+            self.logger.error("Error forgetting outdated memories: %s", e, exc_info=True)
             raise
 
     async def get_memory_summary(self) -> Dict[str, Any]:
@@ -860,7 +860,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
                 "last_updated": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error("Error getting memory summary: %s", e)
+            self.logger.error("Error getting memory summary: %s", e, exc_info=True)
             raise
 
 

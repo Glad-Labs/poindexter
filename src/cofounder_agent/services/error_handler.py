@@ -495,7 +495,7 @@ class CircuitBreaker:
             if self.failure_count >= self.failure_threshold:
                 self.is_open = True
                 self.last_state_change = datetime.now(timezone.utc)
-                logger.error(f"🔴 Circuit breaker '{self.name}' is now OPEN")
+                logger.error(f"🔴 Circuit breaker '{self.name}' is now OPEN", exc_info=True)
 
                 # Report to Sentry if available
                 if sentry_sdk is not None:
@@ -544,7 +544,7 @@ class CircuitBreaker:
             if self.failure_count >= self.failure_threshold:
                 self.is_open = True
                 self.last_state_change = datetime.now(timezone.utc)
-                logger.error(f"🔴 Circuit breaker '{self.name}' is now OPEN")
+                logger.error(f"🔴 Circuit breaker '{self.name}' is now OPEN", exc_info=True)
 
                 # Report to Sentry if available
                 if sentry_sdk is not None:
@@ -620,7 +620,7 @@ def retry_with_backoff(
                     # Wait before retry with exponential backoff
                     logger.warning(
                         f"⚠️  {func.__name__} attempt {attempt + 1} failed, retrying in {delay}s: {e}"
-                    )
+, exc_info=True)
 
                     if on_error_callback:
                         on_error_callback(e, attempt + 1, max_retries + 1)
@@ -647,7 +647,7 @@ def retry_with_backoff(
 
                     logger.warning(
                         f"⚠️  {func.__name__} attempt {attempt + 1} failed, retrying in {delay}s: {e}"
-                    )
+, exc_info=True)
 
                     if on_error_callback:
                         on_error_callback(e, attempt + 1, max_retries + 1)

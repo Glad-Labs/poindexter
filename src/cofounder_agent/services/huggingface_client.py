@@ -158,7 +158,7 @@ class HuggingFaceClient:
                     raise ServiceError(f"HuggingFace error: {response.status} - {error_text}")
 
         except asyncio.TimeoutError:
-            logger.error(f"HuggingFace request timeout for model {model}")
+            logger.error(f"HuggingFace request timeout for model {model}", exc_info=True)
             raise TimeoutError("HuggingFace request timed out")
         except Exception as e:
             logger.error(f"[_generate] HuggingFace generation failed: {e}", exc_info=True)

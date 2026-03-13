@@ -234,7 +234,7 @@ async def get_cost_metrics(
                     "by_provider": {},
                 }
             except Exception as db_error:
-                logger.warning(f"Database costs failed, falling back to tracker: {db_error}")
+                logger.warning(f"Database costs failed, falling back to tracker: {db_error}", exc_info=True)
                 use_db = False
 
         # Fallback to legacy usage tracker
@@ -463,7 +463,7 @@ async def get_costs_by_phase(
 
         return result
     except Exception as e:
-        logger.error(f"Error getting phase breakdown: {e}")
+        logger.error(f"Error getting phase breakdown: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="An internal error occurred")
 
 
@@ -491,7 +491,7 @@ async def get_costs_by_model(
 
         return result
     except Exception as e:
-        logger.error(f"Error getting model breakdown: {e}")
+        logger.error(f"Error getting model breakdown: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="An internal error occurred")
 
 
@@ -518,7 +518,7 @@ async def get_cost_history(
 
         return result
     except Exception as e:
-        logger.error(f"Error getting cost history: {e}")
+        logger.error(f"Error getting cost history: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="An internal error occurred")
 
 
@@ -550,7 +550,7 @@ async def get_budget_status(
 
         return result
     except Exception as e:
-        logger.error(f"Error getting budget status: {e}")
+        logger.error(f"Error getting budget status: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="An internal error occurred")
 
 
@@ -752,7 +752,7 @@ async def get_operational_metrics(
                 raw = await db_service.tasks.get_task_counts()
                 task_counts = {str(k): int(v) for k, v in (raw or {}).items()}
         except Exception as db_err:
-            logger.warning(f"[operational_metrics] DB task count unavailable: {db_err}")
+            logger.warning(f"[operational_metrics] DB task count unavailable: {db_err}", exc_info=True)
 
         pending = task_counts.get("pending", 0)
         in_progress = task_counts.get("in_progress", 0)

@@ -702,7 +702,7 @@ async def list_tasks(
             limit=limit,
         )
     except Exception as e:
-        logger.error(f"Failed to list tasks: {str(e)}")
+        logger.error(f"Failed to list tasks: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to list tasks")
 
 
@@ -810,7 +810,7 @@ async def get_task(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to fetch task {task_id}: {str(e)}")
+        logger.error(f"Failed to fetch task {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch task")
 
 
@@ -1145,7 +1145,7 @@ async def get_task_status_info(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error fetching status info for {task_id}: {str(e)}")
+        logger.error(f"Error fetching status info for {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch status info")
 
 
@@ -2182,7 +2182,7 @@ async def publish_task(
                 **ModelConverter.task_response_to_unified(ModelConverter.to_task_response(updated_task))
             )
         except Exception as resp_err:
-            logger.warning(f"[publish_task] Response model conversion failed ({resp_err}); returning minimal response")
+            logger.warning(f"[publish_task] Response model conversion failed ({resp_err}); returning minimal response", exc_info=True)
             return {  # type: ignore[return-value]
                 "id": task_id,
                 "status": "published",
@@ -2470,7 +2470,7 @@ async def generate_task_image(
                                             },
                                         )
                             except json.JSONDecodeError as je:
-                                logger.error(f"Failed to parse Pexels response JSON: {je}")
+                                logger.error(f"Failed to parse Pexels response JSON: {je}", exc_info=True)
                                 raise ValueError(f"Invalid JSON from Pexels API: {str(je)}")
                         elif resp.status == 429:
                             logger.warning(f"Pexels rate limit exceeded")
@@ -2483,15 +2483,15 @@ async def generate_task_image(
                             raise ValueError(f"Pexels API error: HTTP {resp.status}")
 
             except ValueError as ve:
-                logger.error(f"Pexels API error: {ve}")
+                logger.error(f"Pexels API error: {ve}", exc_info=True)
                 raise HTTPException(
                     status_code=500, detail=f"Error fetching image from Pexels: {str(ve)}"
                 )
             except asyncio.TimeoutError:
-                logger.warning(f"Pexels API timeout for query: {search_query}")
+                logger.warning(f"Pexels API timeout for query: {search_query}", exc_info=True)
                 raise HTTPException(status_code=504, detail="Pexels API timeout. Please try again.")
             except Exception as e:
-                logger.error(f"Unexpected error fetching from Pexels: {type(e).__name__}: {e}")
+                logger.error(f"Unexpected error fetching from Pexels: {type(e).__name__}: {e}", exc_info=True)
                 raise HTTPException(
                     status_code=500, detail="Unexpected error fetching image from Pexels"
                 )
@@ -2543,7 +2543,7 @@ async def generate_task_image(
                     raise RuntimeError("SDXL image generation failed or file not created")
 
             except asyncio.TimeoutError:
-                logger.warning(f"SDXL image generation timeout for task {task_id}")
+                logger.warning(f"SDXL image generation timeout for task {task_id}", exc_info=True)
                 raise HTTPException(
                     status_code=408,
                     detail="Image generation timeout. Please try again with 'pexels' source.",

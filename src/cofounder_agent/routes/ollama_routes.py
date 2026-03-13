@@ -96,7 +96,7 @@ async def check_ollama_health(
             )
 
     except httpx.ConnectError:
-        logger.warning("[Ollama] Connection refused - is Ollama running?")
+        logger.warning("[Ollama] Connection refused - is Ollama running?", exc_info=True)
         return OllamaHealthResponse(
             connected=False,
             status="unreachable",
@@ -106,7 +106,7 @@ async def check_ollama_health(
         )
 
     except httpx.TimeoutException:
-        logger.warning("[Ollama] Health check timeout")
+        logger.warning("[Ollama] Health check timeout", exc_info=True)
         return OllamaHealthResponse(
             connected=False,
             status="timeout",
@@ -116,7 +116,7 @@ async def check_ollama_health(
         )
 
     except Exception as e:
-        logger.error(f"[Ollama] Health check failed: {str(e)}")
+        logger.error(f"[Ollama] Health check failed: {str(e)}", exc_info=True)
         return OllamaHealthResponse(
             connected=False,
             status="error",
@@ -276,7 +276,7 @@ async def warmup_ollama(
             )
 
     except httpx.TimeoutException:
-        logger.warning(f"[Ollama] Warm-up timeout for model: {resolved_model}")
+        logger.warning(f"[Ollama] Warm-up timeout for model: {resolved_model}", exc_info=True)
         return OllamaWarmupResponse(
             status="warning",
             model=resolved_model,
@@ -286,7 +286,7 @@ async def warmup_ollama(
         )
 
     except httpx.ConnectError:
-        logger.error("[Ollama] Cannot connect to Ollama during warm-up")
+        logger.error("[Ollama] Cannot connect to Ollama during warm-up", exc_info=True)
         return OllamaWarmupResponse(
             status="error",
             model=resolved_model,
@@ -425,7 +425,7 @@ async def select_ollama_model(
                 }
 
     except Exception as e:
-        logger.error(f"[Ollama] Model selection error: {str(e)}")
+        logger.error(f"[Ollama] Model selection error: {str(e)}", exc_info=True)
         return {
             "success": False,
             "selected_model": None,

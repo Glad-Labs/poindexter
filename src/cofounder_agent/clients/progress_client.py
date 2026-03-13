@@ -110,7 +110,7 @@ class WorkflowProgressClient:
                 resp.raise_for_status()
                 return await resp.json()
         except Exception as e:
-            logger.error(f"Failed to initialize progress: {e}")
+            logger.error(f"Failed to initialize progress: {e}", exc_info=True)
             raise
 
     async def start_execution(
@@ -137,7 +137,7 @@ class WorkflowProgressClient:
                 resp.raise_for_status()
                 return await resp.json()
         except Exception as e:
-            logger.error(f"Failed to start execution: {e}")
+            logger.error(f"Failed to start execution: {e}", exc_info=True)
             raise
 
     async def start_phase(
@@ -173,7 +173,7 @@ class WorkflowProgressClient:
                 resp.raise_for_status()
                 return await resp.json()
         except Exception as e:
-            logger.error(f"Failed to start phase: {e}")
+            logger.error(f"Failed to start phase: {e}", exc_info=True)
             raise
 
     async def complete_phase(
@@ -208,7 +208,7 @@ class WorkflowProgressClient:
                 resp.raise_for_status()
                 return await resp.json()
         except Exception as e:
-            logger.error(f"Failed to complete phase: {e}")
+            logger.error(f"Failed to complete phase: {e}", exc_info=True)
             raise
 
     async def fail_phase(
@@ -240,7 +240,7 @@ class WorkflowProgressClient:
                 resp.raise_for_status()
                 return await resp.json()
         except Exception as e:
-            logger.error(f"Failed to fail phase: {e}")
+            logger.error(f"Failed to fail phase: {e}", exc_info=True)
             raise
 
     async def mark_complete(
@@ -275,7 +275,7 @@ class WorkflowProgressClient:
                 resp.raise_for_status()
                 return await resp.json()
         except Exception as e:
-            logger.error(f"Failed to mark execution as complete: {e}")
+            logger.error(f"Failed to mark execution as complete: {e}", exc_info=True)
             raise
 
     async def mark_failed(
@@ -306,7 +306,7 @@ class WorkflowProgressClient:
                 resp.raise_for_status()
                 return await resp.json()
         except Exception as e:
-            logger.error(f"Failed to mark execution as failed: {e}")
+            logger.error(f"Failed to mark execution as failed: {e}", exc_info=True)
             raise
 
     async def get_status(self, execution_id: str) -> Dict[str, Any]:
@@ -327,7 +327,7 @@ class WorkflowProgressClient:
                 resp.raise_for_status()
                 return await resp.json()
         except Exception as e:
-            logger.error(f"Failed to get progress status: {e}")
+            logger.error(f"Failed to get progress status: {e}", exc_info=True)
             raise
 
     async def cleanup(self, execution_id: str) -> Dict[str, Any]:
@@ -348,7 +348,7 @@ class WorkflowProgressClient:
                 resp.raise_for_status()
                 return await resp.json()
         except Exception as e:
-            logger.error(f"Failed to cleanup progress: {e}")
+            logger.error(f"Failed to cleanup progress: {e}", exc_info=True)
             raise
 
     async def subscribe_progress(
@@ -397,10 +397,10 @@ class WorkflowProgressClient:
                         except json.JSONDecodeError:
                             logger.debug(f"Received non-JSON message: {message}")
                         except Exception as e:
-                            logger.error(f"Error processing progress update: {e}")
+                            logger.error(f"Error processing progress update: {e}", exc_info=True)
 
             except Exception as e:
-                logger.error(f"WebSocket error for {execution_id}: {e}")
+                logger.error(f"WebSocket error for {execution_id}: {e}", exc_info=True)
 
                 if not auto_reconnect:
                     raise

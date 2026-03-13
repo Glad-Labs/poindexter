@@ -227,7 +227,7 @@ class TaskExecutor:
                             except Exception as update_err:
                                 logger.error(
                                     f"❌ [TASK_EXEC_LOOP] Failed to update task status: {str(update_err)}"
-                                )
+, exc_info=True)
                             self.error_count += 1
                             logger.info(
                                 f"❌ [TASK_EXEC_LOOP] Task failed (total errors: {self.error_count})"
@@ -248,7 +248,7 @@ class TaskExecutor:
                 logger.critical(
                     "[TASK_EXEC_LOOP] Task executor processor loop cancelled — "
                     "background task processing has stopped"
-                )
+, exc_info=True)
                 break
             except Exception as e:
                 logger.error(
@@ -312,7 +312,7 @@ class TaskExecutor:
             except asyncio.TimeoutError:
                 logger.error(
                     f"⏱️  [TASK_SINGLE] Task execution timed out after {TASK_TIMEOUT_SECONDS}s: {task_id}"
-                )
+, exc_info=True)
                 result = {
                     "status": "failed",
                     "orchestrator_error": f"Task execution timeout ({TASK_TIMEOUT_SECONDS}s exceeded)",
@@ -647,7 +647,7 @@ class TaskExecutor:
                             f"   ✅ Fallback generation succeeded: {len(generated_content)} chars"
                         )
                     except Exception as fallback_err:
-                        logger.error(f"   ❌ Fallback generation also failed: {fallback_err}")
+                        logger.error(f"   ❌ Fallback generation also failed: {fallback_err}", exc_info=True)
                         orchestrator_error = f"Orchestrator failed with: {orchestrator_error or 'Unknown error'}. Fallback also failed: {fallback_err}"
                         generated_content = None
 
@@ -852,7 +852,7 @@ class TaskExecutor:
                     )
                     logger.warning(
                         f"   Keeping original content ({len(generated_content) if generated_content else 0} chars)"
-                    )
+, exc_info=True)
 
                 logger.info(
                     f"🔄 Refinement complete: approved={approved}, score={quality_score}/100, content_len={len(generated_content) if generated_content else 0}"
@@ -949,7 +949,7 @@ class TaskExecutor:
                 await self.database_service.log_cost(cost_log)
                 logger.debug(f"✅ Logged task cost: ${cost_log['cost_usd']:.6f} to database")
             except Exception as e:
-                logger.warning(f"⚠️ Failed to persist cost metrics: {e}")
+                logger.warning(f"⚠️ Failed to persist cost metrics: {e}", exc_info=True)
 
         # Close Phase 2 and log structured metrics summary (issue #837)
         task_metrics.record_phase_end(

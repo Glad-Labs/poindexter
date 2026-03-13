@@ -130,7 +130,7 @@ class StartupManager:
 
                 logger.warning(
                     f"[WARNING] SDXL warmup failed (non-critical): {type(e).__name__}: {e}"
-                )
+, exc_info=True)
                 logger.debug(f"    Traceback: {traceback.format_exc()}")
                 # Continue anyway - SDXL will load lazily when first used
 
@@ -206,11 +206,11 @@ class StartupManager:
         except Exception as e:
             startup_error = f"FATAL: PostgreSQL connection failed: {str(e)}"
             logger.error(f"  {startup_error}", exc_info=True)
-            logger.error("  [FATAL] PostgreSQL is REQUIRED - cannot continue")
-            logger.error("   Set DATABASE_URL or DATABASE_USER environment variables")
+            logger.error("  [FATAL] PostgreSQL is REQUIRED - cannot continue", exc_info=True)
+            logger.error("   Set DATABASE_URL or DATABASE_USER environment variables", exc_info=True)
             logger.error(
                 "  Example DATABASE_URL: postgresql://user:password@localhost:5432/glad_labs_dev"
-            )
+, exc_info=True)
             raise SystemExit(1)
 
     async def _run_migrations(self) -> None:
@@ -225,7 +225,7 @@ class StartupManager:
             else:
                 logger.warning("   [WARNING] Database migrations failed (proceeding anyway)")
         except Exception as e:
-            logger.warning(f"   [WARNING] Migration error: {str(e)} (proceeding anyway)")
+            logger.warning(f"   [WARNING] Migration error: {str(e)} (proceeding anyway)", exc_info=True)
 
         # Inject database service into content task store
         try:
@@ -233,7 +233,7 @@ class StartupManager:
 
             get_content_task_store(self.database_service)
         except Exception as e:
-            logger.warning(f"   [WARNING] Content task store setup failed: {str(e)}")
+            logger.warning(f"   [WARNING] Content task store setup failed: {str(e)}", exc_info=True)
 
         # Initialize JWT blocklist service (issue #721 — server-side token invalidation)
         try:
@@ -244,7 +244,7 @@ class StartupManager:
             await jwt_blocklist.cleanup()
             logger.info("   [OK] JWT blocklist service initialized")
         except Exception as e:
-            logger.warning(f"   [WARNING] JWT blocklist init failed: {str(e)}")
+            logger.warning(f"   [WARNING] JWT blocklist init failed: {str(e)}", exc_info=True)
 
     async def _setup_redis_cache(self) -> None:
         """Initialize Redis cache for query optimization"""
@@ -262,7 +262,7 @@ class StartupManager:
                     "   [INFO] Redis cache not available (system will continue without caching)"
                 )
         except Exception as e:
-            logger.warning(f"   [WARNING] Redis cache error: {str(e)} (continuing without cache)")
+            logger.warning(f"   [WARNING] Redis cache error: {str(e)} (continuing without cache)", exc_info=True)
 
     async def _initialize_model_consolidation(self) -> None:
         """Initialize unified model consolidation service"""
@@ -414,7 +414,7 @@ class StartupManager:
         except Exception as e:
             logger.warning(
                 f"[WARNING] Agent registry initialization failed (non-critical): {type(e).__name__}: {e}"
-            )
+, exc_info=True)
             # Continue anyway - system can function without agent registry
 
     async def _initialize_custom_workflows_service(self) -> None:
@@ -436,7 +436,7 @@ class StartupManager:
         except Exception as e:
             logger.warning(
                 f"   Custom workflows service initialization failed (non-critical): {type(e).__name__}: {e}"
-            )
+, exc_info=True)
             self.custom_workflows_service = None
 
     async def _initialize_template_execution_service(self) -> None:
@@ -454,7 +454,7 @@ class StartupManager:
         except Exception as e:
             logger.warning(
                 f"   Template execution service initialization failed (non-critical): {type(e).__name__}: {e}"
-            )
+, exc_info=True)
             self.template_execution_service = None
 
     async def _warmup_sdxl_models(self) -> None:
@@ -525,8 +525,8 @@ class StartupManager:
         except Exception as e:
             import traceback
 
-            logger.warning(f"  [WARNING] SDXL warmup error (non-critical): {type(e).__name__}: {e}")
-            logger.warning(f"     Full traceback:\n{traceback.format_exc()}")
+            logger.warning(f"  [WARNING] SDXL warmup error (non-critical): {type(e).__name__}: {e}", exc_info=True)
+            logger.warning(f"     Full traceback:\n{traceback.format_exc()}", exc_info=True)
             logger.info("     SDXL will initialize on first request")
 
     def _log_startup_summary(self) -> None:

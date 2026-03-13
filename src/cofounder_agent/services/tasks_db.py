@@ -101,12 +101,12 @@ class TasksDatabase(DatabaseServiceMixin):
                         result.append(ModelConverter.to_dict(task_response))
                     return result
             except asyncio.TimeoutError:
-                logger.error(f"Query timeout fetching pending tasks after {QUERY_TIMEOUT}s")
+                logger.error(f"Query timeout fetching pending tasks after {QUERY_TIMEOUT}s", exc_info=True)
                 return []
         except Exception as e:
             if "content_tasks" in str(e) or "does not exist" in str(e) or "relation" in str(e):
                 return []
-            logger.warning(f"Error fetching pending tasks: {str(e)}")
+            logger.warning(f"Error fetching pending tasks: {str(e)}", exc_info=True)
             return []
 
     async def get_all_tasks(self, limit: int = 100) -> List[TaskResponse]:

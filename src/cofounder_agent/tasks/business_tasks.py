@@ -96,7 +96,7 @@ Total Cost: ${total_cost:.2f}"""
 
             analysis = json.loads(response)
         except (json.JSONDecodeError, ValueError, TypeError) as e:
-            logger.warning(f"Failed to parse cost analysis: {e}")
+            logger.warning(f"Failed to parse cost analysis: {e}", exc_info=True)
             analysis = {
                 "recommendations": [],
                 "opportunities": [],
@@ -173,7 +173,7 @@ class MarketAnalysisTask(PureTask):
 
             analysis = json.loads(response)
         except (json.JSONDecodeError, ValueError, TypeError) as e:
-            logger.warning(f"Failed to parse market analysis: {e}")
+            logger.warning(f"Failed to parse market analysis: {e}", exc_info=True)
             analysis = {
                 "market_size": "Unknown",
                 "trends": [],
@@ -256,7 +256,7 @@ class PerformanceReviewTask(PureTask):
 
             analysis = json.loads(response)
         except (json.JSONDecodeError, ValueError, TypeError) as e:
-            logger.warning(f"Failed to parse performance analysis: {e}")
+            logger.warning(f"Failed to parse performance analysis: {e}", exc_info=True)
             analysis = {
                 "summary": response,
                 "insights": [],

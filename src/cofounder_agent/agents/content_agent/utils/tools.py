@@ -29,7 +29,7 @@ except ImportError:
         "[crewai_tools] crewai_tools package not installed — using STUB implementations. "
         "Web search, file reading, and code execution tools will return placeholder strings "
         "instead of real results. Install crewai-tools to enable real tool functionality."
-    )
+, exc_info=True)
 
 
 class WebSearchTool(SerperDevTool):  # type: ignore[misc]
@@ -63,10 +63,10 @@ class CompetitorContentSearchTool(WebsiteSearchTool):  # type: ignore[misc]
             logger.info("CompetitorContentSearchTool initialized successfully")
         except Exception as e:
             # Handle missing CHROMA_OPENAI_API_KEY or other initialization errors gracefully
-            logger.warning(f"CompetitorContentSearchTool initialization failed: {str(e)[:200]}")
+            logger.warning(f"CompetitorContentSearchTool initialization failed: {str(e)[:200]}", exc_info=True)
             logger.warning(
                 "Competitor content search will be unavailable - continuing without this tool"
-            )
+, exc_info=True)
             # Store the error for later reference, but don't raise
             self._initialization_error = str(e)
             self._is_available = False
@@ -92,7 +92,7 @@ class DocumentAccessTool(FileReadTool):  # type: ignore[misc]
             logger.info(f"Successfully read file: {file_path}")
             return content
         except FileNotFoundError:
-            logger.error(f"File not found: {file_path}")
+            logger.error(f"File not found: {file_path}", exc_info=True)
             return None
         except Exception as e:
             logger.error(f"Error reading file {file_path}: {str(e)}", exc_info=True)

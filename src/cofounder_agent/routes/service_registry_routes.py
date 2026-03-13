@@ -324,7 +324,7 @@ async def execute_service_action(
     except HTTPException:
         raise
     except ValueError as e:
-        logger.warning(f"Invalid parameters for {service_name}.{action_name}: {e}")
+        logger.warning(f"Invalid parameters for {service_name}.{action_name}: {e}", exc_info=True)
         raise HTTPException(status_code=400, detail="Invalid parameters")
     except Exception as e:
         logger.error(f"Failed to execute {service_name}.{action_name}: {e}", exc_info=True)

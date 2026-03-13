@@ -146,7 +146,7 @@ def register_all_routes(
             logger.info(" %s registered (%s)", status_key, description)
             status[status_key] = True
         except Exception as e:
-            logger.error(" %s failed: %s", status_key, e)
+            logger.error(" %s failed: %s", status_key, e, exc_info=True)
             status[status_key] = False
 
     total_routes = len(status)
@@ -188,7 +188,7 @@ def register_workflow_history_routes(
         )
         return True
     except ImportError as e:
-        logger.warning(f"workflow_history routes not available: {e}")
+        logger.warning(f"workflow_history routes not available: {e}", exc_info=True)
         return False
     except Exception as e:
         logger.error(f"workflow_history route registration failed: {e}", exc_info=True)

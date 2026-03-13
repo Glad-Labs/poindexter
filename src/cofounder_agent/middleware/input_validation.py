@@ -80,7 +80,7 @@ class InputValidationMiddleware(BaseHTTPMiddleware):
             raise
         except ValueError as e:
             # Return 400 for validation errors
-            logger.warning(f"Request validation error: {str(e)}")
+            logger.warning(f"Request validation error: {str(e)}", exc_info=True)
             return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 content={"detail": str(e)},

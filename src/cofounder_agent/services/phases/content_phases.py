@@ -360,7 +360,7 @@ class SearchImagePhase(BasePhase):
         except Exception as e:
             self.status = "failed"
             self.error = str(e)
-            logger.warning(f"[SearchImagePhase] Error (non-fatal): {str(e)}")
+            logger.warning(f"[SearchImagePhase] Error (non-fatal): {str(e)}", exc_info=True)
             # Image search failures are typically non-terminal, return null
             self.result = {
                 "image_url": None,

@@ -154,7 +154,7 @@ async def websocket_image_progress(websocket: WebSocket, task_id: str, token: st
                 # Send keep-alive every 30 seconds
                 await websocket.send_json({"type": "keep-alive"})
             except json.JSONDecodeError:
-                logger.warning(f"Invalid JSON received on WebSocket: {data}")  # type: ignore[possibly-undefined]
+                logger.warning(f"Invalid JSON received on WebSocket: {data}", exc_info=True)  # type: ignore[possibly-undefined]
 
     except WebSocketDisconnect:
         await connection_manager.disconnect(task_id, websocket)
@@ -259,7 +259,7 @@ async def websocket_workflow_progress(websocket: WebSocket, execution_id: str, t
                 # Send keep-alive every 30 seconds
                 await websocket.send_json({"type": "keep-alive"})
             except json.JSONDecodeError:
-                logger.warning(f"Invalid JSON received on WebSocket: {data}")  # type: ignore[possibly-undefined]
+                logger.warning(f"Invalid JSON received on WebSocket: {data}", exc_info=True)  # type: ignore[possibly-undefined]
 
     except WebSocketDisconnect:
         await connection_manager.disconnect(execution_id, websocket)
@@ -361,7 +361,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
                     logger.info(f"Client unsubscribed from namespace: {ns_to_remove}")
 
             except json.JSONDecodeError:
-                logger.warning(f"Invalid JSON received: {data}")
+                logger.warning(f"Invalid JSON received: {data}", exc_info=True)
 
     except WebSocketDisconnect:
         for ns in list(active_namespaces):
@@ -427,7 +427,7 @@ async def websocket_approval_updates(websocket: WebSocket, task_id: str, token: 
                     message = json.loads(data)
                     # Could handle client requests here (e.g., refresh status)
                 except json.JSONDecodeError:
-                    logger.warning(f"Invalid JSON on approval WebSocket for {task_id}: {data}")
+                    logger.warning(f"Invalid JSON on approval WebSocket for {task_id}: {data}", exc_info=True)
 
             except asyncio.TimeoutError:
                 # Send keep-alive every 60 seconds

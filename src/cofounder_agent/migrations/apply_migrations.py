@@ -73,7 +73,7 @@ def apply_migrations():
         conn = psycopg2.connect(**db_config)
         cursor = conn.cursor()
     except Exception as e:
-        logger.error(f"❌ Failed to connect to database: {e}")
+        logger.error(f"❌ Failed to connect to database: {e}", exc_info=True)
         sys.exit(1)
 
     # Get migrations directory
@@ -128,8 +128,8 @@ def apply_migrations():
             logger.info(f"✅ Migration completed: {migration_name}")
         except Exception as e:
             conn.rollback()
-            logger.error(f"❌ Migration failed: {migration_name}")
-            logger.error(f"   Error: {e}")
+            logger.error(f"❌ Migration failed: {migration_name}", exc_info=True)
+            logger.error(f"   Error: {e}", exc_info=True)
             cursor.close()
             conn.close()
             sys.exit(1)

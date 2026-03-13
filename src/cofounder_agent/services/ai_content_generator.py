@@ -89,7 +89,7 @@ class AIContentGenerator:
             else:
                 logger.warning(f"⚠️ Ollama returned non-200 status: {response.status_code}")
         except Exception as e:
-            logger.warning(f"⚠️ Ollama health check failed: {type(e).__name__}: {e}")
+            logger.warning(f"⚠️ Ollama health check failed: {type(e).__name__}: {e}", exc_info=True)
             self.ollama_available = False
         finally:
             self.ollama_checked = True
@@ -264,7 +264,7 @@ class AIContentGenerator:
             pm = get_prompt_manager()
             logger.info("✓ Prompt manager loaded successfully")
         except Exception as e:
-            logger.error(f"Failed to load prompt manager: {e}")
+            logger.error(f"Failed to load prompt manager: {e}", exc_info=True)
             raise
 
         # Fetch prompts from centralized manager instead of hardcoding
@@ -280,7 +280,7 @@ class AIContentGenerator:
             )
             logger.info(f"✓ System prompt loaded ({len(system_prompt)} chars)")
         except Exception as e:
-            logger.error(f"Failed to load system prompt: {e}")
+            logger.error(f"Failed to load system prompt: {e}", exc_info=True)
             raise
 
         try:
@@ -304,7 +304,7 @@ class AIContentGenerator:
             )
             logger.info(f"✓ Generation prompt loaded ({len(generation_prompt)} chars)")
         except Exception as e:
-            logger.error(f"Failed to load generation prompt: {type(e).__name__}: {e}")
+            logger.error(f"Failed to load generation prompt: {type(e).__name__}: {e}", exc_info=True)
             raise
 
         # Create a callable refinement prompt getter
@@ -318,7 +318,7 @@ class AIContentGenerator:
                     target_audience=style,
                 )
             except Exception as e:
-                logger.error(f"Failed to load refinement prompt: {e}")
+                logger.error(f"Failed to load refinement prompt: {e}", exc_info=True)
                 raise
 
         # Track metrics
@@ -400,7 +400,7 @@ class AIContentGenerator:
 
                     logger.warning(
                         "⚠️  Using google.generativeai (legacy/deprecated SDK) - upgrade to google-genai for better support"
-                    )
+, exc_info=True)
 
                 # Configure API key based on SDK version
                 if use_new_sdk:
@@ -509,7 +509,7 @@ class AIContentGenerator:
                             )
                             generated_content = ""
                 except AttributeError as e:
-                    logger.error(f"Failed to extract text from Gemini response: {e}")
+                    logger.error(f"Failed to extract text from Gemini response: {e}", exc_info=True)
                     generated_content = ""
 
                 if generated_content and len(generated_content) > 100:
@@ -562,7 +562,7 @@ class AIContentGenerator:
             except Exception as e:
                 import traceback
 
-                logger.warning(f"User-selected Gemini failed: {type(e).__name__}: {str(e)}")
+                logger.warning(f"User-selected Gemini failed: {type(e).__name__}: {str(e)}", exc_info=True)
                 logger.debug(f"Gemini error traceback: {traceback.format_exc()}")
                 metrics["model_selection_log"]["decision_tree"]["gemini_error"] = str(e)[
                     :200
@@ -820,18 +820,18 @@ class AIContentGenerator:
                     except asyncio.TimeoutError as e:
                         # Explicitly catch timeout - model too slow or server unresponsive
                         error_msg = f"Timeout (120s exceeded) with {model_name}"
-                        logger.warning(f"Ollama model {model_name} timed out: {error_msg}")
+                        logger.warning(f"Ollama model {model_name} timed out: {error_msg}", exc_info=True)
                         attempts.append(("Ollama", error_msg))
                         continue
                     except Exception as e:
                         # Catch other errors (500 errors, connection issues, etc.)
                         error_msg = str(e)[:150]  # Truncate long error messages
-                        logger.warning(f"Ollama model {model_name} failed: {error_msg}")
+                        logger.warning(f"Ollama model {model_name} failed: {error_msg}", exc_info=True)
                         attempts.append(("Ollama", f"{model_name}: {error_msg}"))
                         continue
 
             except Exception as e:
-                logger.warning(f"Ollama generation failed: {e}")
+                logger.warning(f"Ollama generation failed: {e}", exc_info=True)
                 if not attempts:  # Only append if attempts list is still empty
                     attempts.append(("Ollama", str(e)[:150]))
 
@@ -897,7 +897,7 @@ class AIContentGenerator:
                         continue
 
             except Exception as e:
-                logger.warning(f"HuggingFace generation failed: {e}")
+                logger.warning(f"HuggingFace generation failed: {e}", exc_info=True)
                 attempts.append(("HuggingFace", str(e)))
 
         # 3. Fall back to Google Gemini (paid, but reliable)
@@ -996,14 +996,14 @@ class AIContentGenerator:
 
             except (AttributeError, ImportError) as e:
                 # Fallback for older SDK versions - try client API
-                logger.warning(f"Gemini SDK format not supported: {e}")
+                logger.warning(f"Gemini SDK format not supported: {e}", exc_info=True)
                 attempts.append(("Gemini", f"SDK error: {str(e)[:100]}"))
 
             except ImportError as e:
-                logger.warning(f"google.generativeai not installed: {e}")
+                logger.warning(f"google.generativeai not installed: {e}", exc_info=True)
                 attempts.append(("Gemini", "SDK not installed"))
             except Exception as e:
-                logger.warning(f"Gemini generation failed: {e}")
+                logger.warning(f"Gemini generation failed: {e}", exc_info=True)
                 attempts.append(("Gemini", str(e)[:150]))
 
         # If all models fail, use fallback

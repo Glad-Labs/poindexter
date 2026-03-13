@@ -161,7 +161,7 @@ async def async_retry(
                 logger.error(
                     f"Operation failed permanently after {config.max_attempts} attempts: "
                     f"{type(e).__name__}: {str(e)}"
-                )
+, exc_info=True)
                 raise
 
             # Calculate delay for next attempt
@@ -181,7 +181,7 @@ async def async_retry(
 
         except Exception as e:
             # Non-retryable exception
-            logger.error(f"Unexpected error (not retried): {type(e).__name__}: {str(e)}")
+            logger.error(f"Unexpected error (not retried): {type(e).__name__}: {str(e)}", exc_info=True)
             raise
 
     # Should not reach here, but handle just in case
@@ -230,13 +230,13 @@ async def with_connection_retry(
             retryable_exceptions=(asyncio.TimeoutError, ConnectionError, RuntimeError),
         )
     except asyncio.TimeoutError:
-        logger.error(f"Connection timeout during {operation_name}")
+        logger.error(f"Connection timeout during {operation_name}", exc_info=True)
         raise
     except ConnectionError as e:
-        logger.error(f"Connection error during {operation_name}: {e}")
+        logger.error(f"Connection error during {operation_name}: {e}", exc_info=True)
         raise
     except Exception as e:
-        logger.error(f"Failed {operation_name} after retries: {e}")
+        logger.error(f"Failed {operation_name} after retries: {e}", exc_info=True)
         raise
 
 
