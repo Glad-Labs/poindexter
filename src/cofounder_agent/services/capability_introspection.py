@@ -6,8 +6,11 @@ as capabilities with derived input/output schemas.
 """
 
 import inspect
+import logging
 import re
 from typing import Any, Callable, List, Optional, get_type_hints
+
+logger = logging.getLogger(__name__)
 
 from .capability_registry import (
     Capability,
@@ -218,7 +221,7 @@ class CapabilityIntrospector:
             return True
 
         except Exception as e:
-            print(f"Failed to register capability '{name}': {e}")
+            logger.error("[capability_introspection] Failed to register capability '%s'", name, exc_info=True)
             return False
 
     def register_class_methods_as_capabilities(
@@ -275,7 +278,7 @@ class CapabilityIntrospector:
                     count += 1
 
             except Exception as e:
-                print(f"Failed to register {cls.__name__}.{name}: {e}")
+                logger.error("[capability_introspection] Failed to register %s.%s", cls.__name__, name, exc_info=True)
 
         return count
 
