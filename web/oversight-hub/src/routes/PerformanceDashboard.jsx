@@ -1,5 +1,5 @@
 import logger from '@/lib/logger';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import './PerformanceDashboard.css';
 import {
   BarChart,
@@ -25,20 +25,34 @@ function PerformanceDashboard() {
   const [error, setError] = useState(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
 
-  // Fetch performance metrics from backend
-  useEffect(() => {
-    const fetchPerformanceData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
+  // Track whether this is the initial load so we only show the spinner once.
+  const initialLoadDone = useRef(false);
 
+  // Fetch performance metrics from backend.
+  // Uses AbortController so that any in-flight request is cancelled when the
+  // component unmounts or when autoRefresh changes — prevents stale responses
+  // from overwriting state after unmount (issue #513).
+  // Polling interval extended to 15 s: metrics queries hit 5 DB tables and the
+  // data changes at most once per task completion, so 5 s was excessive.
+  useEffect(() => {
+    const controller = new AbortController();
+    const { signal } = controller;
+
+    const fetchPerformanceData = async () => {
+      // Only show the loading spinner on the first fetch; subsequent polls are
+      // silent so the UI does not flicker every 15 seconds.
+      if (!initialLoadDone.current) {
+        setLoading(true);
+      }
+      setError(null);
+
+      try {
         const API_BASE_URL = getApiUrl();
         const response = await fetch(
           `${API_BASE_URL}/api/metrics/performance`,
           {
-            headers: {
-              Accept: 'application/json',
-            },
+            headers: { Accept: 'application/json' },
+            signal,
           }
         );
 
@@ -55,7 +69,12 @@ function PerformanceDashboard() {
         }
 
         setPerformanceData(data);
+        initialLoadDone.current = true;
       } catch (err) {
+        if (err.name === 'AbortError') {
+          // Request was cancelled on unmount — not an error.
+          return;
+        }
         logger.error('Error fetching performance data:', err);
         setError(
           err instanceof Error
@@ -70,10 +89,11 @@ function PerformanceDashboard() {
 
     fetchPerformanceData();
     const interval = autoRefresh
-      ? setInterval(fetchPerformanceData, 5000)
+      ? setInterval(fetchPerformanceData, 15000)
       : null;
 
     return () => {
+      controller.abort();
       if (interval) clearInterval(interval);
     };
   }, [autoRefresh]);

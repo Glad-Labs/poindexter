@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -40,8 +41,14 @@ interface Post {
   view_count: number;
 }
 
-// Fetch post data
-async function getPost(slug: string): Promise<Post | null> {
+// Fetch post data.
+// Wrapped with React.cache() so that generateMetadata and PostPage share a
+// single fetch result within the same server-side render request (issue #521).
+// The underlying fetch still uses ISR revalidation (next: { revalidate: 86400 })
+// for cross-request caching at the Next.js layer.
+const getPost = cache(async function getPost(
+  slug: string
+): Promise<Post | null> {
   try {
     // Use direct endpoint for single post by slug (much faster than fetching all posts)
     const response = await fetch(`${API_BASE}/api/posts/${slug}`, {
@@ -64,7 +71,7 @@ async function getPost(slug: string): Promise<Post | null> {
     console.error(`Error fetching post "${slug}":`, error);
     return null;
   }
-}
+});
 
 // Generate metadata for the post
 export async function generateMetadata({

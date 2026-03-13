@@ -1154,7 +1154,9 @@ class AIContentGenerator:
                 logger.error(f"[_gemini_generate] Gemini generation failed: {e}", exc_info=True)
                 attempts.append(("Gemini", str(e)[:150]))
 
-        # If all models fail, use fallback
+        # If all models fail, use fallback.
+        # Log at ERROR and capture in Sentry so an alert fires immediately —
+        # fallback content is a stub template, NOT AI-generated output (issue #556).
         logger.error(f"\n{'='*80}")
         logger.error(f"❌ ALL AI MODELS FAILED - Using fallback template")
         logger.error(f"{'='*80}")
@@ -1168,6 +1170,18 @@ class AIContentGenerator:
             f"   - HuggingFace: {ProviderChecker.is_huggingface_available()} (token available)"
         )
         logger.error(f"{'='*80}\n")
+
+        # Capture in Sentry as a distinct message so alert rules can target it.
+        try:
+            import sentry_sdk  # pylint: disable=import-outside-toplevel
+            if sentry_sdk.is_initialized():  # type: ignore[attr-defined]
+                sentry_sdk.capture_message(  # type: ignore[attr-defined]
+                    "ALL AI MODELS FAILED — serving fallback template content",
+                    level="error",
+                    extras={"attempts": [{"provider": p, "error": e} for p, e in attempts]},
+                )
+        except Exception:  # pylint: disable=broad-except
+            pass  # Never let Sentry integration block content delivery
 
         fallback_content = self._generate_fallback_content(topic, style, tone, tags)
         metrics["model_used"] = "Fallback (no AI models available)"

@@ -356,7 +356,12 @@ class TaskExecutor:
                 await asyncio.sleep(self.poll_interval)
 
             except asyncio.CancelledError:
-                logger.info("[TASK_EXEC_LOOP] Task executor processor loop cancelled")
+                # Log at CRITICAL so Sentry's default "new issue" alert fires and
+                # on-call engineers are paged when the executor loop exits unexpectedly.
+                logger.critical(
+                    "[TASK_EXEC_LOOP] Task executor processor loop cancelled — "
+                    "background task processing has stopped"
+                )
                 break
             except Exception as e:
                 logger.error(
@@ -370,7 +375,11 @@ class TaskExecutor:
                 await asyncio.sleep(self.poll_interval)
                 continue
 
-        logger.info("📋 [TASK_EXEC_LOOP] Task executor processor loop stopped")
+        # Log at CRITICAL so Sentry alerts fire immediately on loop exit.
+        logger.critical(
+            "[TASK_EXEC_LOOP] Task executor processor loop stopped — "
+            f"processed={self.task_count} success={self.success_count} errors={self.error_count}"
+        )
 
     async def _sweep_stale_tasks(self) -> None:
         """
