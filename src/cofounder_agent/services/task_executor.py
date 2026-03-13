@@ -416,17 +416,32 @@ class TaskExecutor:
             await self.database_service.update_task(task_id, update_payload)
             logger.debug(f"✅ update_task completed for {task_id}")
 
+            quality_score_preview = (
+                task_metadata_updates.get("quality_score") if isinstance(task_metadata_updates, dict) else None
+            )
+            user_id = task.get("user_id")
             if final_status == "failed":
-                logger.error(f"❌ [TASK_SINGLE] Task failed: {task_id}")
-                # Extract error message for better logging
                 error_msg = (
                     result.get("orchestrator_error", "Unknown error")
                     if isinstance(result, dict)
                     else "Unknown error"
                 )
-                logger.error(f"   Error: {error_msg}")
+                logger.error(
+                    "❌ [TASK_SINGLE] Task failed: task_id=%s user_id=%s category=%s error=%r",
+                    task_id,
+                    user_id,
+                    category,
+                    error_msg,
+                )
             else:
-                logger.info(f"✅ [TASK_SINGLE] Task awaiting approval: {task_id}")
+                logger.info(
+                    "✅ [TASK_SINGLE] Task %s: task_id=%s user_id=%s category=%s quality_score=%s",
+                    final_status,
+                    task_id,
+                    user_id,
+                    category,
+                    quality_score_preview,
+                )
 
         except ServiceError:
             raise
