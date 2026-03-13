@@ -123,6 +123,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.3.0",
+    "jsdom": "^24.0.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
     "baseline-browser-mapping": "^2.9.11",
