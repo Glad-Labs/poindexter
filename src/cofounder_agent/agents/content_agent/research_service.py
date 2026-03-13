@@ -49,17 +49,17 @@ class SearXNGResearchService:
         self.searxng_instance = searxng_instance.rstrip("/")
         self.timeout = timeout
         self.max_results = max_results
-        self.client = None
+        # Initialise the client eagerly so it is shared across all method calls
+        # and connection pooling is effective. Closed in __aexit__.
+        self.client = httpx.AsyncClient(timeout=self.timeout)
 
     async def __aenter__(self):
         """Async context manager entry."""
-        self.client = httpx.AsyncClient(timeout=self.timeout)
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit."""
-        if self.client:
-            await self.client.aclose()
+        """Async context manager exit — closes the shared client."""
+        await self.client.aclose()
 
     async def search(self, query: str, category: str = "general") -> dict:
         """
@@ -72,9 +72,6 @@ class SearXNGResearchService:
         Returns:
             Dictionary with search results and metadata
         """
-        if not self.client:
-            self.client = httpx.AsyncClient(timeout=self.timeout)
-
         try:
             url = f"{self.searxng_instance}/search"
             params = {
@@ -183,9 +180,6 @@ class SearXNGResearchService:
             logger.debug("BeautifulSoup4 not available, skipping article content extraction")
             return None
 
-        if not self.client:
-            self.client = httpx.AsyncClient(timeout=self.timeout)
-
         try:
             response = await self.client.get(url, follow_redirects=True)
             response.raise_for_status()
@@ -242,9 +236,6 @@ class SearXNGResearchService:
                     "format": "json",
                     "results": 3,
                 }
-
-                if not self.client:
-                    self.client = httpx.AsyncClient(timeout=self.timeout)
 
                 response = await self.client.get(url, params=params)
                 response.raise_for_status()
