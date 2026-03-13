@@ -4,6 +4,7 @@ Capability Tasks Service - Database operations for capability-based tasks.
 Handles CRUD operations for task definitions and execution history.
 """
 
+import json
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -115,27 +116,7 @@ class CapabilityTasksService:
         if not result:
             return None
 
-        # Reconstruct from database row
-        steps = [
-            CapabilityStep(
-                capability_name=step["capability_name"],
-                inputs=step["inputs"],
-                output_key=step["output_key"],
-                order=step.get("order", 0),
-                metadata=step.get("metadata", {}),
-            )
-            for step in result["steps"]
-        ]
-
-        return CapabilityTaskDefinition(
-            id=result["id"],
-            name=result["name"],
-            description=result["description"],
-            steps=steps,
-            tags=result.get("tags", []),
-            owner_id=result["owner_id"],
-            created_at=result["created_at"],
-        )
+        return self._row_to_task(result)
 
     async def list_tasks(
         self,
@@ -181,30 +162,40 @@ class CapabilityTasksService:
         results = self.db.execute(query).fetchall()
 
         tasks = []
-        for row in results:
-            steps = [
-                CapabilityStep(
-                    capability_name=step["capability_name"],
-                    inputs=step["inputs"],
-                    output_key=step["output_key"],
-                    order=step.get("order", 0),
-                )
-                for step in row["steps"]
-            ]
-
-            tasks.append(
-                CapabilityTaskDefinition(
-                    id=row["id"],
-                    name=row["name"],
-                    description=row["description"],
-                    steps=steps,
-                    tags=row.get("tags", []),
-                    owner_id=row["owner_id"],
-                    created_at=row["created_at"],
-                )
-            )
+        tasks = [self._row_to_task(row) for row in results]
 
         return tasks, total
+
+    def _row_to_task(self, row: Any) -> CapabilityTaskDefinition:
+        """Convert database row to CapabilityTaskDefinition."""
+        steps_data = row["steps"]
+        if isinstance(steps_data, str):
+            steps_data = json.loads(steps_data)
+
+        steps = [
+            CapabilityStep(
+                capability_name=step["capability_name"],
+                inputs=step["inputs"],
+                output_key=step["output_key"],
+                order=step.get("order", 0),
+                metadata=step.get("metadata", {}),
+            )
+            for step in steps_data
+        ]
+
+        tags = row.get("tags", [])
+        if isinstance(tags, str):
+            tags = json.loads(tags)
+
+        return CapabilityTaskDefinition(
+            id=row["id"],
+            name=row["name"],
+            description=row["description"],
+            steps=steps,
+            tags=tags,
+            owner_id=row["owner_id"],
+            created_at=row["created_at"],
+        )
 
     async def update_task(
         self,
@@ -423,9 +414,17 @@ class CapabilityTasksService:
         """Convert database row to TaskExecutionResult."""
         from .capability_task_executor import StepResult
 
-        # Reconstruct step results
+        # Reconstruct step results — handle JSON string or list
+        raw_step_results = row["step_results"] or []
+        if isinstance(raw_step_results, str):
+            raw_step_results = json.loads(raw_step_results)
+
+        final_outputs = row.get("final_outputs", {})
+        if isinstance(final_outputs, str):
+            final_outputs = json.loads(final_outputs)
+
         step_results = []
-        for step_data in row["step_results"] or []:
+        for step_data in raw_step_results:
             step_results.append(
                 StepResult(
                     step_index=step_data["step_index"],
@@ -444,7 +443,7 @@ class CapabilityTasksService:
             owner_id=row["owner_id"],
             status=row["status"],
             step_results=step_results,
-            final_outputs=row.get("final_outputs", {}),
+            final_outputs=final_outputs,
             total_duration_ms=row.get("total_duration_ms", 0),
             error=row.get("error_message"),
             started_at=row["started_at"],
