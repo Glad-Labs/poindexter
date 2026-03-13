@@ -401,6 +401,119 @@ class TestProcessLoop:
         assert executor.error_count == 1
 
 
+    @pytest.mark.asyncio
+    async def test_idle_alert_fires_when_pending_tasks_not_started_for_too_long(self, caplog):
+        """
+        Regression test for issue #841: a CRITICAL log must be emitted when
+        pending tasks exist but _last_task_started_at is older than
+        _IDLE_ALERT_THRESHOLD_S.
+        """
+        import time
+        task_a = _make_task("aaaaaaaa-bbbb-cccc-dddd-111111111111")
+        db = _make_db()
+        call_count = 0
+
+        async def get_pending_once(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return [task_a]
+            executor.running = False
+            return []
+
+        db.get_pending_tasks = AsyncMock(side_effect=get_pending_once)
+        executor = _make_executor(db=db, poll_interval=0)
+        executor.running = True
+        # Simulate executor that started tasks long ago and is now stalling.
+        executor._last_task_started_at = time.monotonic() - (executor._IDLE_ALERT_THRESHOLD_S + 10)
+
+        import logging
+        with patch.object(executor, "_process_single_task", new_callable=AsyncMock), \
+             patch.object(executor, "_sweep_stale_tasks", new_callable=AsyncMock), \
+             patch("services.task_executor.asyncio.sleep", new_callable=AsyncMock), \
+             caplog.at_level(logging.CRITICAL, logger="services.task_executor"):
+            await executor._process_loop()
+
+        critical_msgs = [r.message for r in caplog.records if r.levelno == logging.CRITICAL]
+        assert any("possible stall" in m or "Executor has not" in m for m in critical_msgs), (
+            f"Expected a CRITICAL idle alert but got: {critical_msgs}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_idle_alert_not_fired_when_no_prior_tasks(self, caplog):
+        """No idle alert fires when _last_task_started_at is None (executor just started)."""
+        task_a = _make_task("aaaaaaaa-bbbb-cccc-dddd-111111111111")
+        db = _make_db()
+        call_count = 0
+
+        async def get_pending_once(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return [task_a]
+            executor.running = False
+            return []
+
+        db.get_pending_tasks = AsyncMock(side_effect=get_pending_once)
+        executor = _make_executor(db=db, poll_interval=0)
+        executor.running = True
+        # _last_task_started_at is None — fresh executor, no alert should fire.
+
+        import logging
+        with patch.object(executor, "_process_single_task", new_callable=AsyncMock), \
+             patch.object(executor, "_sweep_stale_tasks", new_callable=AsyncMock), \
+             patch("services.task_executor.asyncio.sleep", new_callable=AsyncMock), \
+             caplog.at_level(logging.CRITICAL, logger="services.task_executor"):
+            await executor._process_loop()
+
+        critical_msgs = [r.message for r in caplog.records if r.levelno == logging.CRITICAL]
+        idle_alerts = [m for m in critical_msgs if "possible stall" in m or "Executor has not" in m]
+        assert not idle_alerts, f"Unexpected idle alert on fresh executor: {idle_alerts}"
+
+    @pytest.mark.asyncio
+    async def test_last_task_started_at_updated_when_task_begins(self):
+        """_last_task_started_at is set to monotonic time when a task starts."""
+        import time
+        task_a = _make_task("aaaaaaaa-bbbb-cccc-dddd-111111111111")
+        db = _make_db()
+        call_count = 0
+
+        async def get_pending_once(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return [task_a]
+            executor.running = False
+            return []
+
+        db.get_pending_tasks = AsyncMock(side_effect=get_pending_once)
+        executor = _make_executor(db=db, poll_interval=0)
+        executor.running = True
+        assert executor._last_task_started_at is None
+
+        before = time.monotonic()
+        with patch.object(executor, "_process_single_task", new_callable=AsyncMock), \
+             patch.object(executor, "_sweep_stale_tasks", new_callable=AsyncMock), \
+             patch("services.task_executor.asyncio.sleep", new_callable=AsyncMock):
+            await executor._process_loop()
+
+        assert executor._last_task_started_at is not None
+        assert executor._last_task_started_at >= before
+
+    @pytest.mark.asyncio
+    async def test_get_stats_includes_idle_fields(self):
+        """get_stats() must expose last_task_started_age_s and idle_alert_threshold_s."""
+        db = _make_db()
+        executor = _make_executor(db=db)
+
+        stats = executor.get_stats()
+        assert "last_task_started_age_s" in stats
+        assert "idle_alert_threshold_s" in stats
+        assert stats["idle_alert_threshold_s"] == executor._IDLE_ALERT_THRESHOLD_S
+        # No tasks started yet — age should be None
+        assert stats["last_task_started_age_s"] is None
+
+
 # ---------------------------------------------------------------------------
 # _process_single_task
 # ---------------------------------------------------------------------------

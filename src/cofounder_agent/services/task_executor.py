@@ -84,6 +84,12 @@ class TaskExecutor:
         self.critique_loop: Optional[Any] = None  # Optional critique loop (not wired in current version)
         self.last_poll_at: Optional[float] = None  # monotonic timestamp of last poll
         self._poll_cycle: int = 0  # incremented each loop iteration
+        # Monotonic timestamp of the last time a task was picked up for processing.
+        # Used to detect executor stalls (issue #841).
+        self._last_task_started_at: Optional[float] = None
+        # How long (seconds) the queue may have pending tasks without any being
+        # picked up before we fire a CRITICAL alert.
+        self._IDLE_ALERT_THRESHOLD_S: int = 300  # 5 minutes
 
         logger.info(
             f"TaskExecutor initialized: orchestrator={'✅' if orchestrator else '❌'}, "
@@ -161,11 +167,22 @@ class TaskExecutor:
                 pending_tasks = await self.database_service.get_pending_tasks(limit=10)
 
                 if pending_tasks:
-                    logger.info(f"� [TASK_EXEC_LOOP] Found {len(pending_tasks)} pending task(s)")
+                    logger.info(f"📋 [TASK_EXEC_LOOP] Found {len(pending_tasks)} pending task(s)")
                     for idx, task in enumerate(pending_tasks, 1):
                         logger.info(
                             f"   [{idx}] Task ID: {task.get('id')}, Name: {task.get('task_name')}, Status: {task.get('status')}"
                         )
+
+                    # Check whether this executor has been sitting on pending tasks
+                    # without starting any for longer than the idle threshold (#841).
+                    if self._last_task_started_at is not None:
+                        idle_s = _time.monotonic() - self._last_task_started_at
+                        if idle_s > self._IDLE_ALERT_THRESHOLD_S:
+                            logger.critical(
+                                f"[task_executor] Executor has not started a task in "
+                                f"{idle_s:.0f}s with {len(pending_tasks)} pending task(s) "
+                                f"in the queue — possible stall or hang"
+                            )
 
                     # Process each task
                     for task in pending_tasks:
@@ -178,6 +195,7 @@ class TaskExecutor:
 
                         try:
                             logger.info(f"⚡ [TASK_EXEC_LOOP] Starting to process task: {task_id}")
+                            self._last_task_started_at = _time.monotonic()
                             await self._process_single_task(task)
                             self.success_count += 1
                             logger.info(
@@ -1099,6 +1117,9 @@ The key to success with {topic} is staying informed, adapting to changes, and co
         last_poll_age: Optional[float] = None
         if self.last_poll_at is not None:
             last_poll_age = time.monotonic() - self.last_poll_at
+        last_task_age: Optional[float] = None
+        if self._last_task_started_at is not None:
+            last_task_age = time.monotonic() - self._last_task_started_at
         return {
             "running": self.running,
             "task_count": self.task_count,
@@ -1109,5 +1130,9 @@ The key to success with {topic} is staying informed, adapting to changes, and co
             "orchestrator_available": self.orchestrator is not None,
             "quality_service_available": self.quality_service is not None,
             "last_poll_age_s": last_poll_age,
+            # Time since last task was picked up; None if no tasks have run yet.
+            # Exposed for external health monitors (issue #841).
+            "last_task_started_age_s": last_task_age,
+            "idle_alert_threshold_s": self._IDLE_ALERT_THRESHOLD_S,
             "critique_stats": self.critique_loop.get_stats() if self.critique_loop else {},
         }
