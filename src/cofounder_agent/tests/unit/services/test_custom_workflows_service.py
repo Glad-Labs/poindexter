@@ -78,6 +78,19 @@ def _make_pool(
         pool.fetch = AsyncMock(return_value=fetch_result or [])
     pool.fetchval = AsyncMock(return_value=fetchval_result)
     pool.execute = AsyncMock(return_value=execute_result or "OK")
+
+    # Support async context manager: `async with pool.acquire() as conn:`
+    # conn delegates to pool's own fetch/fetchrow so existing tests work unchanged.
+    conn = MagicMock()
+    conn.fetch = pool.fetch
+    conn.fetchrow = pool.fetchrow
+    conn.fetchval = pool.fetchval
+    conn.execute = pool.execute
+    acquire_cm = MagicMock()
+    acquire_cm.__aenter__ = AsyncMock(return_value=conn)
+    acquire_cm.__aexit__ = AsyncMock(return_value=None)
+    pool.acquire = MagicMock(return_value=acquire_cm)
+
     return pool
 
 
@@ -262,8 +275,9 @@ class TestGetWorkflowByName:
 class TestListWorkflows:
     @pytest.mark.asyncio
     async def test_success_with_templates_returns_workflows(self):
-        rows = [_make_row(id="wf-1"), _make_row(id="wf-2")]
-        pool = _make_pool(fetch_result=rows, fetchval_result=2)
+        # total_count window column is now returned by the single query
+        rows = [_make_row(id="wf-1", total_count=2), _make_row(id="wf-2", total_count=2)]
+        pool = _make_pool(fetch_result=rows)
         service = _make_service(pool=pool)
 
         result = await service.list_workflows("user-123", include_templates=True)
@@ -274,8 +288,8 @@ class TestListWorkflows:
 
     @pytest.mark.asyncio
     async def test_without_templates_uses_owner_only_query(self):
-        rows = [_make_row(id="wf-1")]
-        pool = _make_pool(fetch_result=rows, fetchval_result=1)
+        rows = [_make_row(id="wf-1", total_count=1)]
+        pool = _make_pool(fetch_result=rows)
         service = _make_service(pool=pool)
 
         result = await service.list_workflows("user-123", include_templates=False)
@@ -284,8 +298,8 @@ class TestListWorkflows:
 
     @pytest.mark.asyncio
     async def test_pagination_has_next_when_more_results(self):
-        rows = [_make_row()]
-        pool = _make_pool(fetch_result=rows, fetchval_result=50)
+        rows = [_make_row(total_count=50)]
+        pool = _make_pool(fetch_result=rows)
         service = _make_service(pool=pool)
 
         result = await service.list_workflows("user-123", page=1, page_size=20)
@@ -304,7 +318,7 @@ class TestListWorkflows:
 
     @pytest.mark.asyncio
     async def test_empty_result_has_no_next_page(self):
-        pool = _make_pool(fetch_result=[], fetchval_result=0)
+        pool = _make_pool(fetch_result=[])
         service = _make_service(pool=pool)
 
         result = await service.list_workflows("user-123")

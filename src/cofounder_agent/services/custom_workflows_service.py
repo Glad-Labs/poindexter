@@ -126,48 +126,39 @@ class CustomWorkflowsService:
         try:
             offset = (page - 1) * page_size
 
-            # Get workflows owned by user or public templates
-            if include_templates:
-                rows = await self.database_service.pool.fetch(
-                    """
-                    SELECT id, name, description, phases, owner_id, created_at, updated_at, tags, is_template
-                    FROM custom_workflows
-                    WHERE owner_id = $1 OR is_template = true
-                    ORDER BY updated_at DESC
-                    LIMIT $2 OFFSET $3
-                    """,
-                    owner_id,
-                    page_size,
-                    offset,
-                )
-                total_count_row = await self.database_service.pool.fetchval(
-                    """
-                    SELECT COUNT(*) FROM custom_workflows
-                    WHERE owner_id = $1 OR is_template = true
-                    """,
-                    owner_id,
-                )
-            else:
-                rows = await self.database_service.pool.fetch(
-                    """
-                    SELECT id, name, description, phases, owner_id, created_at, updated_at, tags, is_template
-                    FROM custom_workflows
-                    WHERE owner_id = $1
-                    ORDER BY updated_at DESC
-                    LIMIT $2 OFFSET $3
-                    """,
-                    owner_id,
-                    page_size,
-                    offset,
-                )
-                total_count_row = await self.database_service.pool.fetchval(
-                    """
-                    SELECT COUNT(*) FROM custom_workflows WHERE owner_id = $1
-                    """,
-                    owner_id,
-                )
+            # Single acquire: window function avoids a second COUNT round-trip and keeps
+            # both count and data under the same connection snapshot.
+            async with self.database_service.pool.acquire() as conn:
+                if include_templates:
+                    rows = await conn.fetch(
+                        """
+                        SELECT id, name, description, phases, owner_id, created_at, updated_at,
+                               tags, is_template, COUNT(*) OVER () AS total_count
+                        FROM custom_workflows
+                        WHERE owner_id = $1 OR is_template = true
+                        ORDER BY updated_at DESC
+                        LIMIT $2 OFFSET $3
+                        """,
+                        owner_id,
+                        page_size,
+                        offset,
+                    )
+                else:
+                    rows = await conn.fetch(
+                        """
+                        SELECT id, name, description, phases, owner_id, created_at, updated_at,
+                               tags, is_template, COUNT(*) OVER () AS total_count
+                        FROM custom_workflows
+                        WHERE owner_id = $1
+                        ORDER BY updated_at DESC
+                        LIMIT $2 OFFSET $3
+                        """,
+                        owner_id,
+                        page_size,
+                        offset,
+                    )
 
-            total_count = total_count_row or 0
+            total_count = rows[0]["total_count"] if rows else 0
             workflows = [self._row_to_workflow(row) for row in rows]
 
             logger.info(f"Listed {len(workflows)} workflows for user {owner_id}")
@@ -686,24 +677,23 @@ class CustomWorkflowsService:
 
             where_sql = " AND ".join(where_clauses)
 
-            # Get total count
-            total_count = await self.database_service.pool.fetchval(
-                f"SELECT COUNT(*) FROM workflow_executions WHERE {where_sql}",
-                *params,
-            )
+            # Single acquire: window function keeps COUNT and data on the same connection
+            # snapshot, eliminating a second round-trip.
+            async with self.database_service.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    f"""
+                    SELECT *, COUNT(*) OVER () AS total_count
+                    FROM workflow_executions
+                    WHERE {where_sql}
+                    ORDER BY created_at DESC
+                    LIMIT ${param_index} OFFSET ${param_index + 1}
+                    """,
+                    *params,
+                    limit,
+                    offset,
+                )
 
-            # Get paginated results
-            rows = await self.database_service.pool.fetch(
-                f"""
-                SELECT * FROM workflow_executions
-                WHERE {where_sql}
-                ORDER BY created_at DESC
-                LIMIT ${param_index} OFFSET ${param_index + 1}
-                """,
-                *params,
-                limit,
-                offset,
-            )
+            total_count = rows[0]["total_count"] if rows else 0
 
             executions = [self._row_to_execution(row) for row in rows]
 
