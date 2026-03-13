@@ -82,11 +82,11 @@ class LLMClient:
 
         try:
             if self.provider == "gemini":
-                # Check if google-generativeai is available
+                # Check if google-genai is available
                 # If Poetry broke the import, fall back to Ollama gracefully
                 if not genai:
                     logging.warning(
-                        f"⚠️ Gemini provider requested but google-generativeai module unavailable. "
+                        f"⚠️ Gemini provider requested but google-genai module unavailable. "
                         f"This is often due to Poetry's namespace package handling. "
                         f"Falling back to Ollama for content generation."
                     )
