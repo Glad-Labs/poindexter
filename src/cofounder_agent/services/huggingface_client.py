@@ -247,26 +247,25 @@ async def test_huggingface():
     """Test HuggingFace connection and generation"""
     client = HuggingFaceClient()
 
-    print("Testing HuggingFace connection...")
+    logger.info("Testing HuggingFace connection...")
     available = await client.is_available()
-    print(f"HuggingFace available: {available}")
+    logger.info("HuggingFace available: %s", available)
 
     if available:
-        print("\nAvailable free models:")
+        logger.info("Available free models:")
         for model_id, info in client.get_free_models().items():
-            print(f"  - {model_id}")
-            print(f"    {info['name']} ({info['size']})")
+            logger.info("  - %s: %s (%s)", model_id, info["name"], info["size"])
 
         # Try generation
         model = "mistralai/Mistral-7B-Instruct-v0.1"
-        print(f"\nGenerating with {model}...")
+        logger.info("Generating with %s...", model)
         try:
             result = await client.generate(
                 model=model,
                 prompt="Write a short blog title about AI",
                 max_tokens=100,
             )
-            print(f"Result: {result}")
+            logger.info("Result: %s", result)
         except Exception as e:
             logger.error(f"Generation failed: {e}", exc_info=True)
 
