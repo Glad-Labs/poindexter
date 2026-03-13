@@ -177,18 +177,29 @@ function TaskManagement() {
 
       {/* Error/Success Messages */}
       {error && (
-        <div className="alert alert-error" style={{ marginBottom: '20px' }}>
+        <div
+          className="alert alert-error"
+          role="alert"
+          aria-live="assertive"
+          style={{ marginBottom: '20px' }}
+        >
           <span>{error}</span>
           <button
             onClick={() => setError(null)}
+            aria-label="Dismiss error"
             style={{ marginLeft: 'auto', cursor: 'pointer' }}
           >
-            ✕
+            <span aria-hidden="true">✕</span>
           </button>
         </div>
       )}
       {successMessage && (
-        <div className="alert alert-success" style={{ marginBottom: '20px' }}>
+        <div
+          className="alert alert-success"
+          role="status"
+          aria-live="polite"
+          style={{ marginBottom: '20px' }}
+        >
           <span>{successMessage}</span>
         </div>
       )}
@@ -289,36 +300,112 @@ function TaskManagement() {
                 <tr>
                   <th
                     onClick={() => handleSort('task_name')}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleSort('task_name');
+                      }
+                    }}
+                    tabIndex={0}
+                    role="columnheader"
+                    aria-sort={
+                      sortBy === 'task_name'
+                        ? sortDirection === 'asc'
+                          ? 'ascending'
+                          : 'descending'
+                        : 'none'
+                    }
                     className={`sortable ${sortBy === 'task_name' ? 'active-sort' : ''}`}
                   >
-                    Task{' '}
-                    {sortBy === 'task_name' &&
-                      (sortDirection === 'asc' ? '↑' : '↓')}
+                    Task
+                    {sortBy === 'task_name' && (
+                      <span aria-hidden="true">
+                        {' '}
+                        {sortDirection === 'asc' ? '↑' : '↓'}
+                      </span>
+                    )}
                   </th>
                   <th
                     onClick={() => handleSort('topic')}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleSort('topic');
+                      }
+                    }}
+                    tabIndex={0}
+                    role="columnheader"
+                    aria-sort={
+                      sortBy === 'topic'
+                        ? sortDirection === 'asc'
+                          ? 'ascending'
+                          : 'descending'
+                        : 'none'
+                    }
                     className={`sortable ${sortBy === 'topic' ? 'active-sort' : ''}`}
                   >
-                    Topic{' '}
-                    {sortBy === 'topic' &&
-                      (sortDirection === 'asc' ? '↑' : '↓')}
+                    Topic
+                    {sortBy === 'topic' && (
+                      <span aria-hidden="true">
+                        {' '}
+                        {sortDirection === 'asc' ? '↑' : '↓'}
+                      </span>
+                    )}
                   </th>
                   <th
                     onClick={() => handleSort('status')}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleSort('status');
+                      }
+                    }}
+                    tabIndex={0}
+                    role="columnheader"
+                    aria-sort={
+                      sortBy === 'status'
+                        ? sortDirection === 'asc'
+                          ? 'ascending'
+                          : 'descending'
+                        : 'none'
+                    }
                     className={`sortable ${sortBy === 'status' ? 'active-sort' : ''}`}
                   >
-                    Status{' '}
-                    {sortBy === 'status' &&
-                      (sortDirection === 'asc' ? '↑' : '↓')}
+                    Status
+                    {sortBy === 'status' && (
+                      <span aria-hidden="true">
+                        {' '}
+                        {sortDirection === 'asc' ? '↑' : '↓'}
+                      </span>
+                    )}
                   </th>
                   <th>Progress</th>
                   <th
                     onClick={() => handleSort('created_at')}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleSort('created_at');
+                      }
+                    }}
+                    tabIndex={0}
+                    role="columnheader"
+                    aria-sort={
+                      sortBy === 'created_at'
+                        ? sortDirection === 'asc'
+                          ? 'ascending'
+                          : 'descending'
+                        : 'none'
+                    }
                     className={`sortable ${sortBy === 'created_at' ? 'active-sort' : ''}`}
                   >
-                    Created{' '}
-                    {sortBy === 'created_at' &&
-                      (sortDirection === 'asc' ? '↑' : '↓')}
+                    Created
+                    {sortBy === 'created_at' && (
+                      <span aria-hidden="true">
+                        {' '}
+                        {sortDirection === 'asc' ? '↑' : '↓'}
+                      </span>
+                    )}
                   </th>
                   <th>Actions</th>
                 </tr>

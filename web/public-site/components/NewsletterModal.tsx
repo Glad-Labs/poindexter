@@ -217,6 +217,8 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
 
             {message.text && (
               <div
+                role={message.type === 'error' ? 'alert' : 'status'}
+                aria-live={message.type === 'error' ? 'assertive' : 'polite'}
                 className={`mb-4 p-3 rounded-lg text-sm ${
                   message.type === 'success'
                     ? 'bg-green-500/20 text-green-300 border border-green-500/30'
@@ -230,10 +232,14 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* Email */}
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">
+                <label
+                  htmlFor="newsletter-email"
+                  className="block text-sm font-medium text-slate-300 mb-1"
+                >
                   Email *
                 </label>
                 <input
+                  id="newsletter-email"
                   type="email"
                   name="email"
                   value={formData.email}
@@ -247,10 +253,14 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
               {/* Name Fields */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1">
+                  <label
+                    htmlFor="newsletter-first-name"
+                    className="block text-sm font-medium text-slate-300 mb-1"
+                  >
                     First Name
                   </label>
                   <input
+                    id="newsletter-first-name"
                     type="text"
                     name="firstName"
                     value={formData.firstName}
@@ -260,10 +270,14 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1">
+                  <label
+                    htmlFor="newsletter-last-name"
+                    className="block text-sm font-medium text-slate-300 mb-1"
+                  >
                     Last Name
                   </label>
                   <input
+                    id="newsletter-last-name"
                     type="text"
                     name="lastName"
                     value={formData.lastName}
@@ -276,10 +290,14 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
 
               {/* Company */}
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">
+                <label
+                  htmlFor="newsletter-company"
+                  className="block text-sm font-medium text-slate-300 mb-1"
+                >
                   Company
                 </label>
                 <input
+                  id="newsletter-company"
                   type="text"
                   name="company"
                   value={formData.company}

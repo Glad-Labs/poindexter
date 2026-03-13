@@ -389,3 +389,119 @@ describe('NewsletterModal — a11y: dialog role and Escape close (issue #762)', 
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// a11y — issue #779: submission status announced via live region
+// ---------------------------------------------------------------------------
+
+describe('NewsletterModal — a11y: status message live region (issue #779)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.runOnlyPendingTimers();
+    jest.useRealTimers();
+  });
+
+  it('success message container has role="status"', async () => {
+    const { subscribeToNewsletter: sub } = require('../../lib/api-fastapi');
+    sub.mockResolvedValue({ success: true });
+    render(<NewsletterModal isOpen={true} onClose={jest.fn()} />);
+    fireEvent.change(screen.getByPlaceholderText('you@example.com'), {
+      target: { value: 'ok@example.com', name: 'email', type: 'email' },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Get Updates/i }));
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toBeInTheDocument();
+    });
+  });
+
+  it('success message container has aria-live="polite"', async () => {
+    const { subscribeToNewsletter: sub } = require('../../lib/api-fastapi');
+    sub.mockResolvedValue({ success: true });
+    render(<NewsletterModal isOpen={true} onClose={jest.fn()} />);
+    fireEvent.change(screen.getByPlaceholderText('you@example.com'), {
+      target: { value: 'ok2@example.com', name: 'email', type: 'email' },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Get Updates/i }));
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveAttribute('aria-live', 'polite');
+    });
+  });
+
+  it('error message container has role="alert"', async () => {
+    const { subscribeToNewsletter: sub } = require('../../lib/api-fastapi');
+    sub.mockRejectedValue(new Error('fail'));
+    render(<NewsletterModal isOpen={true} onClose={jest.fn()} />);
+    fireEvent.change(screen.getByPlaceholderText('you@example.com'), {
+      target: { value: 'fail@example.com', name: 'email', type: 'email' },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Get Updates/i }));
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+    });
+  });
+
+  it('error message container has aria-live="assertive"', async () => {
+    const { subscribeToNewsletter: sub } = require('../../lib/api-fastapi');
+    sub.mockRejectedValue(new Error('fail'));
+    render(<NewsletterModal isOpen={true} onClose={jest.fn()} />);
+    fireEvent.change(screen.getByPlaceholderText('you@example.com'), {
+      target: { value: 'fail2@example.com', name: 'email', type: 'email' },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Get Updates/i }));
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveAttribute(
+        'aria-live',
+        'assertive'
+      );
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// a11y — issue #781: form fields have htmlFor/id associations
+// ---------------------------------------------------------------------------
+
+describe('NewsletterModal — a11y: form field label associations (issue #781)', () => {
+  it('Email label has htmlFor="newsletter-email"', () => {
+    render(<NewsletterModal isOpen={true} onClose={jest.fn()} />);
+    const emailLabel = screen.getByText(/Email \*/i).closest('label');
+    expect(emailLabel).toHaveAttribute('for', 'newsletter-email');
+  });
+
+  it('Email input has id="newsletter-email"', () => {
+    render(<NewsletterModal isOpen={true} onClose={jest.fn()} />);
+    const input = document.getElementById('newsletter-email');
+    expect(input).toBeInTheDocument();
+    expect(input.type).toBe('email');
+  });
+
+  it('First Name label has htmlFor="newsletter-first-name"', () => {
+    render(<NewsletterModal isOpen={true} onClose={jest.fn()} />);
+    const label = screen.getByText('First Name').closest('label');
+    expect(label).toHaveAttribute('for', 'newsletter-first-name');
+  });
+
+  it('Last Name label has htmlFor="newsletter-last-name"', () => {
+    render(<NewsletterModal isOpen={true} onClose={jest.fn()} />);
+    const label = screen.getByText('Last Name').closest('label');
+    expect(label).toHaveAttribute('for', 'newsletter-last-name');
+  });
+
+  it('Company label has htmlFor="newsletter-company"', () => {
+    render(<NewsletterModal isOpen={true} onClose={jest.fn()} />);
+    const label = screen.getByText('Company').closest('label');
+    expect(label).toHaveAttribute('for', 'newsletter-company');
+  });
+});

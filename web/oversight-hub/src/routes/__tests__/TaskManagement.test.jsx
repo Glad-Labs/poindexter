@@ -513,3 +513,148 @@ describe('TaskManagement — a11y: action button accessible names (issue #759)',
     expect(retryButtons.length).toBeGreaterThan(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// a11y — issue #773: sortable column headers keyboard-operable
+// ---------------------------------------------------------------------------
+
+describe('TaskManagement — a11y: sortable column headers (issue #773)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setupHook();
+  });
+
+  it('sortable headers have tabIndex=0', () => {
+    const { container } = renderComponent();
+    const sortableHeaders = container.querySelectorAll('th.sortable');
+    expect(sortableHeaders.length).toBeGreaterThan(0);
+    sortableHeaders.forEach((th) => {
+      expect(th).toHaveAttribute('tabIndex', '0');
+    });
+  });
+
+  it('sortable headers have role="columnheader"', () => {
+    const { container } = renderComponent();
+    const sortableHeaders = container.querySelectorAll('th.sortable');
+    sortableHeaders.forEach((th) => {
+      expect(th).toHaveAttribute('role', 'columnheader');
+    });
+  });
+
+  it('non-active sortable headers have aria-sort="none"', () => {
+    const { container } = renderComponent();
+    // Inactive headers (those without active-sort class) must show aria-sort="none"
+    const inactiveHeaders = container.querySelectorAll(
+      'th.sortable:not(.active-sort)'
+    );
+    expect(inactiveHeaders.length).toBeGreaterThan(0);
+    inactiveHeaders.forEach((th) => {
+      expect(th).toHaveAttribute('aria-sort', 'none');
+    });
+  });
+
+  it('pressing Enter on a sort header triggers sort', () => {
+    const { container } = renderComponent();
+    const taskNameHeader = container.querySelector('th.sortable');
+    fireEvent.keyDown(taskNameHeader, { key: 'Enter', code: 'Enter' });
+    // After keyDown, the header should become active-sort
+    expect(taskNameHeader).toHaveClass('active-sort');
+  });
+
+  it('pressing Space on a sort header triggers sort', () => {
+    const { container } = renderComponent();
+    const taskNameHeader = container.querySelector('th.sortable');
+    fireEvent.keyDown(taskNameHeader, { key: ' ', code: 'Space' });
+    expect(taskNameHeader).toHaveClass('active-sort');
+  });
+
+  it('active sort header shows ascending aria-sort', () => {
+    const { container } = renderComponent();
+    const taskNameHeader = container.querySelector('th.sortable');
+    // Click to activate sort on task_name
+    fireEvent.click(taskNameHeader);
+    expect(taskNameHeader).toHaveAttribute('aria-sort', 'ascending');
+  });
+
+  it('clicking active sort header toggles to descending', () => {
+    const { container } = renderComponent();
+    const taskNameHeader = container.querySelector('th.sortable');
+    fireEvent.click(taskNameHeader); // ascending
+    fireEvent.click(taskNameHeader); // descending
+    expect(taskNameHeader).toHaveAttribute('aria-sort', 'descending');
+  });
+
+  it('sort arrow indicators are aria-hidden', () => {
+    const { container } = renderComponent();
+    const taskNameHeader = container.querySelector('th.sortable');
+    fireEvent.click(taskNameHeader); // activate sort to show arrow
+    const arrowSpan = taskNameHeader.querySelector('[aria-hidden="true"]');
+    expect(arrowSpan).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// a11y — issue #776: error/success banners use live regions
+// ---------------------------------------------------------------------------
+
+describe('TaskManagement — a11y: live region banners (issue #776)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setupHook();
+    mockBulkUpdateTasks.mockResolvedValue({ updated_count: 1 });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+  });
+
+  it('error banner has role="alert"', async () => {
+    mockBulkUpdateTasks.mockResolvedValue({ updated_count: 0 });
+    renderComponent();
+    const rejectButtons = screen.getAllByTitle('Reject Task');
+    fireEvent.click(rejectButtons[0]);
+    await waitFor(() => {
+      const alert = screen.getByRole('alert');
+      expect(alert).toBeInTheDocument();
+    });
+  });
+
+  it('error banner has aria-live="assertive"', async () => {
+    mockBulkUpdateTasks.mockResolvedValue({ updated_count: 0 });
+    renderComponent();
+    const rejectButtons = screen.getAllByTitle('Reject Task');
+    fireEvent.click(rejectButtons[0]);
+    await waitFor(() => {
+      const alert = screen.getByRole('alert');
+      expect(alert).toHaveAttribute('aria-live', 'assertive');
+    });
+  });
+
+  it('success banner has role="status"', async () => {
+    renderComponent();
+    const rejectButtons = screen.getAllByTitle('Reject Task');
+    fireEvent.click(rejectButtons[0]);
+    await waitFor(() => {
+      const status = screen.getByRole('status');
+      expect(status).toBeInTheDocument();
+    });
+  });
+
+  it('success banner has aria-live="polite"', async () => {
+    renderComponent();
+    const rejectButtons = screen.getAllByTitle('Reject Task');
+    fireEvent.click(rejectButtons[0]);
+    await waitFor(() => {
+      const status = screen.getByRole('status');
+      expect(status).toHaveAttribute('aria-live', 'polite');
+    });
+  });
+
+  it('error dismiss button has aria-label="Dismiss error"', async () => {
+    mockBulkUpdateTasks.mockResolvedValue({ updated_count: 0 });
+    renderComponent();
+    const rejectButtons = screen.getAllByTitle('Reject Task');
+    fireEvent.click(rejectButtons[0]);
+    await waitFor(() => {
+      const dismissBtn = screen.getByRole('button', { name: 'Dismiss error' });
+      expect(dismissBtn).toBeInTheDocument();
+    });
+  });
+});
