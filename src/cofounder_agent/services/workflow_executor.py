@@ -358,7 +358,7 @@ class WorkflowExecutor:
                 )
 
             return PhaseResult(
-                status="completed" if agent_status == "success" else "completed",
+                status="completed" if agent_status == "success" else "failed",
                 output=result_output,  # type: ignore[arg-type]
                 error=None,
                 execution_time_ms=execution_time_ms,
