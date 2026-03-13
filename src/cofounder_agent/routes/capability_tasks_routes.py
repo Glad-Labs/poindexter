@@ -14,12 +14,14 @@ Endpoints:
 - GET /api/tasks/capability/{id}/executions - List execution history
 """
 
+import logging
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from routes.auth_unified import get_current_user
 from services.capability_natural_language_composer import get_composer
 from services.capability_registry import CapabilityMetadata, ParameterSchema, get_registry
 from services.capability_task_executor import (
@@ -28,6 +30,8 @@ from services.capability_task_executor import (
     execute_capability_task,
 )
 from services.capability_tasks_service import CapabilityTasksService
+
+logger = logging.getLogger(__name__)
 
 # ============ Request/Response Models ============
 
@@ -163,6 +167,11 @@ class ExecutionResponse(BaseModel):
 router = APIRouter(prefix="/api", tags=["capabilities"])
 
 
+def get_owner_id(current_user: Dict[str, Any] = Depends(get_current_user)) -> str:
+    """Extract owner_id from authenticated user."""
+    return str(current_user.get("id", ""))
+
+
 # ============ Capability Discovery Endpoints ============
 
 
@@ -281,7 +290,7 @@ class NaturalLanguageResponse(BaseModel):
 )
 async def compose_task_from_natural_language(
     payload: NaturalLanguageRequest,
-    owner_id: str = Depends(lambda: "user-123"),  # TODO: Extract from auth
+    owner_id: str = Depends(get_owner_id),
 ):
     """
     Compose a capability task from a natural language request.
@@ -342,6 +351,7 @@ async def compose_task_from_natural_language(
         )
 
     except Exception as e:
+        logger.error("[compose_task_from_natural_language] Composition failed", exc_info=True)
         return NaturalLanguageResponse(
             success=False,
             explanation="Error composing task from natural language",
@@ -353,7 +363,7 @@ async def compose_task_from_natural_language(
 @router.post("/tasks/capability/compose-and-execute", response_model=NaturalLanguageResponse)
 async def compose_and_execute(
     payload: NaturalLanguageRequest,
-    owner_id: str = Depends(lambda: "user-123"),  # TODO: Extract from auth
+    owner_id: str = Depends(get_owner_id),
 ):
     """
     Compose and immediately execute a task from natural language.
@@ -372,7 +382,7 @@ async def compose_and_execute(
 @router.post("/tasks/capability", response_model=TaskResponse)
 async def create_capability_task(
     request: CreateTaskRequest,
-    owner_id: str = Depends(lambda: "user-123"),  # TODO: Extract from auth
+    owner_id: str = Depends(get_owner_id),
 ):
     """
     Create a new capability-based task.
@@ -433,7 +443,7 @@ async def create_capability_task(
 async def list_capability_tasks(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
-    owner_id: str = Depends(lambda: "user-123"),  # TODO: Extract from auth
+    owner_id: str = Depends(get_owner_id),
 ):
     """List capability tasks for the current user."""
     # TODO: Query from database via CapabilityTasksService
@@ -449,7 +459,7 @@ async def list_capability_tasks(
 @router.get("/tasks/capability/{task_id}", response_model=TaskResponse)
 async def get_capability_task(
     task_id: str,
-    owner_id: str = Depends(lambda: "user-123"),  # TODO: Extract from auth
+    owner_id: str = Depends(get_owner_id),
 ):
     """Get details of a specific task."""
     # TODO: Query from database
@@ -460,7 +470,7 @@ async def get_capability_task(
 async def update_capability_task(
     task_id: str,
     request: CreateTaskRequest,
-    owner_id: str = Depends(lambda: "user-123"),  # TODO: Extract from auth
+    owner_id: str = Depends(get_owner_id),
 ):
     """Update a capability task."""
     # TODO: Update in database
@@ -470,7 +480,7 @@ async def update_capability_task(
 @router.delete("/tasks/capability/{task_id}")
 async def delete_capability_task(
     task_id: str,
-    owner_id: str = Depends(lambda: "user-123"),  # TODO: Extract from auth
+    owner_id: str = Depends(get_owner_id),
 ):
     """Delete a capability task."""
     # TODO: Delete from database
@@ -483,7 +493,7 @@ async def delete_capability_task(
 @router.post("/tasks/capability/{task_id}/execute", response_model=ExecutionResponse)
 async def execute_capability_task_endpoint(
     task_id: str,
-    owner_id: str = Depends(lambda: "user-123"),  # TODO: Extract from auth
+    owner_id: str = Depends(get_owner_id),
 ):
     """
     Execute a capability task.
@@ -502,7 +512,7 @@ async def execute_capability_task_endpoint(
 async def get_execution_result(
     task_id: str,
     exec_id: str,
-    owner_id: str = Depends(lambda: "user-123"),  # TODO: Extract from auth
+    owner_id: str = Depends(get_owner_id),
 ):
     """Get the result of a specific task execution."""
     # TODO: Query from database
@@ -515,7 +525,7 @@ async def list_executions(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     status: Optional[str] = Query(None),
-    owner_id: str = Depends(lambda: "user-123"),  # TODO: Extract from auth
+    owner_id: str = Depends(get_owner_id),
 ):
     """List execution history for a task."""
     # TODO: Query from database

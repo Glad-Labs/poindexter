@@ -27,6 +27,7 @@ import jwt
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel
 
+from config import get_config
 from schemas.auth_schemas import (
     GitHubCallbackRequest,
     LogoutResponse,
@@ -101,9 +102,13 @@ async def exchange_code_for_token(code: str) -> Dict[str, Any]:
     Raises:
         HTTPException: If token exchange fails
     """
-    # Handle mock auth codes for development
+    # Handle mock auth codes — only permitted in DEVELOPMENT_MODE
     if code.startswith("mock_auth_code_"):
-        logger.info("Mock auth code detected, returning mock token")
+        _cfg = get_config()
+        if _cfg.environment.lower() != "development" or os.getenv("DEVELOPMENT_MODE", "").lower() != "true":
+            logger.warning("[exchange_code_for_token] Mock auth code rejected outside DEVELOPMENT_MODE")
+            raise HTTPException(status_code=401, detail="Mock authentication is not permitted in this environment")
+        logger.info("Mock auth code detected (DEVELOPMENT_MODE), returning mock token")
         return {"access_token": "mock_github_token_dev", "expires_in": 3600}
 
     try:
@@ -165,9 +170,13 @@ async def exchange_code_for_token(code: str) -> Dict[str, Any]:
 
 async def get_github_user(access_token: str) -> Dict[str, Any]:
     """Fetch GitHub user information using access token."""
-    # Handle mock auth tokens for development
+    # Handle mock auth tokens — only permitted in DEVELOPMENT_MODE
     if access_token == "mock_github_token_dev":
-        logger.info("Mock token detected, returning mock user data")
+        _cfg = get_config()
+        if _cfg.environment.lower() != "development" or os.getenv("DEVELOPMENT_MODE", "").lower() != "true":
+            logger.warning("[get_github_user] Mock token rejected outside DEVELOPMENT_MODE")
+            raise HTTPException(status_code=401, detail="Mock authentication is not permitted in this environment")
+        logger.info("Mock token detected (DEVELOPMENT_MODE), returning mock user data")
         return {
             "id": 999999,
             "login": "dev-user",
@@ -361,6 +370,11 @@ async def github_callback(request_data: GitHubCallbackRequest) -> Dict[str, Any]
     if not state:
         logger.warning("GitHub callback missing state parameter")
         raise HTTPException(status_code=400, detail="Missing state parameter")
+
+    # Validate CSRF state token (one-time use, expiry-checked)
+    if not validate_csrf_state(state):
+        logger.warning("GitHub callback CSRF state validation failed")
+        raise HTTPException(status_code=400, detail="Invalid or expired state parameter")
 
     try:
         # Exchange code for GitHub access token

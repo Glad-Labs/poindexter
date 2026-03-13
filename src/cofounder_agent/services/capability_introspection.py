@@ -186,7 +186,7 @@ class CapabilityIntrospector:
             # Get type hints
             try:
                 type_hints = get_type_hints(func)
-            except:
+            except Exception:
                 type_hints = {}
 
             # Use provided description or extract from docstring
@@ -200,7 +200,7 @@ class CapabilityIntrospector:
                 # Enhance with signature info if docstring parsing didn't work
                 if not input_schema.parameters:
                     input_schema = self._extract_schema_from_signature(func, type_hints)
-            except:
+            except Exception:
                 input_schema = self._extract_schema_from_signature(func, type_hints)
                 output_schema = OutputSchema()
 

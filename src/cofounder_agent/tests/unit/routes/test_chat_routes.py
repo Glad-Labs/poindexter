@@ -17,7 +17,10 @@ from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import routes.chat_routes as chat_module
+from routes.auth_unified import get_current_user
 from routes.chat_routes import router
+
+TEST_USER = {"id": "test-user-001", "username": "testuser", "email": "test@example.com"}
 
 
 @pytest.fixture(autouse=True)
@@ -31,6 +34,8 @@ def clear_conversations():
 def _build_app() -> FastAPI:
     app = FastAPI()
     app.include_router(router)
+    # Override auth for all tests — no real token needed
+    app.dependency_overrides[get_current_user] = lambda: TEST_USER
     return app
 
 
@@ -175,7 +180,7 @@ class TestChat:
         assert "response" in data
 
     def test_conversation_history_accumulates(self):
-        """Multi-turn conversation adds messages to history."""
+        """Multi-turn conversation adds messages to history (scoped by user_id)."""
         ollama = _make_ollama_client()
         with (
             patch.object(chat_module, "ollama_client", ollama),
@@ -187,8 +192,9 @@ class TestChat:
                 "/api/chat",
                 json={"message": "Follow up", "model": "ollama", "conversationId": "multi"},
             )
-        assert "multi" in chat_module.conversations
-        assert len(chat_module.conversations["multi"]) == 4  # 2 user + 2 assistant
+        scoped_key = f"{TEST_USER['id']}:multi"
+        assert scoped_key in chat_module.conversations
+        assert len(chat_module.conversations[scoped_key]) == 4  # 2 user + 2 assistant
 
 
 # ---------------------------------------------------------------------------
@@ -210,7 +216,9 @@ class TestGetConversation:
         assert data["message_count"] == 0
 
     def test_returns_messages_for_existing_conversation(self):
-        chat_module.conversations["existing"] = [
+        # Conversations are scoped by user_id — use the test user's scoped key
+        scoped_key = f"{TEST_USER['id']}:existing"
+        chat_module.conversations[scoped_key] = [
             {"role": "user", "content": "Hi", "timestamp": "2026-03-12T08:00:00"}
         ]
         client = TestClient(_build_app())
@@ -233,7 +241,8 @@ class TestGetConversation:
 @pytest.mark.unit
 class TestClearConversation:
     def test_returns_200_for_existing_conversation(self):
-        chat_module.conversations["to-clear"] = [
+        scoped_key = f"{TEST_USER['id']}:to-clear"
+        chat_module.conversations[scoped_key] = [
             {"role": "user", "content": "Hi", "timestamp": "now"}
         ]
         client = TestClient(_build_app())
@@ -246,10 +255,11 @@ class TestClearConversation:
         assert resp.status_code == 200
 
     def test_conversation_removed_after_clear(self):
-        chat_module.conversations["will-clear"] = [{"role": "user", "content": "x"}]
+        scoped_key = f"{TEST_USER['id']}:will-clear"
+        chat_module.conversations[scoped_key] = [{"role": "user", "content": "x"}]
         client = TestClient(_build_app())
         client.delete("/api/chat/history/will-clear")
-        assert "will-clear" not in chat_module.conversations
+        assert scoped_key not in chat_module.conversations
 
     def test_response_has_status_success(self):
         client = TestClient(_build_app())

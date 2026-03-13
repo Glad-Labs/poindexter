@@ -13,9 +13,12 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
+from routes.auth_unified import get_current_user
 from schemas.ollama_schemas import (
     OllamaHealthResponse,
     OllamaModelSelection,
@@ -26,12 +29,17 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/ollama", tags=["ollama"])
 
+# Rate limiter for the warmup endpoint (expensive: loads model into GPU memory)
+_warmup_limiter = Limiter(key_func=get_remote_address)
+
 OLLAMA_HOST = "http://localhost:11434"
 OLLAMA_TIMEOUT = 5.0
 
 
 @router.get("/health", response_model=OllamaHealthResponse)
-async def check_ollama_health() -> OllamaHealthResponse:
+async def check_ollama_health(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> OllamaHealthResponse:
     """
     Check if Ollama is running and accessible
 
@@ -119,7 +127,9 @@ async def check_ollama_health() -> OllamaHealthResponse:
 
 
 @router.get("/models", response_model=dict)
-async def get_ollama_models() -> dict:
+async def get_ollama_models(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> dict:
     """
     Get list of available Ollama models (FAST - no timeout/warmup)
 
@@ -158,7 +168,12 @@ async def get_ollama_models() -> dict:
 
 
 @router.post("/warmup", response_model=OllamaWarmupResponse)
-async def warmup_ollama(model: Optional[str] = None) -> OllamaWarmupResponse:
+@_warmup_limiter.limit("5/minute")
+async def warmup_ollama(
+    request: Request,
+    model: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> OllamaWarmupResponse:
     """
     Warm up an Ollama model by running a simple prompt
 
@@ -194,18 +209,16 @@ async def warmup_ollama(model: Optional[str] = None) -> OllamaWarmupResponse:
     }
     ```
     """
+    # Resolve model name before try/except so it's available in all except handlers
+    resolved_model: str = model or os.getenv("OLLAMA_WARMUP_MODEL", "mistral:latest") or "mistral:latest"
     try:
-        # Use provided model or default to environment config or mistral
-        if not model:
-            model = os.getenv("OLLAMA_WARMUP_MODEL", "mistral:latest")
-        
         # First check if Ollama is running
         async with httpx.AsyncClient(timeout=OLLAMA_TIMEOUT) as client:
             check_response = await client.get(f"{OLLAMA_HOST}/api/tags")
             if check_response.status_code != 200:
                 return OllamaWarmupResponse(
                     status="error",
-                    model=model,
+                    model=resolved_model,
                     message="❌ Ollama is not responding to health check",
                     generation_time=None,
                     timestamp=datetime.utcnow().isoformat(),
@@ -215,21 +228,21 @@ async def warmup_ollama(model: Optional[str] = None) -> OllamaWarmupResponse:
             models_data = check_response.json()
             available_models = [m["name"] for m in models_data.get("models", [])]
 
-            if model not in available_models:
-                logger.warning(f"[Ollama] Model '{model}' not found. Available: {available_models}")
+            if resolved_model not in available_models:
+                logger.warning(f"[Ollama] Model '{resolved_model}' not found. Available: {available_models}")
                 return OllamaWarmupResponse(
                     status="warning",
-                    model=model,
-                    message=f"⚠️ Model '{model}' not found. Available models: {', '.join(available_models)}",
+                    model=resolved_model,
+                    message=f"⚠️ Model '{resolved_model}' not found. Available models: {', '.join(available_models)}",
                     generation_time=None,
                     timestamp=datetime.utcnow().isoformat(),
                 )
 
             # Now warm up the model with a simple prompt
-            logger.info(f"[Ollama] Starting warm-up for model: {model}")
+            logger.info(f"[Ollama] Starting warm-up for model: {resolved_model}")
 
             warmup_payload = {
-                "model": model,
+                "model": resolved_model,
                 "prompt": "Hi",  # Simple prompt to load model
                 "stream": False,
             }
@@ -244,30 +257,30 @@ async def warmup_ollama(model: Optional[str] = None) -> OllamaWarmupResponse:
                 data = warmup_response.json()
                 gen_time = data.get("total_duration", 0) / 1e9  # Convert nanoseconds to seconds
 
-                logger.info(f"[Ollama] Warm-up successful for {model} in {gen_time:.2f}s")
+                logger.info(f"[Ollama] Warm-up successful for {resolved_model} in {gen_time:.2f}s")
 
                 return OllamaWarmupResponse(
                     status="success",
-                    model=model,
-                    message=f"✅ Model '{model}' warmed up successfully in {gen_time:.2f} seconds",
+                    model=resolved_model,
+                    message=f"✅ Model '{resolved_model}' warmed up successfully in {gen_time:.2f} seconds",
                     generation_time=gen_time,
                     timestamp=datetime.utcnow().isoformat(),
                 )
             logger.error(f"[Ollama] Warm-up failed with status {warmup_response.status_code}")
             return OllamaWarmupResponse(
                 status="error",
-                model=model,
+                model=resolved_model,
                 message=f"❌ Warm-up failed: HTTP {warmup_response.status_code}",
                 generation_time=None,
                 timestamp=datetime.utcnow().isoformat(),
             )
 
     except httpx.TimeoutException:
-        logger.warning(f"[Ollama] Warm-up timeout for model: {model}")
+        logger.warning(f"[Ollama] Warm-up timeout for model: {resolved_model}")
         return OllamaWarmupResponse(
             status="warning",
-            model=model,
-            message=f"⏱️ Model warm-up timed out. The model may still be loading.",
+            model=resolved_model,
+            message="⏱️ Model warm-up timed out. The model may still be loading.",
             generation_time=None,
             timestamp=datetime.utcnow().isoformat(),
         )
@@ -276,25 +289,27 @@ async def warmup_ollama(model: Optional[str] = None) -> OllamaWarmupResponse:
         logger.error("[Ollama] Cannot connect to Ollama during warm-up")
         return OllamaWarmupResponse(
             status="error",
-            model=model,
+            model=resolved_model,
             message="❌ Cannot connect to Ollama. Is it running?",
             generation_time=None,
             timestamp=datetime.utcnow().isoformat(),
         )
 
     except Exception as e:
-        logger.error(f"[Ollama] Warm-up error: {str(e)}")
+        logger.error(f"[Ollama] Warm-up error", exc_info=True)
         return OllamaWarmupResponse(
             status="error",
-            model=model,
-            message=f"❌ Warm-up error: {str(e)}",
+            model=resolved_model,
+            message="❌ Warm-up error. Check server logs for details.",
             generation_time=None,
             timestamp=datetime.utcnow().isoformat(),
         )
 
 
 @router.get("/status")
-async def get_ollama_status() -> Dict[str, Any]:
+async def get_ollama_status(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
     """
     Get detailed Ollama system status
 
@@ -341,7 +356,10 @@ async def get_ollama_status() -> Dict[str, Any]:
 
 
 @router.post("/select-model")
-async def select_ollama_model(request: OllamaModelSelection) -> Dict[str, Any]:
+async def select_ollama_model(
+    request: OllamaModelSelection,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
     """
     Validate and select an Ollama model for use
 
