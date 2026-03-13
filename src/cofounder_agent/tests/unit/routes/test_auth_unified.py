@@ -207,13 +207,67 @@ class TestUnifiedLogout:
 
 @pytest.mark.unit
 class TestDevelopmentModeBypass:
-    def test_dev_mode_env_var_gates_bypass(self):
-        """Confirm DEVELOPMENT_MODE is read from environment (integration guard)."""
-        # The bypass is in get_current_user_optional, not get_current_user.
-        # Verify the env key name is correct — no side effects.
-        val = os.getenv("DEVELOPMENT_MODE", "")
-        # In a clean test environment this should be absent or not "true"
-        assert val.lower() != "true" or True  # Always passes; documents expected env state
+    def test_dev_token_accepted_when_disable_auth_for_dev_true(self):
+        """get_current_user returns dev user dict when DISABLE_AUTH_FOR_DEV=true.
+
+        The bypass lives in JWTTokenValidator.verify_token (token_validator.py) and
+        is gated on DISABLE_AUTH_FOR_DEV=true + ENVIRONMENT != 'production'.
+        get_current_user returns a dict with 'username' (not 'login') derived from
+        the dev claims returned by verify_token.
+        """
+        import asyncio
+        import os
+        from fastapi import Request
+
+        with patch.dict(
+            os.environ,
+            {"DISABLE_AUTH_FOR_DEV": "true", "ENVIRONMENT": "development"},
+            clear=False,
+        ):
+            from routes.auth_unified import get_current_user
+
+            async def _call():
+                scope = {
+                    "type": "http",
+                    "method": "GET",
+                    "path": "/",
+                    "query_string": b"",
+                    "headers": [(b"authorization", b"Bearer dev-token")],
+                }
+                request = Request(scope)
+                return await get_current_user(request)
+
+            result = asyncio.get_event_loop().run_until_complete(_call())
+        assert result is not None
+        # get_current_user maps claims["username"] or claims["sub"] → result["username"]
+        assert result.get("username") == "dev-user"
+
+    def test_dev_token_rejected_when_disable_auth_for_dev_not_set(self):
+        """get_current_user raises 401 for dev-token when DISABLE_AUTH_FOR_DEV is not 'true'."""
+        import asyncio
+        import os
+        from fastapi import HTTPException, Request
+
+        env_without_bypass = {k: v for k, v in os.environ.items() if k != "DISABLE_AUTH_FOR_DEV"}
+        env_without_bypass["ENVIRONMENT"] = "development"
+
+        with patch.dict(os.environ, env_without_bypass, clear=True):
+            from routes.auth_unified import get_current_user
+
+            async def _call():
+                scope = {
+                    "type": "http",
+                    "method": "GET",
+                    "path": "/",
+                    "query_string": b"",
+                    "headers": [(b"authorization", b"Bearer dev-token")],
+                }
+                request = Request(scope)
+                return await get_current_user(request)
+
+            with pytest.raises(HTTPException) as exc_info:
+                asyncio.get_event_loop().run_until_complete(_call())
+        assert exc_info.value.status_code == 401
 
 
 # ---------------------------------------------------------------------------

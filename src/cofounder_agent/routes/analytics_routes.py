@@ -12,7 +12,7 @@ All endpoints aggregate real data from PostgreSQL database.
 """
 
 from services.logger_config import get_logger
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -155,7 +155,7 @@ async def get_kpi_metrics(
             )
 
         # Calculate time window
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         if range == "1d":
             start_time = now - timedelta(days=1)
         elif range == "7d":
@@ -457,7 +457,7 @@ async def get_task_distributions(
             raise HTTPException(status_code=400, detail=f"Invalid range '{range}'")
 
         # Calculate time window
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         if range == "1d":
             start_time = now - timedelta(days=1)
         elif range == "7d":
