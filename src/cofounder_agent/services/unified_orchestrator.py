@@ -278,7 +278,7 @@ class UnifiedOrchestrator:
             "research_agent": "agents.content_agent.agents.research_agent:ResearchAgent",
             "creative_agent": "agents.content_agent.agents.creative_agent:CreativeAgent",
             "qa_agent": "agents.content_agent.agents.qa_agent:QAAgent",
-            "image_agent": "agents.content_agent.agents.image_agent:ImageAgent",
+            "image_agent": "agents.content_agent.agents.postgres_image_agent:PostgreSQLImageAgent",
             "publishing_agent": "agents.content_agent.agents.postgres_publishing_agent:PostgreSQLPublishingAgent",
             "financial_agent": "agents.financial_agent:FinancialAgent",
             "market_agent": "agents.market_insight_agent:MarketInsightAgent",

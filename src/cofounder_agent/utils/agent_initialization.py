@@ -27,7 +27,7 @@ def register_all_agents(registry: Optional[AgentRegistry] = None) -> AgentRegist
     try:
         # Import agent classes
         from agents.content_agent.agents.creative_agent import CreativeAgent
-        from agents.content_agent.agents.image_agent import ImageAgent
+        from agents.content_agent.agents.postgres_image_agent import PostgreSQLImageAgent as ImageAgent
         from agents.content_agent.agents.postgres_publishing_agent import (
             PostgreSQLPublishingAgent,
         )

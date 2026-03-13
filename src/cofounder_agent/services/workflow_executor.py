@@ -404,9 +404,12 @@ class WorkflowExecutor:
                     "get_creative_agent",
                 ),
                 "qa_agent": ("agents.content_agent.agents.qa_agent", "get_qa_agent"),
-                "image_agent": ("agents.content_agent.agents.image_agent", "get_image_agent"),
+                "image_agent": (
+                    "agents.content_agent.agents.postgres_image_agent",
+                    "get_image_agent",
+                ),
                 "publishing_agent": (
-                    "agents.content_agent.agents.publishing_agent",
+                    "agents.content_agent.agents.postgres_publishing_agent",
                     "get_publishing_agent",
                 ),
             }

@@ -124,3 +124,8 @@ class PostgreSQLPublishingAgent:
         """Close database connections"""
         if hasattr(self.cms_client, "close"):
             await self.cms_client.close()
+
+
+def get_publishing_agent() -> "PostgreSQLPublishingAgent":
+    """Factory used by workflow_executor dynamic loading."""
+    return PostgreSQLPublishingAgent()
