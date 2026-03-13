@@ -28,7 +28,9 @@ def _fix_sys_path_for_venv():
             site.main()  # Reinitialize site package processing
     except Exception as e:
         # If sys.path fixing fails, log but continue - fallback imports may still work
-        print(f"[WARNING] Failed to fix sys.path for venv: {e}")
+        # logging is not yet available at this point, so use warnings module
+        import warnings
+        warnings.warn(f"Failed to fix sys.path for venv: {e}", stacklevel=2)
 
 
 # Execute the fix immediately when this module is imported

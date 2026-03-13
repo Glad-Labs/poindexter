@@ -18,6 +18,9 @@ except ImportError:
     _GENAI_AVAILABLE = False
 
 
+_GEMINI_TIMEOUT = int(os.getenv("GEMINI_TIMEOUT_SECONDS", "120"))
+
+
 class GeminiClient:
     """
     Client for interacting with Google Gemini models.
@@ -99,13 +102,22 @@ class GeminiClient:
             import google.genai as genai
 
             client = genai.Client(api_key=self.api_key)
-            response = await client.aio.models.generate_content(
-                model=model,
-                contents=prompt,
+            response = await asyncio.wait_for(
+                client.aio.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                ),
+                timeout=_GEMINI_TIMEOUT,
             )
 
             return response.text or ""
 
+        except asyncio.TimeoutError:
+            logger.error(
+                f"[generate] Gemini API call timed out after {_GEMINI_TIMEOUT}s",
+                exc_info=True,
+            )
+            raise RuntimeError(f"Gemini generation timed out after {_GEMINI_TIMEOUT}s")
         except (ValueError, ImportError):
             raise
         except Exception as e:
@@ -154,13 +166,22 @@ class GeminiClient:
                 )
                 for msg in messages
             ]
-            response = await client.aio.models.generate_content(
-                model=model,
-                contents=contents,
+            response = await asyncio.wait_for(
+                client.aio.models.generate_content(
+                    model=model,
+                    contents=contents,
+                ),
+                timeout=_GEMINI_TIMEOUT,
             )
 
             return response.text or ""
 
+        except asyncio.TimeoutError:
+            logger.error(
+                f"[chat] Gemini API call timed out after {_GEMINI_TIMEOUT}s",
+                exc_info=True,
+            )
+            raise RuntimeError(f"Gemini chat timed out after {_GEMINI_TIMEOUT}s")
         except (ValueError, ImportError):
             raise
         except Exception as e:
