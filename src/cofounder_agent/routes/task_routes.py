@@ -2064,25 +2064,42 @@ async def publish_task(
             "published_at": datetime.now(timezone.utc).isoformat(),
             "published_by": current_user.get("id"),
         }
-        await db_service.update_task_status(
-            task_id, "published", result=json.dumps({"metadata": publish_metadata})
-        )
+            # Preserve existing task content: merge publish_metadata into result (do not overwrite)
+            existing_result = task.get("result", {})
+            if isinstance(existing_result, str):
+                try:
+                    existing_result = json.loads(existing_result) if existing_result else {}
+                except (json.JSONDecodeError, ValueError):
+                    existing_result = {}
+            existing_result = existing_result or {}
+            task_meta = task.get("task_metadata", {})
+            if isinstance(task_meta, str):
+                try:
+                    task_meta = json.loads(task_meta) if task_meta else {}
+                except (json.JSONDecodeError, ValueError):
+                    task_meta = {}
+            task_meta = task_meta or {}
+            # task_result wins over task_metadata; publish_metadata stored under its own key
+            merged_result = convert_decimals({**task_meta, **existing_result, "publish_metadata": publish_metadata})
+            await db_service.update_task_status(
+                task_id, "published", result=safe_json_dumps(merged_result)
+            )
 
         # Create post in posts table when publishing (not before)
         # This ensures posts only exist for published content
         logger.info(f"Creating posts table entry for published task {task_id}")
         try:
-            # Get task result which contains generated content
-            task_result = task.get("result", {})
-            if isinstance(task_result, str):
-                import json as json_module
+            # Use merged content (task_metadata + result) so content is found whatever key the agent used
+            task_result = merged_result
 
-                task_result = json_module.loads(task_result) if task_result else {}
-
-            # Extract content from task result
-            topic = task.get("topic", "")
+            # Extract content — check multiple possible keys the content agent may use
+            topic = task.get("topic", "") or task_result.get("topic", "")
             draft_content = (
-                task_result.get("draft_content", "") or task_result.get("content", "") or ""
+                task_result.get("draft_content", "")
+                or task_result.get("content", "")
+                or task_result.get("body", "")
+                or task_result.get("article", "")
+                or ""
             )
             seo_description = task_result.get("seo_description", "")
             seo_keywords = task_result.get("seo_keywords", [])
@@ -2139,6 +2156,14 @@ async def publish_task(
                 logger.info(f"✅ Post created with status='published': {post.id}")  # type: ignore[attr-defined]
                 logger.info(f"   Title: {post_title}")
                 logger.info(f"   Slug: {slug}")
+                    # Persist post info back to task result so frontend gets published_url
+                    post_id_val = str(post.id) if hasattr(post, "id") else str(post.get("id", ""))  # type: ignore[union-attr]
+                    merged_result["post_id"] = post_id_val
+                    merged_result["post_slug"] = slug
+                    merged_result["published_url"] = f"/posts/{slug}"
+                    await db_service.update_task_status(
+                        task_id, "published", result=safe_json_dumps(convert_decimals(merged_result))
+                    )
             else:
                 logger.warning(f"⚠️  Skipping post creation: missing content or topic")
         except Exception as e:
@@ -2150,9 +2175,20 @@ async def publish_task(
         updated_task = await db_service.get_task(task_id)
 
         # Convert to response schema
-        return UnifiedTaskResponse(
-            **ModelConverter.task_response_to_unified(ModelConverter.to_task_response(updated_task))
-        )
+        try:
+            return UnifiedTaskResponse(
+                **ModelConverter.task_response_to_unified(ModelConverter.to_task_response(updated_task))
+            )
+        except Exception as resp_err:
+            logger.warning(f"[publish_task] Response model conversion failed ({resp_err}); returning minimal response")
+            return {  # type: ignore[return-value]
+                "id": task_id,
+                "status": "published",
+                "published_url": merged_result.get("published_url"),
+                "post_id": merged_result.get("post_id"),
+                "post_slug": merged_result.get("post_slug"),
+                "message": "Task published successfully",
+            }
 
     except HTTPException:
         raise

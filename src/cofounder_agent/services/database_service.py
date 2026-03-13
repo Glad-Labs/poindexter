@@ -176,9 +176,10 @@ class DatabaseService:
         limit: int = 20,
         status: Optional[str] = None,
         category: Optional[str] = None,
+        search: Optional[str] = None,
     ) -> Dict:
         """Delegate to tasks module."""
-        return await self.tasks.get_tasks_paginated(offset, limit, status, category)
+        return await self.tasks.get_tasks_paginated(offset, limit, status, category, search)
 
     async def get_task_counts(self) -> Dict:
         """Delegate to tasks module."""

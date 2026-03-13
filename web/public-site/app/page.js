@@ -31,7 +31,7 @@ async function getPosts() {
       return [];
     }
 
-    const url = `${FASTAPI_URL}/api/posts?skip=0&limit=20&published_only=true`;
+    const url = `${FASTAPI_URL}/api/posts?offset=0&limit=20&published_only=true`;
     console.log('📡 Fetching posts from:', url);
 
     // Add timeout support using AbortController
@@ -59,12 +59,14 @@ async function getPosts() {
       }
 
       const data = await response.json();
-      console.log(
-        '✅ Posts fetched successfully, got',
-        data.data?.length || 0,
-        'posts'
-      );
-      return data.data || [];
+      const posts = Array.isArray(data?.posts)
+        ? data.posts
+        : Array.isArray(data?.data)
+          ? data.data
+          : [];
+
+      console.log('✅ Posts fetched successfully, got', posts.length, 'posts');
+      return posts;
     } catch (fetchError) {
       clearTimeout(timeoutId);
       // Specific handling for timeout vs other errors

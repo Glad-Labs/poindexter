@@ -19,7 +19,6 @@ from config import get_config
 # Load configuration
 config = get_config()
 
-from services.auth import AuthService
 from services.container import service_container
 
 # Import services
@@ -93,12 +92,6 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         app.state.startup_error = services["startup_error"]
         app.state.startup_complete = True
         logger.debug("[LIFESPAN] ✅ All services injected into app.state")
-
-        # Initialize auth service
-        logger.info("[LIFESPAN] Initializing authentication service. ..")
-        auth_service = AuthService()
-        service_container.register("auth", auth_service)
-        logger.info("[LIFESPAN] ✅ Authentication service initialized")
 
         # Initialize capability system
         logger.info("[LIFESPAN] Initializing capability system. ..")

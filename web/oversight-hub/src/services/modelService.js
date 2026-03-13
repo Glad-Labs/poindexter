@@ -6,7 +6,7 @@ import logger from '@/lib/logger';
  */
 
 import { getApiUrl } from '../config/apiConfig';
-import { authClient } from '../lib/authClient';
+import { getAuthToken } from './authService';
 
 class ModelService {
   constructor() {
@@ -21,9 +21,11 @@ class ModelService {
   async getAvailableModels() {
     try {
       const API_BASE_URL = getApiUrl();
+      const token = getAuthToken();
       const response = await fetch(`${API_BASE_URL}/api/v1/models/available`, {
         headers: {
-          ...authClient.getAuthHeaders(),
+          'Content-Type': 'application/json',
+          ...(token && { Authorization: `Bearer ${token}` }),
           Accept: 'application/json',
         },
         credentials: 'include',
