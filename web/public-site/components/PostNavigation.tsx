@@ -25,7 +25,7 @@ export function PostNavigation({
             className="group p-4 rounded-lg border border-slate-700 hover:border-cyan-400/50 transition-all duration-300 hover:shadow-lg hover:shadow-cyan-400/10"
           >
             <div className="text-xs uppercase text-slate-500 font-semibold mb-2">
-              ← Previous Article
+              <span aria-hidden="true">← </span>Previous Article
             </div>
             <h3 className="text-lg font-semibold text-cyan-400 group-hover:text-cyan-300 transition-colors line-clamp-2">
               {previousPost.title}
@@ -54,7 +54,7 @@ export function PostNavigation({
             className="group p-4 rounded-lg border border-slate-700 hover:border-cyan-400/50 transition-all duration-300 hover:shadow-lg hover:shadow-cyan-400/10 text-right md:text-left"
           >
             <div className="text-xs uppercase text-slate-500 font-semibold mb-2">
-              Next Article →
+              Next Article<span aria-hidden="true"> →</span>
             </div>
             <h3 className="text-lg font-semibold text-cyan-400 group-hover:text-cyan-300 transition-colors line-clamp-2">
               {nextPost.title}

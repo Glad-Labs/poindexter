@@ -1,5 +1,18 @@
+// @vitest-environment jsdom
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, test, expect, beforeEach, vi } from 'vitest';
+
+vi.mock('@/lib/logger', () => ({
+  default: {
+    log: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    info: vi.fn(),
+    debug: vi.fn(),
+  },
+}));
+
 import GeneralSettings from './GeneralSettings';
 import * as settingsService from '../../services/settingsService';
 
@@ -118,6 +131,42 @@ describe('GeneralSettings Component', () => {
 
     await waitFor(() => {
       expect(saveButton).toBeDisabled();
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// a11y — issue #769: TextField select elements have label props
+// ---------------------------------------------------------------------------
+
+describe('GeneralSettings — a11y: TextField label associations (issue #769)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    settingsService.getSetting.mockResolvedValue({ value: '30' });
+    settingsService.createOrUpdateSetting.mockResolvedValue({});
+  });
+
+  it('Auto-refresh Interval field has accessible label', async () => {
+    render(<GeneralSettings />);
+    await waitFor(() => {
+      const field = screen.getByLabelText(/Auto-refresh Interval/i);
+      expect(field).toBeInTheDocument();
+    });
+  });
+
+  it('Task Table Rows Per Page field has accessible label', async () => {
+    render(<GeneralSettings />);
+    await waitFor(() => {
+      const field = screen.getByLabelText(/Task Table Rows Per Page/i);
+      expect(field).toBeInTheDocument();
+    });
+  });
+
+  it('Default Task Quality Preference select has accessible label', async () => {
+    render(<GeneralSettings />);
+    await waitFor(() => {
+      const field = screen.getByLabelText(/Default Task Quality Preference/i);
+      expect(field).toBeInTheDocument();
     });
   });
 });

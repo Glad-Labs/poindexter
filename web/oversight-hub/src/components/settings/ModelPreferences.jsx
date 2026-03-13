@@ -147,6 +147,7 @@ export const ModelPreferences = () => {
               Primary LLM Provider
             </Typography>
             <TextField
+              label="Primary LLM Provider"
               select
               value={settings.primaryProvider}
               onChange={(e) =>

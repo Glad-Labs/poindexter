@@ -128,6 +128,7 @@ export const GeneralSettings = () => {
               Auto-refresh Interval (seconds)
             </Typography>
             <TextField
+              label="Auto-refresh Interval (seconds)"
               type="number"
               value={settings.autoRefreshInterval}
               onChange={(e) =>
@@ -149,6 +150,7 @@ export const GeneralSettings = () => {
               Task Table Rows Per Page
             </Typography>
             <TextField
+              label="Task Table Rows Per Page"
               type="number"
               value={settings.taskTableRowLimit}
               onChange={(e) =>
@@ -170,6 +172,7 @@ export const GeneralSettings = () => {
               Default Task Quality Preference
             </Typography>
             <TextField
+              label="Default Task Quality Preference"
               select
               value={settings.defaultTaskQualityPreference}
               onChange={(e) =>
