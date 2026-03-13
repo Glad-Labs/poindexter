@@ -300,6 +300,7 @@ class NaturalLanguageResponse(BaseModel):
 async def compose_task_from_natural_language(
     payload: NaturalLanguageRequest,
     owner_id: str = Depends(get_owner_id),
+    service: CapabilityTasksService = Depends(_get_capability_tasks_service),
 ):
     """
     Compose a capability task from a natural language request.
@@ -346,10 +347,21 @@ async def compose_task_from_natural_language(
                 "tags": result.task_definition.tags,
             }
 
-        # Optionally save the task
+        # Optionally save the task to database
         if payload.save_task and result.task_definition:
-            # TODO: Save to database
-            pass
+            try:
+                await service.create_task(
+                    name=result.task_definition.name,
+                    description=result.task_definition.description,
+                    steps=result.task_definition.steps,
+                    owner_id=owner_id,
+                    tags=result.task_definition.tags,
+                )
+            except Exception:
+                logger.error(
+                    "[compose_task_from_natural_language] Failed to persist composed task",
+                    exc_info=True,
+                )
 
         return NaturalLanguageResponse(
             success=True,
@@ -373,6 +385,7 @@ async def compose_task_from_natural_language(
 async def compose_and_execute(
     payload: NaturalLanguageRequest,
     owner_id: str = Depends(get_owner_id),
+    service: CapabilityTasksService = Depends(_get_capability_tasks_service),
 ):
     """
     Compose and immediately execute a task from natural language.
@@ -382,7 +395,7 @@ async def compose_and_execute(
     # Use the same endpoint but force auto_execute
     payload.auto_execute = True
     payload.save_task = True
-    return await compose_task_from_natural_language(payload, owner_id)
+    return await compose_task_from_natural_language(payload, owner_id, service)
 
 
 # ============ Task Management Endpoints ============
@@ -392,7 +405,7 @@ async def compose_and_execute(
 async def create_capability_task(
     request: CreateTaskRequest,
     owner_id: str = Depends(get_owner_id),
-    db=Depends(get_database_dependency),
+    service: CapabilityTasksService = Depends(_get_capability_tasks_service),
 ):
     """
     Create a new capability-based task.
@@ -400,10 +413,6 @@ async def create_capability_task(
     A task is a sequence of capabilities where outputs of one step can be used
     as inputs to the next step (pipeline data flow).
     """
-    # Require DB pool
-    if not getattr(db, "pool", None):
-        raise HTTPException(status_code=503, detail="Database not initialized")
-
     # Validate all capabilities exist
     registry = get_registry()
     for step in request.steps:
@@ -423,14 +432,18 @@ async def create_capability_task(
         for i, step in enumerate(request.steps)
     ]
 
-    # Create task
-    task = CapabilityTaskDefinition(
-        name=request.name,
-        description=request.description or "",
-        steps=steps,
-        tags=request.tags or [],
-        owner_id=owner_id,
-    )
+    # Persist task to database
+    try:
+        task = await service.create_task(
+            name=request.name,
+            description=request.description or "",
+            steps=steps,
+            owner_id=owner_id,
+            tags=request.tags or [],
+        )
+    except Exception:
+        logger.error("[create_capability_task] Failed to persist task", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to create task")
 
     return TaskResponse(
         id=task.id,
@@ -454,15 +467,39 @@ async def create_capability_task(
 @router.get("/tasks/capability", response_model=TaskListResponse)
 async def list_capability_tasks(
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=100),
+    limit: int = Query(20, ge=1, le=100),
     owner_id: str = Depends(get_owner_id),
+    service: CapabilityTasksService = Depends(_get_capability_tasks_service),
 ):
     """List capability tasks for the current user."""
-    # TODO: Query from database via CapabilityTasksService
+    try:
+        tasks, total = await service.list_tasks(owner_id, skip=skip, limit=limit)
+    except Exception:
+        logger.error("[list_capability_tasks] Failed to list tasks", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to list tasks")
 
     return TaskListResponse(
-        tasks=[],
-        total=0,
+        tasks=[
+            TaskResponse(
+                id=t.id,
+                name=t.name,
+                description=t.description,
+                steps=[
+                    StepInputModel(
+                        capability_name=s.capability_name,
+                        inputs=s.inputs,
+                        output_key=s.output_key,
+                        order=s.order,
+                    )
+                    for s in t.steps
+                ],
+                tags=t.tags,
+                owner_id=t.owner_id,
+                created_at=t.created_at.isoformat() if hasattr(t.created_at, "isoformat") else str(t.created_at),
+            )
+            for t in tasks
+        ],
+        total=total,
         skip=skip,
         limit=limit,
     )
