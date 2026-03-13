@@ -157,6 +157,22 @@ class StartupManager:
             logger.info(f"     Tasks DB initialized: {self.database_service.tasks is not None}")
             logger.info(f"     Users DB initialized: {self.database_service.users is not None}")
             logger.info(f"     Content DB initialized: {self.database_service.content is not None}")
+
+            # Start connection pool health monitor if pool is available
+            if self.database_service.pool is not None:
+                try:
+                    from utils.connection_health import ConnectionPoolHealth
+
+                    pool_monitor = ConnectionPoolHealth(self.database_service.pool)
+                    import asyncio
+
+                    asyncio.create_task(pool_monitor.auto_health_check())
+                    logger.info("   ConnectionPoolHealth monitor started")
+                except Exception as monitor_err:
+                    logger.warning(
+                        f"  ConnectionPoolHealth monitor failed to start: {monitor_err}",
+                        exc_info=True,
+                    )
         except Exception as e:
             startup_error = f"FATAL: PostgreSQL connection failed: {str(e)}"
             logger.error(f"  {startup_error}", exc_info=True)

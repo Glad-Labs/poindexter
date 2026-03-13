@@ -124,13 +124,13 @@ class TestGenerateFeaturedImage:
         )
         assert resp.status_code == 422
 
-    def test_is_public_no_auth_required(self):
-        """generate-image endpoint has no auth dependency — responds without 401."""
+    def test_requires_auth(self):
+        """generate-image endpoint requires authentication — returns 401 without token."""
         app = FastAPI()
         app.include_router(media_router)
         client = TestClient(app, raise_server_exceptions=False)
         resp = client.post("/api/media/generate-image", json=VALID_GENERATE_PAYLOAD)
-        assert resp.status_code != 401
+        assert resp.status_code == 401
 
     def test_keywords_accepted(self):
         svc = _make_image_service()
@@ -207,13 +207,13 @@ class TestSearchImages:
         assert data["success"] is True
         svc.get_images_for_gallery.assert_awaited_once()
 
-    def test_is_public_no_auth_required(self):
-        """image search endpoint has no auth dependency — responds without 401."""
+    def test_requires_auth(self):
+        """image search endpoint requires authentication — returns 401 without token."""
         app = FastAPI()
         app.include_router(media_router)
         client = TestClient(app, raise_server_exceptions=False)
         resp = client.get("/api/media/images/search?query=mountains")
-        assert resp.status_code != 401
+        assert resp.status_code == 401
 
 
 # ---------------------------------------------------------------------------

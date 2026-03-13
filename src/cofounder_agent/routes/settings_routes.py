@@ -22,7 +22,7 @@ All endpoints require:
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
 
 from routes.auth_unified import get_current_user
 from schemas.settings_schemas import (
@@ -396,7 +396,6 @@ async def update_setting(
     setting_id: int = Path(..., gt=0, description="Setting ID"),
     update_data: SettingUpdate = Body(...),
     current_user=Depends(get_current_user),
-    request: Optional[Request] = None,
 ):
     """
     Update an existing setting (admin/editor).
@@ -469,7 +468,6 @@ async def delete_setting(
     setting_id: str = Path(..., description="Setting ID or key name"),
     current_user=Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
-    request: Optional[Request] = None,
 ):
     """
     Delete a setting (admin only).

@@ -109,14 +109,14 @@ class TestRevalidateCache:
         assert "/archive" in called_paths
 
     def test_requires_auth(self):
-        """Without auth header, the endpoint returns 200 with success=False (auth error in body)."""
-        client = TestClient(_build_app())
+        """Without auth, the endpoint returns 401 (now uses Depends(get_current_user))."""
+        # Build app without auth override to test the actual auth guard
+        from routes.revalidate_routes import router as reval_router
+        app = FastAPI()
+        app.include_router(reval_router)
+        client = TestClient(app, raise_server_exceptions=False)
         resp = client.post("/api/revalidate-cache", json={"paths": ["/"]})
-        # Route returns 200 with success=False when auth is missing (not 401)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["success"] is False
-        assert "auth" in data["message"].lower()
+        assert resp.status_code == 401
 
     def test_custom_paths_are_forwarded(self):
         custom_paths = ["/blog", "/about"]

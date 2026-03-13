@@ -718,6 +718,7 @@ async def list_tasks(
 )
 async def get_metrics_alias(
     time_range: Optional[str] = Query(None, description="Time range filter (optional)"),
+    current_user: dict = Depends(get_current_user),
 ):
     """Deprecated alias. Use GET /api/tasks/metrics/summary."""
     from fastapi.responses import RedirectResponse
@@ -729,6 +730,7 @@ async def get_metrics_alias(
 @router.get("/metrics/summary", response_model=MetricsResponse, summary="Get task metrics")
 async def get_metrics(
     time_range: Optional[str] = Query(None, description="Time range filter (optional)"),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get aggregated metrics for all tasks.

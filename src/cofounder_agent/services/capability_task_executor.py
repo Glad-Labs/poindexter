@@ -318,7 +318,12 @@ class CapabilityTaskExecutor:
 
                 for (step_idx, step), step_result in zip(group_steps, step_results):
                     if isinstance(step_result, Exception):
-                        # Failed
+                        # Failed — log with full traceback so it appears in Sentry/logs
+                        logger.error(
+                            f"[execute_capability_task] Step {step_idx} "
+                            f"({step.capability_name}) failed",
+                            exc_info=step_result,
+                        )
                         result.step_results.append(
                             StepResult(
                                 step_index=step_idx,
