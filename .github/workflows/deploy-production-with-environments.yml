@@ -63,6 +63,10 @@ jobs:
           check_secret "${{ secrets.PUBLIC_SITE_PROD_PROJECT_ID }}"         "PUBLIC_SITE_PROD_PROJECT_ID"
           check_secret "${{ secrets.OVERSIGHT_PROD_PROJECT_ID }}"           "OVERSIGHT_PROD_PROJECT_ID"
           check_secret "${{ secrets.COFOUNDER_PROD_URL }}"                  "COFOUNDER_PROD_URL"
+          check_secret "${{ secrets.PUBLIC_SITE_PROD_FASTAPI_URL }}"        "PUBLIC_SITE_PROD_FASTAPI_URL"
+          check_secret "${{ secrets.PUBLIC_SITE_PROD_SITE_URL }}"           "PUBLIC_SITE_PROD_SITE_URL"
+          check_secret "${{ secrets.OVERSIGHT_PROD_API_URL }}"              "OVERSIGHT_PROD_API_URL"
+          check_secret "${{ secrets.OVERSIGHT_PROD_GH_OAUTH_CLIENT_ID }}"   "OVERSIGHT_PROD_GH_OAUTH_CLIENT_ID"
 
           if [ -n "$MISSING" ]; then
             echo ""
@@ -144,7 +148,9 @@ jobs:
           NEXT_PUBLIC_FASTAPI_URL: ${{ secrets.PUBLIC_SITE_PROD_FASTAPI_URL }}
           NEXT_PUBLIC_SITE_URL: ${{ secrets.PUBLIC_SITE_PROD_SITE_URL }}
           NEXT_PUBLIC_GA_ID: ${{ secrets.PUBLIC_SITE_PROD_GA_ID }}
+          NEXT_PUBLIC_GA4_ID: ${{ secrets.PUBLIC_SITE_PROD_GA_ID }}
           SENTRY_DSN: ${{ secrets.PUBLIC_SITE_PROD_SENTRY_DSN }}
+          NEXT_PUBLIC_SENTRY_DSN: ${{ secrets.PUBLIC_SITE_PROD_SENTRY_DSN }}
 
       # ============================================
       # DEPLOYMENT PHASE - OVERSIGHT HUB
