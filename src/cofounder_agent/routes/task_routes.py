@@ -1948,6 +1948,13 @@ async def approve_task(
                         logger.info(f"✅ Post created with status='published': {post.id}")  # type: ignore[attr-defined]
                         logger.info(f"   Title: {post_title}")
                         logger.info(f"   Slug: {slug}")
+                        logger.info(
+                            "[content_published] task_id=%s post_id=%s user_id=%s slug=%s",
+                            task_id,
+                            str(post.id) if hasattr(post, "id") else post.get("id"),  # type: ignore[attr-defined]
+                            current_user.get("id"),
+                            slug,
+                        )
 
                         # Store post info in merged_result for response
                         merged_result["post_id"] = (
@@ -2190,8 +2197,15 @@ async def publish_task(
                 logger.info(f"✅ Post created with status='published': {post.id}")  # type: ignore[attr-defined]
                 logger.info(f"   Title: {post_title}")
                 logger.info(f"   Slug: {slug}")
-                # Persist post info back to task result so frontend gets published_url
                 post_id_val = str(post.id) if hasattr(post, "id") else str(post.get("id", ""))  # type: ignore[union-attr]
+                logger.info(
+                    "[content_published] task_id=%s post_id=%s user_id=%s slug=%s",
+                    task_id,
+                    post_id_val,
+                    current_user.get("id"),
+                    slug,
+                )
+                # Persist post info back to task result so frontend gets published_url
                 merged_result["post_id"] = post_id_val
                 merged_result["post_slug"] = slug
                 merged_result["published_url"] = f"/posts/{slug}"
