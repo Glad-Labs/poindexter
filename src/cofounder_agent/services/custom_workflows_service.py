@@ -24,6 +24,7 @@ from schemas.custom_workflow_schemas import (
 from services.phase_registry import PhaseRegistry
 from services.workflow_validator import WorkflowValidator
 from services.workflow_executor import WorkflowExecutor
+from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 
 logger = logging.getLogger(__name__)
 
@@ -615,33 +616,29 @@ class CustomWorkflowsService:
             List of execution records and total count
         """
         try:
-            # Build query
-            where_clauses = ["workflow_id = $1", "owner_id = $2"]
-            params = [workflow_id, owner_id]
-            param_index = 3
-
+            # Use ParameterizedQueryBuilder for safe, consistent parameterization.
+            # Window function keeps COUNT and data in one round-trip.
+            builder = ParameterizedQueryBuilder()
+            where_conditions: List[tuple] = [
+                ("workflow_id", SQLOperator.EQ, workflow_id),
+                ("owner_id", SQLOperator.EQ, owner_id),
+            ]
             if status:
-                where_clauses.append(f"execution_status = ${param_index}")
-                params.append(status)
-                param_index += 1
+                where_conditions.append(("execution_status", SQLOperator.EQ, status))
 
-            where_sql = " AND ".join(where_clauses)
+            _base_sql, base_params = builder.select(
+                columns=["*", "COUNT(*) OVER () AS total_count"],
+                table="workflow_executions",
+                where_clauses=where_conditions,
+                order_by=[("created_at", "DESC")],
+            )
+            # Append LIMIT/OFFSET as the final parameters
+            limit_ph = builder.add_param(limit)
+            offset_ph = builder.add_param(offset)
+            full_sql = _base_sql + f" LIMIT {limit_ph} OFFSET {offset_ph}"
 
-            # Single acquire: window function keeps COUNT and data on the same connection
-            # snapshot, eliminating a second round-trip.
             async with self.database_service.pool.acquire() as conn:
-                rows = await conn.fetch(
-                    f"""
-                    SELECT *, COUNT(*) OVER () AS total_count
-                    FROM workflow_executions
-                    WHERE {where_sql}
-                    ORDER BY created_at DESC
-                    LIMIT ${param_index} OFFSET ${param_index + 1}
-                    """,
-                    *params,
-                    limit,
-                    offset,
-                )
+                rows = await conn.fetch(full_sql, *builder.params)
 
             total_count = rows[0]["total_count"] if rows else 0
 
@@ -655,7 +652,10 @@ class CustomWorkflowsService:
             }
 
         except Exception as e:
-            logger.error(f"Failed to get workflow executions for {workflow_id}: {e}")
+            logger.error(
+                f"[get_workflow_executions] Failed to get workflow executions for {workflow_id}: {e}",
+                exc_info=True,
+            )
             return {
                 "total": 0,
                 "executions": [],
