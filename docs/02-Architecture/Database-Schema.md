@@ -163,8 +163,6 @@ class BlogPost(BaseModel):
     tags: List[str] = []
     images: List[ImageDetails] = []
     body_content_blocks: Optional[List[Dict[str, Any]]] = None
-    strapi_id: Optional[int] = None
-    strapi_url: Optional[str] = None
     qa_feedback: List[str] = []
 ```
 
@@ -181,7 +179,6 @@ class ImageDetails(BaseModel):
     alt_text: Optional[str] = None
     caption: Optional[str] = None
     description: Optional[str] = None
-    strapi_image_id: Optional[int] = None
 ```
 
 ---
@@ -203,7 +200,6 @@ Tracks content generation tasks and agent activities.
   "metadata": {
     "topic": "string",
     "priority": "number", // 1-High, 2-Medium, 3-Low
-    "strapiId": "number", // Link to created post
     "trigger": "string" // "manual", "scheduled", "api"
   }
 }
@@ -237,7 +233,6 @@ Performance tracking for published content.
 ```json
 {
   "contentId": "string", // Document ID
-  "strapiId": "number", // Link to Strapi post
   "title": "string",
   "type": "string", // "blog_post"
   "status": "string", // "published", "draft", "archived"
@@ -260,35 +255,15 @@ Performance tracking for published content.
 
 ## **API Endpoints Reference**
 
-### Strapi v5 REST API
+All content endpoints are served by the FastAPI backend at `http://localhost:8000`.
+See the live OpenAPI spec at `/api/openapi.json` for the full endpoint catalog.
 
+Key content routes:
+
+- **Tasks**: `/api/tasks` (GET, POST, PUT, DELETE)
+- **Content**: `/api/content` (GET, POST, PUT)
 - **Posts**: `/api/posts` (GET, POST, PUT, DELETE)
 - **Categories**: `/api/categories` (GET, POST, PUT, DELETE)
-- **Tags**: `/api/tags` (GET, POST, PUT, DELETE)
-- **Upload**: `/api/upload` (POST for media files)
-
-### Common Query Parameters
-
-- `populate=*` - Include all relations
-- `filters[field][$eq]=value` - Filter by field value
-- `sort[field]=asc|desc` - Sort by field
-- `pagination[page]=1&pagination[pageSize]=25` - Pagination
-
-### Example API Calls
-
-```bash
-# Get all posts with relations
-GET /api/posts?populate=*
-
-# Get featured posts
-GET /api/posts?filters[featured][$eq]=true&populate=*
-
-# Get posts by category
-GET /api/posts?filters[category][slug][$eq]=ai-machine-learning&populate=*
-
-# Get single post by slug
-GET /api/posts?filters[slug][$eq]=post-slug&populate=*
-```
 
 ---
 
