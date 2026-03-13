@@ -100,6 +100,10 @@ def _normalize_seo_keywords_in_task(task: Dict[str, Any]) -> Dict[str, Any]:
         try:
             task["seo_keywords"] = json.loads(task["seo_keywords"])
         except (json.JSONDecodeError, TypeError):
+            logger.warning(
+                "[normalize_task_seo_keywords] seo_keywords is not valid JSON for task %s — defaulting to []",
+                task.get("id"),
+            )
             task["seo_keywords"] = []
 
     # Parse seo_keywords inside result field if present
@@ -108,6 +112,10 @@ def _normalize_seo_keywords_in_task(task: Dict[str, Any]) -> Dict[str, Any]:
             try:
                 task["result"]["seo_keywords"] = json.loads(task["result"]["seo_keywords"])
             except (json.JSONDecodeError, TypeError):
+                logger.warning(
+                    "[normalize_task_seo_keywords] result.seo_keywords is not valid JSON for task %s — defaulting to []",
+                    task.get("id"),
+                )
                 task["result"]["seo_keywords"] = []
 
     # Parse seo_keywords inside task_metadata field if present
@@ -120,6 +128,10 @@ def _normalize_seo_keywords_in_task(task: Dict[str, Any]) -> Dict[str, Any]:
                     task["task_metadata"]["seo_keywords"]
                 )
             except (json.JSONDecodeError, TypeError):
+                logger.warning(
+                    "[normalize_task_seo_keywords] task_metadata.seo_keywords is not valid JSON for task %s — defaulting to []",
+                    task.get("id"),
+                )
                 task["task_metadata"]["seo_keywords"] = []
 
     return task
@@ -689,6 +701,10 @@ async def list_tasks(
                     try:
                         task["cost_breakdown"] = json.loads(task["cost_breakdown"])
                     except (json.JSONDecodeError, TypeError):
+                        logger.warning(
+                            "[get_tasks] cost_breakdown is not valid JSON for task %s — defaulting to None",
+                            task.get("id"),
+                        )
                         task["cost_breakdown"] = None
 
                 validated_tasks.append(UnifiedTaskResponse(**task))
@@ -1784,6 +1800,10 @@ async def approve_task(
             try:
                 task_metadata = json.loads(task_metadata) if task_metadata else {}
             except (json.JSONDecodeError, TypeError):
+                logger.warning(
+                    "[get_task_detail] task_metadata is not valid JSON for task %s — defaulting to {}",
+                    task.get("id"),
+                )
                 task_metadata = {}
         elif task_metadata is None:
             task_metadata = {}
@@ -1796,6 +1816,10 @@ async def approve_task(
             try:
                 task_result = json.loads(task_result) if task_result else {}
             except (json.JSONDecodeError, TypeError):
+                logger.warning(
+                    "[get_task_detail] result is not valid JSON for task %s — defaulting to {}",
+                    task.get("id"),
+                )
                 task_result = {}
         elif task_result is None:
             task_result = {}
@@ -2072,6 +2096,10 @@ async def publish_task(
             try:
                 existing_result = json.loads(existing_result) if existing_result else {}
             except (json.JSONDecodeError, ValueError):
+                logger.warning(
+                    "[publish_task] result is not valid JSON for task %s — defaulting to {}",
+                    task_id,
+                )
                 existing_result = {}
         existing_result = existing_result or {}
         task_meta = task.get("task_metadata", {})
@@ -2079,6 +2107,10 @@ async def publish_task(
             try:
                 task_meta = json.loads(task_meta) if task_meta else {}
             except (json.JSONDecodeError, ValueError):
+                logger.warning(
+                    "[publish_task] task_metadata is not valid JSON for task %s — defaulting to {}",
+                    task_id,
+                )
                 task_meta = {}
         task_meta = task_meta or {}
         # task_result wins over task_metadata; publish_metadata stored under its own key
@@ -2396,6 +2428,10 @@ async def generate_task_image(
                                                 meta = json.loads(task_metadata)
                                                 recently_used = meta.get("recent_image_urls", [])
                                             except json.JSONDecodeError:
+                                                logger.warning(
+                                                    "[update_task_image] task_metadata is not valid JSON for task %s — skipping recent_image_urls",
+                                                    task_id,
+                                                )
                                                 recently_used = []
 
                                     # Create comprehensive exclusion list
@@ -2575,6 +2611,10 @@ async def generate_task_image(
             try:
                 task_result = json.loads(task_result) if task_result.strip() else {}
             except (json.JSONDecodeError, AttributeError):
+                logger.warning(
+                    "[update_task_featured_image] result is not valid JSON for task %s — defaulting to {}",
+                    task_id,
+                )
                 task_result = {}
         elif not isinstance(task_result, dict):
             task_result = {}
@@ -2585,6 +2625,10 @@ async def generate_task_image(
             try:
                 task_metadata = json.loads(task_metadata) if task_metadata.strip() else {}
             except (json.JSONDecodeError, AttributeError):
+                logger.warning(
+                    "[update_task_featured_image] task_metadata is not valid JSON for task %s — defaulting to {}",
+                    task_id,
+                )
                 task_metadata = {}
 
         task_result["featured_image_url"] = image_url

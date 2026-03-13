@@ -240,6 +240,10 @@ async def approve_task(
                     try:
                         task_metadata = json.loads(task_metadata) if task_metadata else {}
                     except (json.JSONDecodeError, TypeError):
+                        logger.warning(
+                            "[get_pending_approvals] task_metadata is not valid JSON for task %s — defaulting to {}",
+                            task.get("id"),
+                        )
                         task_metadata = {}
                 elif task_metadata is None:
                     task_metadata = {}
@@ -250,6 +254,10 @@ async def approve_task(
                     try:
                         task_result = json.loads(task_result) if task_result else {}
                     except (json.JSONDecodeError, TypeError):
+                        logger.warning(
+                            "[get_pending_approvals] result is not valid JSON for task %s — defaulting to {}",
+                            task.get("id"),
+                        )
                         task_result = {}
                 elif task_result is None:
                     task_result = {}
