@@ -17,7 +17,7 @@ import json
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 # Import model selection helper
 from routes.task_routes import get_model_for_phase
@@ -29,12 +29,24 @@ from .ai_content_generator import AIContentGenerator
 from .prompt_manager import get_prompt_manager
 
 # Import unified quality service for content validation
-from .quality_service import UnifiedQualityService
+from .quality_service import QualityAssessment, UnifiedQualityService
 
 # Import usage tracking
 from .usage_tracker import get_usage_tracker
 
+from .error_handler import ServiceError
+
+# Import WebSocket progress emission (re-exported so tests can patch at this module)
+from .websocket_event_broadcaster import emit_notification, emit_task_progress
+
 logger = logging.getLogger(__name__)
+
+# Tasks stuck in "processing" for longer than this are considered stale and reset to "pending"
+STALE_TASK_TIMEOUT_MINUTES: int = 60
+# Maximum number of automatic retry attempts before a task is marked as failed
+MAX_TASK_RETRIES: int = 3
+# How often (seconds) to run the stale-task sweep within the process loop
+SWEEP_INTERVAL_SECONDS: int = 300
 
 
 class TaskExecutor:
@@ -69,6 +81,9 @@ class TaskExecutor:
         self.published_count = 0
         self._processor_task = None
         self.usage_tracker = get_usage_tracker()  # Initialize usage tracking
+        self.critique_loop: Optional[Any] = None  # Optional critique loop (not wired in current version)
+        self.last_poll_at: Optional[float] = None  # monotonic timestamp of last poll
+        self._poll_cycle: int = 0  # incremented each loop iteration
 
         logger.info(
             f"TaskExecutor initialized: orchestrator={'✅' if orchestrator else '❌'}, "
@@ -89,6 +104,10 @@ class TaskExecutor:
             if orch is not None:
                 return orch
         return self.orchestrator_initial
+
+    def inject_orchestrator(self, orchestrator) -> None:
+        """Inject or replace the orchestrator at runtime."""
+        self.orchestrator_initial = orchestrator
 
     async def start(self):
         """Start the background task processor"""
@@ -134,6 +153,9 @@ class TaskExecutor:
 
         while self.running:
             try:
+                import time as _time
+                self.last_poll_at = _time.monotonic()
+                self._poll_cycle += 1
                 # Get pending tasks from database
                 logger.debug(f"🔍 [TASK_EXEC_LOOP] Polling for pending tasks...")
                 pending_tasks = await self.database_service.get_pending_tasks(limit=10)
@@ -200,7 +222,12 @@ class TaskExecutor:
                 await asyncio.sleep(self.poll_interval)
 
             except asyncio.CancelledError:
-                logger.info("[TASK_EXEC_LOOP] Task executor processor loop cancelled")
+                # Log at CRITICAL so Sentry's default "new issue" alert fires and
+                # on-call engineers are paged when the executor loop exits (issue #556).
+                logger.critical(
+                    "[TASK_EXEC_LOOP] Task executor processor loop cancelled — "
+                    "background task processing has stopped"
+                )
                 break
             except Exception as e:
                 logger.error(
@@ -212,11 +239,19 @@ class TaskExecutor:
                 )
                 await asyncio.sleep(self.poll_interval)
 
-        logger.info("📋 [TASK_EXEC_LOOP] Task executor processor loop stopped")
+        # Log at CRITICAL so Sentry alerts fire immediately on loop exit (issue #556).
+        logger.critical(
+            "[TASK_EXEC_LOOP] Task executor processor loop stopped — "
+            f"processed={self.task_count} success={self.success_count} errors={self.error_count}"
+        )
 
     async def _process_single_task(self, task: Dict[str, Any]):
         """Process a single task through the pipeline"""
-        task_id = task.get("id")
+        task_id = task.get("id") or task.get("task_id")
+        if not task_id:
+            logger.warning("[TASK_SINGLE] Task has no id or task_id — skipping")
+            return
+
         task_name = task.get("task_name", "Untitled")
         topic = task.get("topic", "")
         category = task.get("category", "general")
@@ -242,6 +277,7 @@ class TaskExecutor:
                     },
                 },
             )
+            await self.database_service.log_status_change(task_id, "pending", "in_progress")
             logger.info(f"✅ [TASK_SINGLE] Task marked as in_progress")
 
             # 2. Process through orchestrator/agent pipeline with timeout
@@ -357,10 +393,11 @@ class TaskExecutor:
             else:
                 logger.info(f"✅ [TASK_SINGLE] Task awaiting approval: {task_id}")
 
+        except ServiceError:
+            raise
         except Exception as e:
             logger.error(f"❌ [TASK_SINGLE] Task failed: {task_id} - {str(e)}", exc_info=True)
-            # Status already updated to 'failed' in _process_loop
-            raise
+            raise ServiceError(message=str(e), details={"task_id": task_id}) from e
 
     async def _execute_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -469,7 +506,7 @@ class TaskExecutor:
                     logger.info(f"   Result attributes: {list(result.__dict__.keys())}")
 
                 if hasattr(result, "final_formatting"):
-                    final_formatting = result.final_formatting
+                    final_formatting = result.final_formatting  # type: ignore[reportAttributeAccessIssue]
                     logger.debug(
                         f"   Found final_formatting attribute: {len(str(final_formatting)) if final_formatting else 0} chars"
                     )
@@ -637,21 +674,32 @@ class TaskExecutor:
                 "suggestions": ["Content is empty or None"],
             }
 
-        quality_score = quality_result.get("score", 0)
-        approved = quality_result.get("approved", False)
+        # Normalise quality_result — evaluate() returns QualityAssessment; fallback path returns dict
+        if isinstance(quality_result, QualityAssessment):
+            quality_score = quality_result.overall_score
+            approved = quality_result.passing
+            quality_feedback = quality_result.feedback
+            quality_needs_refinement = not quality_result.passing
+            quality_result_keys = list(vars(quality_result).keys())
+        else:
+            quality_score = quality_result.get("score", 0)
+            approved = quality_result.get("approved", False)
+            quality_feedback = quality_result.get("feedback", "")
+            quality_needs_refinement = quality_result.get("needs_refinement", not approved)
+            quality_result_keys = list(quality_result.keys())
 
         logger.info(f"   Quality Score: {quality_score}/100")
         logger.info(f"   Approved: {approved}")
-        logger.debug(f"   Quality result keys: {list(quality_result.keys())}")
+        logger.debug(f"   Quality result keys: {quality_result_keys}")
 
         if approved:
             logger.info(f"✅ [TASK_EXECUTE] PHASE 2 Complete: Content approved")
         else:
             logger.warning(f"⚠️ [TASK_EXECUTE] PHASE 2 Complete: Content needs improvement")
-            logger.debug(f"   Feedback: {critique_result.get('feedback')}")
+            logger.debug(f"   Feedback: {quality_feedback}")
 
             # If not approved but can refine, attempt refinement
-            if critique_result.get("needs_refinement") and self.orchestrator:
+            if quality_needs_refinement and self.orchestrator:
                 logger.info(
                     f"🔄 [TASK_EXECUTE] Attempting refinement based on critique feedback..."
                 )
@@ -665,10 +713,10 @@ class TaskExecutor:
                     ):
                         # UnifiedOrchestrator
                         refinement_result = await self.orchestrator.process_request(
-                            user_input=f"Refine content about '{topic}' based on feedback: {critique_result.get('feedback')}",
+                            user_input=f"Refine content about '{topic}' based on feedback: {quality_feedback}",
                             context={
                                 "original_content": generated_content,
-                                "feedback": critique_result.get("feedback"),
+                                "feedback": quality_feedback,
                                 "task_id": str(task_id),
                                 "model_selections": model_selections,
                             },
@@ -682,8 +730,12 @@ class TaskExecutor:
                                 user_id="system_task_executor",
                                 business_metrics={
                                     "original_content": generated_content,
-                                    "feedback": critique_result.get("feedback"),
-                                    "suggestions": critique_result.get("suggestions"),
+                                    "feedback": quality_feedback,
+                                    "suggestions": (
+                                        quality_result.suggestions
+                                        if isinstance(quality_result, QualityAssessment)
+                                        else quality_result.get("suggestions", [])
+                                    ),
                                     "topic": topic,
                                     "model_selections": model_selections,
                                 },
@@ -691,7 +743,7 @@ class TaskExecutor:
                         else:
                             # Fallback to process_command_async
                             refinement_result = await self.orchestrator.process_command_async(
-                                command=f"Refine content about '{topic}' based on feedback: {critique_result.get('feedback')}",
+                                command=f"Refine content about '{topic}' based on feedback: {quality_feedback}",
                                 context={"original_content": generated_content},
                             )
 
@@ -742,18 +794,20 @@ class TaskExecutor:
                         )
                         logger.info(f"   ✅ Using refined content ({len(generated_content)} chars)")
 
-                        # Re-critique refined content
-                        critique_result = await self.critique_loop.critique(
-                            content=generated_content,
-                            context={
-                                "topic": topic,
-                                "keywords": primary_keyword,
-                            },
-                        )
-
-                        quality_score = critique_result.get("quality_score", 0)
-                        approved = critique_result.get("approved", False)
-                        logger.info(f"   Refined Quality Score: {quality_score}/100")
+                        # Re-critique refined content if critique_loop is available
+                        if self.critique_loop is not None:
+                            critique_result = await self.critique_loop.critique(
+                                content=generated_content,
+                                context={
+                                    "topic": topic,
+                                    "keywords": primary_keyword,
+                                },
+                            )
+                            quality_score = critique_result.get("quality_score", 0)
+                            approved = critique_result.get("approved", False)
+                            logger.info(f"   Refined Quality Score: {quality_score}/100")
+                        else:
+                            logger.debug("   critique_loop not available — skipping re-critique of refined content")
                     else:
                         logger.warning(
                             f"   ⚠️  Refined content too short ({len(str(refined_content).strip()) if refined_content else 0} chars), keeping original"
@@ -849,15 +903,14 @@ class TaskExecutor:
                     "task_id": str(task_id),
                     "user_id": task.get("user_id"),
                     "phase": "content_generation",  # Single phase for overall task
-                    "model": operation_metrics.get("model_name", "unknown"),
-                    "provider": operation_metrics.get("model_provider", "unknown"),
-                    "input_tokens": operation_metrics.get("input_tokens", 0),
-                    "output_tokens": operation_metrics.get("output_tokens", 0),
-                    "total_tokens": operation_metrics.get("input_tokens", 0)
-                    + operation_metrics.get("output_tokens", 0),
-                    "cost_usd": operation_metrics.get("total_cost_usd", 0.0),
+                    "model": operation_metrics.model_name,
+                    "provider": operation_metrics.model_provider,
+                    "input_tokens": operation_metrics.input_tokens,
+                    "output_tokens": operation_metrics.output_tokens,
+                    "total_tokens": operation_metrics.input_tokens + operation_metrics.output_tokens,
+                    "cost_usd": operation_metrics.total_cost_usd,
                     "quality_score": quality_score,
-                    "duration_ms": int(operation_metrics.get("duration_ms", 0)),
+                    "duration_ms": operation_metrics.duration_ms,
                     "success": True,
                 }
                 await self.database_service.log_cost(cost_log)
@@ -1023,14 +1076,38 @@ The key to success with {topic} is staying informed, adapting to changes, and co
             # Emergency minimal content
             return f"# {topic}\n\nContent generation service temporarily unavailable. Please try again later.\n\nError: {str(e)[:100]}"
 
+    async def _sweep_stale_tasks(self) -> None:
+        """Reset tasks stuck in processing state back to pending."""
+        if not self.database_service:
+            return
+        try:
+            result = await self.database_service.sweep_stale_tasks(
+                timeout_minutes=STALE_TASK_TIMEOUT_MINUTES,
+                max_retries=MAX_TASK_RETRIES,
+            )
+            if result and result.get("total_stale", 0) > 0:
+                logger.warning(
+                    f"[_sweep_stale_tasks] Reset {result['reset']} stale tasks "
+                    f"(timeout: {STALE_TASK_TIMEOUT_MINUTES}m)"
+                )
+        except Exception:
+            logger.error("[_sweep_stale_tasks] Failed to sweep stale tasks", exc_info=True)
+
     def get_stats(self) -> Dict[str, Any]:
         """Get executor statistics"""
+        import time
+        last_poll_age: Optional[float] = None
+        if self.last_poll_at is not None:
+            last_poll_age = time.monotonic() - self.last_poll_at
         return {
             "running": self.running,
-            "total_processed": self.task_count,
-            "successful": self.success_count,
-            "failed": self.error_count,
-            "published": self.published_count,
+            "task_count": self.task_count,
+            "success_count": self.success_count,
+            "error_count": self.error_count,
+            "published_count": self.published_count,
             "poll_interval": self.poll_interval,
+            "orchestrator_available": self.orchestrator is not None,
+            "quality_service_available": self.quality_service is not None,
+            "last_poll_age_s": last_poll_age,
             "critique_stats": self.critique_loop.get_stats() if self.critique_loop else {},
         }
