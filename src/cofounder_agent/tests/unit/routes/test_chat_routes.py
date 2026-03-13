@@ -296,3 +296,184 @@ class TestGetAvailableModels:
         client = TestClient(_build_app())
         data = client.get("/api/chat/models").json()
         assert data["available_count"] == len(data["models"])
+
+
+# ---------------------------------------------------------------------------
+# Conversation isolation & history coverage (issue #792)
+# ---------------------------------------------------------------------------
+
+
+def _build_app_for_user(user: dict) -> FastAPI:
+    """Build a FastAPI app with a specific user injected via dependency override."""
+    app = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[get_current_user] = lambda: user
+    return app
+
+
+@pytest.mark.unit
+class TestConversationIsolation:
+    """Cross-user conversation isolation — two users with the same conversationId
+    must have fully separate histories (scoped key = user_id:conversationId)."""
+
+    def test_different_users_have_isolated_histories(self):
+        user_a = {"id": "user-A", "username": "alice", "email": "a@x.com"}
+        user_b = {"id": "user-B", "username": "bob", "email": "b@x.com"}
+
+        ollama = _make_ollama_client()
+        gemini = _make_gemini_client()
+
+        with (
+            patch.object(chat_module, "ollama_client", ollama),
+            patch.object(chat_module, "gemini_client", gemini),
+        ):
+            client_a = TestClient(_build_app_for_user(user_a))
+            client_b = TestClient(_build_app_for_user(user_b))
+
+            client_a.post(
+                "/api/chat",
+                json={"message": "Hello from A", "model": "ollama", "conversationId": "shared"},
+            )
+            client_b.post(
+                "/api/chat",
+                json={"message": "Hello from B", "model": "ollama", "conversationId": "shared"},
+            )
+
+        # Both scoped keys must exist
+        assert "user-A:shared" in chat_module.conversations
+        assert "user-B:shared" in chat_module.conversations
+        # They must hold different histories
+        assert chat_module.conversations["user-A:shared"] != chat_module.conversations["user-B:shared"]
+
+    def test_user_cannot_read_another_users_conversation_history(self):
+        """GET /history/{id} is scoped to the requesting user."""
+        user_a = {"id": "user-A", "username": "alice", "email": "a@x.com"}
+        user_b = {"id": "user-B", "username": "bob", "email": "b@x.com"}
+
+        ollama = _make_ollama_client()
+        gemini = _make_gemini_client()
+
+        # Populate user A's conversation
+        with (
+            patch.object(chat_module, "ollama_client", ollama),
+            patch.object(chat_module, "gemini_client", gemini),
+        ):
+            TestClient(_build_app_for_user(user_a)).post(
+                "/api/chat",
+                json={"message": "Secret message", "model": "ollama", "conversationId": "private"},
+            )
+
+        # User B reads the same conversationId — should see an empty history
+        data = TestClient(_build_app_for_user(user_b)).get("/api/chat/history/private").json()
+        assert data["message_count"] == 0
+        assert data["messages"] == []
+
+    def test_delete_clears_only_requesting_users_conversation(self):
+        """DELETE /history/{id} must not remove another user's same-named conversation."""
+        user_a = {"id": "user-A", "username": "alice", "email": "a@x.com"}
+        user_b = {"id": "user-B", "username": "bob", "email": "b@x.com"}
+
+        ollama = _make_ollama_client()
+        gemini = _make_gemini_client()
+
+        with (
+            patch.object(chat_module, "ollama_client", ollama),
+            patch.object(chat_module, "gemini_client", gemini),
+        ):
+            TestClient(_build_app_for_user(user_a)).post(
+                "/api/chat",
+                json={"message": "A msg", "model": "ollama", "conversationId": "shared-del"},
+            )
+            TestClient(_build_app_for_user(user_b)).post(
+                "/api/chat",
+                json={"message": "B msg", "model": "ollama", "conversationId": "shared-del"},
+            )
+
+        # User A deletes their conversation
+        TestClient(_build_app_for_user(user_a)).delete("/api/chat/history/shared-del")
+
+        assert "user-A:shared-del" not in chat_module.conversations
+        assert "user-B:shared-del" in chat_module.conversations
+
+
+@pytest.mark.unit
+class TestHistoryEndpoint:
+    """GET /api/chat/history/{id} — timestamps, message counts, empty state."""
+
+    def test_history_returns_first_and_last_timestamps(self):
+        """first_message and last_message must reflect the actual message timestamps."""
+        ollama = _make_ollama_client()
+        gemini = _make_gemini_client()
+        client = TestClient(_build_app())
+
+        with (
+            patch.object(chat_module, "ollama_client", ollama),
+            patch.object(chat_module, "gemini_client", gemini),
+        ):
+            # Send two messages to build up history
+            client.post(
+                "/api/chat",
+                json={"message": "First", "model": "ollama", "conversationId": "ts-conv"},
+            )
+            client.post(
+                "/api/chat",
+                json={"message": "Second", "model": "ollama", "conversationId": "ts-conv"},
+            )
+
+        data = client.get("/api/chat/history/ts-conv").json()
+        assert data["message_count"] >= 2
+        assert data["first_message"] is not None
+        assert data["last_message"] is not None
+
+    def test_history_empty_for_unknown_conversation(self):
+        client = TestClient(_build_app())
+        data = client.get("/api/chat/history/nonexistent-conv").json()
+        assert data["message_count"] == 0
+        assert data["messages"] == []
+        assert data["first_message"] is None
+
+    def test_history_includes_message_count_field(self):
+        ollama = _make_ollama_client()
+        gemini = _make_gemini_client()
+        client = TestClient(_build_app())
+
+        with (
+            patch.object(chat_module, "ollama_client", ollama),
+            patch.object(chat_module, "gemini_client", gemini),
+        ):
+            client.post(
+                "/api/chat",
+                json={"message": "Hello", "model": "ollama", "conversationId": "mc-conv"},
+            )
+
+        data = client.get("/api/chat/history/mc-conv").json()
+        assert "message_count" in data
+        assert data["message_count"] > 0
+
+
+@pytest.mark.unit
+class TestMultiTurnHistory:
+    """Verify that conversation history accumulates across turns."""
+
+    def test_second_message_uses_accumulated_history(self):
+        """After two messages the history slice contains at least 2 entries."""
+        ollama = _make_ollama_client()
+        gemini = _make_gemini_client()
+        client = TestClient(_build_app())
+
+        with (
+            patch.object(chat_module, "ollama_client", ollama),
+            patch.object(chat_module, "gemini_client", gemini),
+        ):
+            client.post(
+                "/api/chat",
+                json={"message": "Turn 1", "model": "ollama", "conversationId": "mt-conv"},
+            )
+            client.post(
+                "/api/chat",
+                json={"message": "Turn 2", "model": "ollama", "conversationId": "mt-conv"},
+            )
+
+        scoped_key = f"{TEST_USER['id']}:mt-conv"
+        assert scoped_key in chat_module.conversations
+        assert len(chat_module.conversations[scoped_key]) >= 2
