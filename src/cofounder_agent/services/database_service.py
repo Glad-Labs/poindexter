@@ -208,7 +208,7 @@ class DatabaseService:
         return await self.tasks.get_queued_tasks(limit)
 
     async def get_tasks_by_date_range(
-        self, start_date=None, end_date=None, status: Optional[str] = None, limit: int = 10000
+        self, start_date=None, end_date=None, status: Optional[str] = None, limit: int = 500
     ) -> List[Dict]:
         """Delegate to tasks module."""
         return await self.tasks.get_tasks_by_date_range(start_date, end_date, status, limit)

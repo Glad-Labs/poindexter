@@ -682,6 +682,12 @@ class TasksDatabase(DatabaseServiceMixin):
             start_date = datetime.now(timezone.utc) - timedelta(days=30)
 
         # Cap limit to prevent unbounded result sets
+        if limit > 500:
+            logger.warning(
+                "[get_tasks_by_date_range] requested limit=%d capped at 500; "
+                "use pagination (offset loop) for larger result sets",
+                limit,
+            )
         limit = min(limit, 500)
 
         try:
