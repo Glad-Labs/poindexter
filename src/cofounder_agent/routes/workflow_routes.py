@@ -22,8 +22,8 @@ router = APIRouter(
 )
 
 
-@router.post("/templates", name="List Workflow Templates")
-async def list_workflow_templates():
+@router.get("/templates", name="List Workflow Templates") #changed HTTP Method to GET
+async def list_workflow_templates(): #function doen't have un-used parameter
     """
     Get available workflow templates/pipelines.
 
