@@ -12,6 +12,8 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr
 
+from routes.auth_unified import get_current_user
+from utils.rate_limiter import limiter
 from utils.route_utils import get_database_dependency
 
 logger = logging.getLogger(__name__)
@@ -48,6 +50,7 @@ class NewsletterUnsubscribeRequest(BaseModel):
 
 
 @router.post("/subscribe")
+@limiter.limit("5/minute")
 async def subscribe_to_newsletter(
     request: Request, payload: NewsletterSubscribeRequest, db=Depends(get_database_dependency)
 ):
@@ -71,20 +74,21 @@ async def subscribe_to_newsletter(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid email address"
             )
 
-        # Check for existing subscription
+        # Check for existing subscription — return generic message to prevent email enumeration.
+        # An attacker must not be able to determine whether an email is already registered.
         existing = await db.pool.fetchrow(
             """
-            SELECT id, unsubscribed_at FROM newsletter_subscribers 
+            SELECT id, unsubscribed_at FROM newsletter_subscribers
             WHERE email = $1
             """,
             payload.email,
         )
 
         if existing and not existing["unsubscribed_at"]:
+            # Return generic success — do not reveal whether the email was already subscribed.
             return NewsletterSubscribeResponse(
-                success=False,
-                message=f"Email {payload.email} is already subscribed",
-                subscriber_id=existing["id"],
+                success=True,
+                message="If this email is not already subscribed, you will receive a confirmation shortly.",
             )
 
         # Get client IP and user agent
@@ -139,8 +143,9 @@ async def subscribe_to_newsletter(
 
 
 @router.post("/unsubscribe")
+@limiter.limit("5/minute")
 async def unsubscribe_from_newsletter(
-    payload: NewsletterUnsubscribeRequest, db=Depends(get_database_dependency)
+    request: Request, payload: NewsletterUnsubscribeRequest, db=Depends(get_database_dependency)
 ):
     """
     Unsubscribe email from newsletter.
@@ -186,7 +191,10 @@ async def unsubscribe_from_newsletter(
 
 
 @router.get("/subscribers/count")
-async def get_subscriber_count(db=Depends(get_database_dependency)):
+async def get_subscriber_count(
+    db=Depends(get_database_dependency),
+    current_user: dict = Depends(get_current_user),
+):
     """Get total active newsletter subscribers count"""
     try:
         count = await db.pool.fetchval(
