@@ -705,6 +705,74 @@ class TasksDatabase(DatabaseServiceMixin):
             logger.error(f"Failed to get tasks by date range: {e}", exc_info=True)
             return []
 
+    async def get_kpi_aggregates(
+        self,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+    ) -> Dict[str, Any]:
+        """
+        Compute KPI aggregates for the analytics dashboard using a single SQL query.
+
+        Replaces the previous approach of fetching up to 500 raw task rows and
+        aggregating them in Python loops (issue #696).
+
+        Args:
+            start_date: Start of date range (UTC); None means all-time
+            end_date: End of date range (UTC); defaults to now
+
+        Returns:
+            Dict with keys:
+                rows         — list of dicts: {status, model_used, task_type, day,
+                               count, total_cost, avg_duration_s, completed_count}
+                total_tasks  — int
+        """
+        if end_date is None:
+            end_date = datetime.now(timezone.utc)
+
+        params: list = [end_date]
+        if start_date is not None:
+            date_filter = "AND created_at >= $2"
+            params.append(start_date)
+        else:
+            date_filter = ""
+
+        sql = f"""
+            SELECT
+                status,
+                COALESCE(model_used, 'unknown')                                   AS model_used,
+                COALESCE(task_type,  'unknown')                                   AS task_type,
+                date_trunc('day', created_at AT TIME ZONE 'UTC')::date            AS day,
+                COUNT(*)                                                           AS count,
+                SUM(COALESCE(actual_cost, estimated_cost, 0.0))                   AS total_cost,
+                AVG(
+                    EXTRACT(EPOCH FROM (completed_at - created_at))
+                ) FILTER (WHERE completed_at IS NOT NULL AND completed_at > created_at)
+                                                                                  AS avg_duration_s,
+                COUNT(*) FILTER (WHERE status = 'completed')                      AS completed_count
+            FROM content_tasks
+            WHERE created_at <= $1
+            {date_filter}
+            GROUP BY status, model_used, task_type, day
+            ORDER BY day ASC
+        """
+
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(sql, *params)
+                result_rows = [dict(r) for r in rows]
+                total = sum(int(r["count"]) for r in result_rows)
+                logger.debug(
+                    f"[get_kpi_aggregates] {len(result_rows)} aggregate rows, "
+                    f"{total} total tasks"
+                )
+                return {"rows": result_rows, "total_tasks": total}
+        except Exception as e:
+            logger.error(
+                f"[get_kpi_aggregates] Failed to compute KPI aggregates: {e}",
+                exc_info=True,
+            )
+            return {"rows": [], "total_tasks": 0}
+
     async def delete_task(self, task_id: str) -> bool:
         """
         Delete task from content_tasks.
