@@ -24,6 +24,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Callable, Coroutine, Dict, List, Optional, Type
 
+from services.error_handler import ServiceError as _CanonicalServiceError
+
 from pydantic import BaseModel, Field
 
 logger = get_logger(__name__)
@@ -102,14 +104,36 @@ class ActionResult(BaseModel):
         json_encoders = {datetime: lambda v: v.isoformat()}
 
 
-class ServiceError(Exception):
-    """Base exception for service errors"""
+class ServiceError(_CanonicalServiceError):
+    """Service-layer exception.
 
-    def __init__(self, error_code: str, message: str, details: Optional[Dict] = None):
-        self.error_code = error_code
-        self.message = message
-        self.details = details or {}
-        super().__init__(message)
+    Thin subclass of the canonical error_handler.ServiceError so that a
+    single class is catchable regardless of which module raises it (issue #657).
+
+    Constructor accepts either:
+      - ServiceError(message, error_code=..., details=...)   — canonical form
+      - ServiceError(error_code=..., message=..., details=...) — legacy kwargs form
+    """
+
+    def __init__(
+        self,
+        message: str = "",
+        error_code: Optional[str] = None,
+        details: Optional[Dict] = None,
+        **kwargs,
+    ):
+        # The canonical AppError stores message as self.message; expose details too.
+        super().__init__(message=message, details=details, **kwargs)
+        if error_code is not None:
+            self.error_code = error_code
+
+    def __str__(self) -> str:
+        """String representation — handles both str and ErrorCode enum codes."""
+        code = getattr(self.error_code, "value", self.error_code)
+        msg = f"[{code}] {self.message}" if code else self.message
+        if self.details:
+            msg += f" | Details: {self.details}"
+        return msg
 
 
 # ============================================================================

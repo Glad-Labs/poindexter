@@ -230,8 +230,10 @@ class TestServiceAction:
 class TestServiceError:
     def test_message_propagated(self):
         err = ServiceError(error_code="E001", message="Something went wrong")
-        assert str(err) == "Something went wrong"
+        # err.message is always the plain message text
         assert err.message == "Something went wrong"
+        # str(err) includes the error code prefix for structured logging
+        assert "Something went wrong" in str(err)
 
     def test_error_code_stored(self):
         err = ServiceError(error_code="E001", message="msg")
