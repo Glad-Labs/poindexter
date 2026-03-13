@@ -34,6 +34,7 @@ def _fix_sys_path_for_venv():
 # Execute the fix immediately when this module is imported
 _fix_sys_path_for_venv()
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -133,7 +134,10 @@ class LLMClient:
         _status = "success"
         try:
             if self.provider == "gemini":
-                result = self._generate_json_gemini(prompt)
+                # Run the synchronous Gemini SDK call in a thread so it does
+                # not block the event loop (issue #780).
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(None, self._generate_json_gemini, prompt)
             elif self.provider == "local" or self.provider == "ollama":
                 result = await self._generate_json_local(prompt)
             else:
@@ -201,13 +205,18 @@ class LLMClient:
         cache_path = self._get_cache_path(prompt, "txt")
         if cache_path.exists():
             logging.info(f"Returning cached text response for prompt.")
-            return cache_path.read_text(encoding="utf-8")
+            # Use aiofiles to avoid blocking the event loop on file reads (issue #789).
+            async with aiofiles.open(cache_path, "r", encoding="utf-8") as f:
+                return await f.read()
 
         _llm_start = time.perf_counter()
         _status = "success"
         try:
             if self.provider == "gemini":
-                result = self._generate_text_gemini(prompt)
+                # Run the synchronous Gemini SDK call in a thread so it does
+                # not block the event loop (issue #780).
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(None, self._generate_text_gemini, prompt)
             elif self.provider == "local" or self.provider == "ollama":
                 result = await self._generate_text_local(prompt)
             else:
@@ -225,8 +234,9 @@ class LLMClient:
 
         if result:
             try:
-                # Use UTF-8 encoding explicitly to avoid charmap errors on Windows
-                cache_path.write_text(result, encoding="utf-8")
+                # Use aiofiles to avoid blocking the event loop on file writes (issue #789).
+                async with aiofiles.open(cache_path, "w", encoding="utf-8") as f:
+                    await f.write(result)
             except Exception as e:
                 logging.warning(f"Failed to cache result: {e}")
 
@@ -265,13 +275,18 @@ class LLMClient:
         cache_path = self._get_cache_path(prompt, "summary.txt")
         if cache_path.exists():
             logging.info(f"Returning cached summary for prompt.")
-            return cache_path.read_text()
+            # Use aiofiles to avoid blocking the event loop on file reads (issue #789).
+            async with aiofiles.open(cache_path, "r", encoding="utf-8") as f:
+                return await f.read()
 
         _llm_start = time.perf_counter()
         _status = "success"
         try:
             if self.provider == "gemini":
-                result = self._generate_summary_gemini(prompt)
+                # Run the synchronous Gemini SDK call in a thread so it does
+                # not block the event loop (issue #780).
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(None, self._generate_summary_gemini, prompt)
             elif self.provider == "local" or self.provider == "ollama":
                 # For local/ollama provider, we can reuse the text generation with the summarizer model if needed
                 # or use a specific endpoint if available. For now, we use the main model.
@@ -293,7 +308,12 @@ class LLMClient:
             )
 
         if result:
-            cache_path.write_text(result)
+            try:
+                # Use aiofiles to avoid blocking the event loop on file writes (issue #789).
+                async with aiofiles.open(cache_path, "w", encoding="utf-8") as f:
+                    await f.write(result)
+            except Exception as e:
+                logging.warning(f"Failed to cache summary: {e}")
 
         return result
 
