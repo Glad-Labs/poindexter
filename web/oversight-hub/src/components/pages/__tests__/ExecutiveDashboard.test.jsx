@@ -42,6 +42,11 @@ vi.mock('../../../services/cofounderAgentClient', () => ({
   makeRequest: mockMakeRequest,
 }));
 
+// Mock useAuth — tests assume authenticated state so data fetches fire
+vi.mock('../../../hooks/useAuth', () => ({
+  default: () => ({ isAuthenticated: true, loading: false }),
+}));
+
 // Import after mocks
 import ExecutiveDashboard from '../ExecutiveDashboard';
 

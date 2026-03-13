@@ -4,9 +4,15 @@ import {
   logErrorToSentry,
 } from '../errorLoggingService';
 import * as cofounderAgentClient from '../cofounderAgentClient';
+import * as Sentry from '@sentry/react';
 
 // Mock cofounderAgentClient
 vi.mock('../cofounderAgentClient');
+
+// Mock @sentry/react so captureException is a spy
+vi.mock('@sentry/react', () => ({
+  captureException: vi.fn(),
+}));
 
 describe('errorLoggingService', () => {
   beforeEach(() => {
@@ -98,16 +104,13 @@ describe('errorLoggingService', () => {
 
   describe('logErrorToSentry', () => {
     test('sends error to Sentry if available', () => {
-      const mockCapture = vi.fn();
-      window.__SENTRY__ = { captureException: mockCapture };
-
       const mockError = new Error('Test error');
 
       logErrorToSentry(mockError, {
         componentStack: 'Component > Root',
       });
 
-      expect(mockCapture).toHaveBeenCalledWith(
+      expect(Sentry.captureException).toHaveBeenCalledWith(
         mockError,
         expect.objectContaining({
           contexts: expect.objectContaining({
@@ -117,12 +120,9 @@ describe('errorLoggingService', () => {
           }),
         })
       );
-
-      delete window.__SENTRY__;
     });
 
     test('does not throw if Sentry is not available', () => {
-      delete window.__SENTRY__;
       const mockError = new Error('Test error');
 
       expect(() => {
@@ -131,15 +131,12 @@ describe('errorLoggingService', () => {
     });
 
     test('includes custom context when sending to Sentry', () => {
-      const mockCapture = vi.fn();
-      window.__SENTRY__ = { captureException: mockCapture };
-
       const mockError = new Error('Test error');
       const customContext = { userId: '123' };
 
       logErrorToSentry(mockError, { customContext });
 
-      expect(mockCapture).toHaveBeenCalledWith(
+      expect(Sentry.captureException).toHaveBeenCalledWith(
         mockError,
         expect.objectContaining({
           contexts: expect.objectContaining({
@@ -147,15 +144,11 @@ describe('errorLoggingService', () => {
           }),
         })
       );
-
-      delete window.__SENTRY__;
     });
   });
 
   describe('logError', () => {
     test('calls both Sentry and backend logging', async () => {
-      const mockCapture = vi.fn();
-      window.__SENTRY__ = { captureException: mockCapture };
       cofounderAgentClient.makeRequest.mockResolvedValue({ success: true });
 
       const mockError = new Error('Test error');
@@ -165,17 +158,14 @@ describe('errorLoggingService', () => {
         severity: 'critical',
       });
 
-      expect(mockCapture).toHaveBeenCalled();
+      expect(Sentry.captureException).toHaveBeenCalled();
       expect(cofounderAgentClient.makeRequest).toHaveBeenCalled();
-
-      delete window.__SENTRY__;
     });
 
     test('continues even if Sentry fails', async () => {
-      const mockCapture = vi.fn(() => {
+      Sentry.captureException.mockImplementationOnce(() => {
         throw new Error('Sentry failed');
       });
-      window.__SENTRY__ = { captureException: mockCapture };
       cofounderAgentClient.makeRequest.mockResolvedValue({ success: true });
 
       const mockError = new Error('Test error');
@@ -184,13 +174,9 @@ describe('errorLoggingService', () => {
 
       // Should not throw and should still call backend
       expect(cofounderAgentClient.makeRequest).toHaveBeenCalled();
-
-      delete window.__SENTRY__;
     });
 
     test('continues even if backend fails', async () => {
-      const mockCapture = vi.fn();
-      window.__SENTRY__ = { captureException: mockCapture };
       cofounderAgentClient.makeRequest.mockRejectedValue(
         new Error('Backend failed')
       );
@@ -200,10 +186,8 @@ describe('errorLoggingService', () => {
       const result = await logError(mockError);
 
       // Should not throw
-      expect(mockCapture).toHaveBeenCalled();
+      expect(Sentry.captureException).toHaveBeenCalled();
       expect(result).toBeNull();
-
-      delete window.__SENTRY__;
     });
   });
 });
