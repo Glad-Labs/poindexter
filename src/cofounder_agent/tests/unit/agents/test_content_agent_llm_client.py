@@ -608,3 +608,172 @@ class TestGenerateSummary:
             mock_cls.assert_not_called()
 
         assert result == "Cached summary result"
+
+
+# ---------------------------------------------------------------------------
+# Gemini run_in_executor path — issue #780
+# ---------------------------------------------------------------------------
+
+
+class TestGeminiRunInExecutor:
+    """
+    Verify that Gemini generate_content() calls are dispatched to a thread
+    via run_in_executor and never block the event loop (issue #780).
+    """
+
+    def _make_gemini_client(self, tmp_path):
+        """Build a Gemini LLMClient with a mocked google.genai module."""
+        mock_genai = MagicMock()
+        mock_model = MagicMock()
+        mock_genai.GenerativeModel.return_value = mock_model
+
+        with (
+            patch("agents.content_agent.services.llm_client.config") as mock_cfg,
+            patch("agents.content_agent.services.llm_client.genai", mock_genai),
+            patch("agents.content_agent.services.llm_client._fix_sys_path_for_venv"),
+        ):
+            mock_cfg.LLM_PROVIDER = "gemini"
+            mock_cfg.BASE_DIR = str(tmp_path)
+            mock_cfg.LOCAL_LLM_API_URL = "http://localhost:11434"
+            mock_cfg.LOCAL_LLM_MODEL_NAME = "test-model"
+            mock_cfg.GEMINI_API_KEY = "fake-api-key"
+            mock_cfg.GEMINI_MODEL = "gemini-2.0-flash"
+            mock_cfg.SUMMARIZER_MODEL = "gemini-2.0-flash"
+
+            from agents.content_agent.services.llm_client import LLMClient
+
+            client = LLMClient()
+            client.cache_dir = tmp_path
+            # Replace model with a fresh mock so we can inspect calls
+            client.model = mock_model
+            client.summarizer_model = mock_model
+
+        return client, mock_model
+
+    @pytest.mark.asyncio
+    async def test_generate_json_gemini_uses_run_in_executor(self, tmp_path):
+        """generate_json with Gemini provider must call run_in_executor, not block."""
+        client, mock_model = self._make_gemini_client(tmp_path)
+
+        mock_response = MagicMock()
+        mock_response.text = '{"key": "value"}'
+        mock_model.generate_content.return_value = mock_response
+
+        import asyncio
+        with patch.object(asyncio.get_event_loop(), "run_in_executor", wraps=asyncio.get_event_loop().run_in_executor) as mock_executor:
+            result = await client.generate_json("test prompt")
+
+        assert result == {"key": "value"}
+        # run_in_executor is called for the Gemini blocking call (and possibly by
+        # aiofiles for the cache write). Assert the Gemini callable was dispatched.
+        all_callables = [call.args[1] for call in mock_executor.call_args_list if len(call.args) >= 2]
+        assert client._generate_json_gemini in all_callables, (
+            "Expected _generate_json_gemini to be dispatched via run_in_executor"
+        )
+
+    @pytest.mark.asyncio
+    async def test_generate_text_gemini_uses_run_in_executor(self, tmp_path):
+        """generate_text with Gemini provider must call run_in_executor."""
+        client, mock_model = self._make_gemini_client(tmp_path)
+
+        mock_response = MagicMock()
+        mock_response.text = "Generated text output"
+        mock_model.generate_content.return_value = mock_response
+
+        import asyncio
+        with patch.object(asyncio.get_event_loop(), "run_in_executor", wraps=asyncio.get_event_loop().run_in_executor) as mock_executor:
+            result = await client.generate_text("test prompt")
+
+        assert result == "Generated text output"
+        all_callables = [call.args[1] for call in mock_executor.call_args_list if len(call.args) >= 2]
+        assert client._generate_text_gemini in all_callables, (
+            "Expected _generate_text_gemini to be dispatched via run_in_executor"
+        )
+
+    @pytest.mark.asyncio
+    async def test_generate_summary_gemini_uses_run_in_executor(self, tmp_path):
+        """generate_summary with Gemini provider must call run_in_executor."""
+        client, mock_model = self._make_gemini_client(tmp_path)
+
+        mock_response = MagicMock()
+        mock_response.text = "Summary output"
+        mock_model.generate_content.return_value = mock_response
+
+        import asyncio
+        with patch.object(asyncio.get_event_loop(), "run_in_executor", wraps=asyncio.get_event_loop().run_in_executor) as mock_executor:
+            result = await client.generate_summary("test prompt")
+
+        assert result == "Summary output"
+        all_callables = [call.args[1] for call in mock_executor.call_args_list if len(call.args) >= 2]
+        assert client._generate_summary_gemini in all_callables, (
+            "Expected _generate_summary_gemini to be dispatched via run_in_executor"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Async file I/O — issue #789
+# ---------------------------------------------------------------------------
+
+
+class TestAsyncFileIO:
+    """
+    Verify that generate_text and generate_summary use aiofiles for cache
+    reads and writes rather than blocking Path.read_text/write_text (issue #789).
+    """
+
+    @pytest.mark.asyncio
+    async def test_generate_text_cache_read_uses_aiofiles(self, tmp_path):
+        """Cache hit in generate_text must use aiofiles.open, not Path.read_text."""
+        with (
+            patch("agents.content_agent.services.llm_client.config") as mock_cfg,
+            patch("agents.content_agent.services.llm_client.genai", None),
+            patch("agents.content_agent.services.llm_client._fix_sys_path_for_venv"),
+        ):
+            mock_cfg.LLM_PROVIDER = "ollama"
+            mock_cfg.BASE_DIR = str(tmp_path)
+            mock_cfg.LOCAL_LLM_API_URL = "http://localhost:11434"
+            mock_cfg.LOCAL_LLM_MODEL_NAME = "test-model"
+            mock_cfg.GEMINI_API_KEY = None
+            mock_cfg.GEMINI_MODEL = "gemini-2.0-flash"
+            mock_cfg.SUMMARIZER_MODEL = "gemini-2.0-flash"
+            from agents.content_agent.services.llm_client import LLMClient
+            client = LLMClient()
+            client.cache_dir = tmp_path
+
+        prompt = "cached text prompt"
+        cache_path = client._get_cache_path(prompt, "txt")
+        cache_path.write_text("cached content", encoding="utf-8")
+
+        # Patch Path.read_text to catch any accidental synchronous read
+        with patch.object(cache_path.__class__, "read_text", side_effect=AssertionError("read_text called — must use aiofiles")):
+            result = await client.generate_text(prompt)
+
+        assert result == "cached content"
+
+    @pytest.mark.asyncio
+    async def test_generate_summary_cache_read_uses_aiofiles(self, tmp_path):
+        """Cache hit in generate_summary must use aiofiles.open, not Path.read_text."""
+        with (
+            patch("agents.content_agent.services.llm_client.config") as mock_cfg,
+            patch("agents.content_agent.services.llm_client.genai", None),
+            patch("agents.content_agent.services.llm_client._fix_sys_path_for_venv"),
+        ):
+            mock_cfg.LLM_PROVIDER = "ollama"
+            mock_cfg.BASE_DIR = str(tmp_path)
+            mock_cfg.LOCAL_LLM_API_URL = "http://localhost:11434"
+            mock_cfg.LOCAL_LLM_MODEL_NAME = "test-model"
+            mock_cfg.GEMINI_API_KEY = None
+            mock_cfg.GEMINI_MODEL = "gemini-2.0-flash"
+            mock_cfg.SUMMARIZER_MODEL = "gemini-2.0-flash"
+            from agents.content_agent.services.llm_client import LLMClient
+            client = LLMClient()
+            client.cache_dir = tmp_path
+
+        prompt = "cached summary prompt"
+        cache_path = client._get_cache_path(prompt, "summary.txt")
+        cache_path.write_text("cached summary", encoding="utf-8")
+
+        with patch.object(cache_path.__class__, "read_text", side_effect=AssertionError("read_text called — must use aiofiles")):
+            result = await client.generate_summary(prompt)
+
+        assert result == "cached summary"
