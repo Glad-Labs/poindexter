@@ -441,16 +441,25 @@ class ContentDatabase(DatabaseServiceMixin):
         """
         try:
             async with self.pool.acquire() as conn:
-                # Get task counts from content_tasks
-                total_tasks = await conn.fetchval("SELECT COUNT(*) FROM content_tasks")
+                # Consolidate task counts into a single query using FILTER to avoid
+                # 3 sequential COUNT scans (issue #472).
+                counts_row = await conn.fetchrow(
+                    """
+                    SELECT
+                        COUNT(*)                                              AS total_tasks,
+                        COUNT(*) FILTER (WHERE status = 'completed')         AS completed_tasks,
+                        COUNT(*) FILTER (WHERE status = 'failed')            AS failed_tasks,
+                        AVG(
+                            EXTRACT(EPOCH FROM (updated_at - created_at))
+                        ) FILTER (WHERE status = 'completed'
+                                    AND updated_at IS NOT NULL)              AS avg_seconds
+                    FROM content_tasks
+                    """
+                )
 
-                # Use parameterized queries for status-based counts
-                completed_tasks = await conn.fetchval(
-                    "SELECT COUNT(*) FROM content_tasks WHERE status = $1", "completed"
-                )
-                failed_tasks = await conn.fetchval(
-                    "SELECT COUNT(*) FROM content_tasks WHERE status = $1", "failed"
-                )
+                total_tasks = int(counts_row["total_tasks"] or 0)
+                completed_tasks = int(counts_row["completed_tasks"] or 0)
+                failed_tasks = int(counts_row["failed_tasks"] or 0)
 
                 # Calculate rates
                 success_rate = (
@@ -459,25 +468,21 @@ class ContentDatabase(DatabaseServiceMixin):
                     else 0
                 )
 
-                # Calculate average execution time from completed tasks
+                # Average execution time (already computed in the same query)
                 avg_execution_time = 0
                 try:
-                    time_query = "SELECT AVG(EXTRACT(EPOCH FROM (updated_at - created_at))) as avg_seconds FROM content_tasks WHERE status = $1 AND updated_at IS NOT NULL"
-                    time_result = await conn.fetchrow(time_query, "completed")
-                    if time_result and time_result["avg_seconds"]:
-                        avg_execution_time = round(float(time_result["avg_seconds"]), 2)
+                    raw_avg = counts_row["avg_seconds"]
+                    if raw_avg is not None:
+                        avg_execution_time = round(float(raw_avg), 2)
                 except (ValueError, TypeError, AttributeError) as e:
                     logger.error(
                         f"Could not calculate avg execution time (data type error): {e}",
                         exc_info=True,
                     )
-                except Exception as e:
-                    logger.error(
-                        f"[get_metrics] Unexpected error calculating avg execution time: {type(e).__name__}: {e}",
-                        exc_info=True,
-                    )
 
-                # Calculate total cost from financial tracking (if implemented)
+                # Calculate total cost from financial tracking (if implemented).
+                # Kept as a separate query because cost_logs is a different table and
+                # may not exist in all environments.
                 total_cost = 0
                 try:
                     cost_query = "SELECT SUM(cost_usd) as total FROM cost_logs WHERE created_at >= NOW() - INTERVAL '30 days'"
@@ -502,9 +507,9 @@ class ContentDatabase(DatabaseServiceMixin):
                     )
 
                 return MetricsResponse(
-                    totalTasks=total_tasks or 0,
-                    completedTasks=completed_tasks or 0,
-                    failedTasks=failed_tasks or 0,
+                    totalTasks=total_tasks,
+                    completedTasks=completed_tasks,
+                    failedTasks=failed_tasks,
                     successRate=round(success_rate, 2),
                     avgExecutionTime=avg_execution_time,
                     totalCost=total_cost,

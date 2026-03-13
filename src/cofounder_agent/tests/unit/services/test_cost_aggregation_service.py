@@ -25,11 +25,19 @@ from services.cost_aggregation_service import CostAggregationService
 # ---------------------------------------------------------------------------
 
 
-def _make_conn(fetchval_values=None, fetch_rows=None):
+def _make_row(data: dict):
+    """Build a mock asyncpg Record-like object from a dict."""
+    row = MagicMock()
+    row.__getitem__ = lambda self, key, _d=data: _d[key]
+    return row
+
+
+def _make_conn(fetchval_values=None, fetch_rows=None, fetchrow_value=None):
     """Build a mock asyncpg connection.
 
     fetchval_values: list of values returned in order for each fetchval call.
     fetch_rows: list of row dicts returned by fetch (converted to MagicMock).
+    fetchrow_value: dict returned by fetchrow (converted to MagicMock row).
     """
     conn = MagicMock()
 
@@ -37,11 +45,16 @@ def _make_conn(fetchval_values=None, fetch_rows=None):
     fetchval_values = fetchval_values or []
     conn.fetchval = AsyncMock(side_effect=fetchval_values + [0] * 20)
 
+    # fetchrow returns a single mock row
+    if fetchrow_value is not None:
+        conn.fetchrow = AsyncMock(return_value=_make_row(fetchrow_value))
+    else:
+        conn.fetchrow = AsyncMock(return_value=None)
+
     # fetch returns mock rows
     rows = []
     for row_dict in (fetch_rows or []):
-        row = MagicMock()
-        row.__getitem__ = lambda self, key, _d=row_dict: _d[key]
+        row = _make_row(row_dict)
         rows.append(row)
     conn.fetch = AsyncMock(return_value=rows)
 
@@ -91,8 +104,16 @@ class TestGetSummary:
 
     @pytest.mark.asyncio
     async def test_summary_calculates_fields(self):
-        # fetchval returns: today=1.0, week=5.0, month=10.0, tasks=20
-        conn = _make_conn(fetchval_values=[1.0, 5.0, 10.0, 20])
+        # get_summary now issues a single fetchrow (consolidated FILTER query).
+        # today=1.0, week=5.0, month=10.0, tasks=20
+        conn = _make_conn(
+            fetchrow_value={
+                "today_cost": 1.0,
+                "week_cost": 5.0,
+                "month_cost": 10.0,
+                "tasks_count": 20,
+            }
+        )
         db = _make_db(conn=conn)
         svc = _make_service(db=db)
 

@@ -1,0 +1,96 @@
+version: 2
+
+updates:
+  # ────────────────────────────────────
+  # GitHub Actions (workflows)
+  # ────────────────────────────────────
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '03:00'
+    open-pull-requests-limit: 5
+    pull-request-branch-name:
+      separator: '/'
+    reviewers:
+      - 'mattm'
+    assignees:
+      - 'mattm'
+    labels:
+      - 'dependencies'
+      - 'github-actions'
+    commit-message:
+      prefix: 'ci:'
+      include: 'scope'
+    rebase-strategy: 'auto'
+
+  # ────────────────────────────────────
+  # npm (Node.js packages)
+  # ────────────────────────────────────
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '03:30'
+    open-pull-requests-limit: 5
+    pull-request-branch-name:
+      separator: '/'
+    reviewers:
+      - 'mattm'
+    assignees:
+      - 'mattm'
+    labels:
+      - 'dependencies'
+      - 'npm'
+    commit-message:
+      prefix: 'deps:'
+      include: 'scope'
+    rebase-strategy: 'auto'
+    # Group updates by type for easier review
+    groups:
+      development:
+        dependency-type: 'dev'
+      production:
+        dependency-type: 'production'
+
+  # ────────────────────────────────────
+  # Python (pip / Poetry)
+  # ────────────────────────────────────
+  - package-ecosystem: 'pip'
+    directory: '/src/cofounder_agent'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '04:00'
+    open-pull-requests-limit: 5
+    pull-request-branch-name:
+      separator: '/'
+    reviewers:
+      - 'mattm'
+    assignees:
+      - 'mattm'
+    labels:
+      - 'dependencies'
+      - 'python'
+    commit-message:
+      prefix: 'deps:'
+      include: 'scope'
+    rebase-strategy: 'auto'
+
+  # ────────────────────────────────────
+  # Docker (if using images)
+  # ────────────────────────────────────
+  - package-ecosystem: 'docker'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '04:30'
+    open-pull-requests-limit: 3
+    labels:
+      - 'dependencies'
+      - 'docker'
+    commit-message:
+      prefix: 'ci:'
