@@ -34,6 +34,14 @@ from services.capability_tasks_service import CapabilityTasksService
 
 logger = logging.getLogger(__name__)
 
+
+def _get_capability_tasks_service(db=Depends(get_database_dependency)) -> CapabilityTasksService:
+    """
+    FastAPI dependency that constructs a CapabilityTasksService backed by
+    the application-level asyncpg connection pool (issue #795).
+    """
+    return CapabilityTasksService(pool=db.pool)
+
 # ============ Request/Response Models ============
 
 
@@ -464,9 +472,9 @@ async def list_capability_tasks(
 async def get_capability_task(
     task_id: str,
     owner_id: str = Depends(get_owner_id),
+    service: CapabilityTasksService = Depends(_get_capability_tasks_service),
 ):
     """Get details of a specific task."""
-    service = CapabilityTasksService(None)
     task = await service.get_task(task_id, owner_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -494,6 +502,7 @@ async def update_capability_task(
     task_id: str,
     request: CreateTaskRequest,
     owner_id: str = Depends(get_owner_id),
+    service: CapabilityTasksService = Depends(_get_capability_tasks_service),
 ):
     """Update a capability task."""
     # Validate all capabilities exist
@@ -503,8 +512,6 @@ async def update_capability_task(
             raise HTTPException(
                 status_code=400, detail=f"Capability '{step.capability_name}' not found"
             )
-
-    service = CapabilityTasksService(None)
     # Verify task exists before updating
     existing = await service.get_task(task_id, owner_id)
     if not existing:
@@ -536,9 +543,9 @@ async def update_capability_task(
 async def delete_capability_task(
     task_id: str,
     owner_id: str = Depends(get_owner_id),
+    service: CapabilityTasksService = Depends(_get_capability_tasks_service),
 ):
     """Delete a capability task."""
-    service = CapabilityTasksService(None)
     # Verify task exists before deleting
     existing = await service.get_task(task_id, owner_id)
     if not existing:
@@ -554,6 +561,7 @@ async def delete_capability_task(
 async def execute_capability_task_endpoint(
     task_id: str,
     owner_id: str = Depends(get_owner_id),
+    service: CapabilityTasksService = Depends(_get_capability_tasks_service),
 ):
     """
     Execute a capability task.
@@ -561,7 +569,6 @@ async def execute_capability_task_endpoint(
     Runs all steps in sequence, passing outputs between steps according to
     the task definition. Returns execution result with all outputs.
     """
-    service = CapabilityTasksService(None)
     task = await service.get_task(task_id, owner_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -612,9 +619,9 @@ async def get_execution_result(
     task_id: str,
     exec_id: str,
     owner_id: str = Depends(get_owner_id),
+    service: CapabilityTasksService = Depends(_get_capability_tasks_service),
 ):
     """Get the result of a specific task execution."""
-    service = CapabilityTasksService(None)
     execution = await service.get_execution(exec_id, owner_id)
     if not execution:
         raise HTTPException(status_code=404, detail="Execution not found")
@@ -650,9 +657,9 @@ async def list_executions(
     limit: int = Query(50, ge=1, le=100),
     status: Optional[str] = Query(None),
     owner_id: str = Depends(get_owner_id),
+    service: CapabilityTasksService = Depends(_get_capability_tasks_service),
 ):
     """List execution history for a task."""
-    service = CapabilityTasksService(None)
     task = await service.get_task(task_id, owner_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
