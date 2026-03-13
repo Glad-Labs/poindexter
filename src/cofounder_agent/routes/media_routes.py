@@ -11,6 +11,7 @@ Cost:
 - Much cheaper than DALL-E ($0.02/image)
 """
 
+import asyncio
 import base64
 import logging
 import os
@@ -152,25 +153,30 @@ async def upload_to_s3(file_path: str, task_id: Optional[str] = None) -> Optiona
         # Generate unique key
         image_key = f"generated/{int(time.time())}-{uuid.uuid4()}.png"
 
-        # Read file
-        with open(file_path, "rb") as f:
-            file_data = f.read()
+        # Read file — offload blocking I/O to thread pool so event loop is not stalled
+        loop = asyncio.get_event_loop()
+        file_data = await loop.run_in_executor(
+            None, lambda: open(file_path, "rb").read()
+        )
 
         # Prepare metadata
         metadata = {"generated-date": datetime.now().isoformat()}
         if task_id:
             metadata["task-id"] = task_id
 
-        # Upload to S3
-        s3.upload_fileobj(
-            BytesIO(file_data),
-            bucket,
-            image_key,
-            ExtraArgs={
-                "ContentType": "image/png",
-                "CacheControl": "max-age=31536000, immutable",  # Cache 1 year
-                "Metadata": metadata,
-            },
+        # Upload to S3 — boto3 is synchronous; run in executor to avoid blocking
+        await loop.run_in_executor(
+            None,
+            lambda: s3.upload_fileobj(
+                BytesIO(file_data),
+                bucket,
+                image_key,
+                ExtraArgs={
+                    "ContentType": "image/png",
+                    "CacheControl": "max-age=31536000, immutable",  # Cache 1 year
+                    "Metadata": metadata,
+                },
+            ),
         )
 
         logger.info(f"✅ Uploaded to S3: s3://{bucket}/{image_key}")
