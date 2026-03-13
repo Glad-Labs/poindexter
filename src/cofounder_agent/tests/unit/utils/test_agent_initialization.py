@@ -52,7 +52,7 @@ class TestRegisterAllAgentsContentAgentGroup:
             "sys.modules",
             {
                 "agents.content_agent.agents.creative_agent": MagicMock(CreativeAgent=mock_creative),
-                "agents.content_agent.agents.image_agent": MagicMock(ImageAgent=mock_image),
+                "agents.content_agent.agents.postgres_image_agent": MagicMock(PostgreSQLImageAgent=mock_image),
                 "agents.content_agent.agents.postgres_publishing_agent": MagicMock(
                     PostgreSQLPublishingAgent=mock_pg_pub
                 ),

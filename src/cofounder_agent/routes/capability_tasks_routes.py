@@ -40,6 +40,8 @@ def _get_capability_tasks_service(db=Depends(get_database_dependency)) -> Capabi
     FastAPI dependency that constructs a CapabilityTasksService backed by
     the application-level asyncpg connection pool (issue #795).
     """
+    if db.pool is None:
+        raise HTTPException(status_code=503, detail="Database pool not initialized")
     return CapabilityTasksService(pool=db.pool)
 
 # ============ Request/Response Models ============

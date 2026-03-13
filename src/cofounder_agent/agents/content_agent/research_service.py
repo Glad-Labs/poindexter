@@ -59,7 +59,8 @@ class SearXNGResearchService:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit — closes the shared client."""
-        await self.client.aclose()
+        if self.client is not None:
+            await self.client.aclose()
 
     async def search(self, query: str, category: str = "general") -> dict:
         """

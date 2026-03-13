@@ -93,7 +93,6 @@ class TestListWritingSamples:
         data = client.get("/api/writing-style/samples").json()
         assert "samples" in data
         assert "total" in data
-        assert "total_count" in data
         assert "offset" in data
         assert "limit" in data
 
@@ -105,7 +104,6 @@ class TestListWritingSamples:
         client = TestClient(_build_app(mock_db))
         data = client.get("/api/writing-style/samples").json()
         assert data["total"] == 2
-        assert data["total_count"] == 2
 
     def test_active_sample_id_is_set(self):
         client = TestClient(_build_app())

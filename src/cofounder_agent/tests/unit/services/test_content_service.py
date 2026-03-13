@@ -444,8 +444,8 @@ def _make_image_modules(mock_agent=None):
         mock_agent = MagicMock()
         mock_agent.run = AsyncMock(return_value={"url": "https://example.com/img.jpg"})
     return {
-        "agents.content_agent.agents.image_agent": MagicMock(
-            ImageAgent=lambda: mock_agent
+        "agents.content_agent.agents.postgres_image_agent": MagicMock(
+            PostgreSQLImageAgent=lambda: mock_agent
         ),
     }
 

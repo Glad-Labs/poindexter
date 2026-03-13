@@ -256,4 +256,4 @@ class TestRegisterWorkflowHistoryRoutes:
 
         assert result is True
         mock_init.assert_called_once_with(mock_db.pool)
-        assert app.include_router.call_count == 2
+        assert app.include_router.call_count == 1

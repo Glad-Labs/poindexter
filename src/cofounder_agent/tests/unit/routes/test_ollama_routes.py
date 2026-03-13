@@ -250,9 +250,7 @@ class TestSelectOllamaModel:
         client = _make_httpx_client(get_response=resp)
         with patch("routes.ollama_routes.httpx.AsyncClient", return_value=client):
             tc = TestClient(_build_app())
-            response = tc.post(
-                "/api/ollama/select-model", json={"model": "mistral:latest"}
-            )
+            response = tc.get("/api/ollama/select-model?model=mistral:latest")
         assert response.status_code == 200
 
     def test_success_when_model_available(self):
@@ -260,14 +258,12 @@ class TestSelectOllamaModel:
         client = _make_httpx_client(get_response=resp)
         with patch("routes.ollama_routes.httpx.AsyncClient", return_value=client):
             tc = TestClient(_build_app())
-            data = tc.post(
-                "/api/ollama/select-model", json={"model": "mistral:latest"}
-            ).json()
+            data = tc.get("/api/ollama/select-model?model=mistral:latest").json()
         assert data["success"] is True
 
     def test_missing_model_returns_422(self):
         tc = TestClient(_build_app())
-        resp = tc.post("/api/ollama/select-model", json={})
+        resp = tc.get("/api/ollama/select-model")
         assert resp.status_code == 422
 
     def test_model_not_found_returns_success_false(self):
@@ -275,7 +271,7 @@ class TestSelectOllamaModel:
         client = _make_httpx_client(get_response=resp)
         with patch("routes.ollama_routes.httpx.AsyncClient", return_value=client):
             tc = TestClient(_build_app())
-            data = tc.post("/api/ollama/select-model", json={"model": "nonexistent"}).json()
+            data = tc.get("/api/ollama/select-model?model=nonexistent").json()
         assert data["success"] is False
 
     def test_non_200_from_ollama_returns_success_false(self):
@@ -283,7 +279,7 @@ class TestSelectOllamaModel:
         client = _make_httpx_client(get_response=resp)
         with patch("routes.ollama_routes.httpx.AsyncClient", return_value=client):
             tc = TestClient(_build_app())
-            data = tc.post("/api/ollama/select-model", json={"model": "mistral:latest"}).json()
+            data = tc.get("/api/ollama/select-model?model=mistral:latest").json()
         assert data["success"] is False
 
     def test_exception_returns_success_false(self):
@@ -291,14 +287,14 @@ class TestSelectOllamaModel:
         client.get = AsyncMock(side_effect=RuntimeError("Unexpected error"))
         with patch("routes.ollama_routes.httpx.AsyncClient", return_value=client):
             tc = TestClient(_build_app())
-            data = tc.post("/api/ollama/select-model", json={"model": "mistral:latest"}).json()
+            data = tc.get("/api/ollama/select-model?model=mistral:latest").json()
         assert data["success"] is False
 
     def test_requires_auth(self):
         app = FastAPI()
         app.include_router(router)
         tc = TestClient(app, raise_server_exceptions=False)
-        assert tc.post("/api/ollama/select-model", json={"model": "mistral:latest"}).status_code == 401
+        assert tc.get("/api/ollama/select-model?model=mistral:latest").status_code == 401
 
 
 # ---------------------------------------------------------------------------

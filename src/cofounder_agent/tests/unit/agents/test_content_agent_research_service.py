@@ -41,9 +41,9 @@ class TestSearXNGResearchServiceInit:
         svc = SearXNGResearchService(max_results=20)
         assert svc.max_results == 20
 
-    def test_initial_client_none(self):
+    def test_initial_client_initialized(self):
         svc = SearXNGResearchService()
-        assert svc.client is None
+        assert svc.client is not None
 
 
 # ---------------------------------------------------------------------------
@@ -195,19 +195,18 @@ class TestSearch:
         assert result["count"] == 0
 
     @pytest.mark.asyncio
-    async def test_creates_client_if_none(self):
+    async def test_uses_existing_client(self):
         svc = SearXNGResearchService()
-        assert svc.client is None
+        assert svc.client is not None
 
         mock_response = self._make_mock_response([])
-        with patch("agents.content_agent.research_service.httpx.AsyncClient") as mock_cls:
-            mock_new_client = AsyncMock()
-            mock_new_client.get = AsyncMock(return_value=mock_response)
-            mock_cls.return_value = mock_new_client
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+        svc.client = mock_client  # type: ignore[assignment]
 
-            await svc.search("test")
+        await svc.search("test")
 
-        mock_cls.assert_called_once()
+        mock_client.get.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_result_count_matches_results(self):

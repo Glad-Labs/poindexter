@@ -32,6 +32,13 @@ models_router = APIRouter(
     dependencies=[Depends(get_current_user)],
 )
 
+# Legacy list router — GET /api/models returns the same models list
+models_list_router = APIRouter(
+    prefix="/api/models",
+    tags=["models"],
+    dependencies=[Depends(get_current_user)],
+)
+
 
 # ============================================================================
 # API ENDPOINTS
@@ -205,5 +212,48 @@ async def get_rtx5070_models():
     from fastapi.responses import RedirectResponse
 
     return RedirectResponse(url="/api/models/available?vram_gb=12", status_code=301)
+
+
+@models_list_router.get(
+    "",
+    response_model=ModelsListResponse,
+    description="List all available AI models (legacy endpoint)",
+)
+async def get_models_list():
+    """
+    Legacy endpoint: GET /api/models returns the full models list.
+    Prefer /api/models/available for new integrations.
+    """
+    try:
+        service = get_model_consolidation_service()
+        models_dict = service.list_models()
+
+        models_list = []
+        for provider, model_names in models_dict.items():
+            icon = PROVIDER_ICONS.get(provider, "🤖")
+            for model_name in model_names:
+                models_list.append(
+                    ModelInfo(
+                        name=model_name,
+                        displayName=f"{model_name} ({provider})",
+                        provider=provider,
+                        isFree=provider in ["ollama", "huggingface"],
+                        size="unknown",
+                        estimatedVramGb=0,
+                        description=f"Model from {provider}",
+                        icon=icon,
+                        requiresInternet=provider != "ollama",
+                    )
+                )
+
+        return ModelsListResponse(
+            models=models_list,
+            total=len(models_list),
+            timestamp=datetime.now(timezone.utc).isoformat(),
+        )
+
+    except Exception as e:
+        logger.error(f"Error getting models list: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error getting models list")
 
 

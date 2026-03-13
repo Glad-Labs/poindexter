@@ -2,11 +2,11 @@
 Unit tests for routes/model_routes.py.
 
 Tests cover:
-- GET /api/v1/models/available    — get_available_models
-- GET /api/v1/models/status       — get_provider_status
-- GET /api/v1/models/recommended  — get_recommended_models
-- GET /api/v1/models/rtx5070      — deprecated redirect
-- GET /api/models                 — get_models_list (legacy)
+- GET /api/models/available    — get_available_models
+- GET /api/models/status       — get_provider_status
+- GET /api/models/recommended  — get_recommended_models
+- GET /api/models/rtx5070      — deprecated redirect
+- GET /api/models              — get_models_list (legacy)
 
 Auth is router-level (dependencies=[Depends(get_current_user)]) — override on the
 FastAPI app. ModelConsolidationService is patched to avoid real provider calls.
@@ -52,7 +52,7 @@ def _build_app(service=None) -> FastAPI:
 
 
 # ---------------------------------------------------------------------------
-# GET /api/v1/models/available
+# GET /api/models/available
 # ---------------------------------------------------------------------------
 
 
@@ -64,7 +64,7 @@ class TestGetAvailableModels:
             return_value=_make_service(),
         ):
             client = TestClient(_build_app())
-            resp = client.get("/api/v1/models/available")
+            resp = client.get("/api/models/available")
         assert resp.status_code == 200
 
     def test_response_has_models_and_total(self):
@@ -73,7 +73,7 @@ class TestGetAvailableModels:
             return_value=_make_service(),
         ):
             client = TestClient(_build_app())
-            data = client.get("/api/v1/models/available").json()
+            data = client.get("/api/models/available").json()
         assert "models" in data
         assert "total" in data
         assert data["total"] == len(data["models"])
@@ -84,7 +84,7 @@ class TestGetAvailableModels:
             return_value=_make_service(),
         ):
             client = TestClient(_build_app())
-            data = client.get("/api/v1/models/available").json()
+            data = client.get("/api/models/available").json()
         assert "timestamp" in data
 
     def test_each_model_has_required_fields(self):
@@ -93,7 +93,7 @@ class TestGetAvailableModels:
             return_value=_make_service(),
         ):
             client = TestClient(_build_app())
-            data = client.get("/api/v1/models/available").json()
+            data = client.get("/api/models/available").json()
         if data["models"]:
             model = data["models"][0]
             for field in ["name", "provider", "isFree"]:
@@ -105,7 +105,7 @@ class TestGetAvailableModels:
             return_value=_make_service(),
         ):
             client = TestClient(_build_app())
-            resp = client.get("/api/v1/models/available?vram_gb=8")
+            resp = client.get("/api/models/available?vram_gb=8")
         assert resp.status_code == 200
 
     def test_vram_filter_limits_ollama_models(self):
@@ -118,7 +118,7 @@ class TestGetAvailableModels:
         )
         with patch("routes.model_routes.get_model_consolidation_service", return_value=svc):
             client = TestClient(_build_app())
-            data = client.get("/api/v1/models/available?vram_gb=8").json()
+            data = client.get("/api/models/available?vram_gb=8").json()
         ollama_models = [m for m in data["models"] if m["provider"] == "ollama"]
         assert len(ollama_models) <= 2  # vram_gb=8 <= 12 → limit 2
 
@@ -128,19 +128,19 @@ class TestGetAvailableModels:
             side_effect=RuntimeError("service down"),
         ):
             client = TestClient(_build_app())
-            resp = client.get("/api/v1/models/available")
+            resp = client.get("/api/models/available")
         assert resp.status_code == 500
 
     def test_requires_auth(self):
         app = FastAPI()
         app.include_router(models_router)
         client = TestClient(app, raise_server_exceptions=False)
-        resp = client.get("/api/v1/models/available")
+        resp = client.get("/api/models/available")
         assert resp.status_code == 401
 
 
 # ---------------------------------------------------------------------------
-# GET /api/v1/models/status
+# GET /api/models/status
 # ---------------------------------------------------------------------------
 
 
@@ -152,7 +152,7 @@ class TestGetProviderStatus:
             return_value=_make_service(),
         ):
             client = TestClient(_build_app())
-            resp = client.get("/api/v1/models/status")
+            resp = client.get("/api/models/status")
         assert resp.status_code == 200
 
     def test_response_has_providers_and_timestamp(self):
@@ -161,7 +161,7 @@ class TestGetProviderStatus:
             return_value=_make_service(),
         ):
             client = TestClient(_build_app())
-            data = client.get("/api/v1/models/status").json()
+            data = client.get("/api/models/status").json()
         assert "providers" in data
         assert "timestamp" in data
 
@@ -171,12 +171,12 @@ class TestGetProviderStatus:
             side_effect=RuntimeError("provider check failed"),
         ):
             client = TestClient(_build_app())
-            resp = client.get("/api/v1/models/status")
+            resp = client.get("/api/models/status")
         assert resp.status_code == 500
 
 
 # ---------------------------------------------------------------------------
-# GET /api/v1/models/recommended
+# GET /api/models/recommended
 # ---------------------------------------------------------------------------
 
 
@@ -188,7 +188,7 @@ class TestGetRecommendedModels:
             return_value=_make_service(),
         ):
             client = TestClient(_build_app())
-            resp = client.get("/api/v1/models/recommended")
+            resp = client.get("/api/models/recommended")
         assert resp.status_code == 200
 
     def test_returns_one_model_per_provider(self):
@@ -200,7 +200,7 @@ class TestGetRecommendedModels:
         )
         with patch("routes.model_routes.get_model_consolidation_service", return_value=svc):
             client = TestClient(_build_app())
-            data = client.get("/api/v1/models/recommended").json()
+            data = client.get("/api/models/recommended").json()
         # At most one model per provider in the response
         providers = [m["provider"] for m in data["models"]]
         assert len(providers) == len(set(providers)), "Duplicate providers in recommended"
@@ -211,12 +211,12 @@ class TestGetRecommendedModels:
             side_effect=RuntimeError("service down"),
         ):
             client = TestClient(_build_app())
-            resp = client.get("/api/v1/models/recommended")
+            resp = client.get("/api/models/recommended")
         assert resp.status_code == 500
 
 
 # ---------------------------------------------------------------------------
-# GET /api/v1/models/rtx5070 (deprecated redirect)
+# GET /api/models/rtx5070 (deprecated redirect)
 # ---------------------------------------------------------------------------
 
 
@@ -224,14 +224,14 @@ class TestGetRecommendedModels:
 class TestRtx5070Redirect:
     def test_returns_301_redirect(self):
         client = TestClient(_build_app(), follow_redirects=False)
-        resp = client.get("/api/v1/models/rtx5070")
+        resp = client.get("/api/models/rtx5070")
         assert resp.status_code == 301
 
     def test_redirect_location_points_to_available(self):
         client = TestClient(_build_app(), follow_redirects=False)
-        resp = client.get("/api/v1/models/rtx5070")
+        resp = client.get("/api/models/rtx5070")
         location = resp.headers.get("location", "")
-        assert "/api/v1/models/available" in location
+        assert "/api/models/available" in location
         assert "vram_gb=12" in location
 
 
