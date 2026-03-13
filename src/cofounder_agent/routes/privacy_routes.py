@@ -19,7 +19,7 @@ information about GDPR rights. In production, implement:
 
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
@@ -105,7 +105,7 @@ async def submit_data_request(request_data: DataSubjectRequest) -> Dict:
                 "Check your email for a verification link. "
                 "Once verified, we'll process your request within 30 days."
             ),
-            "request_id": datetime.utcnow().isoformat(),
+            "request_id": datetime.now(timezone.utc).isoformat(),
             "next_steps": [
                 "1. Verify your email address (link sent to your inbox)",
                 "2. We'll confirm receipt within 2 weeks",

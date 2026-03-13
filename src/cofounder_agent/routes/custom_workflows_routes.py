@@ -278,6 +278,8 @@ async def delete_custom_workflow(
             return {"message": f"Workflow '{workflow_id}' deleted successfully"}
 
         raise HTTPException(status_code=404, detail=f"Workflow '{workflow_id}' not found")
+    except HTTPException:
+        raise
     except ValueError as e:
         logger.warning(f"Access denied or not found: {str(e)}")
         raise HTTPException(status_code=404, detail="Workflow not found or access denied")

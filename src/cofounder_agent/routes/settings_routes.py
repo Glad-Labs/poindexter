@@ -24,6 +24,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request, status
 
+from routes.auth_unified import get_current_user
 from schemas.settings_schemas import (
     SettingBase,
     SettingBulkUpdateRequest,
@@ -42,36 +43,6 @@ from utils.route_utils import get_database_dependency
 
 # Create router
 router = APIRouter(prefix="/api/settings", tags=["settings"])
-
-
-# ============================================================================
-# Authentication Dependency (Mock for testing)
-# ============================================================================
-
-
-async def get_current_user(request: Request):
-    """
-    Mock authentication dependency for testing with basic JWT validation.
-    In production, this would validate actual JWT tokens.
-    For testing, this validates Bearer token format and rejects obviously invalid tokens.
-    """
-    # Check for Authorization header
-    auth_header = request.headers.get("Authorization")
-    if not auth_header:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    # Validate Bearer token format
-    if not auth_header.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid token format")
-
-    # Extract token
-    token = auth_header[7:]  # Remove "Bearer " prefix
-
-    # Reject obviously invalid tokens
-    if token.lower() in ["invalid", "fake-invalid", "none", ""]:
-        raise HTTPException(status_code=401, detail="Invalid or revoked token")
-
-    return {"user_id": "test-user", "email": "test@example.com", "role": "user"}
 
 
 # ============================================================================
@@ -425,7 +396,7 @@ async def update_setting(
     setting_id: int = Path(..., gt=0, description="Setting ID"),
     update_data: SettingUpdate = Body(...),
     current_user=Depends(get_current_user),
-    request: Request = None,
+    request: Optional[Request] = None,
 ):
     """
     Update an existing setting (admin/editor).
@@ -498,7 +469,7 @@ async def delete_setting(
     setting_id: str = Path(..., description="Setting ID or key name"),
     current_user=Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
-    request: Request = None,
+    request: Optional[Request] = None,
 ):
     """
     Delete a setting (admin only).

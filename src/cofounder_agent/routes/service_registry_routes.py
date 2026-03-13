@@ -12,6 +12,7 @@ from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from routes.auth_unified import get_current_user
 from services.service_base import get_service_registry
 from utils.route_utils import get_database_dependency
 
@@ -26,7 +27,7 @@ router = APIRouter(prefix="/api/services", tags=["services"])
     summary="Get complete service registry schema",
     description="Returns all registered services with their actions and schemas for LLM/agent discovery",
 )
-async def get_registry_schema():
+async def get_registry_schema(current_user: dict = Depends(get_current_user)):
     """
     Get the complete service registry schema.
 
@@ -90,7 +91,7 @@ async def get_registry_schema():
     summary="List all services",
     description="Returns names of all registered services",
 )
-async def list_services():
+async def list_services(current_user: dict = Depends(get_current_user)):
     """
     List all registered services by name.
 
@@ -116,7 +117,7 @@ async def list_services():
     summary="Get service metadata",
     description="Returns metadata and actions for a specific service",
 )
-async def get_service_metadata(service_name: str):
+async def get_service_metadata(service_name: str, current_user: dict = Depends(get_current_user)):
     """
     Get metadata for a specific service.
 
@@ -168,7 +169,7 @@ async def get_service_metadata(service_name: str):
     summary="List actions for a service",
     description="Returns available actions in a service",
 )
-async def get_service_actions(service_name: str):
+async def get_service_actions(service_name: str, current_user: dict = Depends(get_current_user)):
     """
     Get available actions for a specific service.
 
@@ -209,7 +210,7 @@ async def get_service_actions(service_name: str):
     summary="Get action details",
     description="Returns detailed schema for a specific action",
 )
-async def get_action_details(service_name: str, action_name: str):
+async def get_action_details(service_name: str, action_name: str, current_user: dict = Depends(get_current_user)):
     """
     Get detailed schema for a specific action.
 
@@ -269,6 +270,7 @@ async def execute_service_action(
     service_name: str,
     action_name: str,
     params: Dict[str, Any],
+    current_user: dict = Depends(get_current_user),
     db=Depends(get_database_dependency),
 ):
     """

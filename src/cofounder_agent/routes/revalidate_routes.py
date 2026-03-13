@@ -14,8 +14,10 @@ import os
 from typing import Any, Dict, Optional
 
 import httpx
-from fastapi import APIRouter, Header
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+
+from routes.auth_unified import get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +92,7 @@ async def trigger_nextjs_revalidation(paths: Optional[list] = None) -> bool:
 @router.post("/revalidate-cache")
 async def revalidate_cache(
     request_data: RevalidateCacheRequest,
-    authorization: Optional[str] = Header(None),
+    current_user: dict = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """
     Securely revalidate public site cache after publishing content.
@@ -101,20 +103,10 @@ async def revalidate_cache(
 
     Args:
         request_data: {"paths": ["/"]} - Paths to revalidate
-        authorization: Bearer token (required for auth verification)
 
     Returns:
         {"success": bool, "message": str, "paths": list}
     """
-    # Basic auth check - verify authorization header present
-    if not authorization:
-        logger.warning("Unauthorized cache revalidation attempt (no auth header)")
-        return {
-            "success": False,
-            "message": "Authentication required",
-            "paths": request_data.paths or [],
-        }
-
     paths = request_data.paths or ["/", "/archive"]
 
     # Trigger ISR revalidation on public site
