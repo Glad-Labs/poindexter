@@ -3,14 +3,7 @@ import { Handle, Position } from 'reactflow';
 import { Box, Paper, Typography, Chip } from '@mui/material';
 import { Clock, RotateCcw } from 'lucide-react';
 
-const PhaseNode = ({ data, isConnecting, isSelected }) => {
-  const inputSchema = Array.isArray(data?.phase?.metadata?.input_schema)
-    ? data.phase.metadata.input_schema
-    : [];
-  const requiredInputCount = inputSchema.filter(
-    (field) => field?.required
-  ).length;
-
+const PhaseNode = ({ data, _isConnecting, isSelected }) => {
   return (
     <Paper
       sx={{
@@ -48,21 +41,6 @@ const PhaseNode = ({ data, isConnecting, isSelected }) => {
           variant="outlined"
           sx={{ mb: 0.5 }}
         />
-      )}
-
-      {data.phase?.metadata?.selected_model && (
-        <Chip
-          label={`Model: ${data.phase.metadata.selected_model}`}
-          size="small"
-          color="secondary"
-          sx={{ mb: 0.5, maxWidth: 170 }}
-        />
-      )}
-
-      {requiredInputCount > 0 && (
-        <Typography variant="caption" sx={{ display: 'block', mb: 0.5 }}>
-          Required inputs: {requiredInputCount}
-        </Typography>
       )}
 
       <Box

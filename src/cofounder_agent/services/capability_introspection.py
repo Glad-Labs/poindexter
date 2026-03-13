@@ -6,11 +6,9 @@ as capabilities with derived input/output schemas.
 """
 
 import inspect
-from services.logger_config import get_logger
 import re
 from typing import Any, Callable, List, Optional, get_type_hints
 
-logger = get_logger(__name__)
 from .capability_registry import (
     Capability,
     CapabilityMetadata,
@@ -188,11 +186,7 @@ class CapabilityIntrospector:
             # Get type hints
             try:
                 type_hints = get_type_hints(func)
-            except (TypeError, NameError, AttributeError) as e:
-                logger.error(
-                    f"[register_function_as_capability] Failed to extract type hints for {name}: {e}",
-                    exc_info=True,
-                )
+            except:
                 type_hints = {}
 
             # Use provided description or extract from docstring
@@ -206,11 +200,7 @@ class CapabilityIntrospector:
                 # Enhance with signature info if docstring parsing didn't work
                 if not input_schema.parameters:
                     input_schema = self._extract_schema_from_signature(func, type_hints)
-            except (ValueError, RuntimeError, KeyError) as e:
-                logger.error(
-                    f"[register_function_as_capability] Failed to extract schema from docstring for {name}: {e}",
-                    exc_info=True,
-                )
+            except:
                 input_schema = self._extract_schema_from_signature(func, type_hints)
                 output_schema = OutputSchema()
 
@@ -228,10 +218,7 @@ class CapabilityIntrospector:
             return True
 
         except Exception as e:
-            logger.error(
-                f"[register_function_as_capability] Failed to register capability '{name}': {e}",
-                exc_info=True,
-            )
+            print(f"Failed to register capability '{name}': {e}")
             return False
 
     def register_class_methods_as_capabilities(
@@ -288,10 +275,7 @@ class CapabilityIntrospector:
                     count += 1
 
             except Exception as e:
-                logger.error(
-                    f"[register_class_methods_as_capabilities] Failed to register {cls.__name__}.{name}: {e}",
-                    exc_info=True,
-                )
+                print(f"Failed to register {cls.__name__}.{name}: {e}")
 
         return count
 

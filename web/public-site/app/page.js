@@ -1,4 +1,3 @@
-import logger from '@/lib/logger';
 import Link from 'next/link';
 import Image from 'next/image';
 
@@ -28,38 +27,56 @@ async function getPosts() {
       !FASTAPI_URL.startsWith('http://') &&
       !FASTAPI_URL.startsWith('https://')
     ) {
-      logger.warn('Invalid NEXT_PUBLIC_API_BASE_URL, using static fallback');
+      console.warn('Invalid NEXT_PUBLIC_API_BASE_URL, using static fallback');
       return [];
     }
 
-    const url = `${FASTAPI_URL}/api/posts?offset=0&limit=20&published_only=true`;
-    logger.log('📡 Fetching posts from:', url);
+    const url = `${FASTAPI_URL}/api/posts?skip=0&limit=20&published_only=true`;
+    console.log('📡 Fetching posts from:', url);
 
-    const response = await fetch(url, {
-      // ISR: Revalidate every 1 hour (3600 seconds) - much faster than 24 hours for development
-      // For production, consider webhook-triggered revalidation for instant updates when posts are published
-      next: { revalidate: 3600 },
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
+    // Add timeout support using AbortController
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
-    if (!response.ok) {
-      logger.error(
-        `❌ Failed to fetch posts: ${response.status} ${response.statusText}`
+    try {
+      const response = await fetch(url, {
+        // ISR: Revalidate every 1 hour (3600 seconds) - much faster than 24 hours for development
+        // For production, consider webhook-triggered revalidation for instant updates when posts are published
+        next: { revalidate: 3600 },
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        console.error(
+          `❌ Failed to fetch posts: ${response.status} ${response.statusText}`
+        );
+        return [];
+      }
+
+      const data = await response.json();
+      console.log(
+        '✅ Posts fetched successfully, got',
+        data.data?.length || 0,
+        'posts'
       );
+      return data.data || [];
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      // Specific handling for timeout vs other errors
+      if (fetchError.name === 'AbortError') {
+        console.error('❌ Request timeout (10s) fetching posts from', url);
+      } else {
+        console.error('❌ Network error fetching posts:', fetchError.message);
+      }
       return [];
     }
-
-    const data = await response.json();
-    logger.log(
-      '✅ Posts fetched successfully, got',
-      (data.posts || data.data)?.length || 0,
-      'posts'
-    );
-    return data.posts || data.data || [];
   } catch (error) {
-    logger.error('❌ Error fetching posts for homepage:', error.message);
+    console.error('❌ Error fetching posts for homepage:', error.message);
     return [];
   }
 }
@@ -69,7 +86,7 @@ export default async function HomePage() {
   const currentPost = posts[0];
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
+    <main className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
       {/* Animated Background Elements */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-cyan-500/10 rounded-full blur-3xl animate-pulse" />
@@ -100,15 +117,8 @@ export default async function HomePage() {
           </div>
         </section>
       ) : (
-        <section
-          className="py-12 px-4 md:px-0"
-          aria-labelledby="featured-post-heading"
-        >
+        <section className="py-12 px-4 md:px-0">
           <div className="container mx-auto max-w-6xl">
-            {/* Visually-hidden section heading keeps heading outline: h1 > h2(Featured) > h3(article title) */}
-            <h2 id="featured-post-heading" className="sr-only">
-              Featured Post
-            </h2>
             {/* Main Featured Post Card */}
             <div className="bg-gradient-to-b from-slate-800/50 to-slate-900/50 rounded-2xl overflow-hidden border border-cyan-500/20 hover:border-cyan-400/40 transition-colors">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 p-8">
@@ -142,10 +152,10 @@ export default async function HomePage() {
                       </div>
                     )}
 
-                    {/* Title — h3 because it's article content under the h2 "Featured Post" section heading */}
-                    <h3 className="text-3xl sm:text-4xl font-bold text-white mb-4 leading-tight">
+                    {/* Title */}
+                    <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4 leading-tight">
                       {currentPost?.title}
-                    </h3>
+                    </h2>
 
                     {/* Excerpt */}
                     <p className="text-lg text-slate-300 mb-6 leading-relaxed">
@@ -261,6 +271,6 @@ export default async function HomePage() {
           </Link>
         </div>
       </section>
-    </div>
+    </main>
   );
 }

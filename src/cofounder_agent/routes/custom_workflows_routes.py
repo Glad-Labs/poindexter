@@ -11,12 +11,12 @@ Endpoints:
 - GET /api/workflows/available-phases - List available phases for building
 """
 
-from services.logger_config import get_logger
+import logging
 from typing import Any, Dict, List, Optional
 
+import jwt
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from routes.auth_unified import get_current_user
 from schemas.custom_workflow_schemas import (
     AvailablePhasesResponse,
     CustomWorkflow,
@@ -26,8 +26,10 @@ from schemas.custom_workflow_schemas import (
     WorkflowListResponse,
 )
 from services.custom_workflows_service import CustomWorkflowsService
+from services.token_validator import JWTTokenValidator
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
+
 router = APIRouter(
     prefix="/api/workflows",
     tags=["custom-workflows"],
@@ -43,12 +45,59 @@ def get_workflows_service(request: Request) -> CustomWorkflowsService:
     return service
 
 
+def get_user_id(request: Request) -> str:
+    """
+    Get user ID from JWT token in Authorization header or request context.
+
+    Flow:
+    1. Try to extract from Authorization: Bearer {token} header
+    2. Fall back to request.state.user_id if set by middleware
+    3. Use test user ID in development mode
+
+    Returns:
+        User ID string
+
+    Raises:
+        HTTPException: 401 if token is invalid
+    """
+    # Check if user_id already in request context (from auth middleware)
+    user_id = getattr(request.state, "user_id", None)
+    if user_id:
+        return str(user_id)
+
+    # Try to extract from Authorization header
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        try:
+            token = auth_header[7:]  # Remove "Bearer " prefix
+            claims = JWTTokenValidator.verify_token(token)
+            if claims and "user_id" in claims:
+                return str(claims["user_id"])
+        except jwt.ExpiredSignatureError:
+            logger.warning("JWT token expired in get_user_id()")
+            raise HTTPException(status_code=401, detail="Token expired")
+        except jwt.InvalidTokenError as e:
+            logger.warning(f"Invalid JWT token in get_user_id(): {e}")
+            raise HTTPException(status_code=401, detail="Invalid token")
+        except Exception as e:
+            logger.warning(f"Error extracting user ID from JWT: {e}")
+            raise HTTPException(status_code=401, detail="Authentication failed")
+
+    # Development fallback (no token provided)
+    if not auth_header:
+        logger.debug("No authorization header provided, using test user for development")
+        return "test-user-123"
+
+    # Authorization header present but invalid format
+    logger.warning(f"Invalid authorization header format: {auth_header[:20]}...")
+    raise HTTPException(status_code=401, detail="Invalid authorization header format")
+
 
 @router.post("/custom", response_model=CustomWorkflow, name="Create Custom Workflow")
 async def create_custom_workflow(
     workflow: CustomWorkflow,
+    request: Request,
     service: CustomWorkflowsService = Depends(get_workflows_service),
-    current_user: dict = Depends(get_current_user),
 ) -> CustomWorkflow:
     """
     Create and save a new custom workflow.
@@ -64,22 +113,22 @@ async def create_custom_workflow(
         500: Database error
     """
     try:
-        owner_id = str(current_user.get("id", ""))
+        owner_id = get_user_id(request)
         created = await service.create_workflow(workflow, owner_id)
         logger.info(f"Created workflow: {created.id} for user {owner_id}")
         return created
     except ValueError as e:
         logger.warning(f"Invalid workflow: {str(e)}")
-        raise HTTPException(status_code=400, detail="Invalid workflow")
+        raise HTTPException(status_code=400, detail=f"Invalid workflow: {str(e)}")
     except Exception as e:
         logger.error(f"Error creating workflow: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to create workflow")
+        raise HTTPException(status_code=500, detail=f"Failed to create workflow: {str(e)}")
 
 
 @router.get("/custom", response_model=WorkflowListPageResponse, name="List Custom Workflows")
 async def list_custom_workflows(
+    request: Request,
     service: CustomWorkflowsService = Depends(get_workflows_service),
-    current_user: dict = Depends(get_current_user),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     page_size: int = Query(20, ge=1, le=100, description="Results per page"),
     include_templates: bool = Query(True, description="Include shared templates"),
@@ -95,7 +144,7 @@ async def list_custom_workflows(
         Paginated list of workflows
     """
     try:
-        owner_id = str(current_user.get("id", ""))
+        owner_id = get_user_id(request)
         result = await service.list_workflows(
             owner_id=owner_id, include_templates=include_templates, page=page, page_size=page_size
         )
@@ -123,14 +172,14 @@ async def list_custom_workflows(
         )
     except Exception as e:
         logger.error(f"Error listing workflows: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to list workflows")
+        raise HTTPException(status_code=500, detail=f"Failed to list workflows: {str(e)}")
 
 
 @router.get("/custom/{workflow_id}", response_model=CustomWorkflow, name="Get Custom Workflow")
 async def get_custom_workflow(
     workflow_id: str,
+    request: Request,
     service: CustomWorkflowsService = Depends(get_workflows_service),
-    current_user: dict = Depends(get_current_user),
 ) -> CustomWorkflow:
     """
     Retrieve a custom workflow by ID.
@@ -147,7 +196,7 @@ async def get_custom_workflow(
         404: Workflow not found or access denied
     """
     try:
-        owner_id = str(current_user.get("id", ""))
+        owner_id = get_user_id(request)
         workflow = await service.get_workflow(workflow_id, owner_id)
 
         if not workflow:
@@ -158,15 +207,15 @@ async def get_custom_workflow(
         raise
     except Exception as e:
         logger.error(f"Error retrieving workflow: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to retrieve workflow")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve workflow: {str(e)}")
 
 
 @router.put("/custom/{workflow_id}", response_model=CustomWorkflow, name="Update Custom Workflow")
 async def update_custom_workflow(
     workflow_id: str,
     workflow: CustomWorkflow,
+    request: Request,
     service: CustomWorkflowsService = Depends(get_workflows_service),
-    current_user: dict = Depends(get_current_user),
 ) -> CustomWorkflow:
     """
     Update an existing custom workflow.
@@ -185,7 +234,7 @@ async def update_custom_workflow(
         400: Invalid workflow definition
     """
     try:
-        owner_id = str(current_user.get("id", ""))
+        owner_id = get_user_id(request)
         updated = await service.update_workflow(workflow_id, workflow, owner_id)
         logger.info(f"Updated workflow: {workflow_id}")
         return updated
@@ -197,14 +246,14 @@ async def update_custom_workflow(
         raise HTTPException(status_code=400, detail=f"Invalid workflow: {error_msg}")
     except Exception as e:
         logger.error(f"Error updating workflow: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to update workflow")
+        raise HTTPException(status_code=500, detail=f"Failed to update workflow: {str(e)}")
 
 
 @router.delete("/custom/{workflow_id}", name="Delete Custom Workflow")
 async def delete_custom_workflow(
     workflow_id: str,
+    request: Request,
     service: CustomWorkflowsService = Depends(get_workflows_service),
-    current_user: dict = Depends(get_current_user),
 ) -> Dict[str, str]:
     """
     Delete a custom workflow.
@@ -221,7 +270,7 @@ async def delete_custom_workflow(
         404: Workflow not found or access denied
     """
     try:
-        owner_id = str(current_user.get("id", ""))
+        owner_id = get_user_id(request)
         success = await service.delete_workflow(workflow_id, owner_id)
 
         if success:
@@ -229,14 +278,12 @@ async def delete_custom_workflow(
             return {"message": f"Workflow '{workflow_id}' deleted successfully"}
 
         raise HTTPException(status_code=404, detail=f"Workflow '{workflow_id}' not found")
-    except HTTPException:
-        raise
     except ValueError as e:
         logger.warning(f"Access denied or not found: {str(e)}")
-        raise HTTPException(status_code=404, detail="An internal error occurred")
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         logger.error(f"Error deleting workflow: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to delete workflow")
+        raise HTTPException(status_code=500, detail=f"Failed to delete workflow: {str(e)}")
 
 
 @router.post(
@@ -249,7 +296,6 @@ async def execute_custom_workflow(
     request_body: Dict[str, Any],
     request: Request,
     service: CustomWorkflowsService = Depends(get_workflows_service),
-    current_user: dict = Depends(get_current_user),
     skip_phases: Optional[List[str]] = Query(None, description="Phases to skip"),
     quality_threshold: Optional[float] = Query(
         None, ge=0.0, le=1.0, description="Override quality threshold"
@@ -274,7 +320,7 @@ async def execute_custom_workflow(
         400: Invalid input
     """
     try:
-        owner_id = str(current_user.get("id", ""))
+        owner_id = get_user_id(request)
 
         # Load workflow
         workflow = await service.get_workflow(workflow_id, owner_id)
@@ -306,6 +352,7 @@ async def execute_custom_workflow(
             custom_workflow=workflow,
             input_data=input_data,
             database_service=database_service,
+            execution_owner_id=owner_id,
             queue_async=True,  # Execute in background
         )
 
@@ -339,7 +386,7 @@ async def execute_custom_workflow(
 
         logger.info(f"Workflow execution started: {result['execution_id']}")
 
-        return WorkflowExecutionResponse(  # type: ignore[call-arg]
+        return WorkflowExecutionResponse(
             workflow_id=str(result["workflow_id"]),
             execution_id=result["execution_id"],
             status=result["status"],
@@ -351,14 +398,14 @@ async def execute_custom_workflow(
         raise
     except Exception as e:
         logger.error(f"Error executing workflow: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to execute workflow")
+        raise HTTPException(status_code=500, detail=f"Failed to execute workflow: {str(e)}")
 
 
 @router.get("/executions/{execution_id}", name="Get Workflow Execution Status")
 async def get_workflow_execution_status(
     execution_id: str,
+    request: Request,
     service: CustomWorkflowsService = Depends(get_workflows_service),
-    current_user: dict = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """
     Get status/details for a workflow execution.
@@ -375,7 +422,7 @@ async def get_workflow_execution_status(
         404: Execution not found
     """
     try:
-        owner_id = str(current_user.get("id", ""))
+        owner_id = get_user_id(request)
         execution = await service.get_workflow_execution(execution_id, owner_id)
 
         if not execution:
@@ -423,15 +470,15 @@ async def get_workflow_execution_status(
         )
         raise HTTPException(
             status_code=500,
-            detail="Failed to get execution status",
+            detail=f"Failed to get execution status: {str(e)}",
         )
 
 
 @router.get("/executions", name="List Workflow Executions")
 async def list_workflow_executions(
     workflow_id: str,
+    request: Request,
     service: CustomWorkflowsService = Depends(get_workflows_service),
-    current_user: dict = Depends(get_current_user),
     limit: int = Query(50, ge=1, le=200, description="Maximum executions to return"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     status: Optional[str] = Query(None, description="Optional execution status filter"),
@@ -442,7 +489,7 @@ async def list_workflow_executions(
     Useful for recovering in-progress executions after UI refresh.
     """
     try:
-        owner_id = str(current_user.get("id", ""))
+        owner_id = get_user_id(request)
         result = await service.get_workflow_executions(
             workflow_id=workflow_id,
             owner_id=owner_id,
@@ -460,7 +507,7 @@ async def list_workflow_executions(
         }
     except Exception as e:
         logger.error(f"Error listing workflow executions for {workflow_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to list workflow executions")
+        raise HTTPException(status_code=500, detail=f"Failed to list workflow executions: {str(e)}")
 
 
 @router.get(
@@ -478,7 +525,7 @@ async def get_available_phases(
     try:
         phases = await service.get_available_phases()
 
-        return AvailablePhasesResponse(phases=phases, total_count=len(phases))  # type: ignore[arg-type]
+        return AvailablePhasesResponse(phases=phases, total_count=len(phases))
     except Exception as e:
         logger.error(f"Error getting available phases: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to get available phases")
+        raise HTTPException(status_code=500, detail=f"Failed to get available phases: {str(e)}")

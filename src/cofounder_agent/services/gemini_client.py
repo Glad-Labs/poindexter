@@ -1,30 +1,15 @@
 """
 Google Gemini Client
 Provides interface to Google's Gemini AI models
-
-Uses the official google-genai SDK (google.genai).
-The legacy google-generativeai SDK has been removed (Issue #404).
 """
 
 import asyncio
-from services.logger_config import get_logger
+import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-logger = get_logger(__name__)
-# Verify the SDK is available once at import time
-_GENAI_AVAILABLE: bool = False
-try:
-    import google.genai as _genai_module  # type: ignore  # noqa: F401
-
-    _GENAI_AVAILABLE = True
-    logger.debug("google.genai loaded for GeminiClient")
-except ImportError:
-    logger.warning(
-        "GeminiClient: google.genai not installed. "
-        "Run: pip install google-genai. Gemini calls will raise ImportError at runtime."
-    )
+logger = logging.getLogger(__name__)
 
 
 class GeminiClient:
@@ -74,7 +59,7 @@ class GeminiClient:
     async def generate(
         self,
         prompt: str,
-        model: str = "gemini-pro",
+        model: str = "gemini-2.5-flash",
         max_tokens: int = 1024,
         temperature: float = 0.7,
         **kwargs,
@@ -96,33 +81,38 @@ class GeminiClient:
             Exception: If generation fails
         """
         if not self.is_configured():
-            raise ValueError(
-                "Gemini API key not configured. Set GOOGLE_API_KEY environment variable."
-            )
-
-        if not _GENAI_AVAILABLE:
-            raise ImportError("google-genai not installed. Run: pip install google-genai")
+            raise Exception("Gemini API key not configured")
 
         try:
-            import google.genai as genai  # type: ignore
+            # Use google.generativeai SDK (stable, widely supported)
+            import google.generativeai as genai
 
-            client = genai.Client(api_key=self.api_key)
-            response = await client.aio.models.generate_content(
-                model=f"models/{model}",
-                contents=prompt,
-                config={"max_output_tokens": max_tokens, "temperature": temperature, **kwargs},  # type: ignore
+            genai.configure(api_key=self.api_key)
+            gemini_model = genai.GenerativeModel(model)
+
+            # Generate content using stable SDK
+            response = await gemini_model.generate_content_async(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    max_output_tokens=max_tokens, temperature=temperature, **kwargs
+                ),
             )
 
-            return response.text or ""
+            return response.text
 
+        except ImportError:
+            raise Exception(
+                "google-generativeai library not installed. "
+                "Install with: pip install google-generativeai"
+            )
         except Exception as e:
-            logger.error(f"[_generate] Gemini generation failed: {e}", exc_info=True)
-            raise RuntimeError(f"Gemini generation error: {str(e)}")
+            logger.error(f"Gemini generation failed: {e}")
+            raise Exception(f"Gemini generation error: {str(e)}")
 
     async def chat(
         self,
         messages: List[Dict[str, str]],
-        model: str = "gemini-pro",
+        model: str = "gemini-2.5-flash",
         max_tokens: int = 1024,
         temperature: float = 0.7,
         **kwargs,
@@ -141,37 +131,41 @@ class GeminiClient:
             Generated response text
         """
         if not self.is_configured():
-            raise ValueError(
-                "Gemini API key not configured. Set GOOGLE_API_KEY environment variable."
-            )
-
-        if not _GENAI_AVAILABLE:
-            raise ImportError("google-genai not installed. Run: pip install google-genai")
+            raise Exception("Gemini API key not configured")
 
         try:
-            import google.genai as genai  # type: ignore
-            import google.genai.types as genai_types  # type: ignore
+            # Use google.generativeai SDK (stable, widely supported)
+            import google.generativeai as genai
 
-            client = genai.Client(api_key=self.api_key)
-            # Format conversation as alternating user/model turns
-            contents = [
-                genai_types.Content(
-                    role="user" if msg["role"] == "user" else "model",
-                    parts=[genai_types.Part.from_text(text=msg["content"])],
-                )
-                for msg in messages
-            ]
-            response = await client.aio.models.generate_content(
-                model=f"models/{model}",
-                contents=contents,  # type: ignore
-                config={"max_output_tokens": max_tokens, "temperature": temperature, **kwargs},  # type: ignore
+            genai.configure(api_key=self.api_key)
+            gemini_model = genai.GenerativeModel(model)
+
+            # Start chat session
+            chat = gemini_model.start_chat(history=[])
+
+            # Add previous messages to context
+            for msg in messages[:-1]:
+                if msg["role"] == "user":
+                    chat.send_message(msg["content"])
+
+            # Send final message and get response
+            response = await chat.send_message_async(
+                messages[-1]["content"],
+                generation_config=genai.types.GenerationConfig(
+                    max_output_tokens=max_tokens, temperature=temperature, **kwargs
+                ),
             )
 
-            return response.text or ""
+            return response.text
 
+        except ImportError:
+            raise Exception(
+                "google-generativeai library not installed. "
+                "Install with: pip install google-generativeai"
+            )
         except Exception as e:
-            logger.error(f"[_chat] Gemini chat failed: {e}", exc_info=True)
-            raise RuntimeError(f"Gemini chat error: {str(e)}")
+            logger.error(f"Gemini chat failed: {e}")
+            raise Exception(f"Gemini chat error: {str(e)}")
 
     async def check_health(self) -> Dict[str, Any]:
         """
@@ -198,7 +192,7 @@ class GeminiClient:
                 "configured": True,
                 "models": self.available_models,
                 "test_response": test_response[:50],
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.utcnow().isoformat(),
             }
 
         except Exception as e:
@@ -206,10 +200,10 @@ class GeminiClient:
                 "status": "error",
                 "configured": True,
                 "error": str(e),
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.utcnow().isoformat(),
             }
 
-    def get_pricing(self, model: str = "gemini-pro") -> Dict[str, float]:
+    def get_pricing(self, model: str = "gemini-2.5-flash") -> Dict[str, float]:
         """
         Get pricing information for Gemini models.
 

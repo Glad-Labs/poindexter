@@ -1,4 +1,3 @@
-import logger from '@/lib/logger';
 /**
  * Workflow Builder Service
  *
@@ -17,33 +16,86 @@ import logger from '@/lib/logger';
 
 import { makeRequest } from './cofounderAgentClient';
 
+const normalizePhaseName = (name) =>
+  typeof name === 'string' ? name.trim() : '';
+
+const inferBasePhaseType = (phase = {}) => {
+  const metadataType = normalizePhaseName(phase?.metadata?.phase_type);
+  if (metadataType) {
+    return metadataType;
+  }
+
+  const explicitAgent = normalizePhaseName(phase?.agent);
+  if (explicitAgent) {
+    return explicitAgent;
+  }
+
+  const phaseName = normalizePhaseName(phase?.name);
+  if (!phaseName) {
+    return '';
+  }
+
+  return phaseName.replace(/_\d+$/, '');
+};
+
+const getDuplicatePhaseNames = (phases = []) => {
+  const counts = new Map();
+  phases.forEach((phase) => {
+    const name = normalizePhaseName(phase?.name);
+    if (!name) {
+      return;
+    }
+    counts.set(name, (counts.get(name) || 0) + 1);
+  });
+
+  return Array.from(counts.entries())
+    .filter(([, count]) => count > 1)
+    .map(([name]) => name);
+};
+
+const sanitizePhases = (phases = []) =>
+  phases.map((phase) => {
+    const normalizedName = normalizePhaseName(phase?.name);
+    const phaseType = inferBasePhaseType(phase) || normalizedName;
+
+    return {
+      ...phase,
+      name: normalizedName,
+      agent: phaseType,
+      metadata: {
+        ...(phase?.metadata || {}),
+        phase_type: phaseType,
+      },
+    };
+  });
+
+const validatePhases = (phases = []) => {
+  const hasEmptyName = phases.some((phase) => !normalizePhaseName(phase?.name));
+  if (hasEmptyName) {
+    throw new Error('Every phase must have a name');
+  }
+
+  const duplicatePhaseNames = getDuplicatePhaseNames(phases);
+  if (duplicatePhaseNames.length > 0) {
+    throw new Error(
+      `Duplicate phase names are not allowed: ${duplicatePhaseNames.join(', ')}`
+    );
+  }
+};
+
 /**
  * Get available phases for workflow building
  * @returns {Promise<Object>} Response with phases array
  */
 export const getAvailablePhases = async () => {
   try {
-    logger.log('[workflowBuilderService] Calling getAvailablePhases()');
     const response = await makeRequest(
       '/api/workflows/available-phases',
       'GET'
     );
-    logger.log(
-      '[workflowBuilderService] getAvailablePhases response:',
-      response
-    );
-    if (!response || !response.phases) {
-      logger.warn(
-        '[workflowBuilderService] getAvailablePhases: response.phases is missing',
-        response
-      );
-    }
     return response;
   } catch (error) {
-    logger.error(
-      '[workflowBuilderService] Error fetching available phases:',
-      error
-    );
+    console.error('Error fetching available phases:', error);
     throw new Error(`Failed to load available phases: ${error.message}`);
   }
 };
@@ -64,10 +116,13 @@ export const createWorkflow = async (workflowDefinition) => {
       throw new Error('At least one phase is required');
     }
 
+    const phases = sanitizePhases(workflowDefinition.phases);
+    validatePhases(phases);
+
     const payload = {
       name: workflowDefinition.name.trim(),
       description: workflowDefinition.description || '',
-      phases: workflowDefinition.phases,
+      phases,
       tags: workflowDefinition.tags || [],
       is_template: workflowDefinition.is_template || false,
     };
@@ -79,7 +134,7 @@ export const createWorkflow = async (workflowDefinition) => {
     );
     return response;
   } catch (error) {
-    logger.error('Error creating workflow:', error);
+    console.error('Error creating workflow:', error);
     throw new Error(`Failed to create workflow: ${error.message}`);
   }
 };
@@ -121,7 +176,7 @@ export const listWorkflows = async (options = {}) => {
     );
     return response;
   } catch (error) {
-    logger.error('Error listing workflows:', error);
+    console.error('Error listing workflows:', error);
     throw new Error(`Failed to load workflows: ${error.message}`);
   }
 };
@@ -143,7 +198,7 @@ export const getWorkflow = async (workflowId) => {
     );
     return response;
   } catch (error) {
-    logger.error('Error fetching workflow:', error);
+    console.error('Error fetching workflow:', error);
     throw new Error(`Failed to load workflow: ${error.message}`);
   }
 };
@@ -168,11 +223,18 @@ export const updateWorkflow = async (workflowId, updates) => {
       throw new Error('At least one phase is required');
     }
 
+    const phases =
+      updates.phases !== undefined ? sanitizePhases(updates.phases) : undefined;
+
+    if (phases !== undefined) {
+      validatePhases(phases);
+    }
+
     const payload = {
       name: updates.name ? updates.name.trim() : undefined,
       description:
         updates.description !== undefined ? updates.description : undefined,
-      phases: updates.phases,
+      phases,
       tags: updates.tags,
       is_template: updates.is_template,
     };
@@ -189,7 +251,7 @@ export const updateWorkflow = async (workflowId, updates) => {
     );
     return response;
   } catch (error) {
-    logger.error('Error updating workflow:', error);
+    console.error('Error updating workflow:', error);
     throw new Error(`Failed to update workflow: ${error.message}`);
   }
 };
@@ -211,7 +273,7 @@ export const deleteWorkflow = async (workflowId) => {
     );
     return response;
   } catch (error) {
-    logger.error('Error deleting workflow:', error);
+    console.error('Error deleting workflow:', error);
     throw new Error(`Failed to delete workflow: ${error.message}`);
   }
 };
@@ -239,7 +301,7 @@ export const executeWorkflow = async (workflowId, inputData = {}) => {
     );
     return response;
   } catch (error) {
-    logger.error('Error executing workflow:', error);
+    console.error('Error executing workflow:', error);
     throw new Error(`Failed to execute workflow: ${error.message}`);
   }
 };
@@ -255,74 +317,32 @@ export const getExecutionStatus = async (executionId) => {
       throw new Error('Execution ID is required');
     }
 
-    // This endpoint may need to be added to the backend
     const response = await makeRequest(
       `/api/workflows/executions/${executionId}`,
-      'GET',
-      null,
-      false,
-      null,
-      30000,
-      {
-        shouldSuppressErrorLog: (ctx) => {
-          const status =
-            ctx?.status ||
-            ctx?.error?.status ||
-            ctx?.error?.statusCode ||
-            ctx?.response?.status ||
-            null;
-          const errorMessage =
-            typeof ctx?.error?.message === 'string'
-              ? ctx.error.message.toLowerCase()
-              : '';
-          const responseText =
-            typeof ctx?.response === 'string'
-              ? ctx.response.toLowerCase()
-              : JSON.stringify(ctx?.response || '').toLowerCase();
-          const isNotFoundEquivalent =
-            status === 404 ||
-            errorMessage.includes('not found') ||
-            responseText.includes('not found');
-          const isExecutionStatusEndpoint =
-            typeof ctx?.endpoint === 'string' &&
-            ctx.endpoint.startsWith('/api/workflows/executions/');
-
-          return isExecutionStatusEndpoint && isNotFoundEquivalent;
-        },
-      }
+      'GET'
     );
     return response;
   } catch (error) {
-    const message =
-      typeof error?.message === 'string' ? error.message.toLowerCase() : '';
-    const status =
-      error?.status || error?.statusCode || error?.response?.status || null;
-
-    if (!(status === 404 || message.includes('not found'))) {
-      logger.error('Error fetching execution status:', error);
-    }
-
+    console.error('Error fetching execution status:', error);
     throw new Error(`Failed to load execution status: ${error.message}`);
   }
 };
 
 /**
- * Get execution history for a workflow
+ * List executions for a specific workflow
  * @param {string} workflowId - Workflow ID
  * @param {Object} options - Query options
- * @param {number} options.limit - Number of rows to return
- * @param {number} options.offset - Pagination offset
- * @param {string} options.status - Optional status filter
- * @returns {Promise<Object>} Execution history payload
+ * @returns {Promise<Object>} Executions list payload
  */
-export const getWorkflowExecutions = async (workflowId, options = {}) => {
+export const listExecutions = async (workflowId, options = {}) => {
   try {
     if (!workflowId) {
       throw new Error('Workflow ID is required');
     }
 
-    const { limit = 10, offset = 0, status } = options;
+    const { limit = 20, offset = 0, status } = options;
     const queryParams = new URLSearchParams({
+      workflow_id: workflowId,
       limit: String(limit),
       offset: String(offset),
     });
@@ -332,13 +352,13 @@ export const getWorkflowExecutions = async (workflowId, options = {}) => {
     }
 
     const response = await makeRequest(
-      `/api/workflows/custom/${workflowId}/executions?${queryParams.toString()}`,
+      `/api/workflows/executions?${queryParams.toString()}`,
       'GET'
     );
     return response;
   } catch (error) {
-    logger.error('Error fetching workflow executions:', error);
-    throw new Error(`Failed to load workflow executions: ${error.message}`);
+    console.error('Error listing executions:', error);
+    throw new Error(`Failed to load executions: ${error.message}`);
   }
 };
 
@@ -351,7 +371,7 @@ export const exportWorkflowToJSON = (workflow) => {
   try {
     return JSON.stringify(workflow, null, 2);
   } catch (error) {
-    logger.error('Error exporting workflow:', error);
+    console.error('Error exporting workflow:', error);
     throw new Error('Failed to export workflow');
   }
 };
@@ -372,12 +392,12 @@ export const importWorkflowFromJSON = (jsonString) => {
 
     return workflow;
   } catch (error) {
-    logger.error('Error importing workflow:', error);
+    console.error('Error importing workflow:', error);
     throw new Error(`Failed to import workflow: ${error.message}`);
   }
 };
 
-export default {
+const workflowBuilderService = {
   getAvailablePhases,
   createWorkflow,
   listWorkflows,
@@ -386,7 +406,9 @@ export default {
   deleteWorkflow,
   executeWorkflow,
   getExecutionStatus,
-  getWorkflowExecutions,
+  listExecutions,
   exportWorkflowToJSON,
   importWorkflowFromJSON,
 };
+
+export default workflowBuilderService;

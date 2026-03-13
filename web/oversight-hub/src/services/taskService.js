@@ -1,4 +1,3 @@
-import logger from '@/lib/logger';
 /**
  * Task Service - Uses FastAPI backend (PostgreSQL)
  *
@@ -10,7 +9,6 @@ import logger from '@/lib/logger';
  */
 
 import { makeRequest } from './cofounderAgentClient';
-import { getApiUrl } from '../config/apiConfig';
 
 const API_TIMEOUT = 30000; // 30 seconds
 
@@ -179,16 +177,19 @@ export const revalidatePublicSite = async (paths = []) => {
   try {
     // Call the FastAPI backend which has the real secret
     // Backend will safely call the public site revalidate endpoint
-    const response = await fetch(`${getApiUrl()}/api/revalidate-cache`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ paths }),
-    });
+    const response = await fetch(
+      `${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/revalidate-cache`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ paths }),
+      }
+    );
 
     if (!response.ok) {
-      logger.warn(
+      console.warn(
         `⚠️  Frontend revalidation returned status ${response.status}`
       );
       // Don't throw - revalidation failure shouldn't break the publish flow
@@ -196,10 +197,10 @@ export const revalidatePublicSite = async (paths = []) => {
     }
 
     const data = await response.json();
-    logger.log('✅ Frontend cache revalidated:', data);
+    console.log('✅ Frontend cache revalidated:', data);
     return data;
   } catch (error) {
-    logger.warn('⚠️  Could not trigger frontend revalidation:', error.message);
+    console.warn('⚠️  Could not trigger frontend revalidation:', error.message);
     // Don't throw - publish should succeed even if revalidation fails
     return { success: false, error: error.message };
   }
@@ -233,8 +234,7 @@ export const publishTask = async (taskId) => {
   if (result && typeof result === 'object') {
     // Revalidate homepage and archive pages
     revalidatePublicSite(['/', '/archive']).catch((err) => {
-      logger.warn('⚠️ Public site revalidation failed:', err);
-      // Track this as a metric but don't block the response
+      console.warn('Revalidation failed silently:', err);
     });
   }
 
@@ -245,29 +245,15 @@ export const publishTask = async (taskId) => {
  * Reject a task
  *
  * @param {string} taskId - Task ID to reject
- * @param {string} reason - Rejection reason (short)
- * @param {string} feedback - Detailed feedback (optional, defaults to reason)
- * @param {boolean} allowRevisions - Allow revisions (default: true)
+ * @param {string} reason - Rejection reason
  * @returns {Promise<object>} Updated task object
  * @throws {Error} If rejection fails
  */
-export const rejectTask = async (
-  taskId,
-  reason = '',
-  feedback = null,
-  allowRevisions = true
-) => {
-  // Backend requires both reason and feedback fields
-  const requestBody = {
-    reason: reason || 'Rejected',
-    feedback: feedback || reason || 'No feedback provided',
-    allow_revisions: allowRevisions,
-  };
-
+export const rejectTask = async (taskId, reason = '') => {
   const result = await makeRequest(
     `/api/tasks/${taskId}/reject`,
     'POST',
-    requestBody,
+    { reason },
     false,
     null,
     API_TIMEOUT
@@ -348,75 +334,6 @@ export const deleteContentTask = async (taskId) => {
 
   if (result.error) {
     throw new Error(`Could not delete task: ${result.error}`);
-  }
-
-  return result;
-};
-
-/**
- * Pause a running task
- * @param {string} taskId - Task ID to pause
- * @returns {Promise<Object>} Updated task object
- * @throws {Error} If pause fails
- */
-export const pauseTask = async (taskId) => {
-  const result = await makeRequest(
-    `/api/tasks/${taskId}/pause`,
-    'POST',
-    {},
-    false,
-    null,
-    API_TIMEOUT
-  );
-
-  if (result.error) {
-    throw new Error(`Could not pause task: ${result.error}`);
-  }
-
-  return result;
-};
-
-/**
- * Resume a paused task
- * @param {string} taskId - Task ID to resume
- * @returns {Promise<Object>} Updated task object
- * @throws {Error} If resume fails
- */
-export const resumeTask = async (taskId) => {
-  const result = await makeRequest(
-    `/api/tasks/${taskId}/resume`,
-    'POST',
-    {},
-    false,
-    null,
-    API_TIMEOUT
-  );
-
-  if (result.error) {
-    throw new Error(`Could not resume task: ${result.error}`);
-  }
-
-  return result;
-};
-
-/**
- * Cancel a running or pending task
- * @param {string} taskId - Task ID to cancel
- * @returns {Promise<Object>} Updated task object
- * @throws {Error} If cancellation fails
- */
-export const cancelTask = async (taskId) => {
-  const result = await makeRequest(
-    `/api/tasks/${taskId}/cancel`,
-    'POST',
-    {},
-    false,
-    null,
-    API_TIMEOUT
-  );
-
-  if (result.error) {
-    throw new Error(`Could not cancel task: ${result.error}`);
   }
 
   return result;

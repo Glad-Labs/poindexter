@@ -1,4 +1,3 @@
-import logger from '@/lib/logger';
 /**
  * TaskManagement.jsx - Enhanced Task Management Page
  * Features: Task creation, filtering, sorting, detail view, actions (pause/resume/cancel/delete)
@@ -8,18 +7,14 @@ import logger from '@/lib/logger';
  * - statusConfig (centralized status definitions)
  * - formatTaskForDisplay (centralized task formatting)
  */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import useStore from '../store/useStore';
-import {
-  bulkUpdateTasks,
-  duplicateTask,
-} from '../services/cofounderAgentClient';
-import { unifiedStatusService } from '../services/unifiedStatusService';
+import { bulkUpdateTasks } from '../services/cofounderAgentClient';
 import useFetchTasks from '../hooks/useFetchTasks';
-import { useWebSocketEvent } from '../context/WebSocketContext';
 import CreateTaskModal from '../components/tasks/CreateTaskModal';
 import TaskDetailModal from '../components/tasks/TaskDetailModal';
 import TaskFilters from '../components/tasks/TaskFilters';
+import { StatusDashboardMetrics } from '../components/tasks/StatusComponents';
 import './TaskManagement.css';
 
 function TaskManagement() {
@@ -27,7 +22,6 @@ function TaskManagement() {
   const [sortBy, setSortBy] = useState('created_at');
   const [sortDirection, setSortDirection] = useState('desc');
   const [statusFilter, setStatusFilter] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -35,8 +29,6 @@ function TaskManagement() {
   const [limit] = useState(10);
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
-  const [selectedTaskIds, setSelectedTaskIds] = useState([]);
-  const [bulkActing, setBulkActing] = useState(false);
 
   // Use custom hook for task fetching - replaces duplicate fetchTasks/fetchTasksWrapper
   const {
@@ -44,58 +36,27 @@ function TaskManagement() {
     total,
     loading,
     refetch: refreshTasks,
-    updateTask,
   } = useFetchTasks(
     page,
     limit,
-    5000, // Auto-refresh every 5 seconds
-    { status: statusFilter || undefined, search: searchQuery || undefined }
+    30000 // Auto-refresh every 30 seconds
   );
 
-  // Listen to WebSocket task progress events for real-time updates.
-  // Rather than re-fetching the full task list on every WS message (which caused
-  // a double-refresh — once from the 5 s poll and once per event), we apply an
-  // optimistic in-place status update from the WebSocket payload. A full refetch
-  // is only triggered for terminal states (COMPLETED/FAILED) where we need the
-  // final server-side data (e.g., result, output_data).
-  const handleTaskProgressUpdate = useCallback(
-    (data) => {
-      logger.log('TaskManagement: Received task progress update:', data);
-
-      if (!data?.task_id || !data?.status) return;
-
-      const terminalStates = ['COMPLETED', 'FAILED'];
-      const inProgressStates = ['RUNNING', 'PAUSED'];
-
-      if (terminalStates.includes(data.status)) {
-        // Terminal state — refetch once to get final server-side data
-        logger.log(
-          'TaskManagement: Terminal state reached, triggering full refresh'
-        );
-        refreshTasks();
-      } else if (inProgressStates.includes(data.status)) {
-        // In-progress state — apply optimistic update in place, no API call needed
-        logger.log(
-          'TaskManagement: Applying optimistic status update for task',
-          data.task_id
-        );
-        updateTask(data.task_id, {
-          status: data.status,
-          progress: data.progress,
-        });
-      }
-    },
-    [refreshTasks, updateTask]
-  );
-
-  // Subscribe to all task progress events (not just specific task IDs)
-  useWebSocketEvent('progress', handleTaskProgressUpdate);
+  const normalizeDisplayText = (value) => {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed || trimmed.toLowerCase() === 'null') return null;
+      return trimmed;
+    }
+    if (typeof value === 'object') return JSON.stringify(value);
+    return String(value);
+  };
 
   // Handler to open detail modal for editing
   const handleEditTask = (task) => {
-    logger.log('👁️ handleEditTask called with task:', task);
+    console.log('👁️ handleEditTask called with task:', task);
     setSelectedTask(task);
-    setSelectedTask(task); // Set in store so TaskDetailModal can access it
     setShowDetailModal(true);
   };
 
@@ -114,8 +75,7 @@ function TaskManagement() {
       // Use 'reject' action instead of 'delete' to set status to REJECTED
       const result = await bulkUpdateTasks([taskId], 'reject');
 
-      const updatedCount = result?.updated ?? result?.updated_count ?? 0;
-      if (updatedCount > 0) {
+      if (result.updated_count > 0) {
         setSuccessMessage('Task rejected successfully');
         setTimeout(() => setSuccessMessage(null), 3000);
         // Refresh task list using the hook
@@ -124,7 +84,7 @@ function TaskManagement() {
         setError('Failed to reject task');
       }
     } catch (err) {
-      logger.error('Error rejecting task:', err);
+      console.error('Error rejecting task:', err);
       setError(`Failed to reject task: ${err.message}`);
     } finally {
       setDeleting(false);
@@ -142,84 +102,32 @@ function TaskManagement() {
   const handleTaskAction = async (taskId, action) => {
     try {
       setError(null);
-      if (action === 'retry') {
-        // Use validated status transition endpoint for richer metadata + audit trail.
-        await unifiedStatusService.retry(
-          taskId,
-          'Manual retry from Task Management UI'
-        );
-        setSuccessMessage('Task queued for retry');
-        setTimeout(() => setSuccessMessage(null), 3000);
-        refreshTasks();
-        return;
-      }
-
       const result = await bulkUpdateTasks([taskId], action);
-      const updatedCount = result?.updated ?? result?.updated_count ?? 0;
 
-      if (updatedCount > 0) {
+      if (result.updated_count > 0) {
         setSuccessMessage(`Task ${action} successful`);
         setTimeout(() => setSuccessMessage(null), 3000);
+        // Refresh task list
         refreshTasks();
       } else {
         setError(`Failed to ${action} task`);
       }
     } catch (err) {
-      logger.error(`Error performing ${action} on task:`, err);
+      console.error(`Error performing ${action} on task:`, err);
       setError(`Failed to ${action} task: ${err.message}`);
     }
   };
 
-  // Selection handlers
-  const handleSelectOne = (taskId, checked) => {
-    setSelectedTaskIds((prev) =>
-      checked ? [...prev, taskId] : prev.filter((id) => id !== taskId)
-    );
-  };
-
-  const handleSelectAll = (checked) => {
-    setSelectedTaskIds(checked ? filteredTasks.map((t) => t.id) : []);
-  };
-
-  const handleBulkAction = async (action) => {
-    if (selectedTaskIds.length === 0) return;
-    const confirmMsg = `${action.charAt(0).toUpperCase() + action.slice(1)} ${selectedTaskIds.length} task(s)?`;
-    if (!window.confirm(confirmMsg)) return;
-
-    try {
-      setBulkActing(true);
-      setError(null);
-      const result = await bulkUpdateTasks(selectedTaskIds, action);
-      const updatedCount = result?.updated ?? result?.updated_count ?? 0;
-      setSuccessMessage(`${updatedCount} task(s) ${action}ed successfully`);
-      setTimeout(() => setSuccessMessage(null), 3000);
-      setSelectedTaskIds([]);
-      refreshTasks();
-    } catch (err) {
-      logger.error(`Bulk ${action} error:`, err);
-      setError(`Bulk ${action} failed: ${err.message}`);
-    } finally {
-      setBulkActing(false);
-    }
-  };
-
-  const handleDuplicateTask = async (e, taskId) => {
-    e.stopPropagation();
-    try {
-      setError(null);
-      const result = await duplicateTask(taskId);
-      setSuccessMessage(`Task duplicated: "${result.task_name}"`);
-      setTimeout(() => setSuccessMessage(null), 3000);
-      refreshTasks();
-    } catch (err) {
-      logger.error('Error duplicating task:', err);
-      setError(`Failed to duplicate task: ${err.message}`);
-    }
-  };
-
-  // Sort tasks (filtering is now server-side via API params)
+  // Filter and sort tasks
   const getFilteredTasks = () => {
-    const filtered = localTasks || [];
+    let filtered = localTasks || [];
+
+    // Apply status filter
+    if (statusFilter && statusFilter !== '') {
+      filtered = filtered.filter(
+        (t) => t.status?.toLowerCase() === statusFilter.toLowerCase()
+      );
+    }
 
     // Apply sorting
     return filtered.sort((a, b) => {
@@ -253,85 +161,11 @@ function TaskManagement() {
     setPage(1); // Reset to first page
   };
 
-  const handleSearchChange = (query) => {
-    setSearchQuery(query);
-    setPage(1); // Reset to first page
-  };
-
   const handleResetFilters = () => {
     setStatusFilter('');
-    setSearchQuery('');
     setSortBy('created_at');
     setSortDirection('desc');
     setPage(1);
-  };
-
-  const getTaskMetadata = (task) => {
-    const metadata = task?.task_metadata;
-    if (!metadata) return {};
-
-    if (typeof metadata === 'object' && metadata !== null) {
-      return metadata;
-    }
-
-    if (typeof metadata === 'string') {
-      try {
-        const parsed = JSON.parse(metadata);
-        return parsed && typeof parsed === 'object' ? parsed : {};
-      } catch {
-        return {};
-      }
-    }
-
-    return {};
-  };
-
-  const getStatusClass = (status) =>
-    String(status || 'unknown')
-      .toLowerCase()
-      .replace(/[_\s]+/g, '-');
-
-  const formatStatusLabel = (status) => {
-    const normalized = String(status || 'unknown')
-      .toLowerCase()
-      .replace(/_/g, ' ');
-
-    return normalized
-      .split(' ')
-      .filter(Boolean)
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(' ');
-  };
-
-  const formatStepLabel = (step) => {
-    if (!step) return '';
-    const normalized = String(step)
-      .replace(/[_-]+/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    return normalized.charAt(0).toUpperCase() + normalized.slice(1);
-  };
-
-  const getTaskStepLabel = (task) => {
-    const metadata = getTaskMetadata(task);
-    const rawStep = metadata.message || metadata.stage || metadata.status;
-    if (!rawStep) return '';
-
-    const status = String(task?.status || '').toLowerCase();
-    if (
-      status !== 'pending' &&
-      status !== 'in_progress' &&
-      status !== 'running'
-    ) {
-      return '';
-    }
-
-    return formatStepLabel(rawStep);
-  };
-
-  const getRetryCount = (task) => {
-    const metadata = getTaskMetadata(task);
-    return Number(metadata.retry_count || 0);
   };
 
   const filteredTasks = getFilteredTasks();
@@ -360,16 +194,48 @@ function TaskManagement() {
         </div>
       )}
 
+      {/* Summary Stats */}
+      <div className="summary-stats">
+        <div className="stat-box">
+          <span className="stat-count">{filteredTasks?.length || 0}</span>
+          <span className="stat-label">Filtered Tasks</span>
+        </div>
+        <div className="stat-box">
+          <span className="stat-count">
+            {localTasks?.filter((t) => t.status?.toLowerCase() === 'completed')
+              .length || 0}
+          </span>
+          <span className="stat-label">Completed</span>
+        </div>
+        <div className="stat-box">
+          <span className="stat-count">
+            {localTasks?.filter((t) => t.status?.toLowerCase() === 'running')
+              .length || 0}
+          </span>
+          <span className="stat-label">Running</span>
+        </div>
+        <div className="stat-box">
+          <span className="stat-count">
+            {localTasks?.filter((t) => t.status?.toLowerCase() === 'failed')
+              .length || 0}
+          </span>
+          <span className="stat-label">Failed</span>
+        </div>
+      </div>
+
+      {/* Metrics Dashboard */}
+      <div className="metrics-section" style={{ marginBottom: '30px' }}>
+        <StatusDashboardMetrics tasks={localTasks} compact={true} />
+      </div>
+
       {/* Task Filters */}
       <TaskFilters
         sortBy={sortBy}
         sortDirection={sortDirection}
         statusFilter={statusFilter}
-        searchQuery={searchQuery}
         onSortChange={handleSort}
         onDirectionChange={(dir) => setSortDirection(dir)}
         onStatusChange={handleStatusFilter}
-        onSearchChange={handleSearchChange}
         onResetFilters={handleResetFilters}
       />
 
@@ -406,104 +272,22 @@ function TaskManagement() {
         </div>
       </div>
 
-      {/* Bulk Action Toolbar */}
-      {selectedTaskIds.length > 0 && (
-        <div className="bulk-action-bar">
-          <span className="bulk-count">{selectedTaskIds.length} selected</span>
-          <button
-            className="action-btn pause"
-            onClick={() => handleBulkAction('pause')}
-            disabled={bulkActing}
-            title="Pause selected tasks"
-          >
-            ⏸️ Pause
-          </button>
-          <button
-            className="action-btn resume"
-            onClick={() => handleBulkAction('resume')}
-            disabled={bulkActing}
-            title="Resume selected tasks"
-          >
-            ▶️ Resume
-          </button>
-          <button
-            className="action-btn cancel"
-            onClick={() => handleBulkAction('cancel')}
-            disabled={bulkActing}
-            title="Cancel selected tasks"
-          >
-            ⏹️ Cancel
-          </button>
-          <button
-            className="action-btn delete"
-            onClick={() => handleBulkAction('reject')}
-            disabled={bulkActing}
-            title="Reject selected tasks"
-          >
-            🗑️ Reject
-          </button>
-          <button
-            className="btn-clear-filters"
-            onClick={() => setSelectedTaskIds([])}
-            title="Clear selection"
-          >
-            ✕ Clear
-          </button>
-        </div>
-      )}
-
       {/* Tasks Table */}
       <div className="tasks-table-container">
         {loading && <div className="loading">Loading tasks...</div>}
         {!loading && filteredTasks.length === 0 ? (
           <div className="empty-state">
-            {statusFilter || searchQuery ? (
-              <>
-                <p>
-                  No tasks match
-                  {searchQuery ? ` "${searchQuery}"` : ''}
-                  {statusFilter
-                    ? ` with status "${formatStatusLabel(statusFilter)}"`
-                    : ''}
-                  .
-                </p>
-                <button
-                  className="btn-clear-filters"
-                  onClick={handleResetFilters}
-                >
-                  Clear filters
-                </button>
-              </>
-            ) : (
-              <>
-                <p>No tasks yet. Create your first task to get started!</p>
-                <button
-                  className="btn-create-task"
-                  onClick={() => setShowCreateModal(true)}
-                >
-                  Create Task
-                </button>
-              </>
-            )}
+            <p>
+              {statusFilter
+                ? 'No tasks found with the selected filter. Try adjusting your filters.'
+                : 'No tasks found. Create your first task to get started!'}
+            </p>
           </div>
         ) : (
           <>
             <table className="tasks-table">
               <thead>
                 <tr>
-                  <th className="checkbox-col">
-                    <input
-                      type="checkbox"
-                      aria-label="Select all tasks"
-                      checked={
-                        filteredTasks.length > 0 &&
-                        filteredTasks.every((t) =>
-                          selectedTaskIds.includes(t.id)
-                        )
-                      }
-                      onChange={(e) => handleSelectAll(e.target.checked)}
-                    />
-                  </th>
                   <th
                     onClick={() => handleSort('task_name')}
                     className={`sortable ${sortBy === 'task_name' ? 'active-sort' : ''}`}
@@ -544,72 +328,33 @@ function TaskManagement() {
                 {filteredTasks.map((task) => (
                   <tr
                     key={task.id}
-                    className={`status-${getStatusClass(task.status)} clickable-row${selectedTaskIds.includes(task.id) ? ' row-selected' : ''}`}
+                    className={`status-${task.status?.toLowerCase()} clickable-row`}
                     onClick={() => handleEditTask(task)}
                     title="Click to view details"
                   >
-                    <td
-                      className="checkbox-col"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <input
-                        type="checkbox"
-                        aria-label={`Select task ${task.id}`}
-                        checked={selectedTaskIds.includes(task.id)}
-                        onChange={(e) =>
-                          handleSelectOne(task.id, e.target.checked)
-                        }
-                      />
-                    </td>
                     <td className="task-name">
-                      {task.task_name && typeof task.task_name === 'object'
-                        ? JSON.stringify(task.task_name)
-                        : task.task_name || task.topic || 'Untitled'}
+                      {normalizeDisplayText(task.task_name) ||
+                        normalizeDisplayText(task.topic) ||
+                        'Untitled'}
                     </td>
                     <td className="topic">
-                      {typeof task.topic === 'object'
-                        ? JSON.stringify(task.topic)
-                        : task.topic || task.task_name || '-'}
+                      {normalizeDisplayText(task.topic) ||
+                        normalizeDisplayText(task.task_name) ||
+                        '-'}
                     </td>
                     <td>
-                      <div className="status-cell">
-                        <span
-                          className={`status-badge status-${getStatusClass(task.status)}`}
-                        >
-                          {formatStatusLabel(task.status)}
-                        </span>
-                        {getRetryCount(task) > 0 && (
-                          <span
-                            className="retry-count-badge"
-                            title={`Retry attempts: ${getRetryCount(task)}`}
-                          >
-                            Retry #{getRetryCount(task)}
-                          </span>
-                        )}
-                        {getTaskStepLabel(task) && (
-                          <div
-                            className="status-step-text"
-                            title={getTaskStepLabel(task)}
-                          >
-                            {getTaskStepLabel(task)}
-                          </div>
-                        )}
-                      </div>
+                      <span
+                        className={`status-badge status-${task.status?.toLowerCase()}`}
+                      >
+                        {task.status
+                          ? task.status.charAt(0).toUpperCase() +
+                            task.status.slice(1)
+                          : 'Unknown'}
+                      </span>
                     </td>
                     <td className="progress">
                       {(() => {
-                        const metadata = getTaskMetadata(task);
-                        const progressValue =
-                          typeof metadata.percentage === 'number'
-                            ? metadata.percentage
-                            : task.progress || 0;
-                        const stage = metadata.stage || metadata.status || '';
-                        const isActive = [
-                          'pending',
-                          'in_progress',
-                          'running',
-                        ].includes(String(task.status || '').toLowerCase());
-
+                        const progressValue = task.progress;
                         if (
                           typeof progressValue === 'number' &&
                           progressValue > 0
@@ -618,10 +363,8 @@ function TaskManagement() {
                             <>
                               <div className="progress-bar">
                                 <div
-                                  className={`progress-fill ${isActive ? 'active' : ''}`}
-                                  data-stage={stage}
+                                  className="progress-fill"
                                   style={{ width: `${progressValue}%` }}
-                                  title={stage ? `Stage: ${stage}` : ''}
                                 />
                               </div>
                               <span className="progress-text">
@@ -662,8 +405,7 @@ function TaskManagement() {
                       >
                         👁️
                       </button>
-                      {(task.status?.toLowerCase() === 'running' ||
-                        task.status?.toLowerCase() === 'in_progress') && (
+                      {task.status?.toLowerCase() === 'running' && (
                         <>
                           <button
                             className="action-btn pause"
@@ -683,8 +425,7 @@ function TaskManagement() {
                           </button>
                         </>
                       )}
-                      {(task.status?.toLowerCase() === 'paused' ||
-                        task.status?.toLowerCase() === 'on_hold') && (
+                      {task.status?.toLowerCase() === 'paused' && (
                         <button
                           className="action-btn resume"
                           onClick={() => handleTaskAction(task.id, 'resume')}
@@ -704,14 +445,6 @@ function TaskManagement() {
                           🔄
                         </button>
                       )}
-                      <button
-                        className="action-btn duplicate"
-                        onClick={(e) => handleDuplicateTask(e, task.id)}
-                        title="Duplicate Task"
-                        disabled={deleting}
-                      >
-                        📋
-                      </button>
                       <button
                         className="action-btn delete"
                         onClick={(e) => handleDeleteTask(e, task.id)}

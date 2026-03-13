@@ -1,4 +1,3 @@
-import logger from '@/lib/logger';
 /**
  * ExecutiveDashboard.jsx
  *
@@ -20,7 +19,6 @@ import { useNavigate } from 'react-router-dom';
 import './ExecutiveDashboard.css';
 import CreateTaskModal from '../tasks/CreateTaskModal';
 import CostBreakdownCards from '../CostBreakdownCards';
-import useAuth from '../../hooks/useAuth';
 
 const ExecutiveDashboard = () => {
   const navigate = useNavigate();
@@ -29,44 +27,219 @@ const ExecutiveDashboard = () => {
   const [error, setError] = useState(null);
   const [timeRange, setTimeRange] = useState('30d');
   const [taskModalOpen, setTaskModalOpen] = useState(false);
-  const { isAuthenticated, loading: authLoading } = useAuth();
+
+  const parseNumber = (value, fallback = 0) => {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : fallback;
+    }
+    return fallback;
+  };
+
+  const formatRelativeSync = (isoTimestamp) => {
+    if (!isoTimestamp) return '—';
+    const then = new Date(isoTimestamp);
+    if (Number.isNaN(then.getTime())) return '—';
+
+    const seconds = Math.max(
+      0,
+      Math.floor((Date.now() - then.getTime()) / 1000)
+    );
+
+    if (seconds < 60) return `${seconds}s ago`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    return `${Math.floor(seconds / 86400)}d ago`;
+  };
+
+  const normalizeDashboardData = (analytics, taskMetrics) => {
+    const analyticsData = analytics || {};
+    const taskMetricsData = taskMetrics || {};
+    const normalizeNumericMap = (values = {}) =>
+      Object.fromEntries(
+        Object.entries(values).map(([key, value]) => [
+          key,
+          parseNumber(value, 0),
+        ])
+      );
+
+    if (analyticsData.kpis) {
+      const existingStatus = analyticsData.systemStatus || {};
+      return {
+        ...analyticsData,
+        systemStatus: {
+          agentsActive: parseNumber(existingStatus.agentsActive, 0),
+          agentsTotal: parseNumber(existingStatus.agentsTotal, 0),
+          tasksQueued: parseNumber(
+            taskMetricsData.pending_tasks,
+            parseNumber(existingStatus.tasksQueued, 0)
+          ),
+          tasksFailed: parseNumber(
+            taskMetricsData.failed_tasks,
+            parseNumber(existingStatus.tasksFailed, 0)
+          ),
+          uptime: parseNumber(
+            existingStatus.uptime,
+            parseNumber(analyticsData.kpis?.agentUptime?.current, 0)
+          ),
+          lastSync:
+            existingStatus.lastSync ||
+            formatRelativeSync(
+              analyticsData.timestamp || new Date().toISOString()
+            ),
+        },
+      };
+    }
+
+    const totalTasks = parseNumber(analyticsData.total_tasks, 0);
+    const completedTasks = parseNumber(analyticsData.completed_tasks, 0);
+    const failedTasks = parseNumber(analyticsData.failed_tasks, 0);
+    const pendingTasks = parseNumber(analyticsData.pending_tasks, 0);
+    const successRate = parseNumber(analyticsData.success_rate, 0);
+    const normalizedSuccessRate =
+      successRate > 1 ? successRate : successRate * 100;
+    const totalCost = parseNumber(
+      analyticsData.total_cost_usd,
+      parseNumber(analyticsData.total_cost, 0)
+    );
+    const avgCostPerTask = parseNumber(analyticsData.avg_cost_per_task, 0);
+
+    return {
+      kpis: {
+        revenue: {
+          current: Math.round(completedTasks * 150),
+          previous: 0,
+          change: completedTasks > 0 ? 100 : 0,
+          currency: 'USD',
+          icon: '📈',
+        },
+        contentPublished: {
+          current: completedTasks,
+          previous: 0,
+          change: completedTasks > 0 ? 100 : 0,
+          unit: 'posts',
+          icon: '📝',
+        },
+        tasksCompleted: {
+          current: completedTasks,
+          previous: 0,
+          change: completedTasks > 0 ? 100 : 0,
+          unit: 'tasks',
+          icon: '✅',
+        },
+        aiSavings: {
+          current: Math.round(completedTasks * 150),
+          previous: 0,
+          change: completedTasks > 0 ? 100 : 0,
+          currency: 'USD',
+          icon: '💰',
+        },
+        totalCost: {
+          current: totalCost,
+          previous: 0,
+          change: totalCost > 0 ? 100 : 0,
+          currency: 'USD',
+          icon: '💸',
+        },
+        avgCostPerTask: {
+          current: avgCostPerTask,
+          previous: 0,
+          change: 0,
+          currency: 'USD',
+          icon: '🎯',
+        },
+        engagementRate: {
+          current: normalizedSuccessRate,
+          previous: 0,
+          change: normalizedSuccessRate > 0 ? 100 : 0,
+          unit: '%',
+          icon: '📊',
+        },
+        agentUptime: {
+          current: 99.8,
+          previous: 0,
+          change: 0,
+          unit: '%',
+          icon: '✓',
+        },
+        costByPhase: normalizeNumericMap(analyticsData.cost_by_phase || {}),
+        costByModel: normalizeNumericMap(analyticsData.cost_by_model || {}),
+      },
+      trends: {
+        publishing: {
+          title: 'Publishing Trend',
+          data: [completedTasks || 0],
+          avg: completedTasks || 0,
+          peak: completedTasks || 0,
+          low: 0,
+          unit: 'posts/day',
+        },
+      },
+      systemStatus: {
+        agentsActive: 0,
+        agentsTotal: 0,
+        tasksQueued: parseNumber(taskMetricsData.pending_tasks, pendingTasks),
+        tasksFailed: parseNumber(taskMetricsData.failed_tasks, failedTasks),
+        uptime: 99.8,
+        lastSync: formatRelativeSync(
+          analyticsData.timestamp || new Date().toISOString()
+        ),
+      },
+      quickStats: {
+        thisMonth: {
+          postsCreated: completedTasks,
+          tasksCompleted: completedTasks,
+          automationRate: Math.round(normalizedSuccessRate),
+          costSaved: Math.round(completedTasks * 150),
+        },
+      },
+    };
+  };
 
   // Fetch dashboard data from API
   useEffect(() => {
-    if (authLoading || !isAuthenticated) {
-      setLoading(false);
-      setError(null);
-      setDashboardData(getMockDashboardData());
-      return;
-    }
-
     const fetchDashboardData = async () => {
       try {
         setLoading(true);
 
         const { makeRequest } =
           await import('../../services/cofounderAgentClient');
-        const result = await makeRequest(
-          `/api/analytics/kpis?range=${timeRange}`,
-          'GET',
-          null,
-          false,
-          null,
-          15000 // 15 second timeout for analytics
-        );
+        const [analyticsResult, taskMetricsResult] = await Promise.allSettled([
+          makeRequest(
+            `/api/analytics/kpis?range=${timeRange}`,
+            'GET',
+            null,
+            false,
+            null,
+            15000 // 15 second timeout for analytics
+          ),
+          makeRequest('/api/tasks/metrics', 'GET', null, false, null, 10000),
+        ]);
 
-        if (result.error) {
-          throw new Error(result.error || 'Failed to fetch dashboard data');
+        if (analyticsResult.status !== 'fulfilled') {
+          throw analyticsResult.reason;
         }
 
-        // Transform real API response to component format
-        const transformedData = transformApiDataToComponentFormat(result);
-        setDashboardData(transformedData);
+        const normalizedData = normalizeDashboardData(
+          analyticsResult.value,
+          taskMetricsResult.status === 'fulfilled'
+            ? taskMetricsResult.value
+            : null
+        );
+
+        if (normalizedData.error) {
+          throw new Error(
+            normalizedData.error || 'Failed to fetch dashboard data'
+          );
+        }
+
+        setDashboardData(normalizedData);
         setError(null);
       } catch (err) {
-        logger.error('Dashboard data fetch error:', err);
+        console.error('Dashboard data fetch error:', err);
         setError(err.message);
-        // Set mock data for development/fallback
+        // Set mock data for development
         setDashboardData(getMockDashboardData());
       } finally {
         setLoading(false);
@@ -74,187 +247,7 @@ const ExecutiveDashboard = () => {
     };
 
     fetchDashboardData();
-  }, [timeRange, isAuthenticated, authLoading]);
-
-  const transformApiDataToComponentFormat = (apiData) => {
-    /**
-     * Transform real API response to component's expected format
-     * Maps KPIMetrics fields to KPI card structure
-     */
-    if (!apiData) return getMockDashboardData();
-
-    // Helper: convert cost list to average/peak/low if available
-    const getCostStats = (costByDayList) => {
-      if (!costByDayList || costByDayList.length === 0) {
-        return { avg: 0, peak: 0, low: 0 };
-      }
-      const costs = costByDayList.map((d) => d.cost || 0);
-      return {
-        avg: costs.reduce((a, b) => a + b, 0) / costs.length,
-        peak: Math.max(...costs),
-        low: Math.min(...costs),
-      };
-    };
-
-    // Helper: convert task/success list to stats if available
-    const getTaskStats = (taskByDayList) => {
-      if (!taskByDayList || taskByDayList.length === 0) {
-        return { avg: 0, peak: 0, low: 0 };
-      }
-      const counts = taskByDayList.map((d) => d.count || 0);
-      return {
-        avg: counts.reduce((a, b) => a + b, 0) / counts.length,
-        peak: Math.max(...counts),
-        low: Math.min(...counts),
-      };
-    };
-
-    const costStats = getCostStats(apiData.cost_per_day);
-    const taskStats = getTaskStats(apiData.tasks_per_day);
-
-    return {
-      kpis: {
-        // Map total_tasks to a revenue-like metric (business KPI)
-        revenue: {
-          current: (apiData.total_tasks || 0) * 100, // Estimate: $100 per task
-          previous: (apiData.total_tasks || 0) * 100 * 0.85, // 15% lower
-          change: 15,
-          currency: 'USD',
-          icon: '📈',
-        },
-        // Map task_types count to content published
-        contentPublished: {
-          current: apiData.total_tasks || 0,
-          previous: Math.max(0, (apiData.total_tasks || 0) - 5),
-          change: Math.min(
-            45,
-            Math.max(
-              0,
-              ((apiData.total_tasks || 0) /
-                Math.max(1, (apiData.total_tasks || 0) - 5) -
-                1) *
-                100
-            )
-          ),
-          unit: 'tasks',
-          icon: '📝',
-        },
-        // Map completed_tasks directly
-        tasksCompleted: {
-          current: apiData.completed_tasks || 0,
-          previous: Math.max(0, (apiData.completed_tasks || 0) - 2),
-          change: (apiData.completed_tasks || 0) > 0 ? 80 : 0,
-          unit: 'tasks',
-          icon: '✅',
-        },
-        // Estimate AI savings (avoided cost)
-        aiSavings: {
-          current: (apiData.total_cost_usd || 0) * 10, // Assume 10x ROI
-          previous: (apiData.total_cost_usd || 0) * 10 * 0.7,
-          change: 50,
-          currency: 'USD',
-          icon: '💰',
-        },
-        // Map actual cost
-        totalCost: {
-          current: apiData.total_cost_usd || 0,
-          previous: Math.max(0, (apiData.total_cost_usd || 0) * 0.75),
-          change: (apiData.total_cost_usd || 0) > 0 ? 33.85 : 0,
-          currency: 'USD',
-          icon: '💸',
-        },
-        // Map avg cost per task
-        avgCostPerTask: {
-          current: apiData.avg_cost_per_task || 0,
-          previous: Math.max(0, (apiData.avg_cost_per_task || 0) * 1.2),
-          change: -17.14,
-          currency: 'USD',
-          icon: '🎯',
-        },
-        // Map success rate
-        engagementRate: {
-          current: apiData.success_rate || 0,
-          previous: (apiData.success_rate || 0) * 0.85,
-          change: 50,
-          unit: '%',
-          icon: '📊',
-        },
-        agentUptime: {
-          current: 99.8,
-          previous: 99.2,
-          change: 0.6,
-          unit: '%',
-          icon: '✓',
-        },
-        costByPhase: apiData.cost_by_phase || {},
-        costByModel: apiData.cost_by_model || {},
-      },
-      trends: {
-        // Map tasks_per_day to publishing trend
-        publishing: {
-          title: 'Task Trend (last 30 days)',
-          data: (apiData.tasks_per_day || []).map((d) => d.count || 0),
-          avg: taskStats.avg,
-          peak: taskStats.peak,
-          low: taskStats.low,
-          unit: 'tasks/day',
-        },
-        // Map success_trend to engagement
-        engagement: {
-          title: 'Success Rate Trend (last 30 days)',
-          data: (apiData.success_trend || []).map((d) => {
-            const rate = d.total > 0 ? (d.completed / d.total) * 100 : 0;
-            return Math.round(rate * 10) / 10; // Round to 1 decimal
-          }),
-          avg: apiData.success_rate || 0,
-          peak: 100,
-          low: 0,
-          unit: '%',
-        },
-        // Map cost_per_day to cost trend
-        costTrend: {
-          title: 'AI Cost Trend (last 30 days)',
-          data: (apiData.cost_per_day || []).map((d) => d.cost || 0),
-          avg: costStats.avg,
-          peak: costStats.peak,
-          low: costStats.low,
-          unit: '$/day',
-        },
-      },
-      systemStatus: {
-        agentsActive: 2,
-        agentsTotal: 5,
-        tasksQueued: apiData.pending_tasks || 0,
-        tasksFailed: apiData.failed_tasks || 0,
-        uptime: 99.8,
-        lastSync: '2 minutes ago',
-      },
-      quickStats: {
-        thisMonth: {
-          postsCreated: apiData.total_tasks || 0,
-          tasksCompleted: apiData.completed_tasks || 0,
-          automationRate: Math.round(
-            ((apiData.completed_tasks || 0) /
-              Math.max(1, apiData.total_tasks || 1)) *
-              100
-          ),
-          costSaved: Math.round((apiData.total_cost_usd || 0) * 10),
-        },
-        thisYear: {
-          postsCreated: apiData.total_tasks ? apiData.total_tasks * 5 : 0, // Estimate year = month * 5
-          tasksCompleted: apiData.completed_tasks
-            ? apiData.completed_tasks * 5
-            : 0,
-          automationRate: Math.round(
-            ((apiData.completed_tasks || 0) /
-              Math.max(1, apiData.total_tasks || 1)) *
-              100
-          ),
-          costSaved: Math.round((apiData.total_cost_usd || 0) * 50),
-        },
-      },
-    };
-  };
+  }, [timeRange]);
 
   const getMockDashboardData = () => ({
     kpis: {
@@ -414,7 +407,15 @@ const ExecutiveDashboard = () => {
   const data = dashboardData || {};
   const kpis = data.kpis || {};
   const trends = data.trends || {};
-  const systemStatus = data.systemStatus || {};
+  const systemStatus = {
+    agentsActive: 0,
+    agentsTotal: 0,
+    tasksQueued: 0,
+    tasksFailed: 0,
+    uptime: 0,
+    lastSync: '—',
+    ...(data.systemStatus || {}),
+  };
   const quickStats = data.quickStats || {};
 
   return (
@@ -721,7 +722,8 @@ const ExecutiveDashboard = () => {
               <div className="status-info">
                 <div className="status-label">Agents Active</div>
                 <div className="status-value">
-                  {systemStatus.agentsActive} / {systemStatus.agentsTotal}
+                  {systemStatus.agentsActive ?? 0} /{' '}
+                  {systemStatus.agentsTotal ?? 0}
                 </div>
               </div>
             </div>
@@ -729,28 +731,36 @@ const ExecutiveDashboard = () => {
               <div className="status-icon">📤</div>
               <div className="status-info">
                 <div className="status-label">Tasks Queued</div>
-                <div className="status-value">{systemStatus.tasksQueued}</div>
+                <div className="status-value">
+                  {systemStatus.tasksQueued ?? 0}
+                </div>
               </div>
             </div>
             <div className="status-item">
               <div className="status-icon">⚠️</div>
               <div className="status-info">
                 <div className="status-label">Tasks Failed</div>
-                <div className="status-value">{systemStatus.tasksFailed}</div>
+                <div className="status-value">
+                  {systemStatus.tasksFailed ?? 0}
+                </div>
               </div>
             </div>
             <div className="status-item">
               <div className="status-icon">✓</div>
               <div className="status-info">
                 <div className="status-label">System Uptime</div>
-                <div className="status-value">{systemStatus.uptime}%</div>
+                <div className="status-value">
+                  {parseNumber(systemStatus.uptime, 0)}%
+                </div>
               </div>
             </div>
             <div className="status-item full-width">
               <div className="status-icon">🔄</div>
               <div className="status-info">
                 <div className="status-label">Last Sync</div>
-                <div className="status-value">{systemStatus.lastSync}</div>
+                <div className="status-value">
+                  {systemStatus.lastSync || '—'}
+                </div>
               </div>
             </div>
           </div>
@@ -782,7 +792,7 @@ const ExecutiveDashboard = () => {
             </button>
             <button
               className="action-button reports-button"
-              onClick={() => navigate('/performance')}
+              onClick={() => navigate('/analytics')}
             >
               <span className="action-icon">📊</span>
               <span className="action-label">View Reports</span>
@@ -870,7 +880,7 @@ const ExecutiveDashboard = () => {
         onTaskCreated={(task) => {
           setTaskModalOpen(false);
           // Optionally refresh dashboard data
-          logger.log('Task created:', task);
+          console.log('Task created:', task);
         }}
       />
     </div>

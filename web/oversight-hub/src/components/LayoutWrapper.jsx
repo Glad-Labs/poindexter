@@ -19,6 +19,11 @@ import ModelSelectDropdown from './ModelSelectDropdown';
 import BackendStatusBanner from './BackendStatusBanner';
 import '../OversightHub.css';
 
+// Generate unique message IDs to avoid React key warnings
+const generateMessageId = () => {
+  return `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+};
+
 const LayoutWrapper = ({ children }) => {
   const navigate = useNavigate();
   const chatEndRef = useRef(null);
@@ -26,7 +31,7 @@ const LayoutWrapper = ({ children }) => {
   const [navMenuOpen, setNavMenuOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState([
     {
-      id: 1,
+      id: generateMessageId(),
       sender: 'system',
       text: '👋 Poindexter Assistant ready!\n\n💭 **Conversation Mode**: Direct Q&A with AI\n🔄 **Agent Mode**: Compose and execute capability tasks\n\nChoose a mode to get started!',
     },
@@ -151,12 +156,10 @@ const LayoutWrapper = ({ children }) => {
     }
   }, [chatMessages]);
 
-  // Show mode help when switching modes
+  // Show mode help when switching modes (only trigger on chatMode change)
   useEffect(() => {
-    if (chatMessages.length === 0) return; // Skip on initial load
-
     const modeHelpMessage = {
-      id: chatMessages.length + 1,
+      id: generateMessageId(),
       sender: 'system',
       text:
         chatMode === 'agent'
@@ -164,10 +167,13 @@ const LayoutWrapper = ({ children }) => {
           : "💭 **Conversation Mode Active**\n\nAsk me anything! I'll respond with helpful information.",
     };
 
-    // Only add if last message isn't already a mode help
-    if (chatMessages[chatMessages.length - 1]?.text !== modeHelpMessage.text) {
-      setChatMessages((prev) => [...prev, modeHelpMessage]);
-    }
+    // Only add if last message isn't already a mode help (avoid duplicates)
+    setChatMessages((prev) => {
+      if (prev.length > 0 && prev[prev.length - 1]?.text === modeHelpMessage.text) {
+        return prev; // Already have this message
+      }
+      return [...prev, modeHelpMessage];
+    });
   }, [chatMode]);
 
   // Initialize available models from API
@@ -225,7 +231,7 @@ const LayoutWrapper = ({ children }) => {
 
     const userMessage = chatInput; // Store before clearing
     const newMessage = {
-      id: chatMessages.length + 1,
+      id: generateMessageId(),
       sender: 'user',
       text: userMessage,
     };
@@ -238,20 +244,17 @@ const LayoutWrapper = ({ children }) => {
       // Route based on chat mode
       if (chatMode === 'agent') {
         // Agent Mode: NLP Task Composition
-        await handleAgentModeMessage(userMessage, chatMessages.length + 1);
+        await handleAgentModeMessage(userMessage);
       } else {
         // Conversation Mode: Regular chat
-        await handleConversationModeMessage(
-          userMessage,
-          chatMessages.length + 1
-        );
+        await handleConversationModeMessage(userMessage);
       }
     } catch (error) {
       logger.error('Chat error:', error);
       setChatMessages((prev) => [
         ...prev,
         {
-          id: prev.length + 1,
+          id: generateMessageId(),
           sender: 'ai',
           text: `❌ Error: ${error.message}`,
           error: true,
@@ -262,7 +265,7 @@ const LayoutWrapper = ({ children }) => {
     }
   };
 
-  const handleConversationModeMessage = async (userMessage, nextId) => {
+  const handleConversationModeMessage = async (userMessage) => {
     /**
      * Conversation Mode: Simple request/response with selected agent
      */
@@ -280,7 +283,7 @@ const LayoutWrapper = ({ children }) => {
       setChatMessages((prev) => [
         ...prev,
         {
-          id: nextId + 1,
+          id: generateMessageId(),
           sender: 'ai',
           text: response.response,
           model: response.model,
@@ -292,7 +295,7 @@ const LayoutWrapper = ({ children }) => {
     }
   };
 
-  const handleAgentModeMessage = async (userMessage, nextId) => {
+  const handleAgentModeMessage = async (userMessage) => {
     /**
      * Agent Mode: NLP-powered task composition and execution
      *
@@ -307,7 +310,7 @@ const LayoutWrapper = ({ children }) => {
       setChatMessages((prev) => [
         ...prev,
         {
-          id: nextId + 1,
+          id: generateMessageId(),
           sender: 'system',
           text: '🤔 Analyzing request and composing task chain...',
           isLoading: true,
@@ -341,7 +344,7 @@ const LayoutWrapper = ({ children }) => {
       setChatMessages((prev) => [
         ...prev,
         {
-          id: nextId + 1,
+          id: generateMessageId(),
           sender: 'ai',
           text: taskSummary,
           model: 'nlp-composer',
@@ -357,7 +360,7 @@ const LayoutWrapper = ({ children }) => {
         setChatMessages((prev) => [
           ...prev,
           {
-            id: prev.length + 1,
+            id: generateMessageId(),
             sender: 'system',
             text: `⏳ Task executing... Check Services → Capability Composer for details`,
             timestamp: new Date().toISOString(),
@@ -371,7 +374,7 @@ const LayoutWrapper = ({ children }) => {
 
   const handleClearHistory = () => {
     setChatMessages([
-      { id: 1, sender: 'system', text: 'Poindexter ready. How can I help?' },
+      { id: generateMessageId(), sender: 'system', text: 'Poindexter ready. How can I help?' },
     ]);
   };
 
@@ -581,7 +584,7 @@ const LayoutWrapper = ({ children }) => {
                     <div className="message-task-composition">
                       {/* Render markdown-style text */}
                       {msg.text.split('\n\n').map((paragraph, idx) => (
-                        <div key={idx} style={{ marginBottom: '8px' }}>
+                        <div key={`${msg.id}-para-${idx}`} style={{ marginBottom: '8px' }}>
                           {paragraph.split('\n').map((line, lineIdx) => {
                             // Bold for **text**
                             const boldRegex = /\*\*([^*]+)\*\*/g;
@@ -618,7 +621,7 @@ const LayoutWrapper = ({ children }) => {
 
                             return (
                               <div
-                                key={lineIdx}
+                                key={`${msg.id}-line-${lineIdx}`}
                                 style={{ marginBottom: '4px' }}
                               >
                                 {parts.length > 0 ? parts : line}

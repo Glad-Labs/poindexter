@@ -11,18 +11,16 @@ This service provides:
 - Compliance reporting
 """
 
-from services.logger_config import get_logger
-from datetime import datetime, timezone
+import logging
+from datetime import datetime
 from typing import Any, Dict, Optional
 
-from services.service_base import ServiceBase
+logger = logging.getLogger(__name__)
 
-logger = get_logger(__name__)
-class ComplianceService(ServiceBase):
+
+class ComplianceService:
     """
     Legal and risk compliance service.
-
-    Extends ServiceBase to participate in service-registry discovery.
 
     Provides methods for:
     - Checking legal compliance of content
@@ -30,10 +28,6 @@ class ComplianceService(ServiceBase):
     - Regulatory requirement verification
     - Compliance reporting and documentation
     """
-
-    name: str = "compliance_service"
-    version: str = "1.0.0"
-    description: str = "Legal compliance checking, risk assessment, and regulatory verification"
 
     def __init__(
         self,
@@ -47,7 +41,6 @@ class ComplianceService(ServiceBase):
             database_service: PostgreSQL database service
             model_router: Model router
         """
-        super().__init__()
         self.database_service = database_service
         self.model_router = model_router
         logger.info("ComplianceService initialized")
@@ -72,9 +65,7 @@ class ComplianceService(ServiceBase):
             Dictionary with compliance status and issues found
         """
         try:
-            from agents.compliance_agent.agents.compliance_agent import (  # type: ignore
-                ComplianceAgent,
-            )
+            from agents.compliance_agent.agents.compliance_agent import ComplianceAgent
 
             compliance_agent = ComplianceAgent()
             result = await compliance_agent.run(
@@ -90,12 +81,12 @@ class ComplianceService(ServiceBase):
                 "content_type": content_type,
                 "jurisdictions": jurisdictions or ["US"],
                 "result": result,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.utcnow().isoformat(),
                 "source": "compliance_agent",
             }
 
         except Exception as e:
-            logger.error(f"[_check_legal_compliance] Compliance check failed: {e}", exc_info=True)
+            logger.error(f"Compliance check failed: {e}", exc_info=True)
             return {
                 "phase": "compliance_check",
                 "error": str(e),
@@ -149,10 +140,7 @@ class ComplianceService(ServiceBase):
             }
 
         except Exception as e:
-            logger.error(
-                f"[_assess_privacy_compliance] Privacy compliance assessment failed: {e}",
-                exc_info=True,
-            )
+            logger.error(f"Privacy compliance assessment failed: {e}", exc_info=True)
             return {"error": str(e), "assessment_type": "privacy_compliance"}
 
     async def risk_assessment(
@@ -197,11 +185,11 @@ class ComplianceService(ServiceBase):
                 "risk_level": (
                     "low" if overall_risk < 0.3 else "medium" if overall_risk < 0.7 else "high"
                 ),
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.utcnow().isoformat(),
             }
 
         except Exception as e:
-            logger.error(f"[_risk_assessment] Risk assessment failed: {e}", exc_info=True)
+            logger.error(f"Risk assessment failed: {e}", exc_info=True)
             return {"error": str(e), "assessment_type": "risk_assessment"}
 
     def get_service_metadata(self) -> Dict[str, Any]:

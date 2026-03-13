@@ -5,6 +5,7 @@ from typing import Optional
 
 from services.prompt_manager import get_prompt_manager
 
+from ....services.prompt_manager import get_prompt_manager
 from ..config import config
 from ..services.llm_client import LLMClient
 from ..utils.data_models import BlogPost

@@ -22,12 +22,14 @@ Version History:
 """
 
 import json
-from services.logger_config import get_logger
+import logging
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
+
+
 class PromptVersion(str, Enum):
     """Prompt versions for A/B testing and rollouts"""
 
@@ -94,16 +96,10 @@ class UnifiedPromptManager:
 The target audience is {target_audience}. 
 The primary keyword to focus on is '{primary_keyword}'.
 
-🎯 MANDATORY WORD COUNT: You MUST write EXACTLY {word_count} words (±10% acceptable range).
-   - Minimum: {word_count} × 0.9 ≈ words. Maximum: {word_count} × 1.1 ≈ words.
-   - STOP when you reach the maximum. DO NOT write more than {word_count} × 1.1 words.
-   - Content is REJECTED if too short OR too long. Aim precisely for {word_count} words.
-
 ⭐ CRITICAL REQUIREMENTS:
 1. Start your response with a Markdown heading (# Your Title Here) on the first line
 2. Include 3-5 main sections with ## subheadings
-3. Write DETAILED content in each section - don't be brief!
-4. ⚠️ SECTION TITLES MUST BE CATCHY AND CREATIVE - NOT GENERIC!
+3. ⚠️ SECTION TITLES MUST BE CATCHY AND CREATIVE - NOT GENERIC!
    ❌ AVOID these boring titles: Introduction, Background, Overview, Conclusion, Summary, The End, Final Thoughts, Wrap-up
    ✅ USE these approaches:
       - Curiosity-driven: "Why Most People Get [Topic] Wrong", "The Hidden Truth About [Topic]"
@@ -111,10 +107,13 @@ The primary keyword to focus on is '{primary_keyword}'.
       - Action-oriented: "Start With [Action]", "Never [Mistake] Again", "The Quickest Way to [Goal]"
       - Insight-focused: "What the Data Shows", "Industry Insiders Reveal", "The Surprising Connection"
       - Story-based: "From [Problem] to [Solution]", "How [Entity] Transformed"
-5. Incorporate research context provided below
-6. Add [IMAGE-1], [IMAGE-2], etc. where visuals would enhance the content
+4. Incorporate research context provided below
+5. Add [IMAGE-1], [IMAGE-2], etc. where visuals would enhance the content
+6. ⚠️ MANDATORY: Write FULL CONTENT to reach approximately {word_count} words. 
+   This is NOT a suggestion - your response MUST be comprehensive and thorough to hit this target.
+   Break content into multiple detailed sections to meet word count.
+   If you're at 50% of target, you're not done - continue adding value and details.
 7. Format: Valid Markdown with proper structure
-8. Write multiple paragraphs per section with concrete examples and details
 
 ⭐ RESEARCH CONTEXT TO INCORPORATE:
 {research_context}
@@ -686,15 +685,7 @@ Example Response Format: tag1, tag2, tag3, tag4, tag5""",
 Your writing style is {style}.
 Your tone is {tone}.
 Write for an educated but general audience.
-
-🎯 CRITICAL WORD COUNT REQUIREMENT: You MUST write EXACTLY {target_length} words (±10% tolerance).
-   - Minimum acceptable: {min_words} words
-   - Target: {target_length} words
-   - Maximum: {max_words} words
-   - STOP WRITING when you reach {max_words} words. DO NOT exceed {max_words} words under any circumstances.
-   - Before finishing, count your words. If you exceed {max_words} words, cut content until you are within range.
-   - Your response will be REJECTED if it exceeds {max_words} words.
-
+Generate approximately {target_length} words.
 Format as Markdown with proper headings (# for title, ## for sections, ### for subsections).
 
 ⭐ CRITICAL GUIDANCE ON SECTION TITLES:
@@ -713,9 +704,9 @@ Include:
 - Real-world examples or bullet points
 - Clear conclusion with call-to-action (avoid "Conclusion" as title - use something like "Your Next Step", "Ready to Begin?")
 Tags: {tags}""",
-            description="System prompt for blog generation with strict word count enforcement",
+            description="System prompt for blog generation with creative title guidance",
             output_format="markdown",
-            notes="v3.0: Added strict word count requirements with min/max bounds + Creative title guidance",
+            notes="v2.0: Added explicit guidance on creative section titles with examples",
         )
 
         self._register_prompt(

@@ -11,7 +11,7 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Typography, CircularProgress, Paper, Chip } from '@mui/material';
 import { unifiedStatusService } from '../../services/unifiedStatusService';
-import { STATUS_COLORS, getStatusLabel } from '../../Constants/statusEnums';
+import { STATUS_COLORS } from '../../Constants/statusEnums';
 
 /**
  * StatusAuditTrail Component
@@ -27,13 +27,7 @@ export const StatusAuditTrail = ({ taskId, limit = 100 }) => {
       try {
         setLoading(true);
         const data = await unifiedStatusService.getHistory(taskId, limit);
-        if (Array.isArray(data)) {
-          setHistory(data);
-        } else if (Array.isArray(data?.history)) {
-          setHistory(data.history);
-        } else {
-          setHistory([]);
-        }
+        setHistory(Array.isArray(data) ? data : []);
       } catch (err) {
         setError(err.message || 'Failed to load audit trail');
       } finally {
@@ -154,7 +148,7 @@ export const StatusTimeline = ({
           {statusHistory.map((entry, idx) => (
             <Chip
               key={idx}
-              label={getStatusLabel(entry.new_status)}
+              label={entry.new_status}
               size="small"
               sx={{
                 backgroundColor: STATUS_COLORS[entry.new_status] || '#999',
@@ -170,76 +164,19 @@ export const StatusTimeline = ({
 
 /**
  * ValidationFailureUI Component
- * Displays validation failures from task metadata (updated with validation_details)
+ * Displays validation failures for a task
  */
-export const ValidationFailureUI = ({ task, taskId, limit = 50 }) => {
+export const ValidationFailureUI = ({ taskId, limit = 50 }) => {
   const [failures, setFailures] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (task && task.task_metadata && task.task_metadata.validation_details) {
-      // Use validation_details from task metadata (new approach)
-      const details = task.task_metadata.validation_details;
-      const failingGates = [];
-
-      if (!details.base_content_valid) {
-        failingGates.push({
-          constraint_name: '❌ Content Validity',
-          message: 'Content too short or empty',
-          severity: 'error',
-        });
-      }
-
-      if (!details.length_gate_passes && details.length_gate_detail) {
-        const detail = details.length_gate_detail;
-        const tooLong =
-          (detail.maximum != null && detail.word_count > detail.maximum) ||
-          (detail.maximum == null &&
-            detail.target != null &&
-            detail.word_count > detail.target);
-        failingGates.push({
-          constraint_name: '❌ Length Gate',
-          message: tooLong ? 'Word count too long' : 'Word count insufficient',
-          details: `Generated: ${detail.word_count} words | Target: ${detail.target} | ${tooLong ? `Maximum: ${detail.maximum ?? Math.round(detail.target * (1 + (detail.tolerance_percent || 15) / 100))}` : `Minimum: ${detail.minimum}`} (tolerance: ${detail.tolerance_percent}%)`,
-          severity: 'error',
-        });
-      }
-
-      if (!details.style_gate_passes && details.style_gate_detail) {
-        failingGates.push({
-          constraint_name: '❌ Style Gate',
-          message: 'Style inconsistent',
-          details: details.style_gate_detail,
-          severity: 'warning',
-        });
-      }
-
-      if (!details.seo_gate_passes && details.seo_gate_detail) {
-        failingGates.push({
-          constraint_name: '❌ SEO Gate',
-          message: 'SEO issues detected',
-          details: details.seo_gate_detail,
-          severity: 'error',
-        });
-      }
-
-      setFailures(failingGates);
-      return;
-    }
-
-    // Fallback: Load from legacy failures endpoint
     const fetchFailures = async () => {
       try {
         setLoading(true);
         const data = await unifiedStatusService.getFailures(taskId, limit);
-        if (Array.isArray(data)) {
-          setFailures(data);
-        } else if (Array.isArray(data?.failures)) {
-          setFailures(data.failures);
-        } else {
-          setFailures([]);
-        }
+        setFailures(Array.isArray(data) ? data : []);
       } catch (err) {
         setError(err.message || 'Failed to load validation failures');
       } finally {
@@ -250,46 +187,18 @@ export const ValidationFailureUI = ({ task, taskId, limit = 50 }) => {
     if (taskId) {
       fetchFailures();
     }
-  }, [task, taskId, limit]);
+  }, [taskId, limit]);
 
   if (loading) return <CircularProgress size={24} />;
   if (error) return <Typography color="error">⚠️ {error}</Typography>;
 
   if (!failures || failures.length === 0) {
     return (
-      <Box
-        sx={{
-          p: 2,
-          backgroundColor: '#e8f5e9',
-          border: '1px solid #4caf50',
-          borderRadius: 1,
-        }}
-      >
-        <Typography
-          color="success.main"
-          sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
-        >
-          ✅ All validation gates passed!
-        </Typography>
-      </Box>
+      <Typography color="success.main">
+        ✅ No validation failures recorded.
+      </Typography>
     );
   }
-
-  const getSeverityColor = (severity) => {
-    return severity === 'error'
-      ? '#f44336'
-      : severity === 'warning'
-        ? '#ff9800'
-        : '#2196f3';
-  };
-
-  const getBackgroundColor = (severity) => {
-    return severity === 'error'
-      ? '#ffebee'
-      : severity === 'warning'
-        ? '#fff3e0'
-        : '#e3f2fd';
-  };
 
   return (
     <Box sx={{ space: 2 }}>
@@ -297,26 +206,8 @@ export const ValidationFailureUI = ({ task, taskId, limit = 50 }) => {
         variant="subtitle2"
         sx={{ mb: 2, fontWeight: 600, color: '#f44336' }}
       >
-        ⚠️ {failures.length} Validation Gate{failures.length !== 1 ? 's' : ''}{' '}
-        Failed
+        {failures.length} Validation Failure{failures.length !== 1 ? 's' : ''}
       </Typography>
-
-      <Box
-        sx={{
-          mb: 2,
-          p: 2,
-          backgroundColor: '#fffde7',
-          border: '1px solid #fbc02d',
-          borderRadius: 1,
-        }}
-      >
-        <Typography variant="body2" sx={{ color: '#f57f17' }}>
-          <strong>Work Preserved:</strong> Generated content (
-          {task?.task_metadata?.word_count || task?.word_count || 'unknown'}{' '}
-          words) has been saved to the database even though validation failed.
-          You can review it below.
-        </Typography>
-      </Box>
 
       {failures.map((failure, idx) => (
         <Paper
@@ -324,56 +215,30 @@ export const ValidationFailureUI = ({ task, taskId, limit = 50 }) => {
           sx={{
             p: 2,
             mb: 2,
-            backgroundColor: getBackgroundColor(failure.severity || 'error'),
-            borderLeft: `4px solid ${getSeverityColor(failure.severity || 'error')}`,
+            backgroundColor: '#ffebee',
+            borderLeft: '4px solid #f44336',
           }}
         >
-          <Typography
-            variant="subtitle2"
-            sx={{
-              mb: 1,
-              fontWeight: 600,
-              color: getSeverityColor(failure.severity || 'error'),
-            }}
-          >
+          <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
             {failure.constraint_name || 'Validation Error'}
           </Typography>
 
           {failure.message && (
             <Typography variant="body2" sx={{ mb: 1 }}>
-              {failure.message}
+              <strong>Message:</strong> {failure.message}
             </Typography>
           )}
 
-          {typeof failure.details === 'string' ? (
+          {failure.details && (
             <Typography
               variant="caption"
               display="block"
-              sx={{
-                whiteSpace: 'pre-wrap',
-                fontFamily: 'monospace',
-                p: 1,
-                backgroundColor: 'rgba(0,0,0,0.05)',
-                borderRadius: 0.5,
-              }}
+              sx={{ whiteSpace: 'pre-wrap' }}
             >
-              {failure.details}
-            </Typography>
-          ) : failure.details && typeof failure.details === 'object' ? (
-            <Typography
-              variant="caption"
-              display="block"
-              sx={{
-                whiteSpace: 'pre-wrap',
-                fontFamily: 'monospace',
-                p: 1,
-                backgroundColor: 'rgba(0,0,0,0.05)',
-                borderRadius: 0.5,
-              }}
-            >
+              <strong>Details:</strong>{' '}
               {JSON.stringify(failure.details, null, 2)}
             </Typography>
-          ) : null}
+          )}
 
           <Typography
             variant="caption"
@@ -392,17 +257,59 @@ export const ValidationFailureUI = ({ task, taskId, limit = 50 }) => {
  * StatusDashboardMetrics Component
  * Real-time status distribution and KPI metrics
  */
-export const StatusDashboardMetrics = () => {
+export const StatusDashboardMetrics = ({ tasks = [] }) => {
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  const parseNumber = (value, fallback = 0) => {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : fallback;
+    }
+    return fallback;
+  };
+
+  const normalizeMetricsData = (rawMetrics) => {
+    const raw = rawMetrics || {};
+    const totalTasks = parseNumber(raw.total_tasks, 0);
+    const completedTasks = parseNumber(raw.completed_tasks, 0);
+    const failedTasks = parseNumber(raw.failed_tasks, 0);
+    const pendingTasks = parseNumber(raw.pending_tasks, 0);
+
+    const statusDistribution = raw.status_distribution || {
+      completed: completedTasks,
+      failed: failedTasks,
+      pending: pendingTasks,
+    };
+
+    const rawSuccessRate = parseNumber(raw.success_rate, 0);
+    const normalizedSuccessRate =
+      rawSuccessRate > 1 ? rawSuccessRate : rawSuccessRate * 100;
+
+    return {
+      ...raw,
+      total_tasks: totalTasks,
+      completed_tasks: completedTasks,
+      failed_tasks: failedTasks,
+      pending_tasks: pendingTasks,
+      status_distribution: statusDistribution,
+      success_rate: normalizedSuccessRate,
+      average_processing_time: parseNumber(
+        raw.average_processing_time,
+        parseNumber(raw.avg_execution_time, 0)
+      ),
+    };
+  };
 
   useEffect(() => {
     const fetchMetrics = async () => {
       try {
         setLoading(true);
         const data = await unifiedStatusService.getMetrics();
-        setMetrics(data);
+        setMetrics(normalizeMetricsData(data));
+        setError('');
       } catch (err) {
         setError(err.message || 'Failed to load metrics');
       } finally {
@@ -410,8 +317,34 @@ export const StatusDashboardMetrics = () => {
       }
     };
 
+    if (Array.isArray(tasks) && tasks.length > 0) {
+      const completed = tasks.filter(
+        (t) => t.status?.toLowerCase() === 'completed'
+      ).length;
+      const failed = tasks.filter(
+        (t) => t.status?.toLowerCase() === 'failed'
+      ).length;
+      const pending = Math.max(tasks.length - completed - failed, 0);
+      const successRate =
+        tasks.length > 0 ? (completed / tasks.length) * 100 : 0;
+
+      setMetrics(
+        normalizeMetricsData({
+          total_tasks: tasks.length,
+          completed_tasks: completed,
+          failed_tasks: failed,
+          pending_tasks: pending,
+          success_rate: successRate,
+          avg_execution_time: 0,
+        })
+      );
+      setLoading(false);
+      setError('');
+      return;
+    }
+
     fetchMetrics();
-  }, []);
+  }, [tasks]);
 
   if (loading) return <CircularProgress size={24} />;
   if (error) return <Typography color="error">⚠️ {error}</Typography>;
@@ -468,7 +401,7 @@ export const StatusDashboardMetrics = () => {
             Average Processing Time
           </Typography>
           <Typography variant="body2">
-            {Math.round(metrics.average_processing_time / 60)} seconds
+            {Math.round(metrics.average_processing_time)} seconds
           </Typography>
         </Paper>
       )}
@@ -479,7 +412,7 @@ export const StatusDashboardMetrics = () => {
             Success Rate
           </Typography>
           <Typography variant="body2">
-            {(Number(metrics.success_rate) * 100).toFixed(1)}%
+            {metrics.success_rate.toFixed(1)}%
           </Typography>
         </Paper>
       )}

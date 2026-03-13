@@ -1,35 +1,27 @@
-"""
-Standalone migration runner.
-
-Usage (from src/cofounder_agent/):
-    poetry run python run_migrations.py
-
-This is a convenience wrapper for running migrations outside the normal
-FastAPI startup sequence (e.g. in CI, pre-deploy scripts, or manual recovery).
-At runtime, migrations are run automatically by startup_manager via
-services/migrations/__init__.py.
-"""
-
 import asyncio
+import logging
+import os
 
 from services.database_service import DatabaseService
-from services.logger_config import get_logger
-from services.migrations import run_migrations
+from services.migrations import MigrationService
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
-async def main():
+async def run_migrations():
+    # Initialize database service
     db_service = DatabaseService()
     await db_service.initialize()
 
-    success = await run_migrations(db_service)
+    # Run migrations
+    migration_service = MigrationService(db_service.pool)
+    success = await migration_service.run_migrations()
 
     if success:
-        logger.info("Migrations completed successfully")
+        logger.info("✅ Migrations completed successfully")
     else:
-        logger.error("Migrations failed")
+        logger.error("❌ Migrations failed")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(run_migrations())

@@ -184,9 +184,11 @@ export function formatCompositionResult(compositionResult) {
   return result;
 }
 
-export default {
+const naturalLanguageComposerService = {
   composeTaskFromNaturalLanguage,
   composeAndExecuteTask,
   detectTaskRequest,
   formatCompositionResult,
 };
+
+export default naturalLanguageComposerService;

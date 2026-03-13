@@ -16,7 +16,7 @@ Routes:
 - GET  /api/auth/me             -> Get current user profile
 """
 
-from services.logger_config import get_logger
+import logging
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -27,8 +27,6 @@ import jwt
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel
 
-from utils.rate_limiter import limiter
-
 from schemas.auth_schemas import (
     GitHubCallbackRequest,
     LogoutResponse,
@@ -36,7 +34,8 @@ from schemas.auth_schemas import (
 )
 from services.token_validator import AuthConfig, JWTTokenValidator
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 # GitHub Configuration
@@ -316,72 +315,13 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
         )
 
 
-async def get_current_user_optional(request: Request) -> Optional[Dict[str, Any]]:
-    """
-    Optional authentication dependency.
-
-    Returns user dict if a valid token is present, None otherwise.
-    In development mode (DEVELOPMENT_MODE=true), returns a dev-user identity
-    for unauthenticated requests. In production, unauthenticated callers get None.
-
-    Use this for endpoints that behave differently for authenticated vs anonymous users
-    (e.g., showing personalized content when logged in).
-    """
-    try:
-        auth_header = request.headers.get("Authorization", "")
-
-        if not auth_header.startswith("Bearer "):
-            # No token provided — check for dev mode fallback
-            if os.getenv("DEVELOPMENT_MODE", "").lower() == "true":
-                logger.debug("[get_current_user_optional] No token, returning dev user (DEVELOPMENT_MODE=true)")
-                return {
-                    "id": "dev-user-id",
-                    "email": "dev@example.com",
-                    "username": "dev-user",
-                    "auth_provider": "development",
-                    "is_active": True,
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                }
-            # Production: unauthenticated callers get None
-            return None
-
-        token = auth_header[7:]  # Remove "Bearer " prefix
-
-        try:
-            claims = JWTTokenValidator.verify_token(token)
-        except Exception:
-            logger.debug("[get_current_user_optional] Token verification failed, returning None")
-            return None
-
-        if not claims:
-            return None
-
-        user_id = claims.get("user_id")
-        if not user_id:
-            return None
-
-        return {
-            "id": str(user_id),
-            "email": claims.get("email", ""),
-            "username": claims.get("username") or claims.get("sub", ""),
-            "auth_provider": claims.get("auth_provider", "jwt"),
-            "is_active": claims.get("is_active", True),
-            "created_at": claims.get("created_at", datetime.now(timezone.utc).isoformat()),
-            "token": token,
-        }
-    except Exception as e:
-        logger.debug(f"[get_current_user_optional] Error: {type(e).__name__}", exc_info=True)
-        return None
-
-
 # ============================================================================
 # Unified Endpoints
 # ============================================================================
 
 
 @router.post("/github/callback")
-@limiter.limit("10/minute")
-async def github_callback(request: Request, request_data: GitHubCallbackRequest) -> Dict[str, Any]:
+async def github_callback(request_data: GitHubCallbackRequest) -> Dict[str, Any]:
     """
     Handle GitHub OAuth callback.
 
@@ -442,11 +382,7 @@ async def github_callback(request: Request, request_data: GitHubCallbackRequest)
             "auth_provider": "github",
         }
 
-        logger.info(
-            f"[oauth_callback] User authenticated: user_id={user_info['user_id']} "
-            f"username={user_info['username']!r} provider=github "
-            f"ip={request.client.host if request.client else 'unknown'}"
-        )
+        logger.info(f"GitHub authentication successful for user: {user_info['username']}")
 
         return {
             "token": jwt_token,
@@ -460,10 +396,26 @@ async def github_callback(request: Request, request_data: GitHubCallbackRequest)
         raise HTTPException(status_code=500, detail="Authentication error")
 
 
+@router.post("/github-callback")
+async def github_callback_fallback(request_data: GitHubCallbackRequest) -> Dict[str, Any]:
+    """
+    Fallback endpoint for GitHub OAuth callback (old endpoint path).
+
+    This endpoint exists for backward compatibility with clients using
+    the old /api/auth/github-callback path. All requests are forwarded
+    to the new /api/auth/github/callback endpoint.
+
+    DEPRECATED: Use /api/auth/github/callback instead.
+    """
+    logger.warning(
+        "Deprecated endpoint /api/auth/github-callback called. Use /api/auth/github/callback instead."
+    )
+    # Forward to the main handler
+    return await github_callback(request_data)
+
+
 @router.post("/logout", response_model=LogoutResponse)
-@limiter.limit("20/minute")
 async def unified_logout(
-    request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> LogoutResponse:
     """
@@ -526,9 +478,7 @@ async def unified_logout(
 
 
 @router.get("/me", response_model=UserProfile)
-@limiter.limit("60/minute")
 async def get_current_user_profile(
-    request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> UserProfile:
     """

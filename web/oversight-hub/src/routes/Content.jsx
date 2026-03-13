@@ -1,18 +1,17 @@
-import logger from '@/lib/logger';
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { getPosts, updatePost, deletePost } from '../lib/apiClient';
 import PostEditor from '../components/modals/PostEditor';
-import CreateTaskModal from '../components/tasks/CreateTaskModal';
 import './Content.css';
 
 function Content() {
+  const navigate = useNavigate();
   const [contentItems, setContentItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedTab, setSelectedTab] = useState('all');
   const [editingPost, setEditingPost] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [createTaskModalOpen, setCreateTaskModalOpen] = useState(false);
 
   // Fetch posts from API
   useEffect(() => {
@@ -22,7 +21,7 @@ function Content() {
   const fetchPosts = async () => {
     try {
       setLoading(true);
-      const response = await getPosts();
+      const response = await getPosts(0, 100, false);
 
       // Handle various response formats from backend
       let posts = [];
@@ -36,7 +35,7 @@ function Content() {
       setContentItems(Array.isArray(posts) ? posts : []);
       setError(null);
     } catch (err) {
-      logger.error('Failed to fetch posts:', err);
+      console.error('Failed to fetch posts:', err);
       setError('Failed to load content. Please try again.');
       setContentItems([]);
     } finally {
@@ -59,7 +58,7 @@ function Content() {
       setEditingPost(null);
       alert('Post updated successfully!');
     } catch (err) {
-      logger.error('Failed to update post:', err);
+      console.error('Failed to update post:', err);
       alert('Failed to update post. Please try again.');
     }
   };
@@ -73,22 +72,29 @@ function Content() {
       await fetchPosts(); // Refresh list
       alert('Post deleted successfully!');
     } catch (err) {
-      logger.error('Failed to delete post:', err);
+      console.error('Failed to delete post:', err);
       alert('Failed to delete post. Please try again.');
     }
   };
 
   const handleViewPost = (post) => {
     // Open post in new tab on public site
-    const publicUrl = `http://localhost:3000/posts/${post.slug}`;
+    const publicUrl = post.slug
+      ? `http://localhost:3000/posts/${post.slug}`
+      : `http://localhost:3000/posts`;
     window.open(publicUrl, '_blank');
   };
 
   // Filter and search content
   const filteredContent = contentItems.filter((item) => {
+    const normalizedStatus = (item.status || '')
+      .toLowerCase()
+      .replace(/_/g, ' ')
+      .trim();
+
     // Status filter
     const statusMatch =
-      selectedTab === 'all' || item.status?.toLowerCase() === selectedTab;
+      selectedTab === 'all' || normalizedStatus === selectedTab;
 
     // Search filter
     const searchMatch =
@@ -122,16 +128,16 @@ function Content() {
 
       {/* Action Buttons */}
       <div className="content-actions">
-        <button
-          className="btn btn-primary"
-          onClick={() => setCreateTaskModalOpen(true)}
-        >
+        <button className="btn btn-primary" onClick={() => navigate('/tasks')}>
           ➕ Create New Content
         </button>
-        <button className="btn btn-secondary" disabled title="Coming soon">
-          📤 Upload Files
+        <button className="btn btn-secondary" onClick={fetchPosts}>
+          📤 Refresh Content
         </button>
-        <button className="btn btn-secondary" disabled title="Coming soon">
+        <button
+          className="btn btn-secondary"
+          onClick={() => navigate('/settings')}
+        >
           ⚙️ Content Settings
         </button>
       </div>
@@ -349,16 +355,6 @@ function Content() {
           onSave={handleSavePost}
         />
       )}
-
-      {/* Create Task Modal */}
-      <CreateTaskModal
-        isOpen={createTaskModalOpen}
-        onClose={() => setCreateTaskModalOpen(false)}
-        onTaskCreated={(task) => {
-          setCreateTaskModalOpen(false);
-          logger.log('Task created from Content page:', task);
-        }}
-      />
     </div>
   );
 }

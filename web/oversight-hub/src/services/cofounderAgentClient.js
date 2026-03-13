@@ -1,54 +1,17 @@
-import logger from '@/lib/logger';
 /**
- * Cofounder Agent API Client - Cookie Session Auth
+ * Cofounder Agent API Client - JWT Auth
  *
  * Environment Variables (required):
  * - REACT_APP_API_URL: Backend API base URL (e.g., https://api.example.com or http://localhost:8000)
  *
  * NOTE: This service does NOT directly update Zustand store.
  * Auth state updates are handled by AuthContext only.
+ * Use getAuthToken() to read current token from localStorage.
  */
+import { getAuthToken } from './authService';
+import { clearPersistedAuthState } from './authService';
 
-import { getApiUrl } from '../config/apiConfig';
-import { authClient } from '../lib/authClient';
-import { serviceStatus } from '../lib/serviceStatus';
-
-const API_BASE_URL = getApiUrl();
-
-/**
- * Initialize metrics collection on window object for performance dashboard
- */
-function initializeMetricsCollection() {
-  if (!window.apiMetrics) {
-    window.apiMetrics = [];
-  }
-}
-
-/**
- * Collect API request metrics for performance monitoring
- * @param {string} endpoint - The API endpoint
- * @param {string} method - The HTTP method
- * @param {number} status - The HTTP status code
- * @param {number} duration_ms - Request duration in milliseconds
- * @param {boolean} cached - Whether result was cached
- */
-function collectMetric(endpoint, method, status, duration_ms, cached = false) {
-  initializeMetricsCollection();
-
-  // Keep only last 1000 metrics in memory to prevent memory leaks
-  if (window.apiMetrics.length >= 1000) {
-    window.apiMetrics = window.apiMetrics.slice(-999);
-  }
-
-  window.apiMetrics.push({
-    endpoint,
-    method,
-    status,
-    duration_ms,
-    timestamp: new Date().toISOString(),
-    cached,
-  });
-}
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
 /**
  * Capitalize each word in a string
@@ -68,47 +31,25 @@ function capitalizeWords(str) {
 // API configuration validation - REACT_APP_API_URL should be set in environment
 
 function getAuthHeaders() {
-  // Use centralized auth client for token retrieval
-  return authClient.getAuthHeaders();
+  const accessToken = getAuthToken();
+  const headers = { 'Content-Type': 'application/json' };
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`;
+  }
+  return headers;
 }
 
 export async function makeRequest(
   endpoint,
   method = 'GET',
   data = null,
-  _retry = false,
-  _onUnauthorized = null,
-  timeout = 30000, // 30 seconds - allows for long-running operations like Ollama generation
-  requestOptions = null
+  retry = false,
+  onUnauthorized = null,
+  timeout = 30000 // 30 seconds - allows for long-running operations like Ollama generation
 ) {
-  const startTime = performance.now();
-  const shouldSuppressErrorLog =
-    requestOptions &&
-    typeof requestOptions.shouldSuppressErrorLog === 'function'
-      ? requestOptions.shouldSuppressErrorLog
-      : null;
-
-  const isErrorLogSuppressed = (ctx) => {
-    if (!shouldSuppressErrorLog) {
-      return false;
-    }
-
-    try {
-      return Boolean(shouldSuppressErrorLog(ctx));
-    } catch {
-      return false;
-    }
-  };
-
   try {
     const url = `${API_BASE_URL}${endpoint}`;
-    if (process.env.NODE_ENV === 'development') {
-      logger.debug(
-        `[cofounderAgentClient] ${method} ${endpoint} (timeout: ${timeout}ms)`
-      );
-    }
     const config = { method, headers: getAuthHeaders() };
-    config.credentials = 'include';
 
     // Handle FormData (file uploads) - must NOT set Content-Type header
     if (data instanceof FormData) {
@@ -126,15 +67,46 @@ export async function makeRequest(
     try {
       const response = await fetch(url, config);
       clearTimeout(timeoutId);
-      const duration_ms = Math.round(performance.now() - startTime);
-      if (process.env.NODE_ENV === 'development') {
-        logger.debug(
-          `[cofounderAgentClient] ${method} ${endpoint} completed in ${duration_ms}ms, status: ${response.status}`
-        );
+
+      if (response.status === 401 && !retry) {
+        // Try to refresh token in development
+        if (process.env.NODE_ENV === 'development') {
+          try {
+            const { initializeDevToken } = await import('./authService');
+            clearPersistedAuthState();
+            await initializeDevToken({
+              forceRefresh: true,
+              validateWithBackend: false,
+            });
+            // Retry the request with new token
+            return makeRequest(
+              endpoint,
+              method,
+              data,
+              true,
+              onUnauthorized,
+              timeout
+            );
+          } catch (refreshError) {
+            console.error('Failed to refresh token:', refreshError);
+          }
+        }
+
+        clearPersistedAuthState();
+
+        // Call the onUnauthorized callback if provided
+        if (onUnauthorized) {
+          onUnauthorized();
+        }
+        throw new Error('Unauthorized - token expired or invalid');
+      }
+
+      // Handle 204 No Content response (no body to parse)
+      if (response.status === 204) {
+        return { success: true };
       }
 
       const result = await response.json().catch(() => response.text());
-
       if (!response.ok) {
         // Extract error message from response
         let errorMessage = `HTTP ${response.status}`;
@@ -159,107 +131,25 @@ export async function makeRequest(
         const error = new Error(errorMessage);
         error.status = response.status;
         error.response = result; // Include full response for debugging
-        const suppressErrorLog = isErrorLogSuppressed({
-          endpoint,
-          method,
+        console.error('API error response:', {
           status: response.status,
-          error,
-          response: result,
+          message: errorMessage,
         });
-
-        // Collect metric for error response
-        collectMetric(endpoint, method, response.status, duration_ms, false);
-
-        if (!suppressErrorLog && process.env.NODE_ENV === 'development') {
-          logger.error('API error response:', {
-            status: response.status,
-            message: errorMessage,
-          });
-        }
         throw error;
       }
-
-      // Collect metric for successful response
-      collectMetric(endpoint, method, response.status, duration_ms, false);
-
-      // Signal backend is back online (clears any offline banner)
-      serviceStatus.markOnline();
-
       return result;
     } catch (fetchError) {
       clearTimeout(timeoutId);
-      const duration_ms = Math.round(performance.now() - startTime);
-
       // Check if it's an abort error (timeout)
       if (fetchError.name === 'AbortError') {
-        collectMetric(endpoint, method, 0, duration_ms, false); // 0 for timeout
-        if (process.env.NODE_ENV === 'development') {
-          logger.error(
-            `[cofounderAgentClient] TIMEOUT: ${method} ${endpoint} - exceeded ${timeout}ms limit after ${duration_ms}ms`
-          );
-        }
         throw new Error(
           `Request timeout after ${timeout}ms - operation took too long`
-        );
-      }
-
-      // Detect network-level connection failures (ERR_CONNECTION_RESET, Failed to fetch)
-      const isConnectionFailure =
-        fetchError instanceof TypeError &&
-        (fetchError.message === 'Failed to fetch' ||
-          fetchError.message.includes('NetworkError') ||
-          fetchError.message.includes('ERR_CONNECTION'));
-      if (isConnectionFailure) {
-        const isFirstError = serviceStatus.markOffline();
-        // Only log on first error in the dedup window to avoid console flooding
-        if (isFirstError && process.env.NODE_ENV === 'development') {
-          logger.warn(
-            `[cofounderAgentClient] Backend unreachable: ${method} ${endpoint} — ${fetchError.message}`
-          );
-        }
-        throw fetchError;
-      }
-
-      const status =
-        fetchError?.status ||
-        fetchError?.statusCode ||
-        fetchError?.response?.status ||
-        0;
-      const suppressErrorLog = isErrorLogSuppressed({
-        endpoint,
-        method,
-        status,
-        error: fetchError,
-        response: fetchError?.response,
-      });
-
-      if (!suppressErrorLog && process.env.NODE_ENV === 'development') {
-        logger.error(
-          `[cofounderAgentClient] FETCH ERROR: ${method} ${endpoint}`,
-          fetchError
         );
       }
       throw fetchError;
     }
   } catch (error) {
-    const duration_ms = Math.round(performance.now() - startTime);
-    const status =
-      error?.status || error?.statusCode || error?.response?.status || 0;
-    const response = error?.response;
-    const suppressErrorLog = isErrorLogSuppressed({
-      endpoint,
-      method,
-      status,
-      error,
-      response,
-    });
-
-    // Collect metric for caught error
-    collectMetric(endpoint, method, status, duration_ms, false);
-
-    if (!suppressErrorLog && process.env.NODE_ENV === 'development') {
-      logger.error(`API request failed: ${endpoint}`, error);
-    }
+    console.error(`API request failed: ${endpoint}`, error);
     throw error;
   }
 }
@@ -274,36 +164,42 @@ export async function logout() {
   try {
     // Attempt to notify backend of logout
     await makeRequest('/api/auth/logout', 'POST');
-  } catch {
+  } catch (_error) {
     // Continue with local logout even if API call fails
   }
   // Note: Actual state clearing happens in AuthContext.logout()
 }
 
 export async function refreshAccessToken() {
-  // Cookie session flow does not expose refresh tokens to JavaScript.
-  // Keep helper for compatibility by attempting server-side refresh endpoint.
+  // Token refresh endpoint - requests a new token using refresh token
+  // The backend will validate the refresh token and issue a new access token
   try {
-    await makeRequest('/api/auth/refresh', 'POST');
-    return true;
-  } catch (error) {
-    if (process.env.NODE_ENV === 'development') {
-      logger.error('Token refresh failed:', error);
+    const refreshToken = localStorage.getItem('refresh_token');
+    if (!refreshToken) {
+      // No refresh token available - user needs to re-authenticate
+      return false;
     }
+
+    const response = await makeRequest('/api/auth/refresh', 'POST', {
+      refresh_token: refreshToken,
+    });
+
+    if (response.access_token) {
+      // Update stored access token
+      localStorage.setItem('auth_token', response.access_token);
+      return true;
+    }
+
+    return false;
+  } catch (error) {
+    console.error('Token refresh failed:', error);
     return false;
   }
 }
 
-export async function getTasks(
-  limit = 50,
-  offset = 0,
-  { status, search } = {}
-) {
-  const params = new URLSearchParams({ limit, offset });
-  if (status) params.set('status', status);
-  if (search) params.set('search', search);
+export async function getTasks(limit = 50, offset = 0) {
   return makeRequest(
-    `/api/tasks?${params.toString()}`,
+    `/api/tasks?limit=${limit}&offset=${offset}`,
     'GET',
     null,
     false,
@@ -440,7 +336,7 @@ export async function createBlogPost(
 }
 
 export async function getMetrics() {
-  return makeRequest('/api/metrics/summary', 'GET');
+  return makeRequest('/api/metrics', 'GET');
 }
 
 export async function publishBlogDraft(postId, environment = 'production') {
@@ -952,17 +848,6 @@ export async function bulkUpdateTasks(taskIds, action) {
     action,
   };
   return makeRequest('/api/tasks/bulk', 'POST', payload, true, null, 30000);
-}
-
-export async function duplicateTask(taskId) {
-  return makeRequest(
-    `/api/tasks/${taskId}/duplicate`,
-    'POST',
-    null,
-    true,
-    null,
-    30000
-  );
 }
 
 /**

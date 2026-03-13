@@ -4,20 +4,18 @@ Newsletter & Email Campaign Routes
 Endpoints for managing email campaign subscriptions and newsletter signups.
 """
 
-import json
-
-from services.logger_config import get_logger
+import logging
+import re
+from datetime import datetime
 from typing import List, Optional
 
-import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr
 
-from routes.auth_unified import get_current_user
-from utils.rate_limiter import limiter
 from utils.route_utils import get_database_dependency
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/newsletter", tags=["newsletter"])
 
 
@@ -50,7 +48,6 @@ class NewsletterUnsubscribeRequest(BaseModel):
 
 
 @router.post("/subscribe")
-@limiter.limit("5/minute")
 async def subscribe_to_newsletter(
     request: Request, payload: NewsletterSubscribeRequest, db=Depends(get_database_dependency)
 ):
@@ -84,10 +81,9 @@ async def subscribe_to_newsletter(
         )
 
         if existing and not existing["unsubscribed_at"]:
-            # Idempotent: re-subscribing an active email is treated as success
             return NewsletterSubscribeResponse(
-                success=True,
-                message="Already subscribed",
+                success=False,
+                message=f"Email {payload.email} is already subscribed",
                 subscriber_id=existing["id"],
             )
 
@@ -95,9 +91,12 @@ async def subscribe_to_newsletter(
         client_ip = request.client.host if request.client else None
         user_agent = request.headers.get("user-agent", "")
 
-        # Prepare interest categories as JSON string — asyncpg accepts a JSON string for JSONB columns.
-        # After migration 0033 the column is JSONB; the json.dumps() value passes through correctly.
-        interest_str = json.dumps(payload.interest_categories) if payload.interest_categories else None
+        # Prepare interest categories as JSON string
+        interest_str = None
+        if payload.interest_categories:
+            import json
+
+            interest_str = json.dumps(payload.interest_categories)
 
         # Insert new subscriber
         subscriber_id = await db.pool.fetchval(
@@ -131,7 +130,7 @@ async def subscribe_to_newsletter(
             subscriber_id=subscriber_id,
         )
 
-    except (asyncpg.PostgresError, ValueError, TypeError, AttributeError) as e:
+    except Exception as e:
         logger.error(f"❌ Newsletter subscription error: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -168,9 +167,8 @@ async def unsubscribe_from_newsletter(
         )
 
         if result == "UPDATE 0":
-            raise HTTPException(
-                status_code=404,
-                detail="Email not found or already unsubscribed",
+            return NewsletterSubscribeResponse(
+                success=False, message=f"Email {payload.email} not found or already unsubscribed"
             )
 
         logger.info(f"✅ Unsubscribed from newsletter: {payload.email}")
@@ -179,7 +177,7 @@ async def unsubscribe_from_newsletter(
             success=True, message="Successfully unsubscribed from newsletter"
         )
 
-    except (asyncpg.PostgresError, ValueError, AttributeError) as e:
+    except Exception as e:
         logger.error(f"❌ Unsubscribe error: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -188,10 +186,7 @@ async def unsubscribe_from_newsletter(
 
 
 @router.get("/subscribers/count")
-async def get_subscriber_count(
-    db=Depends(get_database_dependency),
-    current_user: dict = Depends(get_current_user),
-):
+async def get_subscriber_count(db=Depends(get_database_dependency)):
     """Get total active newsletter subscribers count"""
     try:
         count = await db.pool.fetchval(
@@ -202,7 +197,7 @@ async def get_subscriber_count(
         )
 
         return {"success": True, "subscriber_count": count or 0}
-    except (asyncpg.PostgresError, ValueError, AttributeError) as e:
+    except Exception as e:
         logger.error(f"❌ Error fetching subscriber count: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

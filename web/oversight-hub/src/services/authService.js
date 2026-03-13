@@ -1,18 +1,89 @@
-import logger from '@/lib/logger';
 /**
  * GitHub OAuth Authentication Service
- * Handles OAuth flow and cookie-based session verification.
+ * Handles OAuth flow, token exchange, and user verification
  */
 
-import { getApiUrl, getEnv } from '../config/apiConfig';
-import { authClient } from '../lib/authClient';
+import { createMockJWTToken } from '../utils/mockTokenGenerator';
 
-const API_BASE_URL = getApiUrl();
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
-const isMockAuthEnabled = () => getEnv('REACT_APP_USE_MOCK_AUTH') === 'true';
+const PERSIST_KEY = 'oversight-hub-storage';
 
-const isMockCode = (code) =>
-  typeof code === 'string' && code.startsWith('mock_auth_code_');
+export const clearPersistedAuthState = () => {
+  localStorage.removeItem('auth_token');
+  localStorage.removeItem('refresh_token');
+  localStorage.removeItem('user');
+
+  const persistedData = localStorage.getItem(PERSIST_KEY);
+  if (!persistedData) {
+    return;
+  }
+
+  try {
+    const parsed = JSON.parse(persistedData);
+    const currentState = parsed.state || {};
+
+    const updated = {
+      ...parsed,
+      state: {
+        ...currentState,
+        accessToken: null,
+        auth_token: null,
+        refreshToken: null,
+        isAuthenticated: false,
+        user: null,
+      },
+    };
+
+    localStorage.setItem(PERSIST_KEY, JSON.stringify(updated));
+  } catch (error) {
+    console.warn(
+      '[authService] Failed to clear persisted Zustand auth state:',
+      error
+    );
+  }
+};
+
+const requestBackendDevToken = async () => {
+  const response = await fetch(`${API_BASE_URL}/api/auth/github/callback`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      code: `mock_auth_code_${Date.now()}`,
+      state: `dev_state_${Date.now()}`,
+    }),
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Backend dev token request failed: ${response.status}`);
+  }
+
+  const data = await response.json();
+  if (!data?.token) {
+    throw new Error('Backend dev token response missing token');
+  }
+
+  return data;
+};
+
+const validateTokenWithBackend = async (token) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      credentials: 'include',
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+};
 
 /**
  * Generate GitHub OAuth authorization URL
@@ -25,7 +96,7 @@ export const generateGitHubAuthURL = (clientId) => {
   const state = Math.random().toString(36).substring(7); // Simple state for CSRF protection
 
   // Store state in session storage for verification
-  authClient.setOAuthState(state, 'github');
+  sessionStorage.setItem('oauth_state', state);
 
   return `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scope}&state=${state}`;
 };
@@ -35,34 +106,38 @@ export const generateGitHubAuthURL = (clientId) => {
  * @param {string} code - Authorization code from GitHub
  * @returns {Promise<object>} - User data and token
  */
-export const exchangeCodeForToken = async (
-  code,
-  callbackState = null,
-  provider = 'github'
-) => {
+export const exchangeCodeForToken = async (code) => {
   try {
-    if (isMockCode(code)) {
-      if (!isMockAuthEnabled()) {
-        throw new Error('Mock auth code received but mock auth is disabled');
-      }
+    // Check if this is a mock code (for development)
+    if (code && code.startsWith('mock_auth_code_')) {
+      // Handle mock auth
+      await new Promise((resolve) => setTimeout(resolve, 500)); // Simulate network delay
 
-      const mockAuth = await import('./mockAuthService');
-      return await mockAuth.exchangeCodeForToken(code);
+      const mockUser = {
+        id: 'mock_user_12345',
+        login: 'dev-user',
+        email: 'dev@example.com',
+        name: 'Development User',
+        avatar_url: 'https://avatars.githubusercontent.com/u/1?v=4',
+      };
+
+      // Generate a proper JWT token for development (awaiting async signing)
+      const mockToken = await createMockJWTToken(mockUser);
+
+      // Store token and user data
+      localStorage.setItem('auth_token', mockToken);
+      localStorage.setItem('user', JSON.stringify(mockUser));
+
+      return {
+        token: mockToken,
+        user: mockUser,
+      };
     }
 
     // Real GitHub OAuth
-    const effectiveState = callbackState || authClient.getOAuthState();
-    const stateValidation = authClient.validateAndConsumeOAuthState(
-      effectiveState,
-      {
-        provider,
-      }
-    );
-
-    if (!stateValidation.valid) {
-      throw new Error(
-        `CSRF validation failed: ${stateValidation.reason || 'unknown_error'}`
-      );
+    const state = sessionStorage.getItem('oauth_state');
+    if (!state) {
+      throw new Error('CSRF state not found - session expired');
     }
 
     const response = await fetch(`${API_BASE_URL}/api/auth/github/callback`, {
@@ -70,7 +145,7 @@ export const exchangeCodeForToken = async (
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ code, state: effectiveState }),
+      body: JSON.stringify({ code, state }),
       credentials: 'include', // Include cookies for session
     });
 
@@ -80,19 +155,15 @@ export const exchangeCodeForToken = async (
 
     const data = await response.json();
 
-    // Store user profile using centralized auth client
-    if (data.user) {
-      authClient.setUser(data.user);
-    }
-
-    // Store JWT token if provided by backend
+    // Store token and user data
     if (data.token) {
-      authClient.setToken(data.token, data.expires_in);
+      localStorage.setItem('auth_token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
     }
 
     return data;
   } catch (error) {
-    logger.error('Error exchanging code for token:', error);
+    console.error('Error exchanging code for token:', error);
     throw error;
   }
 };
@@ -103,9 +174,43 @@ export const exchangeCodeForToken = async (
  */
 export const verifySession = async () => {
   try {
-    return await validateAndGetCurrentUser();
+    const token = localStorage.getItem('auth_token');
+    const user = localStorage.getItem('user');
+
+    if (!token) {
+      return null;
+    }
+
+    // For mock tokens (development/testing), trust the stored user if valid format
+    if (token.includes('.') && token.split('.').length === 3) {
+      // Token has proper JWT format
+      try {
+        const parsedUser = user ? JSON.parse(user) : null;
+        // For development tokens, also verify expiry if possible
+        const parts = token.split('.');
+        if (parts.length === 3) {
+          try {
+            const payload = JSON.parse(atob(parts[1]));
+            if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+              // Token expired
+              clearPersistedAuthState();
+              return null;
+            }
+          } catch {
+            // Could not parse payload, but JWT format is valid
+          }
+        }
+        return parsedUser;
+      } catch {
+        return null;
+      }
+    }
+
+    // Token format is invalid, clear it
+    clearPersistedAuthState();
+    return null;
   } catch (error) {
-    logger.error('Error verifying session:', error);
+    console.error('Error verifying session:', error);
     return null;
   }
 };
@@ -116,20 +221,26 @@ export const verifySession = async () => {
  */
 export const logout = async () => {
   try {
-    await fetch(`${API_BASE_URL}/api/auth/logout`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      credentials: 'include',
-    });
+    const token = localStorage.getItem('auth_token');
 
-    // Clear client-side auth data using centralized client
-    authClient.logout();
+    if (token) {
+      await fetch(`${API_BASE_URL}/api/auth/logout`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+      });
+    }
+
+    // Clear local storage regardless of API response
+    clearPersistedAuthState();
+    sessionStorage.removeItem('oauth_state');
   } catch (error) {
-    logger.error('Error during logout:', error);
-    // Still clear local cache even if API call fails
-    authClient.logout();
+    console.error('Error during logout:', error);
+    // Still clear local storage even if API call fails
+    clearPersistedAuthState();
   }
 };
 
@@ -138,40 +249,123 @@ export const logout = async () => {
  * @returns {object|null} - Parsed user object or null
  */
 export const getStoredUser = () => {
-  const user = authClient.getUser();
-  logger.log(
+  const userStr = localStorage.getItem('user');
+  console.log(
     '[authService.getStoredUser] Looking for user...',
-    user ? 'FOUND' : 'NOT FOUND'
+    userStr ? 'FOUND' : 'NOT FOUND'
   );
-  return user;
-};
-
-// Legacy function body preserved for reference:
-/*
   try {
     const parsed = userStr ? JSON.parse(userStr) : null;
     if (parsed) {
-      logger.log('[authService.getStoredUser] Parsed user:', parsed.login);
+      console.log('[authService.getStoredUser] Parsed user:', parsed.login);
     }
     return parsed;
   } catch (e) {
-    logger.error('[authService.getStoredUser] Failed to parse user:', e);
+    console.error('[authService.getStoredUser] Failed to parse user:', e);
     return null;
   }
 };
 
 /**
- * Token accessor kept for compatibility with existing imports.
- * Cookie-based auth means no token is available in JavaScript.
+ * Check if JWT token is expired
+ * @param {string} token - JWT token
+ * @returns {boolean} - True if expired, false otherwise
  */
-export const isTokenExpired = () => true;
+export const isTokenExpired = (token) => {
+  if (!token) {
+    return true;
+  }
+
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+      console.log(
+        '[authService.isTokenExpired] Invalid token format (not 3 parts)'
+      );
+      return true;
+    }
+
+    // Decode from base64url to base64 (JWT uses url-safe base64)
+    let base64Payload = parts[1];
+    base64Payload = base64Payload.replace(/-/g, '+').replace(/_/g, '/');
+    // Add padding if needed
+    const padding = 4 - (base64Payload.length % 4);
+    if (padding !== 4) {
+      base64Payload += '='.repeat(padding);
+    }
+
+    const payload = JSON.parse(atob(base64Payload));
+    if (!payload.exp) {
+      console.log(
+        '[authService.isTokenExpired] No expiry in token, assuming valid'
+      );
+      return false;
+    }
+
+    const expiryTime = payload.exp * 1000; // Convert to milliseconds
+    const now = Date.now();
+    const isExpired = now > expiryTime;
+
+    console.log('[authService.isTokenExpired]', {
+      expiryTime: new Date(expiryTime).toISOString(),
+      now: new Date(now).toISOString(),
+      isExpired,
+    });
+
+    return isExpired;
+  } catch (e) {
+    console.error('[authService.isTokenExpired] Error parsing token:', e);
+    return true; // If parsing fails, consider expired
+  }
+};
 
 /**
  * Get stored auth token (with expiry check)
  * @returns {string|null} - Auth token or null if expired
  */
 export const getAuthToken = () => {
-  return null;
+  let token = null;
+
+  // Try to get token from Zustand persist storage first
+  const persistedData = localStorage.getItem(PERSIST_KEY);
+  if (persistedData) {
+    try {
+      const parsed = JSON.parse(persistedData);
+      token = parsed.state?.accessToken || parsed.state?.auth_token;
+    } catch (e) {
+      console.warn(
+        '[authService.getAuthToken] Failed to parse Zustand persist storage:',
+        e
+      );
+    }
+  }
+
+  // Fallback to direct localStorage key if not found in Zustand
+  if (!token) {
+    token = localStorage.getItem('auth_token');
+  }
+
+  console.log(
+    '[authService.getAuthToken] Looking for token...',
+    token ? 'FOUND' : 'NOT FOUND'
+  );
+
+  if (!token) {
+    console.log(
+      '[authService.getAuthToken] No token in localStorage or Zustand'
+    );
+    return null;
+  }
+
+  if (isTokenExpired(token)) {
+    console.log('[authService.getAuthToken] Token is expired, removing');
+    // Token is expired, remove it
+    clearPersistedAuthState();
+    return null;
+  }
+
+  console.log('[authService.getAuthToken] Token is valid');
+  return token;
 };
 
 /**
@@ -180,9 +374,69 @@ export const getAuthToken = () => {
  * Automatically refreshes token every 14 minutes to prevent expiry (tokens last 15 min)
  * @returns {Promise<string>} - Mock development token
  */
-export const initializeDevToken = async () => {
+export const initializeDevToken = async (options = {}) => {
   try {
-    // For development with backend DEVELOPMENT_MODE, only cache non-sensitive user profile.
+    const { forceRefresh = false, validateWithBackend = true } = options;
+
+    // Check if token exists and is still valid
+    const existingToken = localStorage.getItem('auth_token');
+
+    if (!forceRefresh && existingToken && !isTokenExpired(existingToken)) {
+      if (validateWithBackend) {
+        const isValid = await validateTokenWithBackend(existingToken);
+        if (!isValid) {
+          console.warn(
+            '[authService] Existing token failed backend validation, clearing and regenerating'
+          );
+          clearPersistedAuthState();
+        } else {
+          console.log('[authService] Using existing backend-validated token');
+          return existingToken;
+        }
+      } else {
+        console.log('[authService] Using existing valid token');
+        return existingToken;
+      }
+    }
+
+    if (forceRefresh) {
+      clearPersistedAuthState();
+    }
+
+    try {
+      const backendAuth = await requestBackendDevToken();
+      const backendToken = backendAuth.token;
+      const backendUser = backendAuth.user || {
+        id: 'dev_user_local',
+        email: 'dev@localhost',
+        username: 'dev-user',
+        login: 'dev-user',
+        name: 'Development User',
+        avatar_url: 'https://avatars.githubusercontent.com/u/1?v=4',
+        auth_provider: 'mock',
+      };
+
+      localStorage.setItem('auth_token', backendToken);
+      localStorage.setItem('user', JSON.stringify(backendUser));
+
+      console.log(
+        '[authService] Development token initialized from backend signer'
+      );
+      return backendToken;
+    } catch (backendError) {
+      console.warn(
+        '[authService] Backend dev token generation failed, using local mock token fallback:',
+        backendError
+      );
+    }
+
+    if (existingToken && !isTokenExpired(existingToken)) {
+      // Token is still valid
+      console.log('[authService] Using existing valid token');
+      return existingToken;
+    }
+
+    // Token is missing or expired, create a new one
     const mockUser = {
       id: 'dev_user_local',
       email: 'dev@localhost',
@@ -193,16 +447,70 @@ export const initializeDevToken = async () => {
       auth_provider: 'mock',
     };
 
-    // Use dev-token format that backend recognizes (bypasses JWT validation)
-    // Backend auth_unified.py accepts tokens starting with "dev-" or equal to "dev-token"
-    const mockToken = 'dev-token';
+    // Generate proper JWT token for development (awaiting async signing)
+    console.log('[authService] Creating new mock JWT token...');
+    const mockToken = await createMockJWTToken(mockUser);
+    console.log(
+      '[authService] Mock token created successfully, storing in localStorage...'
+    );
 
-    authClient.setUser(mockUser);
-    authClient.setToken(mockToken);
-    logger.log('[authService] Development profile initialized');
-    return null;
+    // Store token and user BEFORE anything else
+    localStorage.setItem('auth_token', mockToken);
+    localStorage.setItem('user', JSON.stringify(mockUser));
+
+    console.log(
+      '[authService] Items set in localStorage, waiting for persistence...'
+    );
+
+    // Small delay to ensure localStorage is actually persisted
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    console.log(
+      '[authService] Development token initialized/refreshed with proper JWT format'
+    );
+
+    // Verify token was actually stored
+    const storedToken = localStorage.getItem('auth_token');
+    if (!storedToken) {
+      console.error(
+        '[authService] ERROR: Token was not actually stored in localStorage! Zustand may be interfering.'
+      );
+      // Try to check if it's in Zustand store instead
+      try {
+        const zustandData = localStorage.getItem(PERSIST_KEY);
+        if (zustandData) {
+          const parsed = JSON.parse(zustandData);
+          console.log(
+            '[authService] Zustand state exists:',
+            Object.keys(parsed.state || {})
+          );
+        }
+      } catch {
+        console.log('[authService] Could not parse Zustand data');
+      }
+      throw new Error('Failed to store token in localStorage');
+    }
+
+    console.log('[authService] ✅ Token verified in localStorage');
+
+    // Set up auto-refresh every 14 minutes (token expires in 15 minutes)
+    // This prevents token expiry during long sessions
+    setTimeout(
+      () => {
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[authService] Auto-refreshing development token...');
+          initializeDevToken().catch((e) => {
+            console.error('[authService] Failed to auto-refresh token:', e);
+          });
+        }
+      },
+      14 * 60 * 1000
+    ); // 14 minutes in milliseconds
+
+    return mockToken;
   } catch (error) {
-    logger.error('[authService] ERROR in initializeDevToken:', error);
+    console.error('[authService] ERROR in initializeDevToken:', error);
+    // If development token fails, return null - frontend should redirect to login
     return null;
   }
 };
@@ -214,8 +522,11 @@ export const initializeDevToken = async () => {
  * @returns {Promise<object>} - Response data
  */
 export const authenticatedFetch = async (endpoint, options = {}) => {
+  const token = getAuthToken();
+
   const headers = {
     'Content-Type': 'application/json',
+    ...(token && { Authorization: `Bearer ${token}` }),
     ...options.headers,
   };
 
@@ -227,6 +538,7 @@ export const authenticatedFetch = async (endpoint, options = {}) => {
 
   if (response.status === 401) {
     // Token expired or invalid
+    clearPersistedAuthState();
     await logout();
     window.location.href = '/login';
     throw new Error('Session expired');
@@ -277,7 +589,7 @@ export async function getAvailableOAuthProviders() {
     const data = await response.json();
     return data.providers || [];
   } catch (error) {
-    logger.error('Error fetching OAuth providers:', error);
+    console.error('Error fetching OAuth providers:', error);
     return [];
   }
 }
@@ -302,7 +614,7 @@ export async function getOAuthLoginURL(provider) {
     const data = await response.json();
     return data.login_url;
   } catch (error) {
-    logger.error(`Error getting ${provider} login URL:`, error);
+    console.error(`Error getting ${provider} login URL:`, error);
     throw error;
   }
 }
@@ -312,33 +624,40 @@ export async function getOAuthLoginURL(provider) {
  * @param {string} provider - OAuth provider
  * @param {string} code - Authorization code
  * @param {string} state - State parameter for CSRF verification
- * @returns {Promise<object>} User/session payload (user profile + optional compatibility fields)
+ * @returns {Promise<object>} User data and tokens {user, token, refresh_token}
  */
 export async function handleOAuthCallbackNew(provider, code, state) {
   try {
-    if (isMockCode(code)) {
-      if (!isMockAuthEnabled()) {
-        throw new Error('Mock auth code received but mock auth is disabled');
-      }
-
-      const mockAuth = await import('./mockAuthService');
-      const mockData = await mockAuth.exchangeCodeForToken(code);
-      authClient.clearOAuthState();
-      return mockData;
+    // Verify CSRF state
+    const storedState = sessionStorage.getItem('oauth_state');
+    if (storedState && storedState !== state) {
+      throw new Error('CSRF state mismatch - potential security breach');
     }
 
-    const effectiveState = state || authClient.getOAuthState();
-    const stateValidation = authClient.validateAndConsumeOAuthState(
-      effectiveState,
-      {
-        provider,
-      }
-    );
+    // Handle mock auth codes for development
+    if (code && code.startsWith('mock_auth_code_')) {
+      // Generate mock JWT token locally for mock auth
+      const mockUser = {
+        id: 'mock_user_12345',
+        login: 'dev-user',
+        email: 'dev@example.com',
+        name: 'Development User',
+        avatar_url: 'https://avatars.githubusercontent.com/u/1?v=4',
+      };
 
-    if (!stateValidation.valid) {
-      throw new Error(
-        `CSRF validation failed: ${stateValidation.reason || 'unknown_error'}`
-      );
+      const mockToken = await createMockJWTToken(mockUser);
+
+      // Store tokens
+      localStorage.setItem('auth_token', mockToken);
+      localStorage.setItem('user', JSON.stringify(mockUser));
+
+      // Clear state
+      sessionStorage.removeItem('oauth_state');
+
+      return {
+        token: mockToken,
+        user: mockUser,
+      };
     }
 
     const response = await fetch(
@@ -346,7 +665,7 @@ export async function handleOAuthCallbackNew(provider, code, state) {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, state: effectiveState }),
+        body: JSON.stringify({ code, state }),
         credentials: 'include',
       }
     );
@@ -357,19 +676,23 @@ export async function handleOAuthCallbackNew(provider, code, state) {
 
     const data = await response.json();
 
-    // Store user profile
+    // Store tokens
+    if (data.token) {
+      localStorage.setItem('auth_token', data.token);
+    }
+    if (data.refresh_token) {
+      localStorage.setItem('refresh_token', data.refresh_token);
+    }
     if (data.user) {
-      authClient.setUser(data.user);
+      localStorage.setItem('user', JSON.stringify(data.user));
     }
 
-    // Store JWT token if provided by backend
-    if (data.token) {
-      authClient.setToken(data.token, data.expires_in);
-    }
+    // Clear state
+    sessionStorage.removeItem('oauth_state');
 
     return data;
   } catch (error) {
-    logger.error(`Error handling ${provider} callback:`, error);
+    console.error(`Error handling ${provider} callback:`, error);
     throw error;
   }
 }
@@ -380,24 +703,8 @@ export async function handleOAuthCallbackNew(provider, code, state) {
  */
 export async function validateAndGetCurrentUser() {
   try {
-    // For dev-token, skip API validation and return cached user immediately
-    const storedToken = authClient.getToken();
-    const storedUser = authClient.getUser();
-
-    if (storedToken === 'dev-token' && storedUser) {
-      logger.log('[authService] Dev-token detected, using cached user');
-      return storedUser;
-    }
-
-    // Only attempt API validation if there is some session indicator:
-    // either a non-dev in-memory token or a stored user profile (which suggests
-    // a prior successful session that may still have a valid HttpOnly cookie).
-    // Skipping this check avoids a guaranteed 401 + cascading noisy errors on
-    // cold page loads where neither token nor user are present.
-    if (!storedToken && !storedUser) {
-      logger.log(
-        '[authService] No session indicators, skipping /api/auth/me check'
-      );
+    const token = getAuthToken();
+    if (!token) {
       return null;
     }
 
@@ -405,37 +712,27 @@ export async function validateAndGetCurrentUser() {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
       },
       credentials: 'include',
     });
 
     if (!response.ok) {
       if (response.status === 401) {
-        // Session has expired — clear local state only.
-        // Do NOT call the logout API: if the session is already invalid on the
-        // server there is nothing to invalidate, and the POST to /api/auth/logout
-        // would itself return 401, triggering another round of cascading errors.
-        authClient.logout();
+        // Token expired
+        await logout();
         return null;
       }
       throw new Error(`Failed to validate user: ${response.statusText}`);
     }
 
     const data = await response.json();
-
-    // Store user profile
     if (data.user) {
-      authClient.setUser(data.user);
+      localStorage.setItem('user', JSON.stringify(data.user));
     }
-
-    // Store JWT token if provided
-    if (data.token) {
-      authClient.setToken(data.token, data.expires_in);
-    }
-
     return data.user;
   } catch (error) {
-    logger.error('Error validating user:', error);
+    console.error('Error validating user:', error);
     return null;
   }
 }
@@ -453,5 +750,5 @@ export async function clearAuth() {
  * @returns {boolean}
  */
 export function isAuthenticated() {
-  return !!getStoredUser();
+  return !!getAuthToken();
 }

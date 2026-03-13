@@ -12,7 +12,7 @@ Features:
 """
 
 import json
-from services.logger_config import get_logger
+import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -24,7 +24,9 @@ from services.capability_task_executor import (
 )
 from services.model_router import ModelRouter
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
+
+
 @dataclass
 class TaskCompositionResult:
     """Result of natural language task composition."""
@@ -192,9 +194,7 @@ Now generate the task JSON for the user's request:"""
                     execution_id = result.execution_id
                     logger.info(f"[Composer] Task executed: {execution_id}")
                 except Exception as e:
-                    logger.error(
-                        f"[_compose_from_request] [Composer] Execution failed: {e}", exc_info=True
-                    )
+                    logger.error(f"[Composer] Execution failed: {e}")
                     return TaskCompositionResult(
                         success=False,
                         suggested_task=task_dict,
@@ -212,9 +212,7 @@ Now generate the task JSON for the user's request:"""
             )
 
         except Exception as e:
-            logger.error(
-                f"[_compose_from_request] [Composer] Composition failed: {e}", exc_info=True
-            )
+            logger.error(f"[Composer] Composition failed: {e}", exc_info=True)
             return TaskCompositionResult(
                 success=False, error=str(e), explanation=f"Failed to compose task: {str(e)}"
             )
@@ -229,18 +227,49 @@ Now generate the task JSON for the user's request:"""
         Returns:
             LLM response text
         """
-        from .model_consolidation_service import get_model_consolidation_service
+        # In production, this would use:
+        # response = await self.model_router.generate(prompt, cost_tier="cheap")
+        # return response.text
 
-        service = get_model_consolidation_service()
-        result = await service.generate(
-            prompt=prompt,
-            temperature=0.3,  # Low temperature for structured JSON output
-        )
+        # For now, mock implementation
+        logger.warning("[Composer] Using mock LLM response - implement real LLM integration")
 
-        if result and result.text:
-            return result.text
+        # Mock response for testing
+        if "blog" in prompt.lower():
+            return """{
+  "name": "Blog Content Creation Pipeline",
+  "description": "Create a blog post with AI generation and image selection",
+  "steps": [
+    {
+      "capability_name": "research",
+      "inputs": {"topic": "AI trends and developments"},
+      "output_key": "research_data",
+      "order": 0
+    },
+    {
+      "capability_name": "generate_content",
+      "inputs": {"topic": "AI trends", "research": "$research_data", "style": "professional"},
+      "output_key": "blog_content",
+      "order": 1
+    },
+    {
+      "capability_name": "select_images",
+      "inputs": {"content": "$blog_content", "count": 3},
+      "output_key": "images",
+      "order": 2
+    },
+    {
+      "capability_name": "publish",
+      "inputs": {"content": "$blog_content", "images": "$images", "platform": "blog"},
+      "output_key": "published_post",
+      "order": 3
+    }
+  ]
+}"""
 
-        raise RuntimeError("[Composer] LLM returned empty response")
+        return """{
+  "error": "Could not determine capabilities for this request"
+}"""
 
     def _parse_llm_response(self, response: str) -> Dict[str, Any]:
         """
@@ -264,7 +293,7 @@ Now generate the task JSON for the user's request:"""
             json_str = response[start_idx:end_idx]
             return json.loads(json_str)
         except json.JSONDecodeError as e:
-            logger.error(f"[Composer] Failed to parse LLM JSON: {e}", exc_info=True)
+            logger.error(f"[Composer] Failed to parse LLM JSON: {e}")
             return {"error": f"Invalid JSON from LLM: {str(e)}"}
 
     def _validate_task_definition(self, task_dict: Dict[str, Any]) -> Dict[str, Any]:

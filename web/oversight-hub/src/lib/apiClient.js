@@ -1,4 +1,3 @@
-import logger from '@/lib/logger';
 /**
  * Refactored API Client for Oversight Hub
  * Matches new FastAPI endpoint structure
@@ -33,72 +32,61 @@ import logger from '@/lib/logger';
  */
 
 import axios from 'axios';
-import { getApiUrl } from '../config/apiConfig';
-import { authClient } from './authClient';
-import { serviceStatus } from './serviceStatus';
+import { clearPersistedAuthState } from '../services/authService';
 
 // ============================================================================
 // API CLIENT CONFIGURATION
 // ============================================================================
 
-const API_BASE_URL = getApiUrl();
+const API_BASE_URL =
+  process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000';
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   timeout: 15000,
-  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-// Transient HTTP status codes that warrant a retry
-const RETRYABLE_STATUSES = new Set([502, 503, 504]);
-const MAX_RETRIES = 3;
+// Request interceptor: Add authorization token
+apiClient.interceptors.request.use(
+  (config) => {
+    // Try to get token from Zustand persist storage first
+    let token = null;
 
-function isRetryableError(error) {
-  if (!error.response) return true; // Network failure / no response
-  return RETRYABLE_STATUSES.has(error.response.status);
-}
-
-function retryDelay(attempt) {
-  // Exponential backoff: 1s, 2s, 4s
-  return 1000 * Math.pow(2, attempt);
-}
-
-// Response interceptor: retry transient errors, track backend connectivity
-apiClient.interceptors.response.use(
-  (response) => {
-    serviceStatus.markOnline();
-    return response;
-  },
-  async (error) => {
-    const config = error.config;
-
-    if (error.response?.status === 401) {
-      // Session expired, clear auth data and force re-auth
-      authClient.logout();
-      window.location.href = '/login';
-      return Promise.reject(error);
-    }
-
-    // Retry transient errors with exponential backoff
-    if (config && isRetryableError(error)) {
-      config._retryCount = (config._retryCount || 0) + 1;
-      if (config._retryCount <= MAX_RETRIES) {
-        serviceStatus.markOffline();
-        await new Promise((resolve) =>
-          setTimeout(resolve, retryDelay(config._retryCount - 1))
-        );
-        return apiClient(config);
+    const persistedData = localStorage.getItem('oversight-hub-storage');
+    if (persistedData) {
+      try {
+        const parsed = JSON.parse(persistedData);
+        token = parsed.state?.accessToken || parsed.state?.auth_token;
+      } catch (e) {
+        console.warn('Failed to parse Zustand persist storage:', e);
       }
     }
 
-    // Network-level failure (no response) = backend unreachable
-    if (!error.response) {
-      serviceStatus.markOffline();
+    // Fallback to direct localStorage key (for backwards compatibility)
+    if (!token) {
+      token = localStorage.getItem('auth_token');
     }
 
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// Response interceptor: Handle common errors
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Token expired, clear auth
+      clearPersistedAuthState();
+      window.location.href = '/login';
+    }
     return Promise.reject(error);
   }
 );
@@ -124,7 +112,7 @@ export const listTasks = async (skip = 0, limit = 20, status = null) => {
     const response = await apiClient.get(`/api/tasks?${params.toString()}`);
     return response.data;
   } catch (error) {
-    logger.error('Error listing tasks:', error);
+    console.error('Error listing tasks:', error);
     throw error;
   }
 };
@@ -143,7 +131,7 @@ export const createTask = async (taskData) => {
     const response = await apiClient.post('/api/tasks', taskData);
     return response.data;
   } catch (error) {
-    logger.error('Error creating task:', error);
+    console.error('Error creating task:', error);
     throw error;
   }
 };
@@ -158,7 +146,7 @@ export const getTask = async (taskId) => {
     const response = await apiClient.get(`/api/tasks/${taskId}`);
     return response.data;
   } catch (error) {
-    logger.error(`Error getting task ${taskId}:`, error);
+    console.error(`Error getting task ${taskId}:`, error);
     throw error;
   }
 };
@@ -176,7 +164,7 @@ export const updateTask = async (taskId, updates) => {
     const response = await apiClient.patch(`/api/tasks/${taskId}`, updates);
     return response.data;
   } catch (error) {
-    logger.error(`Error updating task ${taskId}:`, error);
+    console.error(`Error updating task ${taskId}:`, error);
     throw error;
   }
 };
@@ -230,7 +218,7 @@ export const listPosts = async (
     });
     return response.data;
   } catch (error) {
-    logger.error('Error listing posts:', error);
+    console.error('Error listing posts:', error);
     throw error;
   }
 };
@@ -256,7 +244,7 @@ export const createPost = async (postData) => {
     const response = await apiClient.post('/api/posts', postData);
     return response.data;
   } catch (error) {
-    logger.error('Error creating post:', error);
+    console.error('Error creating post:', error);
     throw error;
   }
 };
@@ -271,7 +259,7 @@ export const getPost = async (postId) => {
     const response = await apiClient.get(`/api/posts/${postId}`);
     return response.data;
   } catch (error) {
-    logger.error(`Error getting post ${postId}:`, error);
+    console.error(`Error getting post ${postId}:`, error);
     throw error;
   }
 };
@@ -288,7 +276,7 @@ export const getPostBySlug = async (slug) => {
     });
     return response.data?.data?.[0] || null;
   } catch (error) {
-    logger.error(`Error getting post by slug ${slug}:`, error);
+    console.error(`Error getting post by slug ${slug}:`, error);
     throw error;
   }
 };
@@ -304,7 +292,7 @@ export const updatePost = async (postId, updates) => {
     const response = await apiClient.patch(`/api/posts/${postId}`, updates);
     return response.data;
   } catch (error) {
-    logger.error(`Error updating post ${postId}:`, error);
+    console.error(`Error updating post ${postId}:`, error);
     throw error;
   }
 };
@@ -340,7 +328,7 @@ export const deletePost = async (postId) => {
     const response = await apiClient.delete(`/api/posts/${postId}`);
     return response.data;
   } catch (error) {
-    logger.error(`Error deleting post ${postId}:`, error);
+    console.error(`Error deleting post ${postId}:`, error);
     throw error;
   }
 };
@@ -358,7 +346,7 @@ export const listCategories = async () => {
     const response = await apiClient.get('/api/categories');
     return response.data;
   } catch (error) {
-    logger.error('Error listing categories:', error);
+    console.error('Error listing categories:', error);
     throw error;
   }
 };
@@ -372,7 +360,7 @@ export const listTags = async () => {
     const response = await apiClient.get('/api/tags');
     return response.data;
   } catch (error) {
-    logger.error('Error listing tags:', error);
+    console.error('Error listing tags:', error);
     throw error;
   }
 };
@@ -390,7 +378,7 @@ export const getHealth = async () => {
     const response = await apiClient.get('/api/health');
     return response.data;
   } catch (error) {
-    logger.error('Error getting health status:', error);
+    console.error('Error getting health status:', error);
     throw error;
   }
 };
@@ -401,10 +389,10 @@ export const getHealth = async () => {
  */
 export const getMetrics = async () => {
   try {
-    const response = await apiClient.get('/api/metrics/summary');
+    const response = await apiClient.get('/api/metrics');
     return response.data;
   } catch (error) {
-    logger.error('Error getting metrics:', error);
+    console.error('Error getting metrics:', error);
     throw error;
   }
 };
@@ -415,10 +403,10 @@ export const getMetrics = async () => {
  */
 export const getTaskMetrics = async () => {
   try {
-    const response = await apiClient.get('/api/tasks/metrics/summary');
+    const response = await apiClient.get('/api/tasks/metrics');
     return response.data;
   } catch (error) {
-    logger.error('Error getting task metrics:', error);
+    console.error('Error getting task metrics:', error);
     throw error;
   }
 };
@@ -429,10 +417,10 @@ export const getTaskMetrics = async () => {
  */
 export const getContentMetrics = async () => {
   try {
-    const response = await apiClient.get('/api/metrics/summary');
+    const response = await apiClient.get('/api/metrics');
     return response.data;
   } catch (error) {
-    logger.error('Error getting metrics:', error);
+    console.error('Error getting metrics:', error);
     throw error;
   }
 };
@@ -450,7 +438,7 @@ export const listModels = async () => {
     const response = await apiClient.get('/api/models');
     return response.data;
   } catch (error) {
-    logger.error('Error listing models:', error);
+    console.error('Error listing models:', error);
     throw error;
   }
 };
@@ -469,7 +457,7 @@ export const testModel = async (provider, model) => {
     });
     return response.data;
   } catch (error) {
-    logger.error(`Error testing model ${provider}/${model}:`, error);
+    console.error(`Error testing model ${provider}/${model}:`, error);
     throw error;
   }
 };
@@ -483,7 +471,7 @@ export const getModelStatus = async () => {
     const response = await apiClient.get('/api/models/status');
     return response.data;
   } catch (error) {
-    logger.error('Error getting model status:', error);
+    console.error('Error getting model status:', error);
     throw error;
   }
 };
@@ -502,7 +490,7 @@ export const generateContent = async (taskId) => {
     const response = await apiClient.post(`/api/tasks/${taskId}/generate`);
     return response.data;
   } catch (error) {
-    logger.error(`Error generating content for task ${taskId}:`, error);
+    console.error(`Error generating content for task ${taskId}:`, error);
     throw error;
   }
 };
@@ -517,7 +505,7 @@ export const getTaskResult = async (taskId) => {
     const response = await apiClient.get(`/api/tasks/${taskId}/result`);
     return response.data;
   } catch (error) {
-    logger.error(`Error getting task result ${taskId}:`, error);
+    console.error(`Error getting task result ${taskId}:`, error);
     throw error;
   }
 };
@@ -532,7 +520,7 @@ export const previewContent = async (taskId) => {
     const response = await apiClient.get(`/api/tasks/${taskId}/preview`);
     return response.data;
   } catch (error) {
-    logger.error(`Error previewing content for task ${taskId}:`, error);
+    console.error(`Error previewing content for task ${taskId}:`, error);
     throw error;
   }
 };
@@ -551,7 +539,7 @@ export const publishTaskAsPost = async (taskId, postData = {}) => {
     );
     return response.data;
   } catch (error) {
-    logger.error(`Error publishing task ${taskId} as post:`, error);
+    console.error(`Error publishing task ${taskId} as post:`, error);
     throw error;
   }
 };
@@ -570,7 +558,7 @@ export const getTasksBatch = async (taskIds) => {
     const response = await apiClient.post('/api/tasks/batch', { ids: taskIds });
     return response.data;
   } catch (error) {
-    logger.error('Error getting tasks batch:', error);
+    console.error('Error getting tasks batch:', error);
     throw error;
   }
 };
@@ -589,7 +577,7 @@ export const exportTasks = async (filters = {}, format = 'csv') => {
     });
     return response.data;
   } catch (error) {
-    logger.error('Error exporting tasks:', error);
+    console.error('Error exporting tasks:', error);
     throw error;
   }
 };
@@ -650,77 +638,6 @@ export const retryWithBackoff = async (apiCall, maxRetries = 3) => {
 };
 
 // ============================================================================
-// WORKFLOW MANAGEMENT ENDPOINTS
-// ============================================================================
-
-/**
- * List all available phases in the phase registry
- * @returns {Promise<Array>} List of phase definitions
- */
-export const getAvailablePhases = async () => {
-  const response = await apiClient.get('/api/workflows/phases');
-  return response.data;
-};
-
-/**
- * Create and execute a custom workflow
- * @param {Object} workflow - Workflow definition with phases
- * @returns {Promise<Object>} Workflow execution result
- */
-export const executeWorkflow = async (workflow) => {
-  const response = await apiClient.post('/api/workflows/custom', workflow);
-  return response.data;
-};
-
-/**
- * Get workflow execution status and progress
- * @param {string} executionId - Workflow execution ID
- * @returns {Promise<Object>} Execution status and progress
- */
-export const getWorkflowProgress = async (executionId) => {
-  const response = await apiClient.get(
-    `/api/workflows/executions/${executionId}/progress`
-  );
-  return response.data;
-};
-
-/**
- * Get detailed results from a completed workflow execution
- * @param {string} executionId - Workflow execution ID
- * @returns {Promise<Object>} Complete execution results
- */
-export const getWorkflowResults = async (executionId) => {
-  const response = await apiClient.get(
-    `/api/workflows/executions/${executionId}/results`
-  );
-  return response.data;
-};
-
-/**
- * List all workflow executions with history
- * @param {Object} params - Query parameters (skip, limit, status, etc)
- * @returns {Promise<Array>} List of workflow executions
- */
-export const listWorkflowExecutions = async (params = {}) => {
-  const response = await apiClient.get('/api/workflows/executions', {
-    params,
-  });
-  return response.data;
-};
-
-/**
- * Cancel a running workflow execution
- * @param {string} executionId - Workflow execution ID
- * @returns {Promise<Object>} Cancellation result
- */
-export const cancelWorkflowExecution = async (executionId) => {
-  const response = await apiClient.post(
-    `/api/workflows/executions/${executionId}/cancel`
-  );
-  return response.data;
-};
-
-// ============================================================================
 // EXPORT ALL
 // ============================================================================
 
@@ -773,14 +690,6 @@ const apiClientMethods = {
   formatApiError,
   isRecoverableError,
   retryWithBackoff,
-
-  // Workflows
-  getAvailablePhases,
-  executeWorkflow,
-  getWorkflowProgress,
-  getWorkflowResults,
-  listWorkflowExecutions,
-  cancelWorkflowExecution,
 };
 
 export default apiClientMethods;

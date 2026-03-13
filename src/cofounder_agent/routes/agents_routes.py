@@ -28,21 +28,14 @@ from schemas.agent_schemas import (
     AgentLog,
     AgentLogs,
     AgentStatus,
-    AgentStatusEnum,
     AllAgentsStatus,
     MemoryStats,
-    SystemHealthEnum,
 )
-from routes.auth_unified import get_current_user
 from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
-router = APIRouter(
-    prefix="/api/agents",
-    tags=["agents"],
-    dependencies=[Depends(get_current_user)],
-)
+router = APIRouter(prefix="/api/agents", tags=["agents"])
 
 
 # ============================================================================
@@ -164,7 +157,7 @@ async def get_all_agents_status(orchestrator=Depends(get_orchestrator)):
     except Exception as e:
         logger.error(f"Error fetching all agents status: {e}")
         raise HTTPException(
-            status_code=500, detail="Failed to fetch agents status"
+            status_code=500, detail=f"Failed to fetch agents status: {str(e)}"
         ) from e
 
 
@@ -195,8 +188,8 @@ async def get_agent_status(agent_name: str, orchestrator=Depends(get_orchestrato
     """
     if agent_name.lower() not in get_agent_names():
         raise HTTPException(
-            status_code=404,
-            detail=f"Agent '{agent_name}' not found",
+            status_code=400,
+            detail=f"Invalid agent name: {agent_name}. Must be one of: {', '.join(get_agent_names())}",
         )
 
     try:
@@ -205,7 +198,7 @@ async def get_agent_status(agent_name: str, orchestrator=Depends(get_orchestrato
     except Exception as e:
         logger.error(f"Error fetching status for agent {agent_name}: {e}")
         raise HTTPException(
-            status_code=500, detail="Failed to fetch agent status"
+            status_code=500, detail=f"Failed to fetch agent status: {str(e)}"
         ) from e
 
 
@@ -248,8 +241,8 @@ async def send_agent_command(
     """
     if agent_name.lower() not in get_agent_names():
         raise HTTPException(
-            status_code=404,
-            detail=f"Agent '{agent_name}' not found",
+            status_code=400,
+            detail=f"Invalid agent name: {agent_name}. Must be one of: {', '.join(get_agent_names())}",
         )
 
     try:
@@ -269,7 +262,7 @@ async def send_agent_command(
         )
     except Exception as e:
         logger.error(f"Error sending command to agent {agent_name}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to send command") from e
+        raise HTTPException(status_code=500, detail=f"Failed to send command: {str(e)}") from e
 
 
 @router.get("/logs", response_model=AgentLogs)
@@ -278,7 +271,7 @@ async def get_agent_logs(
     level: Optional[str] = Query(
         None, description="Filter by log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)"
     ),
-    limit: int = Query(50, ge=1, le=200, description="Maximum number of logs to return (max 200)"),
+    limit: int = Query(50, ge=1, le=500, description="Maximum number of logs to return"),
     offset: int = Query(0, ge=0, description="Number of logs to skip"),
 ):
     """
@@ -333,7 +326,7 @@ async def get_agent_logs(
         )
     except Exception as e:
         logger.error(f"Error fetching agent logs: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch logs")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch logs: {str(e)}")
 
 
 @router.get("/memory/stats", response_model=MemoryStats)
@@ -405,7 +398,7 @@ async def get_memory_stats(orchestrator=Depends(get_orchestrator)):
         )
     except Exception as e:
         logger.error(f"Error fetching memory stats: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch memory stats")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch memory stats: {str(e)}")
 
 
 @router.get("/health", response_model=AgentHealth)
@@ -489,4 +482,4 @@ async def get_agent_system_health(orchestrator=Depends(get_orchestrator)):
         )
     except Exception as e:
         logger.error(f"Error fetching agent health: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch health")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch health: {str(e)}")

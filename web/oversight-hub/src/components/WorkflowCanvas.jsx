@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import ReactFlow, {
   Controls,
   Background,
@@ -13,70 +13,27 @@ import {
   Card,
   CardContent,
   Button,
-  IconButton,
   TextField,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
   Stack,
+  Chip,
   Typography,
   Alert,
-  Divider,
 } from '@mui/material';
-import {
-  Plus,
-  Save,
-  Play,
-  ArrowUp,
-  ArrowDown,
-  Trash2,
-  GripVertical,
-} from 'lucide-react';
+import { Plus, Save, Play } from 'lucide-react';
 import PhaseNode from './PhaseNode';
 import PhaseConfigPanel from './PhaseConfigPanel';
-import ExecutionStatusPanel from './ExecutionStatusPanel';
-import useWorkflowExecution from '../hooks/useWorkflowExecution';
-import useExecutionHistory from '../hooks/useExecutionHistory';
-import useNodeDragDrop from '../hooks/useNodeDragDrop';
 import * as workflowBuilderService from '../services/workflowBuilderService';
-import { modelService } from '../services/modelService';
-
-// ============================================================================
-// Module-level constants & pure utility functions
-// (tightly coupled to workflow graph — not extracted to hooks)
-// ============================================================================
 
 const nodeTypes = {
   phase: PhaseNode,
 };
 
-const PHASE_TO_AGENT_MAP = {
-  research: 'research_agent',
-  draft: 'creative_agent',
-  refine: 'creative_agent',
-  assess: 'qa_agent',
-  image: 'image_agent',
-  image_selection: 'image_agent',
-  publish: 'publishing_agent',
-  finalize: 'publishing_agent',
-};
-
-const KNOWN_AGENT_IDS = new Set(Object.values(PHASE_TO_AGENT_MAP));
-
 const normalizePhaseName = (name) =>
   typeof name === 'string' ? name.trim() : '';
-
-const isValidAgentId = (agentId = '') => {
-  const normalized = normalizePhaseName(agentId);
-  return (
-    Boolean(normalized) &&
-    (KNOWN_AGENT_IDS.has(normalized) || normalized.endsWith('_agent'))
-  );
-};
-
-const getDefaultAgentForPhaseType = (phaseType = '') =>
-  PHASE_TO_AGENT_MAP[normalizePhaseName(phaseType)] || 'creative_agent';
 
 const inferBasePhaseType = (phase = {}) => {
   const explicitType = normalizePhaseName(phase?.metadata?.phase_type);
@@ -97,16 +54,6 @@ const inferBasePhaseType = (phase = {}) => {
   return phaseName.replace(/_\d+$/, '');
 };
 
-const resolvePhaseAgent = (phase = {}) => {
-  const configuredAgent = normalizePhaseName(phase?.agent);
-  if (isValidAgentId(configuredAgent)) {
-    return configuredAgent;
-  }
-
-  const phaseType = inferBasePhaseType(phase);
-  return getDefaultAgentForPhaseType(phaseType);
-};
-
 const getUniquePhaseName = (baseName, existingNames) => {
   const normalizedBase = normalizePhaseName(baseName) || 'phase';
   if (!existingNames.has(normalizedBase)) {
@@ -120,42 +67,6 @@ const getUniquePhaseName = (baseName, existingNames) => {
   return `${normalizedBase}_${index}`;
 };
 
-const buildDefaultPhaseInputs = (inputFields = []) => {
-  const defaults = {};
-  inputFields.forEach((field) => {
-    if (!field?.key) {
-      return;
-    }
-
-    if (field.default_value !== undefined && field.default_value !== null) {
-      defaults[field.key] = field.default_value;
-      return;
-    }
-
-    defaults[field.key] = field.input_type === 'boolean' ? false : '';
-  });
-
-  return defaults;
-};
-
-const buildPhaseMetadata = (phase = {}) => {
-  const existingMetadata = phase?.metadata || {};
-  const inputSchema = Array.isArray(existingMetadata.input_schema)
-    ? existingMetadata.input_schema
-    : Array.isArray(phase?.input_fields)
-      ? phase.input_fields
-      : [];
-
-  return {
-    ...existingMetadata,
-    input_schema: inputSchema,
-    phase_inputs: {
-      ...buildDefaultPhaseInputs(inputSchema),
-      ...(existingMetadata.phase_inputs || {}),
-    },
-  };
-};
-
 const ensureUniqueWorkflowPhases = (phases = []) => {
   const usedNames = new Set();
 
@@ -165,32 +76,24 @@ const ensureUniqueWorkflowPhases = (phases = []) => {
       normalizePhaseName(phase?.name) || baseType,
       usedNames
     );
-
     usedNames.add(uniqueName);
 
     return {
       ...phase,
       name: uniqueName,
-      agent: resolvePhaseAgent(phase),
+      agent: baseType,
       metadata: {
-        ...buildPhaseMetadata(phase),
+        ...(phase?.metadata || {}),
         phase_type: baseType,
       },
     };
   });
 };
 
-// ============================================================================
-// WorkflowCanvas component — thin compositor
-// ============================================================================
-
 const WorkflowCanvas = ({ onSave, availablePhases, workflow = null }) => {
-  // ---- Workflow graph state (ReactFlow) ------------------------------------
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedNode, setSelectedNode] = useState(null);
-
-  // ---- Workflow metadata ---------------------------------------------------
   const [workflowName, setWorkflowName] = useState(workflow?.name || '');
   const [workflowDescription, setWorkflowDescription] = useState(
     workflow?.description || ''
@@ -198,92 +101,11 @@ const WorkflowCanvas = ({ onSave, availablePhases, workflow = null }) => {
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState('');
-  const [availableModels, setAvailableModels] = useState([]);
-
   const isPersistedWorkflow = Boolean(workflow?.isPersisted && workflow?.id);
   const isTemplateWorkflow = Boolean(workflow?.is_template);
-  const effectiveWorkflowId = workflow?.id || null;
 
-  // ---- Execution state (extracted hook) ------------------------------------
-  const {
-    executionId,
-    setExecutionId,
-    executionStatus,
-    executionProgress,
-    executionResults,
-    executionFinalOutput,
-    executionErrorMessage,
-    executionPollingError,
-    startExecution,
-  } = useWorkflowExecution({
-    onHistoryRefresh: (persistedId) => loadExecutionHistory(persistedId),
-  });
-
-  // ---- Execution history (extracted hook) ----------------------------------
-  const {
-    executionHistory,
-    executionHistoryLoading,
-    executionHistoryError,
-    loadExecutionHistory,
-  } = useExecutionHistory({
-    workflowId: effectiveWorkflowId,
-    executionId,
-  });
-
-  // ---- Drag-and-drop (extracted hook) --------------------------------------
-  const {
-    draggedNodeId,
-    dragOverNodeId,
-    handlePhaseDragStart,
-    handlePhaseDragOver,
-    handlePhaseDrop,
-    clearDragState,
-  } = useNodeDragDrop({
-    onReorder: (sourceIndex, targetIndex) => {
-      const phaseConfigs = nodes.map((node) => node.data.phase);
-      const reordered = [...phaseConfigs];
-      const [moved] = reordered.splice(sourceIndex, 1);
-      reordered.splice(targetIndex, 0, moved);
-      rebuildGraphFromPhases(reordered, moved?.name || null);
-    },
-  });
-
-  // ---- Graph builders ------------------------------------------------------
-
-  const rebuildGraphFromPhases = useCallback(
-    (phaseConfigs, selectedPhaseName = null) => {
-      const newNodes = phaseConfigs.map((phase, index) => ({
-        id: `phase-${index}`,
-        data: { label: phase.name, phase },
-        position: { x: index * 250, y: 0 },
-        type: 'phase',
-      }));
-
-      const newEdges = phaseConfigs.slice(0, -1).map((_, index) => ({
-        id: `edge-${index}`,
-        source: `phase-${index}`,
-        target: `phase-${index + 1}`,
-      }));
-
-      setNodes(newNodes);
-      setEdges(newEdges);
-
-      if (!selectedPhaseName) {
-        setSelectedNode(null);
-        return;
-      }
-
-      const nextSelected = newNodes.find(
-        (node) => node.data?.phase?.name === selectedPhaseName
-      );
-      setSelectedNode(nextSelected || null);
-    },
-    [setNodes, setEdges]
-  );
-
-  // ---- Lifecycle effects ---------------------------------------------------
-
-  useEffect(() => {
+  // Initialize with workflow if provided
+  React.useEffect(() => {
     setWorkflowName(workflow?.name || '');
     setWorkflowDescription(workflow?.description || '');
 
@@ -293,39 +115,29 @@ const WorkflowCanvas = ({ onSave, availablePhases, workflow = null }) => {
       workflow.phases.length > 0
     ) {
       const normalizedPhases = ensureUniqueWorkflowPhases(workflow.phases);
-      rebuildGraphFromPhases(normalizedPhases);
+
+      const newNodes = normalizedPhases.map((phase, index) => ({
+        id: `phase-${index}`,
+        data: { label: phase.name, phase },
+        position: { x: index * 250, y: 0 },
+        type: 'phase',
+      }));
+
+      const newEdges = workflow.phases.slice(0, -1).map((_, index) => ({
+        id: `edge-${index}`,
+        source: `phase-${index}`,
+        target: `phase-${index + 1}`,
+      }));
+
+      setNodes(newNodes);
+      setEdges(newEdges);
     } else {
       setNodes([]);
       setEdges([]);
     }
 
     setSelectedNode(null);
-  }, [workflow, setNodes, setEdges, rebuildGraphFromPhases]);
-
-  useEffect(() => {
-    let mounted = true;
-
-    const loadModels = async () => {
-      try {
-        const models = await modelService.getAvailableModels();
-        if (mounted) {
-          setAvailableModels(Array.isArray(models) ? models : []);
-        }
-      } catch {
-        if (mounted) {
-          setAvailableModels(modelService.getDefaultModels());
-        }
-      }
-    };
-
-    loadModels();
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  // ---- Phase mutation handlers ---------------------------------------------
+  }, [workflow, setNodes, setEdges]);
 
   const onConnect = useCallback(
     (connection) => {
@@ -345,65 +157,59 @@ const WorkflowCanvas = ({ onSave, availablePhases, workflow = null }) => {
       phase?.name || baseType,
       existingNames
     );
-
     const phaseConfig = {
       ...phase,
       name: uniqueName,
-      agent: resolvePhaseAgent(phase),
+      agent: baseType,
       metadata: {
-        ...buildPhaseMetadata(phase),
+        ...(phase?.metadata || {}),
         phase_type: baseType,
       },
     };
 
-    const phaseConfigs = nodes.map((node) => node.data.phase);
-    rebuildGraphFromPhases([...phaseConfigs, phaseConfig], uniqueName);
+    const newNodeId = `phase-${nodes.length}`;
+    const newNode = {
+      id: newNodeId,
+      data: { label: uniqueName, phase: phaseConfig },
+      position: { x: nodes.length * 250, y: 0 },
+      type: 'phase',
+    };
+
+    setNodes((nds) => [...nds, newNode]);
+
+    // Auto-connect to last node
+    if (nodes.length > 0) {
+      const lastNode = nodes[nodes.length - 1];
+      setEdges((eds) => [
+        ...eds,
+        {
+          id: `edge-${nodes.length - 1}`,
+          source: lastNode.id,
+          target: newNodeId,
+        },
+      ]);
+    }
   };
 
   const updatePhaseConfig = (nodeId, config) => {
     setNodes((nds) =>
       nds.map((node) =>
         node.id === nodeId
-          ? {
-              ...node,
-              data: { ...node.data, label: config?.name, phase: config },
-            }
+          ? { ...node, data: { ...node.data, phase: config } }
           : node
       )
     );
   };
 
   const removePhase = (nodeId) => {
-    const phaseConfigs = nodes
-      .filter((node) => node.id !== nodeId)
-      .map((node) => node.data.phase);
-    rebuildGraphFromPhases(phaseConfigs);
+    setNodes((nds) => nds.filter((n) => n.id !== nodeId));
+    setEdges((eds) =>
+      eds.filter((e) => e.source !== nodeId && e.target !== nodeId)
+    );
   };
-
-  const movePhase = (nodeId, direction) => {
-    const currentIndex = nodes.findIndex((node) => node.id === nodeId);
-    if (currentIndex < 0) {
-      return;
-    }
-
-    const targetIndex =
-      direction === 'up' ? currentIndex - 1 : currentIndex + 1;
-
-    if (targetIndex < 0 || targetIndex >= nodes.length) {
-      return;
-    }
-
-    const phaseConfigs = nodes.map((node) => node.data.phase);
-    const reordered = [...phaseConfigs];
-    const [moved] = reordered.splice(currentIndex, 1);
-    reordered.splice(targetIndex, 0, moved);
-
-    rebuildGraphFromPhases(reordered, moved?.name || null);
-  };
-
-  // ---- Workflow save / execute ---------------------------------------------
 
   const buildWorkflowDefinition = () => {
+    // Verify workflow has phases
     if (nodes.length === 0) {
       setError('Workflow must have at least one phase');
       return null;
@@ -421,7 +227,7 @@ const WorkflowCanvas = ({ onSave, availablePhases, workflow = null }) => {
 
     const phases = nodes.map((node) => ({
       name: normalizePhaseName(node?.data?.phase?.name),
-      agent: resolvePhaseAgent(node?.data?.phase),
+      agent: inferBasePhaseType(node?.data?.phase),
       description: node?.data?.phase?.description,
       timeout_seconds: node?.data?.phase?.timeout_seconds || 300,
       max_retries: node?.data?.phase?.max_retries || 3,
@@ -429,7 +235,7 @@ const WorkflowCanvas = ({ onSave, availablePhases, workflow = null }) => {
       required: node?.data?.phase?.required !== false,
       quality_threshold: node?.data?.phase?.quality_threshold,
       metadata: {
-        ...buildPhaseMetadata(node?.data?.phase),
+        ...(node?.data?.phase?.metadata || {}),
         phase_type: inferBasePhaseType(node?.data?.phase),
       },
     }));
@@ -456,40 +262,6 @@ const WorkflowCanvas = ({ onSave, availablePhases, workflow = null }) => {
       return null;
     }
 
-    const missingRequiredInputs = [];
-
-    phases.forEach((phase) => {
-      const inputSchema = Array.isArray(phase?.metadata?.input_schema)
-        ? phase.metadata.input_schema
-        : [];
-      const phaseInputs = phase?.metadata?.phase_inputs || {};
-
-      inputSchema.forEach((field) => {
-        if (!field?.required || !field?.key) {
-          return;
-        }
-
-        const value = phaseInputs[field.key];
-        const isMissing =
-          value === undefined ||
-          value === null ||
-          (typeof value === 'string' && !value.trim());
-
-        if (isMissing) {
-          missingRequiredInputs.push(
-            `${phase.name}: ${field.label || field.key}`
-          );
-        }
-      });
-    });
-
-    if (missingRequiredInputs.length > 0) {
-      setError(
-        `Missing required phase inputs: ${missingRequiredInputs.join(', ')}`
-      );
-      return null;
-    }
-
     return {
       name: workflowName,
       description: workflowDescription,
@@ -501,112 +273,55 @@ const WorkflowCanvas = ({ onSave, availablePhases, workflow = null }) => {
 
   const handleSave = async () => {
     const definition = buildWorkflowDefinition();
-    if (!definition) {
-      return;
-    }
-
-    try {
-      const response = workflow?.id
-        ? isPersistedWorkflow
-          ? await workflowBuilderService.updateWorkflow(workflow.id, definition)
-          : await workflowBuilderService.createWorkflow(definition)
-        : await workflowBuilderService.createWorkflow(definition);
-
-      onSave(response);
-      setSuccessMessage('Workflow saved successfully');
-      setError(null);
-      setSaveDialogOpen(false);
-    } catch (err) {
-      setError(err.message || 'Failed to save workflow');
+    if (definition) {
+      try {
+        const response = workflow?.id
+          ? isPersistedWorkflow
+            ? await workflowBuilderService.updateWorkflow(
+                workflow.id,
+                definition
+              )
+            : await workflowBuilderService.createWorkflow(definition)
+          : await workflowBuilderService.createWorkflow(definition);
+        onSave(response);
+        setSuccessMessage('Workflow saved successfully');
+        setSaveDialogOpen(false);
+      } catch (err) {
+        setError(err.message);
+      }
     }
   };
 
   const handleExecute = async () => {
     const definition = buildWorkflowDefinition();
-    if (!definition) {
-      return;
-    }
+    if (definition) {
+      try {
+        const persistedWorkflow = workflow?.id
+          ? isPersistedWorkflow
+            ? await workflowBuilderService.updateWorkflow(
+                workflow.id,
+                definition
+              )
+            : await workflowBuilderService.createWorkflow(definition)
+          : await workflowBuilderService.createWorkflow(definition);
 
-    try {
-      await startExecution({ workflow, isPersistedWorkflow, definition });
-      setSuccessMessage('Workflow execution started');
-      setError(null);
-    } catch (err) {
-      setError(err.message || 'Failed to execute workflow');
+        const execution = await workflowBuilderService.executeWorkflow(
+          persistedWorkflow.id,
+          {
+            topic: definition.name,
+            source: 'workflow_canvas',
+          }
+        );
+
+        setSuccessMessage(
+          `Workflow execution started (${execution.execution_id || 'queued'})`
+        );
+        setError(null);
+      } catch (err) {
+        setError(err.message || 'Failed to execute workflow');
+      }
     }
   };
-
-  // ---- Phase order list (shared between selected/unselected views) ---------
-
-  const renderPhaseOrderList = (highlightSelected) => (
-    <Stack spacing={0.5}>
-      {nodes.map((node, index) => (
-        <Box
-          key={node.id}
-          draggable
-          onDragStart={(event) => handlePhaseDragStart(event, node.id)}
-          onDragOver={(event) => handlePhaseDragOver(event, node.id)}
-          onDrop={(event) => handlePhaseDrop(event, node.id, nodes)}
-          onDragEnd={clearDragState}
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            border: '1px solid #e0e0e0',
-            borderRadius: 1,
-            px: 1,
-            py: 0.5,
-            cursor: 'grab',
-            backgroundColor:
-              node.id === dragOverNodeId
-                ? '#e8f4ff'
-                : highlightSelected && node.id === selectedNode?.id
-                  ? '#f3f8ff'
-                  : 'transparent',
-          }}
-        >
-          <Button
-            size="small"
-            onClick={() => setSelectedNode(node)}
-            sx={{
-              textTransform: 'none',
-              justifyContent: 'flex-start',
-              gap: 0.5,
-              flex: 1,
-            }}
-          >
-            <GripVertical size={14} color="#9e9e9e" />
-            {index + 1}. {node.data.phase.name}
-          </Button>
-          <Box>
-            <IconButton
-              size="small"
-              onClick={() => movePhase(node.id, 'up')}
-              disabled={index === 0}
-            >
-              <ArrowUp size={14} />
-            </IconButton>
-            <IconButton
-              size="small"
-              onClick={() => movePhase(node.id, 'down')}
-              disabled={index === nodes.length - 1}
-            >
-              <ArrowDown size={14} />
-            </IconButton>
-            <IconButton
-              size="small"
-              color="error"
-              onClick={() => removePhase(node.id)}
-            >
-              <Trash2 size={14} />
-            </IconButton>
-          </Box>
-        </Box>
-      ))}
-    </Stack>
-  );
-
-  // ---- Render --------------------------------------------------------------
 
   return (
     <Box
@@ -619,7 +334,7 @@ const WorkflowCanvas = ({ onSave, availablePhases, workflow = null }) => {
         p: 2,
       }}
     >
-      {/* Available Phases sidebar */}
+      {/* Sidebar: Available Phases */}
       <Card sx={{ width: 280, minWidth: 280, flexShrink: 0, overflow: 'auto' }}>
         <CardContent>
           <Typography variant="h6" gutterBottom>
@@ -642,7 +357,7 @@ const WorkflowCanvas = ({ onSave, availablePhases, workflow = null }) => {
         </CardContent>
       </Card>
 
-      {/* ReactFlow canvas */}
+      {/* Canvas: React Flow */}
       <Box
         sx={{
           flex: 1,
@@ -662,7 +377,6 @@ const WorkflowCanvas = ({ onSave, availablePhases, workflow = null }) => {
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           onNodeClick={(_, node) => setSelectedNode(node)}
-          onPaneClick={() => setSelectedNode(null)}
           nodeTypes={nodeTypes}
         >
           <Background />
@@ -690,42 +404,26 @@ const WorkflowCanvas = ({ onSave, availablePhases, workflow = null }) => {
         )}
       </Box>
 
-      {/* Right panel — Phase config (node selected) or Workflow details */}
+      {/* Right Panel: Phase Config or Workflow Info */}
       <Card sx={{ width: 350, minWidth: 350, flexShrink: 0, overflow: 'auto' }}>
         <CardContent>
           {selectedNode ? (
-            <Stack spacing={2}>
-              <Button
-                variant="text"
-                size="small"
-                onClick={() => setSelectedNode(null)}
-                sx={{ alignSelf: 'flex-start', textTransform: 'none' }}
-              >
-                Back to workflow details
-              </Button>
-
-              <PhaseConfigPanel
-                nodeId={selectedNode.id}
-                phase={selectedNode.data.phase}
-                availableModels={availableModels}
-                onUpdate={updatePhaseConfig}
-                onRemove={removePhase}
-              />
-
-              <Divider />
-
-              <Box>
-                <Typography variant="subtitle2" gutterBottom>
-                  Phase Order
-                </Typography>
-                {renderPhaseOrderList(true)}
-              </Box>
-            </Stack>
+            <PhaseConfigPanel
+              nodeId={selectedNode.id}
+              phase={selectedNode.data.phase}
+              onUpdate={updatePhaseConfig}
+              onRemove={removePhase}
+            />
           ) : (
             <>
               <Typography variant="h6" gutterBottom>
                 Workflow Details
               </Typography>
+              {isTemplateWorkflow && (
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  Editing template mode (persists as reusable template)
+                </Alert>
+              )}
               <Stack spacing={2}>
                 <TextField
                   label="Workflow Name"
@@ -747,9 +445,17 @@ const WorkflowCanvas = ({ onSave, availablePhases, workflow = null }) => {
                   <Typography variant="subtitle2" gutterBottom>
                     Phases: {nodes.length}
                   </Typography>
-                  {renderPhaseOrderList(false)}
+                  <Stack direction="row" spacing={1} flexWrap="wrap">
+                    {nodes.map((node) => (
+                      <Chip
+                        key={node.id}
+                        label={node.data.phase.name}
+                        size="small"
+                        variant="outlined"
+                      />
+                    ))}
+                  </Stack>
                 </Box>
-
                 <Stack direction="row" spacing={1}>
                   <Button
                     variant="contained"
@@ -769,29 +475,13 @@ const WorkflowCanvas = ({ onSave, availablePhases, workflow = null }) => {
                     Execute
                   </Button>
                 </Stack>
-
-                {/* Execution status + history (extracted sub-component) */}
-                <ExecutionStatusPanel
-                  executionId={executionId}
-                  executionStatus={executionStatus}
-                  executionProgress={executionProgress}
-                  executionResults={executionResults}
-                  executionFinalOutput={executionFinalOutput}
-                  executionErrorMessage={executionErrorMessage}
-                  executionPollingError={executionPollingError}
-                  executionHistory={executionHistory}
-                  executionHistoryLoading={executionHistoryLoading}
-                  executionHistoryError={executionHistoryError}
-                  onSelectExecution={setExecutionId}
-                  onRefreshHistory={loadExecutionHistory}
-                />
               </Stack>
             </>
           )}
         </CardContent>
       </Card>
 
-      {/* Save dialog */}
+      {/* Save Dialog */}
       <Dialog
         open={saveDialogOpen}
         onClose={() => setSaveDialogOpen(false)}

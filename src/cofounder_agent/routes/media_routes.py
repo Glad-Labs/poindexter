@@ -12,7 +12,7 @@ Cost:
 """
 
 import base64
-from services.logger_config import get_logger
+import logging
 import os
 import time
 import uuid
@@ -20,34 +20,29 @@ from datetime import datetime
 from io import BytesIO
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Query, Request
-from routes.auth_unified import get_current_user
+from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
-from utils.rate_limiter import limiter
 
 # Cloud storage imports
 try:
-    import cloudinary  # type: ignore
-    import cloudinary.uploader  # type: ignore
+    import cloudinary
+    import cloudinary.uploader
 
     CLOUDINARY_AVAILABLE = True
 except ImportError:
-    cloudinary = None  # type: ignore[assignment]
     CLOUDINARY_AVAILABLE = False
 
 try:
-    import boto3  # type: ignore
-    from botocore.config import Config  # type: ignore
+    import boto3
+    from botocore.config import Config
 
     S3_AVAILABLE = True
 except ImportError:
-    boto3 = None  # type: ignore[assignment]
-    Config = None  # type: ignore[assignment,misc]
     S3_AVAILABLE = False
 
 from services.image_service import FeaturedImageMetadata, ImageService
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 media_router = APIRouter(prefix="/api/media", tags=["Media"])
 
 
@@ -55,7 +50,7 @@ media_router = APIRouter(prefix="/api/media", tags=["Media"])
 # CLOUDINARY SETUP (Primary - Free Tier)
 # ═══════════════════════════════════════════════════════════════════════════
 
-if cloudinary is not None and os.getenv("CLOUDINARY_CLOUD_NAME"):
+if CLOUDINARY_AVAILABLE and os.getenv("CLOUDINARY_CLOUD_NAME"):
     cloudinary.config(
         cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
         api_key=os.getenv("CLOUDINARY_API_KEY"),
@@ -77,7 +72,7 @@ async def upload_to_cloudinary(file_path: str, task_id: Optional[str] = None) ->
     Returns:
         Public URL if successful, None if Cloudinary not configured or upload fails
     """
-    if cloudinary is None or not os.getenv("CLOUDINARY_CLOUD_NAME"):
+    if not CLOUDINARY_AVAILABLE or not os.getenv("CLOUDINARY_CLOUD_NAME"):
         return None
 
     try:
@@ -94,7 +89,7 @@ async def upload_to_cloudinary(file_path: str, task_id: Optional[str] = None) ->
         logger.info(f"✅ Uploaded to Cloudinary: {public_url}")
         return public_url
 
-    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
+    except Exception as e:
         logger.error(f"❌ Cloudinary upload failed: {e}", exc_info=True)
         return None
 
@@ -111,18 +106,18 @@ def get_s3_client():
     global _s3_client
     if _s3_client is None:
         # Check if AWS credentials are configured
-        if boto3 is not None and os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_S3_BUCKET"):
+        if S3_AVAILABLE and os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_S3_BUCKET"):
             try:
                 _s3_client = boto3.client(
                     "s3",
                     aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
                     aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
                     region_name=os.getenv("AWS_S3_REGION", "us-east-1"),
-                    config=Config(signature_version="s3v4") if Config is not None else None,
+                    config=Config(signature_version="s3v4") if S3_AVAILABLE else None,
                 )
                 logger.info("✅ S3 client initialized (fallback)")
-            except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
-                logger.warning(f"⚠️ S3 client initialization failed: {e}", exc_info=True)
+            except Exception as e:
+                logger.warning(f"⚠️ S3 client initialization failed: {e}")
                 _s3_client = False  # Mark as explicitly disabled
         else:
             logger.info("ℹ️ AWS S3 not configured (optional fallback)")
@@ -165,7 +160,7 @@ async def upload_to_s3(file_path: str, task_id: Optional[str] = None) -> Optiona
             metadata["task-id"] = task_id
 
         # Upload to S3
-        s3.upload_fileobj(  # type: ignore
+        s3.upload_fileobj(
             BytesIO(file_data),
             bucket,
             image_key,
@@ -189,7 +184,7 @@ async def upload_to_s3(file_path: str, task_id: Optional[str] = None) -> Optiona
 
         return public_url
 
-    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
+    except Exception as e:
         logger.error(f"❌ S3 upload failed: {e}", exc_info=True)
         return None
 
@@ -271,10 +266,10 @@ class ImageGenerationResponse(BaseModel):
     message: Optional[str] = Field(None, description="Status message or error")
     generation_time: Optional[float] = Field(None, description="Time taken in seconds")
     local_path: Optional[str] = Field(
-        default=None, description="Local file path (for generated images in Downloads)"
+        None, description="Local file path (for generated images in Downloads)"
     )
     preview_mode: Optional[bool] = Field(
-        default=False, description="Whether this is a preview (not yet in CDN)"
+        False, description="Whether this is a preview (not yet in CDN)"
     )
 
 
@@ -362,8 +357,7 @@ def build_enhanced_search_prompt(
     summary="Generate or search for featured image",
     description="Search Pexels for free stock images, with optional SDXL fallback",
 )
-@limiter.limit("5/minute")
-async def generate_featured_image(request: Request, body: ImageGenerationRequest, _current_user: dict = Depends(get_current_user)):
+async def generate_featured_image(request: ImageGenerationRequest):
     """
     Generate or search for a featured image.
     
@@ -404,7 +398,7 @@ async def generate_featured_image(request: Request, body: ImageGenerationRequest
 
     try:
         image_service = await get_image_service()
-    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
+    except Exception as e:
         logger.error(f"❌ Failed to initialize image service: {e}", exc_info=True)
         elapsed = time.time() - start_time
         return ImageGenerationResponse(
@@ -420,15 +414,15 @@ async def generate_featured_image(request: Request, body: ImageGenerationRequest
 
         # Log the request configuration
         logger.info(
-            f"📸 Image generation request: use_pexels={body.use_pexels}, use_generation={body.use_generation}"
+            f"📸 Image generation request: use_pexels={request.use_pexels}, use_generation={request.use_generation}"
         )
 
         # Step 1: Try Pexels search first (recommended)
-        if body.use_pexels:
-            keywords = body.keywords or []
+        if request.use_pexels:
+            keywords = request.keywords or []
 
             # Build enhanced search prompt using keywords if available
-            search_prompt = build_enhanced_search_prompt(body.prompt, keywords)
+            search_prompt = build_enhanced_search_prompt(request.prompt, keywords)
 
             logger.info(f"🔍 STEP 1: Searching Pexels for: {search_prompt}")
             if keywords:
@@ -436,31 +430,31 @@ async def generate_featured_image(request: Request, body: ImageGenerationRequest
 
             try:
                 image = await image_service.search_featured_image(
-                    topic=search_prompt, keywords=keywords, page=body.page
+                    topic=search_prompt, keywords=keywords, page=request.page
                 )
 
                 if image:
                     logger.info(f"✅ STEP 1 SUCCESS: Found image via Pexels: {image.url}")
                 else:
                     logger.warning(f"⚠️ STEP 1 FAILED: No Pexels image found for: {search_prompt}")
-            except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
-                logger.warning(f"⚠️ STEP 1 ERROR: Pexels search failed: {e}", exc_info=True)
+            except Exception as e:
+                logger.warning(f"⚠️ STEP 1 ERROR: Pexels search failed: {e}")
         else:
             logger.info(f"ℹ️ STEP 1 SKIPPED: use_pexels=false")
 
         # Step 2: Fall back to SDXL generation
-        if not image and body.use_generation:
-            keywords = body.keywords or []
+        if not image and request.use_generation:
+            keywords = request.keywords or []
 
             # Build enhanced generation prompt using keywords if available
-            generation_prompt = build_enhanced_search_prompt(body.prompt, keywords)
+            generation_prompt = build_enhanced_search_prompt(request.prompt, keywords)
 
             logger.info(f"🎨 STEP 2: Generating image with SDXL: {generation_prompt}")
             if keywords:
                 logger.debug(f"   Keywords: {', '.join(keywords)}")
-            if body.use_refinement:
+            if request.use_refinement:
                 logger.info(
-                    f"   Refinement: ENABLED (base {body.num_inference_steps} steps + 30 refinement steps)"
+                    f"   Refinement: ENABLED (base {request.num_inference_steps} steps + 30 refinement steps)"
                 )
 
             try:
@@ -475,28 +469,21 @@ async def generate_featured_image(request: Request, body: ImageGenerationRequest
                 os.makedirs(downloads_path, exist_ok=True)
 
                 # Create filename with timestamp and task_id for traceability
-                # Sanitize task_id to prevent path traversal (CWE-22)
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                raw_task_id = body.task_id if body.task_id else "no-task"
-                task_id_str = "".join(c for c in raw_task_id if c.isalnum() or c in "-_")
+                task_id_str = request.task_id if request.task_id else "no-task"
                 output_file = f"sdxl_{timestamp}_{task_id_str}.png"
                 output_path = os.path.join(downloads_path, output_file)
-                # Verify resolved path stays within downloads_path
-                base_dir = Path(downloads_path).resolve()
-                resolved_output = Path(output_path).resolve()
-                if not str(resolved_output).startswith(str(base_dir)):
-                    raise ValueError("Path traversal detected in task_id")
 
                 logger.info(f"📁 Will save generated image to: {output_path}")
 
                 success = await image_service.generate_image(
                     prompt=generation_prompt,
                     output_path=output_path,
-                    num_inference_steps=body.num_inference_steps,
-                    guidance_scale=body.guidance_scale,
-                    use_refinement=body.use_refinement,
-                    high_quality=body.high_quality,
-                    task_id=body.task_id,  # Pass task_id for progress tracking
+                    num_inference_steps=request.num_inference_steps,
+                    guidance_scale=request.guidance_scale,
+                    use_refinement=request.use_refinement,
+                    high_quality=request.high_quality,
+                    task_id=request.task_id,  # Pass task_id for progress tracking
                 )
 
                 if success and os.path.exists(output_path):
@@ -526,16 +513,16 @@ async def generate_featured_image(request: Request, body: ImageGenerationRequest
                         photographer_url="",
                         width=1024,  # SDXL standard output
                         height=1024,
-                        alt_text=body.prompt,
+                        alt_text=request.prompt,
                         source="sdxl-local-preview",  # Mark as local preview
-                        search_query=body.prompt,
+                        search_query=request.prompt,
                     )
                     logger.info(f"✅ Created image metadata (local preview): {output_path}")
-            except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
-                logger.warning(f"⚠️ SDXL generation failed: {e}", exc_info=True)
-        elif image and not body.use_generation:
+            except Exception as e:
+                logger.warning(f"⚠️ SDXL generation failed: {e}")
+        elif image and not request.use_generation:
             logger.info(f"ℹ️ STEP 2 SKIPPED: Pexels found image, use_generation=false")
-        elif not image and not body.use_generation:
+        elif not image and not request.use_generation:
             logger.info(
                 f"ℹ️ STEP 2 SKIPPED: use_generation=false (Pexels search failed but SDXL disabled)"
             )
@@ -548,7 +535,7 @@ async def generate_featured_image(request: Request, body: ImageGenerationRequest
             # Unload SDXL models after generation to free memory
             # ═══════════════════════════════════════════════════════════
             if hasattr(image_service, "_unload_sdxl"):
-                image_service._unload_sdxl()  # type: ignore
+                image_service._unload_sdxl()
 
             # ═══════════════════════════════════════════════════════════
             # NOTE: Image is in Downloads folder for preview/approval
@@ -578,8 +565,8 @@ async def generate_featured_image(request: Request, body: ImageGenerationRequest
         # ═══════════════════════════════════════════════════════════
         # Unload SDXL models if generation was requested but failed
         # ═══════════════════════════════════════════════════════════
-        if body.use_generation and hasattr(image_service, "_unload_sdxl"):
-            image_service._unload_sdxl()  # type: ignore
+        if request.use_generation and hasattr(image_service, "_unload_sdxl"):
+            image_service._unload_sdxl()
 
         elapsed = time.time() - start_time
         return ImageGenerationResponse(
@@ -591,7 +578,7 @@ async def generate_featured_image(request: Request, body: ImageGenerationRequest
             preview_mode=False,
         )
 
-    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
+    except Exception as e:
         logger.error(f"❌ Image generation error: {e}", exc_info=True)
         elapsed = time.time() - start_time
         return ImageGenerationResponse(
@@ -609,12 +596,9 @@ async def generate_featured_image(request: Request, body: ImageGenerationRequest
     summary="Search for images",
     description="Search Pexels for images by query",
 )
-@limiter.limit("30/minute")
 async def search_images(
-    request: Request,
     query: str = Query(..., min_length=3, description="Search query"),
     count: int = Query(1, ge=1, le=20, description="Number of images (1-20)"),
-    _current_user: dict = Depends(get_current_user),
 ):
     """
     Search for images by query.
@@ -687,7 +671,7 @@ async def search_images(
             generation_time=elapsed,
         )
 
-    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
+    except Exception as e:
         logger.error(f"❌ Search error: {e}", exc_info=True)
         elapsed = time.time() - start_time
         return ImageGenerationResponse(
@@ -744,7 +728,7 @@ async def health_check():
             message=" | ".join(message_parts),
         )
 
-    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
+    except Exception as e:
         logger.error(f"❌ Health check error: {e}", exc_info=True)
         return HealthResponse(
             status="error",
