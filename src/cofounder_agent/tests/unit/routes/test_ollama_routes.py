@@ -19,8 +19,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 
-import pytest
-
 from routes.auth_unified import get_current_user
 from routes.ollama_routes import router
 import routes.ollama_routes as ollama_module
