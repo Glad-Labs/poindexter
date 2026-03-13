@@ -94,6 +94,19 @@ def _build_app() -> FastAPI:
     return app
 
 
+def _build_app_unauthenticated() -> FastAPI:
+    """App where get_current_user raises 401 — simulates missing/invalid token."""
+    from fastapi import HTTPException as _HTTPException
+
+    def _reject():
+        raise _HTTPException(status_code=401, detail="Not authenticated")
+
+    app = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[get_current_user] = _reject
+    return app
+
+
 # ---------------------------------------------------------------------------
 # GET /api/agents/registry
 # ---------------------------------------------------------------------------
@@ -452,3 +465,67 @@ class TestSearchAgents:
             client = TestClient(_build_app())
             data = client.get("/api/agents/search?capability=nonexistent_capability").json()
         assert data == []
+
+
+# ---------------------------------------------------------------------------
+# Auth guard — all endpoints require authentication
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestAgentRegistryRoutesRequireAuth:
+    """Verify that each endpoint returns 401 when no auth token is provided."""
+
+    def test_registry_requires_auth(self):
+        with patch("routes.agent_registry_routes.get_agent_registry", return_value=_make_registry()):
+            client = TestClient(_build_app_unauthenticated(), raise_server_exceptions=False)
+            resp = client.get("/api/agents/registry")
+        assert resp.status_code == 401
+
+    def test_list_requires_auth(self):
+        with patch("routes.agent_registry_routes.get_agent_registry", return_value=_make_registry()):
+            client = TestClient(_build_app_unauthenticated(), raise_server_exceptions=False)
+            resp = client.get("/api/agents/list")
+        assert resp.status_code == 401
+
+    def test_search_requires_auth(self):
+        with patch("routes.agent_registry_routes.get_agent_registry", return_value=_make_registry()):
+            client = TestClient(_build_app_unauthenticated(), raise_server_exceptions=False)
+            resp = client.get("/api/agents/search")
+        assert resp.status_code == 401
+
+    def test_agent_metadata_requires_auth(self):
+        with patch("routes.agent_registry_routes.get_agent_registry", return_value=_make_registry()):
+            client = TestClient(_build_app_unauthenticated(), raise_server_exceptions=False)
+            resp = client.get("/api/agents/research_agent")
+        assert resp.status_code == 401
+
+    def test_phases_requires_auth(self):
+        with patch("routes.agent_registry_routes.get_agent_registry", return_value=_make_registry()):
+            client = TestClient(_build_app_unauthenticated(), raise_server_exceptions=False)
+            resp = client.get("/api/agents/creative_agent/phases")
+        assert resp.status_code == 401
+
+    def test_capabilities_requires_auth(self):
+        with patch("routes.agent_registry_routes.get_agent_registry", return_value=_make_registry()):
+            client = TestClient(_build_app_unauthenticated(), raise_server_exceptions=False)
+            resp = client.get("/api/agents/research_agent/capabilities")
+        assert resp.status_code == 401
+
+    def test_by_phase_requires_auth(self):
+        with patch("routes.agent_registry_routes.get_agent_registry", return_value=_make_registry()):
+            client = TestClient(_build_app_unauthenticated(), raise_server_exceptions=False)
+            resp = client.get("/api/agents/by-phase/draft")
+        assert resp.status_code == 401
+
+    def test_by_capability_requires_auth(self):
+        with patch("routes.agent_registry_routes.get_agent_registry", return_value=_make_registry()):
+            client = TestClient(_build_app_unauthenticated(), raise_server_exceptions=False)
+            resp = client.get("/api/agents/by-capability/web_search")
+        assert resp.status_code == 401
+
+    def test_by_category_requires_auth(self):
+        with patch("routes.agent_registry_routes.get_agent_registry", return_value=_make_registry()):
+            client = TestClient(_build_app_unauthenticated(), raise_server_exceptions=False)
+            resp = client.get("/api/agents/by-category/content")
+        assert resp.status_code == 401
