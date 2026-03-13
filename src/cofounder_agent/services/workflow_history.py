@@ -101,7 +101,7 @@ class WorkflowHistoryService:
                 row = await conn.fetchrow(
                     """
                     INSERT INTO workflow_executions (
-                        id, workflow_id, workflow_type, user_id, status,
+                        id, workflow_id, workflow_type, owner_id, status,
                         input_data, output_data, task_results, error_message,
                         start_time, end_time, duration_seconds, execution_metadata
                     )
@@ -200,40 +200,35 @@ class WorkflowHistoryService:
         """
         try:
             async with self.pool.acquire() as conn:
-                # Build parameterised WHERE clause once — reused for both COUNT and data queries
-                if status_filter:
-                    where_clause = "user_id = $1 AND status = $2"
-                    count_params = [user_id, status_filter]
-                    data_params = [user_id, status_filter, limit, offset]
-                    data_query = f"""
-                        SELECT * FROM workflow_executions
-                        WHERE {where_clause}
-                        ORDER BY created_at DESC
-                        LIMIT $3 OFFSET $4
-                    """
-                else:
-                    where_clause = "user_id = $1"
-                    count_params = [user_id]
-                    data_params = [user_id, limit, offset]
-                    data_query = f"""
-                        SELECT * FROM workflow_executions
-                        WHERE {where_clause}
-                        ORDER BY created_at DESC
-                        LIMIT $2 OFFSET $3
-                    """
+                # Single query: window function eliminates separate COUNT round-trip.
+                # Uses owner_id (physical column name); prior code incorrectly used user_id.
+                params: list = [user_id]
+                where_clause = "owner_id = $1"
 
-                # Get filtered total count (correct pagination metadata)
-                count_row = await conn.fetchval(
-                    f"SELECT COUNT(*) FROM workflow_executions WHERE {where_clause}",
-                    *count_params,
+                if status_filter:
+                    where_clause += " AND status = $2"
+                    params.append(status_filter)
+
+                limit_idx = len(params) + 1
+                offset_idx = len(params) + 2
+                params.extend([limit, offset])
+
+                rows = await conn.fetch(
+                    f"""
+                    SELECT *, COUNT(*) OVER () AS _total_count
+                    FROM workflow_executions
+                    WHERE {where_clause}
+                    ORDER BY created_at DESC
+                    LIMIT ${limit_idx} OFFSET ${offset_idx}
+                    """,
+                    *params,
                 )
 
-                # Get paginated results using the same filter
-                rows = await conn.fetch(data_query, *data_params)
+                total = int(rows[0]["_total_count"]) if rows else 0
 
                 return {
                     "executions": [self._row_to_dict(row) for row in rows],
-                    "total": count_row,
+                    "total": total,
                     "limit": limit,
                     "offset": offset,
                     "status_filter": status_filter,
@@ -283,7 +278,7 @@ class WorkflowHistoryService:
                         MIN(start_time) as first_execution,
                         MAX(end_time) as last_execution
                     FROM workflow_executions
-                    WHERE user_id = $1 AND created_at >= $2
+                    WHERE owner_id = $1 AND created_at >= $2
                     """,
                     user_id,
                     cutoff_date,
@@ -299,7 +294,7 @@ class WorkflowHistoryService:
                         SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failed,
                         AVG(duration_seconds) as average_duration
                     FROM workflow_executions
-                    WHERE user_id = $1 AND created_at >= $2
+                    WHERE owner_id = $1 AND created_at >= $2
                     GROUP BY workflow_type
                     ORDER BY executions DESC
                     """,
@@ -434,7 +429,7 @@ class WorkflowHistoryService:
                 cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
 
                 # Query condition
-                where = "user_id = $1 AND created_at >= $2"
+                where = "owner_id = $1 AND created_at >= $2"
                 params = [user_id, cutoff_date]
                 param_idx = 3
 

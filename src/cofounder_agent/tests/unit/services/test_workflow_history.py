@@ -238,8 +238,8 @@ class TestGetWorkflowExecution:
 class TestGetUserWorkflowHistory:
     @pytest.mark.asyncio
     async def test_no_filter_returns_all(self):
+        # Single window-function query: rows include _total_count; no fetchval call needed.
         conn = _make_conn()
-        conn.fetchval = AsyncMock(return_value=3)
         now = datetime.now(timezone.utc)
 
         def _row(exec_id):
@@ -251,6 +251,7 @@ class TestGetUserWorkflowHistory:
                 created_at=now,
                 updated_at=None,
                 duration_seconds=Decimal("1"),
+                _total_count=3,
             )
 
         conn.fetch = AsyncMock(return_value=[_row("e1"), _row("e2")])
@@ -265,8 +266,8 @@ class TestGetUserWorkflowHistory:
 
     @pytest.mark.asyncio
     async def test_with_status_filter(self):
+        # Single window-function query with status filter; _total_count reflects filtered count.
         conn = _make_conn()
-        conn.fetchval = AsyncMock(return_value=1)
         now = datetime.now(timezone.utc)
         row = _make_asyncpg_row(
             id="e1",
@@ -276,9 +277,9 @@ class TestGetUserWorkflowHistory:
             created_at=now,
             updated_at=None,
             duration_seconds=Decimal("2"),
+            _total_count=1,
         )
-        # First fetch (without filter) returns empty; second (with filter) returns one row
-        conn.fetch = AsyncMock(side_effect=[[row], [row]])
+        conn.fetch = AsyncMock(return_value=[row])
 
         svc = _service(conn)
         result = await svc.get_user_workflow_history(
@@ -286,6 +287,7 @@ class TestGetUserWorkflowHistory:
         )
 
         assert result["status_filter"] == "COMPLETED"
+        assert result["total"] == 1
 
 
 # ---------------------------------------------------------------------------
