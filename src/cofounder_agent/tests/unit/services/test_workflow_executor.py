@@ -375,6 +375,20 @@ class TestExecutePhase:
         assert result.status == "failed"
         assert "LLM timeout" in (result.error or "")
 
+    @pytest.mark.asyncio
+    async def test_non_success_non_failed_agent_status_returns_failed(self):
+        """Regression: both branches of the ternary previously returned 'completed'.
+        Any status that is not 'success' and not 'failed' (e.g. 'partial', 'timeout')
+        must now produce a 'failed' PhaseResult (issue #664)."""
+        agent = _make_agent(status="partial")
+        executor, _, _ = _make_executor()
+        phase = WorkflowPhase(index=0, name="research", user_inputs={})  # type: ignore[call-arg]
+
+        with patch.object(executor, "_get_agent", return_value=agent):
+            result = await executor._execute_phase(phase, {"topic": "AI"}, "exec-1")
+
+        assert result.status == "failed"
+
 
 # ---------------------------------------------------------------------------
 # WorkflowExecutor._normalize_phases
