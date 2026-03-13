@@ -277,15 +277,29 @@ class TaskExecutor:
         topic = task.get("topic", "")
         category = task.get("category", "general")
 
-        logger.info(f"⏳ [TASK_SINGLE] Processing task: {task_id}")
-        logger.info(f"   Name: {task_name}")
-        logger.info(f"   Topic: {topic}")
-        logger.info(f"   Category: {category}")
+        # Bind a synthetic trace ID for the duration of this task's processing.
+        # Background tasks run outside any HTTP request context so _request_id_var
+        # would otherwise remain None (logged as "-"), making it impossible to
+        # correlate executor log lines with the API request that created the task.
+        # Using "task-<id>" as the trace ID allows `grep request_id=task-<id>` to
+        # find all log lines emitted by both the route handler and the executor.
+        from middleware.request_id import _request_id_var
 
-        # Set per-task timeout (15 minutes max for content generation)
-        TASK_TIMEOUT_SECONDS = 900  # 15 minutes
+        trace_id = f"task-{task_id}"
+        _trace_token = _request_id_var.set(trace_id)
 
+        # All execution is wrapped in try/finally so _trace_token is always reset
+        # when this task finishes — prevents the synthetic trace ID from leaking
+        # into the next task processed by the same asyncio worker.
         try:
+            logger.info(f"⏳ [TASK_SINGLE] Processing task: {task_id}")
+            logger.info(f"   Name: {task_name}")
+            logger.info(f"   Topic: {topic}")
+            logger.info(f"   Category: {category}")
+
+            # Set per-task timeout (15 minutes max for content generation)
+            TASK_TIMEOUT_SECONDS = 900  # 15 minutes
+
             # 1. Update task status to 'in_progress'
             logger.info(f"📝 [TASK_SINGLE] Marking task as in_progress...")
             await self.database_service.update_task(
@@ -419,6 +433,10 @@ class TaskExecutor:
         except Exception as e:
             logger.error(f"❌ [TASK_SINGLE] Task failed: {task_id} - {str(e)}", exc_info=True)
             raise ServiceError(message=str(e), details={"task_id": task_id}) from e
+        finally:
+            # Reset the ContextVar so the synthetic trace ID does not bleed into
+            # subsequent tasks that may run in the same asyncio worker.
+            _request_id_var.reset(_trace_token)
 
     async def _execute_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """
