@@ -369,7 +369,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 criteria.get("seo_quality", 0),
                 criteria.get("readability", 0),
                 criteria.get("engagement", 0),
-                eval_data["overall_score"] >= 70,
+                eval_data["overall_score"] >= 70,  # 0-100 scale; 70 = passing (7.0/10)
                 eval_data.get("feedback"),
                 json.dumps(eval_data.get("suggestions", [])),
                 eval_data.get("evaluated_by", "QualityEvaluator"),
@@ -420,7 +420,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 improved - initial,
                 log_data.get("refinement_type", "auto-critique"),
                 log_data.get("changes_made"),
-                improved >= 70,
+                improved >= 70,  # 0-100 scale; 70 = passing (7.0/10)
             ]
 
             async with self.pool.acquire() as conn:
