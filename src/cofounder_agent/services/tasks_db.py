@@ -101,12 +101,21 @@ class TasksDatabase(DatabaseServiceMixin):
                         result.append(ModelConverter.to_dict(task_response))
                     return result
             except asyncio.TimeoutError:
-                logger.error(f"Query timeout fetching pending tasks after {QUERY_TIMEOUT}s", exc_info=True)
+                logger.error(
+                    "[get_pending_tasks] DB query timeout after %ss — executor will skip this poll cycle",
+                    QUERY_TIMEOUT,
+                    exc_info=True,
+                )
                 return []
         except Exception as e:
             if "content_tasks" in str(e) or "does not exist" in str(e) or "relation" in str(e):
+                # Table not yet created (migration pending) — silent skip is correct.
                 return []
-            logger.warning(f"Error fetching pending tasks: {str(e)}", exc_info=True)
+            logger.warning(
+                "[get_pending_tasks] Unexpected error fetching pending tasks: %s",
+                e,
+                exc_info=True,
+            )
             return []
 
     async def get_all_tasks(self, limit: int = 100) -> List[TaskResponse]:
