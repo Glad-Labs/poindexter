@@ -304,7 +304,7 @@ PARAMETER learning_rate {learning_rate}
         job_id = f"gpt4_finetune_{datetime.now().timestamp()}"
 
         try:
-            import openai
+            from openai import AsyncOpenAI
 
             key = api_key or os.getenv("OPENAI_API_KEY")
             if not key:
@@ -314,21 +314,21 @@ PARAMETER learning_rate {learning_rate}
                     "error": "OPENAI_API_KEY not configured",
                 }
 
-            openai.api_key = key
+            client = AsyncOpenAI(api_key=key)
 
-            # Upload training file — read async, offload blocking SDK call
+            # Upload training file
             async with aiofiles.open(dataset_path, "rb") as f:
                 file_bytes = await f.read()
 
-            file_response = await asyncio.to_thread(
-                lambda: openai.File.create(file=file_bytes, purpose="fine-tune")
+            file_response = await client.files.create(
+                file=("training_data.jsonl", file_bytes), purpose="fine-tune"
             )
 
             file_id = file_response.id
 
-            # Start fine-tuning job — offload blocking SDK call
-            job_response = await asyncio.to_thread(
-                lambda: openai.FineTuningJob.create(training_file=file_id, model="gpt-4")
+            # Start fine-tuning job
+            job_response = await client.fine_tuning.jobs.create(
+                training_file=file_id, model="gpt-4o"
             )
 
             job_id_api = job_response.id
@@ -438,14 +438,14 @@ PARAMETER learning_rate {learning_rate}
 
         elif job["target"] == "gpt4":
             try:
-                import openai
+                from openai import AsyncOpenAI
 
                 key = os.getenv("OPENAI_API_KEY")
                 if not key:
                     return {"status": "error", "error": "OPENAI_API_KEY not set"}
 
-                openai.api_key = key
-                job_api = openai.FineTuningJob.retrieve(job["job_id_api"])
+                client = AsyncOpenAI(api_key=key)
+                job_api = await client.fine_tuning.jobs.retrieve(job["job_id_api"])
 
                 status_map = {
                     "queued": "queued",
