@@ -72,7 +72,7 @@ class ProviderStatus:
     @property
     def cache_expired(self) -> bool:
         """Check if cache should be refreshed (5 min TTL)"""
-        now = datetime.now(timezone.utc) if self.last_checked.tzinfo else datetime.utcnow()
+        now = datetime.now(timezone.utc)
         return now - self.last_checked > timedelta(minutes=5)
 
 
@@ -164,7 +164,7 @@ class OllamaAdapter(ProviderAdapter):
     ) -> ModelResponse:
         """Generate text using Ollama"""
         model = model or "mistral:latest"
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         try:
             response = await self.client.generate(
@@ -175,7 +175,7 @@ class OllamaAdapter(ProviderAdapter):
                 max_tokens=max_tokens,
             )
 
-            elapsed_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
+            elapsed_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
 
             return ModelResponse(
                 text=response.get("response", ""),
@@ -226,7 +226,7 @@ class HuggingFaceAdapter(ProviderAdapter):
     ) -> ModelResponse:
         """Generate text using HuggingFace"""
         model = model or "mistralai/Mistral-7B-Instruct-v0.1"
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         try:
             response = await self.client.generate(
@@ -237,7 +237,7 @@ class HuggingFaceAdapter(ProviderAdapter):
                 top_p=kwargs.get("top_p", 0.9),
             )
 
-            elapsed_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
+            elapsed_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
 
             return ModelResponse(
                 text=response,
@@ -295,7 +295,7 @@ class GoogleAdapter(ProviderAdapter):
     ) -> ModelResponse:
         """Generate text using Google Gemini"""
         model = model or "gemini-pro"
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         try:
             response = await self.client.generate(
@@ -305,7 +305,7 @@ class GoogleAdapter(ProviderAdapter):
                 temperature=temperature,
             )
 
-            elapsed_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
+            elapsed_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
 
             return ModelResponse(
                 text=response,
@@ -371,7 +371,7 @@ class AnthropicAdapter(ProviderAdapter):
             )
 
         model = model or "claude-3-sonnet-20240229"
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         try:
             response = self.client.messages.create(
@@ -381,7 +381,7 @@ class AnthropicAdapter(ProviderAdapter):
                 temperature=temperature,
             )
 
-            elapsed_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
+            elapsed_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
 
             text = response.content[0].text if response.content else ""
 
@@ -444,7 +444,7 @@ class OpenAIAdapter(ProviderAdapter):
             )
 
         model = model or "gpt-4-turbo"
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         try:
             response = self.client.chat.completions.create(
@@ -454,7 +454,7 @@ class OpenAIAdapter(ProviderAdapter):
                 temperature=temperature,
             )
 
-            elapsed_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
+            elapsed_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
 
             text = response.choices[0].message.content if response.choices else ""
 
@@ -538,7 +538,7 @@ class ModelConsolidationService:
                 self.provider_status[provider_type] = ProviderStatus(
                     provider=provider_type,
                     is_available=False,
-                    last_checked=datetime.utcnow(),
+                    last_checked=datetime.now(timezone.utc),
                 )
                 logger.debug("Adapter initialized", provider=provider_type.value)
             except Exception as e:
@@ -566,7 +566,7 @@ class ModelConsolidationService:
             self.provider_status[provider_type] = ProviderStatus(
                 provider=provider_type,
                 is_available=is_available,
-                last_checked=datetime.utcnow(),
+                last_checked=datetime.now(timezone.utc),
                 last_error=None if is_available else "Not available",
             )
 
@@ -577,7 +577,7 @@ class ModelConsolidationService:
             self.provider_status[provider_type] = ProviderStatus(
                 provider=provider_type,
                 is_available=False,
-                last_checked=datetime.utcnow(),
+                last_checked=datetime.now(timezone.utc),
                 last_error=str(e),
             )
 

@@ -6,7 +6,7 @@ This module provides centralized health check functionality.
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ class HealthService:
             "status": "healthy",
             "service": "cofounder-agent",
             "version": config.app_version,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "components": {},
         }
 

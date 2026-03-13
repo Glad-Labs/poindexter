@@ -13,7 +13,7 @@ This service provides:
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -83,7 +83,7 @@ class MarketService:
                 "industry": industry,
                 "timeframe_months": timeframe_months,
                 "analysis": analysis,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "source": "market_insight_agent",
             }
 
@@ -119,7 +119,7 @@ class MarketService:
             "competitors_analyzed": 0,
             "competitors": [],
             "data_source": "unavailable",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     async def identify_opportunities(
@@ -174,7 +174,7 @@ class MarketService:
                 "opportunities_identified": len(opportunities),
                 "opportunities": opportunities,
                 "constraints_considered": constraints,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
 
         except Exception as e:
@@ -211,7 +211,7 @@ class MarketService:
             "overall_sentiment": "unavailable",
             "sentiment_score": None,
             "total_mentions": 0,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     def get_service_metadata(self) -> Dict[str, Any]:

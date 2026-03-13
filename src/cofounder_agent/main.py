@@ -6,7 +6,7 @@ Implements PostgreSQL database with REST API command queue integration
 
 import sys
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 # Third-party imports
@@ -232,7 +232,7 @@ async def api_health():
             "status": "healthy",
             "service": "cofounder-agent",
             "version": "3.0.1",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "components": {},
         }
 
