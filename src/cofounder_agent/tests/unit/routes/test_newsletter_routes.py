@@ -90,16 +90,23 @@ class TestSubscribeToNewsletter:
         assert data["success"] is True
         assert data["subscriber_id"] == 42
 
-    def test_already_subscribed_returns_200_with_success_false(self):
-        """Re-subscribing active email returns 200 with success=False (not idempotent)."""
+    def test_already_subscribed_returns_generic_success_to_prevent_enumeration(self):
+        """Re-subscribing active email returns 200 with success=True and generic message.
+
+        Returning success=False with the email address would allow an attacker to enumerate
+        valid email addresses by observing different response bodies (issue #744).
+        The caller cannot infer whether the email was already registered.
+        """
         existing = {"id": 99, "unsubscribed_at": None}
         pool = _make_pool_mock(fetchrow_return=existing)
         client = TestClient(_build_app(_make_db(pool)))
         resp = client.post("/api/newsletter/subscribe", json=VALID_SUBSCRIBE_PAYLOAD)
         assert resp.status_code == 200
         data = resp.json()
-        assert data["success"] is False
-        assert data["subscriber_id"] == 99
+        # Must return success=True regardless (anti-enumeration)
+        assert data["success"] is True
+        # Must NOT include the email address in the message
+        assert VALID_SUBSCRIBE_PAYLOAD["email"] not in data.get("message", "")
 
     def test_with_interest_categories(self):
         pool = _make_pool_mock(fetchrow_return=None, fetchval_return=10)
@@ -221,15 +228,24 @@ class TestGetSubscriberCount:
         data = client.get("/api/newsletter/subscribers/count").json()
         assert data["subscriber_count"] == 0
 
-    def test_is_public_no_auth_required(self):
-        """subscriber_count endpoint is public — no auth dependency in route."""
+    def test_requires_auth_returns_401_when_unauthenticated(self):
+        """subscriber_count is an admin metric — must require authentication (issue #744)."""
         app = FastAPI()
         app.include_router(router)
         pool = _make_pool_mock(fetchval_return=5)
         app.dependency_overrides[get_database_dependency] = lambda: _make_db(pool)
-        client = TestClient(app)
+        # No get_current_user override — simulate unauthenticated request
+        client = TestClient(app, raise_server_exceptions=False)
         resp = client.get("/api/newsletter/subscribers/count")
-        assert resp.status_code == 200
+        assert resp.status_code == 401
+
+    def test_authenticated_user_receives_subscriber_count(self):
+        """Authenticated user should get the subscriber count as before."""
+        pool = _make_pool_mock(fetchval_return=77)
+        client = TestClient(_build_app(_make_db(pool)))
+        data = client.get("/api/newsletter/subscribers/count").json()
+        assert data["success"] is True
+        assert data["subscriber_count"] == 77
 
     def test_db_error_returns_500(self):
         pool = _make_pool_mock()
