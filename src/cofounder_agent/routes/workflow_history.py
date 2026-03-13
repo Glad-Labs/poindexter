@@ -64,7 +64,7 @@ def initialize_history_service(db_pool) -> None:
 @router.get("/history", response_model=WorkflowHistoryResponse)
 async def get_workflow_history(
     current_user: Dict[str, Any] = Depends(get_current_user),
-    limit: int = Query(50, ge=1, le=500, description="Number of results to return"),
+    limit: int = Query(20, ge=1, le=100, description="Number of results to return"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
     status: Optional[str] = Query(
         None, description="Filter by status: PENDING, RUNNING, COMPLETED, FAILED, PAUSED"
@@ -75,7 +75,7 @@ async def get_workflow_history(
     Get workflow execution history for the current user.
 
     Query Parameters:
-    - limit: Number of results (1-500, default: 50)
+    - limit: Number of results (1-100, default: 20)
     - offset: Pagination offset (default: 0)
     - status: Optional status filter
 
@@ -234,7 +234,7 @@ async def get_performance_metrics(
 async def get_workflow_type_history(
     workflow_id: str = Path(..., description="ID of the workflow"),
     current_user: Dict[str, Any] = Depends(get_current_user),
-    limit: int = Query(50, ge=1, le=500),
+    limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     history_service: WorkflowHistoryService = Depends(get_history_service),
 ) -> Dict[str, Any]:
@@ -245,7 +245,7 @@ async def get_workflow_type_history(
     - workflow_id: ID of the workflow to get history for
 
     Query Parameters:
-    - limit: Number of results (1-500, default: 50)
+    - limit: Number of results (1-100, default: 20)
     - offset: Pagination offset (default: 0)
 
     Returns:

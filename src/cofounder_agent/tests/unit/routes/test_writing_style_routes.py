@@ -124,7 +124,7 @@ class TestListWritingSamples:
         client = TestClient(_build_app())
         data = client.get("/api/writing-style/samples").json()
         assert data["offset"] == 0
-        assert data["limit"] == 100
+        assert data["limit"] == 20  # Default lowered to 20 (project standard, issue #587)
 
     def test_custom_offset_and_limit(self):
         mock_db = _make_writing_style_db()

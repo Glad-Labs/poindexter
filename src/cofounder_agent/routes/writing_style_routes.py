@@ -177,7 +177,7 @@ async def upload_writing_sample(
 @router.get("/samples", response_model=WritingSamplesListResponse)
 async def list_writing_samples(
     offset: int = Query(0, ge=0, description="Number of samples to skip"),
-    limit: int = Query(100, ge=1, le=500, description="Maximum samples to return"),
+    limit: int = Query(20, ge=1, le=100, description="Maximum samples to return"),
     current_user: str = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
