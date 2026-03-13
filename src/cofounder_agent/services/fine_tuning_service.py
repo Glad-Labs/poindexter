@@ -162,12 +162,8 @@ PARAMETER learning_rate {learning_rate}
         job_id = f"gemini_finetune_{datetime.now().timestamp()}"
 
         try:
-            # Import google-genai library (new package, replaces deprecated google.generativeai)
-            try:
-                import google.genai as genai
-            except ImportError:
-                # Fallback to old deprecated package if new one not available
-                import google.generativeai as genai
+            # Import google-genai library
+            import google.genai as genai
 
             key = api_key or os.getenv("GOOGLE_API_KEY")
             if not key:
@@ -177,20 +173,7 @@ PARAMETER learning_rate {learning_rate}
                     "error": "GOOGLE_API_KEY not configured",
                 }
 
-            # Try new SDK first, fall back to old one
-            use_new_sdk = False
-            try:
-                import google.genai as genai
-
-                use_new_sdk = True
-            except ImportError:
-                import google.generativeai as genai
-
-            # Configure API key based on SDK version
-            if use_new_sdk:
-                genai.api_key = key
-            else:
-                genai.configure(api_key=key)
+            genai.api_key = key
 
             # Upload training data
             media = genai.upload_file(dataset_path)
@@ -224,7 +207,7 @@ PARAMETER learning_rate {learning_rate}
             return {
                 "job_id": job_id,
                 "status": "failed",
-                "error": "google-generativeai not installed. Run: pip install google-generativeai",
+                "error": "google-genai not installed. Run: pip install google-genai",
             }
         except Exception as e:
             logger.error(f"Failed to start Gemini fine-tuning: {e}", exc_info=True)

@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 try:
-    import google.generativeai  # noqa: F401
+    import google.genai  # noqa: F401
     _GENAI_AVAILABLE = True
 except ImportError:
     _GENAI_AVAILABLE = False
@@ -95,7 +95,7 @@ class GeminiClient:
         if not _GENAI_AVAILABLE:
             raise ImportError(
                 "google-genai library not installed. "
-                "Install with: pip install google-generativeai"
+                "Install with: pip install google-genai"
             )
 
         try:
@@ -151,7 +151,7 @@ class GeminiClient:
         if not _GENAI_AVAILABLE:
             raise ImportError(
                 "google-genai library not installed. "
-                "Install with: pip install google-generativeai"
+                "Install with: pip install google-genai"
             )
 
         try:
