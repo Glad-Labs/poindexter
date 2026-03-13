@@ -14,7 +14,7 @@ Endpoints:
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -151,7 +151,7 @@ async def get_all_agents_status(orchestrator=Depends(get_orchestrator)):
 
         return AllAgentsStatus(
             status=overall_status,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             agents=agents_status,
             system_health=system_status,
         )
@@ -259,7 +259,7 @@ async def send_agent_command(
                 "agent": agent_name,
                 "command": command.command,
             },
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
         )
     except Exception as e:
         logger.error(f"Error sending command to agent {agent_name}: {e}")
@@ -474,7 +474,7 @@ async def get_agent_system_health(orchestrator=Depends(get_orchestrator)):
 
         return AgentHealth(
             status=overall_status,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             all_agents_running=error_count == 0,
             error_count=error_count,
             warning_count=warning_count,

@@ -8,7 +8,7 @@ Integrates with UsageTracker service for real-time metrics collection.
 """
 
 from services.logger_config import get_logger
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -76,7 +76,7 @@ async def get_usage_metrics(
 
         if not completed_ops:
             return {
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "period": period,
                 "total_operations": 0,
                 "tokens": {"total": 0, "input": 0, "output": 0, "avg_per_operation": 0.0},
@@ -127,7 +127,7 @@ async def get_usage_metrics(
         projected_monthly = (total_cost / days_active * 30) if days_active > 0 else 0
 
         return {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "period": period,
             "total_operations": total_ops,
             "tokens": {

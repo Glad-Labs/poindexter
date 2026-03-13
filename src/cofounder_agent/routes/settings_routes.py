@@ -19,7 +19,7 @@ All endpoints require:
 5. Audit logging of all changes
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
@@ -121,8 +121,8 @@ async def list_settings(
                 is_encrypted=False,
                 is_read_only=False,
                 tags=[],
-                created_at=setting.get("created_at") or datetime.utcnow(),
-                updated_at=setting.get("updated_at") or datetime.utcnow(),
+                created_at=setting.get("created_at") or datetime.now(timezone.utc),
+                updated_at=setting.get("updated_at") or datetime.now(timezone.utc),
                 created_by_id=1,
                 updated_by_id=None,
                 value_preview=setting.get("value", "")[:50],
@@ -189,8 +189,8 @@ async def get_setting(
             is_encrypted=False,
             is_read_only=False,
             tags=[],
-            created_at=setting.get("created_at") or datetime.utcnow(),
-            updated_at=setting.get("updated_at") or datetime.utcnow(),
+            created_at=setting.get("created_at") or datetime.now(timezone.utc),
+            updated_at=setting.get("updated_at") or datetime.now(timezone.utc),
             created_by_id=1,
             updated_by_id=None,
             value_preview=setting.get("value", "")[:50],
@@ -290,8 +290,8 @@ async def create_setting(
             is_encrypted=False,
             is_read_only=False,
             tags=setting_data.tags or [],
-            created_at=created_setting.get("created_at") or datetime.utcnow(),
-            updated_at=created_setting.get("updated_at") or datetime.utcnow(),
+            created_at=created_setting.get("created_at") or datetime.now(timezone.utc),
+            updated_at=created_setting.get("updated_at") or datetime.now(timezone.utc),
             created_by_id=1,
             updated_by_id=None,
             value_preview=created_setting.get("value", "")[:50],
@@ -341,8 +341,8 @@ async def batch_update_settings(
         is_encrypted=False,
         is_read_only=False,
         tags=["batch_update"],
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
         created_by_id=1,
         updated_by_id=1,
         value_preview=update_data.value or "updated_value",
@@ -445,8 +445,8 @@ async def update_setting(
         is_encrypted=False,
         is_read_only=False,
         tags=["test"],
-        created_at=datetime.utcnow() - timedelta(hours=1),
-        updated_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        updated_at=datetime.now(timezone.utc),
         created_by_id=1,
         updated_by_id=1,
         value_preview=new_value,
@@ -616,8 +616,8 @@ async def rollback_setting(
         is_encrypted=False,
         is_read_only=False,
         tags=["test", "rollback"],
-        created_at=datetime.utcnow() - timedelta(hours=2),
-        updated_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc) - timedelta(hours=2),
+        updated_at=datetime.now(timezone.utc),
         created_by_id=1,
         updated_by_id=1,
         value_preview=f"rolled_back_value_{history_id}",
@@ -711,7 +711,7 @@ async def export_settings(
         "format": format,
         "include_secrets": include_secrets,
         "total_settings": 10,
-        "exported_at": datetime.utcnow().isoformat(),
+        "exported_at": datetime.now(timezone.utc).isoformat(),
     }
 
 
