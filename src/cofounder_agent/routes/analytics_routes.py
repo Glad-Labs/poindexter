@@ -95,7 +95,7 @@ class KPIMetrics(BaseModel):
 async def get_kpi_metrics(
     range: str = Query("7d", description="Time range: 1d, 7d, 30d, 90d, all"),
     db: DatabaseService = Depends(get_database_dependency),
-    current_user: Optional[UserProfile] = Depends(lambda: None),  # Optional auth
+    current_user: Optional[UserProfile] = Depends(get_current_user),  # Reqirequire auth
 ):
     """
     Get comprehensive KPI metrics for the executive dashboard.
@@ -414,6 +414,8 @@ class DistributionResponse(BaseModel):
 async def get_task_distributions(
     range: str = Query("7d", description="Time range: 1d, 7d, 30d, 90d, all"),
     db: DatabaseService = Depends(get_database_dependency),
+    current_user: dict = Depends(get_current_user),
+
 ):
     """
     Get task distribution breakdown by type and status for visualization.
