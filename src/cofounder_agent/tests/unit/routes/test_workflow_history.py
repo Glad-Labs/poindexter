@@ -2,11 +2,11 @@
 Unit tests for routes/workflow_history.py.
 
 Tests cover:
-- GET /api/workflow/history              — get_workflow_history
-- GET /api/workflow/{id}/details         — get_execution_details
-- GET /api/workflow/statistics           — get_workflow_statistics
-- GET /api/workflow/performance-metrics  — get_performance_metrics
-- GET /api/workflow/{id}/history         — get_workflow_type_history
+- GET /api/workflows/history              — get_workflow_history
+- GET /api/workflows/{id}/details         — get_execution_details
+- GET /api/workflows/statistics           — get_workflow_statistics
+- GET /api/workflows/performance-metrics  — get_performance_metrics
+- GET /api/workflows/{id}/history         — get_workflow_type_history
 
 WorkflowHistoryService is provided via dependency override.
 Auth is overridden via dependency injection.
@@ -101,7 +101,7 @@ def _build_app(svc=None) -> FastAPI:
 
 
 # ---------------------------------------------------------------------------
-# GET /api/workflow/history
+# GET /api/workflows/history
 # ---------------------------------------------------------------------------
 
 
@@ -109,37 +109,37 @@ def _build_app(svc=None) -> FastAPI:
 class TestGetWorkflowHistory:
     def test_returns_200(self):
         client = TestClient(_build_app())
-        resp = client.get("/api/workflow/history")
+        resp = client.get("/api/workflows/history")
         assert resp.status_code == 200
 
     def test_response_has_executions_and_total(self):
         client = TestClient(_build_app())
-        data = client.get("/api/workflow/history").json()
+        data = client.get("/api/workflows/history").json()
         assert "executions" in data
         assert "total" in data
 
     def test_empty_history_returns_200(self):
         svc = _make_history_svc(history={"executions": [], "total": 0})
         client = TestClient(_build_app(svc))
-        data = client.get("/api/workflow/history").json()
+        data = client.get("/api/workflows/history").json()
         assert data["total"] == 0
         assert data["executions"] == []
 
     def test_pagination_params_accepted(self):
         client = TestClient(_build_app())
-        resp = client.get("/api/workflow/history?limit=10&offset=5")
+        resp = client.get("/api/workflows/history?limit=10&offset=5")
         assert resp.status_code == 200
 
     def test_status_filter_accepted(self):
         client = TestClient(_build_app())
-        resp = client.get("/api/workflow/history?status=COMPLETED")
+        resp = client.get("/api/workflows/history?status=COMPLETED")
         assert resp.status_code == 200
 
     def test_service_error_returns_500(self):
         svc = _make_history_svc()
         svc.get_user_workflow_history = AsyncMock(side_effect=RuntimeError("DB error"))
         client = TestClient(_build_app(svc))
-        resp = client.get("/api/workflow/history")
+        resp = client.get("/api/workflows/history")
         assert resp.status_code == 500
 
     def test_requires_auth(self):
@@ -148,12 +148,12 @@ class TestGetWorkflowHistory:
         app.include_router(router)
         app.dependency_overrides[get_history_service] = lambda: svc
         client = TestClient(app, raise_server_exceptions=False)
-        resp = client.get("/api/workflow/history")
+        resp = client.get("/api/workflows/history")
         assert resp.status_code == 401
 
 
 # ---------------------------------------------------------------------------
-# GET /api/workflow/{execution_id}/details
+# GET /api/workflows/{execution_id}/details
 # ---------------------------------------------------------------------------
 
 
@@ -161,12 +161,12 @@ class TestGetWorkflowHistory:
 class TestGetExecutionDetails:
     def test_returns_200_for_existing_execution(self):
         client = TestClient(_build_app())
-        resp = client.get(f"/api/workflow/{EXECUTION_ID}/details")
+        resp = client.get(f"/api/workflows/{EXECUTION_ID}/details")
         assert resp.status_code == 200
 
     def test_response_has_execution_fields(self):
         client = TestClient(_build_app())
-        data = client.get(f"/api/workflow/{EXECUTION_ID}/details").json()
+        data = client.get(f"/api/workflows/{EXECUTION_ID}/details").json()
         assert "id" in data
         assert "workflow_type" in data
         assert "status" in data
@@ -175,7 +175,7 @@ class TestGetExecutionDetails:
         svc = _make_history_svc()
         svc.get_workflow_execution = AsyncMock(return_value=None)
         client = TestClient(_build_app(svc))
-        resp = client.get("/api/workflow/nonexistent-id/details")
+        resp = client.get("/api/workflows/nonexistent-id/details")
         assert resp.status_code == 404
 
     def test_unauthorized_user_returns_403(self):
@@ -184,19 +184,19 @@ class TestGetExecutionDetails:
             execution={**SAMPLE_EXECUTION, "user_id": "other-user-999"}
         )
         client = TestClient(_build_app(svc))
-        resp = client.get(f"/api/workflow/{EXECUTION_ID}/details")
+        resp = client.get(f"/api/workflows/{EXECUTION_ID}/details")
         assert resp.status_code == 403
 
     def test_service_error_returns_500(self):
         svc = _make_history_svc()
         svc.get_workflow_execution = AsyncMock(side_effect=RuntimeError("DB error"))
         client = TestClient(_build_app(svc))
-        resp = client.get(f"/api/workflow/{EXECUTION_ID}/details")
+        resp = client.get(f"/api/workflows/{EXECUTION_ID}/details")
         assert resp.status_code == 500
 
 
 # ---------------------------------------------------------------------------
-# GET /api/workflow/statistics
+# GET /api/workflows/statistics
 # ---------------------------------------------------------------------------
 
 
@@ -204,30 +204,30 @@ class TestGetExecutionDetails:
 class TestGetWorkflowStatistics:
     def test_returns_200(self):
         client = TestClient(_build_app())
-        resp = client.get("/api/workflow/statistics")
+        resp = client.get("/api/workflows/statistics")
         assert resp.status_code == 200
 
     def test_response_has_stats_fields(self):
         client = TestClient(_build_app())
-        data = client.get("/api/workflow/statistics").json()
+        data = client.get("/api/workflows/statistics").json()
         for field in ["total_executions", "success_rate_percent", "period_days"]:
             assert field in data
 
     def test_days_param_accepted(self):
         client = TestClient(_build_app())
-        resp = client.get("/api/workflow/statistics?days=7")
+        resp = client.get("/api/workflows/statistics?days=7")
         assert resp.status_code == 200
 
     def test_service_error_returns_500(self):
         svc = _make_history_svc()
         svc.get_workflow_statistics = AsyncMock(side_effect=RuntimeError("DB error"))
         client = TestClient(_build_app(svc))
-        resp = client.get("/api/workflow/statistics")
+        resp = client.get("/api/workflows/statistics")
         assert resp.status_code == 500
 
 
 # ---------------------------------------------------------------------------
-# GET /api/workflow/performance-metrics
+# GET /api/workflows/performance-metrics
 # ---------------------------------------------------------------------------
 
 
@@ -235,23 +235,23 @@ class TestGetWorkflowStatistics:
 class TestGetPerformanceMetrics:
     def test_returns_200(self):
         client = TestClient(_build_app())
-        resp = client.get("/api/workflow/performance-metrics")
+        resp = client.get("/api/workflows/performance-metrics")
         assert resp.status_code == 200
 
     def test_response_has_metrics_fields(self):
         client = TestClient(_build_app())
-        data = client.get("/api/workflow/performance-metrics").json()
+        data = client.get("/api/workflows/performance-metrics").json()
         for field in ["period_days", "execution_time_distribution", "optimization_tips"]:
             assert field in data
 
     def test_workflow_type_filter_accepted(self):
         client = TestClient(_build_app())
-        resp = client.get("/api/workflow/performance-metrics?workflow_type=blog_generation")
+        resp = client.get("/api/workflows/performance-metrics?workflow_type=blog_generation")
         assert resp.status_code == 200
 
     def test_service_error_returns_500(self):
         svc = _make_history_svc()
         svc.get_performance_metrics = AsyncMock(side_effect=RuntimeError("DB error"))
         client = TestClient(_build_app(svc))
-        resp = client.get("/api/workflow/performance-metrics")
+        resp = client.get("/api/workflows/performance-metrics")
         assert resp.status_code == 500

@@ -170,7 +170,6 @@ def register_workflow_history_routes(
     Separated from register_all_routes because those services aren't available at module load time.
     """
     try:
-        from routes.workflow_history import alias_router as workflow_history_alias_router
         from routes.workflow_history import initialize_history_service
         from routes.workflow_history import router as workflow_history_router
 
@@ -182,10 +181,7 @@ def register_workflow_history_routes(
 
         initialize_history_service(database_service.pool)
         app.include_router(workflow_history_router)
-        app.include_router(workflow_history_alias_router)
-        logger.info(
-            "workflow_history_router registered (both /api/workflow/* and /api/workflows/* paths)"
-        )
+        logger.info("workflow_history_router registered (/api/workflows/* paths)")
         return True
     except ImportError as e:
         logger.warning(f"workflow_history routes not available: {e}", exc_info=True)
