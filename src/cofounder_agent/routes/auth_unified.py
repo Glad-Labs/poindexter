@@ -315,6 +315,20 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
         )
 
 
+async def get_current_user_optional(request: Request) -> Optional[Dict[str, Any]]:
+    """
+    Optionally resolve current user from Authorization header.
+
+    Returns None when no/invalid auth is provided instead of raising 401.
+    Useful for endpoints that are public by default but may expose additional
+    data for authenticated users.
+    """
+    try:
+        return await get_current_user(request)
+    except HTTPException:
+        return None
+
+
 # ============================================================================
 # Unified Endpoints
 # ============================================================================

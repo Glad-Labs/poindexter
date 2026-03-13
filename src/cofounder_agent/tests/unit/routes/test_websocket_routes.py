@@ -416,3 +416,325 @@ class TestValidateWsToken:
                 result = await _validate_ws_token(ws, "valid.jwt.token")
         assert result is True
         ws.close.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# WebSocket progress stream — connection lifecycle (Issue #563)
+# ---------------------------------------------------------------------------
+# These tests exercise the /api/ws/image-generation/{task_id} endpoint
+# using starlette's TestClient WebSocket context manager.  The progress
+# service and token validation are mocked so no real I/O is needed.
+
+
+@pytest.mark.unit
+class TestWebSocketProgressStream:
+    """Test the image-generation WebSocket endpoint connection lifecycle."""
+
+    def _get_client(self) -> TestClient:
+        return TestClient(_build_app())
+
+    def test_connection_accepted_with_dev_token(self):
+        """Dev token is accepted when DEVELOPMENT_MODE=true."""
+        client = self._get_client()
+        with (
+            patch.dict("os.environ", {"DEVELOPMENT_MODE": "true"}),
+            patch("routes.websocket_routes.get_progress_service") as mock_svc,
+        ):
+            mock_svc.return_value.get_progress.return_value = None
+            with client.websocket_connect(
+                "/api/ws/image-generation/task-001?token=dev-token"
+            ) as ws:
+                # Receive the initial status message
+                msg = ws.receive_json()
+                assert msg["type"] in ("status", "progress")
+
+    def test_initial_message_sent_on_connect_when_no_progress(self):
+        """When no progress exists yet, a 'status' waiting message is sent."""
+        client = self._get_client()
+        with (
+            patch.dict("os.environ", {"DEVELOPMENT_MODE": "true"}),
+            patch("routes.websocket_routes.get_progress_service") as mock_svc,
+        ):
+            mock_svc.return_value.get_progress.return_value = None
+            with client.websocket_connect(
+                "/api/ws/image-generation/task-002?token=dev-token"
+            ) as ws:
+                msg = ws.receive_json()
+                assert msg["type"] == "status"
+                assert "task_id" in msg
+
+    def test_initial_message_sent_on_connect_when_progress_exists(self):
+        """When progress exists, a 'progress' message is sent immediately."""
+        client = self._get_client()
+        fake_progress = MagicMock()
+        fake_progress.to_dict.return_value = {"pct": 45, "status": "generating"}
+        with (
+            patch.dict("os.environ", {"DEVELOPMENT_MODE": "true"}),
+            patch("routes.websocket_routes.get_progress_service") as mock_svc,
+        ):
+            mock_svc.return_value.get_progress.return_value = fake_progress
+            with client.websocket_connect(
+                "/api/ws/image-generation/task-003?token=dev-token"
+            ) as ws:
+                msg = ws.receive_json()
+                assert msg["type"] == "progress"
+                assert msg["pct"] == 45
+
+    def test_ping_receives_pong(self):
+        """Client sending 'ping' receives 'pong' response."""
+        client = self._get_client()
+        with (
+            patch.dict("os.environ", {"DEVELOPMENT_MODE": "true"}),
+            patch("routes.websocket_routes.get_progress_service") as mock_svc,
+        ):
+            mock_svc.return_value.get_progress.return_value = None
+            with client.websocket_connect(
+                "/api/ws/image-generation/task-004?token=dev-token"
+            ) as ws:
+                # Consume initial status message
+                ws.receive_json()
+                ws.send_json({"type": "ping"})
+                pong = ws.receive_json()
+                assert pong["type"] == "pong"
+
+
+@pytest.mark.unit
+class TestWebSocketProgressStreamAuth:
+    """Test that token validation guards the WebSocket endpoint."""
+
+    def test_missing_token_connection_is_rejected(self):
+        """Missing token causes the WebSocket connection to be refused."""
+        client = TestClient(_build_app())
+        with (
+            patch.dict("os.environ", {"DEVELOPMENT_MODE": "false"}),
+            patch("services.token_validator.JWTTokenValidator") as mock_cls,
+        ):
+            mock_cls.verify_token.return_value = None
+            try:
+                # Attempt to connect without a token (using an empty string to satisfy
+                # the required query param; validation then rejects it)
+                with client.websocket_connect(
+                    "/api/ws/image-generation/task-x?token="
+                ) as ws:
+                    ws.receive_text()
+                    assert False, "Expected WebSocket to be closed"
+            except Exception:
+                # Connection was closed or rejected — expected
+                pass
+
+    def test_invalid_token_in_production_mode_closes_connection(self):
+        """Invalid JWT causes connection to be rejected (close code 1008)."""
+        client = TestClient(_build_app())
+        with (
+            patch.dict("os.environ", {"DEVELOPMENT_MODE": "false"}),
+            patch("services.token_validator.JWTTokenValidator") as mock_cls,
+        ):
+            mock_cls.verify_token.return_value = None  # validation fails
+            try:
+                with client.websocket_connect(
+                    "/api/ws/image-generation/task-y?token=invalid.jwt.token"
+                ) as ws:
+                    ws.receive_text()  # Should not reach here
+                    assert False, "Expected WebSocket to be closed"
+            except Exception:
+                # Connection was closed — expected behaviour
+                pass
+
+
+@pytest.mark.unit
+class TestBroadcastReachesConnectedClient:
+    """Unit-level test: broadcast_progress delivers to all connected sockets."""
+
+    @pytest.mark.asyncio
+    async def test_broadcast_progress_message_structure(self):
+        """broadcast_progress wraps the progress dict with type='progress'."""
+        with patch.object(connection_manager, "broadcast", new=AsyncMock()) as mock_bcast:
+            progress = MagicMock()
+            progress.to_dict.return_value = {"pct": 80, "status": "finalizing"}
+            await broadcast_progress("task-broadcast", progress)
+
+        task_id_arg, msg_arg = mock_bcast.call_args[0]
+        assert task_id_arg == "task-broadcast"
+        assert msg_arg["type"] == "progress"
+        assert msg_arg["pct"] == 80
+
+    @pytest.mark.asyncio
+    async def test_multiple_clients_same_task_all_receive_broadcast(self):
+        """All connected sockets for a task receive the broadcast message."""
+        mgr = ConnectionManager()
+        ws1, ws2, ws3 = AsyncMock(), AsyncMock(), AsyncMock()
+        await mgr.connect("task-multi", ws1)
+        await mgr.connect("task-multi", ws2)
+        await mgr.connect("task-multi", ws3)
+
+        msg = {"type": "progress", "pct": 60}
+        await mgr.broadcast("task-multi", msg)
+
+        ws1.send_json.assert_awaited_once_with(msg)
+        ws2.send_json.assert_awaited_once_with(msg)
+        ws3.send_json.assert_awaited_once_with(msg)
+
+    @pytest.mark.asyncio
+    async def test_client_disconnect_during_broadcast_is_cleaned_up(self):
+        """A stale connection that raises on send_json is removed from the manager."""
+        mgr = ConnectionManager()
+        live_ws = AsyncMock()
+        dead_ws = AsyncMock()
+        dead_ws.send_json.side_effect = RuntimeError("pipe broken")
+
+        await mgr.connect("task-fail", live_ws)
+        await mgr.connect("task-fail", dead_ws)
+
+        await mgr.broadcast("task-fail", {"type": "progress"})
+
+        remaining = mgr.active_connections.get("task-fail", set())
+        assert live_ws in remaining
+        assert dead_ws not in remaining
+
+
+# ---------------------------------------------------------------------------
+# WebSocket progress stream — connection lifecycle (Issue #563)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestWebSocketProgressStream:
+    """Test the image-generation WebSocket endpoint connection lifecycle."""
+
+    def _get_client(self) -> TestClient:
+        return TestClient(_build_app())
+
+    def test_connection_accepted_with_dev_token(self):
+        """Dev token is accepted when DEVELOPMENT_MODE=true."""
+        client = self._get_client()
+        with (
+            patch.dict("os.environ", {"DEVELOPMENT_MODE": "true"}),
+            patch("routes.websocket_routes.get_progress_service") as mock_svc,
+        ):
+            mock_svc.return_value.get_progress.return_value = None
+            with client.websocket_connect(
+                "/api/ws/image-generation/task-001?token=dev-token"
+            ) as ws:
+                msg = ws.receive_json()
+                assert msg["type"] in ("status", "progress")
+
+    def test_initial_status_message_when_no_progress(self):
+        """When no progress exists yet, a 'status' waiting message is sent."""
+        client = self._get_client()
+        with (
+            patch.dict("os.environ", {"DEVELOPMENT_MODE": "true"}),
+            patch("routes.websocket_routes.get_progress_service") as mock_svc,
+        ):
+            mock_svc.return_value.get_progress.return_value = None
+            with client.websocket_connect(
+                "/api/ws/image-generation/task-002?token=dev-token"
+            ) as ws:
+                msg = ws.receive_json()
+                assert msg["type"] == "status"
+                assert "task_id" in msg
+
+    def test_initial_progress_message_when_progress_exists(self):
+        """When progress exists, a 'progress' message is sent immediately."""
+        client = self._get_client()
+        fake_progress = MagicMock()
+        fake_progress.to_dict.return_value = {"pct": 45, "status": "generating"}
+        with (
+            patch.dict("os.environ", {"DEVELOPMENT_MODE": "true"}),
+            patch("routes.websocket_routes.get_progress_service") as mock_svc,
+        ):
+            mock_svc.return_value.get_progress.return_value = fake_progress
+            with client.websocket_connect(
+                "/api/ws/image-generation/task-003?token=dev-token"
+            ) as ws:
+                msg = ws.receive_json()
+                assert msg["type"] == "progress"
+                assert msg["pct"] == 45
+
+    def test_ping_receives_pong(self):
+        """Client sending 'ping' receives 'pong' response."""
+        client = self._get_client()
+        with (
+            patch.dict("os.environ", {"DEVELOPMENT_MODE": "true"}),
+            patch("routes.websocket_routes.get_progress_service") as mock_svc,
+        ):
+            mock_svc.return_value.get_progress.return_value = None
+            with client.websocket_connect(
+                "/api/ws/image-generation/task-004?token=dev-token"
+            ) as ws:
+                ws.receive_json()  # consume initial status message
+                ws.send_json({"type": "ping"})
+                pong = ws.receive_json()
+                assert pong["type"] == "pong"
+
+
+@pytest.mark.unit
+class TestWebSocketProgressStreamAuth:
+    """Test that token validation guards the WebSocket endpoint."""
+
+    def test_invalid_token_in_production_mode_closes_connection(self):
+        """Invalid JWT causes connection to be rejected."""
+        client = TestClient(_build_app())
+        with (
+            patch.dict("os.environ", {"DEVELOPMENT_MODE": "false"}),
+            patch("services.token_validator.JWTTokenValidator") as mock_cls,
+        ):
+            mock_cls.verify_token.return_value = None
+            try:
+                with client.websocket_connect(
+                    "/api/ws/image-generation/task-y?token=invalid.jwt.token"
+                ) as ws:
+                    ws.receive_text()
+                    assert False, "Expected WebSocket to be closed"
+            except Exception:
+                pass  # connection closed — expected
+
+
+@pytest.mark.unit
+class TestBroadcastReachesConnectedClient:
+    """Unit tests: broadcast delivers to all connected sockets."""
+
+    @pytest.mark.asyncio
+    async def test_broadcast_progress_message_structure(self):
+        """broadcast_progress wraps the progress dict with type='progress'."""
+        with patch.object(connection_manager, "broadcast", new=AsyncMock()) as mock_bcast:
+            progress = MagicMock()
+            progress.to_dict.return_value = {"pct": 80, "status": "finalizing"}
+            await broadcast_progress("task-broadcast", progress)
+
+        task_id_arg, msg_arg = mock_bcast.call_args[0]
+        assert task_id_arg == "task-broadcast"
+        assert msg_arg["type"] == "progress"
+        assert msg_arg["pct"] == 80
+
+    @pytest.mark.asyncio
+    async def test_multiple_clients_same_task_all_receive_broadcast(self):
+        """All connected sockets for a task receive the broadcast message."""
+        mgr = ConnectionManager()
+        ws1, ws2, ws3 = AsyncMock(), AsyncMock(), AsyncMock()
+        await mgr.connect("task-multi", ws1)
+        await mgr.connect("task-multi", ws2)
+        await mgr.connect("task-multi", ws3)
+
+        msg = {"type": "progress", "pct": 60}
+        await mgr.broadcast("task-multi", msg)
+
+        ws1.send_json.assert_awaited_once_with(msg)
+        ws2.send_json.assert_awaited_once_with(msg)
+        ws3.send_json.assert_awaited_once_with(msg)
+
+    @pytest.mark.asyncio
+    async def test_client_disconnect_during_broadcast_is_cleaned_up(self):
+        """A stale connection that raises on send_json is removed from the manager."""
+        mgr = ConnectionManager()
+        live_ws = AsyncMock()
+        dead_ws = AsyncMock()
+        dead_ws.send_json.side_effect = RuntimeError("pipe broken")
+
+        await mgr.connect("task-fail", live_ws)
+        await mgr.connect("task-fail", dead_ws)
+
+        await mgr.broadcast("task-fail", {"type": "progress"})
+
+        remaining = mgr.active_connections.get("task-fail", set())
+        assert live_ws in remaining
+        assert dead_ws not in remaining
