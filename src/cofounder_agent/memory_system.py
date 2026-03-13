@@ -467,7 +467,10 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
                         )
                         relevance_score = max(relevance_score, cosine_similarity)
                     except Exception:  # pylint: disable=broad-except
-                        pass
+                        self.logger.debug(
+                            "[memory_relevance] Cosine similarity calculation failed, skipping embedding score",
+                            exc_info=True,
+                        )
 
                 # Combine scores
                 relevance_score = max(relevance_score, keyword_overlap)
@@ -806,7 +809,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
 
                     # Delete from database
                     # Use ANY operator for PostgreSQL list comparison with UUID type
-                    deleted = await conn.execute(
+                    await conn.execute(
                         """
                         DELETE FROM memories WHERE id = ANY($1::uuid[])
                     """,
@@ -941,7 +944,8 @@ async def main(db_pool: asyncpg.Pool):
 
 
 if __name__ == "__main__":
-    logger.error("❌ This module must be used with a PostgreSQL database connection pool.")
-    logger.error(
+    _logger = logging.getLogger(__name__)
+    _logger.error("❌ This module must be used with a PostgreSQL database connection pool.")
+    _logger.error(
         "   Use from within the FastAPI application context during lifespan initialization."
     )

@@ -10,20 +10,17 @@ Provides endpoints for:
 
 import logging
 import os
-import time
-from datetime import datetime
-from typing import Any, Dict, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
 
 from routes.auth_unified import get_current_user
 from schemas.chat_schemas import (
-    ChatMessage,
     ChatRequest,
     ChatResponse,
 )
-from services.model_router import ModelRouter, TaskComplexity
+from services.model_router import ModelRouter
 from services.ollama_client import OllamaClient
 from services.gemini_client import GeminiClient
 from services.usage_tracker import get_usage_tracker
@@ -106,7 +103,7 @@ async def chat(
 
         # Add user message to conversation history
         conversations[scoped_key].append(
-            {"role": "user", "content": request.message, "timestamp": datetime.utcnow().isoformat()}
+            {"role": "user", "content": request.message, "timestamp": datetime.now(timezone.utc).isoformat()}
         )
 
         # Log the chat request
@@ -160,7 +157,7 @@ async def chat(
                                 "content": response_text,
                                 "model": request.model,
                                 "provider": provider,
-                                "timestamp": datetime.utcnow().isoformat(),
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
                             }
                         )
 
@@ -168,7 +165,7 @@ async def chat(
                             response=response_text,
                             model=request.model,
                             conversationId=request.conversationId,
-                            timestamp=datetime.utcnow().isoformat(),
+                            timestamp=datetime.now(timezone.utc).isoformat(),
                             tokens_used=tokens_used,
                         )
                 except Exception as e:
@@ -267,7 +264,7 @@ async def chat(
                 "content": response_text,
                 "model": request.model,  # Keep original full model specification
                 "provider": provider,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
         )
 
@@ -275,7 +272,7 @@ async def chat(
             response=response_text,
             model=request.model,  # Return original full model specification
             conversationId=request.conversationId,
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
             tokens_used=len(response_text.split()),  # Rough estimate
         )
 
@@ -366,7 +363,7 @@ async def clear_conversation(
 
 @router.get("/models")
 async def get_available_models(
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    _current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """
     Get list of available chat models
@@ -409,7 +406,7 @@ async def get_available_models(
     return {
         "models": models_list,
         "available_count": len(models_list),
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 

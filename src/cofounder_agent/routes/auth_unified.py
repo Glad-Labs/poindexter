@@ -24,8 +24,7 @@ from typing import Any, Dict, Optional
 
 import httpx
 import jwt
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from config import get_config
 from schemas.auth_schemas import (
