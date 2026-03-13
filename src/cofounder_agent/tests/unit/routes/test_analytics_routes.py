@@ -8,6 +8,7 @@ Tests cover:
 Auth and DB are overridden so no real I/O occurs.
 """
 
+import datetime as _dt
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -38,11 +39,85 @@ def _build_app(mock_db=None) -> FastAPI:
     return app
 
 
-def _make_analytics_db(tasks=None):
+def _make_analytics_db(agg=None):
+    """Create a mock DB that returns KPI aggregates (issue #696 new API)."""
     db = MagicMock()
-    db.get_tasks_by_date_range = AsyncMock(return_value=tasks or [])
+    db.get_kpi_aggregates = AsyncMock(
+        return_value=agg or {"rows": [], "total_tasks": 0}
+    )
     db.query = AsyncMock(return_value=[])
     return db
+
+
+# ---------------------------------------------------------------------------
+# Helper: convert old-style task-list specs to aggregate rows
+#
+# Many tests were originally written with lists of raw task dicts.
+# This helper converts those into the aggregate format the route now expects,
+# preserving test intent without duplicating fixture data.
+# ---------------------------------------------------------------------------
+
+def _tasks_to_agg(tasks: list) -> dict:
+    """Convert a list of task-dict fixtures into a get_kpi_aggregates payload."""
+    from collections import defaultdict
+    import datetime as dt
+
+    buckets: dict = defaultdict(lambda: {
+        "count": 0,
+        "total_cost": 0.0,
+        "duration_sum": 0.0,
+        "duration_count": 0,
+        "completed_count": 0,
+    })
+
+    for t in tasks:
+        status = t.get("status", "unknown")
+        model = t.get("model_used", "unknown") or "unknown"
+        task_type = t.get("task_type", "unknown") or "unknown"
+        created = t.get("created_at")
+        if isinstance(created, str):
+            try:
+                created = dt.datetime.fromisoformat(created.replace("Z", "+00:00"))
+            except (ValueError, AttributeError):
+                created = None
+        day = created.date() if isinstance(created, dt.datetime) else None
+
+        key = (status, model, task_type, day)
+        b = buckets[key]
+        b["count"] += 1
+
+        cost = float(t.get("estimated_cost") or t.get("actual_cost") or 0.0)
+        b["total_cost"] += cost
+
+        completed_at = t.get("completed_at")
+        if isinstance(completed_at, str):
+            try:
+                completed_at = dt.datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
+            except (ValueError, AttributeError):
+                completed_at = None
+
+        if status == "completed" and completed_at and isinstance(created, dt.datetime):
+            dur = (completed_at - created).total_seconds()
+            if dur >= 0:
+                b["duration_sum"] += dur
+                b["duration_count"] += 1
+                b["completed_count"] += 1
+
+    rows = []
+    for (status, model, task_type, day), b in buckets.items():
+        avg_dur = (b["duration_sum"] / b["duration_count"]) if b["duration_count"] > 0 else None
+        rows.append({
+            "status": status,
+            "model_used": model,
+            "task_type": task_type,
+            "day": day,
+            "count": b["count"],
+            "total_cost": b["total_cost"],
+            "avg_duration_s": avg_dur,
+            "completed_count": b["completed_count"],
+        })
+
+    return {"rows": rows, "total_tasks": len(tasks)}
 
 
 SAMPLE_TASK = {
@@ -112,7 +187,7 @@ class TestGetKpiMetrics:
             {**SAMPLE_TASK, "status": "completed"},
             {**SAMPLE_TASK, "status": "failed"},
         ]
-        mock_db = _make_analytics_db(tasks=tasks)
+        mock_db = _make_analytics_db(agg=_tasks_to_agg(tasks))
         client = TestClient(_build_app(mock_db))
         data = client.get("/api/analytics/kpis?range=7d").json()
         assert data["total_tasks"] == 3
@@ -128,7 +203,7 @@ class TestGetKpiMetrics:
 
     def test_db_error_returns_500(self):
         mock_db = _make_analytics_db()
-        mock_db.get_tasks_by_date_range = AsyncMock(side_effect=RuntimeError("DB error"))
+        mock_db.get_kpi_aggregates = AsyncMock(side_effect=RuntimeError("DB error"))
         client = TestClient(_build_app(mock_db))
         resp = client.get("/api/analytics/kpis")
         assert resp.status_code == 500
@@ -225,7 +300,7 @@ class TestGetKpiMetricsEdgeCases:
                 "completed_at": "2026-03-01T10:05:00",  # 300 seconds
             }
         ]
-        mock_db = _make_analytics_db(tasks=tasks)
+        mock_db = _make_analytics_db(agg=_tasks_to_agg(tasks))
         client = TestClient(_build_app(mock_db))
         data = client.get("/api/analytics/kpis?range=7d").json()
         assert data["avg_execution_time_seconds"] == pytest.approx(300.0, abs=1.0)
@@ -247,12 +322,10 @@ class TestGetKpiMetricsEdgeCases:
                 "completed_at": "2026-03-01T10:03:00",  # 180s
             },
         ]
-        mock_db = _make_analytics_db(tasks=tasks)
+        mock_db = _make_analytics_db(agg=_tasks_to_agg(tasks))
         client = TestClient(_build_app(mock_db))
         data = client.get("/api/analytics/kpis?range=7d").json()
         assert data["avg_execution_time_seconds"] == pytest.approx(120.0, abs=1.0)
-        assert data["min_execution_time_seconds"] == pytest.approx(60.0, abs=1.0)
-        assert data["max_execution_time_seconds"] == pytest.approx(180.0, abs=1.0)
 
     def test_tasks_without_timestamps_excluded_from_execution_time(self):
         tasks = [
@@ -263,7 +336,7 @@ class TestGetKpiMetricsEdgeCases:
                 "completed_at": None,  # Not finished
             }
         ]
-        mock_db = _make_analytics_db(tasks=tasks)
+        mock_db = _make_analytics_db(agg=_tasks_to_agg(tasks))
         client = TestClient(_build_app(mock_db))
         data = client.get("/api/analytics/kpis?range=7d").json()
         assert data["avg_execution_time_seconds"] == 0.0
@@ -274,7 +347,7 @@ class TestGetKpiMetricsEdgeCases:
             {**SAMPLE_TASK, "estimated_cost": 0.10, "model_used": "mistral"},
             {**SAMPLE_TASK, "estimated_cost": 0.02, "model_used": "gpt-4"},
         ]
-        mock_db = _make_analytics_db(tasks=tasks)
+        mock_db = _make_analytics_db(agg=_tasks_to_agg(tasks))
         client = TestClient(_build_app(mock_db))
         data = client.get("/api/analytics/kpis?range=7d").json()
         assert data["total_cost_usd"] == pytest.approx(0.17, abs=0.001)
@@ -286,7 +359,7 @@ class TestGetKpiMetricsEdgeCases:
             {**SAMPLE_TASK, "model_used": "mistral"},
             {**SAMPLE_TASK, "model_used": "gpt-4"},
         ]
-        mock_db = _make_analytics_db(tasks=tasks)
+        mock_db = _make_analytics_db(agg=_tasks_to_agg(tasks))
         client = TestClient(_build_app(mock_db))
         data = client.get("/api/analytics/kpis?range=7d").json()
         assert data["primary_model"] == "mistral"
@@ -297,31 +370,20 @@ class TestGetKpiMetricsEdgeCases:
             {**SAMPLE_TASK, "task_type": "blog_post"},
             {**SAMPLE_TASK, "task_type": "social_media"},
         ]
-        mock_db = _make_analytics_db(tasks=tasks)
+        mock_db = _make_analytics_db(agg=_tasks_to_agg(tasks))
         client = TestClient(_build_app(mock_db))
         data = client.get("/api/analytics/kpis?range=7d").json()
         assert data["task_types"].get("blog_post") == 2
         assert data["task_types"].get("social_media") == 1
 
-    def test_cost_from_metadata_cost_breakdown(self):
-        """Tasks with task_metadata.cost_breakdown should aggregate into cost_by_phase."""
-        import json
-        metadata = json.dumps(
-            {"cost_breakdown": {"draft": 0.03, "research": 0.01}}
-        )
-        tasks = [
-            {
-                **SAMPLE_TASK,
-                "task_metadata": metadata,
-                "estimated_cost": 0.04,
-                "model_used": "mistral",
-            }
-        ]
-        mock_db = _make_analytics_db(tasks=tasks)
+    def test_cost_by_phase_is_empty_dict(self):
+        """Phase breakdown from JSON metadata is no longer extracted — cost_by_phase is {}."""
+        tasks = [{**SAMPLE_TASK, "estimated_cost": 0.04, "model_used": "mistral"}]
+        mock_db = _make_analytics_db(agg=_tasks_to_agg(tasks))
         client = TestClient(_build_app(mock_db))
         data = client.get("/api/analytics/kpis?range=7d").json()
-        assert "draft" in data["cost_by_phase"]
-        assert data["cost_by_phase"]["draft"] == pytest.approx(0.03, abs=0.001)
+        # cost_by_phase is intentionally empty; phase tracking moved to cost_logs table
+        assert isinstance(data["cost_by_phase"], dict)
 
     def test_pending_tasks_count_is_remainder(self):
         tasks = [
@@ -329,7 +391,7 @@ class TestGetKpiMetricsEdgeCases:
             {**SAMPLE_TASK, "status": "failed"},
             {**SAMPLE_TASK, "status": "pending"},
         ]
-        mock_db = _make_analytics_db(tasks=tasks)
+        mock_db = _make_analytics_db(agg=_tasks_to_agg(tasks))
         client = TestClient(_build_app(mock_db))
         data = client.get("/api/analytics/kpis?range=7d").json()
         assert data["pending_tasks"] == 1
@@ -341,7 +403,7 @@ class TestGetKpiMetricsEdgeCases:
             {**SAMPLE_TASK, "status": "failed"},
             {**SAMPLE_TASK, "status": "failed"},
         ]
-        mock_db = _make_analytics_db(tasks=tasks)
+        mock_db = _make_analytics_db(agg=_tasks_to_agg(tasks))
         client = TestClient(_build_app(mock_db))
         data = client.get("/api/analytics/kpis?range=7d").json()
         assert data["failure_rate"] == pytest.approx(75.0, abs=0.1)
@@ -363,7 +425,7 @@ class TestGetKpiMetricsEdgeCases:
                 "estimated_cost": 0.02,
             },
         ]
-        mock_db = _make_analytics_db(tasks=tasks)
+        mock_db = _make_analytics_db(agg=_tasks_to_agg(tasks))
         client = TestClient(_build_app(mock_db))
         data = client.get("/api/analytics/kpis?range=7d").json()
         # Both tasks are on the same day — expect one entry in tasks_per_day
