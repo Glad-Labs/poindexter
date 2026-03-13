@@ -724,6 +724,14 @@ class TaskExecutor:
         logger.info(f"   Quality Score: {quality_score}/100")
         logger.info(f"   Approved: {approved}")
         logger.debug(f"   Quality result keys: {quality_result_keys}")
+        # Structured quality gate event for log aggregation and threshold reporting
+        logger.info(
+            "[quality_gate] task_id=%s user_id=%s score=%s passed=%s",
+            task_id,
+            task.get("user_id"),
+            quality_score,
+            approved,
+        )
 
         if approved:
             logger.info(f"✅ [TASK_EXECUTE] PHASE 2 Complete: Content approved")
@@ -963,6 +971,17 @@ class TaskExecutor:
             task_id,
             task_metrics.get_phase_breakdown(),
             task_metrics.get_total_duration_ms(),
+        )
+
+        # Structured completion event for log aggregation and P50/P95 computation
+        logger.info(
+            "[task_completed] task_id=%s user_id=%s duration_ms=%.0f quality_score=%s approved=%s status=%s",
+            task_id,
+            task.get("user_id"),
+            task_duration_ms,
+            quality_score,
+            approved,
+            result.get("status") if isinstance(result, dict) else "unknown",
         )
 
         # Store metadata in result
