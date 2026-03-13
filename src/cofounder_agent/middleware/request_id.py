@@ -16,6 +16,20 @@ Usage:
 
     Callers can pass 'X-Request-ID' in their request headers to propagate
     an existing trace ID (e.g., from an API gateway or frontend).
+
+Background task usage:
+    Long-lived asyncio tasks (e.g., task_executor.py) run outside any HTTP
+    request context. To enable log correlation for background processing, bind
+    a synthetic trace ID for the lifetime of each unit of work:
+
+        from middleware.request_id import _request_id_var
+
+        token = _request_id_var.set(f"task-{task_id}")
+        try:
+            # all log lines inside here carry request_id=task-<uuid>
+            await do_work()
+        finally:
+            _request_id_var.reset(token)
 """
 
 import logging
