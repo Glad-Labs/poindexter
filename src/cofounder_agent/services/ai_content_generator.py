@@ -20,6 +20,7 @@ import logging
 import os
 import re
 import time
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
 import httpx
@@ -1109,7 +1110,7 @@ Take action today—the insights you gain will compound over time.
 ---
 
 *Tags: {tag_str}*
-*Last updated: {os.popen('date').read().strip()}*
+*Last updated: {datetime.now(timezone.utc).strftime('%Y-%m-%d')}*
 """
 
 

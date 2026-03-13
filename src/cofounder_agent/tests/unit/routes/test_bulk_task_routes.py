@@ -43,11 +43,18 @@ def _build_app(mock_db=None) -> FastAPI:
     return app
 
 
-def _make_bulk_db():
+def _make_bulk_db(updated_ids=None, missing_ids=None):
+    """Build a mock DB. By default all task_ids are 'found and updated'."""
     db = make_mock_db()
     db.get_task = AsyncMock(return_value=SAMPLE_TASK)
     db.update_task_status = AsyncMock(return_value=True)
     db.create_task = AsyncMock(return_value={"id": VALID_UUID_1})
+    # bulk_update_task_statuses — new 2-query implementation for #700
+    _updated = updated_ids if updated_ids is not None else [VALID_UUID_1, VALID_UUID_2]
+    _missing = missing_ids if missing_ids is not None else []
+    db.bulk_update_task_statuses = AsyncMock(
+        return_value={"updated_ids": _updated, "missing_ids": _missing}
+    )
     return db
 
 
@@ -67,7 +74,8 @@ class TestBulkTaskOperations:
         assert resp.status_code == 200
 
     def test_cancel_returns_updated_count(self):
-        client = TestClient(_build_app())
+        mock_db = _make_bulk_db(updated_ids=[VALID_UUID_1], missing_ids=[])
+        client = TestClient(_build_app(mock_db))
         data = client.post(
             "/api/tasks/bulk",
             json={"task_ids": [VALID_UUID_1], "action": "cancel"},
@@ -127,8 +135,8 @@ class TestBulkTaskOperations:
         assert data["updated"] == 0
 
     def test_task_not_found_is_counted_as_failed(self):
-        mock_db = _make_bulk_db()
-        mock_db.get_task = AsyncMock(return_value=None)
+        # bulk_update_task_statuses returns the task as missing
+        mock_db = _make_bulk_db(updated_ids=[], missing_ids=[VALID_UUID_1])
         client = TestClient(_build_app(mock_db))
         data = client.post(
             "/api/tasks/bulk",
@@ -139,9 +147,9 @@ class TestBulkTaskOperations:
 
     def test_partial_success_tracks_both(self):
         """When one task exists and one doesn't, counts should reflect reality."""
-        mock_db = _make_bulk_db()
-        # First call returns task, second returns None
-        mock_db.get_task = AsyncMock(side_effect=[SAMPLE_TASK, None])
+        mock_db = _make_bulk_db(
+            updated_ids=[VALID_UUID_1], missing_ids=[VALID_UUID_2]
+        )
         client = TestClient(_build_app(mock_db))
         data = client.post(
             "/api/tasks/bulk",

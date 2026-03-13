@@ -116,39 +116,36 @@ async def bulk_task_operations(
     }
     new_status = status_map[request.action]
 
-    updated_count = 0
-    failed_count = 0
+    # Validate UUID formats before hitting the DB — collect invalid IDs up-front.
     errors = []
-
+    valid_ids = []
     for task_id in request.task_ids:
         try:
-            # Validate UUID format
-            try:
-                UUID(task_id)
-            except ValueError:
-                errors.append({"task_id": task_id, "error": "Invalid UUID format"})
+            UUID(task_id)
+            valid_ids.append(task_id)
+        except ValueError:
+            errors.append({"task_id": task_id, "error": "Invalid UUID format"})
+
+    # Replace N+1 loop (2N queries) with 2 bulk queries regardless of batch size (#700).
+    updated_count = 0
+    failed_count = len(errors)
+
+    if valid_ids:
+        try:
+            result = await db_service.bulk_update_task_statuses(valid_ids, new_status)
+            updated_count = len(result["updated_ids"])
+            for missing_id in result["missing_ids"]:
+                errors.append({"task_id": missing_id, "error": "Task not found"})
                 failed_count += 1
-                continue
-
-            # Check if task exists
-            task = await db_service.get_task(task_id)
-            if not task:
-                errors.append({"task_id": task_id, "error": "Task not found"})
-                failed_count += 1
-                continue
-
-            # Update task status
-            await db_service.update_task_status(task_id, new_status)
-            updated_count += 1
-            logger.info(f"Updated task {task_id} status to {new_status}")
-
-        except HTTPException as e:
-            errors.append({"task_id": task_id, "error": e.detail})
-            failed_count += 1
+            logger.info(
+                f"Bulk {request.action}: updated {updated_count} tasks to '{new_status}'"
+            )
         except Exception as e:
-            errors.append({"task_id": task_id, "error": str(e)})
-            failed_count += 1
-            logger.error(f"Failed to update task {task_id}: {str(e)}")
+            logger.error(
+                f"[bulk_task_action] Bulk update failed for action={request.action}: {e}",
+                exc_info=True,
+            )
+            raise HTTPException(status_code=500, detail="Bulk update failed")
 
     return BulkTaskResponse(
         message=f"Bulk {request.action} completed: {updated_count} updated, {failed_count} failed",

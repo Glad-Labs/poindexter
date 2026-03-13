@@ -148,16 +148,22 @@ class ContentDatabase(DatabaseServiceMixin):
 
                 # Also write to the post_tags junction table (authoritative source per migration 014).
                 # tag_ids on posts is kept in sync for backward compat but post_tags is canonical.
-                # Use executemany() to batch all inserts into a single round-trip (avoids N+1).
+                # Single INSERT with unnest() replaces N per-tag round-trips (issue #703).
                 if tag_ids:
-                    valid_tag_pairs = [(post_id, str(tid)) for tid in tag_ids if tid]
-                    if valid_tag_pairs:
-                        await conn.executemany(
-                            "INSERT INTO post_tags (post_id, tag_id) VALUES ($1, $2)"
-                            " ON CONFLICT (post_id, tag_id) DO NOTHING",
-                            valid_tag_pairs,
+                    clean_ids = [str(tid) for tid in tag_ids if tid]
+                    if clean_ids:
+                        await conn.execute(
+                            """
+                            INSERT INTO post_tags (post_id, tag_id)
+                            SELECT $1, unnest($2::text[])
+                            ON CONFLICT (post_id, tag_id) DO NOTHING
+                            """,
+                            post_id,
+                            clean_ids,
                         )
-                    logger.info(f"   - Inserted {len(valid_tag_pairs)} tag(s) into post_tags for post {post_id}")
+                        logger.info(
+                            f"   - Inserted {len(clean_ids)} tag(s) into post_tags for post {post_id}"
+                        )
 
                 logger.info(f"✅ POST CREATED SUCCESSFULLY in database with ID: {post_id}")
                 logger.info(f"   - Status: {post_data.get('status', 'draft')}")
