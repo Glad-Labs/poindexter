@@ -19,7 +19,6 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, Field, field_validator
 
 from schemas.agent_schemas import (
     AgentCommand,
