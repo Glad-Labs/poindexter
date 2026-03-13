@@ -54,6 +54,14 @@ def _make_pool(
     conn.fetch = AsyncMock(return_value=fetch_result or [])
     conn.execute = AsyncMock(return_value=execute_result or "DELETE 1")
 
+    # Mock conn.transaction() as a no-op async context manager so tests work
+    # with the REPEATABLE READ transaction wrapper added in issue #767 fix.
+    @asynccontextmanager
+    async def _transaction(**_kwargs):
+        yield
+
+    conn.transaction = _transaction
+
     pool = MagicMock()
 
     @asynccontextmanager
@@ -249,12 +257,19 @@ class TestGetOrCreateOAuthUser:
         """Path 3: no oauth row, no email match → create new user and OAuth account."""
         no_oauth = None
         no_existing_user = None
-        new_user_row = _make_row(id="brand-new-uuid", email="newuser@example.com")
-        pool = _make_pool(fetchrow_results=[no_oauth, no_existing_user, new_user_row])
+        # Patch uuid4 so we know the generated user_id in advance
+        _fixed_uuid = "brand-new-uuid"
+        new_user_row = _make_row(id=_fixed_uuid, email="newuser@example.com")
+        # 4th fetchrow: winner re-fetch (issue #767) returns same user_id → no-race path
+        winner_recheck = _make_row(user_id=_fixed_uuid)
+        pool = _make_pool(
+            fetchrow_results=[no_oauth, no_existing_user, new_user_row, winner_recheck]
+        )
         db = _make_db(pool)
 
         sentinel = object()
-        with patch(f"{_CONVERTER}.to_user_response", return_value=sentinel):
+        with patch(f"{_CONVERTER}.to_user_response", return_value=sentinel), \
+             patch("services.users_db.uuid4", return_value=_fixed_uuid):
             result = await db.get_or_create_oauth_user(
                 provider="google",
                 provider_user_id="google-xyz",
@@ -268,17 +283,105 @@ class TestGetOrCreateOAuthUser:
         """If provider_data has no email, username fallback 'user' is used."""
         no_oauth = None
         no_existing_user = None
-        new_user_row = _make_row(id="new-uuid")
-        pool = _make_pool(fetchrow_results=[no_oauth, no_existing_user, new_user_row])
+        _fixed_uuid = "new-uuid"
+        new_user_row = _make_row(id=_fixed_uuid)
+        # 4th fetchrow: winner re-fetch returns same user_id
+        winner_recheck = _make_row(user_id=_fixed_uuid)
+        pool = _make_pool(
+            fetchrow_results=[no_oauth, no_existing_user, new_user_row, winner_recheck]
+        )
         db = _make_db(pool)
 
-        with patch(f"{_CONVERTER}.to_user_response", return_value=MagicMock()):
+        with patch(f"{_CONVERTER}.to_user_response", return_value=MagicMock()), \
+             patch("services.users_db.uuid4", return_value=_fixed_uuid):
             # Should not raise even with no email
             await db.get_or_create_oauth_user(
                 provider="github",
                 provider_user_id="gh-no-email",
                 provider_data={},  # No email
             )
+
+
+# ---------------------------------------------------------------------------
+# get_or_create_oauth_user — race condition (issue #767)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestGetOrCreateOAuthUserRace:
+    """Verify the REPEATABLE READ + ON CONFLICT race-condition fix (issue #767)."""
+
+    @pytest.mark.asyncio
+    async def test_transaction_is_used_in_path3(self):
+        """The connection must use a transaction wrapper for the create path."""
+        _fixed_uuid = "race-uuid"
+        no_oauth = None
+        no_existing_user = None
+        new_user_row = _make_row(id=_fixed_uuid)
+        winner_recheck = _make_row(user_id=_fixed_uuid)
+        pool = _make_pool(
+            fetchrow_results=[no_oauth, no_existing_user, new_user_row, winner_recheck]
+        )
+
+        # Spy on the transaction context manager
+        transaction_entered = []
+
+        @asynccontextmanager
+        async def _spy_transaction(**_kwargs):
+            transaction_entered.append(True)
+            yield
+
+        # Inject spy into the conn object that _acquire yields
+        original_acquire = pool.acquire
+
+        @asynccontextmanager
+        async def _spy_acquire():
+            async with original_acquire() as conn:
+                conn.transaction = _spy_transaction
+                yield conn
+
+        pool.acquire = _spy_acquire
+        db = _make_db(pool)
+
+        with patch(f"{_CONVERTER}.to_user_response", return_value=MagicMock()), \
+             patch("services.users_db.uuid4", return_value=_fixed_uuid):
+            await db.get_or_create_oauth_user(
+                provider="github",
+                provider_user_id="gh-race-test",
+                provider_data={"email": "race@example.com"},
+            )
+
+        assert transaction_entered, "conn.transaction() must be entered in path 3"
+
+    @pytest.mark.asyncio
+    async def test_concurrent_winner_returns_winner_user(self):
+        """If a concurrent coroutine won the insert race, return the winner's user."""
+        _my_uuid = "my-uuid"
+        _winner_uuid = "winner-uuid"
+        no_oauth = None
+        no_existing_user = None
+        my_new_user_row = _make_row(id=_my_uuid)
+        # Winner re-fetch returns a different user_id (the concurrent winner)
+        winner_recheck = _make_row(user_id=_winner_uuid)
+        winner_user_row = _make_row(id=_winner_uuid, email="winner@example.com")
+        pool = _make_pool(
+            fetchrow_results=[
+                no_oauth, no_existing_user, my_new_user_row,
+                winner_recheck, winner_user_row,
+            ]
+        )
+        db = _make_db(pool)
+
+        winner_sentinel = object()
+        with patch(f"{_CONVERTER}.to_user_response", return_value=winner_sentinel), \
+             patch("services.users_db.uuid4", return_value=_my_uuid):
+            result = await db.get_or_create_oauth_user(
+                provider="github",
+                provider_user_id="gh-concurrent",
+                provider_data={"email": "race@example.com"},
+            )
+
+        assert result is winner_sentinel
 
 
 # ---------------------------------------------------------------------------
