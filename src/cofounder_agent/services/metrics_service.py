@@ -175,10 +175,13 @@ class MetricsService:
             return False
 
     async def get_metrics(self) -> Dict[str, Any]:
-        """Get aggregated task and system metrics."""
-        # This would typically query the database for metrics
-        # For now, we return mock metrics
-        return {
+        """Get aggregated task and system metrics from the database.
+
+        Delegates to DatabaseService.get_metrics() when a database_service is
+        wired in. Returns zero-value defaults when no database is available
+        (e.g., unit tests or bare instantiation).
+        """
+        _zero = {
             "total_tasks": 0,
             "completed_tasks": 0,
             "failed_tasks": 0,
@@ -187,6 +190,33 @@ class MetricsService:
             "avg_execution_time": 0.0,
             "total_cost": 0.0,
         }
+        if self._database_service is None:
+            return _zero
+        try:
+            db_metrics = await self._database_service.get_metrics()
+            # DatabaseService.get_metrics() returns a MetricsResponse Pydantic model
+            # or a plain dict; normalize to the expected flat dict shape.
+            if hasattr(db_metrics, "model_dump"):
+                raw = db_metrics.model_dump()
+            elif hasattr(db_metrics, "dict"):
+                raw = db_metrics.dict()
+            elif isinstance(db_metrics, dict):
+                raw = db_metrics
+            else:
+                return _zero
+            # Map camelCase DB keys to snake_case surface API
+            return {
+                "total_tasks": raw.get("totalTasks", raw.get("total_tasks", 0)),
+                "completed_tasks": raw.get("completedTasks", raw.get("completed_tasks", 0)),
+                "failed_tasks": raw.get("failedTasks", raw.get("failed_tasks", 0)),
+                "pending_tasks": raw.get("pendingTasks", raw.get("pending_tasks", 0)),
+                "success_rate": raw.get("successRate", raw.get("success_rate", 0.0)),
+                "avg_execution_time": raw.get("avgExecutionTime", raw.get("avg_execution_time", 0.0)),
+                "total_cost": raw.get("totalCost", raw.get("total_cost", 0.0)),
+            }
+        except Exception as e:
+            logger.error("[get_metrics] Failed to retrieve metrics from database: %s", e, exc_info=True)
+            return _zero
 
     def update_metrics(self, **kwargs) -> None:
         """Update metrics with new values."""

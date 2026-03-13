@@ -294,6 +294,62 @@ class TestMetricsService:
         svc = MetricsService()
         assert svc.get_metric("nonexistent") is None
 
+    @pytest.mark.asyncio
+    async def test_get_metrics_with_db_returns_real_values(self):
+        """When database_service is wired, get_metrics() delegates to it (#654)."""
+        mock_db = AsyncMock()
+        mock_db.get_metrics = AsyncMock(return_value={
+            "totalTasks": 42,
+            "completedTasks": 38,
+            "failedTasks": 4,
+            "pendingTasks": 0,
+            "successRate": 90.48,
+            "avgExecutionTime": 12.5,
+            "totalCost": 1.23,
+        })
+        svc = MetricsService(database_service=mock_db)
+        result = await svc.get_metrics()
+        assert result["total_tasks"] == 42
+        assert result["completed_tasks"] == 38
+        assert result["failed_tasks"] == 4
+        assert result["success_rate"] == 90.48
+        assert result["total_cost"] == 1.23
+        mock_db.get_metrics.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_get_metrics_maps_camelcase_to_snake_case(self):
+        """DB returns camelCase keys — output must be snake_case (#654)."""
+        mock_db = AsyncMock()
+        mock_db.get_metrics = AsyncMock(return_value={
+            "totalTasks": 10, "completedTasks": 8, "failedTasks": 2,
+            "pendingTasks": 0, "successRate": 80.0, "avgExecutionTime": 5.0,
+            "totalCost": 0.5,
+        })
+        svc = MetricsService(database_service=mock_db)
+        result = await svc.get_metrics()
+        assert "total_tasks" in result
+        assert "completed_tasks" in result
+        assert "failed_tasks" in result
+        assert "totalTasks" not in result  # camelCase must not leak into output
+
+    @pytest.mark.asyncio
+    async def test_get_metrics_with_db_error_returns_zeros(self):
+        """If DB raises, get_metrics() falls back to zero defaults (#654)."""
+        mock_db = AsyncMock()
+        mock_db.get_metrics = AsyncMock(side_effect=RuntimeError("db down"))
+        svc = MetricsService(database_service=mock_db)
+        result = await svc.get_metrics()
+        assert result["total_tasks"] == 0
+        assert result["success_rate"] == 0.0
+
+    @pytest.mark.asyncio
+    async def test_get_metrics_without_db_returns_zeros(self):
+        """Without a database_service, returns zero defaults without error (#654)."""
+        svc = MetricsService(database_service=None)
+        result = await svc.get_metrics()
+        assert result["total_tasks"] == 0
+        assert isinstance(result["success_rate"], float)
+
 
 # ---------------------------------------------------------------------------
 # get_metrics_service singleton
