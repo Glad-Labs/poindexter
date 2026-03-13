@@ -926,11 +926,12 @@ async def update_task_status_enterprise(
                 detail="Invalid status value",
             )
 
-        # Validate transition
+        # Validate transition — 409 Conflict, not 422 (the request body is valid;
+        # the current resource state prevents the transition)
         if not is_valid_transition(current_status, target_status):
             allowed = get_allowed_transitions(current_status)
             raise HTTPException(
-                status_code=422,
+                status_code=409,
                 detail={
                     "error": "invalid_status_transition",
                     "current_status": current_status.value,

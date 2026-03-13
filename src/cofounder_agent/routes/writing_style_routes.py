@@ -61,8 +61,7 @@ class WritingSamplesListResponse(BaseModel):
     """Response containing list of samples"""
 
     samples: List[WritingSampleResponse]
-    total: int  # project-standard field name
-    total_count: int  # backwards-compat alias — same value as total
+    total: int  # project-standard field name; total_count alias removed (issue #604)
     active_sample_id: Optional[str]
     offset: int = 0
     limit: int = 100
@@ -206,7 +205,6 @@ async def list_writing_samples(
         return WritingSamplesListResponse(
             samples=[WritingSampleResponse(**s) for s in paginated],
             total=total,
-            total_count=total,
             active_sample_id=active_sample_id,
             offset=offset,
             limit=limit,
