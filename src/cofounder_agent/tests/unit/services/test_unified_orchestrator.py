@@ -959,3 +959,41 @@ class TestHandleContentCreation:
         call_args_list = get_model_mock.call_args_list
         quality_prefs = [call.args[2] if len(call.args) >= 3 else call.kwargs.get("quality_preference") for call in call_args_list]
         assert any(qp == "quality" for qp in quality_prefs)
+
+    @pytest.mark.asyncio
+    async def test_no_new_database_service_created_per_request(self):
+        """
+        Regression test for issue #783: _handle_content_creation must NOT instantiate
+        a new DatabaseService() each call. It must reuse self.database_service so that
+        the application-level connection pool is not exhausted under concurrent load.
+        """
+        mocks = self._patch_all()
+        orch = _make_orchestrator()
+        request = _make_content_request()
+
+        with (
+            patch(f"{_CONSTRAINT_UTILS}.ContentConstraints"),
+            patch(f"{_CONSTRAINT_UTILS}.calculate_phase_targets", return_value={}),
+            patch(f"{_CONSTRAINT_UTILS}.count_words_in_content", return_value=1000),
+            patch(f"{_CONSTRAINT_UTILS}.validate_constraints", return_value=mocks["compliance"]),
+            patch(f"{_CONSTRAINT_UTILS}.merge_compliance_reports", return_value=mocks["merged"]),
+            patch(f"{_CONSTRAINT_UTILS}.apply_strict_mode", return_value=(True, None)),
+            patch(f"{_WRITING_STYLE_INTEGRATION}.WritingStyleIntegrationService") as MockWSI,
+            patch(f"{_LLM_CLIENT_MOD}.LLMClient"),
+            patch(f"{_BLOG_POST_MOD}.BlogPost", return_value=MagicMock(body="content")),
+            patch(
+                f"{_DB_SERVICE_MOD}.DatabaseService"
+            ) as MockDatabaseService,
+            patch(f"{_QUALITY_SVC_MOD}.get_content_quality_service", return_value=mocks["quality_service"]),
+            patch(f"{_IMAGE_SVC_MOD}.get_image_service", return_value=mocks["image_service"]),
+            patch(_EMIT_PROGRESS, new_callable=AsyncMock),
+            patch.object(orch, "_get_agent_instance", side_effect=mocks["_get_agent_side_effect"]),
+            patch.object(orch, "_get_model_for_phase", return_value="test-model"),
+        ):
+            MockWSI.return_value.get_sample_for_content_generation = AsyncMock(return_value=None)
+            await orch._handle_content_creation(request)
+
+        # DatabaseService() constructor must NOT have been called — the orchestrator
+        # must reuse self.database_service (injected at startup) rather than opening
+        # a new connection pool on every content generation request.
+        MockDatabaseService.assert_not_called()

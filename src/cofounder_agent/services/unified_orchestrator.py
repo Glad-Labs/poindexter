@@ -776,15 +776,13 @@ class UnifiedOrchestrator:
             # STAGE 3: QA REVIEW LOOP (45% → 60%)
             # ====================================================================
             logger.info("[%s] STAGE 3: QA Review", request.request_id)
-            from services.database_service import (  # pylint: disable=import-outside-toplevel
-                DatabaseService,
-            )
             from services.quality_service import (  # pylint: disable=import-outside-toplevel
                 get_content_quality_service,
             )
 
-            database_service = DatabaseService()
-            quality_service = get_content_quality_service(database_service=database_service)
+            # Use the application-level database_service (initialized once at startup)
+            # to avoid creating a new connection pool per request (issue #783).
+            quality_service = get_content_quality_service(database_service=self.database_service)
 
             content = draft_post
             feedback = ""
