@@ -226,7 +226,10 @@ class TasksDatabase(DatabaseServiceMixin):
 
             async with self.pool.acquire() as conn:
                 result = await conn.fetchval(sql, *params)
-                logger.info(f"✅ Task added: {task_id}")
+                logger.info(
+                    f"✅ Task added: {task_id} | user_id={task_data.get('user_id', 'unknown')}"
+                    f" | task_type={task_data.get('task_type', 'unknown')}"
+                )
                 return str(result)
         except Exception as e:
             logger.error(f"❌ Failed to add task: {e}", exc_info=True)
@@ -310,7 +313,10 @@ class TasksDatabase(DatabaseServiceMixin):
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(sql, *params)
                 if row:
-                    logger.info(f"✅ Task status updated: {task_id} → {status}")
+                    task_type = row.get("task_type", "unknown") if hasattr(row, "get") else "unknown"
+                    logger.info(
+                        f"✅ Task status updated: {task_id} → {status} | task_type={task_type}"
+                    )
                     return self._convert_row_to_dict(row)
                 return None
         except Exception as e:
