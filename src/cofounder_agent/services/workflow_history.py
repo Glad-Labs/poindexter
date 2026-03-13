@@ -200,42 +200,36 @@ class WorkflowHistoryService:
         """
         try:
             async with self.pool.acquire() as conn:
-                # Build query with optional status filter
-                where_clause = "user_id = $1"
-                params = [user_id, limit, offset]
-
+                # Build parameterised WHERE clause once — reused for both COUNT and data queries
                 if status_filter:
-                    where_clause += " AND status = $4"
-                    params = [user_id, limit, offset, status_filter]
-
-                # Get total count
-                count_row = await conn.fetchval(
-                    f"SELECT COUNT(*) FROM workflow_executions WHERE user_id = $1",
-                    user_id,
-                )
-
-                # Get paginated results
-                rows = await conn.fetch(
-                    f"""
-                    SELECT * FROM workflow_executions
-                    WHERE {where_clause}
-                    ORDER BY created_at DESC
-                    LIMIT $2 OFFSET $3
-                    """,
-                    *params[:3],  # Use only user_id, limit, offset for main query
-                )
-
-                if status_filter:
-                    # Re-fetch with status filter
-                    rows = await conn.fetch(
-                        f"""
+                    where_clause = "user_id = $1 AND status = $2"
+                    count_params = [user_id, status_filter]
+                    data_params = [user_id, status_filter, limit, offset]
+                    data_query = f"""
                         SELECT * FROM workflow_executions
-                        WHERE user_id = $1 AND status = $4
+                        WHERE {where_clause}
+                        ORDER BY created_at DESC
+                        LIMIT $3 OFFSET $4
+                    """
+                else:
+                    where_clause = "user_id = $1"
+                    count_params = [user_id]
+                    data_params = [user_id, limit, offset]
+                    data_query = f"""
+                        SELECT * FROM workflow_executions
+                        WHERE {where_clause}
                         ORDER BY created_at DESC
                         LIMIT $2 OFFSET $3
-                        """,
-                        *params,
-                    )
+                    """
+
+                # Get filtered total count (correct pagination metadata)
+                count_row = await conn.fetchval(
+                    f"SELECT COUNT(*) FROM workflow_executions WHERE {where_clause}",
+                    *count_params,
+                )
+
+                # Get paginated results using the same filter
+                rows = await conn.fetch(data_query, *data_params)
 
                 return {
                     "executions": [self._row_to_dict(row) for row in rows],
