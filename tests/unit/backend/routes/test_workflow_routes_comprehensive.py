@@ -552,7 +552,7 @@ async def test_list_executions_empty():
     result = await list_workflow_executions(request=mock_request, limit=10, offset=0, status=None)
 
     assert result["executions"] == []
-    assert result["total_count"] == 0
+    assert result["total"] == 0
 
 
 @pytest.mark.unit
@@ -564,7 +564,7 @@ async def test_list_executions_respects_limit_and_offset():
 
     # The current implementation is a stub that always returns empty list.
     assert isinstance(result["executions"], list)
-    assert "total_count" in result
+    assert "total" in result
 
 
 # ===========================================================================

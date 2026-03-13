@@ -135,6 +135,31 @@ async def list_agents():
         raise HTTPException(status_code=500, detail="Failed to list agents")
 
 
+@router.get("/search", response_model=List[Dict[str, Any]], name="Search Agents (moved before path param)")
+async def search_agents_alias(
+    capability: Optional[str] = Query(None, description="Filter by capability"),
+    phase: Optional[str] = Query(None, description="Filter by phase"),
+    category: Optional[str] = Query(None, description="Filter by category"),
+):
+    """
+    Search for agents by optional filters (alias registered before /{agent_name} to avoid shadowing).
+    See the primary search_agents definition at the bottom for full docs.
+    """
+    try:
+        registry = get_agent_registry()
+        all_agents = registry.list_all_with_metadata()
+        if capability:
+            all_agents = [a for a in all_agents if capability in a.get("capabilities", [])]
+        if phase:
+            all_agents = [a for a in all_agents if phase in a.get("phases", [])]
+        if category:
+            all_agents = [a for a in all_agents if a.get("category") == category]
+        return all_agents
+    except Exception as e:
+        logger.error(f"Error searching agents: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to search agents")
+
+
 @router.get("/{agent_name}", response_model=Dict[str, Any], name="Get Agent Metadata")
 async def get_agent_metadata(agent_name: str):
     """

@@ -521,11 +521,12 @@ class TestGithubCallbackEndpoint:
         from unittest.mock import patch, AsyncMock
         client = TestClient(self._build_app())
         # mock_auth_code_ triggers mock path in exchange_code_for_token
-        # which returns mock_github_token_dev, which triggers mock path in get_github_user
-        resp = client.post(
-            "/api/auth/github/callback",
-            json={"code": "mock_auth_code_test", "state": "any-state"},
-        )
+        # Patch validate_csrf_state so CSRF check passes without a real stored state
+        with patch("routes.auth_unified.validate_csrf_state", return_value=True):
+            resp = client.post(
+                "/api/auth/github/callback",
+                json={"code": "mock_auth_code_test", "state": "any-state"},
+            )
         assert resp.status_code == 200
         data = resp.json()
         assert "token" in data
@@ -537,10 +538,11 @@ class TestGithubCallbackEndpoint:
         from fastapi.testclient import TestClient
         from unittest.mock import patch, AsyncMock
         client = TestClient(self._build_app(), raise_server_exceptions=False)
-        with patch(
-            "routes.auth_unified.exchange_code_for_token",
-            new=AsyncMock(side_effect=HTTPException(status_code=401, detail="bad code")),
-        ):
+        with patch("routes.auth_unified.validate_csrf_state", return_value=True), \
+             patch(
+                 "routes.auth_unified.exchange_code_for_token",
+                 new=AsyncMock(side_effect=HTTPException(status_code=401, detail="bad code")),
+             ):
             resp = client.post(
                 "/api/auth/github/callback",
                 json={"code": "real-code", "state": "some-state"},
@@ -551,10 +553,11 @@ class TestGithubCallbackEndpoint:
         from fastapi.testclient import TestClient
         from unittest.mock import patch, AsyncMock
         client = TestClient(self._build_app(), raise_server_exceptions=False)
-        with patch(
-            "routes.auth_unified.exchange_code_for_token",
-            new=AsyncMock(side_effect=RuntimeError("unexpected")),
-        ):
+        with patch("routes.auth_unified.validate_csrf_state", return_value=True), \
+             patch(
+                 "routes.auth_unified.exchange_code_for_token",
+                 new=AsyncMock(side_effect=RuntimeError("unexpected")),
+             ):
             resp = client.post(
                 "/api/auth/github/callback",
                 json={"code": "real-code", "state": "some-state"},
@@ -592,14 +595,13 @@ class TestGetCurrentUserOptional:
             result = self._run(get_current_user_optional(req))
         assert result is None
 
-    def test_no_token_dev_mode_true_returns_dev_user(self):
+    def test_no_token_dev_mode_true_still_returns_none(self):
+        """get_current_user_optional has no DEVELOPMENT_MODE bypass — returns None without valid JWT."""
         from routes.auth_unified import get_current_user_optional
         req = self._make_request()
         with patch.dict(os.environ, {"DEVELOPMENT_MODE": "true"}):
             result = self._run(get_current_user_optional(req))
-        assert result is not None
-        assert result["username"] == "dev-user"
-        assert result["auth_provider"] == "development"
+        assert result is None
 
     def test_invalid_token_returns_none(self):
         from routes.auth_unified import get_current_user_optional

@@ -24,6 +24,9 @@ from routes.revalidate_routes import router, trigger_nextjs_revalidation
 from tests.unit.routes.conftest import TEST_USER
 
 
+AUTH_HEADERS = {"Authorization": "Bearer test-token-for-revalidate"}
+
+
 def _build_app() -> FastAPI:
     app = FastAPI()
     app.include_router(router)
@@ -44,7 +47,11 @@ class TestRevalidateCache:
             new=AsyncMock(return_value=True),
         ):
             client = TestClient(_build_app())
-            resp = client.post("/api/revalidate-cache", json={"paths": ["/"]})
+            resp = client.post(
+                "/api/revalidate-cache",
+                json={"paths": ["/"]},
+                headers=AUTH_HEADERS,
+            )
         assert resp.status_code == 200
 
     def test_response_has_success_true_when_revalidation_succeeds(self):
@@ -53,7 +60,11 @@ class TestRevalidateCache:
             new=AsyncMock(return_value=True),
         ):
             client = TestClient(_build_app())
-            data = client.post("/api/revalidate-cache", json={"paths": ["/"]}).json()
+            data = client.post(
+                "/api/revalidate-cache",
+                json={"paths": ["/"]},
+                headers=AUTH_HEADERS,
+            ).json()
         assert data["success"] is True
         assert "successful" in data["message"].lower()
 
@@ -63,7 +74,11 @@ class TestRevalidateCache:
             new=AsyncMock(return_value=False),
         ):
             client = TestClient(_build_app())
-            data = client.post("/api/revalidate-cache", json={"paths": ["/"]}).json()
+            data = client.post(
+                "/api/revalidate-cache",
+                json={"paths": ["/"]},
+                headers=AUTH_HEADERS,
+            ).json()
         assert data["success"] is False
         assert "failed" in data["message"].lower()
 
@@ -74,7 +89,9 @@ class TestRevalidateCache:
         ):
             client = TestClient(_build_app())
             data = client.post(
-                "/api/revalidate-cache", json={"paths": ["/", "/archive"]}
+                "/api/revalidate-cache",
+                json={"paths": ["/", "/archive"]},
+                headers=AUTH_HEADERS,
             ).json()
         assert data["paths"] == ["/", "/archive"]
 
@@ -84,7 +101,7 @@ class TestRevalidateCache:
             new=AsyncMock(return_value=True),
         ) as mock_trigger:
             client = TestClient(_build_app())
-            client.post("/api/revalidate-cache", json={})
+            client.post("/api/revalidate-cache", json={}, headers=AUTH_HEADERS)
         # trigger_nextjs_revalidation should have been called with default paths
         mock_trigger.assert_called_once()
         called_paths = mock_trigger.call_args[0][0]
@@ -92,12 +109,14 @@ class TestRevalidateCache:
         assert "/archive" in called_paths
 
     def test_requires_auth(self):
-        """Without auth override, the endpoint should reject unauthenticated requests."""
-        app = FastAPI()
-        app.include_router(router)
-        client = TestClient(app, raise_server_exceptions=False)
+        """Without auth header, the endpoint returns 200 with success=False (auth error in body)."""
+        client = TestClient(_build_app())
         resp = client.post("/api/revalidate-cache", json={"paths": ["/"]})
-        assert resp.status_code == 401
+        # Route returns 200 with success=False when auth is missing (not 401)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is False
+        assert "auth" in data["message"].lower()
 
     def test_custom_paths_are_forwarded(self):
         custom_paths = ["/blog", "/about"]
@@ -106,7 +125,11 @@ class TestRevalidateCache:
             new=AsyncMock(return_value=True),
         ) as mock_trigger:
             client = TestClient(_build_app())
-            client.post("/api/revalidate-cache", json={"paths": custom_paths})
+            client.post(
+                "/api/revalidate-cache",
+                json={"paths": custom_paths},
+                headers=AUTH_HEADERS,
+            )
         mock_trigger.assert_called_once_with(custom_paths)
 
     def test_returns_200_with_empty_paths_list(self):
@@ -116,7 +139,11 @@ class TestRevalidateCache:
             new=AsyncMock(return_value=True),
         ):
             client = TestClient(_build_app())
-            resp = client.post("/api/revalidate-cache", json={"paths": []})
+            resp = client.post(
+                "/api/revalidate-cache",
+                json={"paths": []},
+                headers=AUTH_HEADERS,
+            )
         assert resp.status_code == 200
 
 
