@@ -31,6 +31,7 @@ from schemas.model_converter import ModelConverter
 from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 
 from .database_mixin import DatabaseServiceMixin
+from .decorators import log_query_performance
 
 logger = get_logger(__name__)
 class AdminDatabase(DatabaseServiceMixin):
@@ -59,6 +60,7 @@ class AdminDatabase(DatabaseServiceMixin):
     # COST LOGGING
     # ========================================================================
 
+    @log_query_performance(operation="log_cost", category="cost_write")
     async def log_cost(self, cost_log: Dict[str, Any]) -> CostLogResponse:
         """
         Log cost of LLM API call to cost_logs table.
@@ -122,6 +124,7 @@ class AdminDatabase(DatabaseServiceMixin):
             )
             raise
 
+    @log_query_performance(operation="get_task_costs", category="cost_retrieval")
     async def get_task_costs(self, task_id: str) -> TaskCostBreakdownResponse:
         """
         Get cost breakdown for a task by phase.
@@ -196,6 +199,7 @@ class AdminDatabase(DatabaseServiceMixin):
     # HEALTH CHECK
     # ========================================================================
 
+    @log_query_performance(operation="health_check", category="settings_retrieval")
     async def health_check(self, service: str = "cofounder") -> Dict[str, Any]:
         """
         Check database health.
@@ -250,6 +254,7 @@ class AdminDatabase(DatabaseServiceMixin):
     # SETTINGS MANAGEMENT
     # ========================================================================
 
+    @log_query_performance(operation="get_setting", category="settings_retrieval")
     async def get_setting(self, key: str) -> Optional[SettingResponse]:
         """
         Get a setting by key (with 60s in-memory TTL cache).
@@ -280,6 +285,7 @@ class AdminDatabase(DatabaseServiceMixin):
             )
             return None
 
+    @log_query_performance(operation="get_all_settings", category="settings_retrieval")
     async def get_all_settings(self, category: Optional[str] = None) -> List[SettingResponse]:
         """
         Get all active settings, optionally filtered by category (with 60s TTL cache).
@@ -315,6 +321,7 @@ class AdminDatabase(DatabaseServiceMixin):
             )
             return []
 
+    @log_query_performance(operation="set_setting", category="settings_write")
     async def set_setting(
         self,
         key: str,
@@ -367,6 +374,7 @@ class AdminDatabase(DatabaseServiceMixin):
             )
             return False
 
+    @log_query_performance(operation="delete_setting", category="settings_write")
     async def delete_setting(self, key: str) -> bool:
         """
         Soft delete a setting (mark as inactive).
@@ -392,6 +400,7 @@ class AdminDatabase(DatabaseServiceMixin):
             )
             return False
 
+    @log_query_performance(operation="get_setting_value", category="settings_retrieval")
     async def get_setting_value(self, key: str, default: Any = None) -> Any:
         """
         Get just the value of a setting, with optional default.
@@ -416,6 +425,7 @@ class AdminDatabase(DatabaseServiceMixin):
         except (json.JSONDecodeError, ValueError, TypeError):
             return value_str
 
+    @log_query_performance(operation="setting_exists", category="settings_retrieval")
     async def setting_exists(self, key: str) -> bool:
         """
         Check if a setting exists and is active.

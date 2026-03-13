@@ -30,6 +30,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
         """
         self.pool = pool
 
+    @log_query_performance(operation="create_writing_sample", category="writing_style_write")
     async def create_writing_sample(
         self,
         user_id: str,
@@ -93,6 +94,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
             )
             raise
 
+    @log_query_performance(operation="get_writing_sample", category="writing_style_retrieval")
     async def get_writing_sample(self, sample_id: str) -> Optional[Dict[str, Any]]:
         """
         Get a specific writing sample by ID.
@@ -121,6 +123,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
             )
             raise
 
+    @log_query_performance(operation="get_user_writing_samples", category="writing_style_retrieval")
     async def get_user_writing_samples(self, user_id: str) -> List[Dict[str, Any]]:
         """
         Get all writing samples for a user.
@@ -151,6 +154,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
             )
             raise
 
+    @log_query_performance(operation="get_active_writing_sample", category="writing_style_retrieval")
     async def get_active_writing_sample(self, user_id: str) -> Optional[Dict[str, Any]]:
         """
         Get the active/current writing sample for a user.
@@ -181,6 +185,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
             )
             raise
 
+    @log_query_performance(operation="set_active_writing_sample", category="writing_style_write")
     async def set_active_writing_sample(self, user_id: str, sample_id: str) -> Dict[str, Any]:
         """
         Set a writing sample as the active one for a user.
@@ -227,6 +232,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
             )
             raise
 
+    @log_query_performance(operation="update_writing_sample", category="writing_style_write")
     async def update_writing_sample(
         self,
         sample_id: str,
@@ -299,6 +305,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
             )
             raise
 
+    @log_query_performance(operation="delete_writing_sample", category="writing_style_write")
     async def delete_writing_sample(self, sample_id: str, user_id: str) -> bool:
         """
         Delete a writing sample.

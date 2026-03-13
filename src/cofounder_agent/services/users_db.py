@@ -35,6 +35,7 @@ class UsersDatabase(DatabaseServiceMixin):
         """
         self.pool = pool
 
+    @log_query_performance(operation="get_user_by_id", category="user_retrieval")
     async def get_user_by_id(self, user_id: str) -> Optional[UserResponse]:
         """
         Get user by ID.
@@ -53,6 +54,7 @@ class UsersDatabase(DatabaseServiceMixin):
             row = await conn.fetchrow(sql, *params)
             return ModelConverter.to_user_response(row) if row else None
 
+    @log_query_performance(operation="get_user_by_email", category="user_retrieval")
     async def get_user_by_email(self, email: str) -> Optional[UserResponse]:
         """
         Get user by email address.
@@ -71,6 +73,7 @@ class UsersDatabase(DatabaseServiceMixin):
             row = await conn.fetchrow(sql, *params)
             return ModelConverter.to_user_response(row) if row else None
 
+    @log_query_performance(operation="get_user_by_username", category="user_retrieval")
     async def get_user_by_username(self, username: str) -> Optional[UserResponse]:
         """
         Get user by username.
@@ -89,6 +92,7 @@ class UsersDatabase(DatabaseServiceMixin):
             row = await conn.fetchrow(sql, *params)
             return ModelConverter.to_user_response(row) if row else None
 
+    @log_query_performance(operation="create_user", category="user_write")
     async def create_user(self, user_data: Dict[str, Any]) -> UserResponse:
         """
         Create new user.
@@ -118,6 +122,7 @@ class UsersDatabase(DatabaseServiceMixin):
             row = await conn.fetchrow(sql, *params)
             return ModelConverter.to_user_response(row)
 
+    @log_query_performance(operation="get_or_create_oauth_user", category="user_write")
     async def get_or_create_oauth_user(
         self,
         provider: str,
@@ -266,6 +271,7 @@ class UsersDatabase(DatabaseServiceMixin):
             rows = await conn.fetch(sql, *params)
             return [ModelConverter.to_oauth_account_response(row) for row in rows]
 
+    @log_query_performance(operation="unlink_oauth_account", category="user_write")
     async def unlink_oauth_account(self, user_id: str, provider: str) -> bool:
         """
         Unlink OAuth account from user.
