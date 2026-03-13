@@ -127,7 +127,7 @@ class TestListSettings:
         mock_db = _make_settings_db()
         mock_db.get_all_settings = AsyncMock(return_value=[SETTING_DICT] * 10)
         client = TestClient(_build_app(mock_db))
-        data = client.get("/api/settings?limit=5").json()
+        data = client.get("/api/settings?per_page=5").json()
         assert data["per_page"] == 5
 
     def test_db_error_returns_500(self):

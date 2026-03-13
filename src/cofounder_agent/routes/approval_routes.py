@@ -335,7 +335,7 @@ async def approve_task(
 
                     logger.info(f"[OK] Task {task_id} published with post_id: {post_id}")
                 auto_publish_succeeded = True
-            except Exception as e:
+            except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
                 logger.warning(f"[WARNING] Auto-publish failed: {str(e)}", exc_info=True)
                 # Don't fail the approval if auto-publish fails
                 auto_publish_succeeded = False
@@ -359,25 +359,25 @@ async def approve_task(
         # Build response based on whether auto_publish happened
         response_data = {
             "task_id": task_id,
-              "status": "published" if auto_publish_succeeded else "approved",
+            "status": "published" if auto_publish_succeeded else "approved",
             "approval_status": "approved",
             "approval_date": approval_date.isoformat(),
             "approval_timestamp": approval_date.isoformat(),
             "approved_by": current_user.get("id"),
             "feedback": request.feedback,
             "message": (
-                 "Task approved and published"
-                 if auto_publish_succeeded
-                 else (
+                "Task approved and published"
+                if auto_publish_succeeded
+                else (
                     "Task approved but auto-publish failed — please publish manually"
                     if request.auto_publish
                     else "Task approved for publishing"
-                 )
+                )
             ),
             "next_action": (
-                 "Task is published"
-                 if auto_publish_succeeded
-                 else "Task will be published by the publishing agent"
+                "Task is published"
+                if auto_publish_succeeded
+                else "Task will be published by the publishing agent"
             ),
             "_debug_auto_publish_value": request.auto_publish,
             "_debug_auto_publish_type": str(type(request.auto_publish)),

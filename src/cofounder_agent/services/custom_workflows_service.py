@@ -18,8 +18,12 @@ from schemas.custom_workflow_schemas import (
     AvailablePhase,
     CustomWorkflow,
     PhaseConfig,
+    WorkflowPhase,
     WorkflowValidationResult,
 )
+from services.phase_registry import PhaseRegistry
+from services.workflow_validator import WorkflowValidator
+from services.workflow_executor import WorkflowExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +34,10 @@ class CustomWorkflowsService:
     def __init__(self, database_service):
         """Initialize with database service"""
         self.database_service = database_service
-        self._available_phases_cache: Optional[List[AvailablePhase]] = None
+        self._available_phases_cache: Optional[List[Dict[str, Any]]] = None
+        self.phase_registry = PhaseRegistry.get_instance()
+        self.workflow_validator = WorkflowValidator()
+        self.workflow_executor = WorkflowExecutor()
         logger.info("CustomWorkflowsService initialized")
 
     async def create_workflow(self, workflow: CustomWorkflow, owner_id: str) -> CustomWorkflow:
@@ -292,19 +299,22 @@ class CustomWorkflowsService:
         for i, phase in enumerate(workflow.phases):
             try:
                 # Validate component-level constraints
-                if phase.timeout_seconds < 10:
+                timeout_seconds = getattr(phase, "timeout_seconds", 300)
+                if timeout_seconds < 10:
                     warnings.append(
-                        f"Phase '{phase.name}' timeout {phase.timeout_seconds}s is very short"
+                        f"Phase '{phase.name}' timeout {timeout_seconds}s is very short"
                     )
-                if phase.timeout_seconds > 3600:
+                if timeout_seconds > 3600:
                     warnings.append(
-                        f"Phase '{phase.name}' timeout {phase.timeout_seconds}s is very long"
+                        f"Phase '{phase.name}' timeout {timeout_seconds}s is very long"
                     )
 
                 # TODO: Validate agent exists in registry when available
-                # For now, just warn if agent looks invalid
-                if not phase.agent or not phase.agent.strip():
-                    errors.append(f"Phase '{phase.name}' must specify an agent")
+                # Only validate agent if the phase type has an explicit agent field
+                if hasattr(phase, "agent") and "agent" in phase.model_fields:
+                    agent = phase.agent  # type: ignore[union-attr]
+                    if not agent or not str(agent).strip():
+                        errors.append(f"Phase '{phase.name}' must specify an agent")
 
             except Exception as e:
                 errors.append(f"Error validating phase '{phase.name}': {str(e)}")
@@ -405,14 +415,14 @@ class CustomWorkflowsService:
             [
                 {
                     "name": p.name,
-                    "agent": p.agent,
-                    "description": p.description,
-                    "timeout_seconds": p.timeout_seconds,
-                    "max_retries": p.max_retries,
-                    "skip_on_error": p.skip_on_error,
-                    "required": p.required,
-                    "quality_threshold": p.quality_threshold,
-                    "metadata": p.metadata,
+                    "agent": getattr(p, "agent", ""),
+                    "description": getattr(p, "description", ""),
+                    "timeout_seconds": getattr(p, "timeout_seconds", 300),
+                    "max_retries": getattr(p, "max_retries", 2),
+                    "skip_on_error": getattr(p, "skip_on_error", False),
+                    "required": getattr(p, "required", True),
+                    "quality_threshold": getattr(p, "quality_threshold", None),
+                    "metadata": getattr(p, "metadata", {}),
                 }
                 for p in workflow.phases
             ]
@@ -441,14 +451,14 @@ class CustomWorkflowsService:
             [
                 {
                     "name": p.name,
-                    "agent": p.agent,
-                    "description": p.description,
-                    "timeout_seconds": p.timeout_seconds,
-                    "max_retries": p.max_retries,
-                    "skip_on_error": p.skip_on_error,
-                    "required": p.required,
-                    "quality_threshold": p.quality_threshold,
-                    "metadata": p.metadata,
+                    "agent": getattr(p, "agent", ""),
+                    "description": getattr(p, "description", ""),
+                    "timeout_seconds": getattr(p, "timeout_seconds", 300),
+                    "max_retries": getattr(p, "max_retries", 2),
+                    "skip_on_error": getattr(p, "skip_on_error", False),
+                    "required": getattr(p, "required", True),
+                    "quality_threshold": getattr(p, "quality_threshold", None),
+                    "metadata": getattr(p, "metadata", {}),
                 }
                 for p in workflow.phases
             ]

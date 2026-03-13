@@ -25,7 +25,6 @@ from typing import List, Optional
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request, status
 
 from schemas.settings_schemas import (
-    ErrorResponse,
     SettingBase,
     SettingBulkUpdateRequest,
     SettingCategoryEnum,
@@ -314,7 +313,7 @@ async def create_setting(
             key=created_setting.get("key", setting_data.key),
             value=created_setting.get("value", ""),
             data_type=setting_data.data_type or SettingDataTypeEnum.STRING,
-            category=setting_data.category or SettingCategoryEnum.SYSTEM,
+            category=setting_data.category or SettingCategoryEnum.GENERAL,
             environment=setting_data.environment or SettingEnvironmentEnum.PRODUCTION,
             description=created_setting.get("description", ""),
             is_encrypted=False,
@@ -332,6 +331,17 @@ async def create_setting(
         raise HTTPException(status_code=500, detail=f"Failed to create setting: {str(e)}")
 
 
+@router.patch(
+    "",
+    response_model=SettingResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Batch update user settings",
+    responses={
+        200: {"description": "Settings updated successfully"},
+        400: {"description": "Invalid request body"},
+        401: {"description": "Unauthorized - invalid or missing token"},
+    },
+)
 @router.put(
     "",
     response_model=SettingResponse,
@@ -354,7 +364,7 @@ async def batch_update_settings(
         key="user_preferences",
         value=update_data.value or "updated_value",
         data_type=SettingDataTypeEnum.STRING,
-        category=SettingCategoryEnum.SYSTEM,
+        category=SettingCategoryEnum.GENERAL,
         environment=SettingEnvironmentEnum.ALL,
         description="Batch updated user settings",
         is_encrypted=False,
@@ -385,6 +395,19 @@ async def batch_delete_settings(
     return None
 
 
+@router.patch(
+    "/{setting_id}",
+    response_model=SettingResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Update existing setting",
+    responses={
+        200: {"description": "Setting updated successfully"},
+        400: {"description": "Invalid request body"},
+        401: {"description": "Unauthorized - invalid or missing token"},
+        403: {"description": "Forbidden - insufficient permissions or read-only setting"},
+        404: {"description": "Setting not found"},
+    },
+)
 @router.put(
     "/{setting_id}",
     response_model=SettingResponse,
@@ -437,21 +460,7 @@ async def update_setting(
     if setting_id < 1 or setting_id > 10:
         raise HTTPException(status_code=404, detail="Setting not found")
 
-    # Log the update for audit trail
-    old_value = f"old_value_{setting_id}"
     new_value = update_data.value if update_data.value else f"value_{setting_id}"
-
-    log_audit(
-        action=SettingsAuditLogger.ACTION_UPDATE,
-        setting_id=str(setting_id),
-        user_id=current_user.get("user_id", "unknown"),
-        old_value=old_value,
-        new_value=new_value,
-        user_email=current_user.get("email", "unknown"),
-        change_description=f"Updated setting {setting_id}: {update_data.description or 'no description'}",
-        ip_address=request.client.host if request else None,
-        user_agent=request.headers.get("user-agent") if request else None,
-    )
 
     return SettingResponse(
         id=setting_id,

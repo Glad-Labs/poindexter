@@ -2064,26 +2064,26 @@ async def publish_task(
             "published_at": datetime.now(timezone.utc).isoformat(),
             "published_by": current_user.get("id"),
         }
-            # Preserve existing task content: merge publish_metadata into result (do not overwrite)
-            existing_result = task.get("result", {})
-            if isinstance(existing_result, str):
-                try:
-                    existing_result = json.loads(existing_result) if existing_result else {}
-                except (json.JSONDecodeError, ValueError):
-                    existing_result = {}
-            existing_result = existing_result or {}
-            task_meta = task.get("task_metadata", {})
-            if isinstance(task_meta, str):
-                try:
-                    task_meta = json.loads(task_meta) if task_meta else {}
-                except (json.JSONDecodeError, ValueError):
-                    task_meta = {}
-            task_meta = task_meta or {}
-            # task_result wins over task_metadata; publish_metadata stored under its own key
-            merged_result = convert_decimals({**task_meta, **existing_result, "publish_metadata": publish_metadata})
-            await db_service.update_task_status(
-                task_id, "published", result=safe_json_dumps(merged_result)
-            )
+        # Preserve existing task content: merge publish_metadata into result (do not overwrite)
+        existing_result = task.get("result", {})
+        if isinstance(existing_result, str):
+            try:
+                existing_result = json.loads(existing_result) if existing_result else {}
+            except (json.JSONDecodeError, ValueError):
+                existing_result = {}
+        existing_result = existing_result or {}
+        task_meta = task.get("task_metadata", {})
+        if isinstance(task_meta, str):
+            try:
+                task_meta = json.loads(task_meta) if task_meta else {}
+            except (json.JSONDecodeError, ValueError):
+                task_meta = {}
+        task_meta = task_meta or {}
+        # task_result wins over task_metadata; publish_metadata stored under its own key
+        merged_result = convert_decimals({**task_meta, **existing_result, "publish_metadata": publish_metadata})
+        await db_service.update_task_status(
+            task_id, "published", result=safe_json_dumps(merged_result)
+        )
 
         # Create post in posts table when publishing (not before)
         # This ensures posts only exist for published content
@@ -2156,14 +2156,14 @@ async def publish_task(
                 logger.info(f"✅ Post created with status='published': {post.id}")  # type: ignore[attr-defined]
                 logger.info(f"   Title: {post_title}")
                 logger.info(f"   Slug: {slug}")
-                    # Persist post info back to task result so frontend gets published_url
-                    post_id_val = str(post.id) if hasattr(post, "id") else str(post.get("id", ""))  # type: ignore[union-attr]
-                    merged_result["post_id"] = post_id_val
-                    merged_result["post_slug"] = slug
-                    merged_result["published_url"] = f"/posts/{slug}"
-                    await db_service.update_task_status(
-                        task_id, "published", result=safe_json_dumps(convert_decimals(merged_result))
-                    )
+                # Persist post info back to task result so frontend gets published_url
+                post_id_val = str(post.id) if hasattr(post, "id") else str(post.get("id", ""))  # type: ignore[union-attr]
+                merged_result["post_id"] = post_id_val
+                merged_result["post_slug"] = slug
+                merged_result["published_url"] = f"/posts/{slug}"
+                await db_service.update_task_status(
+                    task_id, "published", result=safe_json_dumps(convert_decimals(merged_result))
+                )
             else:
                 logger.warning(f"⚠️  Skipping post creation: missing content or topic")
         except Exception as e:

@@ -369,11 +369,7 @@ class TaskIntentRouter:
             "confidence": f"{intent_request.confidence * 100:.0f}%",
             "steps": steps,
             "total_estimated_time": self._format_duration(total_duration_ms),
-            "cost_estimate": (
-                await self.model_router.estimate_cost(task_data)
-                if hasattr(self, "model_router")
-                else "$2.15"
-            ),
+            "cost_estimate": "$2.15",
             "next_action": (
                 "Ready to execute"
                 if not intent_request.requires_confirmation
