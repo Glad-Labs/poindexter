@@ -166,6 +166,10 @@ class DatabaseService:
         """Delegate to tasks module."""
         return await self.tasks.update_task_status(task_id, status, result)
 
+    async def get_tasks_by_ids(self, task_ids: list) -> dict:
+        """Delegate bulk task fetch to tasks module (1 query for all IDs)."""
+        return await self.tasks.get_tasks_by_ids(task_ids)
+
     async def bulk_update_task_statuses(
         self, task_ids: list, new_status: str
     ) -> dict:

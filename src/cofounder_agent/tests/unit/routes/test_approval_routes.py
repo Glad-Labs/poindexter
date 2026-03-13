@@ -274,13 +274,9 @@ class TestBulkApprove:
         task_a = {**AWAITING_TASK, "id": "t1", "task_id": "t1"}
         task_b = {**AWAITING_TASK, "id": "t2", "task_id": "t2"}
 
-        call_count = 0
-
-        async def get_task_side_effect(task_id):
-            return {"t1": task_a, "t2": task_b}.get(task_id)
-
         mock_db = make_mock_db()
-        mock_db.get_task = AsyncMock(side_effect=get_task_side_effect)
+        # get_tasks_by_ids returns a dict keyed by task_id (#665 — replaces N get_task calls)
+        mock_db.get_tasks_by_ids = AsyncMock(return_value={"t1": task_a, "t2": task_b})
         client = TestClient(_build_app(mock_db))
 
         with patch.object(approval_module, "broadcast_approval_status", new=AsyncMock()):
@@ -296,7 +292,8 @@ class TestBulkApprove:
 
     def test_bulk_approve_skips_nonexistent_tasks(self):
         mock_db = make_mock_db()
-        mock_db.get_task = AsyncMock(return_value=None)
+        # Empty dict = no tasks found
+        mock_db.get_tasks_by_ids = AsyncMock(return_value={})
         client = TestClient(_build_app(mock_db))
 
         with patch.object(approval_module, "broadcast_approval_status", new=AsyncMock()):
@@ -309,9 +306,9 @@ class TestBulkApprove:
         assert data["failed_count"] == 2
 
     def test_bulk_approve_skips_tasks_with_wrong_status(self):
-        already_approved = {**AWAITING_TASK, "status": "approved"}
+        already_approved = {**AWAITING_TASK, "status": "approved", "task_id": "t1"}
         mock_db = make_mock_db()
-        mock_db.get_task = AsyncMock(return_value=already_approved)
+        mock_db.get_tasks_by_ids = AsyncMock(return_value={"t1": already_approved})
         client = TestClient(_build_app(mock_db))
 
         with patch.object(approval_module, "broadcast_approval_status", new=AsyncMock()):
@@ -342,11 +339,9 @@ class TestBulkReject:
         task_a = {**AWAITING_TASK, "id": "r1", "task_id": "r1"}
         task_b = {**AWAITING_TASK, "id": "r2", "task_id": "r2"}
 
-        async def get_task_side_effect(task_id):
-            return {"r1": task_a, "r2": task_b}.get(task_id)
-
         mock_db = make_mock_db()
-        mock_db.get_task = AsyncMock(side_effect=get_task_side_effect)
+        # get_tasks_by_ids returns a dict keyed by task_id (#665 — replaces N get_task calls)
+        mock_db.get_tasks_by_ids = AsyncMock(return_value={"r1": task_a, "r2": task_b})
         client = TestClient(_build_app(mock_db))
 
         with patch.object(approval_module, "broadcast_approval_status", new=AsyncMock()):

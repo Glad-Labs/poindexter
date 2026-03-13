@@ -615,10 +615,12 @@ async def bulk_approve_tasks(
         failed_ids = []
         approval_date = datetime.now(timezone.utc).isoformat()
 
+        # Fetch all tasks in one query instead of N individual get_task() calls (#665)
+        tasks_by_id = await db_service.get_tasks_by_ids(request.task_ids)
+
         for task_id in request.task_ids:
             try:
-                # Fetch task
-                task = await db_service.get_task(task_id)
+                task = tasks_by_id.get(task_id)
                 if not task:
                     failed_ids.append(task_id)
                     failed_count += 1
@@ -737,10 +739,12 @@ async def bulk_reject_tasks(
         rejection_date = datetime.now(timezone.utc).isoformat()
         final_status = "failed_revisions_requested" if request.allow_revisions else "failed"
 
+        # Fetch all tasks in one query instead of N individual get_task() calls (#665)
+        tasks_by_id = await db_service.get_tasks_by_ids(request.task_ids)
+
         for task_id in request.task_ids:
             try:
-                # Fetch task
-                task = await db_service.get_task(task_id)
+                task = tasks_by_id.get(task_id)
                 if not task:
                     failed_ids.append(task_id)
                     failed_count += 1

@@ -271,6 +271,38 @@ class TasksDatabase(DatabaseServiceMixin):
             logger.error(f"❌ Failed to get task {task_id}: {e}", exc_info=True)
             return None
 
+    async def get_tasks_by_ids(self, task_ids: List[str]) -> Dict[str, dict]:
+        """
+        Fetch multiple tasks in a single query.
+
+        Used by bulk operations (bulk_approve, bulk_reject) to replace N
+        individual get_task() calls with one SELECT ... WHERE task_id = ANY().
+
+        Args:
+            task_ids: List of task UUIDs to fetch
+
+        Returns:
+            Dict mapping task_id → task dict for each found task.
+            Missing IDs are simply absent from the result.
+        """
+        if not task_ids:
+            return {}
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT * FROM content_tasks WHERE task_id = ANY($1::text[])",
+                    task_ids,
+                )
+                result = {}
+                for row in rows:
+                    task_response = ModelConverter.to_task_response(row)
+                    task_dict = ModelConverter.to_dict(task_response)
+                    result[task_dict["task_id"]] = task_dict
+                return result
+        except Exception as e:
+            logger.error(f"[get_tasks_by_ids] Failed to bulk-fetch tasks: {e}", exc_info=True)
+            return {}
+
     @log_query_performance(operation="update_task_status", category="task_write")
     async def update_task_status(
         self,
