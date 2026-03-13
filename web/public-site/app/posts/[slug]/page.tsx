@@ -202,9 +202,11 @@ export default async function PostPage({
         <div className="pt-20 pb-12">
           {imageUrl && (
             <div className="relative w-full h-96 md:h-[500px] overflow-hidden">
+              {/* Decorative featured image — alt="" prevents screen reader re-announcement
+                  of the title already in the <h1> immediately below (WCAG 1.1.1). */}
               <Image
                 src={imageUrl}
-                alt={post.title}
+                alt=""
                 fill
                 priority
                 className="object-cover"
@@ -307,6 +309,7 @@ export default async function PostPage({
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
+                  aria-hidden="true"
                 >
                   <path
                     strokeLinecap="round"
