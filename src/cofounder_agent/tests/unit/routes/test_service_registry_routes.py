@@ -10,7 +10,7 @@ Tests cover:
 - POST /api/services/{service_name}/actions/{action} — execute_service_action
 
 get_service_registry is patched to avoid real registry I/O.
-No auth required on these endpoints.
+All endpoints require authentication via get_current_user (overridden with TEST_USER).
 """
 
 import pytest
@@ -18,10 +18,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from routes.auth_unified import get_current_user
 from utils.route_utils import get_database_dependency
 from routes.service_registry_routes import router
 
-from tests.unit.routes.conftest import make_mock_db
+from tests.unit.routes.conftest import make_mock_db, TEST_USER
 
 
 SAMPLE_SCHEMA = {
@@ -69,6 +70,7 @@ def _build_app(db=None) -> FastAPI:
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_database_dependency] = lambda: (db or make_mock_db())
+    app.dependency_overrides[get_current_user] = lambda: TEST_USER
     return app
 
 

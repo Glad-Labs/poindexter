@@ -42,7 +42,9 @@ class Config:
 
     # Application settings
     app_version: str = "3.0.1"
-    secret_key: str = "your-secret-key-here"
+    # NOTE: secret_key intentionally has no hardcoded default — callers must supply SECRET_KEY
+    # via .env.local.  get_config() raises RuntimeError in production when this is missing.
+    secret_key: str = ""
 
 
 def load_env() -> None:
@@ -90,8 +92,27 @@ def load_env() -> None:
 
 def get_config() -> Config:
     """Get application configuration."""
+    import logging as _logging
+    _cfg_logger = _logging.getLogger(__name__)
+
     # Load environment variables if not already loaded
     load_env()
+
+    secret_key_value = os.getenv("SECRET_KEY", "")
+    environment = os.getenv("ENVIRONMENT", "development")
+
+    if secret_key_value in ("", "your-secret-key-here"):
+        if environment == "production":
+            raise RuntimeError(
+                "SECRET_KEY must be set to a strong random value in production. "
+                "Current value is missing or the known default placeholder. "
+                "Set SECRET_KEY in .env.local before deploying."
+            )
+        else:
+            _cfg_logger.warning(
+                "[config] SECRET_KEY is not set or uses the default placeholder. "
+                "Set SECRET_KEY in .env.local before deploying to production."
+            )
 
     return Config(
         database_url=os.getenv("DATABASE_URL", ""),
@@ -109,5 +130,5 @@ def get_config() -> Config:
         enable_tracing=os.getenv("ENABLE_TRACING", "false").lower() == "true",
         otlp_endpoint=os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318/v1/traces"),
         app_version=os.getenv("APP_VERSION", "3.0.1"),
-        secret_key=os.getenv("SECRET_KEY", "your-secret-key-here"),
+        secret_key=os.getenv("SECRET_KEY", ""),
     )

@@ -13,7 +13,7 @@ Tests cover:
 - GET /api/agents/search               — search_agents
 
 get_agent_registry is patched to avoid real registry I/O.
-No auth required on these endpoints.
+Auth is required on these endpoints — get_current_user overridden with TEST_USER.
 """
 
 import pytest
@@ -22,6 +22,8 @@ from fastapi.testclient import TestClient
 from unittest.mock import MagicMock, patch
 
 from routes.agent_registry_routes import router
+from routes.auth_unified import get_current_user
+from tests.unit.routes.conftest import TEST_USER
 
 
 SAMPLE_AGENTS = [
@@ -88,6 +90,7 @@ def _make_registry(agents=None, agent_obj=None):
 def _build_app() -> FastAPI:
     app = FastAPI()
     app.include_router(router)
+    app.dependency_overrides[get_current_user] = lambda: TEST_USER
     return app
 
 
