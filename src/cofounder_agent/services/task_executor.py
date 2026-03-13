@@ -34,6 +34,9 @@ from .quality_service import QualityAssessment, UnifiedQualityService
 # Import usage tracking
 from .usage_tracker import get_usage_tracker
 
+# Import task metrics for per-task LLM and phase instrumentation (issue #837)
+from .metrics_service import TaskMetrics
+
 from .error_handler import ServiceError
 
 # Import WebSocket progress emission (re-exported so tests can patch at this module)
@@ -461,10 +464,14 @@ class TaskExecutor:
             f"task_execution_{task_id}", "content_generation", "multi-agent-orchestrator"
         )
 
+        # Per-task structured metrics instrumentation (issue #837)
+        task_metrics = TaskMetrics(str(task_id))
+
         # ===== PHASE 1: Generate Content via Orchestrator =====
         generated_content = None
         orchestrator_error = None
         generation_start_time = time.time()
+        _phase1_start = task_metrics.record_phase_start("content_generation")
 
         logger.info(f"📝 [TASK_EXECUTE] PHASE 1: Generating content via orchestrator...")
         if self.orchestrator:
@@ -663,7 +670,15 @@ class TaskExecutor:
                 f"✅ [TASK_EXECUTE] PHASE 1 Complete (fallback): Generated {len(generated_content)} chars"
             )
 
+        task_metrics.record_phase_end(
+            "content_generation",
+            _phase1_start,
+            status="success" if generated_content and not orchestrator_error else "error",
+            error=str(orchestrator_error) if orchestrator_error else None,
+        )
+
         # ===== PHASE 2: Quality Validation =====
+        _phase2_start = task_metrics.record_phase_start("quality_validation")
         logger.info(f"🔍 [TASK_EXECUTE] PHASE 2: Validating content quality...")
         logger.info(
             f"   Input content length: {len(generated_content) if generated_content else 0} chars"
@@ -935,6 +950,20 @@ class TaskExecutor:
                 logger.debug(f"✅ Logged task cost: ${cost_log['cost_usd']:.6f} to database")
             except Exception as e:
                 logger.warning(f"⚠️ Failed to persist cost metrics: {e}")
+
+        # Close Phase 2 and log structured metrics summary (issue #837)
+        task_metrics.record_phase_end(
+            "quality_validation",
+            _phase2_start,
+            status="success" if approved else "error",
+        )
+        task_metrics.end_time = time.time()
+        logger.info(
+            "[task_executor] task_metrics summary task_id=%s phases=%s total_duration_ms=%.1f",
+            task_id,
+            task_metrics.get_phase_breakdown(),
+            task_metrics.get_total_duration_ms(),
+        )
 
         # Store metadata in result
         metadata = {
