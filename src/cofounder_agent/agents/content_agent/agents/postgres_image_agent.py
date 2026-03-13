@@ -310,3 +310,18 @@ Only return the JSON array, no other text."""
             logger.error(f"Error processing image at index {index}: {e}", exc_info=True)
             # Return None instead of fallback image
             return None
+
+
+def get_image_agent() -> "PostgreSQLImageAgent":
+    """Factory used by workflow_executor dynamic loading.
+
+    Returns a PostgreSQLImageAgent configured from application settings.
+    Note: caller must supply llm_client and pexels_client before use.
+    """
+    from ..config import config
+    from ..services.llm_client import LLMClient
+    from ..services.pexels_client import PexelsClient
+
+    llm_client = LLMClient()
+    pexels_client = PexelsClient(api_key=getattr(config, "PEXELS_API_KEY", ""))
+    return PostgreSQLImageAgent(llm_client=llm_client, pexels_client=pexels_client)

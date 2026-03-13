@@ -12,7 +12,7 @@ This service consolidates:
 - ResearchAgent (agents/content_agent/agents/research_agent.py)
 - CreativeAgent (agents/content_agent/agents/creative_agent.py)
 - QAAgent (agents/content_agent/agents/qa_agent.py)
-- ImageAgent (agents/content_agent/agents/image_agent.py)
+- PostgreSQLImageAgent (agents/content_agent/agents/postgres_image_agent.py)
 - PublishingAgent (agents/content_agent/agents/postgres_publishing_agent.py)
 """
 
@@ -359,9 +359,9 @@ class ContentService(ServiceBase):
             Dictionary with image_urls, metadata, alt_text
         """
         try:
-            from agents.content_agent.agents.image_agent import ImageAgent
+            from agents.content_agent.agents.postgres_image_agent import PostgreSQLImageAgent
 
-            image_agent = ImageAgent()  # type: ignore[call-arg]
+            image_agent = PostgreSQLImageAgent()  # type: ignore[call-arg]
             image_result = await image_agent.run(topic)  # type: ignore[arg-type]
 
             logger.info(f"Image selection phase completed for topic: {topic}")
