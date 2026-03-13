@@ -10,7 +10,7 @@ Tests cover:
 - GET  /api/agents/health            — get_agent_system_health
 
 get_orchestrator reads from request.app.state — overridden via dependency injection.
-Auth is NOT required on these endpoints (no get_current_user dependency).
+Auth is required on these endpoints — get_current_user overridden with TEST_USER.
 """
 
 import pytest
@@ -19,6 +19,8 @@ from fastapi.testclient import TestClient
 from unittest.mock import MagicMock
 
 from routes.agents_routes import router, get_orchestrator
+from routes.auth_unified import get_current_user
+from tests.unit.routes.conftest import TEST_USER
 
 
 def _make_orchestrator(system_status=None):
@@ -42,6 +44,7 @@ def _build_app(orchestrator=None) -> FastAPI:
     app.include_router(router)
     orch = orchestrator if orchestrator is not None else _make_orchestrator()
     app.dependency_overrides[get_orchestrator] = lambda: orch
+    app.dependency_overrides[get_current_user] = lambda: TEST_USER
     return app
 
 
@@ -49,6 +52,7 @@ def _build_app_no_orchestrator() -> FastAPI:
     """App with no dependency override — get_orchestrator raises 503."""
     app = FastAPI()
     app.include_router(router)
+    app.dependency_overrides[get_current_user] = lambda: TEST_USER
     return app
 
 

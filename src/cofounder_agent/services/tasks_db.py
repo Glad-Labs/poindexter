@@ -779,6 +779,10 @@ class TasksDatabase(DatabaseServiceMixin):
             List of status change records
         """
         try:
+            # NOTE: Column was named "timestamp" (reserved word) until migration 0031
+            # renamed it to "created_at".  SELECT both with aliases so this code works
+            # against both pre- and post-migration schemas; the one that exists will
+            # carry a non-NULL value.
             sql = """
                 SELECT id, task_id, old_status, new_status, reason, metadata, created_at
                 FROM task_status_history
@@ -786,9 +790,22 @@ class TasksDatabase(DatabaseServiceMixin):
                 ORDER BY created_at DESC
                 LIMIT $2
             """
+            # Pre-migration fallback (column still named "timestamp")
+            sql_legacy = """
+                SELECT id, task_id, old_status, new_status, reason, metadata,
+                       "timestamp" AS created_at
+                FROM task_status_history
+                WHERE task_id = $1
+                ORDER BY "timestamp" DESC
+                LIMIT $2
+            """
 
             async with self.pool.acquire() as conn:
-                rows = await conn.fetch(sql, task_id, limit)
+                try:
+                    rows = await conn.fetch(sql, task_id, limit)
+                except Exception:
+                    # Migration 0031 not yet applied — column is still "timestamp"
+                    rows = await conn.fetch(sql_legacy, task_id, limit)
 
                 history = []
                 for row in rows:
@@ -830,9 +847,23 @@ class TasksDatabase(DatabaseServiceMixin):
                 ORDER BY created_at DESC
                 LIMIT $2
             """
+            # Pre-migration fallback (column still named "timestamp")
+            sql_legacy = """
+                SELECT id, task_id, old_status, new_status, reason, metadata,
+                       "timestamp" AS created_at
+                FROM task_status_history
+                WHERE task_id = $1
+                AND new_status IN ('validation_failed', 'validation_error')
+                ORDER BY "timestamp" DESC
+                LIMIT $2
+            """
 
             async with self.pool.acquire() as conn:
-                rows = await conn.fetch(sql, task_id, limit)
+                try:
+                    rows = await conn.fetch(sql, task_id, limit)
+                except Exception:
+                    # Migration 0031 not yet applied — column is still "timestamp"
+                    rows = await conn.fetch(sql_legacy, task_id, limit)
 
                 failures = []
                 for row in rows:

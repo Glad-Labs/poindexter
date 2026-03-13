@@ -21,7 +21,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock
 
+from routes.auth_unified import get_current_user
 from routes.custom_workflows_routes import router, get_workflows_service
+from tests.unit.routes.conftest import TEST_USER
 from schemas.custom_workflow_schemas import (
     AvailablePhase,
     AvailablePhasesResponse,
@@ -117,8 +119,9 @@ def _build_app(svc=None) -> FastAPI:
         svc = _make_svc()
     app = FastAPI()
     app.include_router(router)
-    # Override the service dependency
+    # Override the service and auth dependencies
     app.dependency_overrides[get_workflows_service] = lambda: svc
+    app.dependency_overrides[get_current_user] = lambda: TEST_USER
     return app
 
 

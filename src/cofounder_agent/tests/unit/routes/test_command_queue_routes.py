@@ -12,7 +12,7 @@ Tests cover:
 - POST /api/commands/cleanup/clear-old — clear_old_commands
 
 create_command and get_command_queue are patched to avoid real I/O.
-No auth required on these endpoints.
+Auth is required on these endpoints — get_current_user overridden with TEST_USER.
 """
 
 import pytest
@@ -21,7 +21,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from routes.auth_unified import get_current_user
 from routes.command_queue_routes import router
+from tests.unit.routes.conftest import TEST_USER
 
 
 COMMAND_ID = "cmd-11111111-1111-1111-1111-111111111111"
@@ -70,6 +72,7 @@ def _make_queue(cmd=None, cmd_list=_SENTINEL):
 def _build_app() -> FastAPI:
     app = FastAPI()
     app.include_router(router)
+    app.dependency_overrides[get_current_user] = lambda: TEST_USER
     return app
 
 
