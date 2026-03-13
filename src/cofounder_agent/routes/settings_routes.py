@@ -134,7 +134,7 @@ async def list_settings(
             total=total, page=page, per_page=per_page, pages=pages, items=items
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve settings: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve settings")
 
 
 @router.get(
@@ -198,7 +198,7 @@ async def get_setting(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve setting: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve setting")
 
 
 @router.post(
@@ -299,7 +299,7 @@ async def create_setting(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create setting: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to create setting")
 
 
 @router.patch(
@@ -510,7 +510,7 @@ async def delete_setting(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete setting: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete setting")
 
 
 # ============================================================================

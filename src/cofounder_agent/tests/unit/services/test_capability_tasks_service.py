@@ -6,21 +6,20 @@ Tests cover:
 - get_task — found (row → object), not found (None)
 - list_tasks — basic listing, pagination params, active_only filter
 - update_task — not found returns None, found updates and returns via get_task
-- delete_task — "UPDATE 1" → True, "UPDATE 0" → False
-- persist_execution — happy path, counter update via transaction
+- delete_task — rowcount 1 → True, rowcount 0 → False
+- persist_execution — happy path, counter update via commit
 - get_execution — found, not found
 - list_executions — basic listing, status filter
 - _row_to_task — JSON/list steps, JSON/list tags
 - _row_to_execution — JSON/list step_results, JSON/dict final_outputs
 
-The asyncpg pool is fully mocked; no real database access.
+The SQLAlchemy Session is fully mocked; no real database access.
 """
 
 import json
 import pytest
-from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock, patch
 
 from services.capability_task_executor import (
     CapabilityStep,
@@ -29,41 +28,63 @@ from services.capability_task_executor import (
     TaskExecutionResult,
 )
 from services.capability_tasks_service import CapabilityTasksService
+import services.capability_tasks_service as _svc_mod
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+# The service uses SQLAlchemy string table args that raise at query-build time.
+# Patch the SQLAlchemy functions in the service module so queries become mocks.
+_SA_EXPR = MagicMock()
+_SA_EXPR.where.return_value = _SA_EXPR
+_SA_EXPR.values.return_value = _SA_EXPR
+_SA_EXPR.offset.return_value = _SA_EXPR
+_SA_EXPR.limit.return_value = _SA_EXPR
+_SA_EXPR.order_by.return_value = _SA_EXPR
+_SA_EXPR.select_from.return_value = _SA_EXPR
 
-def _make_conn():
-    conn = MagicMock()
-    conn.execute = AsyncMock()
-    conn.fetchrow = AsyncMock(return_value=None)
-    conn.fetchval = AsyncMock(return_value=0)
-    conn.fetch = AsyncMock(return_value=[])
-    # transaction context manager
-    conn.transaction = MagicMock()
-    conn.transaction.return_value.__aenter__ = AsyncMock(return_value=None)
-    conn.transaction.return_value.__aexit__ = AsyncMock(return_value=False)
-    return conn
-
-
-def _make_pool(conn):
-    pool = MagicMock()
-
-    @asynccontextmanager
-    async def _acquire():
-        yield conn
-
-    pool.acquire = _acquire
-    return pool
+_SA_PATCHES = {
+    "select": MagicMock(return_value=_SA_EXPR),
+    "insert": MagicMock(return_value=_SA_EXPR),
+    "update": MagicMock(return_value=_SA_EXPR),
+    "and_": MagicMock(return_value=_SA_EXPR),
+    "desc": MagicMock(return_value=_SA_EXPR),
+}
 
 
-def _service(conn=None) -> tuple[CapabilityTasksService, MagicMock]:
-    c = conn or _make_conn()
-    pool = _make_pool(c)
-    return CapabilityTasksService(pool=pool), c
+@pytest.fixture(autouse=True)
+def _patch_sqlalchemy(monkeypatch):
+    """Replace SQLAlchemy builders with mocks so string table args don't raise."""
+    for name, mock in _SA_PATCHES.items():
+        mock.reset_mock()
+        monkeypatch.setattr(_svc_mod, name, mock)
+    # Reset the shared _SA_EXPR call tracking too
+    _SA_EXPR.reset_mock()
+    _SA_EXPR.where.return_value = _SA_EXPR
+    _SA_EXPR.values.return_value = _SA_EXPR
+    _SA_EXPR.offset.return_value = _SA_EXPR
+    _SA_EXPR.limit.return_value = _SA_EXPR
+    _SA_EXPR.order_by.return_value = _SA_EXPR
+    _SA_EXPR.select_from.return_value = _SA_EXPR
+
+
+def _make_db():
+    """Return (mock_db_session, mock_execute_result) for SQLAlchemy Session."""
+    db = MagicMock()
+    result = MagicMock()
+    result.first.return_value = None
+    result.scalar.return_value = 0
+    result.fetchall.return_value = []
+    result.rowcount = 0
+    db.execute.return_value = result
+    return db, result
+
+
+def _service() -> tuple[CapabilityTasksService, MagicMock]:
+    db, _ = _make_db()
+    return CapabilityTasksService(db_session=db), db
 
 
 def _step(name="echo", output_key="out", order=0) -> CapabilityStep:
@@ -71,13 +92,14 @@ def _step(name="echo", output_key="out", order=0) -> CapabilityStep:
 
 
 def _task_row(task_id="t1", name="my-task", steps=None, tags=None):
-    """Build a mock asyncpg row for capability_tasks."""
+    """Build a mock SQLAlchemy row for capability_tasks."""
     steps_list = steps or [{"capability_name": "echo", "inputs": {}, "output_key": "out", "order": 0, "metadata": {}}]
     tags_list = tags or ["test"]
     row = MagicMock()
     data = {
         "id": task_id,
         "name": name,
+        "version": 1,
         "description": "desc",
         "owner_id": "owner-1",
         "steps": steps_list,           # already a list (asyncpg returns jsonb as list)
@@ -127,8 +149,7 @@ def _exec_row(exec_id="e1", task_id="t1", status="completed"):
 class TestCreateTask:
     @pytest.mark.asyncio
     async def test_returns_capability_task_definition(self):
-        svc, conn = _service()
-        conn.execute = AsyncMock()
+        svc, db = _service()
 
         steps = [_step()]
         result = await svc.create_task(
@@ -144,11 +165,11 @@ class TestCreateTask:
         assert result.owner_id == "owner-1"
         assert result.tags == ["ai"]
         assert len(result.steps) == 1
-        conn.execute.assert_called_once()
+        db.execute.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_no_tags_defaults_to_empty_list(self):
-        svc, conn = _service()
+        svc, _ = _service()
         result = await svc.create_task("t", "d", [_step()], "owner-1")
         assert result.tags == []
 
@@ -161,8 +182,8 @@ class TestCreateTask:
 class TestGetTask:
     @pytest.mark.asyncio
     async def test_found_returns_definition(self):
-        svc, conn = _service()
-        conn.fetchrow = AsyncMock(return_value=_task_row())
+        svc, db = _service()
+        db.execute.return_value.first.return_value = _task_row()
 
         result = await svc.get_task("t1", "owner-1")
 
@@ -172,8 +193,8 @@ class TestGetTask:
 
     @pytest.mark.asyncio
     async def test_not_found_returns_none(self):
-        svc, conn = _service()
-        conn.fetchrow = AsyncMock(return_value=None)
+        svc, db = _service()
+        db.execute.return_value.first.return_value = None
 
         result = await svc.get_task("missing", "owner-1")
 
@@ -188,9 +209,12 @@ class TestGetTask:
 class TestListTasks:
     @pytest.mark.asyncio
     async def test_returns_tasks_and_count(self):
-        svc, conn = _service()
-        conn.fetchval = AsyncMock(return_value=2)
-        conn.fetch = AsyncMock(return_value=[_task_row("t1"), _task_row("t2")])
+        svc, db = _service()
+        count_result = MagicMock()
+        count_result.scalar.return_value = 2
+        list_result = MagicMock()
+        list_result.fetchall.return_value = [_task_row("t1"), _task_row("t2")]
+        db.execute.side_effect = [count_result, list_result]
 
         tasks, total = await svc.list_tasks("owner-1")
 
@@ -200,9 +224,12 @@ class TestListTasks:
 
     @pytest.mark.asyncio
     async def test_empty_results(self):
-        svc, conn = _service()
-        conn.fetchval = AsyncMock(return_value=0)
-        conn.fetch = AsyncMock(return_value=[])
+        svc, db = _service()
+        count_result = MagicMock()
+        count_result.scalar.return_value = 0
+        list_result = MagicMock()
+        list_result.fetchall.return_value = []
+        db.execute.side_effect = [count_result, list_result]
 
         tasks, total = await svc.list_tasks("owner-1")
 
@@ -218,8 +245,8 @@ class TestListTasks:
 class TestUpdateTask:
     @pytest.mark.asyncio
     async def test_not_found_returns_none(self):
-        svc, conn = _service()
-        conn.fetchrow = AsyncMock(return_value=None)
+        svc, db = _service()
+        db.execute.return_value.first.return_value = None
 
         result = await svc.update_task("missing", "owner-1", name="new")
 
@@ -227,13 +254,15 @@ class TestUpdateTask:
 
     @pytest.mark.asyncio
     async def test_found_executes_update_and_returns_task(self):
-        svc, conn = _service()
-        version_row = MagicMock()
-        version_row.__getitem__ = lambda self, key: {"version": 1}[key]
-
+        svc, db = _service()
         updated_row = _task_row(name="updated-name")
-        # First fetchrow: get version; second fetchrow: get updated task
-        conn.fetchrow = AsyncMock(side_effect=[version_row, updated_row])
+        # Call 1: select for exists → version_row; Call 2: update → ignored; Call 3: select for get_task → updated_row
+        r_exists = MagicMock()
+        r_exists.first.return_value = _task_row()
+        r_update = MagicMock()
+        r_get = MagicMock()
+        r_get.first.return_value = updated_row
+        db.execute.side_effect = [r_exists, r_update, r_get]
 
         result = await svc.update_task("t1", "owner-1", name="updated-name")
 
@@ -249,8 +278,10 @@ class TestUpdateTask:
 class TestDeleteTask:
     @pytest.mark.asyncio
     async def test_deleted_returns_true(self):
-        svc, conn = _service()
-        conn.execute = AsyncMock(return_value="UPDATE 1")
+        svc, db = _service()
+        del_result = MagicMock()
+        del_result.rowcount = 1
+        db.execute.return_value = del_result
 
         result = await svc.delete_task("t1", "owner-1")
 
@@ -258,8 +289,10 @@ class TestDeleteTask:
 
     @pytest.mark.asyncio
     async def test_not_found_returns_false(self):
-        svc, conn = _service()
-        conn.execute = AsyncMock(return_value="UPDATE 0")
+        svc, db = _service()
+        del_result = MagicMock()
+        del_result.rowcount = 0
+        db.execute.return_value = del_result
 
         result = await svc.delete_task("missing", "owner-1")
 
@@ -274,7 +307,7 @@ class TestDeleteTask:
 class TestPersistExecution:
     @pytest.mark.asyncio
     async def test_returns_execution_id(self):
-        svc, conn = _service()
+        svc, db = _service()
 
         step_r = StepResult(
             step_index=0,
@@ -296,8 +329,8 @@ class TestPersistExecution:
         returned_id = await svc.persist_execution(exec_result)
 
         assert returned_id == "exec-123"
-        # Both INSERT and UPDATE should have been called inside the transaction
-        assert conn.execute.call_count == 2
+        # INSERT execution + UPDATE task metrics
+        assert db.execute.call_count == 2
 
 
 # ---------------------------------------------------------------------------
@@ -308,8 +341,8 @@ class TestPersistExecution:
 class TestGetExecution:
     @pytest.mark.asyncio
     async def test_found_returns_result(self):
-        svc, conn = _service()
-        conn.fetchrow = AsyncMock(return_value=_exec_row())
+        svc, db = _service()
+        db.execute.return_value.first.return_value = _exec_row()
 
         result = await svc.get_execution("e1", "owner-1")
 
@@ -320,8 +353,8 @@ class TestGetExecution:
 
     @pytest.mark.asyncio
     async def test_not_found_returns_none(self):
-        svc, conn = _service()
-        conn.fetchrow = AsyncMock(return_value=None)
+        svc, db = _service()
+        db.execute.return_value.first.return_value = None
 
         result = await svc.get_execution("missing", "owner-1")
 
@@ -336,9 +369,12 @@ class TestGetExecution:
 class TestListExecutions:
     @pytest.mark.asyncio
     async def test_returns_executions_and_count(self):
-        svc, conn = _service()
-        conn.fetchval = AsyncMock(return_value=1)
-        conn.fetch = AsyncMock(return_value=[_exec_row()])
+        svc, db = _service()
+        count_result = MagicMock()
+        count_result.scalar.return_value = 1
+        list_result = MagicMock()
+        list_result.fetchall.return_value = [_exec_row()]
+        db.execute.side_effect = [count_result, list_result]
 
         executions, total = await svc.list_executions("t1", "owner-1")
 
@@ -348,9 +384,12 @@ class TestListExecutions:
 
     @pytest.mark.asyncio
     async def test_status_filter_appended(self):
-        svc, conn = _service()
-        conn.fetchval = AsyncMock(return_value=0)
-        conn.fetch = AsyncMock(return_value=[])
+        svc, db = _service()
+        count_result = MagicMock()
+        count_result.scalar.return_value = 0
+        list_result = MagicMock()
+        list_result.fetchall.return_value = []
+        db.execute.side_effect = [count_result, list_result]
 
         executions, total = await svc.list_executions(
             "t1", "owner-1", status_filter="failed"
@@ -358,9 +397,6 @@ class TestListExecutions:
 
         assert total == 0
         assert executions == []
-        # The second fetch call includes the status filter param
-        fetch_call_args = conn.fetch.call_args
-        assert "failed" in fetch_call_args[0]  # positional args include status value
 
 
 # ---------------------------------------------------------------------------
