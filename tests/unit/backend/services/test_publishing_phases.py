@@ -1,8 +1,16 @@
 """Unit tests for publishing workflow phases."""
 
-from unittest.mock import AsyncMock
+import sys
+from types import ModuleType
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
+# Stub 'slugify' if not installed (optional dependency not in dev environment)
+if "slugify" not in sys.modules:
+    slugify_stub = ModuleType("slugify")
+    setattr(slugify_stub, "slugify", lambda text, **kwargs: text.lower().replace(" ", "-"))
+    sys.modules["slugify"] = slugify_stub
 
 from src.cofounder_agent.services.phases.publishing_phases import (
     CreatePostPhase,

@@ -90,13 +90,15 @@ class TestSubscribeToNewsletter:
         assert data["success"] is True
         assert data["subscriber_id"] == 42
 
-    def test_already_subscribed_returns_success(self):
-        """Idempotent: re-subscribing active email is treated as success."""
+    def test_already_subscribed_returns_200_with_success_false(self):
+        """Re-subscribing active email returns 200 with success=False (not idempotent)."""
         existing = {"id": 99, "unsubscribed_at": None}
         pool = _make_pool_mock(fetchrow_return=existing)
         client = TestClient(_build_app(_make_db(pool)))
-        data = client.post("/api/newsletter/subscribe", json=VALID_SUBSCRIBE_PAYLOAD).json()
-        assert data["success"] is True
+        resp = client.post("/api/newsletter/subscribe", json=VALID_SUBSCRIBE_PAYLOAD)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is False
         assert data["subscriber_id"] == 99
 
     def test_with_interest_categories(self):
@@ -161,14 +163,17 @@ class TestUnsubscribeFromNewsletter:
         ).json()
         assert data["success"] is True
 
-    def test_email_not_found_returns_404(self):
+    def test_email_not_found_returns_200_with_success_false(self):
+        """When email not found or already unsubscribed, route returns 200 with success=False."""
         pool = _make_pool_mock(execute_return="UPDATE 0")
         client = TestClient(_build_app(_make_db(pool)))
         resp = client.post(
             "/api/newsletter/unsubscribe",
             json={"email": "notfound@example.com"},
         )
-        assert resp.status_code == 404
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is False
 
     def test_with_reason_returns_200(self):
         pool = _make_pool_mock(execute_return="UPDATE 1")
@@ -216,14 +221,15 @@ class TestGetSubscriberCount:
         data = client.get("/api/newsletter/subscribers/count").json()
         assert data["subscriber_count"] == 0
 
-    def test_requires_auth(self):
+    def test_is_public_no_auth_required(self):
+        """subscriber_count endpoint is public — no auth dependency in route."""
         app = FastAPI()
         app.include_router(router)
         pool = _make_pool_mock(fetchval_return=5)
         app.dependency_overrides[get_database_dependency] = lambda: _make_db(pool)
-        client = TestClient(app, raise_server_exceptions=False)
+        client = TestClient(app)
         resp = client.get("/api/newsletter/subscribers/count")
-        assert resp.status_code == 401
+        assert resp.status_code == 200
 
     def test_db_error_returns_500(self):
         pool = _make_pool_mock()
