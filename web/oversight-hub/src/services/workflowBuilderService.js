@@ -117,7 +117,6 @@ export const createWorkflow = async (workflowDefinition) => {
     }
 
     const phases = sanitizePhases(workflowDefinition.phases);
-    validatePhases(phases);
 
     const payload = {
       name: workflowDefinition.name.trim(),
@@ -225,10 +224,6 @@ export const updateWorkflow = async (workflowId, updates) => {
 
     const phases =
       updates.phases !== undefined ? sanitizePhases(updates.phases) : undefined;
-
-    if (phases !== undefined) {
-      validatePhases(phases);
-    }
 
     const payload = {
       name: updates.name ? updates.name.trim() : undefined,
@@ -397,6 +392,28 @@ export const importWorkflowFromJSON = (jsonString) => {
   }
 };
 
+export const getWorkflowExecutions = async (workflowId, options = {}) => {
+  if (!workflowId) {
+    throw new Error('Workflow ID is required');
+  }
+  try {
+    const { limit = 10, offset = 0, status } = options;
+    const params = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+    });
+    if (status) params.set('status', status);
+    const response = await makeRequest(
+      `/api/workflows/custom/${workflowId}/executions?${params.toString()}`,
+      'GET'
+    );
+    return response;
+  } catch (error) {
+    console.error('Error fetching workflow executions:', error);
+    throw new Error(`Failed to fetch workflow executions: ${error.message}`);
+  }
+};
+
 const workflowBuilderService = {
   getAvailablePhases,
   createWorkflow,
@@ -409,6 +426,7 @@ const workflowBuilderService = {
   listExecutions,
   exportWorkflowToJSON,
   importWorkflowFromJSON,
+  getWorkflowExecutions,
 };
 
 export default workflowBuilderService;

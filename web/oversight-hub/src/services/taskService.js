@@ -249,11 +249,20 @@ export const publishTask = async (taskId) => {
  * @returns {Promise<object>} Updated task object
  * @throws {Error} If rejection fails
  */
-export const rejectTask = async (taskId, reason = '') => {
+export const rejectTask = async (
+  taskId,
+  reason = 'Rejected',
+  feedback = null,
+  allow_revisions = true
+) => {
   const result = await makeRequest(
     `/api/tasks/${taskId}/reject`,
     'POST',
-    { reason },
+    {
+      reason: reason || 'Rejected',
+      feedback: feedback !== null ? feedback : reason || 'Rejected',
+      allow_revisions,
+    },
     false,
     null,
     API_TIMEOUT
@@ -322,6 +331,51 @@ export const getContentTask = async (taskId) => {
  * @returns {Promise<void>}
  * @throws {Error} If deletion fails
  */
+export const pauseTask = async (taskId) => {
+  const result = await makeRequest(
+    `/api/tasks/${taskId}/pause`,
+    'POST',
+    null,
+    false,
+    null,
+    API_TIMEOUT
+  );
+  if (result.error) {
+    throw new Error(`Could not pause task: ${result.error}`);
+  }
+  return result;
+};
+
+export const resumeTask = async (taskId) => {
+  const result = await makeRequest(
+    `/api/tasks/${taskId}/resume`,
+    'POST',
+    null,
+    false,
+    null,
+    API_TIMEOUT
+  );
+  if (result.error) {
+    throw new Error(`Could not resume task: ${result.error}`);
+  }
+  return result;
+};
+
+export const cancelTask = async (taskId) => {
+  const result = await makeRequest(
+    `/api/tasks/${taskId}/cancel`,
+    'POST',
+    null,
+    false,
+    null,
+    API_TIMEOUT
+  );
+  if (result.error) {
+    throw new Error(`Could not cancel task: ${result.error}`);
+  }
+  return result;
+};
+
 export const deleteContentTask = async (taskId) => {
   const result = await makeRequest(
     `/api/tasks/${taskId}`,

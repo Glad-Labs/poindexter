@@ -11,7 +11,7 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Typography, CircularProgress, Paper, Chip } from '@mui/material';
 import { unifiedStatusService } from '../../services/unifiedStatusService';
-import { STATUS_COLORS } from '../../Constants/statusEnums';
+import { STATUS_COLORS, getStatusLabel } from '../../Constants/statusEnums';
 
 /**
  * StatusAuditTrail Component
@@ -27,7 +27,13 @@ export const StatusAuditTrail = ({ taskId, limit = 100 }) => {
       try {
         setLoading(true);
         const data = await unifiedStatusService.getHistory(taskId, limit);
-        setHistory(Array.isArray(data) ? data : []);
+        setHistory(
+          Array.isArray(data)
+            ? data
+            : Array.isArray(data?.history)
+              ? data.history
+              : []
+        );
       } catch (err) {
         setError(err.message || 'Failed to load audit trail');
       } finally {
@@ -41,7 +47,7 @@ export const StatusAuditTrail = ({ taskId, limit = 100 }) => {
   }, [taskId, limit]);
 
   if (loading) return <CircularProgress size={24} />;
-  if (error) return <Typography color="error">⚠️ {error}</Typography>;
+  if (error) return <Typography color="error">{error}</Typography>;
 
   if (!history || history.length === 0) {
     return (
@@ -148,7 +154,7 @@ export const StatusTimeline = ({
           {statusHistory.map((entry, idx) => (
             <Chip
               key={idx}
-              label={entry.new_status}
+              label={getStatusLabel(entry.new_status)}
               size="small"
               sx={{
                 backgroundColor: STATUS_COLORS[entry.new_status] || '#999',
@@ -164,9 +170,101 @@ export const StatusTimeline = ({
 
 /**
  * ValidationFailureUI Component
- * Displays validation failures for a task
+ * Displays validation failures for a task.
+ * When a `task` prop is provided, reads validation_details from task metadata directly.
+ * Otherwise falls back to fetching from unifiedStatusService using `taskId`.
  */
-export const ValidationFailureUI = ({ taskId, limit = 50 }) => {
+export const ValidationFailureUI = ({ taskId, task, limit = 50 }) => {
+  // --- task-prop path: read validation_details from task metadata directly ---
+  if (task) {
+    const validationDetails = task?.task_metadata?.validation_details || {};
+    const gateFailures = [];
+
+    if (validationDetails.base_content_valid === false) {
+      gateFailures.push({
+        name: 'Content Validity',
+        label: 'Validation Gate',
+        detail: null,
+      });
+    }
+    if (validationDetails.length_gate_passes === false) {
+      const d = validationDetails.length_gate_detail;
+      const msg =
+        d &&
+        typeof d.word_count === 'number' &&
+        typeof d.minimum === 'number' &&
+        d.word_count < d.minimum
+          ? 'Word count insufficient'
+          : null;
+      gateFailures.push({
+        name: 'Length Gate',
+        label: 'Length Gate',
+        detail: msg,
+      });
+    }
+    if (validationDetails.style_gate_passes === false) {
+      gateFailures.push({
+        name: 'Style Gate',
+        label: 'Style Gate',
+        detail: null,
+      });
+    }
+    if (validationDetails.seo_gate_passes === false) {
+      gateFailures.push({
+        name: 'SEO Gate',
+        label: 'SEO Gate',
+        detail: validationDetails.seo_gate_detail || null,
+      });
+    }
+
+    if (gateFailures.length === 0) {
+      return (
+        <Typography color="success.main">
+          All validation gates passed
+        </Typography>
+      );
+    }
+
+    return (
+      <Box>
+        <Typography
+          variant="subtitle2"
+          sx={{ mb: 1, fontWeight: 600, color: '#f44336' }}
+        >
+          {gateFailures.length} gate{gateFailures.length !== 1 ? 's' : ''}{' '}
+          failed
+        </Typography>
+        {gateFailures.map((f, idx) => (
+          <Paper
+            key={idx}
+            sx={{
+              p: 2,
+              mb: 1,
+              backgroundColor: '#ffebee',
+              borderLeft: '4px solid #f44336',
+            }}
+          >
+            <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+              {f.name}
+            </Typography>
+            {f.label && f.label !== f.name && (
+              <Typography variant="caption">{f.label}</Typography>
+            )}
+            {f.detail && <Typography variant="body2">{f.detail}</Typography>}
+          </Paper>
+        ))}
+        <Typography variant="body2" sx={{ mt: 1, color: '#1976d2' }}>
+          Work Preserved — content saved despite validation failures.
+        </Typography>
+      </Box>
+    );
+  }
+
+  // --- taskId path: fetch from service ---
+  return <ValidationFailureUIFetcher taskId={taskId} limit={limit} />;
+};
+
+const ValidationFailureUIFetcher = ({ taskId, limit = 50 }) => {
   const [failures, setFailures] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -190,7 +288,7 @@ export const ValidationFailureUI = ({ taskId, limit = 50 }) => {
   }, [taskId, limit]);
 
   if (loading) return <CircularProgress size={24} />;
-  if (error) return <Typography color="error">⚠️ {error}</Typography>;
+  if (error) return <Typography color="error">{error}</Typography>;
 
   if (!failures || failures.length === 0) {
     return (
@@ -208,7 +306,6 @@ export const ValidationFailureUI = ({ taskId, limit = 50 }) => {
       >
         {failures.length} Validation Failure{failures.length !== 1 ? 's' : ''}
       </Typography>
-
       {failures.map((failure, idx) => (
         <Paper
           key={idx}
@@ -222,13 +319,11 @@ export const ValidationFailureUI = ({ taskId, limit = 50 }) => {
           <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
             {failure.constraint_name || 'Validation Error'}
           </Typography>
-
           {failure.message && (
             <Typography variant="body2" sx={{ mb: 1 }}>
               <strong>Message:</strong> {failure.message}
             </Typography>
           )}
-
           {failure.details && (
             <Typography
               variant="caption"
@@ -239,7 +334,6 @@ export const ValidationFailureUI = ({ taskId, limit = 50 }) => {
               {JSON.stringify(failure.details, null, 2)}
             </Typography>
           )}
-
           <Typography
             variant="caption"
             color="textSecondary"
@@ -253,11 +347,14 @@ export const ValidationFailureUI = ({ taskId, limit = 50 }) => {
   );
 };
 
+// Stable empty array — prevents infinite useEffect loop when tasks prop is omitted
+const _EMPTY_TASKS = [];
+
 /**
  * StatusDashboardMetrics Component
  * Real-time status distribution and KPI metrics
  */
-export const StatusDashboardMetrics = ({ tasks = [] }) => {
+export const StatusDashboardMetrics = ({ tasks = _EMPTY_TASKS }) => {
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -308,7 +405,7 @@ export const StatusDashboardMetrics = ({ tasks = [] }) => {
       try {
         setLoading(true);
         const data = await unifiedStatusService.getMetrics();
-        setMetrics(normalizeMetricsData(data));
+        setMetrics(data == null ? null : normalizeMetricsData(data));
         setError('');
       } catch (err) {
         setError(err.message || 'Failed to load metrics');
@@ -347,10 +444,10 @@ export const StatusDashboardMetrics = ({ tasks = [] }) => {
   }, [tasks]);
 
   if (loading) return <CircularProgress size={24} />;
-  if (error) return <Typography color="error">⚠️ {error}</Typography>;
+  if (error) return <Typography color="error">{error}</Typography>;
 
   if (!metrics) {
-    return <Typography color="textSecondary">No metrics available.</Typography>;
+    return <Typography color="textSecondary">No metrics available</Typography>;
   }
 
   return (
@@ -401,7 +498,7 @@ export const StatusDashboardMetrics = ({ tasks = [] }) => {
             Average Processing Time
           </Typography>
           <Typography variant="body2">
-            {Math.round(metrics.average_processing_time)} seconds
+            {Math.round(metrics.average_processing_time / 60)} seconds
           </Typography>
         </Paper>
       )}
