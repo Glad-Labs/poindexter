@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from routes.auth_unified import get_current_user
 from routes.websocket_routes import (
     ConnectionManager,
     broadcast_approval_status,
@@ -23,9 +24,19 @@ from routes.websocket_routes import (
     get_connection_manager,
     websocket_router,
 )
+from tests.unit.routes.conftest import TEST_USER
 
 
 def _build_app() -> FastAPI:
+    """Build a test app with auth dependency overridden."""
+    app = FastAPI()
+    app.include_router(websocket_router)
+    app.dependency_overrides[get_current_user] = lambda: TEST_USER
+    return app
+
+
+def _build_app_no_auth() -> FastAPI:
+    """Build a test app WITHOUT auth override (to test auth enforcement)."""
     app = FastAPI()
     app.include_router(websocket_router)
     return app
@@ -71,17 +82,18 @@ class TestWebSocketStats:
             data = client.get("/api/ws/stats").json()
         assert "namespaces" in data
 
-    def test_no_auth_required(self):
-        """Stats endpoint has no auth guard."""
+    def test_auth_required_for_stats(self):
+        """Stats endpoint requires authentication — unauthenticated request returns 401/422."""
         with patch(
             "routes.websocket_routes.websocket_manager"
         ) as mock_mgr:
             mock_mgr.get_stats = AsyncMock(
                 return_value={"total_connections": 0, "namespaces": {}}
             )
-            client = TestClient(_build_app())
+            client = TestClient(_build_app_no_auth(), raise_server_exceptions=False)
             resp = client.get("/api/ws/stats")
-        assert resp.status_code == 200
+        # Unauthenticated access should be rejected (401 or 422 for missing dependency)
+        assert resp.status_code in (401, 422)
 
 
 # ---------------------------------------------------------------------------
