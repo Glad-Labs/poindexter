@@ -5,11 +5,9 @@ This module provides centralized health check functionality.
 """
 
 import asyncio
-from services.logger_config import get_logger
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Dict, Optional
 
-logger = get_logger(__name__)
 from fastapi import FastAPI
 
 # Import configuration
@@ -38,7 +36,7 @@ class HealthService:
             "status": "healthy",
             "service": "cofounder-agent",
             "version": config.app_version,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.utcnow().isoformat(),
             "components": {},
         }
 
@@ -59,7 +57,7 @@ class HealthService:
                 health_data["components"]["database"] = db_health.get("status", "unknown")
             except Exception as e:  # pylint: disable=broad-except
                 # Log the error but don't fail the health check
-                logger.error(f"[get_health] Database health check failed: {str(e)}", exc_info=True)
+                print(f"Database health check failed: {str(e)}")
                 health_data["components"]["database"] = "degraded"
         else:
             health_data["components"]["database"] = "unavailable"

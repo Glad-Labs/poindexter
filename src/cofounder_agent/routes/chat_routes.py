@@ -8,7 +8,7 @@ Provides endpoints for:
 - Smart fallback to multiple AI providers
 """
 
-from services.logger_config import get_logger
+import logging
 import os
 import time
 from datetime import datetime
@@ -27,7 +27,8 @@ from services.ollama_client import OllamaClient
 from services.gemini_client import GeminiClient
 from services.usage_tracker import get_usage_tracker
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
+
 # Initialize services
 ollama_client = OllamaClient()
 gemini_client = GeminiClient()  # Initialize with API key from env
@@ -115,12 +116,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
                 # Check if model is available
                 try:
-                    raw_models = await ollama_client.list_models()
-                    # list_models() returns List[Dict[str,Any]] — extract the "name" field
-                    available_models: list[str] = [
-                        m.get("name", "") if isinstance(m, dict) else str(m)
-                        for m in raw_models
-                    ]
+                    available_models = await ollama_client.list_models()
                     logger.debug(f"[Chat] Available Ollama models: {available_models}")
 
                     if actual_ollama_model not in available_models:
@@ -271,11 +267,11 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
     except ValueError as e:
         logger.error(f"[Chat] Validation error: {str(e)}")
-        raise HTTPException(status_code=400, detail="An internal error occurred")
+        raise HTTPException(status_code=400, detail=str(e))
 
     except Exception as e:
         logger.error(f"[Chat] Error processing message: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Chat processing failed")
+        raise HTTPException(status_code=500, detail=f"Chat processing failed: {str(e)}")
 
 
 @router.get("/history/{conversation_id}")
@@ -314,7 +310,7 @@ async def get_conversation(conversation_id: str) -> Dict[str, Any]:
 
     except Exception as e:
         logger.error(f"[Chat] Error retrieving conversation: {str(e)}")
-        raise HTTPException(status_code=500, detail="An internal error occurred")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.delete("/history/{conversation_id}")
@@ -341,7 +337,7 @@ async def clear_conversation(conversation_id: str) -> Dict[str, str]:
 
     except Exception as e:
         logger.error(f"[Chat] Error clearing conversation: {str(e)}")
-        raise HTTPException(status_code=500, detail="An internal error occurred")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/models")

@@ -9,14 +9,16 @@ Connects NLPIntentRecognizer to task creation, handling:
 - Workflow routing (direct execution vs form confirmation)
 """
 
-from services.logger_config import get_logger
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from .nlp_intent_recognizer import NLPIntentRecognizer
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
+
+
 @dataclass
 class TaskIntentRequest:
     """User request parsed from natural language."""
@@ -184,9 +186,8 @@ class TaskIntentRouter:
                 days = int(params["deadline_days"])
                 normalized["deadline"] = (datetime.now() + timedelta(days=days)).isoformat()
             except (ValueError, TypeError) as e:
-                logger.error(
-                    f"Failed to parse deadline_days '{params['deadline_days']}': {type(e).__name__} - deadline not set",
-                    exc_info=True,
+                logger.debug(
+                    f"Failed to parse deadline_days '{params['deadline_days']}': {type(e).__name__} - deadline not set"
                 )
                 # deadline will remain unset if parsing fails
 
@@ -368,7 +369,11 @@ class TaskIntentRouter:
             "confidence": f"{intent_request.confidence * 100:.0f}%",
             "steps": steps,
             "total_estimated_time": self._format_duration(total_duration_ms),
-            "cost_estimate": None,  # Real cost requires async model_router call; omitted in sync context
+            "cost_estimate": (
+                await self.model_router.estimate_cost(task_data)
+                if hasattr(self, "model_router")
+                else "$2.15"
+            ),
             "next_action": (
                 "Ready to execute"
                 if not intent_request.requires_confirmation

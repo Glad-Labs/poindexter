@@ -23,21 +23,22 @@ Glad Labs is a **production-ready AI orchestration system** combining autonomous
 **Three-service startup pattern** (all async, all required for full system):
 
 ```bash
-# From repo root - PRIMARY COMMAND for full dev environment:
+# From repo root - PRIMARY COMMAND for dev environment (starts backend + both frontends):
 npm run dev
 
 # This uses concurrently to run:
 # - npm run dev:cofounder  → Python FastAPI with uvicorn (port 8000) @ src/cofounder_agent/
-# - npm run dev:public     → Next.js dev server (port 3000) @ web/public-site/
-# - npm run dev:oversight  → React dev server (port 3001) @ web/oversight-hub/
+# - npm run dev:frontend   → Both frontend apps
+#   - npm run dev:public     → Next.js dev server (port 3000) @ web/public-site/
+#   - npm run dev:oversight  → React dev server (port 3001) @ web/oversight-hub/
 
 # Alternative: run services individually
 npm run dev:cofounder     # Just backend
 npm run dev:backend       # Alias for dev:cofounder
-npm run dev:frontend      # Both React apps
+npm run dev:frontend      # Both React apps (public + oversight)
 npm run dev:public        # Just Next.js
 npm run dev:oversight     # Just React admin
-npm run dev:all           # All three (same as npm run dev but setup may vary)
+npm run dev:all           # Explicitly run all three services
 ```
 
 **Service Startup Details:**
@@ -64,6 +65,7 @@ npm run dev:all           # All three (same as npm run dev but setup may vary)
 
 ```
 src/cofounder_agent/
+<<<<<<< HEAD
 ├── main.py                        # FastAPI initialization, CORS, middleware setup
 ├── routes/                        # 29 route modules (core + workflows + capabilities + analytics)
 │   ├── agents_routes.py           # Agent management and retrieval
@@ -119,6 +121,40 @@ src/cofounder_agent/
 ├── middleware/                    # Auth, logging, error handling, CORS
 ├── tests/                         # Pytest suite (~200+ tests)
 └── config/                        # Configuration modules and environment loading
+=======
+├── main.py                    # FastAPI initialization, CORS, middleware setup
+├── routes/                    # 27 route modules
+│   ├── task_routes.py         # Task CRUD and execution
+│   ├── agents_routes.py       # Agent management
+│   ├── model_routes.py        # LLM model selection/health
+│   ├── chat_routes.py         # Real-time chat/agent communication
+│   ├── workflow_history.py    # Workflow tracking
+│   ├── analytics_routes.py    # Analytics and metrics
+│   ├── command_queue_routes.py# Task queueing system
+│   ├── bulk_task_routes.py    # Batch operations
+│   ├── cms_routes.py          # CMS integration (Strapi)
+│   ├── media_routes.py        # Media/asset management
+│   ├── websocket_routes.py    # Real-time WebSocket
+│   ├── webhooks.py            # External webhooks
+│   └── [12+ other routes]     # Settings, social, auth, etc.
+├── services/                  # 60+ service modules (61 files)
+│   ├── database_service.py    # Coordinator for 5 DB modules
+│   ├── model_router.py        # Cost-optimized LLM routing
+│   ├── task_executor.py       # Task execution orchestration
+│   ├── content_critique_loop.py # Self-critiquing pipeline
+│   ├── unified_orchestrator.py # Master agent choreography
+│   └── [55+ specialized]      # OAuth, caching, webhooks, ML, etc.
+├── agents/                    # 4 core agent types
+│   ├── content_agent/         # 6-stage self-critiquing pipeline
+│   ├── financial_agent/       # Cost/ROI tracking
+│   ├── market_insight_agent/  # Trend analysis
+│   └── compliance_agent/      # Legal/risk review
+├── models/                    # Pydantic request/response schemas
+├── tasks/                     # Task execution logic
+├── middleware/                # Auth, logging, error handling
+├── tests/                     # Test configuration and fixtures
+└── config/                    # Configuration modules
+>>>>>>> origin/main
 ```
 
 **Specialized Database Modules (DatabaseService Delegates To):**
@@ -155,13 +191,16 @@ Route selection is **automatic** based on API key availability + model configura
 - **Feature branches:** `feature/*`, `bugfix/*`, `docs/*` - test locally with `npm run dev`
 - **Staging:** `dev` branch auto-deploys to Railway staging on push
 - **Production:** `main` branch auto-deploys to Vercel (frontend) + Railway (backend)
+- **Documentation hygiene:** PRs with significant architectural changes must update affected `docs/`, remove stale references, audit moved or renamed internal links, and note any deferred larger doc update
 
 **Testing:**
 
 ```bash
-# Python backend
-npm run test:python          # Full test suite
-npm run test:python:smoke    # Fast smoke tests (e2e_fixed.py)
+# Python backend (runs integration + e2e tests from tests/ root directory)
+npm run test:python          # Full test suite (integration + e2e)
+npm run test:python:integration  # Integration tests only
+npm run test:python:e2e      # End-to-end tests only
+npm run test:python:smoke    # Fast smoke tests
 
 # Frontend
 npm run test                 # Runs Jest for all workspaces
@@ -345,6 +384,7 @@ glad-labs-website/
 ├── src/
 │   ├── cofounder_agent/    # **Main orchestrator** (FastAPI, port 8000)
 │   │   ├── main.py         # App entry point
+<<<<<<< HEAD
 │   │   ├── routes/         # 29 REST endpoint modules
 │   │   ├── services/       # 87 service modules (model_router, database_service, task_executor)
 │   │   ├── models/         # Pydantic schemas for requests/responses
@@ -353,12 +393,25 @@ glad-labs-website/
 │   │   └── tests/          # pytest suite (~200+ tests)
 │   ├── agents/             # Specialized agent implementations
 │   │   ├── content_agent/  # 7-stage self-critiquing content pipeline with sub-agents
+=======
+│   │   ├── routes/         # 27 REST endpoint modules
+│   │   ├── services/       # 60+ service modules (model_router, database_service, task_executor)
+│   │   ├── models/         # Pydantic schemas for requests/responses
+│   │   ├── tasks/          # Task execution and scheduling
+│   │   ├── middleware/     # Auth, logging, error handling
+│   │   └── agents/         # Agent implementations used by orchestrator
+│   ├── agents/             # Specialized agent types
+│   │   ├── content_agent/  # 6-stage self-critiquing content pipeline
+>>>>>>> origin/main
 │   │   ├── financial_agent/
 │   │   ├── market_insight_agent/
 │   │   └── compliance_agent/
 │   ├── mcp/                # Model Context Protocol integration
 │   ├── mcp_server/         # MCP server implementations
 │   └── services/           # Shared service modules
+├── tests/
+│   ├── integration/        # Integration tests for backend services
+│   └── e2e/               # End-to-end workflow tests
 └── web/
     ├── public-site/        # **Content distribution** (Next.js 15, port 3000)
     └── oversight-hub/      # **Control center** (React 18 + Material-UI, port 3001)

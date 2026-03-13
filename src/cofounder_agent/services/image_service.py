@@ -23,10 +23,9 @@ Cost Optimization:
 
 import asyncio
 import logging
-from services.logger_config import get_logger
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
 
 try:
@@ -34,15 +33,13 @@ try:
 
     HTTPX_AVAILABLE = True
 except ImportError:
-    httpx = None  # type: ignore[assignment]
     HTTPX_AVAILABLE = False
 
 try:
-    import torch  # type: ignore[import-untyped]
+    import torch
 
     TORCH_AVAILABLE = True
 except ImportError:
-    torch = None  # type: ignore[assignment]
     TORCH_AVAILABLE = False
 
 import numpy as np
@@ -50,7 +47,7 @@ from PIL import Image
 
 # Try to import diffusers - optional for SDXL generation
 try:
-    from diffusers import StableDiffusionXLPipeline  # type: ignore[import-untyped]
+    from diffusers import StableDiffusionXLPipeline
 
     DIFFUSERS_AVAILABLE = True
 except (ImportError, RuntimeError) as e:
@@ -60,23 +57,20 @@ except (ImportError, RuntimeError) as e:
 
 # Optional optimization packages
 try:
-    import xformers  # type: ignore[import-untyped]
+    import xformers
 
     XFORMERS_AVAILABLE = True
 except ImportError:
-    xformers = None  # type: ignore[assignment]
     XFORMERS_AVAILABLE = False
 
 try:
-    from optimum.intel import OVModelForFeatureExtraction  # type: ignore[import-untyped]
+    from optimum.intel import OVModelForFeatureExtraction
 
     OPTIMUM_AVAILABLE = True
 except ImportError:
-    OVModelForFeatureExtraction = None  # type: ignore[assignment,misc]
     OPTIMUM_AVAILABLE = False
 
-logger = get_logger(__name__)
-from utils.error_handler import handle_service_error
+logger = logging.getLogger(__name__)
 
 
 class FeaturedImageMetadata:
@@ -105,7 +99,7 @@ class FeaturedImageMetadata:
         self.caption = caption
         self.source = source
         self.search_query = search_query
-        self.retrieved_at = datetime.now(timezone.utc)
+        self.retrieved_at = datetime.now()
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for database storage"""
@@ -150,15 +144,10 @@ class ImageService:
     def __init__(self):
         """Initialize image service"""
         self.pexels_api_key = os.getenv("PEXELS_API_KEY")
-        self.pexels_available = bool(self.pexels_api_key)
-
         if not self.pexels_api_key:
             logger.warning(
-                "⚠️  PEXELS_API_KEY not found in environment - featured image search disabled"
+                "Pexels API key not configured - featured image search will be unavailable"
             )
-            logger.warning("   Set PEXELS_API_KEY in .env.local to enable Pexels image search")
-        else:
-            logger.info("✅ Pexels API key configured - image search enabled")
 
         self.pexels_base_url = "https://api.pexels.com/v1"
         self.pexels_headers = {"Authorization": self.pexels_api_key} if self.pexels_api_key else {}
@@ -177,8 +166,8 @@ class ImageService:
 
     def _initialize_sdxl(self) -> None:
         """Initialize Stable Diffusion XL model with optimization and refinement if GPU available"""
-        # Check if diffusers and torch are available first
-        if not DIFFUSERS_AVAILABLE or torch is None or StableDiffusionXLPipeline is None:
+        # Check if diffusers is available first
+        if not DIFFUSERS_AVAILABLE:
             logger.warning(
                 "Diffusers library not installed - SDXL image generation will be unavailable"
             )
@@ -230,10 +219,7 @@ class ImageService:
                             f"Falling back to CPU mode."
                         )
                 except Exception as e:
-                    logger.error(
-                        f"[__init__] Could not verify GPU capability: {e}. Using CPU mode.",
-                        exc_info=True,
-                    )
+                    logger.warning(f"Could not verify GPU capability: {e}. Using CPU mode.")
             else:
                 logger.warning("CUDA not available - using CPU mode (slower)")
 
@@ -241,24 +227,6 @@ class ImageService:
             if use_device == "cpu":
                 torch_dtype = torch.float32
                 logger.info("ℹ️  CPU mode: using fp32 (full precision)")
-
-            # Validate HuggingFace cache path before attempting model load
-            # (prevents [Errno 22] on Windows due to long/invalid cache paths)
-            import os as _os
-            hf_cache = _os.getenv("HF_HOME") or _os.getenv("HUGGINGFACE_HUB_CACHE") or _os.path.expanduser("~/.cache/huggingface")
-            try:
-                _os.makedirs(hf_cache, exist_ok=True)
-                _test_path = _os.path.join(hf_cache, ".sdxl_path_test")
-                with open(_test_path, "w") as _f:
-                    _f.write("")
-                _os.remove(_test_path)
-            except OSError as path_err:
-                logger.warning(
-                    f"⚠️  SDXL cache path invalid ({hf_cache}): {path_err}. "
-                    "Set HF_HOME to a short, writable path (e.g. D:/hf_cache). Skipping SDXL."
-                )
-                self.sdxl_available = False
-                return
 
             # Load base SDXL model with optimizations
             logger.info(f"🎨 Loading SDXL base model (device: {use_device})...")
@@ -298,9 +266,7 @@ class ImageService:
             )
 
         except Exception as e:
-            logger.error(
-                f"[__init__] Failed to load Stable Diffusion XL models: {e}", exc_info=True
-            )
+            logger.error(f"Failed to load Stable Diffusion XL models: {e}")
             self.sdxl_available = False
 
     def _apply_model_optimizations(self, pipe, device: str) -> None:
@@ -326,10 +292,7 @@ class ImageService:
                     pipe.enable_xformers_memory_efficient_attention()
                     logger.info("   ✓ xformers memory-efficient attention enabled (2-4x faster)")
                 except Exception as e:
-                    logger.error(
-                        f"   [_apply_model_optimizations] Could not enable xformers: {e}",
-                        exc_info=True,
-                    )
+                    logger.warning(f"   ⚠️  Could not enable xformers: {e}")
 
             # 3. Enable Flash Attention v2 if available (PyTorch 2.0+)
             try:
@@ -337,10 +300,7 @@ class ImageService:
                     pipe.unet.enable_flash_attn(use_flash_attention_v2=True)
                     logger.info("   ✓ Flash Attention v2 enabled (30-50% faster)")
             except Exception as e:
-                logger.error(
-                    f"[_apply_model_optimizations] Flash Attention v2 not available: {e}",
-                    exc_info=True,
-                )
+                logger.debug(f"   Flash Attention v2 not available: {e}")
 
             # 4. Enable sequential CPU offloading for GPU mode (frees VRAM between steps)
             if device == "cuda":
@@ -348,28 +308,20 @@ class ImageService:
                     pipe.enable_sequential_cpu_offload()
                     logger.info("   ✓ Sequential CPU offloading enabled (GPU memory saver)")
                 except Exception as e:
-                    logger.error(
-                        f"[_apply_model_optimizations] Sequential CPU offload not available: {e}",
-                        exc_info=True,
-                    )
+                    logger.debug(f"   Sequential CPU offload not available: {e}")
 
             # 5. Enable model CPU offload for memory-constrained GPUs
             if device == "cuda":
                 try:
-                    gpu_mem = torch.cuda.get_device_properties(0).total_memory / (1024**3)  # type: ignore[union-attr]
+                    gpu_mem = torch.cuda.get_device_properties(0).total_memory / (1024**3)
                     if gpu_mem < 20:
                         pipe.enable_model_cpu_offload()
                         logger.info("   ✓ Model CPU offload enabled (constrained GPU memory)")
                 except Exception as e:
-                    logger.error(
-                        f"[_apply_model_optimizations] Model CPU offload not available: {e}",
-                        exc_info=True,
-                    )
+                    logger.debug(f"   Model CPU offload not available: {e}")
 
         except Exception as e:
-            logger.error(
-                f"[_apply_model_optimizations] Error applying optimizations: {e}", exc_info=True
-            )
+            logger.warning(f"Error applying optimizations: {e}")
 
     # =========================================================================
     # FEATURED IMAGE SEARCH (Pexels - Free, Unlimited)
@@ -398,8 +350,8 @@ class ImageService:
         """
         import random
 
-        if not self.pexels_available:
-            logger.debug("Pexels API key not configured - skipping image search")
+        if not self.pexels_api_key:
+            logger.warning("Pexels API key not configured")
             return None
 
         # Build search queries prioritizing concept/topic over people
@@ -458,9 +410,7 @@ class ImageService:
                     )
                     return metadata
             except Exception as e:
-                logger.error(
-                    f"[get_featured_image] Error searching for '{query}': {e}", exc_info=True
-                )
+                logger.warning(f"Error searching for '{query}': {e}")
 
         logger.warning(f"No featured image found for topic: {topic}")
         return None
@@ -502,10 +452,7 @@ class ImageService:
                     return all_images[:count]
 
             except Exception as e:
-                logger.error(
-                    f"[get_images_for_gallery] Error searching for gallery images '{query}': {e}",
-                    exc_info=True,
-                )
+                logger.warning(f"Error searching for gallery images '{query}': {e}")
 
         logger.info(f"Found {len(all_images)} gallery images (less than requested)")
         return all_images
@@ -531,8 +478,8 @@ class ImageService:
         Returns:
             List of FeaturedImageMetadata objects
         """
-        # Skip search if API key is not configured or httpx not available
-        if not self.pexels_api_key or httpx is None:
+        # Skip search if API key is not configured
+        if not self.pexels_api_key:
             logger.debug(f"Pexels API key not configured - skipping search for '{query}'")
             return []
 
@@ -575,7 +522,7 @@ class ImageService:
                 ]
 
         except Exception as e:
-            logger.error(f"[_pexels_search] Pexels search error: {e}", exc_info=True)
+            logger.error(f"Pexels search error: {e}")
             return []
 
     # =========================================================================
@@ -641,7 +588,7 @@ class ImageService:
                     )
 
             # Run generation in thread pool to avoid blocking
-            loop = asyncio.get_running_loop()
+            loop = asyncio.get_event_loop()
             await loop.run_in_executor(
                 None,
                 self._generate_image_sync,
@@ -673,7 +620,7 @@ class ImageService:
             return True
 
         except Exception as e:
-            logger.error(f"[generate_image] Error generating image: {e}", exc_info=True)
+            logger.error(f"❌ Error generating image: {e}")
 
             # Mark progress as failed if tracking
             if task_id:
@@ -767,7 +714,7 @@ class ImageService:
             callback=progress_callback if task_id else None,
             callback_steps=1 if task_id else None,
         )
-        base_image_pil = base_result.images[0]  # type: ignore[union-attr]
+        base_image_pil = base_result.images[0]
         logger.info(f"   ✓ Stage 1 complete: Base image generated")
 
         # =====================================================================
@@ -809,17 +756,14 @@ class ImageService:
                     output_type="pil",
                     callback=refiner_progress_callback if task_id else None,
                     callback_steps=1 if task_id else None,
-                ).images[  # type: ignore
-                    0
-                ]
+                ).images[0]
 
                 logger.info(f"   ✓ Stage 2 complete: Refinement applied successfully")
                 refined_image.save(output_path)
 
             except Exception as refine_error:
-                logger.error(
-                    f"[generate_image] Refinement failed, falling back to base image: {refine_error}",
-                    exc_info=True,
+                logger.warning(
+                    f"   ⚠️  Refinement failed, falling back to base image: {refine_error}"
                 )
                 # Fallback: save base PIL image without refinement
                 try:
@@ -827,7 +771,7 @@ class ImageService:
                     logger.info(f"   ✓ Saved base image without refinement (fallback)")
 
                 except Exception as save_error:
-                    logger.error(f"[generate_image] Save failed: {save_error}", exc_info=True)
+                    logger.error(f"   ❌ Save failed: {save_error}")
                     raise
 
         else:
@@ -838,7 +782,7 @@ class ImageService:
                 logger.info(f"   ✓ Saved base image (refinement disabled)")
 
             except Exception as save_error:
-                logger.error(f"[generate_image] Save failed: {save_error}", exc_info=True)
+                logger.error(f"   ❌ Save failed: {save_error}")
                 raise
 
     # =========================================================================
@@ -870,11 +814,13 @@ class ImageService:
         Returns:
             Optimization result dict or None
         """
-        # No external optimization service configured — return original URL unchanged.
-        # To enable optimization, set CLOUDINARY_URL or IMGIX_DOMAIN in the environment.
+        # Placeholder for future image optimization
+        # Could integrate with imgix, Cloudinary, or local optimization
+        logger.info(f"Image optimization placeholder for {image_url}")
         return {
             "url": image_url,
             "optimized": False,
+            "note": "Image optimization not yet implemented",
         }
 
     def get_search_cache(self, query: str) -> Optional[List[FeaturedImageMetadata]]:

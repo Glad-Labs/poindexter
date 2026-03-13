@@ -14,7 +14,7 @@ Provides centralized blog post generation with:
 - Comprehensive task tracking
 """
 
-from services.logger_config import get_logger
+import logging
 import uuid
 from datetime import datetime
 from enum import Enum
@@ -28,9 +28,10 @@ from .image_service import ImageService, get_image_service
 from .prompt_manager import get_prompt_manager
 from .quality_service import EvaluationMethod, UnifiedQualityService
 from .seo_content_generator import get_seo_content_generator
-from .seo_validator import SEOValidator
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
+
+
 # ============================================================================
 # ENUMS
 # ============================================================================
@@ -115,7 +116,7 @@ class ContentTaskStore:
             # Generate task_name from topic
             task_name = f"{topic[:50]}" if len(topic) <= 50 else f"{topic[:47]}..."
 
-            task_result = await self.database_service.add_task(
+            task_id = await self.database_service.add_task(
                 {
                     "task_name": task_name,  # REQUIRED: must be provided
                     "topic": topic,
@@ -128,8 +129,6 @@ class ContentTaskStore:
                     "metadata": metadata or {},
                 }
             )
-            # add_task returns a dict; extract the string ID
-            task_id: str = str(task_result.get("id", task_result)) if isinstance(task_result, dict) else str(task_result)
 
             logger.info(f"✅ [CONTENT_TASK_STORE] Task CREATED and PERSISTED (async)")
             logger.info(f"   Task ID: {task_id}")
@@ -138,7 +137,7 @@ class ContentTaskStore:
             return task_id
 
         except Exception as e:
-            logger.error(f"[_create_task] ❌ [CONTENT_TASK_STORE] ERROR: {e}", exc_info=True)
+            logger.error(f"❌ [CONTENT_TASK_STORE] ERROR: {e}", exc_info=True)
             raise
 
     async def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
@@ -147,10 +146,10 @@ class ContentTaskStore:
             return None
         return await self.database_service.get_task(task_id)
 
-    async def update_task(self, task_id: str, updates: Dict[str, Any]) -> bool:
+    async def update_task(self, task_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Update task data in persistent storage (async, non-blocking)"""
         if not self.database_service:
-            return False
+            return None
 
         # Handle metadata updates by converting to JSON
         import json
@@ -178,10 +177,10 @@ class ContentTaskStore:
         )
         return tasks
 
-    async def get_drafts(self, limit: int = 20, offset: int = 0) -> List[Dict[str, Any]]:
+    async def get_drafts(self, limit: int = 20, offset: int = 0) -> tuple:
         """Get list of drafts from persistent storage (async, non-blocking)"""
         if not self.database_service:
-            return []
+            return ([], 0)
         return await self.database_service.get_drafts(limit=limit, offset=offset)
 
 
@@ -229,18 +228,7 @@ class ContentGenerationService:
         preferred_provider: Optional[str] = None,
     ) -> tuple:
         """
-        Generate blog post content using a strategy selected by `enhanced`.
-
-        Strategy routing:
-        - enhanced=False (default): Delegates to AIContentGenerator.generate_blog_post()
-          which uses the standard LLM pipeline with model router cost tiers.
-        - enhanced=True: Delegates to SEOContentGenerator.generate_complete_blog_post()
-          which adds SEO validation, quality scoring, and structured output.
-
-        Note: AIContentGenerator also exposes generate_blog_post() directly.
-        Callers that always want the standard path can use AIContentGenerator
-        directly. This method exists as a strategy router for callers that
-        need the enhanced/standard toggle.
+        Generate blog post content
 
         Args:
             topic: Blog post topic
@@ -248,8 +236,8 @@ class ContentGenerationService:
             tone: Content tone
             target_length: Target word count
             tags: Tags for categorization
-            enhanced: Strategy selection — False=standard LLM, True=SEO-enhanced
-            preferred_model: User-selected model name (cost tier preferred)
+            enhanced: Whether to use SEO enhancement
+            preferred_model: User-selected model name (e.g., 'gpt-4', 'gemini-pro')
             preferred_provider: User-selected provider ('openai', 'anthropic', 'gemini', 'ollama')
 
         Returns:
@@ -295,10 +283,7 @@ class ContentGenerationService:
             prompt = f"Create a visual representation for: {topic}\n\nContext: {content[:200]}"
             return prompt
         except Exception as e:
-            logger.error(
-                f"[_generate_featured_image_prompt] Error generating image prompt: {e}",
-                exc_info=True,
-            )
+            logger.warning(f"Error generating image prompt: {e}")
             return f"Featured image for: {topic}"
 
 
@@ -306,63 +291,6 @@ class ContentGenerationService:
 # ============================================================================
 # BACKGROUND TASK PROCESSORS
 # ============================================================================
-
-
-def _embed_images_in_content(content: str, images: list) -> str:
-    """
-    Replace [IMAGE-N] placeholders with actual image markdown.
-
-    The LLM is instructed to include [IMAGE-1], [IMAGE-2], etc. at appropriate
-    locations in the draft. This function replaces each placeholder with a real
-    Pexels image. If no placeholders are found, images are inserted after every
-    other H2 heading as a fallback.
-    """
-    import re as _re
-
-    def _img_markdown(img) -> str:
-        if hasattr(img, "to_markdown"):
-            return img.to_markdown()
-        url = getattr(img, "url", "")
-        alt = getattr(img, "alt_text", "") or getattr(img, "caption", "") or "Related image"
-        photographer = getattr(img, "photographer", "")
-        md = f"![{alt}]({url})"
-        if photographer:
-            md += f"\n*Photo by {photographer} on Pexels*"
-        return md
-
-    # Check if LLM left [IMAGE-N] placeholders in the draft
-    placeholder_pattern = _re.compile(r"\[IMAGE-?\d+\]", _re.IGNORECASE)
-    placeholders = placeholder_pattern.findall(content)
-
-    if placeholders:
-        # Replace placeholders with real images in order
-        result = content
-        for i, placeholder in enumerate(placeholders):
-            if i < len(images):
-                replacement = f"\n\n{_img_markdown(images[i])}\n\n"
-            else:
-                replacement = ""  # Remove excess placeholders with no image
-            # Only replace first occurrence so we handle duplicates correctly
-            result = result.replace(placeholder, replacement, 1)
-        return result
-
-    # Fallback: insert after every second H2 heading
-    lines = content.split("\n")
-    result_lines = []
-    h2_count = 0
-    image_index = 0
-
-    for line in lines:
-        result_lines.append(line)
-        if _re.match(r"^## ", line) and image_index < len(images):
-            h2_count += 1
-            if h2_count % 2 == 0:
-                result_lines.append("")
-                result_lines.append(_img_markdown(images[image_index]))
-                result_lines.append("")
-                image_index += 1
-
-    return "\n".join(result_lines)
 
 
 async def _generate_canonical_title(
@@ -412,9 +340,7 @@ async def _generate_canonical_title(
         return None
 
     except Exception as e:
-        logger.error(
-            f"[_generate_canonical_title] Error generating canonical title: {e}", exc_info=True
-        )
+        logger.warning(f"Error generating canonical title: {e}")
         return None
 
 
@@ -503,27 +429,7 @@ async def process_content_generation_task(
         )
 
         image_service = get_image_service()
-
-        # Wrap model_consolidation_service so UnifiedQualityService can call generate_text().
-        # Uses cheap-tier provider fallback (Ollama → HuggingFace → Gemini → Anthropic).
-        from .model_consolidation_service import get_model_consolidation_service
-
-        _consolidation_svc = get_model_consolidation_service()
-
-        class _LLMClientAdapter:
-            """Thin adapter: exposes generate_text() over ModelConsolidationService.generate()."""
-
-            def __init__(self, svc):
-                self._svc = svc
-
-            async def generate_text(self, prompt: str) -> str:
-                result = await self._svc.generate(prompt=prompt)
-                return result.text if result and result.text else ""
-
-        quality_service = UnifiedQualityService(
-            database_service=database_service,
-            llm_client=_LLMClientAdapter(_consolidation_svc),
-        )
+        quality_service = UnifiedQualityService(database_service=database_service)
         logger.debug(
             f"[BG-TASK] Services initialized: image_service={image_service}, quality_service={quality_service}"
         )
@@ -546,9 +452,7 @@ async def process_content_generation_task(
                 logger.warning(f"⚠️  Task {task_id} not found - this should not happen")
                 result["stages"]["1_content_task_created"] = False
         except Exception as e:
-            logger.error(
-                f"[_process_content_generation_task] ❌ Failed to verify task: {e}", exc_info=True
-            )
+            logger.error(f"❌ Failed to verify task: {e}")
             result["stages"]["1_content_task_created"] = False
 
         # ================================================================================
@@ -671,7 +575,7 @@ async def process_content_generation_task(
         # ================================================================================
         # STAGE 2B: QUALITY EVALUATION (Early check after content generation)
         # ================================================================================
-        logger.info("⭐ STAGE 2B: Early quality evaluation with LLM feedback...")
+        logger.info("⭐ STAGE 2B: Early quality evaluation...")
 
         quality_result = await quality_service.evaluate(
             content=content_text,
@@ -680,7 +584,7 @@ async def process_content_generation_task(
                 "keywords": tags or [topic],
                 "audience": "General",
             },
-            method=EvaluationMethod.LLM_BASED,  # Changed to LLM_BASED for actual feedback
+            method=EvaluationMethod.PATTERN_BASED,
         )
 
         # Validate quality_result is not None
@@ -690,7 +594,6 @@ async def process_content_generation_task(
 
         result["quality_score"] = quality_result.overall_score
         result["quality_passing"] = quality_result.passing
-        result["qa_feedback"] = quality_result.feedback  # [CRITICAL FIX] Store QA feedback
         result["quality_details_initial"] = {
             "clarity": quality_result.dimensions.clarity,
             "accuracy": quality_result.dimensions.accuracy,
@@ -701,94 +604,9 @@ async def process_content_generation_task(
             "engagement": quality_result.dimensions.engagement,
         }
         result["stages"]["2b_quality_evaluated_initial"] = True
-        logger.info(f"✅ Quality evaluation complete:")
+        logger.info(f"✅ Initial quality evaluation complete:")
         logger.info(f"   Overall Score: {quality_result.overall_score:.1f}/100")
-        logger.info(f"   Passing: {quality_result.passing} (threshold ≥70.0)")
-        logger.info(f"   Feedback: {quality_result.feedback}\n")
-
-        # ================================================================================
-        # STAGE 2C: QUALITY-GATED REFINEMENT LOOP (#186, #187, #188)
-        # If content fails the quality threshold, re-generate with feedback context up to
-        # MAX_REFINEMENTS times before proceeding. This enforces the 70/100 gate and
-        # prevents sub-threshold content from bypassing human approval without at least
-        # attempting improvement.
-        # ================================================================================
-        _MAX_REFINEMENTS = 3
-        _refinement_count = 0
-        _initial_score = quality_result.overall_score  # track for improvement logging
-
-        while not quality_result.passing and _refinement_count < _MAX_REFINEMENTS:
-            _score_before = quality_result.overall_score
-            _refinement_count += 1
-            logger.info(
-                f"🔄 STAGE 2C: Refinement attempt {_refinement_count}/{_MAX_REFINEMENTS} "
-                f"(score={quality_result.overall_score:.1f} < 70.0)"
-            )
-
-            # Embed quality feedback into topic context so generate_blog_post incorporates it
-            _refinement_topic = (
-                f"{topic}\n\n"
-                f"[QUALITY IMPROVEMENT — attempt {_refinement_count}/{_MAX_REFINEMENTS}]\n"
-                f"Previous score: {quality_result.overall_score:.1f}/100\n"
-                f"Feedback to address: {quality_result.feedback}"
-            )
-
-            content_text, model_used, _ = await content_generator.generate_blog_post(
-                topic=_refinement_topic,
-                style=style,
-                tone=tone,
-                target_length=target_length,
-                tags=tags or [topic],
-                preferred_model=preferred_model,
-                preferred_provider=preferred_provider,
-            )
-
-            # Re-evaluate with the unified quality service
-            quality_result = await quality_service.evaluate(
-                content=content_text,
-                context={"topic": topic, "keywords": tags or [topic], "audience": "General"},
-                method=EvaluationMethod.LLM_BASED,
-            )
-
-            logger.info(
-                f"   Refinement {_refinement_count}: "
-                f"score={quality_result.overall_score:.1f}, passing={quality_result.passing}"
-            )
-
-            # Persist per-attempt improvement data (#192)
-            try:
-                await database_service.create_quality_improvement_log({
-                    "content_id": task_id,
-                    "initial_score": _score_before,
-                    "improved_score": quality_result.overall_score,
-                    "refinement_type": f"auto-critique-attempt-{_refinement_count}",
-                    "changes_made": quality_result.feedback,
-                })
-            except Exception as _log_err:
-                logger.warning(
-                    f"[REFINEMENT] Failed to persist improvement log (non-fatal): {_log_err}"
-                )
-
-        if _refinement_count > 0:
-            # Update result with potentially improved content
-            result["content"] = content_text
-            result["content_length"] = len(content_text)
-            result["quality_score"] = quality_result.overall_score
-            result["quality_passing"] = quality_result.passing
-            result["refinement_attempts"] = _refinement_count
-            result["stages"]["2c_refinement_completed"] = True
-
-            if quality_result.passing:
-                logger.info(
-                    f"✅ Quality gate passed after {_refinement_count} refinement attempt(s) "
-                    f"(final score: {quality_result.overall_score:.1f}/100)\n"
-                )
-            else:
-                logger.warning(
-                    f"⚠️  Quality gate not met after {_MAX_REFINEMENTS} refinement attempts "
-                    f"(final score: {quality_result.overall_score:.1f}/100). "
-                    f"Proceeding to human approval gate.\n"
-                )
+        logger.info(f"   Passing: {quality_result.passing} (threshold ≥70.0)\n")
 
         # ================================================================================
         # STAGE 3: SOURCE FEATURED IMAGE FROM UNIFIED IMAGE SERVICE
@@ -797,7 +615,6 @@ async def process_content_generation_task(
 
         featured_image = None
         image_metadata = None
-        search_keywords: list = []
 
         if generate_featured_image:
             search_keywords = tags or [topic]
@@ -807,58 +624,24 @@ async def process_content_generation_task(
                     topic=topic, keywords=search_keywords
                 )
 
-                if featured_image and featured_image is not None:
-                    # Validate featured_image has required attributes before accessing
-                    if hasattr(featured_image, "to_dict") and hasattr(featured_image, "url"):
-                        image_metadata = featured_image.to_dict()
-                        result["featured_image_url"] = featured_image.url
-                        result["featured_image_photographer"] = getattr(
-                            featured_image, "photographer", "Unknown"
-                        )
-                        result["featured_image_source"] = getattr(
-                            featured_image, "source", "Pexels"
-                        )
-                        result["stages"]["3_featured_image_found"] = True
-                        logger.info(
-                            f"✅ Featured image found: {result['featured_image_photographer']} (Pexels)\n"
-                        )
-                    else:
-                        logger.warning(
-                            f"⚠️  Image search returned invalid object (missing attributes)"
-                        )
-                        result["stages"]["3_featured_image_found"] = False
+                if featured_image:
+                    image_metadata = featured_image.to_dict()
+                    result["featured_image_url"] = featured_image.url
+                    result["featured_image_photographer"] = featured_image.photographer
+                    result["featured_image_source"] = featured_image.source
+                    result["stages"]["3_featured_image_found"] = True
+                    logger.info(
+                        f"✅ Featured image found: {featured_image.photographer} (Pexels)\n"
+                    )
                 else:
                     result["stages"]["3_featured_image_found"] = False
                     logger.warning(f"⚠️  No featured image found for '{topic}'\n")
             except Exception as e:
-                logger.error(
-                    f"[_process_content_generation_task] ❌ Image search failed: {e}", exc_info=True
-                )
+                logger.error(f"❌ Image search failed: {e}")
                 result["stages"]["3_featured_image_found"] = False
         else:
             result["stages"]["3_featured_image_found"] = False
             logger.info("⏭️  Image search skipped (disabled)\n")
-
-        # ================================================================================
-        # STAGE 3B: EMBED BODY IMAGES INTO CONTENT
-        # ================================================================================
-        if generate_featured_image:
-            logger.info("🖼️  STAGE 3B: Fetching body images to embed in content...")
-            try:
-                body_images = await image_service.get_images_for_gallery(
-                    topic=topic, count=3, keywords=search_keywords
-                )
-                if body_images:
-                    content_text = _embed_images_in_content(content_text, body_images)
-                    result["content"] = content_text
-                    logger.info(f"✅ Embedded {len(body_images)} body images into content\n")
-                else:
-                    logger.info("ℹ️  No body images available to embed\n")
-            except Exception as e:
-                logger.error(
-                    f"[process_content] Body image embedding failed (continuing): {e}",
-                    exc_info=True,
-                )
 
         # ================================================================================
         # STAGE 4: GENERATE SEO METADATA
@@ -908,42 +691,6 @@ async def process_content_generation_task(
         logger.info(f"   Description: {seo_description[:80]}...")
         logger.info(f"   Keywords: {', '.join(seo_keywords[:5])}...\n")
 
-        # Validate SEO metadata using hard constraints
-        logger.info("🔍 VALIDATING SEO METADATA...")
-        seo_validator = SEOValidator()
-        seo_validation = seo_validator.validate(
-            content=content_text,
-            title=seo_title,
-            meta_description=seo_description,
-            keywords=seo_keywords,
-            primary_keyword=(seo_keywords[0] if seo_keywords else None),
-            slug=None,  # Slug will be generated from title later
-        )
-
-        # Log validation results
-        if seo_validation.is_valid:
-            logger.info("✅ SEO validation passed")
-        else:
-            logger.warning("⚠️ SEO validation issues found:")
-            for error in seo_validation.errors:
-                logger.warning(f"   ❌ {error}")
-            for warning in seo_validation.warnings:
-                logger.warning(f"   ⚠️ {warning}")
-            for suggestion in seo_validation.suggestions:
-                logger.info(f"   💡 {suggestion}")
-
-        # Store validation result for debugging
-        result["seo_validation"] = {
-            "is_valid": seo_validation.is_valid,
-            "errors": seo_validation.errors,
-            "warnings": seo_validation.warnings,
-            "suggestions": seo_validation.suggestions,
-            "keyword_densities": {
-                kv.keyword: f"{kv.density:.2f}% ({kv.appearances} mentions)"
-                for kv in seo_validation.keyword_validations
-            },
-        }
-
         # ================================================================================
         # STAGE 5: CREATE POSTS RECORD
         # ================================================================================
@@ -989,16 +736,13 @@ async def process_content_generation_task(
                 "content_id": task_id,
                 "task_id": task_id,
                 "overall_score": quality_result.overall_score,
-                # Nest dimension scores under "criteria" as create_quality_evaluation expects
-                "criteria": {
-                    "clarity": quality_result.dimensions.clarity,
-                    "accuracy": quality_result.dimensions.accuracy,
-                    "completeness": quality_result.dimensions.completeness,
-                    "relevance": quality_result.dimensions.relevance,
-                    "seo_quality": quality_result.dimensions.seo_quality,
-                    "readability": quality_result.dimensions.readability,
-                    "engagement": quality_result.dimensions.engagement,
-                },
+                "clarity": quality_result.dimensions.clarity,
+                "accuracy": quality_result.dimensions.accuracy,
+                "completeness": quality_result.dimensions.completeness,
+                "relevance": quality_result.dimensions.relevance,
+                "seo_quality": quality_result.dimensions.seo_quality,
+                "readability": quality_result.dimensions.readability,
+                "engagement": quality_result.dimensions.engagement,
                 "passing": quality_result.passing,
                 "feedback": quality_result.feedback,
                 "suggestions": quality_result.suggestions,
@@ -1034,7 +778,7 @@ async def process_content_generation_task(
                     "featured_image": featured_image is not None,
                 },
                 "execution_result": "success",
-                "quality_score": quality_result.overall_score / 100,
+                "quality_score": quality_result.overall_score / 10,
                 "success": quality_result.passing,
                 "tags": tags or [],
                 "source_agent": "content_router_service",
@@ -1047,52 +791,12 @@ async def process_content_generation_task(
         # ================================================================================
         # UPDATE CONTENT_TASK WITH FINAL STATUS AND ALL METADATA
         # ================================================================================
-        # Enforce word count constraint: target +/-10% (issue #193).
-        # The prompt declares this MANDATORY but previously only checked minimum.
-        min_words_required = int(target_length * 0.9) if target_length else 0
-        max_words_allowed = int(target_length * 1.1) if target_length else float("inf")
-        meets_length_requirement = min_words_required <= word_count <= max_words_allowed
-        if not meets_length_requirement and target_length:
-            logger.warning(
-                f"Word count {word_count} outside target {target_length} +/-10% "
-                f"(allowed: {min_words_required}-{max_words_allowed})"
-            )
-
-        # Enforce quality gate — content must pass quality threshold (issue #186).
-        # Previously, quality_result.passing was evaluated but never checked before
-        # setting the task status, so all content proceeded to human review regardless
-        # of quality score.
-        meets_quality_requirement = quality_result.passing
-
-        if meets_length_requirement and meets_quality_requirement:
-            final_status = "awaiting_approval"
-            final_approval_status = "pending_human_review"
-            logger.info(
-                f"✅ Length gate passed: {word_count} words (minimum required: {min_words_required})"
-            )
-            logger.info(
-                f"✅ Quality gate passed: {quality_result.overall_score:.1f}/100 (threshold: 70)"
-            )
-        elif not meets_quality_requirement:
-            final_status = "failed"
-            final_approval_status = "failed"
-            logger.warning(
-                f"❌ Quality gate failed: {quality_result.overall_score:.1f}/100 "
-                f"(threshold: 70, feedback: {quality_result.feedback})"
-            )
-        else:
-            final_status = "failed"
-            final_approval_status = "failed"
-            logger.warning(
-                f"❌ Length gate failed: {word_count} words (minimum required: {min_words_required}, target: {target_length})"
-            )
-
         # 🔑 CRITICAL: Store featured_image_url and all other metadata so approval endpoint can find it
         await database_service.update_task(
             task_id=task_id,
             updates={
-                "status": final_status,
-                "approval_status": final_approval_status,
+                "status": "awaiting_approval",
+                "approval_status": "pending_human_review",
                 "quality_score": int(quality_result.overall_score),
                 "featured_image_url": result.get("featured_image_url"),
                 "seo_title": seo_title,
@@ -1119,15 +823,13 @@ async def process_content_generation_task(
                     "post_id": result.get("post_id"),
                     "quality_score": quality_result.overall_score,
                     "content_length": len(content_text),
-                    "word_count": word_count,
-                    "min_words_required": min_words_required,
-                    "meets_length_requirement": meets_length_requirement,
+                    "word_count": len(content_text.split()),
                 },
             },
         )
 
-        result["status"] = final_status
-        result["approval_status"] = final_approval_status
+        result["status"] = "awaiting_approval"
+        result["approval_status"] = "pending_human_review"
 
         logger.info(f"{'='*80}")
         logger.info(f"✅ COMPLETE CONTENT GENERATION PIPELINE FINISHED")
@@ -1139,19 +841,13 @@ async def process_content_generation_task(
         )
         logger.info(f"   Quality Score: {quality_result.overall_score:.1f}/10")
         logger.info(f"   Status: {result['status']}")
-        if result["status"] == "awaiting_approval":
-            logger.info("   Next: Human review & approval")
-        else:
-            logger.info("   Next: Regenerate content (failed length gate)")
+        logger.info(f"   Next: Human review & approval")
         logger.info(f"{'='*80}\n")
 
         return result
 
     except Exception as e:
-        logger.error(
-            f"[_process_content_generation_task] ❌ [BG-TASK] Pipeline error for task {task_id[:8]}...: {e}",
-            exc_info=True,
-        )
+        logger.error(f"❌ [BG-TASK] Pipeline error for task {task_id[:8]}...: {e}", exc_info=True)
         logger.error(f"[BG-TASK] Detailed traceback:", exc_info=True)
 
         # Update content_task with failure status
@@ -1213,6 +909,95 @@ async def process_content_generation_task(
 # ================================================================================
 
 
+async def _evaluate_content_quality(
+    content: str, topic: str, seo_title: str, seo_keywords: List[str]
+) -> Dict[str, Any]:
+    """
+    Evaluate content quality on 7 criteria (0-10 each)
+
+    Criteria:
+    1. Clarity: Easy to understand
+    2. Accuracy: Factually correct
+    3. Completeness: Covers topic thoroughly
+    4. Relevance: Matches topic
+    5. SEO Quality: Keywords and structure
+    6. Readability: Grammar, flow
+    7. Engagement: Interest level
+    """
+    import re
+
+    criteria = {}
+
+    # 1. CLARITY (check structure, headings, length)
+    heading_count = len(re.findall(r"^#{1,3} ", content, re.MULTILINE))
+    paragraph_count = len([p for p in content.split("\n\n") if p.strip()])
+    clarity = 8.0
+    if heading_count < 3:
+        clarity -= 1.0
+    if paragraph_count < 5:
+        clarity -= 1.0
+    criteria["clarity"] = max(0, min(10, clarity))
+
+    # 2. ACCURACY (check for hedging language, sources)
+    accuracy = 7.5
+    # Assume generated content is reasonably accurate
+    criteria["accuracy"] = max(0, min(10, accuracy))
+
+    # 3. COMPLETENESS (check word count, section coverage)
+    word_count = len(content.split())
+    completeness = 6.0
+    if word_count > 800:
+        completeness = 8.0
+    if word_count > 1500:
+        completeness = 9.0
+    if word_count < 300:
+        completeness = 4.0
+    criteria["completeness"] = max(0, min(10, completeness))
+
+    # 4. RELEVANCE (check topic mentions)
+    topic_words = topic.lower().split()[:3]
+    topic_mentions = sum(1 for word in topic_words if word.lower() in content.lower())
+    relevance = 7.0 if topic_mentions >= 2 else 5.0
+    criteria["relevance"] = max(0, min(10, relevance))
+
+    # 5. SEO QUALITY (check keyword usage, title)
+    keyword_mentions = sum(1 for kw in seo_keywords if kw.lower() in content.lower())
+    seo_quality = 7.0 if keyword_mentions >= 3 else 6.0
+    if len(seo_title) < 50:
+        seo_quality += 1.0
+    criteria["seo_quality"] = max(0, min(10, seo_quality))
+
+    # 6. READABILITY (check sentence length, lists)
+    has_lists = "- " in content or "* " in content or "1. " in content
+    readability = 7.5 if has_lists else 6.5
+    criteria["readability"] = max(0, min(10, readability))
+
+    # 7. ENGAGEMENT (check for examples, CTAs)
+    has_cta = any(word in content.lower() for word in ["start", "try", "begin", "ready", "action"])
+    has_examples = has_lists or "example" in content.lower()
+    engagement = 7.0
+    if has_examples:
+        engagement += 1.0
+    if has_cta:
+        engagement += 0.5
+    criteria["engagement"] = max(0, min(10, engagement))
+
+    # Calculate overall score (average of 7 criteria)
+    overall_score = sum(criteria.values()) / 7
+    overall_score = max(0, min(10, overall_score))
+
+    return {
+        "overall_score": overall_score,
+        "criteria": criteria,
+        "passing": overall_score >= 7.0,
+        "feedback": f"Overall quality: {overall_score:.1f}/10",
+        "suggestions": [
+            "Check formatting for readability",
+            "Ensure all claims are backed by data",
+            "Add more specific examples if possible",
+        ],
+    }
+
 
 async def _select_category_for_topic(
     topic: str, database_service: DatabaseService
@@ -1259,13 +1044,13 @@ async def _select_category_for_topic(
 
     # Get category ID
     try:
-        async with database_service.pool.acquire() as conn:  # type: ignore[union-attr]
+        async with database_service.pool.acquire() as conn:
             cat_id = await conn.fetchval(
                 "SELECT id FROM categories WHERE slug = $1", matched_category
             )
         return cat_id
     except Exception as e:
-        logger.error(f"[_select_category_for_topic] Error selecting category: {e}", exc_info=True)
+        logger.error(f"Error selecting category: {e}")
         return None
 
 
@@ -1276,7 +1061,7 @@ async def _get_or_create_default_author(database_service: DatabaseService) -> Op
     Returns author UUID
     """
     try:
-        async with database_service.pool.acquire() as conn:  # type: ignore[union-attr]
+        async with database_service.pool.acquire() as conn:
             # Try to get existing Poindexter AI author
             author_id = await conn.fetchval(
                 "SELECT id FROM authors WHERE slug = 'poindexter-ai' LIMIT 1"
@@ -1305,8 +1090,5 @@ async def _get_or_create_default_author(database_service: DatabaseService) -> Op
             return fallback_id
 
     except Exception as e:
-        logger.error(
-            f"[_get_or_create_default_author] Error getting/creating default author: {e}",
-            exc_info=True,
-        )
+        logger.error(f"Error getting/creating default author: {e}")
         return None

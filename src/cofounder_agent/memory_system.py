@@ -9,6 +9,7 @@ Uses PostgreSQL for persistent storage (no SQLite).
 
 import hashlib
 import json
+import logging
 import pickle
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
@@ -16,17 +17,13 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from services.logger_config import get_logger
-
 import asyncpg
 import numpy as np
 
 from services.logger_config import get_logger
 
-logger = get_logger(__name__)
-
 try:
-    from sentence_transformers import SentenceTransformer  # type: ignore[import-untyped]
+    from sentence_transformers import SentenceTransformer
 
     SENTENCE_TRANSFORMERS_AVAILABLE = True
 except ImportError:
@@ -126,7 +123,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
             db_pool: asyncpg connection pool for PostgreSQL database
         """
         self.db_pool = db_pool
-        self.logger = get_logger("ai_memory_system")
+        self.logger = logging.getLogger("ai_memory_system")
 
         # Embedding model for semantic similarity
         self.embedding_model = None

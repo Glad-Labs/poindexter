@@ -6,7 +6,6 @@ inputs of the next step (pipeline data flow).
 """
 
 import asyncio
-from services.logger_config import get_logger
 import re
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -15,7 +14,7 @@ from typing import Any, Dict, List, Optional
 
 from .capability_registry import get_registry
 
-logger = get_logger(__name__)
+
 @dataclass
 class CapabilityStep:
     """A single step in a capability task."""
@@ -230,10 +229,6 @@ class CapabilityTaskExecutor:
                     result.step_results.append(step_result)
 
                 except Exception as e:
-                    logger.error(
-                        f"[execute] Step execution failed: task_id={task.id}, step_index={step_index}, capability='{step.capability_name}': {str(e)}",
-                        exc_info=True,
-                    )
                     # Record failed step
                     step_duration = (time.time() - step_start) * 1000
                     step_result = StepResult(
@@ -258,10 +253,6 @@ class CapabilityTaskExecutor:
                 result.final_outputs = context.copy()
 
         except Exception as e:
-            logger.error(
-                f"[execute] Task execution failed: task_id={task.id}, execution_id={result.execution_id}: {str(e)}",
-                exc_info=True,
-            )
             result.status = "failed"
             result.error = f"Task execution failed: {str(e)}"
 
@@ -336,8 +327,8 @@ class CapabilityTaskExecutor:
                         break
                     else:
                         # Success - update context
-                        context[step.output_key] = step_result["output"]  # type: ignore[index]
-                        result.step_results.append(step_result)  # type: ignore[arg-type]
+                        context[step.output_key] = step_result["output"]
+                        result.step_results.append(step_result)
 
                 if result.status == "failed":
                     break
@@ -347,10 +338,6 @@ class CapabilityTaskExecutor:
                 result.final_outputs = context.copy()
 
         except Exception as e:
-            logger.error(
-                f"[execute_parallel_steps] Parallel task execution failed: task_id={task.id}, execution_id={result.execution_id}: {str(e)}",
-                exc_info=True,
-            )
             result.status = "failed"
             result.error = str(e)
 

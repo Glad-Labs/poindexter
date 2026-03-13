@@ -32,13 +32,12 @@ import asyncio
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
 import structlog
 
-from .error_handler import ServiceError
 from .provider_checker import ProviderChecker
 
 logger = structlog.get_logger(__name__)
@@ -72,7 +71,7 @@ class ProviderStatus:
     @property
     def cache_expired(self) -> bool:
         """Check if cache should be refreshed (5 min TTL)"""
-        return datetime.now(timezone.utc) - self.last_checked > timedelta(minutes=5)
+        return datetime.utcnow() - self.last_checked > timedelta(minutes=5)
 
 
 @dataclass
@@ -147,12 +146,10 @@ class OllamaAdapter(ProviderAdapter):
                     )
                 return is_available
         except asyncio.TimeoutError:
-            logger.error("Ollama health check timed out (3s)", exc_info=True, host=self.host)
+            logger.debug("Ollama health check timed out (3s)", host=self.host)
             return False
         except Exception as e:
-            logger.error(
-                f"[_is_available] Ollama unavailable", exc_info=True, error=str(e), host=self.host
-            )
+            logger.debug("Ollama unavailable", error=str(e), host=self.host)
             return False
 
     async def generate(
@@ -165,7 +162,7 @@ class OllamaAdapter(ProviderAdapter):
     ) -> ModelResponse:
         """Generate text using Ollama"""
         model = model or "mistral:latest"
-        start_time = datetime.now(timezone.utc)
+        start_time = datetime.utcnow()
 
         try:
             response = await self.client.generate(
@@ -176,7 +173,7 @@ class OllamaAdapter(ProviderAdapter):
                 max_tokens=max_tokens,
             )
 
-            elapsed_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
+            elapsed_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
 
             return ModelResponse(
                 text=response.get("response", ""),
@@ -187,9 +184,7 @@ class OllamaAdapter(ProviderAdapter):
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
-            logger.error(
-                f"[_generate] Ollama generation failed: {str(e)}", exc_info=True, model=model
-            )
+            logger.warning("Ollama generation failed", error=str(e), model=model)
             raise
 
     def list_models(self) -> List[str]:
@@ -229,7 +224,7 @@ class HuggingFaceAdapter(ProviderAdapter):
     ) -> ModelResponse:
         """Generate text using HuggingFace"""
         model = model or "mistralai/Mistral-7B-Instruct-v0.1"
-        start_time = datetime.now(timezone.utc)
+        start_time = datetime.utcnow()
 
         try:
             response = await self.client.generate(
@@ -240,20 +235,18 @@ class HuggingFaceAdapter(ProviderAdapter):
                 top_p=kwargs.get("top_p", 0.9),
             )
 
-            elapsed_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
+            elapsed_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
 
             return ModelResponse(
                 text=response,
                 provider=self.provider_type,
                 model=model,
                 tokens_used=len(prompt.split()) + len(response.split()),  # Rough estimate
-                cost=0.0001,  # Minimal cost estimate
+                cost=0.0 if not api_token else 0.0001,  # Free tier or minimal cost
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
-            logger.error(
-                f"[_generate] HuggingFace generation failed: {str(e)}", exc_info=True, model=model
-            )
+            logger.warning("HuggingFace generation failed", error=str(e), model=model)
             raise
 
     def list_models(self) -> List[str]:
@@ -287,7 +280,7 @@ class GoogleAdapter(ProviderAdapter):
                 logger.debug("Google Gemini available", model_count=len(models))
             return is_available
         except Exception as e:
-            logger.error(f"[_is_available] Google Gemini unavailable", exc_info=True, error=str(e))
+            logger.debug("Google Gemini unavailable", error=str(e))
             return False
 
     async def generate(
@@ -300,7 +293,7 @@ class GoogleAdapter(ProviderAdapter):
     ) -> ModelResponse:
         """Generate text using Google Gemini"""
         model = model or "gemini-pro"
-        start_time = datetime.now(timezone.utc)
+        start_time = datetime.utcnow()
 
         try:
             response = await self.client.generate(
@@ -310,7 +303,7 @@ class GoogleAdapter(ProviderAdapter):
                 temperature=temperature,
             )
 
-            elapsed_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
+            elapsed_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
 
             return ModelResponse(
                 text=response,
@@ -321,9 +314,7 @@ class GoogleAdapter(ProviderAdapter):
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
-            logger.error(
-                f"[_generate] Google Gemini generation failed: {str(e)}", exc_info=True, model=model
-            )
+            logger.warning("Google Gemini generation failed", error=str(e), model=model)
             raise
 
     def list_models(self) -> List[str]:
@@ -349,15 +340,12 @@ class AnthropicAdapter(ProviderAdapter):
             self.client = None
         else:
             try:
-                from anthropic import AsyncAnthropic  # fix #154: use async client
+                from anthropic import Anthropic
 
                 self.api_key = ProviderChecker.get_anthropic_api_key()
-                self.client = AsyncAnthropic(api_key=self.api_key)
+                self.client = Anthropic(api_key=self.api_key)
             except ImportError:
-                logger.error(
-                    "Anthropic SDK not installed. Install with: pip install anthropic",
-                    exc_info=True,
-                )
+                logger.warning("Anthropic SDK not installed. Install with: pip install anthropic")
                 self.client = None
 
         self.provider_type = ProviderType.ANTHROPIC
@@ -376,25 +364,24 @@ class AnthropicAdapter(ProviderAdapter):
     ) -> ModelResponse:
         """Generate text using Anthropic Claude"""
         if not self.client:
-            raise ValueError(
+            raise Exception(
                 "Anthropic client not configured. Set ANTHROPIC_API_KEY environment variable."
             )
 
         model = model or "claude-3-sonnet-20240229"
-        start_time = datetime.now(timezone.utc)
+        start_time = datetime.utcnow()
 
         try:
-            response = await self.client.messages.create(  # type: ignore[union-attr]  # fix #154
+            response = self.client.messages.create(
                 model=model,
                 max_tokens=max_tokens,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=temperature,
             )
 
-            elapsed_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
+            elapsed_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
 
-            block = response.content[0] if response.content else None
-            text = (getattr(block, "text", None) or "") if block else ""
+            text = response.content[0].text if response.content else ""
 
             return ModelResponse(
                 text=text,
@@ -405,9 +392,7 @@ class AnthropicAdapter(ProviderAdapter):
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
-            logger.error(
-                f"[_generate] Anthropic generation failed: {str(e)}", exc_info=True, model=model
-            )
+            logger.warning("Anthropic generation failed", error=str(e), model=model)
             raise
 
     def list_models(self) -> List[str]:
@@ -428,14 +413,12 @@ class OpenAIAdapter(ProviderAdapter):
             self.client = None
         else:
             try:
-                from openai import AsyncOpenAI  # fix #154: use async client
+                from openai import OpenAI
 
                 self.api_key = ProviderChecker.get_openai_api_key()
-                self.client = AsyncOpenAI(api_key=self.api_key)
+                self.client = OpenAI(api_key=self.api_key)
             except ImportError:
-                logger.error(
-                    "OpenAI SDK not installed. Install with: pip install openai", exc_info=True
-                )
+                logger.warning("OpenAI SDK not installed. Install with: pip install openai")
                 self.client = None
 
         self.provider_type = ProviderType.OPENAI
@@ -454,41 +437,35 @@ class OpenAIAdapter(ProviderAdapter):
     ) -> ModelResponse:
         """Generate text using OpenAI GPT"""
         if not self.client:
-            raise ValueError(
+            raise Exception(
                 "OpenAI client not configured. Set OPENAI_API_KEY environment variable."
             )
 
         model = model or "gpt-4-turbo"
-        start_time = datetime.now(timezone.utc)
+        start_time = datetime.utcnow()
 
         try:
-            response = await self.client.chat.completions.create(
+            response = self.client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=max_tokens,
                 temperature=temperature,
             )
 
-            elapsed_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
+            elapsed_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
 
             text = response.choices[0].message.content if response.choices else ""
 
             return ModelResponse(
-                text=text or "",
+                text=text,
                 provider=self.provider_type,
                 model=model,
-                tokens_used=(
-                    (response.usage.prompt_tokens + response.usage.completion_tokens)
-                    if response.usage
-                    else 0
-                ),
+                tokens_used=response.usage.prompt_tokens + response.usage.completion_tokens,
                 cost=0.0006,  # Approximate cost per token (GPT-4 is expensive!)
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
-            logger.error(
-                f"[_generate] OpenAI generation failed: {str(e)}", exc_info=True, model=model
-            )
+            logger.warning("OpenAI generation failed", error=str(e), model=model)
             raise
 
     def list_models(self) -> List[str]:
@@ -559,15 +536,12 @@ class ModelConsolidationService:
                 self.provider_status[provider_type] = ProviderStatus(
                     provider=provider_type,
                     is_available=False,
-                    last_checked=datetime.now(timezone.utc),
+                    last_checked=datetime.utcnow(),
                 )
                 logger.debug("Adapter initialized", provider=provider_type.value)
             except Exception as e:
-                logger.error(
-                    "Failed to initialize adapter",
-                    provider=provider_type.value,
-                    error=str(e),
-                    exc_info=True,
+                logger.warning(
+                    "Failed to initialize adapter", provider=provider_type.value, error=str(e)
                 )
 
     async def _check_provider_availability(self, provider_type: ProviderType) -> bool:
@@ -590,22 +564,18 @@ class ModelConsolidationService:
             self.provider_status[provider_type] = ProviderStatus(
                 provider=provider_type,
                 is_available=is_available,
-                last_checked=datetime.now(timezone.utc),
+                last_checked=datetime.utcnow(),
                 last_error=None if is_available else "Not available",
             )
 
             return is_available
         except Exception as e:
-            logger.error(
-                f"[_check_provider_availability] Provider check failed: {str(e)}",
-                exc_info=True,
-                provider=provider_type.value,
-            )
+            logger.warning("Provider check failed", provider=provider_type.value, error=str(e))
 
             self.provider_status[provider_type] = ProviderStatus(
                 provider=provider_type,
                 is_available=False,
-                last_checked=datetime.now(timezone.utc),
+                last_checked=datetime.utcnow(),
                 last_error=str(e),
             )
 
@@ -649,8 +619,7 @@ class ModelConsolidationService:
                 chain.append(provider)
 
         # Try each provider in order
-        last_error: Optional[Exception] = None
-        skip_reasons: list[str] = []
+        last_error = None
         logger.info(
             f"🔗 Starting provider fallback chain ({len(chain)} providers to try)",
             chain=[p.value for p in chain],
@@ -662,8 +631,6 @@ class ModelConsolidationService:
                 logger.debug(f"⏳ Checking {provider_type.value} availability...")
                 is_available = await self._check_provider_availability(provider_type)
                 if not is_available:
-                    reason = f"{provider_type.value}: not available"
-                    skip_reasons.append(reason)
                     logger.info(
                         f"⏭️  {provider_type.value} not available, skipping",
                         provider=provider_type.value,
@@ -673,8 +640,6 @@ class ModelConsolidationService:
                 # Try to generate
                 adapter = self.adapters.get(provider_type)
                 if not adapter:
-                    reason = f"{provider_type.value}: no adapter configured"
-                    skip_reasons.append(reason)
                     logger.warning(
                         f"⚠️  No adapter for {provider_type.value}, skipping",
                         provider=provider_type.value,
@@ -718,10 +683,8 @@ class ModelConsolidationService:
 
             except Exception as e:
                 last_error = e
-                skip_reasons.append(f"{provider_type.value}: {e}")
-                logger.error(
+                logger.warning(
                     f"❌ {provider_type.value} generation failed",
-                    exc_info=True,
                     provider=provider_type.value,
                     error=str(e),
                 )
@@ -729,12 +692,9 @@ class ModelConsolidationService:
 
         # All providers failed
         self.metrics["failed_requests"] += 1
-        if last_error is not None:
-            error_msg = f"All model providers failed. Last error: {last_error}"
-        else:
-            error_msg = f"All model providers unavailable. Reasons: {'; '.join(skip_reasons)}"
+        error_msg = f"All model providers failed. Last error: {str(last_error)}"
         logger.error("🚨 All providers exhausted", error=error_msg)
-        raise ServiceError(error_msg)
+        raise Exception(error_msg)
 
     def get_status(self) -> Dict[str, Any]:
         """Get status of all providers"""
@@ -783,4 +743,4 @@ def get_model_consolidation_service() -> ModelConsolidationService:
     if _model_consolidation_service is None:
         initialize_model_consolidation_service()
 
-    return _model_consolidation_service  # type: ignore[return-value]
+    return _model_consolidation_service

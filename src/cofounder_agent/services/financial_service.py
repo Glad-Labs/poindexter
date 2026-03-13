@@ -11,18 +11,16 @@ This service provides:
 - Cost optimization recommendations
 """
 
-from services.logger_config import get_logger
-from datetime import datetime, timezone
+import logging
+from datetime import datetime
 from typing import Any, Dict, Optional
 
-from services.service_base import ServiceBase
+logger = logging.getLogger(__name__)
 
-logger = get_logger(__name__)
-class FinancialService(ServiceBase):
+
+class FinancialService:
     """
     Financial analysis and cost tracking service.
-
-    Extends ServiceBase to participate in service-registry discovery.
 
     Provides methods for:
     - Tracking AI model costs
@@ -30,10 +28,6 @@ class FinancialService(ServiceBase):
     - Budget forecasting
     - Cost optimization recommendations
     """
-
-    name: str = "financial_service"
-    version: str = "1.0.0"
-    description: str = "Financial analysis and cost tracking for AI-driven content workflows"
 
     def __init__(
         self,
@@ -47,7 +41,6 @@ class FinancialService(ServiceBase):
             database_service: PostgreSQL database service
             model_router: Model router for cost tracking
         """
-        super().__init__()
         self.database_service = database_service
         self.model_router = model_router
         logger.info("FinancialService initialized")
@@ -74,9 +67,7 @@ class FinancialService(ServiceBase):
             Dictionary with cost analysis, ROI metrics, recommendations
         """
         try:
-            from agents.financial_agent.agents.financial_agent import (  # type: ignore
-                FinancialAgent,
-            )
+            from agents.financial_agent.agents.financial_agent import FinancialAgent
 
             financial_agent = FinancialAgent()
             analysis = await financial_agent.run(
@@ -92,12 +83,12 @@ class FinancialService(ServiceBase):
                 "phase": "financial_analysis",
                 "content_id": content_id,
                 "analysis": analysis,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.utcnow().isoformat(),
                 "source": "financial_agent",
             }
 
         except Exception as e:
-            logger.error(f"[_analyze_content_cost] Financial analysis failed: {e}", exc_info=True)
+            logger.error(f"Financial analysis failed: {e}", exc_info=True)
             return {
                 "phase": "financial_analysis",
                 "error": str(e),
@@ -151,7 +142,7 @@ class FinancialService(ServiceBase):
             }
 
         except Exception as e:
-            logger.error(f"[_calculate_roi] ROI calculation failed: {e}", exc_info=True)
+            logger.error(f"ROI calculation failed: {e}", exc_info=True)
             return {"error": str(e), "content_id": content_id}
 
     async def forecast_budget(
@@ -202,7 +193,7 @@ class FinancialService(ServiceBase):
             }
 
         except Exception as e:
-            logger.error(f"[_forecast_budget] Budget forecast failed: {e}", exc_info=True)
+            logger.error(f"Budget forecast failed: {e}", exc_info=True)
             return {"error": str(e)}
 
     def get_service_metadata(self) -> Dict[str, Any]:

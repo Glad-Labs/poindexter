@@ -15,7 +15,7 @@ Single source of truth for all metadata operations with:
 - Featured image prompt generation
 """
 
-from services.logger_config import get_logger
+import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -24,19 +24,19 @@ from typing import Any, Dict, List, Optional, Tuple
 from .model_consolidation_service import get_model_consolidation_service
 from .prompt_manager import get_prompt_manager
 from .provider_checker import ProviderChecker
-from utils.text_utils import extract_keywords_from_text, extract_keywords_from_title
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
+
 # Legacy provider checks are kept for backward compatibility during migration
 # but new code should use unified model_router and prompt_manager
 
 # Check for Anthropic availability and API key
 try:
-    from anthropic import AsyncAnthropic
+    from anthropic import Anthropic
 
     ANTHROPIC_AVAILABLE = ProviderChecker.is_anthropic_available()
     if ANTHROPIC_AVAILABLE:
-        anthropic_client = AsyncAnthropic(api_key=ProviderChecker.get_anthropic_api_key())
+        anthropic_client = Anthropic(api_key=ProviderChecker.get_anthropic_api_key())
     else:
         anthropic_client = None
         logger.debug("⚠️  ANTHROPIC_API_KEY not set in environment")
@@ -63,19 +63,19 @@ try:
     # Try new SDK first, fall back to old one
     use_new_sdk = False
     try:
-        import google.genai as genai  # type: ignore
+        import google.genai as genai
 
         use_new_sdk = True
     except ImportError:
-        import google.generativeai as genai  # type: ignore
+        import google.generativeai as genai
 
     GOOGLE_AVAILABLE = ProviderChecker.is_gemini_available()
     if GOOGLE_AVAILABLE:
         # Configure API key based on SDK version
         if use_new_sdk:
-            genai.api_key = ProviderChecker.get_gemini_api_key()  # type: ignore[attr-defined]
+            genai.api_key = ProviderChecker.get_gemini_api_key()
         else:
-            genai.configure(api_key=ProviderChecker.get_gemini_api_key())  # type: ignore[attr-defined]
+            genai.configure(api_key=ProviderChecker.get_gemini_api_key())
     else:
         logger.debug("⚠️  GOOGLE_API_KEY not set in environment")
 except ImportError:
@@ -210,10 +210,8 @@ class UnifiedMetadataService:
             metadata.tag_ids = tag_ids
             # Get tag names for display
             metadata.tags = [
-                t.get("name") or ""
+                next((t.get("name") for t in available_tags if t.get("id") == tid), "")
                 for tid in tag_ids
-                for t in available_tags
-                if t.get("id") == tid
             ]
 
         # 7. Generate featured image prompt
@@ -288,7 +286,7 @@ class UnifiedMetadataService:
                     logger.info("LLM generated title: %s", title[:50])
                     return title
             except Exception as e:
-                logger.error(f"[_extract_title] LLM title generation failed: {e}", exc_info=True)
+                logger.warning("LLM title generation failed: %s", e)
 
         # Strategy 5: Fallback to date
         title = f"Blog Post - {datetime.now().strftime('%B %d, %Y')}"
@@ -335,7 +333,7 @@ class UnifiedMetadataService:
             return result.text[:100] if result and result.text else None
 
         except Exception as e:
-            logger.error(f"[_llm_generate_title] LLM title generation error: {e}", exc_info=True)
+            logger.warning("LLM title generation error: %s", e)
             return None
 
     # ========================================================================
@@ -373,9 +371,7 @@ class UnifiedMetadataService:
                     logger.info("LLM generated excerpt")
                     return excerpt
             except Exception as e:
-                logger.error(
-                    f"[_generate_excerpt] LLM excerpt generation failed: {e}", exc_info=True
-                )
+                logger.warning("LLM excerpt generation failed: %s", e)
 
         # Fallback: Use content start
         excerpt = content[:max_length]
@@ -413,34 +409,29 @@ class UnifiedMetadataService:
         prompt = pm.get_prompt("seo.generate_excerpt", max_length=max_length, content=content[:800])
 
         try:
-            if ANTHROPIC_AVAILABLE and anthropic_client is not None:
-                response = await anthropic_client.messages.create(  # type: ignore[attr-defined]
+            if ANTHROPIC_AVAILABLE:
+                response = anthropic_client.messages.create(
                     model="claude-3-haiku-20240307",
                     max_tokens=max_length,
                     messages=[{"role": "user", "content": prompt}],
                 )
-                block = response.content[0]
-                text = getattr(block, "text", None) or ""
-                excerpt = text.strip()
+                excerpt = response.content[0].text.strip()
                 return excerpt[:max_length] if excerpt else None
 
             if OPENAI_AVAILABLE:
-                from openai import AsyncOpenAI as _AsyncOpenAI
+                import openai as openai_module
 
-                client = _AsyncOpenAI()
-                resp = await client.chat.completions.create(
+                response = openai_module.ChatCompletion.create(
                     model="gpt-3.5-turbo",
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=max_length,
                     temperature=0.7,
                 )
-                excerpt = (resp.choices[0].message.content or "").strip()
+                excerpt = response.choices[0].message.content.strip()
                 return excerpt[:max_length] if excerpt else None
 
         except Exception as e:
-            logger.error(
-                f"[_llm_generate_excerpt] LLM excerpt generation error: {e}", exc_info=True
-            )
+            logger.warning("LLM excerpt generation error: %s", e)
             return None
 
     # ========================================================================
@@ -475,9 +466,7 @@ class UnifiedMetadataService:
                 else:
                     result["seo_description"] = content[:155]
             except Exception as e:
-                logger.error(
-                    f"[_generate_seo_metadata] LLM SEO description failed: {e}", exc_info=True
-                )
+                logger.warning("LLM SEO description failed: %s", e)
                 result["seo_description"] = content[:155]
         else:
             result["seo_description"] = content[:155]
@@ -494,9 +483,7 @@ class UnifiedMetadataService:
                 if not keywords_list:
                     keywords_list = self._extract_keywords_fallback(title)
             except Exception as e:
-                logger.error(
-                    f"[_generate_seo_metadata] LLM keyword extraction error: {e}", exc_info=True
-                )
+                logger.warning("LLM keywordd extraction error: %s", e)
                 keywords_list = self._extract_keywords_fallback(title)
         else:
             keywords_list = self._extract_keywords_fallback(title)
@@ -527,9 +514,7 @@ class UnifiedMetadataService:
             return result.text[:155] if result and result.text else None
 
         except Exception as e:
-            logger.error(
-                f"[_llm_generate_seo_description] LLM SEO description error: {e}", exc_info=True
-            )
+            logger.warning("LLM SEO description error: %s", e)
             return None
 
     async def _llm_extract_keywords(self, title: str, content: str) -> Optional[List[str]]:
@@ -555,17 +540,29 @@ class UnifiedMetadataService:
             return None
 
         except Exception as e:
-            logger.error(
-                f"[_llm_extract_keywords] LLM keyword extraction error: {e}", exc_info=True
-            )
+            logger.warning("LLM keyword extraction error: %s", e)
             return None
 
     def _extract_keywords_fallback(self, title: str) -> List[str]:
-        """Fallback keyword extraction from title only.
-
-        Delegates to ``utils.text_utils.extract_keywords_from_title`` (issue #288).
-        """
-        return extract_keywords_from_title(title)
+        """Fallback keyword extraction from title"""
+        words = title.lower().split()
+        common_words = {
+            "a",
+            "an",
+            "the",
+            "and",
+            "or",
+            "but",
+            "is",
+            "are",
+            "to",
+            "of",
+            "in",
+            "on",
+            "for",
+        }
+        keywords = [w.strip(".,;:") for w in words if w not in common_words and len(w) > 3]
+        return keywords[:7] if keywords else [title[:20]]
 
     # ========================================================================
     # SLUG GENERATION
@@ -606,9 +603,7 @@ class UnifiedMetadataService:
         best_category, score = self._keyword_match_category(content, available_categories, title)
         if score > 0:
             logger.debug(
-                "Keyword matched category: %s (score=%s)",
-                best_category.get("name") if best_category else None,
-                score,
+                "Keyword matched category: %s (score=%s)", best_category.get("name"), score
             )
             return best_category
 
@@ -620,7 +615,7 @@ class UnifiedMetadataService:
                     logger.info("LLM matched category: %s", best_category.get("name"))
                     return best_category
             except Exception as e:
-                logger.error(f"[_match_category] LLM category matching failed: {e}", exc_info=True)
+                logger.warning("LLM category matching failed: %s", e)
 
         # Fallback: return first category
         logger.debug(f"✓ Using first category as fallback: {available_categories[0].get('name')}")
@@ -677,31 +672,29 @@ class UnifiedMetadataService:
         )
 
         try:
-            if ANTHROPIC_AVAILABLE and anthropic_client is not None:
-                response = await anthropic_client.messages.create(  # type: ignore[attr-defined]
+            if ANTHROPIC_AVAILABLE:
+                response = anthropic_client.messages.create(
                     model="claude-3-haiku-20240307",
                     max_tokens=100,
                     messages=[{"role": "user", "content": prompt}],
                 )
-                block = response.content[0]
-                category_name = (getattr(block, "text", None) or "").strip()
+                category_name = response.content[0].text.strip()
                 return next((c for c in available_categories if c["name"] == category_name), None)
 
             if OPENAI_AVAILABLE:
-                from openai import AsyncOpenAI as _AsyncOpenAI
+                import openai as openai_module
 
-                client = _AsyncOpenAI()
-                resp = await client.chat.completions.create(
+                response = openai_module.ChatCompletion.create(
                     model="gpt-3.5-turbo",
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=100,
                     temperature=0.7,
                 )
-                category_name = (resp.choices[0].message.content or "").strip()
+                category_name = response.choices[0].message.content.strip()
                 return next((c for c in available_categories if c["name"] == category_name), None)
 
         except Exception as e:
-            logger.error(f"[_llm_match_category] LLM category matching error: {e}", exc_info=True)
+            logger.warning(f"⚠️  LLM category matching error: {e}")
             return None
 
     # ========================================================================
@@ -746,7 +739,7 @@ class UnifiedMetadataService:
                     logger.info(f"✓ LLM extracted {len(llm_tags)} tags")
                     return llm_tags[:max_tags]
             except Exception as e:
-                logger.error(f"[_extract_tags] LLM tag extraction failed: {e}", exc_info=True)
+                logger.warning(f"⚠️  LLM tag extraction failed: {e}")
 
         # Fallback: return empty (better than random tags)
         logger.debug("✓ No tags matched")
@@ -764,7 +757,7 @@ class UnifiedMetadataService:
             tag_slug = tag.get("slug", "").lower()
             tag_id = tag.get("id")
 
-            if (tag_name in search_text or tag_slug in search_text) and tag_id is not None:
+            if tag_name in search_text or tag_slug in search_text:
                 matched_tag_ids.append(tag_id)
 
         return matched_tag_ids
@@ -793,45 +786,40 @@ class UnifiedMetadataService:
         )
 
         try:
-            if ANTHROPIC_AVAILABLE and anthropic_client is not None:
-                response = await anthropic_client.messages.create(  # type: ignore[attr-defined]
+            if ANTHROPIC_AVAILABLE:
+                response = anthropic_client.messages.create(
                     model="claude-3-haiku-20240307",
                     max_tokens=100,
                     messages=[{"role": "user", "content": prompt}],
                 )
-                block = response.content[0]
-                tags_str = (getattr(block, "text", None) or "").strip()
+                tags_str = response.content[0].text.strip()
                 tag_names = [t.strip() for t in tags_str.split(",")]
                 return [
-                    tag["id"]
+                    next((tag["id"] for tag in available_tags if tag["name"] == name), None)
                     for name in tag_names
-                    for tag in available_tags
-                    if tag["name"] == name
+                    if any(tag["name"] == name for tag in available_tags)
                 ]
 
             if OPENAI_AVAILABLE:
-                from openai import AsyncOpenAI as _AsyncOpenAI
+                import openai as openai_module
 
-                client = _AsyncOpenAI()
-                resp = await client.chat.completions.create(
+                response = openai_module.ChatCompletion.create(
                     model="gpt-3.5-turbo",
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=100,
                     temperature=0.7,
                 )
-                tags_str = (resp.choices[0].message.content or "").strip()
+                tags_str = response.choices[0].message.content.strip()
                 tag_names = [t.strip() for t in tags_str.split(",")]
                 return [
-                    tag["id"]
+                    next((tag["id"] for tag in available_tags if tag["name"] == name), None)
                     for name in tag_names
-                    for tag in available_tags
-                    if tag["name"] == name
+                    if any(tag["name"] == name for tag in available_tags)
                 ]
 
         except Exception as e:
-            logger.error(f"[_llm_extract_tags] LLM tag extraction error: {e}", exc_info=True)
-
-        return []
+            logger.warning(f"⚠️  LLM tag extraction error: {e}")
+            return []
 
     # ========================================================================
     # FEATURED IMAGE & SOCIAL METADATA
@@ -850,6 +838,8 @@ class UnifiedMetadataService:
             category=category or "General",
             content_context=context,
         )
+
+        return prompt
 
     def generate_social_metadata(
         self, title: str, excerpt: str, image_url: Optional[str] = None
@@ -888,11 +878,19 @@ class UnifiedMetadataService:
         return reading_time
 
     def _extract_keywords_from_content(self, content: str, count: int = 5) -> List[str]:
-        """Extract keywords by word frequency from content.
+        """Extract keywords by word frequency from content"""
+        # Remove markdown and common words
+        clean_content = re.sub(r"[#*`_\-\[\]()]", "", content).lower()
+        words = re.findall(r"\b[a-z]{4,}\b", clean_content)
 
-        Delegates to ``utils.text_utils.extract_keywords_from_text`` (issue #288).
-        """
-        return extract_keywords_from_text(content, count=count)
+        # Count frequencies
+        word_freq = {}
+        for word in words:
+            word_freq[word] = word_freq.get(word, 0) + 1
+
+        # Get top words
+        keywords = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)
+        return [word for word, _ in keywords[:count]]
 
 
 # ============================================================================

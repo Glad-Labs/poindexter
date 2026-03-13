@@ -280,17 +280,11 @@ class CostLogResponse(BaseModel):
     id: str = Field(..., description="Cost log UUID")
     task_id: str = Field(..., description="Associated task UUID")
     user_id: Optional[str] = Field(None, description="Associated user UUID")
-    phase: Literal[
-        "research",
-        "outline",
-        "draft",
-        "assess",
-        "refine",
-        "finalize",
-        "content_generation",
-    ] = Field(..., description="Execution phase")
-    model: str = Field(..., description="LLM model or cost tier used (e.g., ultra_cheap, cheap, balanced, premium)")
-    provider: Literal["ollama", "openai", "anthropic", "google", "gemini", "unknown"] = Field(
+    phase: Literal["research", "outline", "draft", "assess", "refine", "finalize"] = Field(
+        ..., description="Execution phase"
+    )
+    model: str = Field(..., description="LLM model used (gpt-4, claude-3-opus, etc.)")
+    provider: Literal["ollama", "openai", "anthropic", "google"] = Field(
         ..., description="LLM provider"
     )
     input_tokens: int = Field(default=0, ge=0, description="Input token count")
@@ -470,14 +464,3 @@ class ErrorResponse(BaseModel):
     message: str = Field(..., description="Error message")
     details: Optional[Dict[str, Any]] = Field(None, description="Additional error details")
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Error timestamp")
-
-
-# ---------------------------------------------------------------------------
-# Database-prefixed aliases — use these in new code to avoid name collisions
-# with identically-named models in task_schemas.py / settings_schemas.py.
-# Existing imports of the bare names continue to work unchanged.
-# ---------------------------------------------------------------------------
-DatabaseTaskResponse = TaskResponse
-DatabaseMetricsResponse = MetricsResponse
-DatabaseErrorResponse = ErrorResponse
-DatabaseQualityEvaluationResponse = QualityEvaluationResponse

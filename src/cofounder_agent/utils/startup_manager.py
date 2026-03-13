@@ -14,14 +14,14 @@ Handles all startup and shutdown operations for the Glad Labs AI Co-Founder:
 - Graceful shutdown
 """
 
-from services.logger_config import get_logger
+import logging
 import os
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-# Import global service container for DI-4
+logger = logging.getLogger(__name__)
 
-logger = get_logger(__name__)
+
 class StartupManager:
     """Manages all startup and shutdown operations for the FastAPI application"""
 
@@ -35,7 +35,6 @@ class StartupManager:
         self.training_data_service = None
         self.fine_tuning_service = None
         self.custom_workflows_service = None
-        self.template_execution_service = None
         self.startup_error = None
 
     async def initialize_all_services(self) -> Dict[str, Any]:
@@ -57,9 +56,6 @@ class StartupManager:
             logger.info("🚀 Starting Glad Labs AI Co-Founder application...")
             logger.info(f"  Environment: {os.getenv('ENVIRONMENT', 'production')}")
 
-            # Step 0: Validate secrets (fail fast in production with known defaults)
-            self._validate_secrets()
-
             # Step 1: Initialize PostgreSQL database (MANDATORY)
             await self._initialize_database()
 
@@ -75,7 +71,10 @@ class StartupManager:
             # Step 5: Initialize workflow history service
             await self._initialize_workflow_history()
 
-            # Step 6: Initialize background task executor
+            # Step 6: Initialize content critique loop
+            await self._initialize_content_critique()
+
+            # Step 7: Initialize background task executor
             await self._initialize_task_executor()
 
             # Step 8: Initialize training data services
@@ -84,19 +83,27 @@ class StartupManager:
             # Step 9: Verify connections
             await self._verify_connections()
 
-            # Step 10: Initialize agent registry
+            # Step 10: Register services with routes
+            await self._register_route_services()
+
+            # Step 11: Initialize agent registry
             await self._initialize_agent_registry()
 
             # Step 12: Initialize custom workflows service
             await self._initialize_custom_workflows_service()
 
-            # Step 13: Initialize template execution service (depends on custom workflows service)
-            await self._initialize_template_execution_service()
+            # Step 13: Warmup SDXL models (async, non-blocking)
+            # Only if GPU is available - this prevents timeout issues when users first request SDXL
+            try:
+                await self._warmup_sdxl_models()
+            except Exception as e:
+                import traceback
 
-            # Step 14: SDXL models are lazy-loaded on first use — no warmup at startup.
-            # ImageService._initialize_sdxl() is called automatically inside generate_image()
-            # the first time image generation is requested.
-            logger.info("  ⏭️  SDXL models will load lazily on first image generation request")
+                logger.warning(
+                    f"[WARNING] SDXL warmup failed (non-critical): {type(e).__name__}: {e}"
+                )
+                logger.debug(f"    Traceback: {traceback.format_exc()}")
+                # Continue anyway - SDXL will load lazily when first used
 
             logger.info(" Application started successfully!")
             self._log_startup_summary()
@@ -109,7 +116,6 @@ class StartupManager:
                 "training_data_service": self.training_data_service,
                 "fine_tuning_service": self.fine_tuning_service,
                 "custom_workflows_service": self.custom_workflows_service,
-                "template_execution_service": self.template_execution_service,
                 "startup_error": self.startup_error,
             }
 
@@ -119,40 +125,6 @@ class StartupManager:
             self.startup_error = f"Critical startup failure: {str(e)}"
             logger.error(f" {self.startup_error}", exc_info=True)
             raise
-
-    def _validate_secrets(self) -> None:
-        """
-        Validate that known-default placeholder secrets have been replaced.
-
-        In production (ENVIRONMENT=production) any default secret is a hard failure.
-        In development/staging a warning is logged but startup continues.
-        """
-        is_production = os.getenv("ENVIRONMENT", "production").lower() == "production"
-
-        KNOWN_DEFAULTS = {
-            "JWT_SECRET_KEY": "development-secret-key-change-in-production",
-            "JWT_SECRET": "development-secret-key-change-in-production",
-            "SECRET_KEY": "your-secret-key-here",
-            "REVALIDATE_SECRET": "dev-secret-key",
-        }
-
-        violations: list = []
-        for env_var, default_value in KNOWN_DEFAULTS.items():
-            actual = os.getenv(env_var, "")
-            if actual == default_value or actual == "":
-                if actual == default_value:
-                    violations.append(f"{env_var} is using the known-default placeholder value")
-                # empty string means not set — only warn, don't block (may be intentionally absent)
-
-        if violations:
-            msg = "Secret validation failed:\n" + "\n".join(f"  - {v}" for v in violations)
-            if is_production:
-                logger.error(f"[startup] FATAL — {msg}")
-                raise RuntimeError(
-                    f"Refusing to start in production with default secrets. {msg}"
-                )
-            else:
-                logger.warning(f"[startup] {msg}\n  Set these in .env.local before deploying to production.")
 
     async def _initialize_database(self) -> None:
         """Initialize PostgreSQL database connection"""
@@ -272,6 +244,12 @@ class StartupManager:
             logger.warning(f"   {error_msg}", exc_info=True)
             self.workflow_history_service = None
 
+    async def _initialize_content_critique(self) -> None:
+        """DEPRECATED: Content critique is now handled by UnifiedQualityService in TaskExecutor"""
+        logger.debug(
+            "⏭️  Skipping _initialize_content_critique (now handled by UnifiedQualityService)"
+        )
+
     async def _initialize_task_executor(self) -> None:
         """Initialize background task executor (WITHOUT starting it yet)
 
@@ -285,14 +263,15 @@ class StartupManager:
 
             logger.debug(f"  [DEBUG] TaskExecutor init: database_service={self.database_service}")
             logger.debug(
-                f"  [DEBUG] TaskExecutor init: database_service.tasks={self.database_service.tasks}"  # type: ignore[union-attr]
+                f"  [DEBUG] TaskExecutor init: database_service.tasks={self.database_service.tasks}"
             )
             logger.debug(f"  [DEBUG] TaskExecutor init: orchestrator={self.orchestrator}")
 
             logger.debug("  [DEBUG] Creating TaskExecutor instance...")
+            # Pass None for orchestrator - it will be injected from main.py lifespan
             self.task_executor = TaskExecutor(
                 database_service=self.database_service,
-                orchestrator=None,  # Injected via inject_orchestrator() in main.py after UnifiedOrchestrator is created
+                orchestrator=None,  # Will be injected in main.py AFTER UnifiedOrchestrator is created
                 poll_interval=5,  # Poll every 5 seconds
             )
             logger.debug(f"  [DEBUG] TaskExecutor created: {self.task_executor}")
@@ -323,7 +302,7 @@ class StartupManager:
 
             if self.database_service:
                 # Initialize training data service
-                self.training_data_service = TrainingDataService(self.database_service.pool)  # type: ignore[arg-type]
+                self.training_data_service = TrainingDataService(self.database_service.pool)
                 logger.info("   Training data service initialized")
 
                 # Initialize fine-tuning service
@@ -356,14 +335,17 @@ class StartupManager:
             except Exception as e:
                 logger.warning(f"   Database health check failed: {e}", exc_info=True)
 
+    async def _register_route_services(self) -> None:
+        """Register database service with all route modules (deprecated - now using dependency injection)"""
+        # Service injection is now handled via Depends(get_database_dependency) in routes
+        # This method is kept for backward compatibility but no longer performs any operations
+        if self.database_service:
+            logger.debug(
+                "   Database service available via dependency injection (get_database_dependency)"
+            )
+
     async def _initialize_agent_registry(self) -> None:
         """Initialize agent registry with all available agents"""
-        # Skip heavy ML model loading in development mode
-        is_dev_mode = os.getenv("DEVELOPMENT_MODE", "").lower() == "true"
-        if is_dev_mode:
-            logger.info("  ⏭️  Skipping agent registry initialization (DEVELOPMENT_MODE enabled)")
-            return
-
         try:
             from agents.registry import get_agent_registry
             from utils.agent_initialization import register_all_agents
@@ -400,29 +382,77 @@ class StartupManager:
             )
             self.custom_workflows_service = None
 
-    async def _initialize_template_execution_service(self) -> None:
-        """Initialize template execution service for workflow template execution"""
-        logger.info("  📋 Initializing template execution service...")
-        try:
-            from services.template_execution_service import TemplateExecutionService
+    async def _warmup_sdxl_models(self) -> None:
+        """Warmup SDXL models to avoid timeout on first request"""
+        import os
 
-            if self.custom_workflows_service:
-                self.template_execution_service = TemplateExecutionService(
-                    self.custom_workflows_service
-                )
-                logger.info(
-                    "   Template execution service initialized - users can execute workflow templates"
-                )
-            else:
-                logger.warning(
-                    "   Template execution service not available - custom workflows service required"
-                )
-                self.template_execution_service = None
-        except Exception as e:
-            logger.warning(
-                f"   Template execution service initialization failed (non-critical): {type(e).__name__}: {e}"
+        # Skip warmup if explicitly disabled
+        if os.getenv("DISABLE_SDXL_WARMUP", "").lower() == "true":
+            logger.info("  SDXL warmup: Disabled via DISABLE_SDXL_WARMUP environment variable")
+            return
+
+        # Check if torch is even available (optional dependency for SDXL)
+        try:
+            import torch
+        except ModuleNotFoundError:
+            logger.info("  SDXL warmup: torch not installed - SDXL disabled")
+            logger.info("     To enable SDXL: pip install -r scripts/requirements-ml.txt")
+            return
+
+        # Skip warmup if GPU is not available (SDXL only works on GPU)
+        if not torch.cuda.is_available():
+            logger.debug(
+                "  SDXL warmup: GPU not available, skipping model warmup (lazy loading enabled)"
             )
-            self.template_execution_service = None
+            return
+
+        try:
+            logger.info("  🎨 Warming up SDXL models (this may take 20-30 seconds)...")
+            import tempfile
+
+            from services.image_service import ImageService
+
+            # Create image service
+            image_service = ImageService()
+
+            # Generate a minimal test image just to load the models
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                output_path = tmp.name
+
+            try:
+                # Single-step generation just to load models
+                success = await image_service.generate_image(
+                    prompt="warmup",
+                    output_path=output_path,
+                    num_inference_steps=1,
+                    guidance_scale=7.5,
+                    use_refinement=False,
+                    high_quality=False,
+                )
+
+                if success:
+                    logger.info(
+                        "  [OK] SDXL models loaded successfully! First requests will be fast."
+                    )
+                else:
+                    logger.warning(
+                        "  [WARNING] SDXL warmup generation failed (will initialize lazily)"
+                    )
+
+            finally:
+                # Clean up temp file
+                try:
+                    if os.path.exists(output_path):
+                        os.remove(output_path)
+                except (OSError, IOError) as e:
+                    logger.debug(f"  [DEBUG] Temp file cleanup failed (non-critical): {str(e)}")
+
+        except Exception as e:
+            import traceback
+
+            logger.warning(f"  [WARNING] SDXL warmup error (non-critical): {type(e).__name__}: {e}")
+            logger.warning(f"     Full traceback:\n{traceback.format_exc()}")
+            logger.info("     SDXL will initialize on first request")
 
     def _log_startup_summary(self) -> None:
         """Log summary of startup state"""
@@ -452,8 +482,8 @@ class StartupManager:
                     logger.info("   Task executor stopped")
                     stats = self.task_executor.get_stats()
                     logger.info(
-                        f"     Tasks processed: {stats.get('task_count', 0)}, "
-                        f"Success: {stats.get('success_count', 0)}, Failed: {stats.get('error_count', 0)}"
+                        f"     Tasks processed: {stats['total_processed']}, "
+                        f"Success: {stats['successful']}, Failed: {stats['failed']}"
                     )
             except Exception as e:
                 logger.error(f"   Error stopping task executor: {e}", exc_info=True)

@@ -9,16 +9,16 @@ Endpoints:
 - POST /api/revalidate-cache - Revalidate paths on public site (requires auth token)
 """
 
-from services.logger_config import get_logger
+import logging
 import os
 from typing import Any, Dict, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, Request
-from routes.auth_unified import get_current_user
+from fastapi import APIRouter, Header
 from pydantic import BaseModel
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api", tags=["cache"])
 
 
@@ -82,16 +82,15 @@ async def trigger_nextjs_revalidation(paths: Optional[list] = None) -> bool:
     except httpx.TimeoutException:
         logger.warning(f"⚠️ ISR revalidation timed out (10s)")
         return False
-    except (httpx.HTTPError, OSError) as e:
-        logger.warning(f"⚠️ Failed to trigger ISR revalidation: {type(e).__name__}: {e}", exc_info=True)
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to trigger ISR revalidation: {type(e).__name__}: {e}")
         return False
 
 
 @router.post("/revalidate-cache")
 async def revalidate_cache(
-    request: Request,
     request_data: RevalidateCacheRequest,
-    current_user: dict = Depends(get_current_user),
+    authorization: Optional[str] = Header(None),
 ) -> Dict[str, Any]:
     """
     Securely revalidate public site cache after publishing content.
@@ -102,10 +101,20 @@ async def revalidate_cache(
 
     Args:
         request_data: {"paths": ["/"]} - Paths to revalidate
+        authorization: Bearer token (required for auth verification)
 
     Returns:
         {"success": bool, "message": str, "paths": list}
     """
+    # Basic auth check - verify authorization header present
+    if not authorization:
+        logger.warning("Unauthorized cache revalidation attempt (no auth header)")
+        return {
+            "success": False,
+            "message": "Authentication required",
+            "paths": request_data.paths or [],
+        }
+
     paths = request_data.paths or ["/", "/archive"]
 
     # Trigger ISR revalidation on public site

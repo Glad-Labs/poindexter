@@ -16,20 +16,20 @@ ASYNC-FIRST: All I/O operations use httpx async client (no blocking calls)
 """
 
 import asyncio
+import logging
 import os
-from datetime import datetime, timezone
 import re
 import time
 from typing import Any, Dict, Optional, Tuple
 
 import httpx
 
-from .content_structure_validator import ContentStructureValidator
 from .prompt_manager import get_prompt_manager
 from .provider_checker import ProviderChecker
-from services.logger_config import get_logger
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
+
+
 class ContentValidationResult:
     """Result of content validation check"""
 
@@ -49,19 +49,17 @@ class ContentValidationResult:
 class AIContentGenerator:
     """Unified content generation with provider fallback and self-checking"""
 
-    def __init__(self, quality_threshold: float = 7.5):
+    def __init__(self, quality_threshold: float = 7.0):
         """Initialize content generator
 
         Args:
             quality_threshold: Minimum quality score (0-10) for content acceptance
-                               Default 7.5 ensures content meets length requirements
         """
         self.quality_threshold = quality_threshold
         self.ollama_available = False
         self.ollama_checked = False  # Track if we've checked Ollama async
         self.generation_attempts = 0
         self.max_refinement_attempts = 3
-        self.structure_validator = ContentStructureValidator()
 
         logger.info("AIContentGenerator initialized (Ollama check deferred to first async call)")
         logger.debug(
@@ -90,10 +88,7 @@ class AIContentGenerator:
             else:
                 logger.warning(f"⚠️ Ollama returned non-200 status: {response.status_code}")
         except Exception as e:
-            logger.error(
-                f"[_check_ollama_async] Ollama health check failed: {type(e).__name__}: {e}",
-                exc_info=True,
-            )
+            logger.warning(f"⚠️ Ollama health check failed: {type(e).__name__}: {e}")
             self.ollama_available = False
         finally:
             self.ollama_checked = True
@@ -106,11 +101,11 @@ class AIContentGenerator:
         Self-check: Validate generated content against quality rubric.
 
         Checks:
-        1. Content length (target ±10% for tighter tolerance)
-        2. Structure (heading hierarchy, proper sections)
-        3. Forbidden/generic heading titles
-        4. Practical examples and call-to-action
-        5. Topic relevance and completeness
+        1. Content length (target ±30%)
+        2. Structure (has headings, sections)
+        3. Content quality (readability, completeness)
+        4. Markdown formatting
+        5. Presence of practical examples
 
         Returns:
             ContentValidationResult with quality score and issues
@@ -118,96 +113,50 @@ class AIContentGenerator:
         issues = []
         score = 10.0
 
-        # 1. Check length (strict enforcement: ±10% tolerance)
+        # 1. Check length
         word_count = len(content.split())
-        min_words = int(target_length * 0.9)
-        max_words = int(target_length * 1.1)
+        min_words = int(target_length * 0.7)
+        max_words = int(target_length * 1.3)
 
-        # Calculate severity based on how far from target
         if word_count < min_words:
-            deficit_pct = ((min_words - word_count) / target_length) * 100
-
-            # Very short content (< 70% of target) should FAIL quality check
-            if word_count < target_length * 0.7:
-                issues.append(
-                    f"❌ CRITICAL: Content severely too short: {word_count} words (target: {target_length}, {deficit_pct:.0f}% deficit). "
-                    f"Need at least {int(target_length * 0.7)} words minimum."
-                )
-                score -= 5.0  # Major penalty - will fail quality check
-            # Moderately short (70-90% of target)
-            else:
-                issues.append(
-                    f"⚠️  Content too short: {word_count} words (target: {target_length}, {deficit_pct:.0f}% deficit). "
-                    f"Need {min_words - word_count} more words to meet minimum."
-                )
-                score -= 3.0  # Significant penalty - likely to fail quality check
+            issues.append(f"Content too short: {word_count} words (target: {target_length})")
+            score -= 2.0
         elif word_count > max_words:
-            excess_pct = ((word_count - max_words) / target_length) * 100
-            issues.append(
-                f"Content slightly too long: {word_count} words (target: {target_length}, {excess_pct:.0f}% over)"
-            )
-            score -= 1.0  # Minor penalty - still acceptable
-
-        # 2. Use ContentStructureValidator for comprehensive structure check
-        structure_result = self.structure_validator.validate(content)
-
-        # Add structure issues to validation report
-        if not structure_result.heading_hierarchy_valid:
-            issues.append("Heading hierarchy is invalid (should be H1 → H2 → H3)")
-            score -= 2.0
-
-        if not structure_result.no_forbidden_titles:
-            issues.append(
-                f"Generic heading titles detected: {', '.join(structure_result.sections[0].heading_text for s in structure_result.sections if s.heading_text.lower() in {'introduction', 'conclusion'})} "
-                "(use benefit-focused titles instead)"
-            )
-            score -= 2.0
-
-        if structure_result.orphan_paragraph_count > 0:
-            issues.append(
-                f"Found {structure_result.orphan_paragraph_count} orphan paragraphs (single sentence). "
-                "Merge or expand these."
-            )
+            issues.append(f"Content too long: {word_count} words (target: {target_length})")
             score -= 1.0
 
-        if structure_result.bloated_paragraph_count > 0:
-            issues.append(
-                f"Found {structure_result.bloated_paragraph_count} bloated paragraphs (>10 sentences). "
-                "Break these into smaller paragraphs."
-            )
-            score -= 0.5
+        # 2. Check structure (headings)
+        heading_count = len(re.findall(r"^##+ ", content, re.MULTILINE))
+        if heading_count < 3:
+            issues.append(f"Insufficient structure: {heading_count} sections (recommend 3-5)")
+            score -= 1.5
 
-        # 3. Check for conclusion
-        conclusion_keywords = ["conclusion", "summary", "next steps", "takeaway", "key takeaways"]
+        # 3. Check for introduction
+        if not re.search(r"^# ", content, re.MULTILINE):
+            issues.append("Missing title (# heading)")
+            score -= 1.0
+
+        # 4. Check for conclusion
+        conclusion_keywords = ["conclusion", "summary", "next steps", "takeaway"]
         has_conclusion = any(keyword in content.lower() for keyword in conclusion_keywords)
         if not has_conclusion:
             issues.append("Missing conclusion section")
             score -= 1.5
 
-        # 4. Check for practical examples/lists
+        # 5. Check for practical examples/lists
         has_examples = "- " in content or "* " in content or "1. " in content
         if not has_examples:
             issues.append("Missing practical examples or bullet points")
             score -= 1.0
 
-        # 5. Check for call-to-action
-        cta_keywords = [
-            "ready",
-            "start",
-            "begin",
-            "try",
-            "implement",
-            "action",
-            "next",
-            "discover",
-            "learn",
-        ]
+        # 6. Check for call-to-action
+        cta_keywords = ["ready", "start", "begin", "try", "implement", "action", "next"]
         has_cta = any(keyword in content.lower() for keyword in cta_keywords)
         if not has_cta:
             issues.append("Missing call-to-action")
             score -= 0.5
 
-        # 6. Check for topic mentions (relevance)
+        # 7. Check for topic mentions (relevance)
         topic_words = topic.lower().split()[:3]  # First 3 words
         topic_mentions = sum(1 for word in topic_words if word in content.lower())
         if topic_mentions < 2:
@@ -310,32 +259,23 @@ class AIContentGenerator:
             pm = get_prompt_manager()
             logger.info("✓ Prompt manager loaded successfully")
         except Exception as e:
-            logger.error(f"[_generate_blog_post] Failed to load prompt manager: {e}", exc_info=True)
+            logger.error(f"Failed to load prompt manager: {e}")
             raise
 
         # Fetch prompts from centralized manager instead of hardcoding
         # This ensures all prompts are versioned, documented, and easy to maintain
         try:
             logger.info("📝 Loading system prompt...")
-            # Calculate min/max word counts for prompt
-            min_words = int(target_length * 0.9)
-            max_words = int(target_length * 1.1)
-
             system_prompt = pm.get_prompt(
                 "blog_generation.blog_system_prompt",
                 style=style,
                 tone=tone,
                 target_length=target_length,
-                min_words=min_words,
-                max_words=max_words,
                 tags=", ".join(tags) if tags else "general",
             )
             logger.info(f"✓ System prompt loaded ({len(system_prompt)} chars)")
-            logger.info(
-                f"   Word count requirement: {min_words}-{max_words} words (target: {target_length})"
-            )
         except Exception as e:
-            logger.error(f"[_generate_blog_post] Failed to load system prompt: {e}", exc_info=True)
+            logger.error(f"Failed to load system prompt: {e}")
             raise
 
         try:
@@ -349,20 +289,17 @@ class AIContentGenerator:
             generation_prompt = pm.get_prompt(
                 "blog_generation.initial_draft",
                 topic=topic,
-                target_audience=style or "General",
-                primary_keyword=tags[0] if tags else topic,
-                research_context="No research data provided",
-                internal_link_titles=internal_links_str or "",
-                word_count=target_length or 1500,
+                target_audience=style,
+                primary_keyword=tags[0] if tags else "",
+                research_context="",
+                internal_link_titles=internal_links_str,
+                word_count=target_length,
                 style=style,
                 tone=tone,
             )
             logger.info(f"✓ Generation prompt loaded ({len(generation_prompt)} chars)")
         except Exception as e:
-            logger.error(
-                f"[_generate_blog_post] Failed to load generation prompt: {type(e).__name__}: {e}",
-                exc_info=True,
-            )
+            logger.error(f"Failed to load generation prompt: {type(e).__name__}: {e}")
             raise
 
         # Create a callable refinement prompt getter
@@ -376,9 +313,7 @@ class AIContentGenerator:
                     target_audience=style,
                 )
             except Exception as e:
-                logger.error(
-                    f"[_get_refinement_prompt] Failed to load refinement prompt: {e}", exc_info=True
-                )
+                logger.error(f"Failed to load refinement prompt: {e}")
                 raise
 
         # Track metrics
@@ -408,9 +343,6 @@ class AIContentGenerator:
                 },
             },
         }
-
-        # NEW: Track refinement feedback history to accumulate feedback across attempts
-        refinement_feedback_history = []  # List of {attempt, feedback, issues, score}
 
         start_time = time.time()
 
@@ -450,13 +382,28 @@ class AIContentGenerator:
             )
             metrics["model_selection_log"]["decision_tree"]["gemini_attempted"] = True
             try:
-                # Import google-genai (official SDK — google.generativeai removed, see Issue #404)
-                import google.genai as genai  # type: ignore
+                # Import google-genai library (new package, replaces deprecated google-generativeai)
+                use_new_sdk = False
+                try:
+                    import google.genai as genai
 
-                logger.info("Using google.genai for Gemini API calls")
+                    use_new_sdk = True
+                    logger.info("✅ Using google.genai (new SDK) for Gemini API calls")
+                except ImportError:
+                    # Fallback to older google.generativeai if new one not available
+                    import google.generativeai as genai
 
-                # New google.genai SDK: API key passed per-client, not via global configure()
-                genai.api_key = ProviderChecker.get_gemini_api_key()  # type: ignore[attr-defined]
+                    logger.warning(
+                        "⚠️  Using google.generativeai (legacy/deprecated SDK) - upgrade to google-genai for better support"
+                    )
+
+                # Configure API key based on SDK version
+                if use_new_sdk:
+                    # New google.genai SDK: Pass API key directly
+                    genai.api_key = ProviderChecker.get_gemini_api_key()
+                else:
+                    # Old google.generativeai SDK: Use configure() method
+                    genai.configure(api_key=ProviderChecker.get_gemini_api_key())
 
                 # Map generic model names to actual Gemini API models
                 model_name = (
@@ -495,193 +442,122 @@ class AIContentGenerator:
 
                 # Run blocking Gemini call in a thread to avoid blocking the event loop
                 def _gemini_generate():
-                    # Calculate max tokens: For Gemini, use higher multiplier for better word count coverage
-                    # Gemini uses different tokenization: ~3.5-4 tokens per word for markdown with formatting
+                    # Calculate max tokens: For Gemini, use MUCH higher multiplier for large outputs
+                    # Gemini sometimes throttles long outputs, so we need to give it extra room
+                    # Using 6x multiplier to ensure Gemini has enough token budget to complete full response
                     max_tokens = int(
-                        target_length * 4.5
-                    )  # Increased from 3.0 to 4.5 for better completion
+                        target_length * 6.0
+                    )  # Using 6x for large outputs (3000+ words)
+                    # Cap at Gemini's reasonable maximum to avoid API issues
+                    max_tokens = min(max_tokens, 32000)  # Gemini-pro-15 supports up to 32k output
                     logger.debug(
-                        f"   Gemini max_output_tokens: {max_tokens} (target_length: {target_length}, multiplier: 4.5x)"
+                        f"   Gemini max_output_tokens: {max_tokens} (target_length: {target_length}, multiplier: 6.0x, capped at 32k)"
                     )
 
-                    # google.genai SDK: Use client.models.generate_content()
-                    client = genai.Client(api_key=ProviderChecker.get_gemini_api_key())  # type: ignore[attr-defined]
-                    response = client.models.generate_content(
-                        model=f"models/{model_name}",
-                        contents=f"{system_prompt}\n\n{generation_prompt}",
-                        config={
-                            "max_output_tokens": max_tokens,
-                            "temperature": 0.7,
-                        },
-                    )
+                    if use_new_sdk:
+                        # New google.genai SDK: Use client.models.generate_content()
+                        client = genai.Client(api_key=ProviderChecker.get_gemini_api_key())
+                        response = client.models.generate_content(
+                            model=f"models/{model_name}",
+                            contents=f"{system_prompt}\n\n{generation_prompt}",
+                            config={
+                                "max_output_tokens": max_tokens,
+                                "temperature": 0.7,
+                            },
+                        )
+                    else:
+                        # Old google.generativeai SDK: Use GenerativeModel
+                        model = genai.GenerativeModel(model_name)
+                        response = model.generate_content(
+                            f"{system_prompt}\n\n{generation_prompt}",
+                            generation_config=genai.types.GenerationConfig(
+                                max_output_tokens=max_tokens,
+                                temperature=0.7,
+                            ),
+                        )
 
                     return response
 
                 response = await asyncio.to_thread(_gemini_generate)
 
-                # Extract text from google.genai SDK response
+                # Extract text from response - handle both old and new SDK response formats
                 generated_content = ""
                 try:
-                    if hasattr(response, "text"):
-                        generated_content = response.text or ""
-                    elif hasattr(response, "content"):
-                        generated_content = response.content or ""  # type: ignore[reportAttributeAccessIssue]
+                    if use_new_sdk:
+                        # New google.genai SDK: response.text
+                        if hasattr(response, "text"):
+                            generated_content = response.text or ""
+                        elif hasattr(response, "content"):
+                            generated_content = response.content or ""
+                        else:
+                            logger.error(
+                                f"Gemini response missing text/content attribute. Keys: {dir(response)}"
+                            )
+                            generated_content = ""
                     else:
-                        logger.error(
-                            f"Gemini response missing text/content attribute. Keys: {dir(response)}"
-                        )
+                        # Old google.generativeai SDK: response.text
+                        if hasattr(response, "text"):
+                            generated_content = response.text or ""
+                        else:
+                            logger.error(
+                                f"Gemini response missing text attribute. Type: {type(response)}"
+                            )
+                            generated_content = ""
                 except AttributeError as e:
-                    logger.error(
-                        f"Failed to extract text from Gemini response: {e}",
-                        exc_info=True,
-                    )
+                    logger.error(f"Failed to extract text from Gemini response: {e}")
+                    generated_content = ""
 
                 if generated_content and len(generated_content) > 100:
                     validation = self._validate_content(generated_content, topic, target_length)
+
+                    # Check if content is significantly under target (less than 60% of target)
                     word_count = len(generated_content.split())
-                    metrics["validation_results"].append(
-                        {
-                            "attempt": metrics["generation_attempts"],
-                            "score": validation.quality_score,
-                            "issues": validation.issues,
-                            "passed": validation.is_valid,
-                        }
-                    )
+                    min_acceptable = int(target_length * 0.6)
 
-                    logger.info(
-                        f"   📊 Quality Score: {validation.quality_score:.1f}/{self.quality_threshold} | Words: {word_count} | Issues: {len(validation.issues)}"
-                    )
+                    if word_count < min_acceptable:
+                        logger.warning(
+                            f"⚠️ Gemini returned short content: {word_count} words (target: {target_length}, minimum acceptable: {min_acceptable})"
+                        )
+                        attempts.append(
+                            (
+                                "Gemini (undershoot)",
+                                f"Content too short: {word_count} words vs {target_length} target",
+                            )
+                        )
+                        # Continue to next provider instead of accepting short content
+                        pass  # Fall through to try next provider
+                    else:
+                        # Content is acceptable length
+                        metrics["validation_results"].append(
+                            {
+                                "attempt": metrics["generation_attempts"],
+                                "score": validation.quality_score,
+                                "issues": validation.issues,
+                                "passed": validation.is_valid,
+                            }
+                        )
 
-                    if validation.issues:
-                        for issue in validation.issues:
-                            logger.debug(f"      ⚠️  {issue}")
-
-                    # If content passes QA, return it
-                    if validation.is_valid:
-                        logger.info(f"   ✅ Content APPROVED by QA")
                         metrics["model_used"] = f"Google Gemini ({model_name})"
-                        metrics["models_used_by_phase"]["draft"] = metrics["model_used"]
+                        metrics["models_used_by_phase"]["draft"] = metrics[
+                            "model_used"
+                        ]  # NEW: Track phase
                         metrics["final_quality_score"] = validation.quality_score
                         metrics["generation_time_seconds"] = time.time() - start_time
                         metrics["model_selection_log"]["decision_tree"]["gemini_succeeded"] = True
                         logger.info(
-                            f"✓ Content generated with user-selected Gemini: {validation.feedback}"
+                            f"✓ Content generated with Gemini: {validation.feedback} ({word_count} words)"
                         )
                         return generated_content, metrics["model_used"], metrics
-
-                    # If content fails QA but we have refinement attempts left, try to improve
-                    if metrics["refinement_attempts"] < self.max_refinement_attempts:
-                        logger.info(
-                            f"   ⚙️  Content below threshold. Refining ({metrics['refinement_attempts'] + 1}/{self.max_refinement_attempts})..."
-                        )
-
-                        metrics["refinement_attempts"] += 1
-                        refinement_prompt = get_refinement_prompt(
-                            feedback=validation.feedback,
-                            issues=validation.issues,
-                            content=generated_content,
-                        )
-
-                        # Try to refine with Gemini (always uses google.genai Client SDK)
-                        max_tokens_refinement = int(target_length * 4.5)
-                        try:
-                            client = genai.Client(api_key=ProviderChecker.get_gemini_api_key())  # type: ignore[attr-defined]
-                            refinement_response = client.models.generate_content(
-                                model=f"models/{model_name}",
-                                contents=f"{system_prompt}\n\n{refinement_prompt}",
-                                config={
-                                    "max_output_tokens": max_tokens_refinement,
-                                    "temperature": 0.7,
-                                },
-                            )
-
-                            refined_content = (
-                                refinement_response.text
-                                if hasattr(refinement_response, "text")
-                                else refinement_response.content  # type: ignore[union-attr]
-                            )
-
-                            if refined_content and len(refined_content) > 100:
-                                logger.info(
-                                    f"   ✓ Refined content generated: {len(refined_content)} characters"
-                                )
-
-                                # Validate refined content
-                                logger.info(f"   🔍 Validating refined content...")
-                                refined_validation = self._validate_content(
-                                    refined_content, topic, target_length
-                                )
-                                metrics["validation_results"].append(
-                                    {
-                                        "attempt": metrics["generation_attempts"],
-                                        "refinement": metrics["refinement_attempts"],
-                                        "score": refined_validation.quality_score,
-                                        "issues": refined_validation.issues,
-                                        "passed": refined_validation.is_valid,
-                                    }
-                                )
-
-                                refined_word_count = len(refined_content.split())
-                                logger.info(
-                                    f"   📊 Refined Quality: {refined_validation.quality_score:.1f}/{self.quality_threshold} | Words: {refined_word_count} | Issues: {len(refined_validation.issues)}"
-                                )
-
-                                if refined_validation.is_valid:
-                                    logger.info(f"   ✅ Refined content APPROVED")
-                                    metrics["model_used"] = f"Google Gemini ({model_name}, refined)"
-                                    metrics["models_used_by_phase"]["draft"] = metrics["model_used"]
-                                    metrics["final_quality_score"] = (
-                                        refined_validation.quality_score
-                                    )
-                                    metrics["generation_time_seconds"] = time.time() - start_time
-                                    metrics["model_selection_log"]["decision_tree"][
-                                        "gemini_succeeded"
-                                    ] = True
-                                    logger.info(f"\n{'='*80}")
-                                    logger.info(f"✅ GENERATION COMPLETE (with refinement)")
-                                    logger.info(f"   Model: {metrics['model_used']}")
-                                    logger.info(
-                                        f"   Quality: {refined_validation.quality_score:.1f}/{self.quality_threshold}"
-                                    )
-                                    logger.info(
-                                        f"   Time: {metrics['generation_time_seconds']:.1f}s"
-                                    )
-                                    logger.info(f"{'='*80}\n")
-                                    return refined_content, metrics["model_used"], metrics
-
-                                generated_content = refined_content  # Use refined for next check
-                        except Exception as refine_error:
-                            logger.error(
-                                f"[_generate_blog_post] Refinement failed: {refine_error}",
-                                exc_info=True,
-                            )
-
-                    # If still not passing after refinement, return best attempt with warning
+                else:
                     logger.warning(
-                        f"   ⚠️  Content below quality threshold but no more refinements available"
+                        f"Gemini returned empty or very short content: {len(generated_content) if generated_content else 0} chars"
                     )
-                    metrics["model_used"] = f"Google Gemini ({model_name}, below threshold)"
-                    metrics["models_used_by_phase"]["draft"] = metrics["model_used"]
-                    metrics["final_quality_score"] = validation.quality_score
-                    metrics["generation_time_seconds"] = time.time() - start_time
-                    metrics["model_selection_log"]["decision_tree"]["gemini_succeeded"] = True
-                    logger.info(f"\n{'='*80}")
-                    logger.warning(f"⚠️  GENERATION COMPLETE (below quality threshold)")
-                    logger.info(f"   Model: {metrics['model_used']}")
-                    logger.info(
-                        f"   Quality: {validation.quality_score:.1f}/{self.quality_threshold}"
-                    )
-                    logger.info(f"   Time: {metrics['generation_time_seconds']:.1f}s")
-                    logger.info(f"{'='*80}\n")
-                    return generated_content, metrics["model_used"], metrics
+                    attempts.append(("Gemini", "Empty or very short response"))
 
             except Exception as e:
                 import traceback
 
-                logger.error(
-                    f"[_gemini_generate] User-selected Gemini failed: {type(e).__name__}: {str(e)}",
-                    exc_info=True,
-                )
+                logger.warning(f"User-selected Gemini failed: {type(e).__name__}: {str(e)}")
                 logger.debug(f"Gemini error traceback: {traceback.format_exc()}")
                 metrics["model_selection_log"]["decision_tree"]["gemini_error"] = str(e)[
                     :200
@@ -829,67 +705,9 @@ class AIContentGenerator:
                                     f"      ⚙️  Content below threshold. Refining ({metrics['refinement_attempts'] + 1}/{self.max_refinement_attempts})..."
                                 )
 
-                                # NEW: Accumulate feedback from this attempt
-                                refinement_feedback_history.append(
-                                    {
-                                        "attempt": metrics["refinement_attempts"] + 1,
-                                        "feedback": validation.feedback,
-                                        "issues": validation.issues,
-                                        "score": validation.quality_score,
-                                    }
-                                )
-
-                                # NEW: Check if improvement is worth continuing
-                                if len(refinement_feedback_history) >= 2:
-                                    latest_score = refinement_feedback_history[-1]["score"]
-                                    previous_score = refinement_feedback_history[-2]["score"]
-                                    score_improvement = latest_score - previous_score
-
-                                    if score_improvement < 0.5:  # Less than 0.5 point improvement
-                                        logger.info(
-                                            f"      ⏹️  Stopping refinement: minimal improvement ({score_improvement:.2f} points). "
-                                            f"Best attempt: {latest_score:.1f}/10"
-                                        )
-                                        # Return best attempt so far
-                                        metrics["model_used"] = f"Ollama - {model_name}"
-                                        metrics["models_used_by_phase"]["draft"] = metrics[
-                                            "model_used"
-                                        ]
-                                        metrics["final_quality_score"] = latest_score
-                                        metrics["generation_time_seconds"] = (
-                                            time.time() - start_time
-                                        )
-                                        logger.info(f"\n{'='*80}")
-                                        logger.info(
-                                            f"⚠️  GENERATION COMPLETE (stops refinement due to minimal improvement)"
-                                        )
-                                        logger.info(f"   Model: {metrics['model_used']}")
-                                        logger.info(
-                                            f"   Quality: {latest_score:.1f}/{self.quality_threshold}"
-                                        )
-                                        logger.info(
-                                            f"   Time: {metrics['generation_time_seconds']:.1f}s"
-                                        )
-                                        logger.info(f"{'='*80}\n")
-                                        return generated_content, metrics["model_used"], metrics
-
-                                # BUILD ACCUMULATED FEEDBACK STRING
-                                accumulated_feedback = "REFINEMENT HISTORY:\n" + "\n".join(
-                                    [
-                                        f"Attempt {item['attempt']}: Score {item['score']:.1f}/10\n"
-                                        f"  Feedback: {item['feedback']}\n"
-                                        f"  Issues: {', '.join(item['issues']) if item['issues'] else 'None'}"
-                                        for item in refinement_feedback_history
-                                    ]
-                                )
-
-                                logger.debug(
-                                    f"Accumulated feedback for refinement:\n{accumulated_feedback}"
-                                )
-
                                 metrics["refinement_attempts"] += 1
                                 refinement_prompt = get_refinement_prompt(
-                                    feedback=accumulated_feedback,  # ← CHANGED: Use ALL accumulated feedback
+                                    feedback=validation.feedback,
                                     issues=validation.issues,
                                     content=generated_content,
                                 )
@@ -997,23 +815,18 @@ class AIContentGenerator:
                     except asyncio.TimeoutError as e:
                         # Explicitly catch timeout - model too slow or server unresponsive
                         error_msg = f"Timeout (120s exceeded) with {model_name}"
-                        logger.error(
-                            f"Ollama model {model_name} timed out: {error_msg}", exc_info=True
-                        )
+                        logger.warning(f"Ollama model {model_name} timed out: {error_msg}")
                         attempts.append(("Ollama", error_msg))
                         continue
                     except Exception as e:
                         # Catch other errors (500 errors, connection issues, etc.)
                         error_msg = str(e)[:150]  # Truncate long error messages
-                        logger.error(
-                            f"[_gemini_generate] Ollama model {model_name} failed: {error_msg}",
-                            exc_info=True,
-                        )
+                        logger.warning(f"Ollama model {model_name} failed: {error_msg}")
                         attempts.append(("Ollama", f"{model_name}: {error_msg}"))
                         continue
 
             except Exception as e:
-                logger.error(f"[_gemini_generate] Ollama generation failed: {e}", exc_info=True)
+                logger.warning(f"Ollama generation failed: {e}")
                 if not attempts:  # Only append if attempts list is still empty
                     attempts.append(("Ollama", str(e)[:150]))
 
@@ -1072,19 +885,14 @@ class AIContentGenerator:
                                 return generated_content, metrics["model_used"], metrics
 
                     except asyncio.TimeoutError:
-                        logger.error(f"HuggingFace model {model_id} timed out", exc_info=True)
+                        logger.debug(f"HuggingFace model {model_id} timed out")
                         continue
                     except Exception as e:
-                        logger.error(
-                            f"[_gemini_generate] HuggingFace model {model_id} failed: {e}",
-                            exc_info=True,
-                        )
+                        logger.debug(f"HuggingFace model {model_id} failed: {e}")
                         continue
 
             except Exception as e:
-                logger.error(
-                    f"[_gemini_generate] HuggingFace generation failed: {e}", exc_info=True
-                )
+                logger.warning(f"HuggingFace generation failed: {e}")
                 attempts.append(("HuggingFace", str(e)))
 
         # 3. Fall back to Google Gemini (paid, but reliable)
@@ -1096,29 +904,64 @@ class AIContentGenerator:
             logger.info(f"   ├─ Model: gemini-2.5-flash")
             logger.info(f"   └─ Status: Initializing...\n")
             try:
-                # google-genai SDK (official replacement for google-generativeai, see Issue #404)
-                import google.genai as genai  # type: ignore
+                # Try the updated Gemini API format
+                try:
+                    # Import google.generativeai library (stable SDK)
+                    import google.generativeai as genai
 
-                logger.debug("Using google.genai SDK for Gemini API calls")
-                _gemini_client = genai.Client(api_key=ProviderChecker.get_gemini_api_key())  # type: ignore[attr-defined]
-                logger.debug("Gemini client initialized")
+                    logger.debug("Using google.generativeai (stable SDK)")
+                    use_new_sdk = False
+                except ImportError:
+                    # Fallback to newer google.genai if available
+                    try:
+                        import google.genai as genai
+
+                        use_new_sdk = True
+                        logger.debug("Using google.genai (new SDK)")
+                    except ImportError as e:
+                        raise ImportError(
+                            "Neither google.generativeai nor google.genai found"
+                        ) from e
+                logger.debug(f"Configuring Gemini with API key...")
+                if use_new_sdk:
+                    genai.api_key = ProviderChecker.get_gemini_api_key()
+                    client = genai.Client(api_key=ProviderChecker.get_gemini_api_key())
+                    logger.debug(f"✓ Gemini client initialized (new SDK)")
+                else:
+                    genai.configure(api_key=ProviderChecker.get_gemini_api_key())
+                    # Use model from environment or default to latest flash
+                    gemini_model_name = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash")
+                    model = genai.GenerativeModel(gemini_model_name)
+                    logger.debug(f"✓ Gemini model initialized (legacy SDK): {gemini_model_name}")
 
                 metrics["generation_attempts"] += 1
                 logger.info(f"   Generating content...")
                 # Calculate max tokens for Claude/fallback generation - 2.5x multiplier for full content
                 max_tokens_fallback = int(target_length * 3.0)
 
-                # google.genai SDK: Use client.models.generate_content()
-                response = _gemini_client.models.generate_content(
-                    model="models/gemini-2.5-flash",
-                    contents=f"{system_prompt}\n\n{generation_prompt}",
-                    config={
-                        "max_output_tokens": max_tokens_fallback,
-                        "temperature": 0.7,
-                    },
-                )
+                if use_new_sdk:
+                    # New google.genai SDK
+                    # Use model from environment or default to latest flash
+                    gemini_model_name = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash")
+                    response = client.models.generate_content(
+                        model=f"models/{gemini_model_name}",
+                        contents=f"{system_prompt}\n\n{generation_prompt}",
+                        config={
+                            "max_output_tokens": max_tokens_fallback,
+                            "temperature": 0.7,
+                        },
+                    )
+                else:
+                    # Old google.generativeai SDK
+                    response = model.generate_content(
+                        f"{system_prompt}\n\n{generation_prompt}",
+                        generation_config=genai.types.GenerationConfig(
+                            max_output_tokens=max_tokens_fallback,
+                            temperature=0.7,
+                        ),
+                    )
 
-                generated_content = response.text or ""
+                generated_content = response.text
                 logger.info(f"   Generated {len(generated_content)} characters")
                 if generated_content and len(generated_content) > 100:
                     # Self-check: Validate content quality
@@ -1150,13 +993,15 @@ class AIContentGenerator:
                 # Fallback for older SDK versions - try client API
                 logger.warning(f"Gemini SDK format not supported: {e}")
                 attempts.append(("Gemini", f"SDK error: {str(e)[:100]}"))
+
+            except ImportError as e:
+                logger.warning(f"google.generativeai not installed: {e}")
+                attempts.append(("Gemini", "SDK not installed"))
             except Exception as e:
-                logger.error(f"[_gemini_generate] Gemini generation failed: {e}", exc_info=True)
+                logger.warning(f"Gemini generation failed: {e}")
                 attempts.append(("Gemini", str(e)[:150]))
 
-        # If all models fail, use fallback.
-        # Log at ERROR and capture in Sentry so an alert fires immediately —
-        # fallback content is a stub template, NOT AI-generated output (issue #556).
+        # If all models fail, use fallback
         logger.error(f"\n{'='*80}")
         logger.error(f"❌ ALL AI MODELS FAILED - Using fallback template")
         logger.error(f"{'='*80}")
@@ -1170,18 +1015,6 @@ class AIContentGenerator:
             f"   - HuggingFace: {ProviderChecker.is_huggingface_available()} (token available)"
         )
         logger.error(f"{'='*80}\n")
-
-        # Capture in Sentry as a distinct message so alert rules can target it.
-        try:
-            import sentry_sdk  # pylint: disable=import-outside-toplevel
-            if sentry_sdk.is_initialized():  # type: ignore[attr-defined]
-                sentry_sdk.capture_message(  # type: ignore[attr-defined]
-                    "ALL AI MODELS FAILED — serving fallback template content",
-                    level="error",
-                    extras={"attempts": [{"provider": p, "error": e} for p, e in attempts]},
-                )
-        except Exception:  # pylint: disable=broad-except
-            pass  # Never let Sentry integration block content delivery
 
         fallback_content = self._generate_fallback_content(topic, style, tone, tags)
         metrics["model_used"] = "Fallback (no AI models available)"
@@ -1255,7 +1088,7 @@ Take action today—the insights you gain will compound over time.
 ---
 
 *Tags: {tag_str}*
-*Last updated: {datetime.now(timezone.utc).strftime('%Y-%m-%d')}*
+*Last updated: {os.popen('date').read().strip()}*
 """
 
 
@@ -1280,8 +1113,8 @@ async def test_generation():
 
     logger.info("Testing content generation...")
     logger.debug(f"Ollama available: {generator.ollama_available}")
-    logger.debug(f"HuggingFace token: {'✓' if getattr(generator, 'hf_token', None) else '✗'}")
-    logger.debug(f"Gemini key: {'✓' if getattr(generator, 'gemini_key', None) else '✗'}")
+    logger.debug(f"HuggingFace token: {'✓' if generator.hf_token else '✗'}")
+    logger.debug(f"Gemini key: {'✓' if generator.gemini_key else '✗'}")
 
     logger.info("Generating blog post...")
     content, model, metrics = await generator.generate_blog_post(

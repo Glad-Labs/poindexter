@@ -13,6 +13,7 @@ Defines:
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -101,7 +102,9 @@ class PhaseResult(BaseModel):
 class CustomWorkflow(BaseModel):
     """Complete custom workflow definition"""
 
-    id: Optional[str] = Field(None, description="Workflow UUID (auto-generated)")
+    id: Optional[str | UUID] = Field(
+        None, description="Workflow UUID (auto-generated)"
+    )
     name: str = Field(..., description="Workflow name (e.g., 'My Blog Pipeline')")
     description: str = Field(..., description="Workflow description and purpose")
 
