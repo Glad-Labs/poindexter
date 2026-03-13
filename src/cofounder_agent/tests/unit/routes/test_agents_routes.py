@@ -56,6 +56,21 @@ def _build_app_no_orchestrator() -> FastAPI:
     return app
 
 
+def _build_app_unauthenticated(orchestrator=None) -> FastAPI:
+    """App where get_current_user raises 401 — simulates missing/invalid token."""
+    from fastapi import HTTPException as _HTTPException
+
+    def _reject():
+        raise _HTTPException(status_code=401, detail="Not authenticated")
+
+    app = FastAPI()
+    app.include_router(router)
+    orch = orchestrator if orchestrator is not None else _make_orchestrator()
+    app.dependency_overrides[get_orchestrator] = lambda: orch
+    app.dependency_overrides[get_current_user] = _reject
+    return app
+
+
 # ---------------------------------------------------------------------------
 # GET /api/agents/status
 # ---------------------------------------------------------------------------
@@ -308,3 +323,46 @@ class TestGetAgentSystemHealth:
         client = TestClient(_build_app_no_orchestrator(), raise_server_exceptions=False)
         resp = client.get("/api/agents/health")
         assert resp.status_code == 503
+
+
+# ---------------------------------------------------------------------------
+# Auth guard — all endpoints require authentication
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestAgentRoutesRequireAuth:
+    """Verify that each endpoint returns 401 when no auth token is provided."""
+
+    def test_all_agents_status_requires_auth(self):
+        client = TestClient(_build_app_unauthenticated(), raise_server_exceptions=False)
+        resp = client.get("/api/agents/status")
+        assert resp.status_code == 401
+
+    def test_agent_status_requires_auth(self):
+        client = TestClient(_build_app_unauthenticated(), raise_server_exceptions=False)
+        resp = client.get("/api/agents/content/status")
+        assert resp.status_code == 401
+
+    def test_send_command_requires_auth(self):
+        client = TestClient(_build_app_unauthenticated(), raise_server_exceptions=False)
+        resp = client.post(
+            "/api/agents/content/command",
+            json={"command": "execute"},
+        )
+        assert resp.status_code == 401
+
+    def test_get_logs_requires_auth(self):
+        client = TestClient(_build_app_unauthenticated(), raise_server_exceptions=False)
+        resp = client.get("/api/agents/logs")
+        assert resp.status_code == 401
+
+    def test_memory_stats_requires_auth(self):
+        client = TestClient(_build_app_unauthenticated(), raise_server_exceptions=False)
+        resp = client.get("/api/agents/memory/stats")
+        assert resp.status_code == 401
+
+    def test_health_requires_auth(self):
+        client = TestClient(_build_app_unauthenticated(), raise_server_exceptions=False)
+        resp = client.get("/api/agents/health")
+        assert resp.status_code == 401

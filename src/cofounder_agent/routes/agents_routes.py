@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
+from routes.auth_unified import get_current_user
 from schemas.agent_schemas import (
     AgentCommand,
     AgentCommandResult,
@@ -80,7 +81,10 @@ def format_agent_status(agent_name: str, orchestrator) -> AgentStatus:
 
 
 @router.get("/status", response_model=AllAgentsStatus)
-async def get_all_agents_status(orchestrator=Depends(get_orchestrator)):
+async def get_all_agents_status(
+    orchestrator=Depends(get_orchestrator),
+    current_user: dict = Depends(get_current_user),
+):
     """
     Get status of all AI agents
 
@@ -163,7 +167,11 @@ async def get_all_agents_status(orchestrator=Depends(get_orchestrator)):
 
 
 @router.get("/{agent_name}/status", response_model=AgentStatus)
-async def get_agent_status(agent_name: str, orchestrator=Depends(get_orchestrator)):
+async def get_agent_status(
+    agent_name: str,
+    orchestrator=Depends(get_orchestrator),
+    current_user: dict = Depends(get_current_user),
+):
     """
     Get status of a specific agent
 
@@ -205,7 +213,10 @@ async def get_agent_status(agent_name: str, orchestrator=Depends(get_orchestrato
 
 @router.post("/{agent_name}/command", response_model=AgentCommandResult)
 async def send_agent_command(
-    agent_name: str, command: AgentCommand, orchestrator=Depends(get_orchestrator)
+    agent_name: str,
+    command: AgentCommand,
+    orchestrator=Depends(get_orchestrator),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Send a command to a specific agent
@@ -274,6 +285,7 @@ async def get_agent_logs(
     ),
     limit: int = Query(50, ge=1, le=500, description="Maximum number of logs to return"),
     offset: int = Query(0, ge=0, description="Number of logs to skip"),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get agent logs with optional filtering
@@ -331,7 +343,10 @@ async def get_agent_logs(
 
 
 @router.get("/memory/stats", response_model=MemoryStats)
-async def get_memory_stats(orchestrator=Depends(get_orchestrator)):
+async def get_memory_stats(
+    orchestrator=Depends(get_orchestrator),
+    current_user: dict = Depends(get_current_user),
+):
     """
     Get agent memory system statistics
 
@@ -403,7 +418,10 @@ async def get_memory_stats(orchestrator=Depends(get_orchestrator)):
 
 
 @router.get("/health", response_model=AgentHealth)
-async def get_agent_system_health(orchestrator=Depends(get_orchestrator)):
+async def get_agent_system_health(
+    orchestrator=Depends(get_orchestrator),
+    current_user: dict = Depends(get_current_user),
+):
     """
     Get overall agent system health
 
