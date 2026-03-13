@@ -135,3 +135,50 @@ describe('NotificationCenter', () => {
     expect(screen.queryByText('About to be removed')).not.toBeInTheDocument();
   });
 });
+
+// ---------------------------------------------------------------------------
+// a11y — issue #758: notification history button aria-label
+// ---------------------------------------------------------------------------
+
+describe('NotificationCenter — a11y: notification history button (issue #758)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSubscribe.mockReturnValue(vi.fn());
+  });
+
+  it('history button has an aria-label when there are no notifications', () => {
+    render(<NotificationCenter />);
+    const btn = screen.getByRole('button', {
+      name: /Notification history, 0 notifications/i,
+    });
+    expect(btn).toBeInTheDocument();
+  });
+
+  it('history button aria-label updates with notification count', () => {
+    let listener;
+    mockSubscribe.mockImplementation((fn) => {
+      listener = fn;
+      return vi.fn();
+    });
+
+    render(<NotificationCenter />);
+
+    act(() => {
+      listener({
+        action: 'add',
+        notification: {
+          id: 'n1',
+          type: 'info',
+          title: 'Test',
+          message: 'Test notif',
+          timestamp: new Date(),
+        },
+      });
+    });
+
+    const btn = screen.getByRole('button', {
+      name: /Notification history, 1 notification$/i,
+    });
+    expect(btn).toBeInTheDocument();
+  });
+});

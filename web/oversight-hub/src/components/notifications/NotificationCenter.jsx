@@ -147,6 +147,7 @@ export function NotificationCenter() {
         {/* Notification History Button */}
         <IconButton
           onClick={() => setShowHistory(true)}
+          aria-label={`Notification history, ${notifications.length} notification${notifications.length !== 1 ? 's' : ''}`}
           sx={{
             backgroundColor: '#f5f5f5',
             '&:hover': {
@@ -154,7 +155,11 @@ export function NotificationCenter() {
             },
           }}
         >
-          <Badge badgeContent={notifications.length} color="error">
+          <Badge
+            badgeContent={notifications.length}
+            color="error"
+            aria-hidden="true"
+          >
             <HistoryIcon />
           </Badge>
         </IconButton>
