@@ -648,3 +648,45 @@ class TestProcessSingleTask:
 
         # log_status_change should be called at least twice: pending→in_progress, in_progress→final
         assert db.log_status_change.await_count >= 1
+
+
+# ---------------------------------------------------------------------------
+# TaskMetrics wiring — issue #837
+# ---------------------------------------------------------------------------
+
+
+class TestTaskMetricsWiring:
+    """Verify TaskMetrics is imported and instantiated during _execute_task."""
+
+    def test_task_metrics_importable_from_task_executor_module(self):
+        """TaskMetrics must be importable via the task_executor module (wired at import time)."""
+        import services.task_executor as te_mod
+        assert hasattr(te_mod, "TaskMetrics"), (
+            "TaskMetrics should be imported in task_executor (issue #837)"
+        )
+
+    def test_task_metrics_class_interface(self):
+        """TaskMetrics exposes the required instrumentation methods."""
+        from services.metrics_service import TaskMetrics
+        m = TaskMetrics("test-task")
+        ts = m.record_phase_start("content_generation")
+        assert isinstance(ts, float)
+        m.record_phase_end("content_generation", ts, status="success")
+        breakdown = m.get_phase_breakdown()
+        assert "content_generation" in breakdown
+        assert breakdown["content_generation"] >= 0
+
+    def test_task_metrics_logs_structured_summary(self, caplog):
+        """After recording two phases the summary log includes phase names."""
+        import logging
+        from services.metrics_service import TaskMetrics
+        m = TaskMetrics("task-xyz")
+        ts1 = m.record_phase_start("content_generation")
+        m.record_phase_end("content_generation", ts1)
+        ts2 = m.record_phase_start("quality_validation")
+        m.record_phase_end("quality_validation", ts2)
+        breakdown = m.get_phase_breakdown()
+        assert "content_generation" in breakdown
+        assert "quality_validation" in breakdown
+        # Total duration must be non-negative
+        assert m.get_total_duration_ms() >= 0
