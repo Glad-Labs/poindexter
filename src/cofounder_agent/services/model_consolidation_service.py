@@ -689,7 +689,7 @@ class ModelConsolidationService:
                     f"❌ {provider_type.value} generation failed",
                     provider=provider_type.value,
                     error=str(e),
-, exc_info=True)
+                    exc_info=True)
                 continue
 
         # All providers failed

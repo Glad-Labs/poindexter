@@ -312,7 +312,7 @@ class WorkflowEngine:
                         context.workflow_id,
                         phase.name,
                         callback_error,
-, exc_info=True)
+                        exc_info=True)
 
             # Check if we should continue
             if phase_result.status == PhaseStatus.FAILED:
