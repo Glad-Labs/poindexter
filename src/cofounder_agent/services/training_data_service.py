@@ -294,20 +294,23 @@ class TrainingDataService:
             return 0
 
         async with self.db_pool.acquire() as conn:
-            # Remove each tag individually
-            count = 0
-            for tag in tags:
-                result = await conn.execute(
-                    """
-                    UPDATE orchestrator_training_data
-                    SET tags = array_remove(tags, $2::text),
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE execution_id = ANY($1::text[])
-                    """,
-                    execution_ids,
-                    tag,
-                )
-                count += int(result.split()[-1]) if result else 0
+            # Remove all tags in a single UPDATE using array subtraction instead of
+            # one UPDATE per tag (eliminates N+1 for large tag lists).
+            result = await conn.execute(
+                """
+                UPDATE orchestrator_training_data
+                SET tags = (
+                    SELECT COALESCE(array_agg(t), ARRAY[]::text[])
+                    FROM unnest(tags) AS t
+                    WHERE t <> ALL($2::text[])
+                ),
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE execution_id = ANY($1::text[])
+                """,
+                execution_ids,
+                tags,
+            )
+            count = int(result.split()[-1]) if result else 0
 
         return count
 
@@ -573,10 +576,17 @@ class TrainingDataService:
             "file_size": export_result["file_size"],
         }
 
-    async def list_datasets(self) -> List[Dict[str, Any]]:
-        """List all versioned datasets"""
+    async def list_datasets(self, limit: int = 500) -> List[Dict[str, Any]]:
+        """List versioned datasets, most recent version per name first.
+
+        Args:
+            limit: Maximum number of datasets to return (default 500).
+        """
         async with self.db_pool.acquire() as conn:
-            rows = await conn.fetch("SELECT * FROM training_datasets ORDER BY name, version DESC")
+            rows = await conn.fetch(
+                "SELECT * FROM training_datasets ORDER BY name, version DESC LIMIT $1",
+                limit,
+            )
 
         return [dict(row) for row in rows]
 

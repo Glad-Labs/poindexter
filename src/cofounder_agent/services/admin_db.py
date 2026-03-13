@@ -145,10 +145,14 @@ class AdminDatabase(DatabaseServiceMixin):
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(
                     """
-                    SELECT * FROM cost_logs
+                    SELECT id, task_id, user_id, phase, model, provider,
+                           input_tokens, output_tokens, total_tokens, cost_usd,
+                           quality_score, duration_ms, success, error_message,
+                           created_at, updated_at
+                    FROM cost_logs
                     WHERE task_id = $1
                     ORDER BY created_at ASC
-                """,
+                    """,
                     str(task_id),
                 )
 
