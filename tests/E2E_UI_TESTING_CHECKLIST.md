@@ -43,7 +43,7 @@ curl http://localhost:8000/health
 **✓ Record your result:**
 
 - [ ] Status: OK
-- [ ] Time: ___ ms
+- [ ] Time: \_\_\_ ms
 
 ### Step 1.3: Verify Backend Components
 
@@ -63,8 +63,8 @@ curl http://localhost:8000/api/health | jq '.'
 
 **✓ Record your result:**
 
-- [ ] Database: _____ (ok/degraded/unavailable)
-- [ ] Orchestrator: _____ (ok/degraded)
+- [ ] Database: **\_** (ok/degraded/unavailable)
+- [ ] Orchestrator: **\_** (ok/degraded)
 
 ### Step 1.4: Verify Frontend Connectivity
 
@@ -114,9 +114,9 @@ curl -X POST http://localhost:8000/api/chat \
 **✓ Record your result:**
 
 - [ ] Response received: YES / NO
-- [ ] Response time: ___ seconds
+- [ ] Response time: \_\_\_ seconds
 - [ ] Quality: Good / Medium / Poor
-- Response preview: _________________________________
+- Response preview: ****************\_****************
 
 ### Step 2.2: Multi-turn Conversation Test
 
@@ -189,9 +189,9 @@ curl http://localhost:8000/api/metrics | jq '.'
 
 **✓ Record your result:**
 
-- [ ] Total tasks: ___
-- [ ] Success rate: ___%
-- [ ] Avg execution time: ___ ms
+- [ ] Total tasks: \_\_\_
+- [ ] Success rate: \_\_\_%
+- [ ] Avg execution time: \_\_\_ ms
 
 ---
 
@@ -261,7 +261,7 @@ curl http://localhost:8000/api/metrics | jq '.'
 **✓ Record your result:**
 
 - [ ] Backend log entry visible: YES / NO
-- [ ] Loading time: ___ seconds
+- [ ] Loading time: \_\_\_ seconds
 - [ ] Response appeared in UI: YES / NO
 
 ### Step 3.4: Verify Response Display
@@ -280,7 +280,7 @@ curl http://localhost:8000/api/metrics | jq '.'
 
 - [ ] Response visible: YES / NO
 - [ ] Content quality: Good / Medium / Poor
-- [ ] Quality score (if shown): _____ / 1.0
+- [ ] Quality score (if shown): **\_** / 1.0
 
 **✓ Screenshot:**
 
@@ -313,8 +313,8 @@ curl http://localhost:8000/api/metrics | jq '.'
 **✓ Record your result:**
 
 - [ ] Submission: SUCCESS / FAILED
-- [ ] Execution time: ___ seconds
-- [ ] Content length: ___ words
+- [ ] Execution time: \_\_\_ seconds
+- [ ] Content length: \_\_\_ words
 - [ ] Quality assessment: Good / Medium / Poor
 
 ---
@@ -346,7 +346,7 @@ curl http://localhost:8000/api/metrics | jq '.'
 
 - [ ] Task composed: YES / NO
 - [ ] Parameters visible: YES / NO
-- [ ] Estimated time: ___ seconds
+- [ ] Estimated time: \_\_\_ seconds
 
 ### Step 4.2: Execute Composed Task
 
@@ -376,7 +376,7 @@ curl http://localhost:8000/api/metrics | jq '.'
 
 - [ ] Execution started: YES / NO
 - [ ] Progress updates: YES / NO
-- [ ] Total execution time: ___ seconds
+- [ ] Total execution time: \_\_\_ seconds
 - [ ] Final status: COMPLETED / FAILED
 
 ### Step 4.3: Review Generated Content
@@ -401,8 +401,8 @@ curl http://localhost:8000/api/metrics | jq '.'
 **✓ Record your result:**
 
 - [ ] Content present: YES / NO
-- [ ] Quality score: _____ / 1.0
-- [ ] Tweet count: ___
+- [ ] Quality score: **\_** / 1.0
+- [ ] Tweet count: \_\_\_
 - [ ] Overall quality: Excellent / Good / Medium / Poor
 
 ---
@@ -499,7 +499,7 @@ curl http://localhost:8000/api/metrics | jq '.'
 **✓ Record:**
 
 - [ ] Task list found: YES / NO
-- [ ] Number of tasks shown: ___
+- [ ] Number of tasks shown: \_\_\_
 - [ ] Can view details: YES / NO
 
 ### Step 6.2: Task Status Polling
@@ -545,13 +545,13 @@ curl http://localhost:8000/api/metrics | jq '.'
 
 **Action:** Time a few requests end-to-end
 
-| Request Type | Expected | Actual | Status |
-|---|---|---|---|
-| Chat (simple) | <10s | ___ s | ⬜ |
-| Chat (Ollama) | <15s | ___ s | ⬜ |
-| Task composition | <3s | ___ s | ⬜ |
-| Full pipeline | <120s | ___ s | ⬜ |
-| Results display | <1s | ___ s | ⬜ |
+| Request Type     | Expected | Actual   | Status |
+| ---------------- | -------- | -------- | ------ |
+| Chat (simple)    | <10s     | \_\_\_ s | ⬜     |
+| Chat (Ollama)    | <15s     | \_\_\_ s | ⬜     |
+| Task composition | <3s      | \_\_\_ s | ⬜     |
+| Full pipeline    | <120s    | \_\_\_ s | ⬜     |
+| Results display  | <1s      | \_\_\_ s | ⬜     |
 
 ### Step 7.2: Browser Performance
 
@@ -571,9 +571,9 @@ curl http://localhost:8000/api/metrics | jq '.'
 
 **✓ Record:**
 
-- [ ] JavaScript errors: ___
-- [ ] Network requests: ___ (for one execution)
-- [ ] Memory usage after task: ___ MB
+- [ ] JavaScript errors: \_\_\_
+- [ ] Network requests: \_\_\_ (for one execution)
+- [ ] Memory usage after task: \_\_\_ MB
 - [ ] Page responsiveness: Good / Medium / Sluggish
 
 ### Step 7.3: Network Inspection
@@ -594,10 +594,10 @@ curl http://localhost:8000/api/metrics | jq '.'
 
 **✓ Record:**
 
-- [ ] Total requests: ___
-- [ ] Failed requests: ___
-- [ ] Largest request: ___ KB
-- [ ] Slowest request: ___ ms
+- [ ] Total requests: \_\_\_
+- [ ] Failed requests: \_\_\_
+- [ ] Largest request: \_\_\_ KB
+- [ ] Slowest request: \_\_\_ ms
 
 ---
 
@@ -605,38 +605,38 @@ curl http://localhost:8000/api/metrics | jq '.'
 
 ### Checklist: All Core Features
 
-| Feature | Working | Notes |
-|---------|---------|-------|
-| Backend health | ⬜ | |
-| Chat endpoint | ⬜ | |
-| NLP composition | ⬜ | |
-| UI loads without errors | ⬜ | |
-| Natural language input | ⬜ | |
-| Response display | ⬜ | |
-| Multi-step workflow | ⬜ | |
-| Error handling | ⬜ | |
-| Real-time updates | ⬜ | |
-| No console errors | ⬜ | |
+| Feature                 | Working | Notes |
+| ----------------------- | ------- | ----- |
+| Backend health          | ⬜      |       |
+| Chat endpoint           | ⬜      |       |
+| NLP composition         | ⬜      |       |
+| UI loads without errors | ⬜      |       |
+| Natural language input  | ⬜      |       |
+| Response display        | ⬜      |       |
+| Multi-step workflow     | ⬜      |       |
+| Error handling          | ⬜      |       |
+| Real-time updates       | ⬜      |       |
+| No console errors       | ⬜      |       |
 
 ### Checklist: Performance Targets
 
-| Metric | Target | Actual | Met |
-|--------|--------|--------|-----|
-| Backend health check | <50ms | ___ ms | ⬜ |
-| Chat response | <10s | ___ s | ⬜ |
-| Task composition | <3s | ___ s | ⬜ |
-| Full execution | <120s | ___ s | ⬜ |
-| UI responsiveness | <100ms | ___ ms | ⬜ |
+| Metric               | Target | Actual    | Met |
+| -------------------- | ------ | --------- | --- |
+| Backend health check | <50ms  | \_\_\_ ms | ⬜  |
+| Chat response        | <10s   | \_\_\_ s  | ⬜  |
+| Task composition     | <3s    | \_\_\_ s  | ⬜  |
+| Full execution       | <120s  | \_\_\_ s  | ⬜  |
+| UI responsiveness    | <100ms | \_\_\_ ms | ⬜  |
 
 ### Checklist: Quality Standards
 
-| Aspect | Standard | Result | Met |
-|--------|----------|--------|-----|
-| Content relevance | 100% relevant | ___% | ⬜ |
-| No truncation | 0 truncations | ___ found | ⬜ |
-| Quality score | >0.7 | _____ | ⬜ |
-| No errors/crashes | 0 errors | ___ found | ⬜ |
-| Accessibility | Readable | Good / Fair / Poor | ⬜ |
+| Aspect            | Standard      | Result             | Met |
+| ----------------- | ------------- | ------------------ | --- |
+| Content relevance | 100% relevant | \_\_\_%            | ⬜  |
+| No truncation     | 0 truncations | \_\_\_ found       | ⬜  |
+| Quality score     | >0.7          | **\_**             | ⬜  |
+| No errors/crashes | 0 errors      | \_\_\_ found       | ⬜  |
+| Accessibility     | Readable      | Good / Fair / Poor | ⬜  |
 
 ---
 
@@ -644,9 +644,9 @@ curl http://localhost:8000/api/metrics | jq '.'
 
 ### Overall Assessment
 
-**Date Tested:** ______________  
-**Tester:** ______________  
-**Duration:** ______________  
+**Date Tested:** ******\_\_******  
+**Tester:** ******\_\_******  
+**Duration:** ******\_\_******
 
 **Backend Status:**
 
@@ -668,36 +668,36 @@ curl http://localhost:8000/api/metrics | jq '.'
 
 ### Test Summary Table
 
-| Category | Pass | Fail | Partial | Notes |
-|----------|------|------|---------|-------|
-| **Backend** | ___ | ___ | ___ | |
-| **Frontend** | ___ | ___ | ___ | |
-| **Integration** | ___ | ___ | ___ | |
-| **Performance** | ___ | ___ | ___ | |
-| **Error Handling** | ___ | ___ | ___ | |
+| Category           | Pass   | Fail   | Partial | Notes |
+| ------------------ | ------ | ------ | ------- | ----- |
+| **Backend**        | \_\_\_ | \_\_\_ | \_\_\_  |       |
+| **Frontend**       | \_\_\_ | \_\_\_ | \_\_\_  |       |
+| **Integration**    | \_\_\_ | \_\_\_ | \_\_\_  |       |
+| **Performance**    | \_\_\_ | \_\_\_ | \_\_\_  |       |
+| **Error Handling** | \_\_\_ | \_\_\_ | \_\_\_  |       |
 
 ### Issues Found
 
 **Critical Issues:**
 
-1. _________________________________
-2. _________________________________
+1. ***
+2. ***
 
 **Major Issues:**
 
-1. _________________________________
-2. _________________________________
+1. ***
+2. ***
 
 **Minor Issues:**
 
-1. _________________________________
-2. _________________________________
+1. ***
+2. ***
 
 ### Recommendations
 
-1. _________________________________
-2. _________________________________
-3. _________________________________
+1. ***
+2. ***
+3. ***
 
 ---
 

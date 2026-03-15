@@ -90,13 +90,13 @@ curl -X POST http://localhost:8000/api/chat \
 
 **Test Cases:**
 
-| Model | Command | Expected Behavior |
-|-------|---------|-------------------|
-| ollama-llama2 | `ollama-llama2` | Uses local Ollama (requires instance running at :11434) |
-| ollama-mistral | `ollama-mistral` | Uses Mistral (requires: `ollama pull mistral`) |
-| openai | `openai` | Falls back to OpenAI if OPENAI_API_KEY set |
-| claude | `claude` | Falls back to Anthropic if ANTHROPIC_API_KEY set |
-| gemini | `gemini` | Falls back to Google if GOOGLE_API_KEY set |
+| Model          | Command          | Expected Behavior                                       |
+| -------------- | ---------------- | ------------------------------------------------------- |
+| ollama-llama2  | `ollama-llama2`  | Uses local Ollama (requires instance running at :11434) |
+| ollama-mistral | `ollama-mistral` | Uses Mistral (requires: `ollama pull mistral`)          |
+| openai         | `openai`         | Falls back to OpenAI if OPENAI_API_KEY set              |
+| claude         | `claude`         | Falls back to Anthropic if ANTHROPIC_API_KEY set        |
+| gemini         | `gemini`         | Falls back to Google if GOOGLE_API_KEY set              |
 
 **Validation Checklist:**
 
@@ -151,13 +151,13 @@ curl -X POST http://localhost:8000/api/tasks/capability/compose-from-natural-lan
 
 **Test Scenarios:**
 
-| Request | Expected Task Type | Model Complexity |
-|---------|-------------------|-------------------|
-| "Write a blog post about AI" | content_generation | complex |
-| "Create a social media post" | content_generation | medium |
-| "Summarize this article..." | content_extraction | simple |
-| "Analyze market trends" | market_analysis | complex |
-| "Check compliance..." | compliance_review | critical |
+| Request                      | Expected Task Type | Model Complexity |
+| ---------------------------- | ------------------ | ---------------- |
+| "Write a blog post about AI" | content_generation | complex          |
+| "Create a social media post" | content_generation | medium           |
+| "Summarize this article..."  | content_extraction | simple           |
+| "Analyze market trends"      | market_analysis    | complex          |
+| "Check compliance..."        | compliance_review  | critical         |
 
 **Validation Checklist:**
 
@@ -254,7 +254,9 @@ curl http://localhost:8000/api/tasks/exec-uuid-456/status \
 
 ```javascript
 const taskId = 'task-abc-123';
-const ws = new WebSocket(`ws://localhost:8000/api/ws/image-generation/${taskId}`);
+const ws = new WebSocket(
+  `ws://localhost:8000/api/ws/image-generation/${taskId}`
+);
 
 ws.onopen = () => {
   console.log('Connected to task progress stream');
@@ -527,31 +529,31 @@ websocat ws://localhost:8000/ws/image-generation/test-task-123
 
 ### Response Times
 
-| Operation | Target | Actual | Status |
-|-----------|--------|--------|--------|
-| Health check | <50ms | ___ ms | ⬜ |
-| Chat response (Ollama) | <10s | ___ s | ⬜ |
-| Chat response (Claude) | <5s | ___ s | ⬜ |
-| Task composition | <3s | ___ s | ⬜ |
-| Full workflow (compose + execute) | <120s | ___ s | ⬜ |
+| Operation                         | Target | Actual    | Status |
+| --------------------------------- | ------ | --------- | ------ |
+| Health check                      | <50ms  | \_\_\_ ms | ⬜     |
+| Chat response (Ollama)            | <10s   | \_\_\_ s  | ⬜     |
+| Chat response (Claude)            | <5s    | \_\_\_ s  | ⬜     |
+| Task composition                  | <3s    | \_\_\_ s  | ⬜     |
+| Full workflow (compose + execute) | <120s  | \_\_\_ s  | ⬜     |
 
 ### Success Rates
 
-| Operation | Target | Actual | Status |
-|-----------|--------|--------|--------|
-| Chat endpoint success | 95%+ | ___% | ⬜ |
-| Composition success | 90%+ | ___% | ⬜ |
-| Execution completion | 85%+ | ___% | ⬜ |
-| UI request successful | 99%+ | ___% | ⬜ |
+| Operation             | Target | Actual  | Status |
+| --------------------- | ------ | ------- | ------ |
+| Chat endpoint success | 95%+   | \_\_\_% | ⬜     |
+| Composition success   | 90%+   | \_\_\_% | ⬜     |
+| Execution completion  | 85%+   | \_\_\_% | ⬜     |
+| UI request successful | 99%+   | \_\_\_% | ⬜     |
 
 ### Quality Metrics
 
-| Metric | Target | Actual | Status |
-|--------|--------|--------|--------|
-| Average quality score | 0.80+ | _____ | ⬜ |
-| Content relevance | 0.85+ | _____ | ⬜ |
-| Brand voice consistency | 0.80+ | _____ | ⬜ |
-| Engagement potential | 0.75+ | _____ | ⬜ |
+| Metric                  | Target | Actual | Status |
+| ----------------------- | ------ | ------ | ------ |
+| Average quality score   | 0.80+  | **\_** | ⬜     |
+| Content relevance       | 0.85+  | **\_** | ⬜     |
+| Brand voice consistency | 0.80+  | **\_** | ⬜     |
+| Engagement potential    | 0.75+  | **\_** | ⬜     |
 
 ---
 

@@ -167,7 +167,10 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_PROJECT_ID: ${{ secrets.OVERSIGHT_PROD_PROJECT_ID }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          # Oversight Hub uses CRA (REACT_APP_* prefix); env vars also managed in Vercel dashboard
+          # Oversight Hub uses Vite (VITE_* prefix).
+          # Keep REACT_APP_* aliases during transition for backward compatibility.
+          VITE_API_URL: ${{ secrets.OVERSIGHT_PROD_API_URL }}
+          VITE_GH_OAUTH_CLIENT_ID: ${{ secrets.OVERSIGHT_PROD_GH_OAUTH_CLIENT_ID }}
           REACT_APP_API_URL: ${{ secrets.OVERSIGHT_PROD_API_URL }}
           REACT_APP_GH_OAUTH_CLIENT_ID: ${{ secrets.OVERSIGHT_PROD_GH_OAUTH_CLIENT_ID }}
 

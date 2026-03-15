@@ -56,7 +56,7 @@ chmod +x run-e2e-tests.sh
 **What it tests:**
 
 - ✅ Backend health
-- ✅ Frontend availability  
+- ✅ Frontend availability
 - ✅ Chat endpoint (Ollama)
 - ✅ Multi-turn conversation
 - ✅ Fallback model testing
@@ -290,18 +290,18 @@ Fill this out after testing:
 
 **Issues Found:**
 
-1. _________________________________
-2. _________________________________
-3. _________________________________
+1. ***
+2. ***
+3. ***
 
 **Performance Results:**
 
-| Operation | Expected | Actual | Status |
-|-----------|----------|--------|--------|
-| Backend health | <50ms | ___ | ⬜ |
-| Chat response | <10s | ___ | ⬜ |
-| Full workflow | <120s | ___ | ⬜ |
-| UI responsiveness | <100ms | ___ | ⬜ |
+| Operation         | Expected | Actual | Status |
+| ----------------- | -------- | ------ | ------ |
+| Backend health    | <50ms    | \_\_\_ | ⬜     |
+| Chat response     | <10s     | \_\_\_ | ⬜     |
+| Full workflow     | <120s    | \_\_\_ | ⬜     |
+| UI responsiveness | <100ms   | \_\_\_ | ⬜     |
 
 ---
 
