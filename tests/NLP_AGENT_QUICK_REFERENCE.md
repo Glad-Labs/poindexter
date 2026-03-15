@@ -390,22 +390,22 @@ DEFAULT_MODEL_TEMPERATURE=0.7
   - [ ] ANTHROPIC_API_KEY set, OR
   - [ ] GOOGLE_API_KEY set
 - [ ] Frontend running: `npm run dev:oversight` (port 3001)
-- [ ] JWT token available (for /api/tasks/* endpoints)
+- [ ] JWT token available (for /api/tasks/\* endpoints)
 
 ---
 
 ## 🐛 Quick Troubleshooting
 
-| Issue | Solution |
-|-------|----------|
-| Chat returns 500 | Check backend logs, verify Ollama or API key |
-| "model not found" | Run `ollama pull llama2` or check API keys |
-| Composition fails | Ensure DB connected, check `/api/health` |
-| CORS error | Set REACT_APP_API_URL=<http://localhost:8000> |
-| WebSocket fails | Use correct endpoint (no /api prefix) |
-| Token expired | Set valid JWT or refresh token |
-| Slow responses | Check if Ollama is memory-constrained |
-| UI not updating | Check browser Network tab, backend logs |
+| Issue             | Solution                                      |
+| ----------------- | --------------------------------------------- |
+| Chat returns 500  | Check backend logs, verify Ollama or API key  |
+| "model not found" | Run `ollama pull llama2` or check API keys    |
+| Composition fails | Ensure DB connected, check `/api/health`      |
+| CORS error        | Set REACT_APP_API_URL=<http://localhost:8000> |
+| WebSocket fails   | Use correct endpoint (no /api prefix)         |
+| Token expired     | Set valid JWT or refresh token                |
+| Slow responses    | Check if Ollama is memory-constrained         |
+| UI not updating   | Check browser Network tab, backend logs       |
 
 ---
 
@@ -433,7 +433,7 @@ DEFAULT_MODEL_TEMPERATURE=0.7
    # Check Ollama
    ollama list
    ollama serve  # Should be running
-   
+
    # Check API keys
    echo $OPENAI_API_KEY
    echo $ANTHROPIC_API_KEY
@@ -444,7 +444,7 @@ DEFAULT_MODEL_TEMPERATURE=0.7
    ```bash
    # Test connection
    psql "$DATABASE_URL" -c "SELECT 1"
-   
+
    # Check tables exist
    psql "$DATABASE_URL" -c "\dt"
    ```
@@ -462,7 +462,7 @@ DEFAULT_MODEL_TEMPERATURE=0.7
 
 **Claude 3.5 Sonnet ($0.003 input / $0.015 output):**
 
-- Response time: 2-4 seconds  
+- Response time: 2-4 seconds
 - Quality: Excellent
 - Cost: Low
 - Best for: Production, complex tasks

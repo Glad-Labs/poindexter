@@ -34,16 +34,16 @@ GLAD LABS UI TEST RESULTS
 
 ## 📊 Key Metrics
 
-| Metric | Value | Status |
-|--------|-------|--------|
-| Services Running | 3/3 | ✅ 100% |
-| Functional Features | 18/19 | ✅ 95% |
-| Routes Tested | 12+ | ✅ Working |
-| LLM Models Available | 21 | ✅ Loaded |
-| Ollama Models | 26 | ✅ Connected |
-| Authentication | JWT | ✅ Secure |
-| Critical Issues | 1 | ❌ URGENT |
-| Minor Warnings | 1 | 🟡 LOW |
+| Metric               | Value | Status       |
+| -------------------- | ----- | ------------ |
+| Services Running     | 3/3   | ✅ 100%      |
+| Functional Features  | 18/19 | ✅ 95%       |
+| Routes Tested        | 12+   | ✅ Working   |
+| LLM Models Available | 21    | ✅ Loaded    |
+| Ollama Models        | 26    | ✅ Connected |
+| Authentication       | JWT   | ✅ Secure    |
+| Critical Issues      | 1     | ❌ URGENT    |
+| Minor Warnings       | 1     | 🟡 LOW       |
 
 ## 🟢 What's Working Great
 
@@ -200,11 +200,11 @@ Key Models:
 
 ## 🚀 Deployment Status
 
-| Environment | Status | Notes |
-|-------------|--------|-------|
-| Local Dev | ⚠️ Partial | Public site broken |
-| Staging | ⏳ Not Ready | Fix Footer first |
-| Production | ❌ Not Ready | Multiple issues to fix |
+| Environment | Status       | Notes                  |
+| ----------- | ------------ | ---------------------- |
+| Local Dev   | ⚠️ Partial   | Public site broken     |
+| Staging     | ⏳ Not Ready | Fix Footer first       |
+| Production  | ❌ Not Ready | Multiple issues to fix |
 
 ## 📞 Support & Testing Details
 
@@ -226,7 +226,7 @@ npm run dev
 
 # Or individually:
 npm run dev:cofounder    # Backend (port 8000)
-npm run dev:public       # Next.js (port 3000)  
+npm run dev:public       # Next.js (port 3000)
 npm run dev:oversight    # React (port 3001)
 ```
 

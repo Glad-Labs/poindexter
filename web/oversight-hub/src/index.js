@@ -7,10 +7,11 @@ import App from './App';
 import { getApiUrl } from './config/apiConfig';
 getApiUrl();
 
-// Initialize Sentry when REACT_APP_SENTRY_DSN is set.
+// Initialize Sentry when a DSN is configured.
 // Gated so that development and staging builds without a DSN configured are
 // unaffected — no network calls, no console noise.
-const sentryDsn = process.env.REACT_APP_SENTRY_DSN;
+const sentryDsn =
+  process.env.VITE_SENTRY_DSN || process.env.REACT_APP_SENTRY_DSN;
 if (sentryDsn) {
   Sentry.init({
     dsn: sentryDsn,
@@ -19,8 +20,7 @@ if (sentryDsn) {
     // production to stay within Sentry's transaction quota.
     tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
     // Ship source maps so Sentry can de-minify stack traces.
-    // Source maps must be uploaded during the CI build step via
-    // @sentry/webpack-plugin (or craco plugin) — see docs/05-Operations.
+    // Source maps must be uploaded during the CI build step (Vite-compatible flow) — see docs/05-Operations.
     integrations: [Sentry.browserTracingIntegration()],
   });
 }

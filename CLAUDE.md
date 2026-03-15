@@ -111,7 +111,7 @@ npm run build                 # Build all workspaces
 
 ### Frontend
 
-**Oversight Hub** (`web/oversight-hub/`): Create React App (CRA) with CRACO for build/dev. Jest for unit tests. Path alias `@/` → `src/`. State managed with Zustand. Real-time updates via WebSocket to `ws://localhost:8000/api/workflow-progress/{id}`.
+**Oversight Hub** (`web/oversight-hub/`): Vite + React 18 admin app. Vitest for unit tests. Path alias `@/` → `src/`. State managed with Zustand. Real-time updates via WebSocket to `ws://localhost:8000/api/workflow-progress/{id}`.
 
 **Public Site** (`web/public-site/`): Next.js 15 app router (no `pages/` directory). Markdown content via gray-matter + marked. Static generation with ISR. Jest + React Testing Library for tests.
 
@@ -123,7 +123,7 @@ Each service reads from its own `.env.local` file:
 
 - **Backend:** Reads `.env.local` from project root (configured in `src/cofounder_agent/config/__init__.py`)
 - **Public Site (Next.js):** Reads `.env.local` from `web/public-site/`
-- **Admin Hub (CRA):** Reads `.env.local` from `web/oversight-hub/`
+- **Admin Hub (Vite):** Reads `.env.local` from `web/oversight-hub/`
 
 **Minimum required:**
 

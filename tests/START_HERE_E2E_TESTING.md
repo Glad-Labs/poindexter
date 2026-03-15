@@ -34,7 +34,7 @@ http://localhost:3001
 npm run dev
 
 # Wait for:
-# ✅ Backend: "Application startup complete" 
+# ✅ Backend: "Application startup complete"
 # ✅ Oversight Hub: "Webpack compiled"
 # ✅ Public Site: "ready"
 ```
@@ -73,7 +73,7 @@ bash test-nlp-workflow.sh
 ```
 ✅ Backend health check passed
 ✅ Chat endpoint responding
-✅ Multi-turn conversation working  
+✅ Multi-turn conversation working
 ✅ Frontend responding
 ...
 Test suite complete!
@@ -139,7 +139,7 @@ If found: Note them for debugging
 
 ```
 1. DevTools → "Network" tab
-2. Clear log (circle with X icon)  
+2. Clear log (circle with X icon)
 3. Send a request
 4. Watch API calls appear
 
@@ -212,13 +212,13 @@ Work through this systematically:
 
 Track these metrics:
 
-| Operation | Target | Actual | Pass |
-|-----------|--------|--------|------|
-| Backend health | <50ms | ___ ms | ⬜ |
-| Chat response | <10s | ___ s | ⬜ |
-| Complex task | <120s | ___ s | ⬜ |
-| Task history load | <1s | ___ s | ⬜ |
-| UI response | <100ms | ___ ms | ⬜ |
+| Operation         | Target | Actual    | Pass |
+| ----------------- | ------ | --------- | ---- |
+| Backend health    | <50ms  | \_\_\_ ms | ⬜   |
+| Chat response     | <10s   | \_\_\_ s  | ⬜   |
+| Complex task      | <120s  | \_\_\_ s  | ⬜   |
+| Task history load | <1s    | \_\_\_ s  | ⬜   |
+| UI response       | <100ms | \_\_\_ ms | ⬜   |
 
 ---
 
@@ -278,16 +278,16 @@ ollama pull llama2
 
 ## 📁 DOCUMENTS YOU CREATED
 
-| Document | Purpose | When to Use |
-|----------|---------|------------|
-| `E2E_TESTING_QUICK_START.md` | This quick guide | You are here! |
-| `E2E_UI_TESTING_CHECKLIST.md` | Detailed testing checklist | For comprehensive testing |
-| `NLP_AGENT_QUICK_REFERENCE.md` | API quick reference | To look up endpoints |
-| `NLP_AGENT_WORKFLOW_TESTING_GUIDE.md` | Complete testing guide | For detailed procedures |
-| `FASTAPI_SERVICE_ANALYSIS.md` | Architecture overview | To understand the system |
-| `run-e2e-tests.sh` | Automated test script | To test backend automatically |
-| `test-nlp-workflow.sh` | Quick workflow tests | For fast validation |
-| `test-chat-detailed.sh` | Chat endpoint tests | For testing chat specifically |
+| Document                              | Purpose                    | When to Use                   |
+| ------------------------------------- | -------------------------- | ----------------------------- |
+| `E2E_TESTING_QUICK_START.md`          | This quick guide           | You are here!                 |
+| `E2E_UI_TESTING_CHECKLIST.md`         | Detailed testing checklist | For comprehensive testing     |
+| `NLP_AGENT_QUICK_REFERENCE.md`        | API quick reference        | To look up endpoints          |
+| `NLP_AGENT_WORKFLOW_TESTING_GUIDE.md` | Complete testing guide     | For detailed procedures       |
+| `FASTAPI_SERVICE_ANALYSIS.md`         | Architecture overview      | To understand the system      |
+| `run-e2e-tests.sh`                    | Automated test script      | To test backend automatically |
+| `test-nlp-workflow.sh`                | Quick workflow tests       | For fast validation           |
+| `test-chat-detailed.sh`               | Chat endpoint tests        | For testing chat specifically |
 
 ---
 
@@ -328,14 +328,14 @@ Time: 8.3 seconds
 
 ## ⏱️ TIME ESTIMATES
 
-| Phase | Time | What It Does |
-|-------|------|-------------|
-| Service startup | 5 min | Start backend + frontend |
-| Automated tests | 3 min | Run backend API tests |
-| Manual UI testing | 15 min | Test in browser |
-| Performance validation | 5 min | Check response times |
-| Final verification | 5 min | Confirm all working |
-| **Total** | **33 min** | Complete E2E testing |
+| Phase                  | Time       | What It Does             |
+| ---------------------- | ---------- | ------------------------ |
+| Service startup        | 5 min      | Start backend + frontend |
+| Automated tests        | 3 min      | Run backend API tests    |
+| Manual UI testing      | 15 min     | Test in browser          |
+| Performance validation | 5 min      | Check response times     |
+| Final verification     | 5 min      | Confirm all working      |
+| **Total**              | **33 min** | Complete E2E testing     |
 
 ---
 

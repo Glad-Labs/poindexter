@@ -11,15 +11,15 @@
 
 The Glad Labs AI Co-Founder is a **mature, production-grade FastAPI service** implementing a sophisticated multi-agent orchestration system with intelligent LLM routing. The codebase demonstrates enterprise-level architectural patterns, comprehensive service design, and complete lifecycle management.
 
-| Metric | Value |
-|--------|-------|
-| **Total Python Files** | 218 files |
-| **Total Lines of Code** | 67,676 LOC |
-| **API Routes** | 23+ route modules (50+ endpoints) |
-| **Services** | 60+ specialized service modules |
-| **Agents** | 4 core agent types (Content, Financial, Market, Compliance) |
-| **Database Modules** | 5 specialized modules (Users, Tasks, Content, Admin, WritingStyle) |
-| **Primary Tech Stack** | FastAPI v0.100+, Python 3.10-3.13, PostgreSQL (asyncpg), Redis |
+| Metric                  | Value                                                              |
+| ----------------------- | ------------------------------------------------------------------ |
+| **Total Python Files**  | 218 files                                                          |
+| **Total Lines of Code** | 67,676 LOC                                                         |
+| **API Routes**          | 23+ route modules (50+ endpoints)                                  |
+| **Services**            | 60+ specialized service modules                                    |
+| **Agents**              | 4 core agent types (Content, Financial, Market, Compliance)        |
+| **Database Modules**    | 5 specialized modules (Users, Tasks, Content, Admin, WritingStyle) |
+| **Primary Tech Stack**  | FastAPI v0.100+, Python 3.10-3.13, PostgreSQL (asyncpg), Redis     |
 
 ---
 
@@ -93,31 +93,31 @@ Application Shutdown:
 
 ### Route Modules (23 total)
 
-| Module | Purpose | Key Endpoints |
-|--------|---------|---------------|
-| `task_routes.py` | Task CRUD & execution | `/api/tasks`, `/api/tasks/{id}`, `/api/tasks/execute` |
-| `agents_routes.py` | Agent management | `/api/agents`, `/api/agents/{id}`, `/api/agents/status` |
-| `chat_routes.py` | Real-time agent communication | `/api/chat`, `/api/chat/stream` |
-| `model_routes.py` | LLM model configuration | `/api/models`, `/api/models/health`, `/api/models/router` |
-| `content_routes.py` | Content generation | `/api/content/generate`, `/api/content/publish` |
-| `cms_routes.py` | CMS integration (Strapi) | `/api/cms/sync`, `/api/cms/posts` |
-| `media_routes.py` | Image/media management | `/api/media/upload`, `/api/media/generate` |
-| `analytics_routes.py` | Metrics & analytics | `/api/analytics/tasks`, `/api/analytics/costs` |
-| `bulk_task_routes.py` | Batch operations | `/api/bulk/tasks`, `/api/bulk/execute` |
-| `custom_workflows_routes.py` | Custom workflow definitions | `/api/workflows`, `/api/workflows/execute` |
-| `capability_tasks_routes.py` | Capability-based tasks | `/api/capabilities/tasks` |
-| `command_queue_routes.py` | Task queueing system | `/api/queue/tasks` |
-| `newsletter_routes.py` | Newsletter management | `/api/newsletter/send`, `/api/newsletter/subscribers` |
-| `social_routes.py` | Social media publishing | `/api/social/publish`, `/api/social/schedule` |
-| `websocket_routes.py` | Real-time WebSocket | `/ws/tasks`, `/ws/agents` |
-| `auth_unified.py` | Authentication | `/api/auth/login`, `/api/auth/github`, `/api/auth/token` |
-| `ollama_routes.py` | Ollama local model integration | `/api/ollama/models`, `/api/ollama/generate` |
-| `workflow_routes.py` | Workflow composition | `/api/workflow/execute` |
-| `workflow_history.py` | Workflow tracking | `/api/workflow/history` |
-| `writing_style_routes.py` | Writing style management | `/api/style/samples`, `/api/style/match` |
-| `service_registry_routes.py` | Service discovery | `/api/services/registry` |
-| `settings_routes.py` | Application settings | `/api/settings`, `/api/settings/{key}` |
-| `privacy_routes.py` | Privacy & compliance | `/api/privacy/gdpr`, `/api/privacy/delete` |
+| Module                       | Purpose                        | Key Endpoints                                             |
+| ---------------------------- | ------------------------------ | --------------------------------------------------------- |
+| `task_routes.py`             | Task CRUD & execution          | `/api/tasks`, `/api/tasks/{id}`, `/api/tasks/execute`     |
+| `agents_routes.py`           | Agent management               | `/api/agents`, `/api/agents/{id}`, `/api/agents/status`   |
+| `chat_routes.py`             | Real-time agent communication  | `/api/chat`, `/api/chat/stream`                           |
+| `model_routes.py`            | LLM model configuration        | `/api/models`, `/api/models/health`, `/api/models/router` |
+| `content_routes.py`          | Content generation             | `/api/content/generate`, `/api/content/publish`           |
+| `cms_routes.py`              | CMS integration (Strapi)       | `/api/cms/sync`, `/api/cms/posts`                         |
+| `media_routes.py`            | Image/media management         | `/api/media/upload`, `/api/media/generate`                |
+| `analytics_routes.py`        | Metrics & analytics            | `/api/analytics/tasks`, `/api/analytics/costs`            |
+| `bulk_task_routes.py`        | Batch operations               | `/api/bulk/tasks`, `/api/bulk/execute`                    |
+| `custom_workflows_routes.py` | Custom workflow definitions    | `/api/workflows`, `/api/workflows/execute`                |
+| `capability_tasks_routes.py` | Capability-based tasks         | `/api/capabilities/tasks`                                 |
+| `command_queue_routes.py`    | Task queueing system           | `/api/queue/tasks`                                        |
+| `newsletter_routes.py`       | Newsletter management          | `/api/newsletter/send`, `/api/newsletter/subscribers`     |
+| `social_routes.py`           | Social media publishing        | `/api/social/publish`, `/api/social/schedule`             |
+| `websocket_routes.py`        | Real-time WebSocket            | `/ws/tasks`, `/ws/agents`                                 |
+| `auth_unified.py`            | Authentication                 | `/api/auth/login`, `/api/auth/github`, `/api/auth/token`  |
+| `ollama_routes.py`           | Ollama local model integration | `/api/ollama/models`, `/api/ollama/generate`              |
+| `workflow_routes.py`         | Workflow composition           | `/api/workflow/execute`                                   |
+| `workflow_history.py`        | Workflow tracking              | `/api/workflow/history`                                   |
+| `writing_style_routes.py`    | Writing style management       | `/api/style/samples`, `/api/style/match`                  |
+| `service_registry_routes.py` | Service discovery              | `/api/services/registry`                                  |
+| `settings_routes.py`         | Application settings           | `/api/settings`, `/api/settings/{key}`                    |
+| `privacy_routes.py`          | Privacy & compliance           | `/api/privacy/gdpr`, `/api/privacy/delete`                |
 
 ### Core Health & System Endpoints
 
@@ -248,13 +248,13 @@ Other → Fallback handlers with MCP tools
 
 Each inherits from `DatabaseServiceMixin`:
 
-| Service | File | Key Tables | Methods |
-|---------|------|-----------|---------|
-| **UsersDatabase** | `users_db.py` | users, oauth_tokens, sessions | create_user, find_by_email, validate_oauth |
-| **TasksDatabase** | `tasks_db.py` | tasks, task_history, subtasks | create_task, update_status, list_by_status |
-| **ContentDatabase** | `content_db.py` | posts, quality_evaluations, metrics | save_post, rate_quality, get_analytics |
-| **AdminDatabase** | `admin_db.py` | audit_logs, financial, settings, health | log_event, track_costs, get_health |
-| **WritingStyleDatabase** | `writing_style_db.py` | writing_samples, style_profiles, rag_index | save_sample, match_style, semantic_search |
+| Service                  | File                  | Key Tables                                 | Methods                                    |
+| ------------------------ | --------------------- | ------------------------------------------ | ------------------------------------------ |
+| **UsersDatabase**        | `users_db.py`         | users, oauth_tokens, sessions              | create_user, find_by_email, validate_oauth |
+| **TasksDatabase**        | `tasks_db.py`         | tasks, task_history, subtasks              | create_task, update_status, list_by_status |
+| **ContentDatabase**      | `content_db.py`       | posts, quality_evaluations, metrics        | save_post, rate_quality, get_analytics     |
+| **AdminDatabase**        | `admin_db.py`         | audit_logs, financial, settings, health    | log_event, track_costs, get_health         |
+| **WritingStyleDatabase** | `writing_style_db.py` | writing_samples, style_profiles, rag_index | save_sample, match_style, semantic_search  |
 
 ### Content Processing Services
 
@@ -284,15 +284,15 @@ Each inherits from `DatabaseServiceMixin`:
 
 ### Authentication & Security (7+ OAuth Providers)
 
-| Provider | Files | Endpoints |
-|----------|-------|-----------|
-| GitHub | `github_oauth.py`, `auth_unified.py` | `/api/auth/github/callback` |
-| Google | `google_oauth.py`, `auth_unified.py` | `/api/auth/google/callback` |
-| Microsoft | `microsoft_oauth.py`, `auth_unified.py` | `/api/auth/microsoft/callback` |
-| Facebook | `facebook_oauth.py`, `auth_unified.py` | `/api/auth/facebook/callback` |
-| LinkedIn | (implied in auth structure) | `/api/auth/linkedin/callback` |
-| JWT Tokens | `token_validator.py`, `auth.py` | `/api/auth/token`, `/api/auth/refresh` |
-| API Keys | `auth.py` | Header-based authentication |
+| Provider   | Files                                   | Endpoints                              |
+| ---------- | --------------------------------------- | -------------------------------------- |
+| GitHub     | `github_oauth.py`, `auth_unified.py`    | `/api/auth/github/callback`            |
+| Google     | `google_oauth.py`, `auth_unified.py`    | `/api/auth/google/callback`            |
+| Microsoft  | `microsoft_oauth.py`, `auth_unified.py` | `/api/auth/microsoft/callback`         |
+| Facebook   | `facebook_oauth.py`, `auth_unified.py`  | `/api/auth/facebook/callback`          |
+| LinkedIn   | (implied in auth structure)             | `/api/auth/linkedin/callback`          |
+| JWT Tokens | `token_validator.py`, `auth.py`         | `/api/auth/token`, `/api/auth/refresh` |
+| API Keys   | `auth.py`                               | Header-based authentication            |
 
 **Key Files:**
 
@@ -302,34 +302,34 @@ Each inherits from `DatabaseServiceMixin`:
 
 ### Additional Critical Services
 
-| Service | File | Purpose |
-|---------|------|---------|
-| **Redis Cache** | `services/redis_cache.py` | Distributed caching, session management |
-| **Sentry Integration** | `services/sentry_integration.py` | Error tracking, performance monitoring |
-| **Telemetry** | `services/telemetry.py` | OpenTelemetry tracing, observability |
-| **Health Service** | `services/health_service.py` | Comprehensive health checks |
-| **Financial Service** | `services/financial_service.py` | Cost aggregation, ROI tracking |
-| **Metrics Service** | `services/metrics_service.py` | Task metrics, success rates, timing |
-| **Compliance Service** | `services/compliance_service.py` | Legal/risk review, GDPR compliance |
-| **Image Service** | `services/image_service.py` | Image generation (SDXL), optimization |
-| **Ollama Client** | `services/ollama_client.py` | Local model integration |
-| **Gemini Client** | `services/gemini_client.py` | Google Gemini integration |
-| **Model Validator** | `services/model_validator.py` | API key validation, provider health |
-| **Prompt Manager** | `services/prompt_manager.py` | Centralized prompt templates |
-| **Usage Tracker** | `services/usage_tracker.py` | Token counting, cost attribution |
-| **AI Cache** | `services/ai_cache.py` | LLM response caching |
-| **Email Publisher** | `services/email_publisher.py` | Email distribution |
-| **Twitter Publisher** | `services/twitter_publisher.py` | Twitter integration |
-| **LinkedIn Publisher** | `services/linkedin_publisher.py` | LinkedIn integration |
-| **Content Router** | `services/content_router_service.py` | Route content to appropriate handlers |
-| **Task Intent Router** | `services/task_intent_router.py` | NLP-based task classification |
-| **Unified Metadata** | `services/unified_metadata_service.py` | Metadata aggregation |
-| **Workflow Engine** | `services/workflow_engine.py` | Workflow execution orchestration |
-| **Workflow Execution** | `services/workflow_execution_adapter.py` | Workflow state management |
-| **Training Data Service** | `services/training_data_service.py` | Accumulate training data from executions |
-| **Fine-Tuning Service** | `services/fine_tuning_service.py` | Manage fine-tuning operations |
-| **Custom Workflows Service** | `services/custom_workflows_service.py` | User-defined workflow definitions |
-| **Capability System** | `services/capability_*.py` (5 files) | Capability discovery, introspection, NLP composition |
+| Service                      | File                                     | Purpose                                              |
+| ---------------------------- | ---------------------------------------- | ---------------------------------------------------- |
+| **Redis Cache**              | `services/redis_cache.py`                | Distributed caching, session management              |
+| **Sentry Integration**       | `services/sentry_integration.py`         | Error tracking, performance monitoring               |
+| **Telemetry**                | `services/telemetry.py`                  | OpenTelemetry tracing, observability                 |
+| **Health Service**           | `services/health_service.py`             | Comprehensive health checks                          |
+| **Financial Service**        | `services/financial_service.py`          | Cost aggregation, ROI tracking                       |
+| **Metrics Service**          | `services/metrics_service.py`            | Task metrics, success rates, timing                  |
+| **Compliance Service**       | `services/compliance_service.py`         | Legal/risk review, GDPR compliance                   |
+| **Image Service**            | `services/image_service.py`              | Image generation (SDXL), optimization                |
+| **Ollama Client**            | `services/ollama_client.py`              | Local model integration                              |
+| **Gemini Client**            | `services/gemini_client.py`              | Google Gemini integration                            |
+| **Model Validator**          | `services/model_validator.py`            | API key validation, provider health                  |
+| **Prompt Manager**           | `services/prompt_manager.py`             | Centralized prompt templates                         |
+| **Usage Tracker**            | `services/usage_tracker.py`              | Token counting, cost attribution                     |
+| **AI Cache**                 | `services/ai_cache.py`                   | LLM response caching                                 |
+| **Email Publisher**          | `services/email_publisher.py`            | Email distribution                                   |
+| **Twitter Publisher**        | `services/twitter_publisher.py`          | Twitter integration                                  |
+| **LinkedIn Publisher**       | `services/linkedin_publisher.py`         | LinkedIn integration                                 |
+| **Content Router**           | `services/content_router_service.py`     | Route content to appropriate handlers                |
+| **Task Intent Router**       | `services/task_intent_router.py`         | NLP-based task classification                        |
+| **Unified Metadata**         | `services/unified_metadata_service.py`   | Metadata aggregation                                 |
+| **Workflow Engine**          | `services/workflow_engine.py`            | Workflow execution orchestration                     |
+| **Workflow Execution**       | `services/workflow_execution_adapter.py` | Workflow state management                            |
+| **Training Data Service**    | `services/training_data_service.py`      | Accumulate training data from executions             |
+| **Fine-Tuning Service**      | `services/fine_tuning_service.py`        | Manage fine-tuning operations                        |
+| **Custom Workflows Service** | `services/custom_workflows_service.py`   | User-defined workflow definitions                    |
+| **Capability System**        | `services/capability_*.py` (5 files)     | Capability discovery, introspection, NLP composition |
 
 ---
 
@@ -403,12 +403,12 @@ class AgentRegistry:
 
 **Exception Handlers Registered:**
 
-| Exception Type | Handler | Status Code | Response |
-|---|---|---|---|
-| `AppError` | `app_error_handler` | Varies (400-500) | Structured error with error_code |
-| `ValidationError` | `validation_error_handler` | 400 | Field-level validation errors |
-| `HTTPException` | `http_exception_handler` | Varies | Standardized HTTP error format |
-| `Generic Exception` | `generic_error_handler` | 500 | Internal server error with request ID |
+| Exception Type      | Handler                    | Status Code      | Response                              |
+| ------------------- | -------------------------- | ---------------- | ------------------------------------- |
+| `AppError`          | `app_error_handler`        | Varies (400-500) | Structured error with error_code      |
+| `ValidationError`   | `validation_error_handler` | 400              | Field-level validation errors         |
+| `HTTPException`     | `http_exception_handler`   | Varies           | Standardized HTTP error format        |
+| `Generic Exception` | `generic_error_handler`    | 500              | Internal server error with request ID |
 
 **Error Response Format:**
 
@@ -791,14 +791,14 @@ async def lifespan(app):
 
 ### Common Issues & Solutions
 
-| Issue | Cause | Solution |
-|-------|-------|----------|
-| "DATABASE_URL not set" | Missing env var | Add to .env.local: `DATABASE_URL=postgresql://...` |
-| Connection pool timeout | Too few connections | Increase `DATABASE_POOL_MAX_SIZE` in .env.local |
-| Task executor not processing | Orchestrator None | Ensure lifespan initializes all services |
-| Model router fails | No API keys | Set `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` or `OLLAMA_BASE_URL` |
-| WebSocket not working | Wrong endpoint | Use `/ws/tasks` or `/ws/agents` (note: no `/api` prefix) |
-| Metrics endpoint 500 | Database query error | Check database health: `GET /api/health` |
+| Issue                        | Cause                | Solution                                                         |
+| ---------------------------- | -------------------- | ---------------------------------------------------------------- |
+| "DATABASE_URL not set"       | Missing env var      | Add to .env.local: `DATABASE_URL=postgresql://...`               |
+| Connection pool timeout      | Too few connections  | Increase `DATABASE_POOL_MAX_SIZE` in .env.local                  |
+| Task executor not processing | Orchestrator None    | Ensure lifespan initializes all services                         |
+| Model router fails           | No API keys          | Set `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` or `OLLAMA_BASE_URL` |
+| WebSocket not working        | Wrong endpoint       | Use `/ws/tasks` or `/ws/agents` (note: no `/api` prefix)         |
+| Metrics endpoint 500         | Database query error | Check database health: `GET /api/health`                         |
 
 ### Debugging Commands
 
@@ -825,13 +825,13 @@ SELECT count(*) FROM tasks;
 
 Key documentation in the codebase:
 
-| File | Purpose |
-|------|---------|
-| `DOCUMENTATION_INDEX.md` | Index of all documentation |
-| `README.md` (cofounder_agent) | Service overview, installation, usage |
-| `pyproject.toml` | Dependencies, Poetry configuration |
-| `tests/TESTING_QUICK_REFERENCE.md` | Test running guide |
-| `tests/CI_CD_SETUP_GUIDE.md` | CI/CD configuration |
+| File                               | Purpose                               |
+| ---------------------------------- | ------------------------------------- |
+| `DOCUMENTATION_INDEX.md`           | Index of all documentation            |
+| `README.md` (cofounder_agent)      | Service overview, installation, usage |
+| `pyproject.toml`                   | Dependencies, Poetry configuration    |
+| `tests/TESTING_QUICK_REFERENCE.md` | Test running guide                    |
+| `tests/CI_CD_SETUP_GUIDE.md`       | CI/CD configuration                   |
 
 ---
 
