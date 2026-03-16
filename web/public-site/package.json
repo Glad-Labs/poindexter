@@ -1,6 +1,6 @@
 {
   "name": "glad-labs-public-site",
-  "version": "3.0.48",
+  "version": "3.0.49",
   "private": true,
   "type": "module",
   "description": "Next.js 15 public website for Glad Labs - features SSG optimization, FastAPI integration, and markdown content rendering",
