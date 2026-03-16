@@ -30,7 +30,7 @@
         "label": "Auto Start All Services",
         "type": "shell",
         "command": "npm",
-        "args": ["run", "start:all"],
+        "args": ["run", "dev:all"],
         "group": "build",
         "presentation": {
           "echo": true,

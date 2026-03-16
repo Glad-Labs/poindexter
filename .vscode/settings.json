@@ -3,7 +3,6 @@
   "python.terminal.activateEnvironment": true,
   "task.autoDetect": "on",
   "task.allowAutomaticTasks": "on",
-  "terminal.integrated.defaultProfile.windows": "Git Bash",
   "files.watcherExclude": {
     "**/node_modules/**": true,
     "**/.next/**": true,
