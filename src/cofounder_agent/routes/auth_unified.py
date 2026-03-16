@@ -457,6 +457,44 @@ async def github_callback_fallback(request: Request, request_data: GitHubCallbac
     return await github_callback(request, request_data)
 
 
+@router.post("/dev-token")
+@limiter.limit("30/minute")
+async def issue_dev_token(request: Request) -> Dict[str, Any]:
+    """
+    Issue a backend-signed JWT for local development.
+
+    This endpoint avoids misusing OAuth callback endpoints for dev token bootstrapping.
+    It is intentionally gated to development mode only.
+    """
+    cfg = get_config()
+    is_dev_mode = cfg.environment.lower() != "production"
+
+    if not is_dev_mode:
+        logger.warning("[issue_dev_token] Attempted access outside development mode")
+        raise HTTPException(status_code=404, detail="Not found")
+
+    dev_user = {
+        "id": "dev_user_local",
+        "login": "dev-user",
+        "email": "dev@example.com",
+        "name": "Development User",
+        "avatar_url": "https://avatars.githubusercontent.com/u/1?v=4",
+    }
+
+    token = create_jwt_token(dev_user)
+    return {
+        "token": token,
+        "user": {
+            "user_id": dev_user["id"],
+            "username": dev_user["login"],
+            "email": dev_user["email"],
+            "name": dev_user["name"],
+            "avatar_url": dev_user["avatar_url"],
+            "auth_provider": "github",
+        },
+    }
+
+
 @router.post("/logout", response_model=LogoutResponse)
 @limiter.limit("30/minute")
 async def unified_logout(
