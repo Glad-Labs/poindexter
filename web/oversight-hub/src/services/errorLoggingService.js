@@ -9,6 +9,8 @@ import logger from '@/lib/logger';
 import * as Sentry from '@sentry/react';
 import { makeRequest } from './cofounderAgentClient';
 
+let backendErrorEndpointAvailable = true;
+
 /**
  * Log an error to the backend for aggregation and monitoring
  * @param {Error} error - The error object
@@ -18,6 +20,10 @@ import { makeRequest } from './cofounderAgentClient';
  * @returns {Promise<Object>} Server response
  */
 export const logErrorToBackend = async (error, context = {}) => {
+  if (!backendErrorEndpointAvailable) {
+    return null;
+  }
+
   try {
     const errorPayload = {
       type: 'client_error',
@@ -36,6 +42,13 @@ export const logErrorToBackend = async (error, context = {}) => {
     // This ensures proper auth headers are included
     return await makeRequest('/api/errors', 'POST', errorPayload);
   } catch (err) {
+    if (err?.status === 404) {
+      backendErrorEndpointAvailable = false;
+      logger.warn(
+        '[errorLoggingService] /api/errors endpoint not available; disabling backend error logging for this session'
+      );
+      return null;
+    }
     logger.error('Failed to log error to backend:', err);
     // Don't throw - error logging should never break the app
     return null;
@@ -96,6 +109,10 @@ export const logError = async (error, context = {}) => {
  * @returns {Promise<Object|null>}
  */
 export const logWarning = async (message, component = '', context = {}) => {
+  if (!backendErrorEndpointAvailable) {
+    return null;
+  }
+
   try {
     return await makeRequest('/api/errors', 'POST', {
       type: 'client_warning',
@@ -122,6 +139,10 @@ export const logWarning = async (message, component = '', context = {}) => {
  * @returns {Promise<Object|null>}
  */
 export const logInfo = async (message, component = '', context = {}) => {
+  if (!backendErrorEndpointAvailable) {
+    return null;
+  }
+
   try {
     return await makeRequest('/api/errors', 'POST', {
       type: 'client_info',
@@ -145,10 +166,18 @@ export const logInfo = async (message, component = '', context = {}) => {
  * @returns {Promise<Array>} List of error logs
  */
 export const getErrorLogs = async () => {
+  if (!backendErrorEndpointAvailable) {
+    return [];
+  }
+
   try {
     const response = await makeRequest('/api/errors', 'GET');
     return Array.isArray(response) ? response : [];
   } catch (err) {
+    if (err?.status === 404) {
+      backendErrorEndpointAvailable = false;
+      return [];
+    }
     logger.error('[errorLoggingService] Failed to retrieve error logs:', err);
     return [];
   }
@@ -160,10 +189,18 @@ export const getErrorLogs = async () => {
  * @returns {Promise<boolean>} Success status
  */
 export const deleteErrorLog = async (errorId) => {
+  if (!backendErrorEndpointAvailable) {
+    return false;
+  }
+
   try {
     await makeRequest(`/api/errors/${errorId}`, 'DELETE');
     return true;
   } catch (err) {
+    if (err?.status === 404) {
+      backendErrorEndpointAvailable = false;
+      return false;
+    }
     logger.error('[errorLoggingService] Failed to delete error log:', err);
     return false;
   }
@@ -174,10 +211,18 @@ export const deleteErrorLog = async (errorId) => {
  * @returns {Promise<boolean>} Success status
  */
 export const clearAllLogs = async () => {
+  if (!backendErrorEndpointAvailable) {
+    return false;
+  }
+
   try {
     await makeRequest('/api/errors', 'DELETE');
     return true;
   } catch (err) {
+    if (err?.status === 404) {
+      backendErrorEndpointAvailable = false;
+      return false;
+    }
     logger.error('[errorLoggingService] Failed to clear error logs:', err);
     return false;
   }

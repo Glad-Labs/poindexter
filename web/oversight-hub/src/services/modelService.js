@@ -22,7 +22,7 @@ class ModelService {
     try {
       const API_BASE_URL = getApiUrl();
       const token = getAuthToken();
-      const response = await fetch(`${API_BASE_URL}/api/v1/models/available`, {
+      const response = await fetch(`${API_BASE_URL}/api/models/available`, {
         headers: {
           'Content-Type': 'application/json',
           ...(token && { Authorization: `Bearer ${token}` }),

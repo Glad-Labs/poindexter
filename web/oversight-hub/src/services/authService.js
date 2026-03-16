@@ -11,6 +11,7 @@
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
 const PERSIST_KEY = 'oversight-hub-storage';
+let devTokenInitPromise = null;
 
 export const clearPersistedAuthState = () => {
   // auth_token and user are stored in sessionStorage (not localStorage) to limit
@@ -50,15 +51,11 @@ export const clearPersistedAuthState = () => {
 };
 
 const requestBackendDevToken = async () => {
-  const response = await fetch(`${API_BASE_URL}/api/auth/github/callback`, {
+  const response = await fetch(`${API_BASE_URL}/api/auth/dev-token`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      code: `mock_auth_code_${Date.now()}`,
-      state: `dev_state_${Date.now()}`,
-    }),
     credentials: 'include',
   });
 
@@ -361,36 +358,69 @@ export const getAuthToken = () => {
  * @returns {Promise<string>} - Mock development token
  */
 export const initializeDevToken = async (options = {}) => {
-  try {
-    const { forceRefresh = false, validateWithBackend = true } = options;
+  if (devTokenInitPromise) {
+    return devTokenInitPromise;
+  }
 
-    // Check if token exists and is still valid
-    const existingToken = sessionStorage.getItem('auth_token');
+  devTokenInitPromise = (async () => {
+    try {
+      const { forceRefresh = false, validateWithBackend = true } = options;
 
-    if (!forceRefresh && existingToken && !isTokenExpired(existingToken)) {
-      if (validateWithBackend) {
-        const isValid = await validateTokenWithBackend(existingToken);
-        if (!isValid) {
-          console.warn(
-            '[authService] Existing token failed backend validation, clearing and regenerating'
-          );
-          clearPersistedAuthState();
+      // Check if token exists and is still valid
+      const existingToken = sessionStorage.getItem('auth_token');
+
+      if (!forceRefresh && existingToken && !isTokenExpired(existingToken)) {
+        if (validateWithBackend) {
+          const isValid = await validateTokenWithBackend(existingToken);
+          if (!isValid) {
+            console.warn(
+              '[authService] Existing token failed backend validation, clearing and regenerating'
+            );
+            clearPersistedAuthState();
+          } else {
+            return existingToken;
+          }
         } else {
           return existingToken;
         }
-      } else {
+      }
+
+      if (forceRefresh) {
+        clearPersistedAuthState();
+      }
+
+      try {
+        const backendAuth = await requestBackendDevToken();
+        const backendToken = backendAuth.token;
+        const backendUser = backendAuth.user || {
+          id: 'dev_user_local',
+          email: 'dev@localhost',
+          username: 'dev-user',
+          login: 'dev-user',
+          name: 'Development User',
+          avatar_url: 'https://avatars.githubusercontent.com/u/1?v=4',
+          auth_provider: 'mock',
+        };
+
+        // Store in sessionStorage (not localStorage) to limit XSS exposure (#726)
+        sessionStorage.setItem('auth_token', backendToken);
+        sessionStorage.setItem('user', JSON.stringify(backendUser));
+
+        return backendToken;
+      } catch (backendError) {
+        console.warn(
+          '[authService] Backend dev token generation failed, using local mock token fallback:',
+          backendError
+        );
+      }
+
+      if (existingToken && !isTokenExpired(existingToken)) {
+        // Token is still valid
         return existingToken;
       }
-    }
 
-    if (forceRefresh) {
-      clearPersistedAuthState();
-    }
-
-    try {
-      const backendAuth = await requestBackendDevToken();
-      const backendToken = backendAuth.token;
-      const backendUser = backendAuth.user || {
+      // Token is missing or expired, create a new one
+      const mockUser = {
         id: 'dev_user_local',
         email: 'dev@localhost',
         username: 'dev-user',
@@ -400,80 +430,58 @@ export const initializeDevToken = async (options = {}) => {
         auth_provider: 'mock',
       };
 
-      // Store in sessionStorage (not localStorage) to limit XSS exposure (#726)
-      sessionStorage.setItem('auth_token', backendToken);
-      sessionStorage.setItem('user', JSON.stringify(backendUser));
+      // Dynamic import — keeps the signing secret out of the production bundle.
+      const { createMockJWTToken } =
+        await import('../utils/mockTokenGenerator');
+      const mockToken = await createMockJWTToken(mockUser);
 
-      return backendToken;
-    } catch (backendError) {
-      console.warn(
-        '[authService] Backend dev token generation failed, using local mock token fallback:',
-        backendError
-      );
+      // Store token in sessionStorage (not localStorage) to limit XSS exposure (#726)
+      sessionStorage.setItem('auth_token', mockToken);
+      sessionStorage.setItem('user', JSON.stringify(mockUser));
+
+      // Small delay to ensure sessionStorage is actually persisted
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Verify token was actually stored
+      const storedToken = sessionStorage.getItem('auth_token');
+      if (!storedToken) {
+        console.error(
+          '[authService] ERROR: Token was not actually stored in sessionStorage!'
+        );
+        // Try to check if it's in Zustand store instead
+        try {
+          const zustandData = localStorage.getItem(PERSIST_KEY);
+          if (zustandData) {
+            const parsed = JSON.parse(zustandData);
+          }
+        } catch {}
+        throw new Error('Failed to store token in sessionStorage');
+      }
+
+      // Set up auto-refresh every 14 minutes (token expires in 15 minutes)
+      // This prevents token expiry during long sessions
+      setTimeout(
+        () => {
+          if (process.env.NODE_ENV === 'development') {
+            initializeDevToken().catch((e) => {
+              console.error('[authService] Failed to auto-refresh token:', e);
+            });
+          }
+        },
+        14 * 60 * 1000
+      ); // 14 minutes in milliseconds
+
+      return mockToken;
+    } catch (error) {
+      console.error('[authService] ERROR in initializeDevToken:', error);
+      // If development token fails, return null - frontend should redirect to login
+      return null;
+    } finally {
+      devTokenInitPromise = null;
     }
+  })();
 
-    if (existingToken && !isTokenExpired(existingToken)) {
-      // Token is still valid
-      return existingToken;
-    }
-
-    // Token is missing or expired, create a new one
-    const mockUser = {
-      id: 'dev_user_local',
-      email: 'dev@localhost',
-      username: 'dev-user',
-      login: 'dev-user',
-      name: 'Development User',
-      avatar_url: 'https://avatars.githubusercontent.com/u/1?v=4',
-      auth_provider: 'mock',
-    };
-
-    // Dynamic import — keeps the signing secret out of the production bundle.
-    const { createMockJWTToken } = await import('../utils/mockTokenGenerator');
-    const mockToken = await createMockJWTToken(mockUser);
-
-    // Store token in sessionStorage (not localStorage) to limit XSS exposure (#726)
-    sessionStorage.setItem('auth_token', mockToken);
-    sessionStorage.setItem('user', JSON.stringify(mockUser));
-
-    // Small delay to ensure sessionStorage is actually persisted
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    // Verify token was actually stored
-    const storedToken = sessionStorage.getItem('auth_token');
-    if (!storedToken) {
-      console.error(
-        '[authService] ERROR: Token was not actually stored in sessionStorage!'
-      );
-      // Try to check if it's in Zustand store instead
-      try {
-        const zustandData = localStorage.getItem(PERSIST_KEY);
-        if (zustandData) {
-          const parsed = JSON.parse(zustandData);
-        }
-      } catch {}
-      throw new Error('Failed to store token in sessionStorage');
-    }
-
-    // Set up auto-refresh every 14 minutes (token expires in 15 minutes)
-    // This prevents token expiry during long sessions
-    setTimeout(
-      () => {
-        if (process.env.NODE_ENV === 'development') {
-          initializeDevToken().catch((e) => {
-            console.error('[authService] Failed to auto-refresh token:', e);
-          });
-        }
-      },
-      14 * 60 * 1000
-    ); // 14 minutes in milliseconds
-
-    return mockToken;
-  } catch (error) {
-    console.error('[authService] ERROR in initializeDevToken:', error);
-    // If development token fails, return null - frontend should redirect to login
-    return null;
-  }
+  return devTokenInitPromise;
 };
 
 /**
