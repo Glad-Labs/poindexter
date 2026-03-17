@@ -163,7 +163,7 @@ class OllamaAdapter(ProviderAdapter):
         **kwargs,
     ) -> ModelResponse:
         """Generate text using Ollama"""
-        model = model or "mistral:latest"
+        model = model or "qwen3:8b"
         start_time = datetime.now(timezone.utc)
 
         try:
@@ -190,15 +190,20 @@ class OllamaAdapter(ProviderAdapter):
             raise
 
     def list_models(self) -> List[str]:
-        """List available Ollama models"""
+        """List available Ollama models from live instance."""
+        import httpx
+
+        try:
+            resp = httpx.get(f"{self.host}/api/tags", timeout=5)
+            if resp.status_code == 200:
+                return [m["name"] for m in resp.json().get("models", [])]
+        except Exception:
+            pass
+        # Fallback: models known to be installed
         return [
-            "mistral:latest",
-            "llama2:latest",
-            "neural-chat:latest",
-            "qwen2.5:14b",
-            "mixtral:latest",
-            "deepseek-r1:14b",
-            "llama3:70b-instruct",
+            "qwen3.5:35b",
+            "qwen3:8b",
+            "gemma3:27b",
         ]
 
 

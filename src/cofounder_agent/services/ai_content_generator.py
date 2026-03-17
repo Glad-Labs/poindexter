@@ -271,11 +271,15 @@ class AIContentGenerator:
         # This ensures all prompts are versioned, documented, and easy to maintain
         try:
             logger.info("📝 Loading system prompt...")
+            min_words = int(target_length * 0.9)
+            max_words = int(target_length * 1.1)
             system_prompt = pm.get_prompt(
                 "blog_generation.blog_system_prompt",
                 style=style,
                 tone=tone,
                 target_length=target_length,
+                min_words=min_words,
+                max_words=max_words,
                 tags=", ".join(tags) if tags else "general",
             )
             logger.info(f"✓ System prompt loaded ({len(system_prompt)} chars)")
