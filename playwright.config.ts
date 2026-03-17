@@ -90,12 +90,6 @@ export default defineConfig({
         outputFile: `${outputDir}/junit.xml`,
       },
     ],
-    [
-      'markdown',
-      {
-        outputFile: `${outputDir}/results.md`,
-      },
-    ],
     ['list'],
     // GitHub integration for CI
     ...(isCI ? [['github']] : ([] as any)),

@@ -177,29 +177,24 @@ export const revalidatePublicSite = async (paths = []) => {
   try {
     // Call the FastAPI backend which has the real secret
     // Backend will safely call the public site revalidate endpoint
-    const response = await fetch(
-      `${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/revalidate-cache`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ paths }),
-      }
+    // Uses makeRequest to ensure Authorization header is included (#955)
+    const result = await makeRequest(
+      '/api/revalidate-cache',
+      'POST',
+      { paths },
+      false,
+      null,
+      10000 // 10s timeout — revalidation shouldn't block long
     );
 
-    if (!response.ok) {
-      console.warn(
-        `⚠️  Frontend revalidation returned status ${response.status}`
-      );
-      // Don't throw - revalidation failure shouldn't break the publish flow
-      return { success: false, status: response.status };
+    if (result.error) {
+      console.warn('Revalidation returned error:', result.error);
+      return { success: false, error: result.error };
     }
 
-    const data = await response.json();
-    return data;
+    return result;
   } catch (error) {
-    console.warn('⚠️  Could not trigger frontend revalidation:', error.message);
+    console.warn('Could not trigger frontend revalidation:', error.message);
     // Don't throw - publish should succeed even if revalidation fails
     return { success: false, error: error.message };
   }
@@ -230,9 +225,14 @@ export const publishTask = async (taskId) => {
 
   // Trigger frontend cache revalidation after successful publish
   // This is non-blocking - doesn't fail the publish if it fails
+  // Note: Backend also triggers revalidation (#955), but this is a safety net
   if (result && typeof result === 'object') {
-    // Revalidate homepage and archive pages
-    revalidatePublicSite(['/', '/archive']).catch((err) => {
+    const paths = ['/', '/archive', '/posts'];
+    // Include specific post slug path if available
+    if (result.post_slug) {
+      paths.push(`/posts/${result.post_slug}`);
+    }
+    revalidatePublicSite(paths).catch((err) => {
       console.warn('Revalidation failed silently:', err);
     });
   }

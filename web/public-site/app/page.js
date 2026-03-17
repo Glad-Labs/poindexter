@@ -16,6 +16,7 @@ export const metadata = {
 };
 
 // Server-side data fetching with ISR (Incremental Static Regeneration)
+// Returns { posts, error } so the UI can distinguish API failure from empty content (#946)
 async function getPosts() {
   try {
     const FASTAPI_URL =
@@ -29,7 +30,7 @@ async function getPosts() {
       !FASTAPI_URL.startsWith('https://')
     ) {
       console.warn('Invalid NEXT_PUBLIC_API_BASE_URL, using static fallback');
-      return [];
+      return { posts: [], error: 'invalid_config' };
     }
 
     const url = `${FASTAPI_URL}/api/posts?offset=0&limit=20&published_only=true`;
@@ -40,8 +41,8 @@ async function getPosts() {
 
     try {
       const response = await fetch(url, {
-        // ISR: Revalidate every 1 hour (3600 seconds) - much faster than 24 hours for development
-        // For production, consider webhook-triggered revalidation for instant updates when posts are published
+        // ISR: Revalidate every 1 hour (3600 seconds)
+        // On-demand revalidation via publish webhook triggers instant updates
         next: { revalidate: 3600 },
         headers: {
           'Content-Type': 'application/json',
@@ -56,7 +57,7 @@ async function getPosts() {
           `Failed to fetch posts: ${response.status} ${response.statusText}`,
           'error'
         );
-        return [];
+        return { posts: [], error: 'api_error' };
       }
 
       const data = await response.json();
@@ -66,7 +67,7 @@ async function getPosts() {
           ? data.data
           : [];
 
-      return posts;
+      return { posts, error: null };
     } catch (fetchError) {
       clearTimeout(timeoutId);
       // Specific handling for timeout vs other errors — both reported to Sentry
@@ -75,19 +76,20 @@ async function getPosts() {
           `Homepage posts fetch timed out (10s) from ${url}`,
           'error'
         );
+        return { posts: [], error: 'timeout' };
       } else {
         Sentry.captureException(fetchError, { extra: { url } });
+        return { posts: [], error: 'network' };
       }
-      return [];
     }
   } catch (error) {
     Sentry.captureException(error);
-    return [];
+    return { posts: [], error: 'unexpected' };
   }
 }
 
 export default async function HomePage() {
-  const posts = await getPosts();
+  const { posts, error } = await getPosts();
   const currentPost = posts[0];
 
   return (
@@ -110,13 +112,44 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* Featured Post */}
-      {posts.length === 0 ? (
+      {/* #946: Distinct states for API outage vs empty content */}
+      {error ? (
         <section className="py-12 px-4 md:px-0">
           <div className="container mx-auto max-w-6xl">
-            <div className="h-96 bg-slate-800 rounded-xl flex items-center justify-center border border-slate-700">
-              <p className="text-slate-400">
-                No posts available yet. Check back soon!
+            <div className="h-96 bg-slate-800/50 rounded-xl flex flex-col items-center justify-center border border-amber-500/30">
+              <svg
+                className="w-12 h-12 text-amber-400 mb-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={1.5}
+                  d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
+                />
+              </svg>
+              <p className="text-amber-300 font-medium text-lg mb-2">
+                Unable to load articles right now
+              </p>
+              <p className="text-slate-400 text-sm">
+                Our content service is temporarily unavailable. Please try again
+                shortly.
+              </p>
+            </div>
+          </div>
+        </section>
+      ) : posts.length === 0 ? (
+        <section className="py-12 px-4 md:px-0">
+          <div className="container mx-auto max-w-6xl">
+            <div className="h-96 bg-slate-800 rounded-xl flex flex-col items-center justify-center border border-slate-700">
+              <p className="text-slate-400 text-lg mb-2">
+                No posts available yet.
+              </p>
+              <p className="text-slate-500 text-sm">
+                New articles are on the way — check back soon!
               </p>
             </div>
           </div>

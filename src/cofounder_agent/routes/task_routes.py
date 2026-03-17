@@ -63,6 +63,7 @@ from utils.error_responses import ErrorResponseBuilder
 from utils.json_encoder import convert_decimals, safe_json_dumps
 from utils.route_utils import get_database_dependency
 from utils.text_utils import extract_title_from_content
+from routes.revalidate_routes import trigger_nextjs_revalidation
 
 # Import task status utilities (ENTERPRISE)
 from utils.task_status import (
@@ -300,6 +301,10 @@ async def _handle_blog_post_creation(
     from services.content_router_service import process_content_generation_task
 
     task_id = str(uuid_lib.uuid4())
+
+    # Log model selections (#952) so we can confirm user choices are applied
+    if request.models_by_phase:
+        logger.info(f"[create_task] User model selections applied: {request.models_by_phase}")
 
     task_data = {
         "id": task_id,
@@ -1985,6 +1990,17 @@ async def approve_task(
                 )
                 # Don't fail approval if auto-publish fails
 
+        # Trigger ISR revalidation after auto-publish (#955)
+        if approved and auto_publish:
+            try:
+                reval_paths = ["/", "/archive", "/posts"]
+                slug_val = merged_result.get("post_slug") if isinstance(merged_result, dict) else None
+                if slug_val:
+                    reval_paths.append(f"/posts/{slug_val}")
+                await trigger_nextjs_revalidation(reval_paths)
+            except Exception as reval_err:
+                logger.warning(f"[approve_task] ISR revalidation error (non-fatal): {reval_err}", exc_info=True)
+
         # Fetch updated task
         updated_task = await db_service.get_task(task_id)
 
@@ -2210,6 +2226,30 @@ async def publish_task(
             # Don't fail the publish operation if post creation fails
             # The task is still published, just warn about the post creation issue
 
+        # Trigger ISR revalidation on public site (#955)
+        # Non-fatal: publish succeeds even if revalidation fails
+        revalidation_success = False
+        post_slug_val = merged_result.get("post_slug")
+        revalidation_paths = ["/", "/archive", "/posts"]
+        if post_slug_val:
+            revalidation_paths.append(f"/posts/{post_slug_val}")
+        try:
+            revalidation_success = await trigger_nextjs_revalidation(revalidation_paths)
+            if not revalidation_success:
+                logger.warning("[publish_task] ISR revalidation returned failure — post is published but cache may be stale")
+        except Exception as reval_err:
+            logger.warning(f"[publish_task] ISR revalidation error (non-fatal): {reval_err}", exc_info=True)
+
+        # Store revalidation status in result for frontend signal
+        merged_result["revalidation"] = {
+            "triggered": True,
+            "success": revalidation_success,
+            "paths": revalidation_paths,
+        }
+        await db_service.update_task_status(
+            task_id, "published", result=safe_json_dumps(convert_decimals(merged_result))
+        )
+
         # Fetch updated task
         updated_task = await db_service.get_task(task_id)
 
@@ -2226,6 +2266,7 @@ async def publish_task(
                 "published_url": merged_result.get("published_url"),
                 "post_id": merged_result.get("post_id"),
                 "post_slug": merged_result.get("post_slug"),
+                "revalidation": merged_result.get("revalidation"),
                 "message": "Task published successfully",
             }
 

@@ -129,6 +129,11 @@ class TaskResponse(BaseModel):
     completed_at: Optional[datetime] = Field(None, description="Completion timestamp")
     cost_breakdown: Optional[Dict[str, Any]] = Field(None, description="Task cost breakdown")
 
+    # Publishing fields (#954) — extracted from result JSON by ModelConverter
+    post_id: Optional[str] = Field(None, description="Post ID in CMS after publishing")
+    post_slug: Optional[str] = Field(None, description="Post slug for URL generation")
+    published_url: Optional[str] = Field(None, description="Published post URL")
+
 
 class TaskCountsResponse(BaseModel):
     """Task counts grouped by status."""

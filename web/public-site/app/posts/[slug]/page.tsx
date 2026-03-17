@@ -24,6 +24,30 @@ const API_BASE =
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://glad-labs.com';
 
+// #945: Bounded generateStaticParams — pre-generate recent post pages at build time
+// for faster first-hit latency and better SEO indexing. Long-tail slugs still
+// work via ISR fallback (dynamicParams defaults to true in Next.js 15).
+export async function generateStaticParams(): Promise<{ slug: string }[]> {
+  try {
+    const response = await fetch(
+      `${API_BASE}/api/posts?offset=0&limit=50&published_only=true`,
+      { next: { revalidate: 3600 } }
+    );
+    if (!response.ok) return [];
+    const data = await response.json();
+    const posts = Array.isArray(data?.posts)
+      ? data.posts
+      : Array.isArray(data?.data)
+        ? data.data
+        : [];
+    return posts
+      .filter((p: { slug?: string }) => p.slug)
+      .map((p: { slug: string }) => ({ slug: p.slug }));
+  } catch {
+    return [];
+  }
+}
+
 interface Post {
   id: string;
   title: string;
@@ -53,7 +77,7 @@ const getPost = cache(async function getPost(
   try {
     // Use direct endpoint for single post by slug (much faster than fetching all posts)
     const response = await fetch(`${API_BASE}/api/posts/${slug}`, {
-      next: { revalidate: 86400 }, // ISR: revalidate every 24 hours - on-demand revalidation via webhook triggers updates
+      next: { revalidate: 3600 }, // ISR: revalidate every 1 hour (matches homepage) + on-demand revalidation via publish webhook
     });
 
     if (!response.ok) {
