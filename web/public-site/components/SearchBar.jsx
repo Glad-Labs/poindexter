@@ -34,6 +34,7 @@ export default function SearchBar({ compact = false }) {
         const cats = await getCategories();
         setCategories(cats || []);
       } catch (error) {
+        // eslint-disable-next-line no-console -- Client component, no structured logger
         console.error('Error loading categories:', error);
       }
     };
@@ -62,6 +63,7 @@ export default function SearchBar({ compact = false }) {
         setIsOpen(true);
         setSelectedIndex(-1);
       } catch (error) {
+        // eslint-disable-next-line no-console -- Client component, no structured logger
         console.error('Search error:', error);
         setResults([]);
       } finally {

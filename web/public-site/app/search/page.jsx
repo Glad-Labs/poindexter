@@ -29,6 +29,7 @@ export default function SearchPage() {
           setError(`No articles found for "${query}"`);
         }
       } catch (err) {
+        // eslint-disable-next-line no-console -- Client component, no structured logger
         console.error('Search error:', err);
         setError('Failed to search articles. Please try again.');
       } finally {
