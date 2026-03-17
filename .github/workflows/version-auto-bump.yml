@@ -1,15 +1,11 @@
-name: 🔄 Auto-Bump Version (Per Branch Tier)
+name: 🔄 Auto-Bump Version (Dev Only)
 
 on:
     push:
         branches:
-            - "main"
             - "dev"
             - "dev/**"
             - "feature/**"
-            - "staging"
-            - "staging/**"
-            - "release/**"
         paths-ignore:
             - "docs/**"
             - "*.md"
@@ -50,20 +46,11 @@ jobs:
               run: |
                   BRANCH="${{ github.ref_name }}"
                   echo "branch=$BRANCH" >> $GITHUB_OUTPUT
-
-                  if [[ $BRANCH == "main" ]]; then
-                    echo "tier=main (production)"
-                    echo "tier_name=main" >> $GITHUB_OUTPUT
-                  elif [[ $BRANCH == staging* ]] || [[ $BRANCH == release* ]]; then
-                    echo "tier=staging (feature release)"
-                    echo "tier_name=staging" >> $GITHUB_OUTPUT
-                  elif [[ $BRANCH == dev* ]] || [[ $BRANCH == feature* ]]; then
-                    echo "tier=dev (build)"
-                    echo "tier_name=dev" >> $GITHUB_OUTPUT
-                  else
-                    echo "tier=unknown"
-                    echo "tier_name=unknown" >> $GITHUB_OUTPUT
-                  fi
+                  # Dev and feature branches always get patch bumps.
+                  # Staging inherits dev's version on merge (no independent bump).
+                  # Main is handled by release-please (semantic versioning from commits).
+                  echo "tier=dev (patch bump)"
+                  echo "tier_name=dev" >> $GITHUB_OUTPUT
 
             - name: 🔄 Auto-bump version
               run: |

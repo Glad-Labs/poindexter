@@ -29,6 +29,7 @@ async function getPosts() {
       !FASTAPI_URL.startsWith('http://') &&
       !FASTAPI_URL.startsWith('https://')
     ) {
+      // eslint-disable-next-line no-console -- Server-side config validation, no logger available
       console.warn('Invalid NEXT_PUBLIC_API_BASE_URL, using static fallback');
       return { posts: [], error: 'invalid_config' };
     }
