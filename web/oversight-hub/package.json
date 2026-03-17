@@ -1,6 +1,6 @@
 {
   "name": "oversight-hub",
-  "version": "3.0.59",
+  "version": "3.0.60",
   "private": true,
   "description": "Oversight Hub - React 18 admin interface for monitoring and controlling AI content agents with real-time integration",
   "license": "AGPL-3.0",
