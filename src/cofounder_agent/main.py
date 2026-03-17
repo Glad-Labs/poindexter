@@ -236,7 +236,7 @@ async def api_health():
         health_data = {
             "status": "healthy",
             "service": "cofounder-agent",
-            "version": "3.0.1",
+            "version": "3.0.51",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "components": {},
         }
@@ -444,7 +444,7 @@ async def root():
     """
     return {
         "message": "Glad Labs AI Co-Founder is running",
-        "version": "3.0.1",
+        "version": "3.0.51",
         "database_enabled": hasattr(app.state, "database") and app.state.database is not None,
     }
 

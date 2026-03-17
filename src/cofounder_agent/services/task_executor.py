@@ -312,7 +312,7 @@ class TaskExecutor:
                     },
                 },
             )
-            await self.database_service.log_status_change(task_id, "pending", "in_progress")
+            await self.database_service.tasks.log_status_change(task_id, "pending", "in_progress")
             logger.info(f"✅ [TASK_SINGLE] Task marked as in_progress")
 
             # 2. Process through orchestrator/agent pipeline with timeout

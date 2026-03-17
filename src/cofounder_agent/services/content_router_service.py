@@ -882,7 +882,7 @@ async def process_content_generation_task(
                 task_id=task_id,
                 updates={
                     "status": "failed",
-                    "approval_status": "failed",
+                    "error_message": str(e),
                     "task_metadata": failure_metadata,  # ✅ Preserve all data
                 },
             )
