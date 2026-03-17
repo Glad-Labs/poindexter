@@ -14,16 +14,17 @@ RUN pip install --no-cache-dir poetry==1.8.5
 # Copy project files
 COPY pyproject.toml poetry.lock ./
 
-# Install dependencies (--no-root to skip installing the package itself yet)
+# Install dependencies only (--no-root skips installing the project package itself,
+# avoiding README.md not found errors in the container)
 RUN poetry config virtualenvs.create false && \
-    poetry install --no-interaction --no-ansi --only main
+    poetry install --no-interaction --no-ansi --only main --no-root
 
 # Copy application code
 COPY . .
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
+# Health check — use /api/health to match Railway's healthcheckPath in railway.json
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-8000}/api/health || exit 1
 
 # Run the application - use shell form to expand $PORT environment variable
 CMD poetry run uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
