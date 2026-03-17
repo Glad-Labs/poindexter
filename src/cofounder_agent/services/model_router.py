@@ -222,29 +222,29 @@ class ModelRouter:
             "primary": "gpt-3.5-turbo",
             "fallback": "claude-haiku-3",
             "tier": ModelTier.BUDGET,
-            "ollama": "ollama/phi",  # Blazing fast, free local inference
+            "ollama": "ollama/qwen3:8b",  # Fast, good at extraction/summarization
         },
         TaskComplexity.MEDIUM: {
             "primary": "claude-haiku-3",
             "fallback": "gpt-3.5-turbo",
             "tier": ModelTier.BUDGET,
-            "ollama": "ollama/mistral",  # Excellent quality, free local inference
+            "ollama": "ollama/gemma3:27b",  # Strong analysis and critique
         },
         TaskComplexity.COMPLEX: {
             "primary": "claude-sonnet-3",
             "fallback": "gpt-4",
             "tier": ModelTier.PREMIUM,
-            "ollama": "ollama/mixtral",  # Outstanding reasoning, free local inference
+            "ollama": "ollama/qwen3.5:35b",  # Best prose quality in VRAM budget
         },
         TaskComplexity.CRITICAL: {
             "primary": "gpt-4-turbo",
             "fallback": "claude-opus-3",
             "tier": ModelTier.FLAGSHIP,
-            "ollama": "ollama/llama2:70b",  # Top-tier quality, free local inference
+            "ollama": "ollama/qwen3.5:122b",  # Top-tier quality (CPU offload needed)
         },
     }
 
-    def __init__(self, default_model: str = "ollama/mistral", use_ollama: bool | None = None):
+    def __init__(self, default_model: str = "ollama/qwen3:8b", use_ollama: bool | None = None):
         """
         Initialize model router.
 
@@ -577,7 +577,7 @@ def get_model_router() -> Optional[ModelRouter]:
     return _model_router
 
 
-def initialize_model_router(default_model: str = "ollama/mistral") -> ModelRouter:
+def initialize_model_router(default_model: str = "ollama/qwen3:8b") -> ModelRouter:
     """
     Initialize the global model router.
 
@@ -610,36 +610,40 @@ def get_model_for_phase(
         Model identifier string (e.g., "gpt-4", "ollama/gpt-oss:20b")
     """
     # Phase-differentiated model tiers (#196):
-    # - research/assess/finalize: simple filtering/classification → cheap model
-    # - refine: editing existing draft → medium model
-    # - draft/outline: creative generation → best available model
+    # - research/assess/finalize: simple filtering/classification → fast 8B model
+    # - outline: structural planning → fast 8B model
+    # - draft/refine: creative generation & editing → best available model
+    # - assess: QA critique uses a DIFFERENT model family for genuine diversity
+    #
+    # Hardware: RTX 5090 32GB VRAM + 64GB RAM (R9 9950X3D)
+    # Models: qwen3.5:35b (prose), gemma3:27b (critique), qwen3:8b (fast tasks)
     defaults_by_phase = {
         "fast": {
             # All phases use the smallest model for maximum speed
-            "research": "ollama/gpt-oss:20b",
-            "outline": "ollama/gpt-oss:20b",
-            "draft": "ollama/gpt-oss:20b",
-            "assess": "ollama/gpt-oss:20b",
-            "refine": "ollama/gpt-oss:20b",
-            "finalize": "ollama/gpt-oss:20b",
+            "research": "ollama/qwen3:8b",
+            "outline": "ollama/qwen3:8b",
+            "draft": "ollama/qwen3:8b",
+            "assess": "ollama/qwen3:8b",
+            "refine": "ollama/qwen3:8b",
+            "finalize": "ollama/qwen3:8b",
         },
         "balanced": {
-            # Draft gets best local model; simple stages use cheap model (~40% savings)
-            "research": "ollama/gpt-oss:20b",   # SIMPLE: filtering/ranking snippets
-            "outline": "ollama/gpt-oss:20b",    # SIMPLE: structural planning
-            "draft": "ollama/gpt-oss:120b",     # COMPLEX: primary creative generation
-            "assess": "ollama/gpt-oss:20b",     # SIMPLE: binary approved/rejected + score
-            "refine": "ollama/gpt-oss:20b",     # MEDIUM: editing existing draft
-            "finalize": "ollama/gpt-oss:20b",   # SIMPLE: cleanup and formatting
+            # Draft/refine get best prose model; assess uses different family for diversity
+            "research": "ollama/qwen3:8b",       # SIMPLE: filtering/ranking snippets
+            "outline": "ollama/qwen3:8b",        # SIMPLE: structural planning
+            "draft": "ollama/qwen3.5:35b",       # COMPLEX: primary creative generation (best prose)
+            "assess": "ollama/gemma3:27b",       # QA: different model family catches different issues
+            "refine": "ollama/qwen3.5:35b",      # COMPLEX: editing needs same quality as draft
+            "finalize": "ollama/qwen3:8b",       # SIMPLE: cleanup and formatting
         },
         "quality": {
-            # Draft gets largest model; other stages use medium model (~50% savings vs all-120b)
-            "research": "ollama/gpt-oss:20b",   # SIMPLE: filtering/ranking snippets
-            "outline": "ollama/gpt-oss:20b",    # SIMPLE: structural planning
-            "draft": "ollama/gpt-oss:120b",     # COMPLEX: primary creative generation
-            "assess": "ollama/gpt-oss:20b",     # SIMPLE: binary approved/rejected + score
-            "refine": "ollama/gpt-oss:20b",     # MEDIUM: editing existing draft
-            "finalize": "ollama/gpt-oss:20b",   # SIMPLE: cleanup and formatting
+            # All creative phases get best model; assess uses large alternative
+            "research": "ollama/qwen3:8b",       # SIMPLE: filtering/ranking snippets
+            "outline": "ollama/qwen3.5:35b",     # Better outlines → better drafts
+            "draft": "ollama/qwen3.5:35b",       # COMPLEX: primary creative generation
+            "assess": "ollama/gemma3:27b",       # QA: different model family for genuine critique
+            "refine": "ollama/qwen3.5:35b",      # COMPLEX: polish and improve draft
+            "finalize": "ollama/qwen3:8b",       # SIMPLE: cleanup and formatting
         },
     }
 
@@ -653,6 +657,6 @@ def get_model_for_phase(
     if quality not in defaults_by_phase:
         quality = "balanced"
 
-    model = defaults_by_phase[quality].get(phase, "ollama/gpt-oss:20b")
+    model = defaults_by_phase[quality].get(phase, "ollama/qwen3:8b")
     logger.info(f"[MODEL_ROUTER] Using {quality} quality model for {phase}: {model}")
     return model
