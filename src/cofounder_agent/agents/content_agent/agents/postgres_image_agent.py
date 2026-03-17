@@ -207,7 +207,7 @@ Only return the JSON array, no other text."""
             logger.debug(f"LLM response was: {metadata_text if metadata_text else 'unknown'}")
             return []
         except Exception as e:
-            logger.error(f"❌ Error generating image metadata: {e}", exc_info=True)
+            logger.error(f"[_generate_image_metadata] post_slug={post.slug} title={post.title or post.topic}: {e}", exc_info=True)
             return []
 
     async def _process_single_image_async(
@@ -260,14 +260,14 @@ Only return the JSON array, no other text."""
                     return image_details
                 logger.warning(f"⚠️  No images found on Pexels for '{query}'")
             except Exception as e:
-                logger.warning(f"[search_images] Pexels search failed for query={query!r}: {e}", exc_info=True)
+                logger.warning(f"[_process_single_image_async] Pexels search failed post_slug={slug} index={index} query={query!r}: {e}", exc_info=True)
 
             # No fallback placeholder - return None instead
             logger.info(f"ℹ️  No image available for '{query}' - skipping")
             return None
 
         except Exception as e:
-            logger.error(f"❌ Error processing image at index {index}: {e}", exc_info=True)
+            logger.error(f"[_process_single_image_async] post_slug={slug} index={index}: {e}", exc_info=True)
             return None
 
     def _process_single_image(
@@ -307,7 +307,7 @@ Only return the JSON array, no other text."""
             return None
 
         except Exception as e:
-            logger.error(f"Error processing image at index {index}: {e}", exc_info=True)
+            logger.error(f"[_process_single_image] post_slug={slug} index={index}: {e}", exc_info=True)
             # Return None instead of fallback image
             return None
 

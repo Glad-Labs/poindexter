@@ -2,9 +2,19 @@
 Database Migrations Runner
 
 Dynamically discovers and runs all async migrations in the migrations/ directory.
-Migration files should have two functions:
+
+Two interface conventions are supported:
+
+Convention A (pool-based):
 - async def up(pool): Apply the migration
 - async def down(pool): Revert the migration
+
+Convention B (connection-based):
+- async def run_migration(conn): Apply the migration
+- async def rollback_migration(conn): Revert the migration
+
+The runner checks for `up` first; if absent it falls back to `run_migration`,
+acquiring a connection from the pool automatically.
 
 Migration files are run in alphabetical order. Each migration is tracked in a
 `schema_migrations` table and will only be applied once (idempotent).
@@ -85,12 +95,20 @@ async def run_migrations(database_service) -> bool:
                 migration_module = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
                 spec.loader.exec_module(migration_module)  # type: ignore[union-attr]
 
-                if not hasattr(migration_module, "up"):
-                    logger.warning(f"Migration {migration_name} missing up() function — skipping")
+                has_up = hasattr(migration_module, "up")
+                has_run_migration = hasattr(migration_module, "run_migration")
+
+                if not has_up and not has_run_migration:
+                    logger.warning(f"Migration {migration_name} missing up() or run_migration() function — skipping")
                     continue
 
                 logger.info(f"Applying migration: {migration_name}")
-                await migration_module.up(pool)
+
+                if has_up:
+                    await migration_module.up(pool)
+                else:
+                    async with pool.acquire() as migration_conn:
+                        await migration_module.run_migration(migration_conn)
 
                 # Record as applied
                 async with pool.acquire() as conn:

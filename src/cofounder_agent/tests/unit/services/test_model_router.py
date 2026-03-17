@@ -185,7 +185,7 @@ class TestGetModelCost:
         assert cost == 0.045
 
     def test_ollama_model_is_free(self, router):
-        cost = router.get_model_cost("ollama/mistral")
+        cost = router.get_model_cost("ollama/qwen3:8b")
         assert cost == 0.0
 
     def test_unknown_model_returns_fallback(self, router):
@@ -286,25 +286,25 @@ class TestGetModelForPhase:
         selections = {"draft": "auto"}
         result = get_model_for_phase("draft", selections, "balanced")
         # draft phase uses best model in balanced tier (#196 phase differentiation)
-        assert result == "ollama/gpt-oss:120b"
+        assert result == "ollama/qwen3.5:35b"
 
     def test_empty_selections_uses_quality_preference(self):
         result = get_model_for_phase("draft", {}, "quality")
-        assert result == "ollama/gpt-oss:120b"
+        assert result == "ollama/qwen3.5:35b"
 
     def test_unknown_quality_preference_falls_back_to_balanced(self):
         result = get_model_for_phase("draft", {}, "nonexistent_tier")
         # falls back to balanced tier; draft uses best model (#196)
-        assert result == "ollama/gpt-oss:120b"
+        assert result == "ollama/qwen3.5:35b"
 
     def test_none_quality_preference_defaults_to_balanced(self):
         result = get_model_for_phase("draft", {}, None)  # type: ignore[arg-type]
         # defaults to balanced tier; draft uses best model (#196)
-        assert result == "ollama/gpt-oss:120b"
+        assert result == "ollama/qwen3.5:35b"
 
     def test_unknown_phase_returns_fallback(self):
         result = get_model_for_phase("unknown_phase", {}, "balanced")
-        assert result == "ollama/gpt-oss:20b"
+        assert result == "ollama/qwen3:8b"
 
     def test_all_phases_covered_for_all_tiers(self):
         phases = ["research", "outline", "draft", "assess", "refine", "finalize"]

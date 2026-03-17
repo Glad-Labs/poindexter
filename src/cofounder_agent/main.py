@@ -121,6 +121,11 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         )
         logger.info("[LIFESPAN] ✅ Services registered in global DI container")
 
+        # Start the background task executor now that all services are wired up
+        logger.info("[LIFESPAN] Starting background task executor...")
+        await services["task_executor"].start()
+        logger.info("[LIFESPAN] ✅ Task executor started")
+
         logger.info("[OK] Lifespan: Yielding control to FastAPI application. ..")
         try:
             logger.info("[OK] Application is now running")
@@ -171,7 +176,7 @@ for complete business operations including:
 Most endpoints require JWT authentication via the `Authorization: Bearer <token>` header.
 Use the `/api/auth/logout` or GitHub OAuth endpoints to obtain tokens.
 """,
-    version="3.0.1",
+    version="3.0.51",
     lifespan=lifespan,
     contact={
         "name": "Glad Labs Support",

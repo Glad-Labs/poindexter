@@ -176,12 +176,21 @@ class OllamaAdapter(ProviderAdapter):
             )
 
             elapsed_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
+            tokens_used = response.get("prompt_eval_count", 0) + response.get("eval_count", 0)
+
+            logger.info(
+                "LLM call completed",
+                provider="ollama",
+                model=model,
+                response_time_ms=elapsed_ms,
+                tokens_used=tokens_used,
+            )
 
             return ModelResponse(
                 text=response.get("response", ""),
                 provider=self.provider_type,
                 model=model,
-                tokens_used=response.get("prompt_eval_count", 0) + response.get("eval_count", 0),
+                tokens_used=tokens_used,
                 cost=0.0,  # Ollama is free!
                 response_time_ms=elapsed_ms,
             )
@@ -243,12 +252,21 @@ class HuggingFaceAdapter(ProviderAdapter):
             )
 
             elapsed_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
+            tokens_used = len(prompt.split()) + len(response.split())  # Rough estimate
+
+            logger.info(
+                "LLM call completed",
+                provider="huggingface",
+                model=model,
+                response_time_ms=elapsed_ms,
+                tokens_used=tokens_used,
+            )
 
             return ModelResponse(
                 text=response,
                 provider=self.provider_type,
                 model=model,
-                tokens_used=len(prompt.split()) + len(response.split()),  # Rough estimate
+                tokens_used=tokens_used,
                 cost=0.0 if not api_token else 0.0001,  # Free tier or minimal cost
                 response_time_ms=elapsed_ms,
             )
@@ -311,12 +329,21 @@ class GoogleAdapter(ProviderAdapter):
             )
 
             elapsed_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
+            tokens_used = len(prompt.split()) + len(response.split())  # Rough estimate
+
+            logger.info(
+                "LLM call completed",
+                provider="google",
+                model=model,
+                response_time_ms=elapsed_ms,
+                tokens_used=tokens_used,
+            )
 
             return ModelResponse(
                 text=response,
                 provider=self.provider_type,
                 model=model,
-                tokens_used=len(prompt.split()) + len(response.split()),  # Rough estimate
+                tokens_used=tokens_used,
                 cost=0.0001,  # Gemini is relatively cheap
                 response_time_ms=elapsed_ms,
             )
@@ -389,12 +416,21 @@ class AnthropicAdapter(ProviderAdapter):
             elapsed_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
 
             text = response.content[0].text if response.content else ""
+            tokens_used = response.usage.input_tokens + response.usage.output_tokens
+
+            logger.info(
+                "LLM call completed",
+                provider="anthropic",
+                model=model,
+                response_time_ms=elapsed_ms,
+                tokens_used=tokens_used,
+            )
 
             return ModelResponse(
                 text=text,
                 provider=self.provider_type,
                 model=model,
-                tokens_used=response.usage.input_tokens + response.usage.output_tokens,
+                tokens_used=tokens_used,
                 cost=0.0003,  # Approximate cost per token
                 response_time_ms=elapsed_ms,
             )
@@ -462,12 +498,21 @@ class OpenAIAdapter(ProviderAdapter):
             elapsed_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
 
             text = response.choices[0].message.content if response.choices else ""
+            tokens_used = response.usage.prompt_tokens + response.usage.completion_tokens
+
+            logger.info(
+                "LLM call completed",
+                provider="openai",
+                model=model,
+                response_time_ms=elapsed_ms,
+                tokens_used=tokens_used,
+            )
 
             return ModelResponse(
                 text=text,
                 provider=self.provider_type,
                 model=model,
-                tokens_used=response.usage.prompt_tokens + response.usage.completion_tokens,
+                tokens_used=tokens_used,
                 cost=0.0006,  # Approximate cost per token (GPT-4 is expensive!)
                 response_time_ms=elapsed_ms,
             )

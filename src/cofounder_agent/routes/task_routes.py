@@ -331,7 +331,7 @@ async def _handle_blog_post_creation(
 
     # Store in database
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"✅ [BLOG_TASK] Created: {returned_task_id}")
+    logger.info(f"✅ [BLOG_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')}")
 
     # Schedule background generation
     async def _run_blog_generation():
@@ -394,7 +394,7 @@ async def _handle_social_media_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"✅ [SOCIAL_TASK] Created: {returned_task_id} - Platforms: {request.platforms}")
+    logger.info(f"✅ [SOCIAL_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')} - Platforms: {request.platforms}")
 
     return {
         "id": returned_task_id,
@@ -429,7 +429,7 @@ async def _handle_email_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"✅ [EMAIL_TASK] Created: {returned_task_id}")
+    logger.info(f"✅ [EMAIL_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')}")
 
     return {
         "id": returned_task_id,
@@ -462,7 +462,7 @@ async def _handle_newsletter_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"✅ [NEWSLETTER_TASK] Created: {returned_task_id}")
+    logger.info(f"✅ [NEWSLETTER_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')}")
 
     return {
         "id": returned_task_id,
@@ -500,7 +500,7 @@ async def _handle_business_analytics_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"✅ [ANALYTICS_TASK] Created: {returned_task_id} - Metrics: {request.metrics}")
+    logger.info(f"✅ [ANALYTICS_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')} - Metrics: {request.metrics}")
 
     return {
         "id": returned_task_id,
@@ -536,7 +536,7 @@ async def _handle_data_retrieval_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"✅ [DATA_TASK] Created: {returned_task_id} - Sources: {request.data_sources}")
+    logger.info(f"✅ [DATA_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')} - Sources: {request.data_sources}")
 
     return {
         "id": returned_task_id,
@@ -569,7 +569,7 @@ async def _handle_market_research_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"✅ [MARKET_RESEARCH_TASK] Created: {returned_task_id}")
+    logger.info(f"✅ [MARKET_RESEARCH_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')}")
 
     return {
         "id": returned_task_id,
@@ -602,7 +602,7 @@ async def _handle_financial_analysis_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"✅ [FINANCIAL_ANALYSIS_TASK] Created: {returned_task_id}")
+    logger.info(f"✅ [FINANCIAL_ANALYSIS_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')}")
 
     return {
         "id": returned_task_id,

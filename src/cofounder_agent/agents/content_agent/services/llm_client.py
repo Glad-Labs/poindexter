@@ -166,10 +166,10 @@ class LLMClient:
             response = self.model.generate_content(prompt)  # type: ignore[union-attr]
             return json.loads(response.text)
         except json.JSONDecodeError:
-            logging.error("Failed to decode JSON from Gemini response.")
+            logging.error("Failed to decode JSON from Gemini response.", exc_info=True)
             return {}
         except Exception as e:
-            logging.error(f"Error generating JSON content from Gemini: {e}")
+            logging.error(f"Error generating JSON content from Gemini: {e}", exc_info=True)
             return {}
 
     async def _generate_json_local(self, prompt: str) -> dict:
@@ -249,7 +249,7 @@ class LLMClient:
             response = self.model.generate_content(prompt)  # type: ignore[union-attr]
             return response.text
         except Exception as e:
-            logging.error(f"Error generating text content from Gemini: {e}")
+            logging.error(f"Error generating text content from Gemini: {e}", exc_info=True)
             return ""
 
     async def _generate_text_local(self, prompt: str) -> str:
@@ -324,5 +324,5 @@ class LLMClient:
             response = self.summarizer_model.generate_content(prompt)  # type: ignore[union-attr]
             return response.text
         except Exception as e:
-            logging.error(f"Error generating summary from Gemini: {e}")
+            logging.error(f"Error generating summary from Gemini: {e}", exc_info=True)
             return ""
