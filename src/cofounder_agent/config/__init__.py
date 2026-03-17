@@ -41,8 +41,8 @@ class Config:
     enable_tracing: bool = False
     otlp_endpoint: str = "http://localhost:4318/v1/traces"
 
-    # Application settings
-    app_version: str = "3.0.1"
+    # Application settings — version is read from APP_VERSION env var or pyproject.toml
+    app_version: str = "0.0.0"
     secret_key: str = "your-secret-key-here"
 
 
@@ -92,6 +92,23 @@ def load_env() -> None:
 _PLACEHOLDER_SECRET = "your-secret-key-here"
 
 
+def _read_pyproject_version() -> str:
+    """Read version from pyproject.toml as fallback when APP_VERSION env var is not set."""
+    try:
+        # In Docker: /app/pyproject.toml, locally: src/cofounder_agent/pyproject.toml
+        config_dir = os.path.dirname(os.path.abspath(__file__))
+        pyproject_path = os.path.join(config_dir, "..", "pyproject.toml")
+        if os.path.exists(pyproject_path):
+            with open(pyproject_path, "r") as f:
+                for line in f:
+                    if line.strip().startswith("version"):
+                        # Parse: version = "3.0.55"
+                        return line.split("=", 1)[1].strip().strip('"')
+    except Exception:
+        pass
+    return "0.0.0"
+
+
 def get_config() -> Config:
     """Get application configuration."""
     # Load environment variables if not already loaded
@@ -125,6 +142,6 @@ def get_config() -> Config:
         sentry_enabled=os.getenv("SENTRY_ENABLED", "true").lower() in ("true", "1", "yes"),
         enable_tracing=os.getenv("ENABLE_TRACING", "false").lower() == "true",
         otlp_endpoint=os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318/v1/traces"),
-        app_version=os.getenv("APP_VERSION", "3.0.1"),
+        app_version=os.getenv("APP_VERSION", _read_pyproject_version()),
         secret_key=secret_key,
     )

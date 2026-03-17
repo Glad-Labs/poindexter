@@ -5,10 +5,11 @@ WORKDIR /app
 # Install system dependencies (including headless graphics libs if needed by indirect deps)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Poetry
-RUN pip install --no-cache-dir poetry==1.7.1
+RUN pip install --no-cache-dir poetry==1.8.5
 
 # Copy project files
 COPY pyproject.toml poetry.lock ./

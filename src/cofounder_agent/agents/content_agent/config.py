@@ -56,9 +56,18 @@ class Config:
         # Load environment variables from a .env file into the environment.
         # This allows for secure and flexible configuration without hardcoding secrets.
 
-        # Path calculation: config.py is at src/cofounder_agent/agents/content_agent/config.py
-        # So we need to go up 4 levels to reach project root (glad-labs-website/)
-        project_root = Path(__file__).resolve().parents[4]
+        # Find project root by looking for a known marker file.
+        # In Docker (WORKDIR /app), config.py is at /app/agents/content_agent/config.py (3 parents).
+        # Locally, it's at glad-labs-website/src/cofounder_agent/agents/content_agent/config.py (4 parents).
+        config_path = Path(__file__).resolve()
+        project_root = None
+        for parent in config_path.parents:
+            if (parent / "pyproject.toml").exists() or (parent / "main.py").exists():
+                project_root = parent
+                break
+        if project_root is None:
+            # Fallback: use the working directory
+            project_root = Path.cwd()
 
         # Try .env.local first (development/local), then .env (committed version)
         dotenv_local_path = project_root / ".env.local"

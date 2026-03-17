@@ -65,6 +65,18 @@ class HealthService:
         else:
             health_data["components"]["database"] = "unavailable"
 
+        # Include Redis cache status if available
+        redis_cache = getattr(self.app.state, "redis_cache", None)
+        if redis_cache:
+            try:
+                redis_health = await redis_cache.health_check()
+                health_data["components"]["redis"] = redis_health.get("status", "unknown")
+            except Exception as e:  # pylint: disable=broad-except
+                logger.error("[health_service] Redis health check failed", exc_info=True)
+                health_data["components"]["redis"] = "degraded"
+        else:
+            health_data["components"]["redis"] = "unavailable"
+
         return health_data
 
 

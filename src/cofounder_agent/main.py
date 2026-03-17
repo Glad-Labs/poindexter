@@ -176,7 +176,7 @@ for complete business operations including:
 Most endpoints require JWT authentication via the `Authorization: Bearer <token>` header.
 Use the `/api/auth/logout` or GitHub OAuth endpoints to obtain tokens.
 """,
-    version="3.0.51",
+    version=config.app_version,
     lifespan=lifespan,
     contact={
         "name": "Glad Labs Support",
@@ -236,7 +236,7 @@ async def api_health():
         health_data = {
             "status": "healthy",
             "service": "cofounder-agent",
-            "version": "3.0.51",
+            "version": config.app_version,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "components": {},
         }
@@ -444,7 +444,7 @@ async def root():
     """
     return {
         "message": "Glad Labs AI Co-Founder is running",
-        "version": "3.0.51",
+        "version": config.app_version,
         "database_enabled": hasattr(app.state, "database") and app.state.database is not None,
     }
 
