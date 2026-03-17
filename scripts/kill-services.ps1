@@ -11,7 +11,6 @@ $services = @(
     @{Port = 8000; Name = "AI Co-Founder API"}
     @{Port = 3001; Name = "Oversight Hub"}
     @{Port = 3000; Name = "Public Site"}
-    @{Port = 1337; Name = "Strapi CMS"}
 )
 
 $stopped = 0

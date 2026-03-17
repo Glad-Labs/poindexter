@@ -154,7 +154,10 @@ def configure_standard_logging() -> None:
                 record.request_id = "-"
             return super().format(record)
 
-    handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
+    # Use a UTF-8 stream to avoid UnicodeEncodeError on Windows (cp1252)
+    # when log messages contain emoji or other non-ASCII characters.
+    utf8_stream = open(sys.stdout.fileno(), mode="w", encoding="utf-8", closefd=False)
+    handlers: list[logging.Handler] = [logging.StreamHandler(utf8_stream)]
 
     if LOG_TO_FILE:
         try:

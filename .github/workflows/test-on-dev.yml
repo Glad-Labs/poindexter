@@ -51,9 +51,13 @@ jobs:
       # TEST PHASE
       # ============================================
 
-      - name: 🧪 Run tests
+      - name: 🧪 Run frontend tests with coverage
         run: npm run test:ci
         # fix #144: removed continue-on-error — failures should be visible on dev
+
+      - name: 🧪 Enforce coverage thresholds (oversight-hub)
+        run: cd web/oversight-hub && npx vitest run --coverage --pool=forks --poolOptions.forks.maxForks=2
+        # #951: Vitest coverage thresholds in vitest.config.ts — CI fails if thresholds regress
 
       - name: 🧪 Run backend tests
         run: npm run test:python

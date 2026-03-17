@@ -6,7 +6,7 @@ Consolidates all Pydantic models for task management endpoints
 
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from schemas.unified_task_response import UnifiedTaskResponse
 
@@ -102,9 +102,25 @@ class UnifiedTaskRequest(BaseModel):
     models_by_phase: Optional[Dict[str, str]] = Field(
         None, description="Per-phase model selection (research, creative, qa, etc.)"
     )
+    # Legacy alias — callers using model_selections are mapped to models_by_phase (#952)
+    model_selections: Optional[Dict[str, str]] = Field(
+        None, description="DEPRECATED: Use models_by_phase. Legacy per-phase model selections.",
+        exclude=True,
+    )
     quality_preference: Optional[Literal["fast", "balanced", "quality"]] = Field(
         "balanced", description="Quality vs speed preference"
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_model_selections(cls, values: Any) -> Any:
+        """Map legacy model_selections to models_by_phase (#952)."""
+        if isinstance(values, dict):
+            legacy = values.get("model_selections")
+            canonical = values.get("models_by_phase")
+            if legacy and not canonical:
+                values["models_by_phase"] = legacy
+        return values
     enforce_constraints: Optional[bool] = Field(
         True,
         description="Whether to enforce word count and style validation gates. Set False to skip validation failures.",

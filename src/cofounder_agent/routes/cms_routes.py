@@ -23,9 +23,15 @@ router = APIRouter(tags=["cms"])
 
 def convert_markdown_to_html(markdown_content: str) -> str:
     """
-    Convert markdown content to HTML for safe rendering.
-    Handles both pure markdown and HTML-wrapped markdown hybrid format.
-    Uses regex patterns for compatibility without external markdown library.
+    Convert markdown content to HTML for safe rendering (#956).
+
+    Uses the ``markdown`` library for reliable conversion (handles links,
+    images, code blocks, blockquotes, tables, etc.) instead of fragile
+    regex patterns.  Falls back to the raw content on error.
+
+    The canonical content boundary is: **markdown in, HTML out**.
+    Content is stored as markdown in the database; this function converts
+    on read so the frontend always receives HTML.
 
     Args:
         markdown_content: Markdown formatted text
@@ -37,82 +43,21 @@ def convert_markdown_to_html(markdown_content: str) -> str:
         return ""
 
     try:
-        import re
+        import markdown as md
 
-        content = markdown_content.strip()
-        html = content
+        # If content already looks like HTML (starts with a tag), return as-is
+        stripped = markdown_content.strip()
+        if stripped.startswith("<") and not stripped.startswith("<!["):
+            return markdown_content
 
-        # Handle setext-style headers (underlined with = or -)
-        # Level 1 headers (underlined with =)
-        html = re.sub(r"^(.*?)\n=+\s*$", r"<h1>\1</h1>", html, flags=re.MULTILINE)
-        # Level 2 headers (underlined with -)
-        html = re.sub(r"^(.*?)\n-+\s*$", r"<h2>\1</h2>", html, flags=re.MULTILINE)
-
-        # Convert ATX-style headers (# style)
-        html = re.sub(r"^### (.*?)$", r"<h3>\1</h3>", html, flags=re.MULTILINE)
-        html = re.sub(r"^## (.*?)$", r"<h2>\1</h2>", html, flags=re.MULTILINE)
-        html = re.sub(r"^# (.*?)$", r"<h1>\1</h1>", html, flags=re.MULTILINE)
-
-        # Remove standalone lines of dashes/equals (separator lines)
-        html = re.sub(r"^\s*={3,}\s*$", "", html, flags=re.MULTILINE)
-        html = re.sub(r"^\s*-{3,}\s*$", "", html, flags=re.MULTILINE)
-
-        # Convert bold (**, __, **text**, __text__)
-        html = re.sub(r"\*\*(.*?)\*\*", r"<strong>\1</strong>", html)
-        html = re.sub(r"__(.*?)__", r"<strong>\1</strong>", html)
-
-        # Convert italic (*, _)
-        html = re.sub(r"\*(.*?)\*", r"<em>\1</em>", html)
-        html = re.sub(r"_(.*?)_", r"<em>\1</em>", html)
-
-        # Convert line breaks to paragraphs
-        paragraphs = html.split("\n\n")
-        converted_paragraphs = []
-        for p in paragraphs:
-            p = p.strip()
-            if not p:
-                continue
-            # Skip if already an HTML element
-            if (
-                p.startswith("<h")
-                or p.startswith("<ol")
-                or p.startswith("<ul")
-                or p.startswith("<blockquote")
-            ):
-                converted_paragraphs.append(p)
-            # Handle numbered lists
-            elif re.match(r"^\d+\.", p):
-                items = []
-                for line in p.split("\n"):
-                    line = line.strip()
-                    if re.match(r"^\d+\.", line):
-                        item_text = re.sub(r"^\d+\.\s*", "", line)
-                        items.append(f"<li>{item_text}</li>")
-                converted_paragraphs.append("<ol>" + "".join(items) + "</ol>")
-            # Handle bullet lists
-            elif p.startswith("-") or p.startswith("*"):
-                items = []
-                for line in p.split("\n"):
-                    line = line.strip()
-                    if line.startswith("-"):
-                        item_text = re.sub(r"^-\s*", "", line)
-                        items.append(f"<li>{item_text}</li>")
-                    elif line.startswith("*"):
-                        item_text = re.sub(r"^\*\s*", "", line)
-                        items.append(f"<li>{item_text}</li>")
-                if items:
-                    converted_paragraphs.append("<ul>" + "".join(items) + "</ul>")
-            else:
-                # Regular paragraph
-                converted_paragraphs.append(f"<p>{p}</p>")
-
-        html = "\n".join(converted_paragraphs)
-
-        logger.info(f"Converted markdown to HTML (len={len(html)} chars)")
+        html = md.markdown(
+            stripped,
+            extensions=["extra", "codehilite", "sane_lists", "smarty"],
+            output_format="html",
+        )
         return html
     except Exception as e:
         logger.error(f"Error converting markdown: {e}", exc_info=True)
-        # Fallback: return as-is
         return markdown_content
 
 

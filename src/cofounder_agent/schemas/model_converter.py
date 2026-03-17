@@ -184,6 +184,15 @@ class ModelConverter:
                 if "constraint_compliance" in data["task_metadata"]:
                     data["constraint_compliance"] = data["task_metadata"]["constraint_compliance"]
 
+        # Extract publish fields from result dict to top level (#954)
+        # The publish endpoint stores post_id, post_slug, published_url inside the result JSON.
+        # Pull them up so UnifiedTaskResponse can expose them as top-level fields.
+        result_dict = data.get("result")
+        if isinstance(result_dict, dict):
+            for publish_field in ("post_id", "post_slug", "published_url"):
+                if not data.get(publish_field) and result_dict.get(publish_field):
+                    data[publish_field] = result_dict[publish_field]
+
         return TaskResponse(**data)
 
     @staticmethod
