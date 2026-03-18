@@ -57,9 +57,12 @@ jobs:
       # TEST PHASE (must pass before deploy)
       # ============================================
 
-      - name: 🧪 Run tests
-        run: npm run test:ci
-        # fix #144: removed continue-on-error — test failures block staging deploy
+      - name: 🧪 Run frontend tests
+        run: |
+          # Run each workspace's test script directly to avoid passing
+          # jest-specific flags (--ci, --watchAll) to vitest workspaces
+          npm run test --workspace=web/public-site --if-present
+          npm run test --workspace=web/oversight-hub --if-present
 
       - name: 🧪 Run backend tests
         run: npm run test:python
