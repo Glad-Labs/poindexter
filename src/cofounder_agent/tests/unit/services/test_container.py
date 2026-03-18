@@ -94,4 +94,4 @@ class TestHelperFunctions:
         """Calling with no services should not raise."""
         app = MagicMock()
         initialize_services(app)
-        # Nothing registered; no error
+        assert get_service("database") is None
