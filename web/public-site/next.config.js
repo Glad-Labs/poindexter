@@ -51,6 +51,9 @@ import { withSentryConfig } from '@sentry/nextjs';
 })();
 
 const nextConfig = {
+  // Standalone output for Docker deployments — produces .next/standalone with a self-contained server.js
+  output: 'standalone',
+
   // Image Optimization Configuration
   images: {
     // Supported image formats with automatic optimization
