@@ -140,7 +140,11 @@ const TaskImageManager = ({
           <Box
             component="img"
             src={selectedImageUrl}
-            alt="Selected"
+            alt={
+              task?.topic
+                ? `Preview image for task: ${task.topic}`
+                : 'Selected task image preview'
+            }
             sx={{
               maxWidth: '100%',
               maxHeight: '250px',
@@ -157,6 +161,7 @@ const TaskImageManager = ({
 TaskImageManager.propTypes = {
   task: PropTypes.shape({
     status: PropTypes.string.isRequired,
+    topic: PropTypes.string,
   }),
   imageSource: PropTypes.string.isRequired,
   selectedImageUrl: PropTypes.string.isRequired,

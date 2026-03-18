@@ -250,7 +250,7 @@ export default async function PostPage({
               </h1>
 
               {/* Meta Information */}
-              <div className="flex flex-wrap items-center gap-4 text-slate-400 mb-8">
+              <div className="flex flex-wrap items-center gap-4 text-slate-300 mb-8">
                 <time dateTime={post.published_at || post.created_at}>
                   {publishDate}
                 </time>

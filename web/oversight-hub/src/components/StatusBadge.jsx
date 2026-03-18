@@ -5,7 +5,7 @@ const StatusBadge = ({ status }) => {
   switch (status.toLowerCase()) {
     case 'completed':
       return (
-        <span className={`${baseClasses} bg-green-500 text-green-900`}>
+        <span className={`${baseClasses} bg-green-600 text-white`}>
           Completed
         </span>
       );
@@ -17,13 +17,11 @@ const StatusBadge = ({ status }) => {
       );
     case 'queued':
       return (
-        <span className={`${baseClasses} bg-blue-500 text-blue-900`}>
-          Queued
-        </span>
+        <span className={`${baseClasses} bg-blue-700 text-white`}>Queued</span>
       );
     case 'failed':
       return (
-        <span className={`${baseClasses} bg-red-500 text-red-900`}>Failed</span>
+        <span className={`${baseClasses} bg-red-700 text-white`}>Failed</span>
       );
     default:
       return (

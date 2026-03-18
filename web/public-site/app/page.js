@@ -264,14 +264,14 @@ export default async function HomePage() {
                         <h3 className="text-lg font-semibold text-white mb-2 group-hover:text-cyan-400 transition-colors line-clamp-2">
                           {post.title}
                         </h3>
-                        <p className="text-sm text-slate-400 line-clamp-2">
+                        <p className="text-sm text-slate-300 line-clamp-2">
                           {post.excerpt ||
                             (post.content
                               ? post.content.substring(0, 100) + '...'
                               : '')}
                         </p>
                         {post.published_at && (
-                          <time className="text-xs text-slate-500 mt-3 block">
+                          <time className="text-xs text-slate-400 mt-3 block">
                             {new Date(post.published_at).toLocaleDateString(
                               'en-US',
                               {
@@ -298,7 +298,7 @@ export default async function HomePage() {
           <h2 className="text-3xl font-bold text-white mb-4">
             Browse All Articles
           </h2>
-          <p className="text-lg text-slate-400 mb-8">
+          <p className="text-lg text-slate-300 mb-8">
             Explore our complete collection of insights and analyses
           </p>
           <Link
