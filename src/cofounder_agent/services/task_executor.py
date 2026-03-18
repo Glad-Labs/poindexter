@@ -19,8 +19,8 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-# Import model selection helper
-from routes.task_routes import get_model_for_phase
+# Import model selection helper (from services layer, not routes)
+from services.model_router import get_model_for_phase
 
 # Import AI content generator for fallback
 from .ai_content_generator import AIContentGenerator
