@@ -6,7 +6,7 @@
   "framework": "nextjs",
   "cleanUrls": true,
   "trailingSlash": false,
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- cms/",
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- web/public-site/ package.json package-lock.json",
   "headers": [
     {
       "source": "/(.*)",
@@ -21,7 +21,7 @@
         },
         {
           "key": "X-XSS-Protection",
-          "value": "1; mode=block"
+          "value": "0"
         },
         {
           "key": "Cache-Control",
