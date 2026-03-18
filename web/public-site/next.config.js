@@ -151,7 +151,7 @@ const nextConfig = {
                 "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://giscus.app",
                 "img-src 'self' data: https:",
                 "font-src 'self' data: https://fonts.gstatic.com",
-                "connect-src 'self' http://localhost:8000 https://www.google-analytics.com https://cofounder-production.up.railway.app https://api.railway.app https://va.vercel-scripts.com https://vitals.vercel-insights.com",
+                `connect-src 'self' ${process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_FASTAPI_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:8000' : '')} https://www.google-analytics.com https://cofounder-production.up.railway.app https://api.railway.app https://va.vercel-scripts.com https://vitals.vercel-insights.com`,
                 "frame-src 'self' https://pagead2.googlesyndication.com https://giscus.app",
               ].join('; ') + ';',
           },
