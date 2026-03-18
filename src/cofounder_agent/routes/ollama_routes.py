@@ -344,6 +344,7 @@ async def get_ollama_status(
             }
 
     except Exception as e:
+        logger.warning("[get_ollama_status] Health check failed: %s", e, exc_info=True)
         return {
             "running": False,
             "host": OLLAMA_HOST,
