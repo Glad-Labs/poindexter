@@ -147,24 +147,43 @@ jobs:
       - name: ✅ Verify Staging Deployment
         run: |
           echo "🔍 Verifying staging deployment..."
-          echo "Waiting for services to stabilize (15 seconds)..."
-          sleep 15
+          echo "Waiting for services to stabilize (30 seconds)..."
+          sleep 30
 
+          FAILURES=0
           COFOUNDER_URL="${{ secrets.COFOUNDER_STAGING_URL }}"
           OVERSIGHT_URL="${{ secrets.OVERSIGHT_STAGING_URL }}"
           PUBLIC_SITE_URL="${{ secrets.PUBLIC_SITE_STAGING_SITE_URL }}"
 
-          # fix #147: use real secrets, retry on failure, still soft-fail for first deploy
           echo "Testing Co-Founder Agent..."
-          curl -f --retry 3 --retry-delay 5 "${COFOUNDER_URL}/health" || echo "⚠️ Agent health check pending — verify COFOUNDER_STAGING_URL secret"
+          if curl -sf --retry 3 --retry-delay 5 "${COFOUNDER_URL}/health" | grep -q "healthy"; then
+            echo "✅ Co-Founder Agent is healthy"
+          else
+            echo "❌ Co-Founder Agent health check FAILED"
+            FAILURES=$((FAILURES + 1))
+          fi
 
           echo "Testing Public Site..."
-          curl -f --retry 3 --retry-delay 5 "${PUBLIC_SITE_URL}" || echo "⚠️ Public Site check pending — verify PUBLIC_SITE_STAGING_SITE_URL secret"
+          if curl -sf --retry 3 --retry-delay 5 "${PUBLIC_SITE_URL}" > /dev/null; then
+            echo "✅ Public Site is reachable"
+          else
+            echo "❌ Public Site check FAILED"
+            FAILURES=$((FAILURES + 1))
+          fi
 
           echo "Testing Oversight Hub..."
-          curl -f --retry 3 --retry-delay 5 "${OVERSIGHT_URL}" || echo "⚠️ Oversight Hub check pending — verify OVERSIGHT_STAGING_URL secret"
+          if curl -sf --retry 3 --retry-delay 5 "${OVERSIGHT_URL}" > /dev/null; then
+            echo "✅ Oversight Hub is reachable"
+          else
+            echo "❌ Oversight Hub check FAILED"
+            FAILURES=$((FAILURES + 1))
+          fi
 
-          echo "✅ All components deployed successfully to staging!"
+          if [ "$FAILURES" -gt 0 ]; then
+            echo "❌ $FAILURES service(s) failed verification"
+            exit 1
+          fi
+          echo "✅ All components deployed and verified!"
 
       - name: 📢 Notification
         if: always()
