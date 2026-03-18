@@ -106,9 +106,7 @@ jobs:
       - name: 🚀 Deploy Public Site to Vercel (Staging)
         run: |
           echo "📤 Deploying Public Site to staging environment..."
-          cd web/public-site
-          npx vercel --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_ORG_ID }}
-          cd ../..
+          npx vercel --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_ORG_ID }} --archive=tgz
           echo "✅ Public Site staging deployment completed"
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -128,9 +126,7 @@ jobs:
       - name: 🚀 Deploy Oversight Hub to Vercel (Staging)
         run: |
           echo "📤 Deploying Oversight Hub to staging environment..."
-          cd web/oversight-hub
-          npx vercel --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_ORG_ID }}
-          cd ../..
+          npx vercel --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_ORG_ID }} --archive=tgz
           echo "✅ Oversight Hub staging deployment completed"
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
