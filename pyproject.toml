@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "glad-labs"
-version = "3.0.72"
+version = "3.0.73"
 description = "Production-ready AI orchestration system with autonomous agents, multi-provider LLM routing, and full-stack web applications"
 authors = ["Matthew M. Gladding <mattg@gladlabs.io>"]
 readme = "README.md"
