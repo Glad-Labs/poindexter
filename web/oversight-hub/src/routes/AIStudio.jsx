@@ -21,43 +21,43 @@ function AIStudio() {
   const FALLBACK_MODELS = [
     {
       id: 1,
-      name: 'GPT-4',
-      provider: 'OpenAI',
-      version: '4.0',
+      name: 'gpt-4',
+      displayName: 'gpt-4 (openai)',
+      provider: 'openai',
       status: 'Active',
-      accuracy: 94.2,
-      latency: '245ms',
-      usage: 8540,
+      isFree: false,
+      size: 'unknown',
+      description: 'Model from openai',
     },
     {
       id: 2,
-      name: 'Claude 3',
-      provider: 'Anthropic',
-      version: '3.0',
+      name: 'claude-3-opus',
+      displayName: 'claude-3-opus (anthropic)',
+      provider: 'anthropic',
       status: 'Active',
-      accuracy: 92.8,
-      latency: '312ms',
-      usage: 6230,
+      isFree: false,
+      size: 'unknown',
+      description: 'Model from anthropic',
     },
     {
       id: 3,
-      name: 'GPT-3.5',
-      provider: 'OpenAI',
-      version: '3.5',
+      name: 'gpt-3.5-turbo',
+      displayName: 'gpt-3.5-turbo (openai)',
+      provider: 'openai',
       status: 'Active',
-      accuracy: 88.5,
-      latency: '89ms',
-      usage: 12450,
+      isFree: false,
+      size: 'unknown',
+      description: 'Model from openai',
     },
     {
       id: 4,
-      name: 'Local Model',
-      provider: 'Custom',
-      version: '1.0',
-      status: 'Inactive',
-      accuracy: 85.2,
-      latency: '45ms',
-      usage: 2340,
+      name: 'llama3',
+      displayName: 'llama3 (ollama)',
+      provider: 'ollama',
+      status: 'Active',
+      isFree: true,
+      size: '7B-13B',
+      description: 'Model from ollama',
     },
   ];
 
@@ -207,24 +207,24 @@ function AIStudio() {
           setModels(
             fetched.map((m, idx) => ({
               id: m.id || idx + 1,
-              // Prefer backend displayName when available, then fall back to name/model_name
-              name: m.displayName || m.name || m.model_name || 'Unknown',
+              name: m.name || m.model_name || 'Unknown',
+              displayName: m.displayName || m.name || 'Unknown',
               provider: m.provider || 'Unknown',
-              // Backend may not provide version/status; use neutral placeholders when absent
-              version: m.version || '-',
-              status: m.status || '-',
-              // Metrics are optional; avoid fabricating values
-              accuracy: m.accuracy ?? '-',
-              latency: m.latency || '-',
-              usage: m.usage ?? null,
+              status: m.status || 'Active',
+              isFree: m.isFree ?? false,
+              size: m.size || 'unknown',
+              description: m.description || '',
             }))
           );
+        } else {
+          setModels(FALLBACK_MODELS);
         }
       } catch (err) {
         logger.warn(
           'Could not fetch models from API, using fallback data:',
           err
         );
+        setModels(FALLBACK_MODELS);
       } finally {
         setModelsLoading(false);
       }
@@ -392,21 +392,29 @@ function AIStudio() {
                     </span>
                   </div>
                   <div className="model-version">
-                    <span className="version-label">Version:</span>
-                    <span className="version-value">{model.version}</span>
+                    <span className="version-label">Display Name:</span>
+                    <span className="version-value">
+                      {model.displayName || model.name}
+                    </span>
                   </div>
                   <div className="model-metrics">
                     <div className="metric">
-                      <span className="metric-label">Accuracy</span>
-                      <span className="metric-value">{model.accuracy}%</span>
+                      <span className="metric-label">Size</span>
+                      <span className="metric-value">
+                        {model.size || 'unknown'}
+                      </span>
                     </div>
                     <div className="metric">
-                      <span className="metric-label">Latency</span>
-                      <span className="metric-value">{model.latency}</span>
+                      <span className="metric-label">Free</span>
+                      <span className="metric-value">
+                        {model.isFree ? 'Yes' : 'No'}
+                      </span>
                     </div>
                     <div className="metric">
-                      <span className="metric-label">Usage</span>
-                      <span className="metric-value">{model.usage}</span>
+                      <span className="metric-label">Description</span>
+                      <span className="metric-value">
+                        {model.description || '-'}
+                      </span>
                     </div>
                   </div>
                 </div>

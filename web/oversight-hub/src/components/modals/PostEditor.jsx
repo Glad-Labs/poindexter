@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import DOMPurify from 'dompurify';
 import './PostEditor.css';
 import { logError } from '../../services/errorLoggingService';
@@ -48,7 +48,7 @@ function PostEditor({ post, onClose, onSave }) {
       // Focus trap: cycle focus within the dialog
       if (e.key === 'Tab') {
         const focusable = dialog.querySelectorAll(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]):not([disabled])'
         );
         if (focusable.length === 0) return;
         const first = focusable[0];
@@ -170,7 +170,11 @@ function PostEditor({ post, onClose, onSave }) {
         {/* Header */}
         <div className="modal-header">
           <h2 id="post-editor-title">Edit Post</h2>
-          <button className="close-btn" onClick={onClose} aria-label="Close dialog">
+          <button
+            className="close-btn"
+            onClick={onClose}
+            aria-label="Close dialog"
+          >
             ×
           </button>
         </div>

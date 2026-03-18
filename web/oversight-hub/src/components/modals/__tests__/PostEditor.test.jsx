@@ -88,13 +88,13 @@ describe('PostEditor — rendering', () => {
 
   it('renders close (×) button', () => {
     render(<PostEditor post={SAMPLE_POST} onClose={onClose} onSave={onSave} />);
-    const closeBtn = screen.getByRole('button', { name: '×' });
+    const closeBtn = screen.getByRole('button', { name: /Close dialog/i });
     expect(closeBtn).toBeInTheDocument();
   });
 
   it('clicking × button calls onClose', () => {
     render(<PostEditor post={SAMPLE_POST} onClose={onClose} onSave={onSave} />);
-    const closeBtn = screen.getByRole('button', { name: '×' });
+    const closeBtn = screen.getByRole('button', { name: /Close dialog/i });
     fireEvent.click(closeBtn);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
