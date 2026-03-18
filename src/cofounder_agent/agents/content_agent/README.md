@@ -1,8 +1,12 @@
-# � Content Agent System
+# Content Agent System
 
-**Status:** ✅ ACTIVE & PRODUCTION-READY (NOT Legacy Code)
-**Last Updated:** March 10, 2026
-**Version:** 3.0.43
+> **Note:** This README references Strapi CMS integration which has been replaced.
+> Content is now published directly to PostgreSQL via the `content_db` module.
+> Strapi client code (`strapi_client.py`) is deprecated dead code (#833).
+
+**Status:** ✅ ACTIVE & PRODUCTION-READY
+**Last Updated:** March 18, 2026
+**Version:** 3.0.66+
 **Architecture:** Self-Critiquing Multi-Agent Pipeline
 
 ---
