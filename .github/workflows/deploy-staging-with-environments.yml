@@ -71,6 +71,10 @@ jobs:
 
       - name: 🏗️ Build all workspaces
         run: npm run build --if-present
+        env:
+          NEXT_PUBLIC_API_BASE_URL: ${{ secrets.PUBLIC_SITE_STAGING_FASTAPI_URL }}
+          NEXT_PUBLIC_FASTAPI_URL: ${{ secrets.PUBLIC_SITE_STAGING_FASTAPI_URL }}
+          NEXT_PUBLIC_SITE_URL: ${{ secrets.PUBLIC_SITE_STAGING_SITE_URL }}
 
       # ============================================
       # DEPLOYMENT PHASE - CO-FOUNDER AGENT
