@@ -705,6 +705,7 @@ async def bulk_update_settings(
 async def export_settings(
     include_secrets: bool = Query(False, description="Include encrypted secrets in export"),
     current_user=Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
     format: str = Query("json", regex="^(json|yaml|csv)$", description="Export format"),
 ):
     """
@@ -727,14 +728,19 @@ async def export_settings(
     **Response:**
     - File download or JSON response
     """
-    # Mock implementation for testing
-    return {
-        "success": True,
-        "format": format,
-        "include_secrets": include_secrets,
-        "total_settings": 10,
-        "exported_at": datetime.now(timezone.utc).isoformat(),
-    }
+    try:
+        settings = await db_service.get_all_settings()
+        return {
+            "success": True,
+            "format": format,
+            "include_secrets": include_secrets,
+            "total_settings": len(settings),
+            "settings": settings,
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception:
+        logger.error("[export_settings] Failed to export settings", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to export settings")
 
 
 # ============================================================================
