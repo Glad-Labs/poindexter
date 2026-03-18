@@ -88,11 +88,6 @@ const useStore = create(
       notifications: {
         desktop: true,
       },
-      apiKeys: {
-        mercury: '',
-        gcp: '',
-      },
-
       setTheme: (theme) => set({ theme }),
       toggleTheme: () =>
         set((state) => ({ theme: state.theme === 'light' ? 'dark' : 'light' })),
@@ -103,13 +98,6 @@ const useStore = create(
           notifications: {
             ...state.notifications,
             desktop: !state.notifications.desktop,
-          },
-        })),
-      setApiKey: (key, value) =>
-        set((state) => ({
-          apiKeys: {
-            ...state.apiKeys,
-            [key]: value,
           },
         })),
 
@@ -300,7 +288,6 @@ const useStore = create(
         theme: state.theme,
         autoRefresh: state.autoRefresh,
         notifications: state.notifications,
-        apiKeys: state.apiKeys,
       }), // persist theme and other settings
     }
   )
