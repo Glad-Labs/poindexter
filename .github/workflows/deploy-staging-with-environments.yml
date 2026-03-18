@@ -62,7 +62,6 @@ jobs:
 
       - name: 🧪 Run frontend tests (public-site)
         run: npm run test --workspace=web/public-site --if-present
-        continue-on-error: true  # 151 pre-existing test failures — unblock staging deploy while fixing
 
       - name: 🧪 Run backend unit tests
         run: cd src/cofounder_agent && poetry run pytest tests/unit/ -v --tb=short
