@@ -50,7 +50,7 @@ describe('StatusBadge', () => {
   it('applies green background classes for completed status', () => {
     const { container } = render(<StatusBadge status="completed" />);
     const span = container.querySelector('span');
-    expect(span.className).toContain('bg-green-500');
+    expect(span.className).toContain('bg-green-600');
   });
 
   it('applies yellow background classes for in_progress status', () => {
@@ -62,13 +62,13 @@ describe('StatusBadge', () => {
   it('applies blue background classes for queued status', () => {
     const { container } = render(<StatusBadge status="queued" />);
     const span = container.querySelector('span');
-    expect(span.className).toContain('bg-blue-500');
+    expect(span.className).toContain('bg-blue-700');
   });
 
   it('applies red background classes for failed status', () => {
     const { container } = render(<StatusBadge status="failed" />);
     const span = container.querySelector('span');
-    expect(span.className).toContain('bg-red-500');
+    expect(span.className).toContain('bg-red-700');
   });
 
   it('applies gray background classes for unknown status', () => {
