@@ -29,6 +29,16 @@ interface Tag {
 
 // Import FastAPI client to query published posts
 async function fetchPublishedContent() {
+  // During Vercel builds the backend (Railway) is not reliably reachable.
+  // Fetching here causes 60s+ hangs → OOM crashes. Sitemap will be populated
+  // at runtime via ISR/on-demand revalidation instead.
+  if (process.env.VERCEL || process.env.CI) {
+    logger.log(
+      'Build environment detected — skipping sitemap API fetch. Sitemap uses static pages only.'
+    );
+    return { allPosts: [], allCategories: [], allTags: [] };
+  }
+
   const FASTAPI_URL =
     process.env.NEXT_PUBLIC_API_BASE_URL ||
     process.env.NEXT_PUBLIC_FASTAPI_URL ||
