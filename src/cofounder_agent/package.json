@@ -1,6 +1,6 @@
 {
   "name": "glad-labs-cofounder-agent",
-  "version": "3.0.68",
+  "version": "3.0.69",
   "private": true,
   "description": "AI Co-Founder System - FastAPI backend with autonomous agents, multi-provider LLM routing, and comprehensive error handling (Phase 1C complete).",
   "license": "AGPL-3.0-or-later",
