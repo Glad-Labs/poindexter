@@ -13,6 +13,7 @@ import {
   Snackbar,
   Alert,
 } from '@mui/material';
+import { useShallow } from 'zustand/react/shallow';
 import useStore from '../../store/useStore';
 import {
   approveTask,
@@ -50,7 +51,12 @@ function TabPanel(props) {
 }
 
 const TaskDetailModal = ({ onClose, onUpdate }) => {
-  const { selectedTask, setSelectedTask } = useStore();
+  const { selectedTask, setSelectedTask } = useStore(
+    useShallow((s) => ({
+      selectedTask: s.selectedTask,
+      setSelectedTask: s.setSelectedTask,
+    }))
+  );
   const [tabValue, setTabValue] = useState(0);
   const [approvalLoading, setApprovalLoading] = useState(false);
   const [approvalFeedback, setApprovalFeedback] = useState('');

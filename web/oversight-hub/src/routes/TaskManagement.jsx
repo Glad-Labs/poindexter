@@ -10,6 +10,7 @@
 import React, { useState } from 'react';
 import logger from '@/lib/logger';
 import useStore from '../store/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import { bulkUpdateTasks } from '../services/cofounderAgentClient';
 import useFetchTasks from '../hooks/useFetchTasks';
 import CreateTaskModal from '../components/tasks/CreateTaskModal';
@@ -19,7 +20,9 @@ import { StatusDashboardMetrics } from '../components/tasks/StatusComponents';
 import './TaskManagement.css';
 
 function TaskManagement() {
-  const { setSelectedTask } = useStore();
+  const { setSelectedTask } = useStore(
+    useShallow((s) => ({ setSelectedTask: s.setSelectedTask }))
+  );
   const [sortBy, setSortBy] = useState('created_at');
   const [sortDirection, setSortDirection] = useState('desc');
   const [statusFilter, setStatusFilter] = useState('');

@@ -88,11 +88,6 @@ const useStore = create(
       notifications: {
         desktop: true,
       },
-      apiKeys: {
-        mercury: '',
-        gcp: '',
-      },
-
       setTheme: (theme) => set({ theme }),
       toggleTheme: () =>
         set((state) => ({ theme: state.theme === 'light' ? 'dark' : 'light' })),
@@ -103,13 +98,6 @@ const useStore = create(
           notifications: {
             ...state.notifications,
             desktop: !state.notifications.desktop,
-          },
-        })),
-      setApiKey: (key, value) =>
-        set((state) => ({
-          apiKeys: {
-            ...state.apiKeys,
-            [key]: value,
           },
         })),
 
@@ -291,6 +279,16 @@ const useStore = create(
     }),
     {
       name: 'oversight-hub-storage',
+      // Bump version to clear stale apiKeys from localStorage on existing clients.
+      version: 1,
+      migrate: (persisted, version) => {
+        if (version === 0 && persisted) {
+          // Drop apiKeys that may have been persisted by older versions
+          const { apiKeys, ...rest } = persisted;
+          return rest;
+        }
+        return persisted;
+      },
       partialize: (state) => ({
         // Persist non-sensitive auth state only (session token is HttpOnly cookie).
         user: state.user,
@@ -300,7 +298,6 @@ const useStore = create(
         theme: state.theme,
         autoRefresh: state.autoRefresh,
         notifications: state.notifications,
-        apiKeys: state.apiKeys,
       }), // persist theme and other settings
     }
   )
