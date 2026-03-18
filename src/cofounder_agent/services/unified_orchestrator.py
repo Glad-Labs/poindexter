@@ -590,7 +590,10 @@ class UnifiedOrchestrator:
             # Instantiate research agent (with registry fallback support)
             research_agent = self._get_agent_instance("research_agent")
             try:
-                research_data = await research_agent.run(topic, keywords[:5])
+                research_data = await asyncio.wait_for(
+                    research_agent.run(topic, keywords[:5]),
+                    timeout=120,
+                )
                 research_text = research_data if isinstance(research_data, str) else str(research_data)
             except (TimeoutError, asyncio.TimeoutError):
                 logger.warning("[%s] Research timed out, continuing with empty research", request.request_id, exc_info=True)
@@ -696,8 +699,11 @@ class UnifiedOrchestrator:
 
             # Pass constraints with phase-specific word count target
             phase_target = phase_targets.get("creative", 300)
-            draft_post = await creative_agent.run(
-                post, is_refinement=False, word_count_target=phase_target, constraints=constraints
+            draft_post = await asyncio.wait_for(
+                creative_agent.run(
+                    post, is_refinement=False, word_count_target=phase_target, constraints=constraints
+                ),
+                timeout=180,
             )
             draft_text = draft_post.body if hasattr(draft_post, "body") else str(draft_post)
 
@@ -740,9 +746,12 @@ class UnifiedOrchestrator:
                 if writing_style_guidance:
                     quality_context["writing_style_guidance"] = writing_style_guidance
 
-                quality_result = await quality_service.evaluate(
-                    content=getattr(content, "raw_content", str(content)),
-                    context=quality_context,
+                quality_result = await asyncio.wait_for(
+                    quality_service.evaluate(
+                        content=getattr(content, "raw_content", str(content)),
+                        context=quality_context,
+                    ),
+                    timeout=120,
                 )
 
                 approval_bool = quality_result.passing
@@ -791,11 +800,14 @@ class UnifiedOrchestrator:
                         creative_agent = self._get_agent_instance(
                             "creative_agent", llm_client=refine_llm_client
                         )
-                    content = await creative_agent.run(
-                        content,
-                        is_refinement=True,
-                        word_count_target=phase_targets.get("creative", 300),
-                        constraints=constraints,
+                    content = await asyncio.wait_for(
+                        creative_agent.run(
+                            content,
+                            is_refinement=True,
+                            word_count_target=phase_targets.get("creative", 300),
+                            constraints=constraints,
+                        ),
+                        timeout=180,
                     )
 
             qa_compliance = validate_constraints(
@@ -839,7 +851,10 @@ class UnifiedOrchestrator:
 
             # Instantiate publishing agent (with registry fallback support)
             publishing_agent = self._get_agent_instance("publishing_agent")
-            result_post = await publishing_agent.run(content)
+            result_post = await asyncio.wait_for(
+                publishing_agent.run(content),
+                timeout=120,
+            )
 
             formatted_content = getattr(result_post, "raw_content", str(content))
             excerpt = getattr(result_post, "meta_description", "Article about %s" % topic)

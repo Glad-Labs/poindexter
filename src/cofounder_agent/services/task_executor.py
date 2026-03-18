@@ -992,6 +992,19 @@ class TaskExecutor:
             except Exception as e:
                 logger.warning(f"⚠️ Failed to persist cost metrics: {e}", exc_info=True)
 
+        # Record LLM call metrics for structured per-task tracking (issue #974)
+        if operation_metrics:
+            task_metrics.record_llm_call(
+                phase="content_generation",
+                model=getattr(operation_metrics, "model_name", "unknown"),
+                provider=getattr(operation_metrics, "model_provider", "unknown"),
+                tokens_in=getattr(operation_metrics, "input_tokens", 0),
+                tokens_out=getattr(operation_metrics, "output_tokens", 0),
+                cost_usd=getattr(operation_metrics, "total_cost_usd", 0.0),
+                duration_ms=getattr(operation_metrics, "duration_ms", 0.0),
+                status="success" if generated_content and not orchestrator_error else "error",
+            )
+
         # Close Phase 2 and log structured metrics summary (issue #837)
         task_metrics.record_phase_end(
             "quality_validation",
