@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
+from routes.auth_unified import get_current_user
 from services.workflow_history import WorkflowHistoryService
 from utils.route_utils import (
     get_database_dependency,
@@ -24,6 +25,7 @@ logger = get_logger(__name__)
 router = APIRouter(
     prefix="/api/workflows",
     tags=["workflows"],
+    dependencies=[Depends(get_current_user)],
     responses={404: {"description": "Workflow not found"}},
 )
 
