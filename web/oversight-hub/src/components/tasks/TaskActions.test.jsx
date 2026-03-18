@@ -209,18 +209,18 @@ describe('TaskActions Component', () => {
 
   describe('Loading State', () => {
     it('should show loading indicator while processing', () => {
-      const { rerender } = render(
+      const { container, rerender } = render(
         <TaskActions {...defaultProps} isLoading={false} />
       );
 
       // Should render normally
-      expect(defaultProps.onApprove).toBeDefined();
+      expect(container).toBeInTheDocument();
 
       // Show loading state
       rerender(<TaskActions {...defaultProps} isLoading={true} />);
 
-      // Component should handle loading state
-      expect(true).toBe(true);
+      // Component should still be rendered (not crash) with loading state
+      expect(container).toBeInTheDocument();
     });
 
     it('should disable actions while loading', () => {

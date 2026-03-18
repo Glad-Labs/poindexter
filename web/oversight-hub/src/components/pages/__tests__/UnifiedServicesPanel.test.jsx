@@ -56,16 +56,9 @@ describe('UnifiedServicesPanel - Bug Fix Verification', () => {
     it('should have separate state variables for studioTab and discoveryTab', () => {
       // This test verifies the code-level fix: two separate useState calls
       // The component should not crash when rendered
-      try {
-        render(<UnifiedServicesPanel />);
-        // If no error, the component renders successfully with proper state
-        expect(true).toBe(true);
-      } catch (error) {
-        if (error.message.includes('studioTab')) {
-          throw new Error('studioTab state issue - Bug #2 not fixed');
-        }
-        throw error;
-      }
+      const { container } = render(<UnifiedServicesPanel />);
+      // Verify component mounts successfully with proper tab state separation
+      expect(container).toBeInTheDocument();
     });
 
     it('should render without console errors related to tab state', () => {
@@ -87,10 +80,10 @@ describe('UnifiedServicesPanel - Bug Fix Verification', () => {
   });
 
   describe('Component Initialization', () => {
-    it('should render Unified Services title', async () => {
+    it('should render tab navigation', async () => {
       render(<UnifiedServicesPanel />);
-      // Component should render without crashing
-      expect(true).toBe(true);
+      // Component should render the tab structure
+      expect(screen.getByText('WORKFLOW EDITOR')).toBeInTheDocument();
     });
   });
 });
