@@ -16,11 +16,17 @@ logger = get_logger(__name__)
 
 async def broadcast_progress(task_id: str, progress) -> None:
     """Broadcast progress update to all connected clients for a task."""
+    if progress is None:
+        return
+
     from routes.websocket_routes import connection_manager
 
-    await connection_manager.broadcast(
-        task_id, {"type": "progress", **progress.to_dict()}
-    )
+    try:
+        await connection_manager.broadcast(
+            task_id, {"type": "progress", **progress.to_dict()}
+        )
+    except Exception as e:
+        logger.error(f"[broadcast_progress] Failed to broadcast for task {task_id}: {e}", exc_info=True)
 
 
 async def broadcast_workflow_progress(execution_id: str, progress) -> None:
