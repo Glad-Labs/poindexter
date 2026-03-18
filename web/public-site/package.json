@@ -50,14 +50,6 @@
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.19"
   },
-  "jest": {
-    "testEnvironment": "jsdom",
-    "testPathIgnorePatterns": [
-      "/node_modules/",
-      "/e2e/",
-      "/.next/"
-    ]
-  },
   "engines": {
     "node": ">=18.0.0",
     "npm": ">=9.0.0"

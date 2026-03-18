@@ -16,6 +16,7 @@ const customJestConfig = {
     '^@/(.*)$': '<rootDir>/$1',
   },
   testEnvironment: 'jest-environment-jsdom',
+  testPathIgnorePatterns: ['/node_modules/', '/e2e/', '/.next/'],
   // Enforce minimum coverage thresholds. Fail CI if any threshold is missed.
   coverageThreshold: {
     global: {
