@@ -179,8 +179,11 @@ router = APIRouter(prefix="/api", tags=["capabilities"])
 
 
 def get_owner_id(current_user: Dict[str, Any] = Depends(get_current_user)) -> str:
-    """Extract owner_id from authenticated user."""
-    return str(current_user.get("id", ""))
+    """Extract and validate owner_id from the authenticated user."""
+    user_id = current_user.get("id") if isinstance(current_user, dict) else current_user
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User identity could not be determined")
+    return str(user_id)
 
 
 # ============ Capability Discovery Endpoints ============
