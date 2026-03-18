@@ -314,7 +314,7 @@ class TemplateExecutionService:
         Sets up progress service and optional WebSocket broadcasting.
         """
         try:
-            from routes.websocket_routes import broadcast_workflow_progress
+            from services.progress_broadcaster import broadcast_workflow_progress
             from services.workflow_progress_service import get_workflow_progress_service
 
             progress_service = get_workflow_progress_service()
