@@ -97,29 +97,31 @@ class WorkflowHistoryService:
         execution_metadata = execution_metadata or {}
 
         try:
+            # Convert duration from seconds to milliseconds for schema compatibility
+            duration_ms = int(duration_seconds * 1000) if duration_seconds else None
+
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
                     """
                     INSERT INTO workflow_executions (
-                        id, workflow_id, workflow_type, owner_id, status,
-                        input_data, output_data, task_results, error_message,
-                        start_time, end_time, duration_seconds, execution_metadata
+                        id, workflow_id, owner_id, execution_status,
+                        initial_input, final_output, phase_results, error_message,
+                        started_at, completed_at, duration_ms, metadata
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                     RETURNING *
                     """,
                     execution_id,
                     workflow_id,
-                    workflow_type,
                     user_id,
                     status,
                     input_data,
                     output_data,
-                    task_results or [],
+                    {"task_results": task_results or [], "workflow_type": workflow_type},
                     error_message,
                     start_time,
                     end_time,
-                    duration_seconds,
+                    duration_ms,
                     execution_metadata,
                 )
 
