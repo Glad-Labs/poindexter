@@ -440,10 +440,9 @@ async def get_workflow_execution_status(
         )
 
 
-@router.get("/executions", name="List Workflow Executions")
-async def list_workflow_executions(
-    workflow_id: str,
-    request: Request,
+@router.get("/custom-executions", name="List Custom Workflow Executions")
+async def list_custom_workflow_executions(
+    workflow_id: str = Query(..., description="Custom workflow ID to list executions for"),
     service: CustomWorkflowsService = Depends(get_workflows_service),
     owner_id: str = Depends(get_owner_id),
     limit: int = Query(50, ge=1, le=200, description="Maximum executions to return"),
@@ -451,7 +450,7 @@ async def list_workflow_executions(
     status: Optional[str] = Query(None, description="Optional execution status filter"),
 ) -> Dict[str, Any]:
     """
-    List executions for a workflow owned by current user.
+    List executions for a custom workflow owned by current user.
 
     Useful for recovering in-progress executions after UI refresh.
     """

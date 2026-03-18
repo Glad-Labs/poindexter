@@ -22,6 +22,14 @@ from utils.route_utils import (
 )
 
 logger = get_logger(__name__)
+
+
+def _verify_ownership(execution: Dict[str, Any], user_id: str) -> None:
+    """Raise 404 if the execution does not belong to the given user."""
+    if execution.get("owner_id") and execution["owner_id"] != user_id:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+
 router = APIRouter(
     prefix="/api/workflows",
     tags=["workflows"],
@@ -128,6 +136,7 @@ async def list_workflow_templates():
 async def get_workflow_status(
     workflow_id: str,
     db_service: Any = Depends(get_database_dependency),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """
     Get the current status of a workflow.
@@ -154,6 +163,8 @@ async def get_workflow_status(
                 detail=f"Workflow '{workflow_id}' not found",
             )
 
+        _verify_ownership(execution, current_user["id"])
+
         return {
             "workflow_id": execution.get("id", workflow_id),
             "status": execution.get("status", "unknown"),
@@ -177,6 +188,7 @@ async def pause_workflow(
     workflow_id: str,
     db_service: Any = Depends(get_database_dependency),
     workflow_engine: Any = Depends(get_workflow_engine_dependency),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """
     Pause a currently executing workflow.
@@ -200,6 +212,8 @@ async def pause_workflow(
                 status_code=404,
                 detail=f"Workflow '{workflow_id}' not found",
             )
+
+        _verify_ownership(execution, current_user["id"])
 
         current_status = execution.get("status", "")
         if current_status != "running":
@@ -232,6 +246,7 @@ async def resume_workflow(
     workflow_id: str,
     db_service: Any = Depends(get_database_dependency),
     workflow_engine: Any = Depends(get_workflow_engine_dependency),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """
     Resume a paused workflow.
@@ -255,6 +270,8 @@ async def resume_workflow(
                 status_code=404,
                 detail=f"Workflow '{workflow_id}' not found",
             )
+
+        _verify_ownership(execution, current_user["id"])
 
         current_status = execution.get("status", "")
         if current_status != "paused":
@@ -287,6 +304,7 @@ async def cancel_workflow(
     workflow_id: str,
     db_service: Any = Depends(get_database_dependency),
     workflow_engine: Any = Depends(get_workflow_engine_dependency),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """
     Cancel a workflow (cannot be resumed).
@@ -310,6 +328,8 @@ async def cancel_workflow(
                 status_code=404,
                 detail=f"Workflow '{workflow_id}' not found",
             )
+
+        _verify_ownership(execution, current_user["id"])
 
         current_status = execution.get("status", "")
         cancellable_statuses = {"running", "paused"}
@@ -425,6 +445,7 @@ async def get_workflow_history(
     offset: int = Query(0, ge=0, description="Pagination offset"),
     template_name: Optional[str] = Query(None, description="Filter by template name"),
     template_service: Any = Depends(get_template_service_dependency),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """
     Get workflow execution history.
@@ -443,7 +464,7 @@ async def get_workflow_history(
     """
     try:
         result = await template_service.get_execution_history(
-            owner_id="system",
+            owner_id=current_user["id"],
             template_name=template_name,
             limit=limit,
             offset=offset,
@@ -458,6 +479,7 @@ async def get_workflow_history(
 async def cancel_workflow_execution(
     execution_id: str,
     db_service: Any = Depends(get_database_dependency),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """
     Cancel a specific workflow execution by its execution ID.
@@ -489,6 +511,8 @@ async def cancel_workflow_execution(
                 detail=f"Workflow execution '{execution_id}' not found",
             )
 
+        _verify_ownership(execution, current_user["id"])
+
         previous_status = execution.get("status", "unknown")
         terminal_statuses = {"completed", "failed", "cancelled"}
         if previous_status in terminal_statuses:
@@ -516,6 +540,7 @@ async def cancel_workflow_execution(
 async def get_workflow_execution_progress(
     execution_id: str,
     db_service: Any = Depends(get_database_dependency),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """
     Get detailed progress for a specific workflow execution.
@@ -545,6 +570,8 @@ async def get_workflow_execution_progress(
                 status_code=404,
                 detail=f"Workflow execution '{execution_id}' not found",
             )
+
+        _verify_ownership(execution, current_user["id"])
 
         status = execution.get("status", "unknown")
         current_phase = execution.get("current_phase") or ""

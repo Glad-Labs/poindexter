@@ -8,7 +8,7 @@ Tests cover:
 - PUT  /api/workflows/custom/{id}               — update_custom_workflow
 - DELETE /api/workflows/custom/{id}             — delete_custom_workflow
 - GET  /api/workflows/executions/{id}           — get_workflow_execution_status
-- GET  /api/workflows/executions               — list_workflow_executions
+- GET  /api/workflows/custom-executions         — list_custom_workflow_executions
 - GET  /api/workflows/available-phases          — get_available_phases
 
 CustomWorkflowsService is provided via dependency override.
@@ -359,7 +359,7 @@ class TestGetWorkflowExecutionStatus:
 
 
 # ---------------------------------------------------------------------------
-# GET /api/workflows/executions
+# GET /api/workflows/custom-executions
 # ---------------------------------------------------------------------------
 
 
@@ -367,12 +367,12 @@ class TestGetWorkflowExecutionStatus:
 class TestListWorkflowExecutions:
     def test_returns_200(self):
         client = TestClient(_build_app())
-        resp = client.get(f"/api/workflows/executions?workflow_id={WORKFLOW_ID}")
+        resp = client.get(f"/api/workflows/custom-executions?workflow_id={WORKFLOW_ID}")
         assert resp.status_code == 200
 
     def test_response_has_executions_list(self):
         client = TestClient(_build_app())
-        data = client.get(f"/api/workflows/executions?workflow_id={WORKFLOW_ID}").json()
+        data = client.get(f"/api/workflows/custom-executions?workflow_id={WORKFLOW_ID}").json()
         assert "executions" in data
         assert "total" in data
 
@@ -381,14 +381,14 @@ class TestListWorkflowExecutions:
             executions_list={"executions": [], "total": 0, "limit": 50, "offset": 0}
         )
         client = TestClient(_build_app(svc))
-        data = client.get(f"/api/workflows/executions?workflow_id={WORKFLOW_ID}").json()
+        data = client.get(f"/api/workflows/custom-executions?workflow_id={WORKFLOW_ID}").json()
         assert data["total"] == 0
 
     def test_service_error_returns_500(self):
         svc = _make_svc()
         svc.get_workflow_executions = AsyncMock(side_effect=RuntimeError("DB error"))
         client = TestClient(_build_app(svc))
-        resp = client.get(f"/api/workflows/executions?workflow_id={WORKFLOW_ID}")
+        resp = client.get(f"/api/workflows/custom-executions?workflow_id={WORKFLOW_ID}")
         assert resp.status_code == 500
 
 
