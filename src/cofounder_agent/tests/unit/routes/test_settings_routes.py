@@ -13,10 +13,6 @@ Tests cover:
 - POST   /api/settings/{id}/rollback — rollback_setting
 - POST   /api/settings/bulk/update  — bulk_update_settings
 - GET    /api/settings/export/all   — export_settings
-
-Auth uses the local get_current_user in settings_routes (not the shared one)
-which validates Bearer token format. The DB dependency is overridden via
-the shared get_database_dependency.
 """
 
 import pytest
@@ -257,6 +253,12 @@ class TestBatchUpdateSettings:
         assert "key" in data
         assert "value" in data
 
+    def test_patch_calls_set_setting(self):
+        mock_db = _make_settings_db()
+        client = TestClient(_build_app(mock_db))
+        client.patch("/api/settings", json={"value": "updated_value"})
+        mock_db.set_setting.assert_awaited_once()
+
 
 # ---------------------------------------------------------------------------
 # DELETE /api/settings (batch delete)
@@ -278,36 +280,51 @@ class TestBatchDeleteSettings:
 
 @pytest.mark.unit
 class TestUpdateSetting:
-    def test_valid_id_returns_200(self):
-        """Mock implementation treats IDs 1-10 as existing."""
+    def test_existing_key_returns_200(self):
+        """Update existing setting by key name."""
         client = TestClient(_build_app())
         resp = client.patch(
-            "/api/settings/5",
+            "/api/settings/log_level",
             json={"value": "new_value"},
         )
         assert resp.status_code == 200
 
     def test_response_has_key_field(self):
         client = TestClient(_build_app())
-        data = client.patch("/api/settings/3", json={"value": "x"}).json()
+        data = client.patch("/api/settings/log_level", json={"value": "x"}).json()
         assert "key" in data
 
-    def test_out_of_range_id_returns_404(self):
-        """Mock implementation returns 404 for IDs > 10."""
-        client = TestClient(_build_app())
-        resp = client.patch("/api/settings/99", json={"value": "x"})
+    def test_missing_key_returns_404(self):
+        """Non-existent setting key returns 404."""
+        mock_db = _make_settings_db()
+        mock_db.get_setting = AsyncMock(return_value=None)
+        client = TestClient(_build_app(mock_db))
+        resp = client.patch("/api/settings/nonexistent_key", json={"value": "x"})
         assert resp.status_code == 404
 
     def test_value_reflected_in_response(self):
-        client = TestClient(_build_app())
-        data = client.patch("/api/settings/2", json={"value": "my_value"}).json()
+        mock_db = _make_settings_db()
+        # After update, get_setting returns the updated value
+        updated_setting = {**SETTING_DICT, "value": "my_value"}
+        mock_db.get_setting = AsyncMock(side_effect=[SETTING_DICT, updated_setting])
+        client = TestClient(_build_app(mock_db))
+        data = client.patch("/api/settings/log_level", json={"value": "my_value"}).json()
         assert data["value"] == "my_value"
 
-    def test_zero_id_returns_422(self):
-        """Path param has gt=0 constraint."""
-        client = TestClient(_build_app())
-        resp = client.patch("/api/settings/0", json={"value": "x"})
-        assert resp.status_code == 422
+    def test_set_setting_called_with_correct_key(self):
+        mock_db = _make_settings_db()
+        client = TestClient(_build_app(mock_db))
+        client.patch("/api/settings/log_level", json={"value": "info"})
+        mock_db.set_setting.assert_awaited_once()
+        call_kwargs = mock_db.set_setting.call_args
+        assert call_kwargs.kwargs.get("key") == "log_level" or call_kwargs[1].get("key") == "log_level"
+
+    def test_db_failure_returns_500(self):
+        mock_db = _make_settings_db()
+        mock_db.set_setting = AsyncMock(return_value=False)
+        client = TestClient(_build_app(mock_db))
+        resp = client.patch("/api/settings/log_level", json={"value": "x"})
+        assert resp.status_code == 500
 
 
 # ---------------------------------------------------------------------------
@@ -356,29 +373,26 @@ class TestDeleteSingleSetting:
 
 @pytest.mark.unit
 class TestGetSettingHistory:
-    def test_valid_id_returns_200(self):
+    def test_existing_setting_returns_200(self):
         client = TestClient(_build_app())
-        resp = client.get("/api/settings/1/history")
+        resp = client.get("/api/settings/log_level/history")
         assert resp.status_code == 200
 
     def test_response_is_list(self):
         client = TestClient(_build_app())
-        data = client.get("/api/settings/5/history").json()
+        data = client.get("/api/settings/log_level/history").json()
         assert isinstance(data, list)
 
-    def test_out_of_range_id_returns_404(self):
-        client = TestClient(_build_app())
-        resp = client.get("/api/settings/99/history")
+    def test_missing_setting_returns_404(self):
+        mock_db = _make_settings_db()
+        mock_db.get_setting = AsyncMock(return_value=None)
+        client = TestClient(_build_app(mock_db))
+        resp = client.get("/api/settings/nonexistent/history")
         assert resp.status_code == 404
-
-    def test_zero_id_returns_422(self):
-        client = TestClient(_build_app())
-        resp = client.get("/api/settings/0/history")
-        assert resp.status_code == 422
 
     def test_limit_param_accepted(self):
         client = TestClient(_build_app())
-        resp = client.get("/api/settings/1/history?limit=10")
+        resp = client.get("/api/settings/log_level/history?limit=10")
         assert resp.status_code == 200
 
 
@@ -389,29 +403,14 @@ class TestGetSettingHistory:
 
 @pytest.mark.unit
 class TestRollbackSetting:
-    def test_valid_ids_return_200(self):
+    def test_returns_501_not_implemented(self):
         client = TestClient(_build_app())
-        resp = client.post("/api/settings/5/rollback?history_id=1")
-        assert resp.status_code == 200
-
-    def test_response_contains_rollback_in_value(self):
-        client = TestClient(_build_app())
-        data = client.post("/api/settings/3/rollback?history_id=7").json()
-        assert "rolled_back_value_7" in data["value"]
-
-    def test_out_of_range_setting_returns_404(self):
-        client = TestClient(_build_app())
-        resp = client.post("/api/settings/99/rollback?history_id=1")
-        assert resp.status_code == 404
-
-    def test_zero_setting_id_returns_422(self):
-        client = TestClient(_build_app())
-        resp = client.post("/api/settings/0/rollback?history_id=1")
-        assert resp.status_code == 422
+        resp = client.post("/api/settings/log_level/rollback?history_id=1")
+        assert resp.status_code == 501
 
     def test_missing_history_id_returns_422(self):
         client = TestClient(_build_app())
-        resp = client.post("/api/settings/5/rollback")
+        resp = client.post("/api/settings/log_level/rollback")
         assert resp.status_code == 422
 
 
@@ -438,16 +437,17 @@ class TestBulkUpdateSettings:
         ).json()
         assert data["success"] is True
 
-    def test_updated_count_matches_payload_length(self):
-        client = TestClient(_build_app())
-        data = client.post(
+    def test_set_setting_called_for_each_update(self):
+        mock_db = _make_settings_db()
+        client = TestClient(_build_app(mock_db))
+        client.post(
             "/api/settings/bulk/update",
             json={"updates": [
                 {"setting_id": 1, "value": "a"},
                 {"setting_id": 2, "value": "b"},
             ]},
-        ).json()
-        assert data["updated_count"] == 2
+        )
+        assert mock_db.set_setting.await_count == 2
 
     def test_missing_updates_field_returns_422(self):
         client = TestClient(_build_app())
