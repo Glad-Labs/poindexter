@@ -199,6 +199,32 @@ describe('request interceptor', () => {
 // ---------------------------------------------------------------------------
 
 describe('response interceptor', () => {
+  // Save and restore window.location safely using Object.defineProperty
+  let origLocationDescriptor;
+
+  beforeEach(() => {
+    origLocationDescriptor = Object.getOwnPropertyDescriptor(
+      window,
+      'location'
+    );
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      writable: true,
+      value: {
+        href: '',
+        assign: vi.fn(),
+        replace: vi.fn(),
+        reload: vi.fn(),
+      },
+    });
+  });
+
+  afterEach(() => {
+    if (origLocationDescriptor) {
+      Object.defineProperty(window, 'location', origLocationDescriptor);
+    }
+  });
+
   it('passes through successful responses', () => {
     const interceptor = responseInterceptors[0]?.fulfilled;
     const response = { status: 200, data: { ok: true } };
@@ -206,35 +232,21 @@ describe('response interceptor', () => {
   });
 
   it('clears auth and redirects on 401', async () => {
-    // Save original
-    const origHref = window.location.href;
-    delete window.location;
-    window.location = { href: '' };
-
     const interceptor = responseInterceptors[0]?.rejected;
     const error = { response: { status: 401 } };
 
     await expect(interceptor(error)).rejects.toEqual(error);
     expect(mockClearPersistedAuthState).toHaveBeenCalled();
     expect(window.location.href).toBe('/login');
-
-    // Restore
-    window.location = { href: origHref };
   });
 
   it('does not redirect on non-401 errors', async () => {
-    const origHref = window.location.href;
-    delete window.location;
-    window.location = { href: '' };
-
     const interceptor = responseInterceptors[0]?.rejected;
     const error = { response: { status: 500 } };
 
     await expect(interceptor(error)).rejects.toEqual(error);
     expect(mockClearPersistedAuthState).not.toHaveBeenCalled();
     expect(window.location.href).toBe('');
-
-    window.location = { href: origHref };
   });
 });
 
@@ -559,6 +571,15 @@ describe('isRecoverableError', () => {
 // ---------------------------------------------------------------------------
 
 describe('retryWithBackoff', () => {
+  // Use fake timers to avoid real exponential backoff delays (1s, 2s, ...)
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('returns result on first success', async () => {
     const fn = vi.fn().mockResolvedValue('ok');
     const result = await retryWithBackoff(fn, 3);
@@ -572,7 +593,10 @@ describe('retryWithBackoff', () => {
       .mockRejectedValueOnce({ response: { status: 500 } })
       .mockResolvedValueOnce('recovered');
 
-    const result = await retryWithBackoff(fn, 3);
+    const promise = retryWithBackoff(fn, 3);
+    // Run all pending timers (the exponential backoff setTimeout)
+    await vi.runAllTimersAsync();
+    const result = await promise;
     expect(result).toBe('recovered');
     expect(fn).toHaveBeenCalledTimes(2);
   });
@@ -589,7 +613,12 @@ describe('retryWithBackoff', () => {
     const err = { response: { status: 500 } };
     const fn = vi.fn().mockRejectedValue(err);
 
-    await expect(retryWithBackoff(fn, 2)).rejects.toEqual(err);
+    // Attach the catch handler immediately to avoid unhandled rejection
+    const promise = retryWithBackoff(fn, 2).catch((e) => e);
+    // Run all pending timers (backoff delays between retries)
+    await vi.runAllTimersAsync();
+    const result = await promise;
+    expect(result).toEqual(err);
     expect(fn).toHaveBeenCalledTimes(2);
   });
 });

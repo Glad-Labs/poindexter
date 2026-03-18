@@ -466,8 +466,9 @@ describe('persist config', () => {
       getState().toggleAutoRefresh();
     });
 
-    // Wait for zustand persist to flush to localStorage
-    await new Promise((r) => setTimeout(r, 50));
+    // Zustand persist with localStorage is synchronous — flush is immediate.
+    // Use a microtask yield to ensure any pending persist callbacks complete.
+    await Promise.resolve();
 
     const stored = JSON.parse(
       localStorage.getItem('oversight-hub-storage') || '{}'

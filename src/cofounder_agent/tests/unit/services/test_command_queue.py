@@ -279,8 +279,9 @@ class TestCommandQueueHandlers:
 
         queue.register_handler("content", bad_handler)
         await queue.enqueue(basic_command)
-        # Should not raise
+        # Should not raise — handler exception caught internally
         await queue.complete_command(basic_command.id, {})
+        assert basic_command.id not in queue.pending
 
     def test_multiple_handlers_registered(self, queue):
         h1 = MagicMock()
