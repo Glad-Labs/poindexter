@@ -61,7 +61,7 @@ function AIStudio() {
     },
   ];
 
-  const [models, setModels] = useState(FALLBACK_MODELS);
+  const [models, setModels] = useState([]);
   const [modelsLoading, setModelsLoading] = useState(true);
   const [ollamaModels, setOllamaModels] = useState([]);
   const [selectedModel, setSelectedModel] = useState('');
