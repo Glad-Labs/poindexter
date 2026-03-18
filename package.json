@@ -66,7 +66,7 @@
     "// web-tests": "=== FRONTEND AND E2E TESTING ===",
     "test:watch": "npm run test --workspaces --if-present -- --watch",
     "test:coverage": "npm run test --workspaces --if-present -- --coverage",
-    "test:ci": "npm run test --workspace=web/public-site --if-present -- --ci --coverage --watchAll=false && npm run test --workspace=web/oversight-hub --if-present",
+    "test:ci": "npm run test --workspace=web/oversight-hub --if-present && npm run test --workspace=web/public-site --if-present -- --ci --coverage --watchAll=false",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug",
