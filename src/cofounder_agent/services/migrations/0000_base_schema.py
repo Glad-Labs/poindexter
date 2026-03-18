@@ -45,7 +45,49 @@ CREATE TABLE IF NOT EXISTS content_tasks (
     completed_at TIMESTAMP WITH TIME ZONE,
     metadata JSONB DEFAULT '{}'::jsonb,
     result JSONB,
-    error_message TEXT
+    error_message TEXT,
+    -- From 006_add_all_required_columns.sql
+    topic VARCHAR(500),
+    style VARCHAR(100) DEFAULT 'technical',
+    tone VARCHAR(100) DEFAULT 'professional',
+    target_length INTEGER DEFAULT 1500,
+    primary_keyword VARCHAR(255),
+    target_audience VARCHAR(255),
+    category VARCHAR(100),
+    writing_style_id INTEGER,
+    content TEXT,
+    excerpt TEXT,
+    featured_image_url VARCHAR(500),
+    featured_image_data JSONB,
+    featured_image_prompt TEXT,
+    qa_feedback TEXT,
+    quality_score INTEGER,
+    seo_title VARCHAR(255),
+    seo_description VARCHAR(500),
+    seo_keywords VARCHAR(500),
+    percentage INTEGER DEFAULT 0,
+    message TEXT,
+    model_used VARCHAR(255),
+    approval_status VARCHAR(50) DEFAULT 'pending',
+    publish_mode VARCHAR(50) DEFAULT 'draft',
+    model_selections JSONB DEFAULT '{}'::jsonb,
+    quality_preference VARCHAR(50) DEFAULT 'balanced',
+    estimated_cost NUMERIC(10,4) DEFAULT 0.0000,
+    actual_cost NUMERIC(10,4) DEFAULT 0.0000,
+    cost_breakdown JSONB,
+    agent_id VARCHAR(100) DEFAULT 'content-agent',
+    started_at TIMESTAMP WITH TIME ZONE,
+    published_at TIMESTAMP WITH TIME ZONE,
+    human_feedback TEXT,
+    approved_by VARCHAR(255),
+    approval_timestamp TIMESTAMP WITH TIME ZONE,
+    approval_notes TEXT,
+    progress JSONB DEFAULT '{}'::jsonb,
+    tags JSONB DEFAULT '[]'::jsonb,
+    task_metadata JSONB DEFAULT '{}'::jsonb,
+    -- From 009_add_multi_phase_model_tracking.sql
+    models_used_by_phase JSONB DEFAULT '{}'::jsonb,
+    model_selection_log JSONB DEFAULT '{}'::jsonb
 );
 
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
@@ -55,17 +97,26 @@ CREATE INDEX IF NOT EXISTS idx_content_tasks_task_id ON content_tasks(task_id);
 CREATE INDEX IF NOT EXISTS idx_content_tasks_status ON content_tasks(status);
 CREATE INDEX IF NOT EXISTS idx_content_tasks_stage ON content_tasks(stage);
 CREATE INDEX IF NOT EXISTS idx_content_tasks_created_at ON content_tasks(created_at);
+CREATE INDEX IF NOT EXISTS idx_content_tasks_topic ON content_tasks(topic);
+CREATE INDEX IF NOT EXISTS idx_content_tasks_category ON content_tasks(category);
+CREATE INDEX IF NOT EXISTS idx_content_tasks_approval_status ON content_tasks(approval_status);
+CREATE INDEX IF NOT EXISTS idx_content_tasks_publish_mode ON content_tasks(publish_mode);
+CREATE INDEX IF NOT EXISTS idx_content_tasks_quality_preference ON content_tasks(quality_preference);
+CREATE INDEX IF NOT EXISTS idx_content_tasks_writing_style_id ON content_tasks(writing_style_id);
+CREATE INDEX IF NOT EXISTS idx_content_tasks_model_used ON content_tasks(model_used);
 
 -- ============================================================
 -- Task status history (from 001_create_task_status_history.sql)
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS task_status_history (
-    id SERIAL PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,
     task_id VARCHAR(255) NOT NULL,
     old_status VARCHAR(50),
     new_status VARCHAR(50) NOT NULL,
     changed_by VARCHAR(100) DEFAULT 'system',
+    reason TEXT,
+    metadata JSONB DEFAULT '{}'::jsonb,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
