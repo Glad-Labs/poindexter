@@ -279,6 +279,16 @@ const useStore = create(
     }),
     {
       name: 'oversight-hub-storage',
+      // Bump version to clear stale apiKeys from localStorage on existing clients.
+      version: 1,
+      migrate: (persisted, version) => {
+        if (version === 0 && persisted) {
+          // Drop apiKeys that may have been persisted by older versions
+          const { apiKeys, ...rest } = persisted;
+          return rest;
+        }
+        return persisted;
+      },
       partialize: (state) => ({
         // Persist non-sensitive auth state only (session token is HttpOnly cookie).
         user: state.user,
