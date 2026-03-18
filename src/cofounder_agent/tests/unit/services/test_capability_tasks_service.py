@@ -41,6 +41,13 @@ def _make_pool(
     conn.fetch = AsyncMock(return_value=fetch_result or [])
     conn.execute = AsyncMock(return_value=execute_result or "INSERT 0 1")
     conn.fetchval = AsyncMock(return_value=fetchval_result or 0)
+    # Support conn.transaction() as async context manager
+    conn.transaction = MagicMock(
+        return_value=AsyncMock(
+            __aenter__=AsyncMock(return_value=None),
+            __aexit__=AsyncMock(return_value=None),
+        )
+    )
 
     pool = MagicMock()
     pool.acquire = MagicMock(

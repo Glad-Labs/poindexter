@@ -278,48 +278,49 @@ class CapabilityTasksService:
         now = datetime.now(timezone.utc)
 
         async with self.pool.acquire() as conn:
-            await conn.execute(
-                """
-                INSERT INTO capability_executions (
-                    id, task_id, owner_id, status, error_message,
-                    step_results, final_outputs, total_duration_ms,
-                    progress_percent, completed_steps, total_steps,
-                    started_at, completed_at, created_at
+            async with conn.transaction():
+                await conn.execute(
+                    """
+                    INSERT INTO capability_executions (
+                        id, task_id, owner_id, status, error_message,
+                        step_results, final_outputs, total_duration_ms,
+                        progress_percent, completed_steps, total_steps,
+                        started_at, completed_at, created_at
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb,
+                            $8, $9, $10, $11, $12, $13, $14)
+                    """,
+                    result.execution_id,
+                    result.task_id,
+                    result.owner_id,
+                    result.status,
+                    result.error,
+                    step_results_json,
+                    final_outputs_json,
+                    result.total_duration_ms,
+                    result.progress_percent,
+                    completed_steps,
+                    total_steps,
+                    result.started_at,
+                    result.completed_at,
+                    now,
                 )
-                VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb,
-                        $8, $9, $10, $11, $12, $13, $14)
-                """,
-                result.execution_id,
-                result.task_id,
-                result.owner_id,
-                result.status,
-                result.error,
-                step_results_json,
-                final_outputs_json,
-                result.total_duration_ms,
-                result.progress_percent,
-                completed_steps,
-                total_steps,
-                result.started_at,
-                result.completed_at,
-                now,
-            )
 
-            # Update task metrics atomically
-            success_increment = 1 if result.status == "completed" else 0
-            failure_increment = 1 if result.status == "failed" else 0
-            await conn.execute(
-                """
-                UPDATE capability_tasks
-                SET
-                    execution_count = execution_count + 1,
-                    success_count   = success_count + $2,
-                    failure_count   = failure_count + $3,
-                    last_executed_at = $4
-                WHERE id = $1
-                """,
-                result.task_id, success_increment, failure_increment, now,
-            )
+                # Update task metrics atomically within same transaction
+                success_increment = 1 if result.status == "completed" else 0
+                failure_increment = 1 if result.status == "failed" else 0
+                await conn.execute(
+                    """
+                    UPDATE capability_tasks
+                    SET
+                        execution_count = execution_count + 1,
+                        success_count   = success_count + $2,
+                        failure_count   = failure_count + $3,
+                        last_executed_at = $4
+                    WHERE id = $1
+                    """,
+                    result.task_id, success_increment, failure_increment, now,
+                )
 
         logger.info(
             "[capability_tasks] Persisted execution %s (status=%s)",
