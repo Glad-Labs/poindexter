@@ -20,7 +20,7 @@ All endpoints require:
 """
 
 from datetime import datetime, timezone, timedelta
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
 
@@ -40,6 +40,13 @@ from schemas.settings_schemas import (
 from services.database_service import DatabaseService
 from utils.error_responses import ErrorResponseBuilder
 from utils.route_utils import get_database_dependency
+
+
+def _setting_attr(setting: Any, attr: str, default: Any = None) -> Any:
+    """Safely get attribute from a setting (Pydantic model or dict)."""
+    if isinstance(setting, dict):
+        return setting.get(attr, default)
+    return getattr(setting, attr, default)
 
 # Create router
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -111,21 +118,21 @@ async def list_settings(
         # Convert to SettingResponse objects
         items = [
             SettingResponse(
-                id=setting.get("id") or idx,
-                key=setting.get("key", ""),
-                value=setting.get("value", ""),
-                data_type=SettingDataTypeEnum.STRING,
-                category=SettingCategoryEnum.DATABASE,
-                environment=SettingEnvironmentEnum.PRODUCTION,
-                description=setting.get("description", ""),
-                is_encrypted=False,
-                is_read_only=False,
-                tags=[],
-                created_at=setting.get("created_at") or datetime.now(timezone.utc),
-                updated_at=setting.get("updated_at") or datetime.now(timezone.utc),
-                created_by_id=1,
-                updated_by_id=None,
-                value_preview=setting.get("value", "")[:50],
+                id=_setting_attr(setting, "id") or idx,
+                key=_setting_attr(setting, "key", ""),
+                value=_setting_attr(setting, "value", ""),
+                data_type=_setting_attr(setting, "data_type", SettingDataTypeEnum.STRING),
+                category=_setting_attr(setting, "category", SettingCategoryEnum.DATABASE),
+                environment=_setting_attr(setting, "environment", SettingEnvironmentEnum.PRODUCTION),
+                description=_setting_attr(setting, "description", ""),
+                is_encrypted=_setting_attr(setting, "is_encrypted", False),
+                is_read_only=_setting_attr(setting, "is_read_only", False),
+                tags=_setting_attr(setting, "tags", []),
+                created_at=_setting_attr(setting, "created_at") or datetime.now(timezone.utc),
+                updated_at=_setting_attr(setting, "updated_at") or datetime.now(timezone.utc),
+                created_by_id=_setting_attr(setting, "created_by_id", 1),
+                updated_by_id=_setting_attr(setting, "updated_by_id"),
+                value_preview=(_setting_attr(setting, "value", "") or "")[:50],
             )
             for idx, setting in enumerate(paginated_items)
         ]
@@ -179,21 +186,21 @@ async def get_setting(
 
         # Convert database result to SettingResponse
         return SettingResponse(
-            id=setting.get("id") or 1,
-            key=setting.get("key", setting_id),
-            value=setting.get("value", ""),
-            data_type=SettingDataTypeEnum.STRING,
-            category=SettingCategoryEnum.DATABASE,
-            environment=SettingEnvironmentEnum.PRODUCTION,
-            description=setting.get("description", ""),
-            is_encrypted=False,
-            is_read_only=False,
-            tags=[],
-            created_at=setting.get("created_at") or datetime.now(timezone.utc),
-            updated_at=setting.get("updated_at") or datetime.now(timezone.utc),
-            created_by_id=1,
-            updated_by_id=None,
-            value_preview=setting.get("value", "")[:50],
+            id=_setting_attr(setting, "id") or 1,
+            key=_setting_attr(setting, "key", setting_id),
+            value=_setting_attr(setting, "value", ""),
+            data_type=_setting_attr(setting, "data_type", SettingDataTypeEnum.STRING),
+            category=_setting_attr(setting, "category", SettingCategoryEnum.DATABASE),
+            environment=_setting_attr(setting, "environment", SettingEnvironmentEnum.PRODUCTION),
+            description=_setting_attr(setting, "description", ""),
+            is_encrypted=_setting_attr(setting, "is_encrypted", False),
+            is_read_only=_setting_attr(setting, "is_read_only", False),
+            tags=_setting_attr(setting, "tags", []),
+            created_at=_setting_attr(setting, "created_at") or datetime.now(timezone.utc),
+            updated_at=_setting_attr(setting, "updated_at") or datetime.now(timezone.utc),
+            created_by_id=_setting_attr(setting, "created_by_id", 1),
+            updated_by_id=_setting_attr(setting, "updated_by_id"),
+            value_preview=(_setting_attr(setting, "value", "") or "")[:50],
         )
     except HTTPException:
         raise
@@ -280,21 +287,21 @@ async def create_setting(
         created_setting = await db_service.get_setting(setting_data.key)
 
         return SettingResponse(
-            id=created_setting.get("id") or 1,
-            key=created_setting.get("key", setting_data.key),
-            value=created_setting.get("value", ""),
+            id=_setting_attr(created_setting, "id") or 1,
+            key=_setting_attr(created_setting, "key", setting_data.key),
+            value=_setting_attr(created_setting, "value", ""),
             data_type=setting_data.data_type or SettingDataTypeEnum.STRING,
             category=setting_data.category or SettingCategoryEnum.GENERAL,
             environment=setting_data.environment or SettingEnvironmentEnum.PRODUCTION,
-            description=created_setting.get("description", ""),
+            description=_setting_attr(created_setting, "description", ""),
             is_encrypted=False,
             is_read_only=False,
             tags=setting_data.tags or [],
-            created_at=created_setting.get("created_at") or datetime.now(timezone.utc),
-            updated_at=created_setting.get("updated_at") or datetime.now(timezone.utc),
+            created_at=_setting_attr(created_setting, "created_at") or datetime.now(timezone.utc),
+            updated_at=_setting_attr(created_setting, "updated_at") or datetime.now(timezone.utc),
             created_by_id=1,
             updated_by_id=None,
-            value_preview=created_setting.get("value", "")[:50],
+            value_preview=(_setting_attr(created_setting, "value", "") or "")[:50],
         )
     except HTTPException:
         raise
@@ -347,7 +354,7 @@ async def batch_update_settings(
         updated = await db_service.get_setting(key)
 
         return SettingResponse(
-            id=updated.get("id") or 1 if updated else 1,
+            id=(_setting_attr(updated, "id") or 1) if updated else 1,
             key=key,
             value=new_value,
             data_type=SettingDataTypeEnum.STRING,
@@ -357,7 +364,7 @@ async def batch_update_settings(
             is_encrypted=False,
             is_read_only=False,
             tags=[],
-            created_at=(updated.get("created_at") if updated else None) or datetime.now(timezone.utc),
+            created_at=(_setting_attr(updated, "created_at") if updated else None) or datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
             created_by_id=1,
             updated_by_id=1,
@@ -430,15 +437,20 @@ async def update_setting(
         if not existing:
             raise HTTPException(status_code=404, detail=f"Setting '{setting_id}' not found")
 
-        # Update setting in database
-        new_value = update_data.value if update_data.value else existing.get("value", "")
+        # Preserve existing values for fields not passed in the update
+        new_value = update_data.value if update_data.value else _setting_attr(existing, "value", "")
         new_description = (
-            update_data.description if update_data.description else existing.get("description", "")
+            update_data.description if update_data.description else _setting_attr(existing, "description", "")
         )
+        existing_category = _setting_attr(existing, "category")
+        existing_category_str = existing_category.value if hasattr(existing_category, "value") else existing_category
+        existing_display_name = _setting_attr(existing, "display_name") or _setting_attr(existing, "key", setting_id)
 
         success = await db_service.set_setting(
             key=setting_id,
             value=new_value,
+            category=existing_category_str,
+            display_name=existing_display_name,
             description=new_description,
         )
 
@@ -449,21 +461,21 @@ async def update_setting(
         updated = await db_service.get_setting(setting_id)
 
         return SettingResponse(
-            id=updated.get("id") or 1,
-            key=updated.get("key", setting_id),
-            value=updated.get("value", ""),
-            data_type=SettingDataTypeEnum.STRING,
-            category=SettingCategoryEnum.DATABASE,
-            environment=SettingEnvironmentEnum.PRODUCTION,
-            description=updated.get("description", ""),
-            is_encrypted=False,
-            is_read_only=False,
-            tags=[],
-            created_at=updated.get("created_at") or datetime.now(timezone.utc),
-            updated_at=updated.get("updated_at") or datetime.now(timezone.utc),
-            created_by_id=1,
+            id=_setting_attr(updated, "id") or 1,
+            key=_setting_attr(updated, "key", setting_id),
+            value=_setting_attr(updated, "value", ""),
+            data_type=_setting_attr(updated, "data_type", SettingDataTypeEnum.STRING),
+            category=_setting_attr(updated, "category", SettingCategoryEnum.DATABASE),
+            environment=_setting_attr(updated, "environment", SettingEnvironmentEnum.PRODUCTION),
+            description=_setting_attr(updated, "description", ""),
+            is_encrypted=_setting_attr(updated, "is_encrypted", False),
+            is_read_only=_setting_attr(updated, "is_read_only", False),
+            tags=_setting_attr(updated, "tags", []),
+            created_at=_setting_attr(updated, "created_at") or datetime.now(timezone.utc),
+            updated_at=_setting_attr(updated, "updated_at") or datetime.now(timezone.utc),
+            created_by_id=_setting_attr(updated, "created_by_id", 1),
             updated_by_id=1,
-            value_preview=updated.get("value", "")[:50],
+            value_preview=(_setting_attr(updated, "value", "") or "")[:50],
         )
     except HTTPException:
         raise
@@ -578,6 +590,7 @@ async def get_setting_history(
         401: {"description": "Unauthorized - invalid or missing token"},
         403: {"description": "Forbidden - admin only"},
         404: {"description": "Setting or history entry not found"},
+        501: {"description": "Not implemented - requires audit history table"},
     },
 )
 async def rollback_setting(
@@ -631,10 +644,32 @@ async def bulk_update_settings(
         updated_count = 0
 
         for update in updates:
-            key = str(update.get("setting_id", "")) if isinstance(update, dict) else str(update)
-            value = update.get("value", "") if isinstance(update, dict) else ""
+            if isinstance(update, dict):
+                # Support both "key" and "setting_id"; prefer "key" for direct lookup
+                key = update.get("key") or str(update.get("setting_id", ""))
+                value = update.get("value", "")
+            else:
+                key = str(update)
+                value = ""
 
-            success = await db_service.set_setting(key=key, value=value)
+            if not key:
+                continue
+
+            # Preserve existing category/display_name on bulk updates
+            existing = await db_service.get_setting(key)
+            existing_category = None
+            existing_display_name = None
+            if existing:
+                cat = _setting_attr(existing, "category")
+                existing_category = cat.value if hasattr(cat, "value") else cat
+                existing_display_name = _setting_attr(existing, "display_name") or _setting_attr(existing, "key", key)
+
+            success = await db_service.set_setting(
+                key=key,
+                value=value,
+                category=existing_category,
+                display_name=existing_display_name,
+            )
             if success:
                 updated_count += 1
 
