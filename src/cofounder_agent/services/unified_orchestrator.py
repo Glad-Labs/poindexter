@@ -48,6 +48,14 @@ from services.websocket_event_broadcaster import emit_task_progress
 
 logger = logging.getLogger(__name__)
 
+# Per-stage timeout budgets (seconds) for asyncio.wait_for in content pipeline.
+# Tune these based on observed P99 latencies per LLM provider.
+RESEARCH_TIMEOUT_S = 120
+DRAFT_TIMEOUT_S = 180
+QA_TIMEOUT_S = 120
+REFINEMENT_TIMEOUT_S = 180
+FORMATTING_TIMEOUT_S = 120
+
 
 # ============================================================================
 # UNIFIED ORCHESTRATOR
@@ -592,7 +600,7 @@ class UnifiedOrchestrator:
             try:
                 research_data = await asyncio.wait_for(
                     research_agent.run(topic, keywords[:5]),
-                    timeout=120,
+                    timeout=RESEARCH_TIMEOUT_S,
                 )
                 research_text = research_data if isinstance(research_data, str) else str(research_data)
             except (TimeoutError, asyncio.TimeoutError):
@@ -699,12 +707,17 @@ class UnifiedOrchestrator:
 
             # Pass constraints with phase-specific word count target
             phase_target = phase_targets.get("creative", 300)
-            draft_post = await asyncio.wait_for(
-                creative_agent.run(
-                    post, is_refinement=False, word_count_target=phase_target, constraints=constraints
-                ),
-                timeout=180,
-            )
+            try:
+                draft_post = await asyncio.wait_for(
+                    creative_agent.run(
+                        post, is_refinement=False, word_count_target=phase_target, constraints=constraints
+                    ),
+                    timeout=DRAFT_TIMEOUT_S,
+                )
+            except asyncio.TimeoutError:
+                raise TimeoutError(
+                    "Creative draft timed out after %ds" % DRAFT_TIMEOUT_S
+                ) from None
             draft_text = draft_post.body if hasattr(draft_post, "body") else str(draft_post)
 
             creative_compliance = validate_constraints(
@@ -746,13 +759,18 @@ class UnifiedOrchestrator:
                 if writing_style_guidance:
                     quality_context["writing_style_guidance"] = writing_style_guidance
 
-                quality_result = await asyncio.wait_for(
-                    quality_service.evaluate(
-                        content=getattr(content, "raw_content", str(content)),
-                        context=quality_context,
-                    ),
-                    timeout=120,
-                )
+                try:
+                    quality_result = await asyncio.wait_for(
+                        quality_service.evaluate(
+                            content=getattr(content, "raw_content", str(content)),
+                            context=quality_context,
+                        ),
+                        timeout=QA_TIMEOUT_S,
+                    )
+                except asyncio.TimeoutError:
+                    raise TimeoutError(
+                        "QA evaluation timed out after %ds (iteration %d)" % (QA_TIMEOUT_S, iteration)
+                    ) from None
 
                 approval_bool = quality_result.passing
                 feedback = quality_result.feedback
@@ -800,15 +818,20 @@ class UnifiedOrchestrator:
                         creative_agent = self._get_agent_instance(
                             "creative_agent", llm_client=refine_llm_client
                         )
-                    content = await asyncio.wait_for(
-                        creative_agent.run(
-                            content,
-                            is_refinement=True,
-                            word_count_target=phase_targets.get("creative", 300),
-                            constraints=constraints,
-                        ),
-                        timeout=180,
-                    )
+                    try:
+                        content = await asyncio.wait_for(
+                            creative_agent.run(
+                                content,
+                                is_refinement=True,
+                                word_count_target=phase_targets.get("creative", 300),
+                                constraints=constraints,
+                            ),
+                            timeout=REFINEMENT_TIMEOUT_S,
+                        )
+                    except asyncio.TimeoutError:
+                        raise TimeoutError(
+                            "Creative refinement timed out after %ds (iteration %d)" % (REFINEMENT_TIMEOUT_S, iteration)
+                        ) from None
 
             qa_compliance = validate_constraints(
                 getattr(content, "body", str(content)),
@@ -851,10 +874,15 @@ class UnifiedOrchestrator:
 
             # Instantiate publishing agent (with registry fallback support)
             publishing_agent = self._get_agent_instance("publishing_agent")
-            result_post = await asyncio.wait_for(
-                publishing_agent.run(content),
-                timeout=120,
-            )
+            try:
+                result_post = await asyncio.wait_for(
+                    publishing_agent.run(content),
+                    timeout=FORMATTING_TIMEOUT_S,
+                )
+            except asyncio.TimeoutError:
+                raise TimeoutError(
+                    "Formatting/publishing timed out after %ds" % FORMATTING_TIMEOUT_S
+                ) from None
 
             formatted_content = getattr(result_post, "raw_content", str(content))
             excerpt = getattr(result_post, "meta_description", "Article about %s" % topic)

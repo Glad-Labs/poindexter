@@ -994,6 +994,7 @@ class TaskExecutor:
 
         # Record LLM call metrics for structured per-task tracking (issue #974)
         if operation_metrics:
+            _llm_status = "success" if generated_content and not orchestrator_error else "error"
             task_metrics.record_llm_call(
                 phase="content_generation",
                 model=getattr(operation_metrics, "model_name", "unknown"),
@@ -1002,7 +1003,8 @@ class TaskExecutor:
                 tokens_out=getattr(operation_metrics, "output_tokens", 0),
                 cost_usd=getattr(operation_metrics, "total_cost_usd", 0.0),
                 duration_ms=getattr(operation_metrics, "duration_ms", 0.0),
-                status="success" if generated_content and not orchestrator_error else "error",
+                status=_llm_status,
+                error=orchestrator_error if _llm_status == "error" else None,
             )
 
         # Close Phase 2 and log structured metrics summary (issue #837)
