@@ -224,16 +224,16 @@ class TestSweepStaleTasks:
             return_value={"total_stale": 3, "reset": 2, "failed": 1}
         )
         executor = _make_executor(db=db)
-        # Should not raise even with stale tasks
         await executor._sweep_stale_tasks()
+        db.sweep_stale_tasks.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_sweep_swallows_db_errors(self):
         db = _make_db()
         db.sweep_stale_tasks = AsyncMock(side_effect=Exception("DB down"))
         executor = _make_executor(db=db)
-        # Must not raise
         await executor._sweep_stale_tasks()
+        db.sweep_stale_tasks.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
