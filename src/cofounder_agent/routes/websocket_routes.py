@@ -380,7 +380,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
                     f"[websocket_cleanup] Error disconnecting from namespace {ns}: {disconnect_error}"
                 )
         try:
-            await websocket.close(code=1011, reason=str(e))
+            await websocket.close(code=1011, reason="Internal error")
         except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as close_error:
             logger.error(f"Error closing WebSocket: {close_error}", exc_info=True)
 

@@ -416,7 +416,7 @@ async def generate_featured_image(
             success=False,
             image_url="",
             image=None,
-            message=f"❌ Image service initialization failed: {str(e)}",
+            message="Image service initialization failed",
             generation_time=elapsed,
         )
 
@@ -596,7 +596,7 @@ async def generate_featured_image(
             success=False,
             image_url="",
             image=None,
-            message=f"❌ Error: {str(e)}",
+            message="An internal error occurred",
             generation_time=elapsed,
         )
 
@@ -690,7 +690,7 @@ async def search_images(
             success=False,
             image_url="",
             image=None,
-            message=f"❌ Error: {str(e)}",
+            message="An internal error occurred",
             generation_time=elapsed,
         )
 
@@ -746,5 +746,5 @@ async def health_check():
             status="error",
             pexels_available=False,
             sdxl_available=False,
-            message=f"Error checking services: {str(e)}",
+            message="Error checking services",
         )

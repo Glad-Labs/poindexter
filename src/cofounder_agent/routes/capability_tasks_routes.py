@@ -381,7 +381,7 @@ async def compose_task_from_natural_language(
         return NaturalLanguageResponse(
             success=False,
             explanation="Error composing task from natural language",
-            error=str(e),
+            error="An internal error occurred",
             confidence=0.0,
         )
 
