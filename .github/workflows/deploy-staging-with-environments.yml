@@ -89,13 +89,14 @@ jobs:
       - name: 🚀 Deploy Co-Founder Agent to Railway (Staging)
         run: |
           echo "📤 Deploying Co-Founder Agent to staging environment..."
-          npm install -g @railway/cli  # fix #158: cached above
-          railway link --project ${{ secrets.RAILWAY_STAGING_PROJECT_ID }} --environment staging
-          railway up --service cofounder
+          npm install -g @railway/cli
+          echo "Railway CLI version: $(railway --version)"
+          # Use RAILWAY_PROJECT_ID env var instead of railway link (more reliable in CI)
+          railway up --service cofounder --environment staging
           echo "✅ Co-Founder Agent staging deployment completed"
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          # Note: API keys, DB URL, JWT secret are managed in Railway dashboard directly
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_STAGING_PROJECT_ID }}
           ENVIRONMENT: staging
 
       # ============================================
