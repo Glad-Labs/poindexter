@@ -22,9 +22,12 @@ RUN poetry config virtualenvs.create false && \
 # Copy application code
 COPY . .
 
-# Create non-root user
+# Create non-root user with home directory
 RUN addgroup --system --gid 1001 appgroup && \
-    adduser --system --uid 1001 --ingroup appgroup appuser
+    adduser --system --uid 1001 --ingroup appgroup --home /home/appuser appuser
+
+# Ensure appuser owns the application directory
+RUN chown -R appuser:appgroup /app
 
 # Switch to non-root user
 USER appuser
