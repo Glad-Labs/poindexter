@@ -3,6 +3,9 @@
  * Handles OAuth flow, token exchange, and user verification
  */
 
+import * as Sentry from '@sentry/react';
+import logger from '@/lib/logger';
+
 // mockTokenGenerator is intentionally NOT imported statically.
 // Use dynamic import inside dev-only code paths (see calls below) so that
 // the file — including its signing secret — is tree-shaken from production
@@ -43,7 +46,7 @@ export const clearPersistedAuthState = () => {
 
     localStorage.setItem(PERSIST_KEY, JSON.stringify(updated));
   } catch (error) {
-    console.warn(
+    logger.warn(
       '[authService] Failed to clear persisted Zustand auth state:',
       error
     );
@@ -173,7 +176,9 @@ export const exchangeCodeForToken = async (code) => {
 
     return data;
   } catch (error) {
-    console.error('Error exchanging code for token:', error);
+    Sentry.captureException(error, {
+      contexts: { custom: { action: 'exchangeCodeForToken' } },
+    });
     throw error;
   }
 };
@@ -220,7 +225,9 @@ export const verifySession = async () => {
     clearPersistedAuthState();
     return null;
   } catch (error) {
-    console.error('Error verifying session:', error);
+    Sentry.captureException(error, {
+      contexts: { custom: { action: 'verifySession' } },
+    });
     return null;
   }
 };
@@ -248,7 +255,9 @@ export const logout = async () => {
     clearPersistedAuthState();
     sessionStorage.removeItem('oauth_state');
   } catch (error) {
-    console.error('Error during logout:', error);
+    Sentry.captureException(error, {
+      contexts: { custom: { action: 'logout' } },
+    });
     // Still clear local storage even if API call fails
     clearPersistedAuthState();
   }
@@ -266,7 +275,7 @@ export const getStoredUser = () => {
     }
     return parsed;
   } catch (e) {
-    console.error('[authService.getStoredUser] Failed to parse user:', e);
+    logger.warn('[authService.getStoredUser] Failed to parse user:', e);
     return null;
   }
 };
@@ -307,7 +316,7 @@ export const isTokenExpired = (token) => {
 
     return isExpired;
   } catch (e) {
-    console.error('[authService.isTokenExpired] Error parsing token:', e);
+    logger.warn('[authService.isTokenExpired] Error parsing token:', e);
     return true; // If parsing fails, consider expired
   }
 };
@@ -326,7 +335,7 @@ export const getAuthToken = () => {
       const parsed = JSON.parse(persistedData);
       token = parsed.state?.accessToken || parsed.state?.auth_token;
     } catch (e) {
-      console.warn(
+      logger.warn(
         '[authService.getAuthToken] Failed to parse Zustand persist storage:',
         e
       );
@@ -373,7 +382,7 @@ export const initializeDevToken = async (options = {}) => {
         if (validateWithBackend) {
           const isValid = await validateTokenWithBackend(existingToken);
           if (!isValid) {
-            console.warn(
+            logger.warn(
               '[authService] Existing token failed backend validation, clearing and regenerating'
             );
             clearPersistedAuthState();
@@ -408,7 +417,7 @@ export const initializeDevToken = async (options = {}) => {
 
         return backendToken;
       } catch (backendError) {
-        console.warn(
+        logger.warn(
           '[authService] Backend dev token generation failed, using local mock token fallback:',
           backendError
         );
@@ -445,8 +454,9 @@ export const initializeDevToken = async (options = {}) => {
       // Verify token was actually stored
       const storedToken = sessionStorage.getItem('auth_token');
       if (!storedToken) {
-        console.error(
-          '[authService] ERROR: Token was not actually stored in sessionStorage!'
+        Sentry.captureMessage(
+          '[authService] Token was not stored in sessionStorage',
+          'error'
         );
         // Try to check if it's in Zustand store instead
         try {
@@ -464,7 +474,9 @@ export const initializeDevToken = async (options = {}) => {
         () => {
           if (process.env.NODE_ENV === 'development') {
             initializeDevToken().catch((e) => {
-              console.error('[authService] Failed to auto-refresh token:', e);
+              Sentry.captureException(e, {
+                contexts: { custom: { action: 'autoRefreshToken' } },
+              });
             });
           }
         },
@@ -473,7 +485,9 @@ export const initializeDevToken = async (options = {}) => {
 
       return mockToken;
     } catch (error) {
-      console.error('[authService] ERROR in initializeDevToken:', error);
+      Sentry.captureException(error, {
+        contexts: { custom: { action: 'initializeDevToken' } },
+      });
       // If development token fails, return null - frontend should redirect to login
       return null;
     } finally {
@@ -558,7 +572,9 @@ export async function getAvailableOAuthProviders() {
     const data = await response.json();
     return data.providers || [];
   } catch (error) {
-    console.error('Error fetching OAuth providers:', error);
+    Sentry.captureException(error, {
+      contexts: { custom: { action: 'getOAuthProviders' } },
+    });
     return [];
   }
 }
@@ -583,7 +599,9 @@ export async function getOAuthLoginURL(provider) {
     const data = await response.json();
     return data.login_url;
   } catch (error) {
-    console.error(`Error getting ${provider} login URL:`, error);
+    Sentry.captureException(error, {
+      contexts: { custom: { action: 'getOAuthLoginURL', provider } },
+    });
     throw error;
   }
 }
@@ -664,7 +682,9 @@ export async function handleOAuthCallbackNew(provider, code, state) {
 
     return data;
   } catch (error) {
-    console.error(`Error handling ${provider} callback:`, error);
+    Sentry.captureException(error, {
+      contexts: { custom: { action: 'handleOAuthCallback', provider } },
+    });
     throw error;
   }
 }
@@ -704,7 +724,9 @@ export async function validateAndGetCurrentUser() {
     }
     return data.user;
   } catch (error) {
-    console.error('Error validating user:', error);
+    Sentry.captureException(error, {
+      contexts: { custom: { action: 'validateUser' } },
+    });
     return null;
   }
 }

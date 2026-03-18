@@ -9,6 +9,7 @@
  * NEXT_PUBLIC_ADSENSE_ID=ca-pub-xxxxxxxxxxxxxxxx
  */
 
+import * as Sentry from '@sentry/nextjs';
 import Script from 'next/script';
 import { useEffect, useState } from 'react';
 
@@ -36,9 +37,12 @@ export default function AdSenseScript() {
           w.adsbygoogle.push({});
         }
       }}
-      onError={() => {
+      onError={(e) => {
         // eslint-disable-next-line no-console
         console.error('[AdSense] Failed to load script');
+        Sentry.captureException(
+          e || new Error('[AdSense] Failed to load script')
+        );
       }}
     />
   );

@@ -10,6 +10,7 @@
  */
 import { getAuthToken } from './authService';
 import { clearPersistedAuthState } from './authService';
+import { logErrorToSentry } from './sentryUtils';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
@@ -88,7 +89,9 @@ export async function makeRequest(
               timeout
             );
           } catch (refreshError) {
-            console.error('Failed to refresh token:', refreshError);
+            logErrorToSentry(refreshError, {
+              customContext: { action: 'refreshToken' },
+            });
           }
         }
 
@@ -131,9 +134,11 @@ export async function makeRequest(
         const error = new Error(errorMessage);
         error.status = response.status;
         error.response = result; // Include full response for debugging
-        console.error('API error response:', {
-          status: response.status,
-          message: errorMessage,
+        logErrorToSentry(error, {
+          customContext: {
+            action: 'apiErrorResponse',
+            status: response.status,
+          },
         });
         throw error;
       }
@@ -149,7 +154,9 @@ export async function makeRequest(
       throw fetchError;
     }
   } catch (error) {
-    console.error(`API request failed: ${endpoint}`, error);
+    logErrorToSentry(error, {
+      customContext: { action: 'makeRequest', endpoint },
+    });
     throw error;
   }
 }
@@ -192,7 +199,7 @@ export async function refreshAccessToken() {
 
     return false;
   } catch (error) {
-    console.error('Token refresh failed:', error);
+    logErrorToSentry(error, { customContext: { action: 'tokenRefresh' } });
     return false;
   }
 }

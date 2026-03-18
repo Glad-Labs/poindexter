@@ -217,6 +217,7 @@ class GeminiClient:
             }
 
         except Exception as e:
+            logger.warning("[check_health] Gemini health check failed: %s", e, exc_info=True)
             return {
                 "status": "error",
                 "configured": True,

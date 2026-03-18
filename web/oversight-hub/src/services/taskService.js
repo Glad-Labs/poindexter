@@ -9,6 +9,7 @@
  */
 
 import { makeRequest } from './cofounderAgentClient';
+import logger from '@/lib/logger';
 
 const API_TIMEOUT = 30000; // 30 seconds
 
@@ -182,13 +183,13 @@ export const revalidatePublicSite = async (paths = []) => {
     );
 
     if (result.error) {
-      console.warn('Revalidation returned error:', result.error);
+      logger.warn('Revalidation returned error:', result.error);
       return { success: false, error: result.error };
     }
 
     return result;
   } catch (error) {
-    console.warn('Could not trigger frontend revalidation:', error.message);
+    logger.warn('Could not trigger frontend revalidation:', error.message);
     // Don't throw - publish should succeed even if revalidation fails
     return { success: false, error: error.message };
   }
@@ -227,7 +228,7 @@ export const publishTask = async (taskId) => {
       paths.push(`/posts/${result.post_slug}`);
     }
     revalidatePublicSite(paths).catch((err) => {
-      console.warn('Revalidation failed silently:', err);
+      logger.warn('Revalidation failed silently:', err);
     });
   }
 
