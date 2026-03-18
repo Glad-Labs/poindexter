@@ -5,50 +5,6 @@
 
 services:
   # ==================================
-  # Strapi CMS Backend
-  # ==================================
-  strapi:
-    build:
-      context: ./cms/strapi-main
-      dockerfile: Dockerfile
-    container_name: glad-labs-strapi
-    restart: unless-stopped
-    ports:
-      - "${STRAPI_PORT:-1337}:1337"
-    environment:
-      NODE_ENV: ${NODE_ENV:-production}
-      # PostgreSQL REQUIRED - no SQLite
-      DATABASE_CLIENT: postgres
-      DATABASE_HOST: ${DATABASE_HOST:-postgres}
-      DATABASE_PORT: ${DATABASE_PORT:-5432}
-      DATABASE_NAME: ${DATABASE_NAME:-glad_labs_dev}
-      DATABASE_USER: ${DATABASE_USER:-postgres}
-      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
-      JWT_SECRET: ${STRAPI_JWT_SECRET}
-      ADMIN_JWT_SECRET: ${STRAPI_ADMIN_JWT_SECRET}
-      APP_KEYS: ${STRAPI_APP_KEYS}
-      API_TOKEN_SALT: ${STRAPI_API_TOKEN_SALT}
-      HOST: 0.0.0.0
-      PORT: 1337
-    volumes:
-      - strapi-data:/app/.tmp
-      - strapi-uploads:/app/public/uploads
-    networks:
-      - glad-labs-network
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "require('http').get('http://localhost:1337/_health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})",
-        ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-
-  # ==================================
   # Next.js Public Site
   # ==================================
   public-site:
@@ -61,11 +17,10 @@ services:
       - "${PUBLIC_SITE_PORT:-3000}:3000"
     environment:
       NODE_ENV: ${NODE_ENV:-production}
-      NEXT_PUBLIC_STRAPI_API_URL: ${NEXT_PUBLIC_STRAPI_API_URL:-http://strapi:1337}
       NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
-      STRAPI_API_TOKEN: ${STRAPI_API_TOKEN}
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
     depends_on:
-      strapi:
+      cofounder-agent:
         condition: service_healthy
     networks:
       - glad-labs-network
@@ -95,9 +50,7 @@ services:
       - "${OVERSIGHT_HUB_PORT:-3001}:80"
     environment:
       REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost:8000}
-      REACT_APP_STRAPI_URL: ${REACT_APP_STRAPI_URL:-http://localhost:1337}
     depends_on:
-      - strapi
       - cofounder-agent
     networks:
       - glad-labs-network
@@ -122,6 +75,7 @@ services:
     environment:
       PYTHONUNBUFFERED: 1
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATABASE_URL: ${DATABASE_URL}
 
       # API Keys
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
@@ -150,7 +104,7 @@ services:
     networks:
       - glad-labs-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/metrics/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -215,10 +169,6 @@ networks:
 # Volumes
 # ==================================
 volumes:
-  strapi-data:
-    name: glad-labs-strapi-data
-  strapi-uploads:
-    name: glad-labs-strapi-uploads
   cofounder-logs:
     name: glad-labs-cofounder-logs
   cofounder-cache:
