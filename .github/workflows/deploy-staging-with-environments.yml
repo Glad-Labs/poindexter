@@ -35,6 +35,35 @@ jobs:
           python-version: "3.12"
 
       # ============================================
+      # PRE-FLIGHT VALIDATION
+      # ============================================
+
+      - name: 🔍 Validate required secrets
+        run: |
+          MISSING=""
+          check_secret() {
+            if [ -z "$1" ]; then
+              echo "❌ Missing required secret: $2"
+              MISSING="$MISSING $2"
+            fi
+          }
+          check_secret "${{ secrets.RAILWAY_TOKEN }}"                       "RAILWAY_TOKEN"
+          check_secret "${{ secrets.RAILWAY_STAGING_PROJECT_ID }}"          "RAILWAY_STAGING_PROJECT_ID"
+          check_secret "${{ secrets.VERCEL_TOKEN }}"                        "VERCEL_TOKEN"
+          check_secret "${{ secrets.VERCEL_ORG_ID }}"                       "VERCEL_ORG_ID"
+          check_secret "${{ secrets.PUBLIC_SITE_STAGING_PROJECT_ID }}"      "PUBLIC_SITE_STAGING_PROJECT_ID"
+          check_secret "${{ secrets.PUBLIC_SITE_STAGING_FASTAPI_URL }}"     "PUBLIC_SITE_STAGING_FASTAPI_URL"
+          check_secret "${{ secrets.OVERSIGHT_STAGING_PROJECT_ID }}"        "OVERSIGHT_STAGING_PROJECT_ID"
+          check_secret "${{ secrets.COFOUNDER_STAGING_URL }}"               "COFOUNDER_STAGING_URL"
+
+          if [ -n "$MISSING" ]; then
+            echo ""
+            echo "❌ Staging deployment blocked — configure the missing secrets above in the GitHub 'staging' environment."
+            exit 1
+          fi
+          echo "✅ All required secrets are present"
+
+      # ============================================
       # INSTALL PHASE
       # ============================================
 
