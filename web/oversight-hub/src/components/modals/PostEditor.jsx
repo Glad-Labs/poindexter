@@ -170,7 +170,7 @@ function PostEditor({ post, onClose, onSave }) {
         {/* Header */}
         <div className="modal-header">
           <h2 id="post-editor-title">Edit Post</h2>
-          <button className="close-btn" onClick={onClose}>
+          <button className="close-btn" onClick={onClose} aria-label="Close dialog">
             ×
           </button>
         </div>
