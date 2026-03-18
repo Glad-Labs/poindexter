@@ -634,7 +634,8 @@ class ImageService:
                 from services.progress_broadcaster import broadcast_progress
 
                 progress = progress_service.get_progress(task_id)
-                await broadcast_progress(task_id, progress)
+                if progress is not None:
+                    await broadcast_progress(task_id, progress)
 
             return False
 
