@@ -51,10 +51,10 @@
     "lint:python": "cd src/cofounder_agent && python -m pylint src/ --disable=C0111,C0103,W0612",
     "lint:python:sql": "cd src/cofounder_agent && python -m pylint src/ --disable=all --enable=E0001,E0101,E0203,E0211,E0213,E1121,E1123,E1136,E1200,E1201,E1205,E1206,E1300,E1301,E1302,E1303,E1304,E1305,E1306,E1307,E1401,E1999",
     "// python": "=== PYTHON TESTING ===",
-    "test:python": "poetry run pytest tests/integration/ tests/e2e/ -v --tb=short || echo '⚠️  Some tests failed - see above'",
+    "test:python": "poetry run pytest tests/unit/ tests/integration/ tests/e2e/ -v --tb=short",
     "test:python:integration": "poetry run pytest tests/integration/ -v --tb=short -m integration",
     "test:python:e2e": "poetry run pytest tests/e2e/ -v --tb=short -m e2e",
-    "test:python:unit": "poetry run pytest tests/unit/ -v --tb=short -m unit",
+    "test:python:unit": "poetry run pytest tests/unit/ -v --tb=short",
     "test:python:smoke": "poetry run pytest tests/ -k \"smoke or quick\" -v --tb=short 2>&1 | tail -50",
     "test:python:coverage": "poetry run pytest tests/integration tests/e2e -v --cov --cov-report=html",
     "test:python:performance": "poetry run pytest tests/integration tests/e2e -v -m performance --tb=short",
@@ -110,7 +110,11 @@
     "prepare": "node -e \"process.exit(process.env.CI || process.env.VERCEL ? 0 : 1)\" || husky",
     "// validation": "=== VALIDATION ===",
     "validate:env": "node scripts/validate-env.js",
-    "validate:all": "npm run format:check && npm run lint && npm run validate:env && npm run type:check"
+    "validate:all": "npm run format:check && npm run lint && npm run validate:env && npm run type:check",
+    "// audit": "=== AUDIT AGENTS ===",
+    "audit": "node scripts/generate-audit-manifest.js && bash scripts/run-auditors.sh",
+    "audit:manifest": "node scripts/generate-audit-manifest.js",
+    "audit:dry-run": "node scripts/generate-audit-manifest.js && bash scripts/run-auditors.sh --dry-run"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": [
