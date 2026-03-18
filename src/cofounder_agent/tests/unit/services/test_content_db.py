@@ -130,7 +130,8 @@ class TestCreatePost:
         db = _make_db(pool)
 
         with patch(f"{_CONVERTER_PATCH_BASE}.to_post_response", return_value=row):
-            await db.create_post({"slug": "x", "tag_ids": "tag-uuid-1"})
+            result = await db.create_post({"slug": "x", "tag_ids": "tag-uuid-1"})
+        assert result is not None
 
     @pytest.mark.asyncio
     async def test_no_row_returned_raises_database_error(self):
@@ -505,13 +506,13 @@ class TestCreateOrchestratorTrainingData:
             f"{_CONVERTER_PATCH_BASE}.to_orchestrator_training_data_response",
             side_effect=lambda r: r,
         ):
-            # Should not raise
-            await db.create_orchestrator_training_data(
+            result = await db.create_orchestrator_training_data(
                 {
                     "execution_id": "exec-2",
                     "tags": json.dumps(["ai", "content"]),
                 }
             )
+        assert result is not None
 
     @pytest.mark.asyncio
     async def test_db_error_raises(self):
