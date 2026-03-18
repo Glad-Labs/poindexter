@@ -182,6 +182,7 @@ class TestConnectionManagerDisconnect:
         ws = AsyncMock()
         # Should not raise even when task_id is unknown
         await mgr.disconnect("unknown-task", ws)
+        assert "unknown-task" not in mgr.active_connections
 
     @pytest.mark.asyncio
     async def test_disconnect_nonexistent_ws_is_noop(self):
@@ -336,8 +337,11 @@ class TestBroadcastApprovalStatus:
 
     @pytest.mark.asyncio
     async def test_no_details_does_not_raise(self):
-        with patch.object(connection_manager, "broadcast", new=AsyncMock()):
+        with patch.object(connection_manager, "broadcast", new=AsyncMock()) as mock_bcast:
             await broadcast_approval_status("task-1", "approved")
+        mock_bcast.assert_awaited_once()
+        sent = mock_bcast.call_args[0][1]
+        assert sent["status"] == "approved"
 
 
 # ---------------------------------------------------------------------------
