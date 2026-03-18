@@ -218,8 +218,8 @@ class TestAddTask:
     async def test_task_name_stored_in_metadata(self):
         pool = _make_pool(fetchval_result="t-1")
         db = _make_db(pool)
-        # Should not raise
-        await db.add_task({"task_name": "My Task", "topic": "Tech"})
+        result = await db.add_task({"task_name": "My Task", "topic": "Tech"})
+        assert result == "t-1"
 
     @pytest.mark.asyncio
     async def test_custom_task_id_used(self):

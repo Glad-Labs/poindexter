@@ -367,8 +367,8 @@ class TestStoreExecutionResult:
         """Should return without error when database_service is None."""
         orch = _make_orchestrator()
         result = _make_result()
-        # Should not raise
-        await orch._store_execution_result(result)
+        ret = await orch._store_execution_result(result)
+        assert ret is None
 
     @pytest.mark.asyncio
     async def test_swallows_exceptions(self):
@@ -377,8 +377,8 @@ class TestStoreExecutionResult:
         db.store = AsyncMock(side_effect=Exception("DB error"))
         orch = _make_orchestrator(database_service=db)
         result = _make_result()
-        # Should not raise
-        await orch._store_execution_result(result)
+        ret = await orch._store_execution_result(result)
+        assert ret is None
 
 
 # ---------------------------------------------------------------------------
