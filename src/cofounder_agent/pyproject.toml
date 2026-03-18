@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "glad-labs-backend"
-version = "3.0.73"
+version = "3.0.74"
 description = "FastAPI backend with specialized AI agents for Glad Labs"
 authors = ["Matthew M. Gladding <mattg@gladlabs.io>"]
 readme = "README.md"
