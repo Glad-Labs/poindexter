@@ -86,7 +86,7 @@ export default async function ArchivePage({ params }: ArchivePageProps) {
   const totalPages = Math.ceil(total / POSTS_PER_PAGE);
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900">
+    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900">
       {/* Header Section */}
       <div className="pt-24 pb-16 px-4 sm:px-6 lg:px-8">
         <div className="max-w-4xl mx-auto text-center">
@@ -276,6 +276,6 @@ export default async function ArchivePage({ params }: ArchivePageProps) {
           )}
         </div>
       </div>
-    </main>
+    </div>
   );
 }

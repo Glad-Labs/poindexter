@@ -7,6 +7,7 @@ import {
   CardHeader,
   Grid,
   FormControl,
+  InputLabel,
   Select,
   MenuItem,
   Typography,
@@ -683,7 +684,12 @@ export function ModelSelectionPanel({
                       <TableCell>
                         {phaseModels[phase] && (
                           <FormControl size="small" sx={{ width: '100%' }}>
+                            <InputLabel id={`phase-model-label-${phase}`}>
+                              {PHASE_NAMES[phase]} model
+                            </InputLabel>
                             <Select
+                              labelId={`phase-model-label-${phase}`}
+                              label={`${PHASE_NAMES[phase]} model`}
                               value={modelSelections[phase]}
                               onChange={(e) =>
                                 handlePhaseChange(phase, e.target.value)

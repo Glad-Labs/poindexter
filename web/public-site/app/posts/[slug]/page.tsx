@@ -221,7 +221,7 @@ export default async function PostPage({
         />
       )}
 
-      <main className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900">
+      <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900">
         {/* Header with Featured Image */}
         <div className="pt-20 pb-12">
           {imageUrl && (
@@ -361,7 +361,7 @@ export default async function PostPage({
             <GiscusWrapper postSlug={post.slug} postTitle={post.title} />
           </div>
         </div>
-      </main>
+      </div>
     </>
   );
 }

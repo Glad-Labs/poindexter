@@ -30,8 +30,10 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControl,
   FormControlLabel,
   Grid,
+  InputLabel,
   MenuItem,
   Pagination,
   Rating,
@@ -415,32 +417,38 @@ const ApprovalQueue = () => {
 
       {/* Filters & Controls */}
       <Stack direction="row" spacing={2} sx={{ mb: 3 }}>
-        <Select
-          value={queue.taskTypeFilter}
-          onChange={queue.handleTaskTypeFilterChange}
-          size="small"
-          sx={{ minWidth: 200 }}
-          displayEmpty
-        >
-          <MenuItem value="">All Task Types</MenuItem>
-          <MenuItem value="blog_post">Blog Posts</MenuItem>
-          <MenuItem value="email">Emails</MenuItem>
-          <MenuItem value="newsletter">Newsletters</MenuItem>
-          <MenuItem value="social_media">Social Media</MenuItem>
-          <MenuItem value="market_research">Market Research</MenuItem>
-          <MenuItem value="financial_analysis">Financial Analysis</MenuItem>
-        </Select>
+        <FormControl size="small" sx={{ minWidth: 200 }}>
+          <InputLabel id="approval-task-type-label">Task Type</InputLabel>
+          <Select
+            labelId="approval-task-type-label"
+            label="Task Type"
+            value={queue.taskTypeFilter}
+            onChange={queue.handleTaskTypeFilterChange}
+            displayEmpty
+          >
+            <MenuItem value="">All Task Types</MenuItem>
+            <MenuItem value="blog_post">Blog Posts</MenuItem>
+            <MenuItem value="email">Emails</MenuItem>
+            <MenuItem value="newsletter">Newsletters</MenuItem>
+            <MenuItem value="social_media">Social Media</MenuItem>
+            <MenuItem value="market_research">Market Research</MenuItem>
+            <MenuItem value="financial_analysis">Financial Analysis</MenuItem>
+          </Select>
+        </FormControl>
 
-        <Select
-          value={queue.sortBy}
-          onChange={queue.handleSortChange}
-          size="small"
-          sx={{ minWidth: 200 }}
-        >
-          <MenuItem value="created_at">Sort: Newest First</MenuItem>
-          <MenuItem value="quality_score">Sort: Highest Quality</MenuItem>
-          <MenuItem value="topic">Sort: Topic (A-Z)</MenuItem>
-        </Select>
+        <FormControl size="small" sx={{ minWidth: 200 }}>
+          <InputLabel id="approval-sort-by-label">Sort By</InputLabel>
+          <Select
+            labelId="approval-sort-by-label"
+            label="Sort By"
+            value={queue.sortBy}
+            onChange={queue.handleSortChange}
+          >
+            <MenuItem value="created_at">Sort: Newest First</MenuItem>
+            <MenuItem value="quality_score">Sort: Highest Quality</MenuItem>
+            <MenuItem value="topic">Sort: Topic (A-Z)</MenuItem>
+          </Select>
+        </FormControl>
 
         <Button
           variant="outlined"
@@ -611,18 +619,21 @@ const ApprovalQueue = () => {
               Rejecting <strong>{queue.selectedTask?.task_name}</strong>
             </Typography>
 
-            <Select
-              label="Reason"
-              value={queue.rejectReason}
-              onChange={(e) => queue.setRejectReason(e.target.value)}
-              fullWidth
-            >
-              <MenuItem value="Content quality">Content Quality</MenuItem>
-              <MenuItem value="Factual errors">Factual Errors</MenuItem>
-              <MenuItem value="Tone mismatch">Tone Mismatch</MenuItem>
-              <MenuItem value="Style issues">Style Issues</MenuItem>
-              <MenuItem value="Other">Other</MenuItem>
-            </Select>
+            <FormControl fullWidth>
+              <InputLabel id="reject-reason-label">Reason</InputLabel>
+              <Select
+                labelId="reject-reason-label"
+                label="Reason"
+                value={queue.rejectReason}
+                onChange={(e) => queue.setRejectReason(e.target.value)}
+              >
+                <MenuItem value="Content quality">Content Quality</MenuItem>
+                <MenuItem value="Factual errors">Factual Errors</MenuItem>
+                <MenuItem value="Tone mismatch">Tone Mismatch</MenuItem>
+                <MenuItem value="Style issues">Style Issues</MenuItem>
+                <MenuItem value="Other">Other</MenuItem>
+              </Select>
+            </FormControl>
 
             <TextField
               label="Feedback"
@@ -734,18 +745,21 @@ const ApprovalQueue = () => {
               </strong>
             </Typography>
 
-            <Select
-              label="Reason"
-              value={bulk.bulkRejectReason}
-              onChange={(e) => bulk.setBulkRejectReason(e.target.value)}
-              fullWidth
-            >
-              <MenuItem value="Content quality">Content Quality</MenuItem>
-              <MenuItem value="Factual errors">Factual Errors</MenuItem>
-              <MenuItem value="Tone mismatch">Tone Mismatch</MenuItem>
-              <MenuItem value="Style issues">Style Issues</MenuItem>
-              <MenuItem value="Other">Other</MenuItem>
-            </Select>
+            <FormControl fullWidth>
+              <InputLabel id="bulk-reject-reason-label">Reason</InputLabel>
+              <Select
+                labelId="bulk-reject-reason-label"
+                label="Reason"
+                value={bulk.bulkRejectReason}
+                onChange={(e) => bulk.setBulkRejectReason(e.target.value)}
+              >
+                <MenuItem value="Content quality">Content Quality</MenuItem>
+                <MenuItem value="Factual errors">Factual Errors</MenuItem>
+                <MenuItem value="Tone mismatch">Tone Mismatch</MenuItem>
+                <MenuItem value="Style issues">Style Issues</MenuItem>
+                <MenuItem value="Other">Other</MenuItem>
+              </Select>
+            </FormControl>
 
             <TextField
               label="Feedback"
