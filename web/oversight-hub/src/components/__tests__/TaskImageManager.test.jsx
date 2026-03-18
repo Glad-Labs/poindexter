@@ -38,10 +38,7 @@ describe('TaskImageManager Component', () => {
 
   it('should render for rejected status', () => {
     render(
-      <TaskImageManager
-        {...defaultProps}
-        task={{ status: 'rejected' }}
-      />
+      <TaskImageManager {...defaultProps} task={{ status: 'rejected' }} />
     );
     expect(screen.getByText(/Image Management/)).toBeInTheDocument();
   });
@@ -95,9 +92,7 @@ describe('TaskImageManager Component', () => {
 
   it('should disable generate button when imageGenerating is true', () => {
     render(<TaskImageManager {...defaultProps} imageGenerating={true} />);
-    expect(
-      screen.getByText(/Generating/).closest('button')
-    ).toBeDisabled();
+    expect(screen.getByText(/Generating/).closest('button')).toBeDisabled();
   });
 
   it('should show image preview when selectedImageUrl is set', () => {
@@ -108,7 +103,7 @@ describe('TaskImageManager Component', () => {
       />
     );
     expect(screen.getByText(/Preview/)).toBeInTheDocument();
-    expect(screen.getByAltText('Selected')).toHaveAttribute(
+    expect(screen.getByAltText('Selected task image preview')).toHaveAttribute(
       'src',
       'https://example.com/test.jpg'
     );
