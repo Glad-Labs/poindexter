@@ -472,13 +472,15 @@ async def create_capability_task(
 @router.get("/tasks/capability", response_model=TaskListResponse)
 async def list_capability_tasks(
     offset: int = Query(0, ge=0),
+    skip: int = Query(0, ge=0, include_in_schema=False),
     limit: int = Query(20, ge=1, le=100),
     owner_id: str = Depends(get_owner_id),
     service: CapabilityTasksService = Depends(_get_capability_tasks_service),
 ):
     """List capability tasks for the current user."""
     try:
-        tasks, total = await service.list_tasks(owner_id, skip=offset, limit=limit)
+        effective_offset = offset if offset else skip
+        tasks, total = await service.list_tasks(owner_id, skip=effective_offset, limit=limit)
     except Exception:
         logger.error("[list_capability_tasks] Failed to list tasks", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to list tasks")
@@ -505,7 +507,7 @@ async def list_capability_tasks(
             for t in tasks
         ],
         total=total,
-        offset=offset,
+        offset=effective_offset,
         limit=limit,
     )
 
@@ -696,18 +698,20 @@ async def get_execution_result(
 async def list_executions(
     task_id: str,
     offset: int = Query(0, ge=0),
+    skip: int = Query(0, ge=0, include_in_schema=False),
     limit: int = Query(50, ge=1, le=100),
     status: Optional[str] = Query(None),
     owner_id: str = Depends(get_owner_id),
     service: CapabilityTasksService = Depends(_get_capability_tasks_service),
 ):
     """List execution history for a task."""
+    effective_offset = offset if offset else skip
     task = await service.get_task(task_id, owner_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
     executions, total = await service.list_executions(
-        task_id, owner_id, skip=offset, limit=limit, status_filter=status
+        task_id, owner_id, skip=effective_offset, limit=limit, status_filter=status
     )
 
     return {
@@ -720,6 +724,6 @@ async def list_executions(
             for e in executions
         ],
         "total": total,
-        "offset": offset,
+        "offset": effective_offset,
         "limit": limit,
     }
