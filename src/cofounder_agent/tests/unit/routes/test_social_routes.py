@@ -105,10 +105,10 @@ class TestGetPlatforms:
 
 @pytest.mark.unit
 class TestConnectPlatform:
-    def test_connect_twitter_returns_200(self):
+    def test_connect_twitter_returns_201(self):
         client = TestClient(_build_app())
         resp = client.post("/api/social/connect", json={"platform": "twitter"})
-        assert resp.status_code == 200
+        assert resp.status_code == 201
 
     def test_connect_response_has_success_true(self):
         client = TestClient(_build_app())
@@ -175,10 +175,10 @@ class TestGetPosts:
 
 @pytest.mark.unit
 class TestCreatePost:
-    def test_create_post_returns_200(self):
+    def test_create_post_returns_201(self):
         client = TestClient(_build_app())
         resp = client.post("/api/social/posts", json=VALID_POST_PAYLOAD)
-        assert resp.status_code == 200
+        assert resp.status_code == 201
 
     def test_create_post_response_has_post_id(self):
         client = TestClient(_build_app())
@@ -332,10 +332,10 @@ class TestGetTrendingTopics:
 
 @pytest.mark.unit
 class TestCrossPost:
-    def test_cross_post_two_platforms_returns_200(self):
+    def test_cross_post_two_platforms_returns_201(self):
         client = TestClient(_build_app())
         resp = client.post("/api/social/cross-post", json=VALID_CROSS_POST_PAYLOAD)
-        assert resp.status_code == 200
+        assert resp.status_code == 201
 
     def test_cross_post_response_has_post_ids(self):
         client = TestClient(_build_app())

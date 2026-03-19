@@ -142,7 +142,7 @@ class TaskListResponse(BaseModel):
 
     tasks: List[TaskResponse]
     total: int
-    skip: int
+    offset: int
     limit: int
 
 
@@ -471,14 +471,14 @@ async def create_capability_task(
 
 @router.get("/tasks/capability", response_model=TaskListResponse)
 async def list_capability_tasks(
-    skip: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     owner_id: str = Depends(get_owner_id),
     service: CapabilityTasksService = Depends(_get_capability_tasks_service),
 ):
     """List capability tasks for the current user."""
     try:
-        tasks, total = await service.list_tasks(owner_id, skip=skip, limit=limit)
+        tasks, total = await service.list_tasks(owner_id, skip=offset, limit=limit)
     except Exception:
         logger.error("[list_capability_tasks] Failed to list tasks", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to list tasks")
@@ -505,7 +505,7 @@ async def list_capability_tasks(
             for t in tasks
         ],
         total=total,
-        skip=skip,
+        offset=offset,
         limit=limit,
     )
 
@@ -695,7 +695,7 @@ async def get_execution_result(
 @router.get("/tasks/capability/{task_id}/executions")
 async def list_executions(
     task_id: str,
-    skip: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     status: Optional[str] = Query(None),
     owner_id: str = Depends(get_owner_id),
@@ -707,7 +707,7 @@ async def list_executions(
         raise HTTPException(status_code=404, detail="Task not found")
 
     executions, total = await service.list_executions(
-        task_id, owner_id, skip=skip, limit=limit, status_filter=status
+        task_id, owner_id, skip=offset, limit=limit, status_filter=status
     )
 
     return {
@@ -720,6 +720,6 @@ async def list_executions(
             for e in executions
         ],
         "total": total,
-        "skip": skip,
+        "offset": offset,
         "limit": limit,
     }

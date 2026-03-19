@@ -61,7 +61,7 @@ async def get_platforms() -> Dict[str, Any]:
     }
 
 
-@social_router.post("/connect")
+@social_router.post("/connect", status_code=201)
 async def connect_platform(
     request: SocialPlatformConnection,
     current_user: dict = Depends(get_current_user),
@@ -120,7 +120,7 @@ async def get_posts(
     }
 
 
-@social_router.post("/posts")
+@social_router.post("/posts", status_code=201)
 async def create_post(
     request: SocialPost,
     background_tasks: BackgroundTasks,
@@ -317,7 +317,7 @@ async def get_trending_topics(platform: str = "twitter") -> Dict[str, Any]:
     }
 
 
-@social_router.post("/cross-post")
+@social_router.post("/cross-post", status_code=201)
 async def cross_post(
     request: CrossPostRequest,
     background_tasks: BackgroundTasks,

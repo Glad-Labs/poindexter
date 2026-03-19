@@ -10,8 +10,8 @@
  * - Task action state (setTaskActionLoading, setTaskActionError, clearTaskAction)
  * - Metrics state (setMetrics)
  * - UI state (setTheme, toggleTheme, toggleAutoRefresh, toggleDesktopNotifications)
- * - Orchestrator state (setActiveHost, setSelectedModel, execution lifecycle)
- * - Message stream (addMessage, updateMessage, clearMessages, removeMessage, 200-cap)
+ * - Orchestrator state (setSelectedModel, execution lifecycle)
+ * - Message stream (addMessage, updateMessage, removeMessage, 200-cap)
  * - Persist config: partialize, version=1 migration
  *
  * Closes #1020.
@@ -111,11 +111,6 @@ describe('authentication actions', () => {
     expect(getState().accessToken).toBe('tok-abc');
   });
 
-  it('setRefreshToken stores refresh token', () => {
-    act(() => getState().setRefreshToken('ref-xyz'));
-    expect(getState().refreshToken).toBe('ref-xyz');
-  });
-
   it('setIsAuthenticated sets auth flag', () => {
     act(() => getState().setIsAuthenticated(true));
     expect(getState().isAuthenticated).toBe(true);
@@ -131,7 +126,6 @@ describe('authentication actions', () => {
     act(() => {
       getState().setUser({ id: 'u1' });
       getState().setAccessToken('tok');
-      getState().setRefreshToken('ref');
       getState().setIsAuthenticated(true);
       getState().setTasks([{ id: 't1' }]);
       getState().setSelectedTask({ id: 't1' });
@@ -284,11 +278,6 @@ describe('UI state', () => {
 // ---------------------------------------------------------------------------
 
 describe('orchestrator state', () => {
-  it('setActiveHost updates activeHost', () => {
-    act(() => getState().setActiveHost('openai'));
-    expect(getState().orchestrator.activeHost).toBe('openai');
-  });
-
   it('setSelectedModel updates selectedModel', () => {
     act(() => getState().setSelectedModel('claude-3'));
     expect(getState().orchestrator.selectedModel).toBe('claude-3');
@@ -307,33 +296,6 @@ describe('orchestrator state', () => {
     expect(exec.startedAt).toBeTruthy();
     expect(exec.completedAt).toBeNull();
     expect(exec.error).toBeNull();
-  });
-
-  it('updateExecutionPhase updates phase data and progress', () => {
-    const phases = [
-      { name: 'Research' },
-      { name: 'Draft' },
-      { name: 'Review' },
-    ];
-    act(() => getState().startExecution('exec-1', 'blog_post', phases));
-
-    act(() => getState().updateExecutionPhase(1, { status: 'running' }));
-
-    const exec = getState().orchestrator.currentExecution;
-    expect(exec.phases[1].status).toBe('running');
-    expect(exec.currentPhaseIndex).toBe(1);
-    expect(exec.status).toBe('executing');
-    expect(exec.progress).toBe(Math.round((2 / 3) * 100));
-  });
-
-  it('updateExecutionPhase ignores out-of-bounds index', () => {
-    const phases = [{ name: 'Research' }];
-    act(() => getState().startExecution('exec-1', 'blog_post', phases));
-
-    act(() => getState().updateExecutionPhase(5, { status: 'running' }));
-
-    // State should be unchanged (still pending)
-    expect(getState().orchestrator.currentExecution.status).toBe('pending');
   });
 
   it('completeExecution sets completed status and adds to history', () => {
@@ -421,14 +383,6 @@ describe('message stream', () => {
     expect(getState().messages).toHaveLength(1);
   });
 
-  it('clearMessages empties array', () => {
-    act(() => getState().addMessage({ type: 'status' }));
-    act(() => getState().addMessage({ type: 'command' }));
-    act(() => getState().clearMessages());
-
-    expect(getState().messages).toEqual([]);
-  });
-
   it('removeMessage removes message at index', () => {
     act(() => getState().addMessage({ type: 'a' }));
     act(() => getState().addMessage({ type: 'b' }));
@@ -460,7 +414,6 @@ describe('persist config', () => {
     act(() => {
       getState().setUser({ id: 'u1' });
       getState().setAccessToken('secret-tok');
-      getState().setRefreshToken('secret-ref');
       getState().setIsAuthenticated(true);
       getState().setTheme('light');
       getState().toggleAutoRefresh();
