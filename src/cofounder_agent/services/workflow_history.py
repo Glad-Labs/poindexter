@@ -98,7 +98,7 @@ class WorkflowHistoryService:
 
         try:
             # Convert duration from seconds to milliseconds for schema compatibility
-            duration_ms = int(duration_seconds * 1000) if duration_seconds else None
+            duration_ms = int(duration_seconds * 1000) if duration_seconds is not None else None
 
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
