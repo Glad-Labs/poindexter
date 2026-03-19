@@ -1,4 +1,5 @@
 import logger from '@/lib/logger';
+import * as Sentry from '@sentry/nextjs';
 /**
  * Single Post API Route Handler
  * Provides access to a specific post by slug
@@ -45,7 +46,9 @@ export async function GET(
 
     return NextResponse.json(post);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    Sentry.captureException(error);
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error';
     const errorStack = error instanceof Error ? error.stack : undefined;
     logger.error('Error fetching post', {
       message: errorMessage,

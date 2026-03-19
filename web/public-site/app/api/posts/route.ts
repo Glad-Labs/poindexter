@@ -1,4 +1,5 @@
 import logger from '@/lib/logger';
+import * as Sentry from '@sentry/nextjs';
 /**
  * Posts API Route Handler
  * Provides unified access to posts from FastAPI backend
@@ -40,6 +41,7 @@ export async function GET(request: NextRequest) {
       total: data.total ?? data.meta?.pagination?.total ?? 0,
     });
   } catch (error) {
+    Sentry.captureException(error);
     const errorMessage =
       error instanceof Error ? error.message : 'Unknown error';
     const errorStack = error instanceof Error ? error.stack : undefined;

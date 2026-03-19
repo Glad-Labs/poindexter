@@ -169,6 +169,8 @@ export default async function ArchivePage({ params }: ArchivePageProps) {
                         </div>
                         <Link
                           href={`/posts/${post.slug}`}
+                          aria-hidden="true"
+                          tabIndex={-1}
                           className="text-cyan-400 hover:text-cyan-300 font-semibold text-sm transition-colors flex items-center gap-2 self-start"
                         >
                           Read More

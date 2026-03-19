@@ -1,4 +1,5 @@
 import logger from '@/lib/logger';
+import * as Sentry from '@sentry/nextjs';
 import { revalidatePath } from 'next/cache';
 
 /**
@@ -52,11 +53,11 @@ export async function POST(request) {
       }
     );
   } catch (error) {
+    Sentry.captureException(error);
     logger.error('❌ Revalidation error:', error);
     return new Response(
       JSON.stringify({
         error: 'Revalidation failed',
-        message: error.message,
       }),
       {
         status: 500,
