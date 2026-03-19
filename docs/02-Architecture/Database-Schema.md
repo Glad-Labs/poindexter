@@ -47,12 +47,13 @@ CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_username ON users(username);
 ```
 
-### 2. `tasks` Table
+### 2. `content_tasks` Table
 
-Stores all tasks created by agents and users.
+Stores all content generation tasks created by agents and users.
+**Note:** The legacy `tasks` table exists in 0000_base_schema.py but all production code writes to `content_tasks`.
 
 ```sql
-CREATE TABLE tasks (
+CREATE TABLE content_tasks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     title VARCHAR(500) NOT NULL,

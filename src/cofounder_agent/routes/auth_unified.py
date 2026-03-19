@@ -466,8 +466,9 @@ async def issue_dev_token(request: Request) -> Dict[str, Any]:
     This endpoint avoids misusing OAuth callback endpoints for dev token bootstrapping.
     It is intentionally gated to development mode only.
     """
-    cfg = get_config()
-    is_dev_mode = cfg.environment.lower() != "production"
+    # Gate on DEVELOPMENT_MODE=true explicitly — not just "not production".
+    # This prevents staging/test environments from exposing the dev-token endpoint.
+    is_dev_mode = os.getenv("DEVELOPMENT_MODE", "false").lower() in ("true", "1", "yes")
 
     if not is_dev_mode:
         logger.warning("[issue_dev_token] Attempted access outside development mode")

@@ -209,7 +209,7 @@ async def bulk_create_tasks(
                 )
             except Exception as e:
                 logger.error(f"Error creating task {i+1}: {str(e)}", exc_info=True)
-                errors.append({"index": i, "task_name": task.task_name, "error": str(e)})
+                errors.append({"index": i, "task_name": task.task_name, "error": "Task creation failed"})
 
         return BulkCreateTasksResponse(
             created=len(created_tasks),

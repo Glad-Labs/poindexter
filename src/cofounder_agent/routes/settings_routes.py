@@ -24,7 +24,10 @@ from typing import Any, List, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
 
+from services.logger_config import get_logger
 from routes.auth_unified import get_current_user
+
+logger = get_logger(__name__)
 from schemas.settings_schemas import (
     SettingBase,
     SettingBulkUpdateRequest,
@@ -140,7 +143,8 @@ async def list_settings(
         return SettingListResponse(
             total=total, page=page, per_page=per_page, pages=pages, items=items
         )
-    except Exception as e:
+    except Exception:
+        logger.error("[list_settings] Failed to retrieve settings", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve settings")
 
 
@@ -204,7 +208,8 @@ async def get_setting(
         )
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
+        logger.error("[get_setting] Failed to retrieve setting", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve setting")
 
 
@@ -305,7 +310,8 @@ async def create_setting(
         )
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception :
+        logger.error("[settings_routes] Failed to create setting", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to create setting")
 
 
@@ -372,7 +378,8 @@ async def batch_update_settings(
         )
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception :
+        logger.error("[settings_routes] Failed to update settings", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to update settings")
 
 
@@ -479,7 +486,8 @@ async def update_setting(
         )
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception :
+        logger.error("[settings_routes] Failed to update setting", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to update setting")
 
 
@@ -539,7 +547,8 @@ async def delete_setting(
         return None
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception :
+        logger.error("[settings_routes] Failed to delete setting", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to delete setting")
 
 
@@ -678,7 +687,8 @@ async def bulk_update_settings(
             "updated_count": updated_count,
             "message": "Bulk update completed",
         }
-    except Exception as e:
+    except Exception :
+        logger.error("[settings_routes] Failed to perform bulk update", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to perform bulk update")
 
 
@@ -695,6 +705,7 @@ async def bulk_update_settings(
 async def export_settings(
     include_secrets: bool = Query(False, description="Include encrypted secrets in export"),
     current_user=Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
     format: str = Query("json", regex="^(json|yaml|csv)$", description="Export format"),
 ):
     """
@@ -717,14 +728,19 @@ async def export_settings(
     **Response:**
     - File download or JSON response
     """
-    # Mock implementation for testing
-    return {
-        "success": True,
-        "format": format,
-        "include_secrets": include_secrets,
-        "total_settings": 10,
-        "exported_at": datetime.now(timezone.utc).isoformat(),
-    }
+    try:
+        settings = await db_service.get_all_settings()
+        return {
+            "success": True,
+            "format": format,
+            "include_secrets": include_secrets,
+            "total_settings": len(settings),
+            "settings": settings,
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception:
+        logger.error("[export_settings] Failed to export settings", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to export settings")
 
 
 # ============================================================================
