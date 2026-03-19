@@ -13,7 +13,6 @@ const useStore = create(
 
       setUser: (user) => set({ user }),
       setAccessToken: (token) => set({ accessToken: token }),
-      setRefreshToken: (token) => set({ refreshToken: token }),
       setIsAuthenticated: (isAuth) => set({ isAuthenticated: isAuth }),
       setAuthInitialized: (initialized) =>
         set({ authInitialized: initialized }),
@@ -128,14 +127,6 @@ const useStore = create(
         executionHistory: [],
       },
 
-      setActiveHost: (host) =>
-        set((state) => ({
-          orchestrator: {
-            ...state.orchestrator,
-            activeHost: host,
-          },
-        })),
-
       setSelectedModel: (model) =>
         set((state) => ({
           orchestrator: {
@@ -161,28 +152,6 @@ const useStore = create(
             },
           },
         })),
-
-      updateExecutionPhase: (phaseIndex, phaseData) =>
-        set((state) => {
-          const newExecution = { ...state.orchestrator.currentExecution };
-          if (phaseIndex >= 0 && phaseIndex < newExecution.phases.length) {
-            newExecution.phases[phaseIndex] = {
-              ...newExecution.phases[phaseIndex],
-              ...phaseData,
-            };
-            newExecution.currentPhaseIndex = phaseIndex;
-            newExecution.progress = Math.round(
-              ((phaseIndex + 1) / newExecution.phases.length) * 100
-            );
-            newExecution.status = 'executing';
-          }
-          return {
-            orchestrator: {
-              ...state.orchestrator,
-              currentExecution: newExecution,
-            },
-          };
-        }),
 
       completeExecution: (_result) =>
         set((state) => {
@@ -258,11 +227,6 @@ const useStore = create(
           }
           return { messages: newMessages };
         }),
-
-      /**
-       * Clear all messages from stream
-       */
-      clearMessages: () => set({ messages: [] }),
 
       /**
        * Remove specific message from stream
