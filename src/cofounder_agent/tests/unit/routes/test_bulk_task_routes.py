@@ -49,6 +49,13 @@ def _make_bulk_db(updated_ids=None, missing_ids=None):
     db.get_task = AsyncMock(return_value=SAMPLE_TASK)
     db.update_task_status = AsyncMock(return_value=True)
     db.create_task = AsyncMock(return_value={"id": VALID_UUID_1})
+    # tasks sub-service with bulk_add_tasks (#1089)
+    db.tasks = MagicMock()
+    async def _mock_bulk_add(tasks):
+        """Return one UUID per task submitted."""
+        uuids = [VALID_UUID_1, VALID_UUID_2]
+        return uuids[:len(tasks)]
+    db.tasks.bulk_add_tasks = AsyncMock(side_effect=_mock_bulk_add)
     # bulk_update_task_statuses — new 2-query implementation for #700
     _updated = updated_ids if updated_ids is not None else [VALID_UUID_1, VALID_UUID_2]
     _missing = missing_ids if missing_ids is not None else []
@@ -215,16 +222,15 @@ class TestBulkCreateTasks:
         assert "id" in data["tasks"][0]
         assert "status" in data["tasks"][0]
 
-    def test_db_error_on_create_counts_as_failed(self):
+    def test_db_error_on_create_returns_500(self):
         mock_db = _make_bulk_db()
-        mock_db.create_task = AsyncMock(side_effect=RuntimeError("DB error"))
+        mock_db.tasks.bulk_add_tasks = AsyncMock(side_effect=RuntimeError("DB error"))
         client = TestClient(_build_app(mock_db))
-        data = client.post(
+        resp = client.post(
             "/api/tasks/bulk/create",
             json={"tasks": [VALID_TASK_ITEM]},
-        ).json()
-        assert data["failed"] == 1
-        assert data["created"] == 0
+        )
+        assert resp.status_code == 500
 
     def test_missing_required_fields_returns_422(self):
         """Missing task_name or topic should fail Pydantic validation."""

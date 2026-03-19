@@ -244,6 +244,83 @@ class TasksDatabase(DatabaseServiceMixin):
             logger.error(f"❌ Failed to add task: {e}", exc_info=True)
             raise
 
+    @log_query_performance(operation="bulk_add_tasks", category="task_write")
+    async def bulk_add_tasks(self, tasks: List[Dict[str, Any]]) -> List[str]:
+        """
+        Add multiple tasks in a single connection acquire using executemany.
+
+        Args:
+            tasks: List of task data dicts (same format as add_task).
+
+        Returns:
+            List of created task IDs.
+        """
+        if not tasks:
+            return []
+
+        now = datetime.now(timezone.utc)
+        rows = []
+        task_ids = []
+
+        for task_data in tasks:
+            task_id = task_data.get("id", task_data.get("task_id", str(uuid4())))
+            if isinstance(task_id, UUID):
+                task_id = str(task_id)
+            task_ids.append(task_id)
+
+            metadata = task_data.get("task_metadata") or task_data.get("metadata", {})
+            metadata = safe_json_load(metadata, fallback={})
+            if "task_name" in task_data and "task_name" not in metadata:
+                metadata["task_name"] = task_data["task_name"]
+
+            rows.append((
+                task_id,
+                task_data.get("content_type") or task_data.get("task_type", "blog_post"),
+                task_data.get("task_type", "blog_post"),
+                task_data.get("request_type", "content_generation"),
+                task_data.get("status", "pending"),
+                task_data.get("topic", ""),
+                task_data.get("title") or task_data.get("task_name"),
+                task_data.get("style", "technical"),
+                task_data.get("tone", "professional"),
+                task_data.get("target_length", 1500),
+                task_data.get("agent_id", "content-agent"),
+                task_data.get("primary_keyword"),
+                task_data.get("target_audience"),
+                task_data.get("category"),
+                task_data.get("approval_status", "pending"),
+                task_data.get("publish_mode", "draft"),
+                task_data.get("quality_preference", "balanced"),
+                float(task_data.get("estimated_cost", 0.0)),
+                json.dumps(task_data.get("tags", [])),
+                json.dumps(metadata or {}),
+                now,
+                now,
+            ))
+
+        sql = """
+            INSERT INTO content_tasks (
+                task_id, content_type, task_type, request_type, status, topic,
+                title, style, tone, target_length, agent_id, primary_keyword,
+                target_audience, category, approval_status, publish_mode,
+                quality_preference, estimated_cost, tags, task_metadata,
+                created_at, updated_at
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+                $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+            )
+        """
+
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.transaction():
+                    await conn.executemany(sql, rows)
+            logger.info(f"Bulk created {len(task_ids)} tasks")
+            return task_ids
+        except Exception as e:
+            logger.error(f"Failed to bulk add tasks: {e}", exc_info=True)
+            raise
+
     @log_query_performance(operation="get_task", category="task_retrieval")
     async def get_task(self, task_id: str) -> Optional[dict]:
         """
