@@ -249,8 +249,11 @@ class TasksDatabase(DatabaseServiceMixin):
         """
         Add multiple tasks in a single connection acquire using executemany.
 
+        Inserts core task columns only (not content/SEO/image fields).
+        For tasks that need all columns, use add_task() individually.
+
         Args:
-            tasks: List of task data dicts (same format as add_task).
+            tasks: List of task data dicts with keys like task_name, topic, status, etc.
 
         Returns:
             List of created task IDs.
