@@ -95,10 +95,12 @@ class WorkflowHistoryService:
             duration_seconds = (end_time - start_time).total_seconds()
 
         execution_metadata = execution_metadata or {}
+        # Ensure workflow_type is persisted in the metadata JSON column, as expected by readers/metrics
+        combined_metadata = {**execution_metadata, "workflow_type": workflow_type}
 
         try:
             # Convert duration from seconds to milliseconds for schema compatibility
-            duration_ms = int(duration_seconds * 1000) if duration_seconds else None
+            duration_ms = int(duration_seconds * 1000) if duration_seconds is not None else None
 
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
@@ -117,12 +119,12 @@ class WorkflowHistoryService:
                     status,
                     input_data,
                     output_data,
-                    {"task_results": task_results or [], "workflow_type": workflow_type},
+                    {"task_results": task_results or []},
                     error_message,
                     start_time,
                     end_time,
                     duration_ms,
-                    execution_metadata,
+                    combined_metadata,
                 )
 
                 logger.info(
