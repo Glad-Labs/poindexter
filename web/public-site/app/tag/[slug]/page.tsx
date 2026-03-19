@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import logger from '@/lib/logger';
+import * as Sentry from '@sentry/nextjs';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
@@ -38,6 +39,7 @@ async function getTagPosts(tag: string): Promise<Post[]> {
     return data.posts || data.items || data.data || [];
   } catch (error) {
     logger.error(`Error fetching posts for tag "${tag}":`, error);
+    Sentry.captureException(error);
     return [];
   }
 }

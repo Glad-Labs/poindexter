@@ -80,16 +80,17 @@ curl -X POST "http://localhost:8000/api/workflows/custom/wf-550e8400/execute" \
 - **`free`** (local, zero API cost): Ollama models (mistral, llama2, neural-chat)
 - **`budget`** (low API cost): GPT-3.5 Turbo, Claude Instant, Gemini Flash
 - **`standard`** (mid-tier cost): Claude Haiku, balanced quality/cost
-- **`premium`** (high-capability): Claude Opus, GPT-4 Turbo, Gemini Pro
+- **`premium`** (high-capability): Claude Opus, Gemini Pro
+- **`flagship`** (most capable): GPT-4 Turbo, top-tier models for critical tasks
 
-**Key Principle:** Always specify a cost tier (free/budget/standard/premium), never hardcode model names. The router automatically selects the best available model within that tier based on API availability, rate limits, and fallback chains.
+**Key Principle:** Always specify a cost tier (free/budget/standard/premium/flagship), never hardcode model names. The router automatically selects the best available model within that tier based on API availability, rate limits, and fallback chains.
 
 ## Automatic Fallback Chain
 
 If primary tier is unavailable, system automatically cascades through:
 
 ```plaintext
-Free (Ollama) → Budget (Cheapest APIs) → Standard → Premium → Echo/Mock
+Free (Ollama) → Budget (Cheapest APIs) → Standard → Premium → Flagship → Echo/Mock
 ```
 
 **Fallback Example:**

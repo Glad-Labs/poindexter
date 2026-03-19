@@ -153,27 +153,27 @@ class TestDeprecatedKpiEndpoint:
 
 
 # ---------------------------------------------------------------------------
-# GET /api/metrics/operational (no auth required)
+# GET /api/metrics/operational (auth required — #1011)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestGetOperationalMetrics:
-    def test_returns_200_without_auth(self):
-        """Operational metrics endpoint has no auth guard — succeeds without auth override."""
+    def test_returns_401_without_auth(self):
+        """Operational metrics now requires auth (#1011)."""
         mock_db = make_mock_db()
         mock_db.tasks = MagicMock()
         mock_db.tasks.get_task_counts = AsyncMock(return_value={
             "pending": 2, "in_progress": 1, "failed": 0, "completed": 10
         })
 
-        # Build app with NO auth override — operational metrics requires no auth
+        # Build app with NO auth override — should now require auth
         app = FastAPI()
         app.include_router(metrics_router)
         app.dependency_overrides[get_database_dependency] = lambda: mock_db
         client = TestClient(app)
         resp = client.get("/api/metrics/operational")
-        assert resp.status_code == 200
+        assert resp.status_code == 401
 
     def test_response_has_required_operational_fields(self):
         mock_db = make_mock_db()

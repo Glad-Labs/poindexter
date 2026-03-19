@@ -1,5 +1,5 @@
 import logger from '@/lib/logger';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Box,
   Card,
@@ -76,6 +76,22 @@ function BlogWorkflowPage() {
   const [executionResults, setExecutionResults] = useState(null);
   const [isExecuting, setIsExecuting] = useState(false);
   const [workflowHistory, setWorkflowHistory] = useState([]);
+  const pollIntervalRef = useRef(null);
+  const abortControllerRef = useRef(null);
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+    };
+  }, []);
 
   // Load available phases on mount
   useEffect(() => {
@@ -190,14 +206,26 @@ function BlogWorkflowPage() {
   }, [workflowConfig, selectedPhases]);
 
   const pollWorkflowProgress = async (execId) => {
-    const pollInterval = setInterval(async () => {
+    // Clear any existing poll
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+    }
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    pollIntervalRef.current = setInterval(async () => {
       try {
-        const progress = await apiClient.getWorkflowProgress(execId);
+        abortControllerRef.current = new AbortController();
+        const progress = await apiClient.getWorkflowProgress(execId, {
+          signal: abortControllerRef.current.signal,
+        });
         setExecutionProgress(progress);
 
         // If workflow is complete, get results
         if (progress.status === 'completed' || progress.status === 'failed') {
-          clearInterval(pollInterval);
+          clearInterval(pollIntervalRef.current);
+          pollIntervalRef.current = null;
           const results = await apiClient.getWorkflowResults(execId);
           setExecutionResults(results);
           setActiveStep(3); // Move to Results step
@@ -205,10 +233,10 @@ function BlogWorkflowPage() {
           await loadWorkflowHistory();
         }
       } catch (err) {
+        if (err.name === 'AbortError') return;
         logger.error('Error polling progress:', err);
-        // Continue polling even if there's an error
       }
-    }, 2000); // Poll every 2 seconds
+    }, 2000);
   };
 
   const handleCancelExecution = async () => {

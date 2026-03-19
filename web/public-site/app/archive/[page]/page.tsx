@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import type { Metadata } from 'next';
+import * as Sentry from '@sentry/nextjs';
+import logger from '@/lib/logger';
 
 interface Post {
   id: string;
@@ -50,7 +52,9 @@ async function getArchivePosts(page: number) {
       data?.total ?? data?.meta?.pagination?.total ?? posts.length ?? 0;
 
     return { posts, total };
-  } catch {
+  } catch (error) {
+    logger.error('Error fetching archive posts:', error);
+    Sentry.captureException(error);
     return { posts: [], total: 0 };
   }
 }

@@ -172,14 +172,13 @@ async def unsubscribe_from_newsletter(
         )
 
         if result == "UPDATE 0":
-            return NewsletterSubscribeResponse(
-                success=False, message=f"Email {payload.email} not found or already unsubscribed"
-            )
+            logger.info(f"[newsletter_unsubscribe] No active subscription found for email (not revealing to client)")
+        else:
+            logger.info(f"[newsletter_unsubscribe] Successfully unsubscribed: {payload.email}")
 
-        logger.info(f"✅ Unsubscribed from newsletter: {payload.email}")
-
+        # Always return the same response to prevent email enumeration
         return NewsletterSubscribeResponse(
-            success=True, message="Successfully unsubscribed from newsletter"
+            success=True, message="If this email was subscribed, it has been removed."
         )
 
     except Exception as e:

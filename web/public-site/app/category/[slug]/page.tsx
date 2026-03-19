@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import logger from '@/lib/logger';
+import * as Sentry from '@sentry/nextjs';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
@@ -42,6 +43,7 @@ async function getCategory(slug: string): Promise<Category | null> {
     return data.data || data;
   } catch (error) {
     logger.error(`Error fetching category "${slug}":`, error);
+    Sentry.captureException(error);
     return null;
   }
 }
@@ -63,6 +65,7 @@ async function getCategoryPosts(categoryId: string): Promise<Post[]> {
     return data.posts || data.items || data.data || [];
   } catch (error) {
     logger.error(`Error fetching posts for category "${categoryId}":`, error);
+    Sentry.captureException(error);
     return [];
   }
 }

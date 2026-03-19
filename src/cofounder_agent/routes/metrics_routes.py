@@ -719,12 +719,13 @@ async def get_performance_metrics(
     description=(
         "Returns in-memory operational metrics without requiring a database query. "
         "Designed for external monitoring scraping (Railway, Datadog, Loki). "
-        "No authentication required — values are non-sensitive operational gauges."
+        "Requires authentication for consistency with other metrics endpoints."
     ),
     include_in_schema=True,
 )
 async def get_operational_metrics(
     request: Request,
+    current_user: UserProfile = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
 ) -> Dict[str, Any]:
     """

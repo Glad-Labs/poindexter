@@ -44,6 +44,10 @@ const LayoutWrapper = ({ children }) => {
   const [chatHeight, setChatHeight] = useState(
     parseInt(localStorage.getItem('chatHeight') || '300', 10)
   );
+  const chatHeightRef = useRef(chatHeight);
+  useEffect(() => {
+    chatHeightRef.current = chatHeight;
+  }, [chatHeight]);
   const [isResizing, setIsResizing] = useState(false);
   const [ollamaConnected, setOllamaConnected] = useState(false);
   // const [availableOllamaModels, setAvailableOllamaModels] = useState([]);
@@ -421,7 +425,7 @@ const LayoutWrapper = ({ children }) => {
     const handleMouseUp = () => {
       setIsResizing(false);
       document.body.classList.remove('resizing-chat');
-      localStorage.setItem('chatHeight', Math.round(chatHeight));
+      localStorage.setItem('chatHeight', Math.round(chatHeightRef.current));
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('touchmove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);

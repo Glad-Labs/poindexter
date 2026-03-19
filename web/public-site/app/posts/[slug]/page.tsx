@@ -43,7 +43,8 @@ export async function generateStaticParams(): Promise<{ slug: string }[]> {
     return posts
       .filter((p: { slug?: string }) => p.slug)
       .map((p: { slug: string }) => ({ slug: p.slug }));
-  } catch {
+  } catch (error) {
+    Sentry.captureException(error);
     return [];
   }
 }

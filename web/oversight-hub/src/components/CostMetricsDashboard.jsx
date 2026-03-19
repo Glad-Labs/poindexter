@@ -1,5 +1,5 @@
 import logger from '@/lib/logger';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Card,
@@ -88,10 +88,50 @@ const CostMetricsDashboard = () => {
   };
 
   // Fetch on mount and set up auto-refresh every 60 seconds
+  const cancelledRef = useRef(false);
   useEffect(() => {
-    fetchMetrics();
-    const interval = setInterval(fetchMetrics, 60000);
-    return () => clearInterval(interval);
+    cancelledRef.current = false;
+
+    const safeFetch = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const [mainMetrics, phaseData, modelData, historyData, budgetData] =
+          await Promise.all([
+            getCostMetrics(),
+            getCostsByPhase('month'),
+            getCostsByModel('month'),
+            getCostHistory('week'),
+            getBudgetStatus(150.0),
+          ]);
+
+        if (cancelledRef.current) return;
+
+        const metricsData = mainMetrics?.costs || mainMetrics;
+        setMetrics(metricsData);
+        setCostsByPhase(phaseData?.phases || []);
+        setCostsByModel(modelData?.models || []);
+        setCostHistory(historyData?.daily_data || []);
+        setBudgetStatus(budgetData);
+        setLastUpdated(new Date());
+      } catch (err) {
+        if (cancelledRef.current) return;
+        setError(
+          err instanceof Error ? err.message : 'Failed to fetch metrics'
+        );
+        logger.error('Error fetching cost metrics:', err);
+      } finally {
+        if (!cancelledRef.current) setLoading(false);
+      }
+    };
+
+    safeFetch();
+    const interval = setInterval(safeFetch, 60000);
+    return () => {
+      cancelledRef.current = true;
+      clearInterval(interval);
+    };
   }, []);
 
   // Calculate budget usage percentage from budgetStatus if available
