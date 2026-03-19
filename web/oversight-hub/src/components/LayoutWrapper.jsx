@@ -234,6 +234,7 @@ const LayoutWrapper = ({ children }) => {
       dashboard: '/',
       tasks: '/tasks',
       content: '/content',
+      approvals: '/approvals',
       services: '/services',
       ai: '/ai',
       costs: '/costs',

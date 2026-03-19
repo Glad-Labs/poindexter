@@ -16,7 +16,10 @@ export function PostNavigation({
   }
 
   return (
-    <nav className="mt-16 pt-8 border-t border-slate-700">
+    <nav
+      aria-label="Post navigation"
+      className="mt-16 pt-8 border-t border-slate-700"
+    >
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         {/* Previous Post */}
         {previousPost ? (

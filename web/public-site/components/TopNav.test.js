@@ -8,9 +8,13 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import TopNav from '../components/TopNav';
 
-// Mock Next.js Link
+// Mock Next.js Link — preserve all props including aria-label
 jest.mock('next/link', () => {
-  return ({ children, href }) => <a href={href}>{children}</a>;
+  return ({ children, href, ...props }) => (
+    <a href={href} {...props}>
+      {children}
+    </a>
+  );
 });
 
 // Mock Next.js useRouter
@@ -32,24 +36,21 @@ describe('TopNav Component', () => {
 
   it('should display logo', () => {
     render(<TopNav />);
-    const logo =
-      screen.getByRole('img', { name: /logo/i }) ||
-      screen.getByAltText(/logo/i);
-    if (logo) {
-      expect(logo).toBeInTheDocument();
-    }
+    // TopNav renders "GL" text as logo with aria-label "Glad Labs — Home"
+    const logoLink = screen.getByRole('link', { name: /glad labs/i });
+    expect(logoLink).toBeInTheDocument();
   });
 
-  it('should display home link', () => {
+  it('should display home link via logo', () => {
     render(<TopNav />);
-    const homeLink = screen.getByRole('link', { name: /home/i });
-    expect(homeLink).toBeInTheDocument();
+    const homeLink = screen.getByRole('link', { name: /glad labs/i });
+    expect(homeLink).toHaveAttribute('href', '/');
   });
 
-  it('should display blog link', () => {
+  it('should display articles link', () => {
     render(<TopNav />);
-    const blogLink = screen.getByRole('link', { name: /blog/i });
-    expect(blogLink).toBeInTheDocument();
+    const articlesLink = screen.getByRole('link', { name: /articles/i });
+    expect(articlesLink).toBeInTheDocument();
   });
 
   it('should display about link', () => {
@@ -58,15 +59,15 @@ describe('TopNav Component', () => {
     expect(aboutLink).toBeInTheDocument();
   });
 
-  it('should display contact link', () => {
+  it('should display explore link', () => {
     render(<TopNav />);
-    const contactLink = screen.getByRole('link', { name: /contact/i });
-    expect(contactLink).toBeInTheDocument();
+    const exploreLink = screen.getByRole('link', { name: /explore/i });
+    expect(exploreLink).toBeInTheDocument();
   });
 
   it('should have correct navigation links', () => {
     render(<TopNav />);
-    const homeLink = screen.getByRole('link', { name: /home/i });
+    const homeLink = screen.getByRole('link', { name: /glad labs/i });
     expect(homeLink).toHaveAttribute('href', '/');
   });
 
@@ -112,16 +113,17 @@ describe('TopNav Component', () => {
 
   it('should display all main navigation items', () => {
     render(<TopNav />);
-    expect(screen.getByRole('link', { name: /home/i })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /blog/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: /glad labs/i })
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /articles/i })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /about/i })).toBeInTheDocument();
   });
 
-  it('should highlight current page in navigation', () => {
+  it('should have navigation landmark', () => {
     render(<TopNav />);
-    const homeLink = screen.getByRole('link', { name: /home/i });
-    expect(homeLink.parentElement).toHaveClass('active') ||
-      expect(homeLink).toHaveAttribute('aria-current');
+    const nav = screen.getByRole('navigation', { name: /main/i });
+    expect(nav).toBeInTheDocument();
   });
 
   it('should have accessibility attributes', () => {
@@ -143,16 +145,11 @@ describe('TopNav Component', () => {
     }
   });
 
-  it('should be sticky on scroll', () => {
+  it('should have fixed positioning class', () => {
     const { container } = render(<TopNav />);
-    const nav =
-      container.querySelector('nav') || container.querySelector('header');
-
-    if (nav) {
-      const style = window.getComputedStyle(nav);
-      expect(style.position).toBe('sticky') ||
-        expect(style.position).toBe('fixed');
-    }
+    const header = container.querySelector('header');
+    // TopNav uses Tailwind "fixed" class
+    expect(header?.className).toContain('fixed');
   });
 
   it('should handle search input', () => {

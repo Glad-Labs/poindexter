@@ -6,7 +6,7 @@
  */
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import GiscusComments from '../GiscusComments';
+import GiscusComments from './GiscusComments';
 
 describe('GiscusComments Component', () => {
   const defaultProps = {
@@ -39,7 +39,8 @@ describe('GiscusComments Component', () => {
 
   it('should have proper styling with dark background', () => {
     const { container } = render(<GiscusComments {...defaultProps} />);
-    const commentSection = container.querySelector('.bg-slate-800');
+    // Class includes opacity modifier: bg-slate-800/50
+    const commentSection = container.querySelector('[class*="bg-slate-800"]');
 
     expect(commentSection).toBeInTheDocument();
   });
@@ -147,7 +148,7 @@ describe('GiscusComments Component', () => {
   it('should prepare for real Giscus widget mounting', () => {
     const { container } = render(<GiscusComments {...defaultProps} />);
     // Should have structure ready for Giscus
-    const wrapper = container.querySelector('.bg-slate-800');
+    const wrapper = container.querySelector('[class*="bg-slate-800"]');
     expect(wrapper).toBeInTheDocument();
   });
 });

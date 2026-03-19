@@ -1,6 +1,20 @@
 import '@testing-library/jest-dom';
 import { useRouter } from 'next/router';
 
+// Mock @sentry/nextjs — the real SDK accesses router.events at import time,
+// which crashes in jsdom because next/router is not fully initialised.
+jest.mock('@sentry/nextjs', () => ({
+  init: jest.fn(),
+  captureException: jest.fn(),
+  captureMessage: jest.fn(),
+  withScope: jest.fn((cb) => cb({ setTag: jest.fn(), setExtra: jest.fn() })),
+  setUser: jest.fn(),
+  setTag: jest.fn(),
+  setExtra: jest.fn(),
+  startSpan: jest.fn((_opts, cb) => cb()),
+  metrics: { increment: jest.fn(), distribution: jest.fn() },
+}));
+
 // Mock Next.js router for testing
 jest.mock('next/router', () => ({
   useRouter: jest.fn(),

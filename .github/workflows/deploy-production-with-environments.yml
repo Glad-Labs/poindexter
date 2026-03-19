@@ -185,22 +185,42 @@ jobs:
       - name: 🧪 Smoke Tests
         run: |
           echo "🔍 Running smoke tests against production..."
-          echo "Waiting for services to stabilize (20 seconds)..."
-          sleep 20
+          echo "Waiting for services to stabilize (30 seconds)..."
+          sleep 30
 
+          FAILURES=0
           COFOUNDER_URL="${{ secrets.COFOUNDER_PROD_URL }}"
           OVERSIGHT_URL="${{ secrets.OVERSIGHT_PROD_URL }}"
 
           echo "Testing Co-Founder Agent health..."
-          curl -f --retry 3 --retry-delay 5 "${COFOUNDER_URL}/health" || echo "⚠️ Co-Founder Agent health check pending"
+          if curl -sf --retry 3 --retry-delay 5 "${COFOUNDER_URL}/health" | grep -q "healthy"; then
+            echo "✅ Co-Founder Agent is healthy"
+          else
+            echo "❌ Co-Founder Agent health check FAILED"
+            FAILURES=$((FAILURES + 1))
+          fi
 
           echo "Testing Public Site health..."
-          curl -f --retry 3 --retry-delay 5 https://glad-labs.com || echo "⚠️ Public Site health check pending"
+          if curl -sf --retry 3 --retry-delay 5 https://glad-labs.com > /dev/null; then
+            echo "✅ Public Site is reachable"
+          else
+            echo "❌ Public Site health check FAILED"
+            FAILURES=$((FAILURES + 1))
+          fi
 
           echo "Testing Oversight Hub health..."
-          curl -f --retry 3 --retry-delay 5 "${OVERSIGHT_URL}" || echo "⚠️ Oversight Hub health check pending"
+          if curl -sf --retry 3 --retry-delay 5 "${OVERSIGHT_URL}" > /dev/null; then
+            echo "✅ Oversight Hub is reachable"
+          else
+            echo "❌ Oversight Hub health check FAILED"
+            FAILURES=$((FAILURES + 1))
+          fi
 
-          echo "✅ Smoke tests completed"
+          if [ "$FAILURES" -gt 0 ]; then
+            echo "❌ $FAILURES production service(s) failed smoke tests — INVESTIGATE IMMEDIATELY"
+            exit 1
+          fi
+          echo "✅ All production smoke tests passed"
 
       - name: 📊 Health Checks
         run: |

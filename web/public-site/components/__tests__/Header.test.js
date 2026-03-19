@@ -1,10 +1,14 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import Header from '../Header';
+import Header from '../TopNav';
 
 // Mock next/link
 jest.mock('next/link', () => {
-  return ({ children, href }) => <a href={href}>{children}</a>;
+  return ({ children, href, ...props }) => (
+    <a href={href} {...props}>
+      {children}
+    </a>
+  );
 });
 
 describe('Header Component', () => {
@@ -28,11 +32,11 @@ describe('Header Component', () => {
     expect(logo).toBeInTheDocument();
   });
 
-  test('renders Glad Labs text on desktop', () => {
+  test('renders brand logo with accessible name', () => {
     render(<Header />);
 
-    const brandName = screen.getByText('Glad Labs');
-    expect(brandName).toBeInTheDocument();
+    const brandLink = screen.getByRole('link', { name: /glad labs/i });
+    expect(brandLink).toBeInTheDocument();
   });
 
   test('has correct link href attributes', () => {

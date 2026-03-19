@@ -297,7 +297,11 @@ const ExecutiveDashboard = () => {
           <p>AI-Powered Business Management System - Real-time KPI Overview</p>
         </div>
         <div className="time-range-selector">
+          <label htmlFor="time-range-select" className="sr-only">
+            Time range
+          </label>
           <select
+            id="time-range-select"
             value={timeRange}
             onChange={(e) => setTimeRange(e.target.value)}
           >

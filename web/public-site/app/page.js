@@ -271,7 +271,10 @@ export default async function HomePage() {
                               : '')}
                         </p>
                         {post.published_at && (
-                          <time className="text-xs text-slate-400 mt-3 block">
+                          <time
+                            dateTime={post.published_at}
+                            className="text-xs text-slate-400 mt-3 block"
+                          >
                             {new Date(post.published_at).toLocaleDateString(
                               'en-US',
                               {

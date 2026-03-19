@@ -120,7 +120,7 @@ async def check_ollama_health(
             connected=False,
             status="error",
             models=None,
-            message=f"❌ Ollama health check failed: {str(e)}",
+            message="Ollama health check failed",
             timestamp=datetime.now(timezone.utc).isoformat(),
         )
 
@@ -351,7 +351,7 @@ async def get_ollama_status(
             "models_available": 0,
             "models": [],
             "last_check": datetime.now(timezone.utc).isoformat(),
-            "error": str(e),
+            "error": "An internal error occurred",
         }
 
 
@@ -419,7 +419,7 @@ async def select_ollama_model(
         return {
             "success": False,
             "selected_model": None,
-            "message": f"❌ Model selection error: {str(e)}",
+            "message": "Model selection error",
             "available_models": [],
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }

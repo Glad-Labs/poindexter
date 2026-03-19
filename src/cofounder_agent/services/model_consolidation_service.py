@@ -374,10 +374,10 @@ class AnthropicAdapter(ProviderAdapter):
             self.client = None
         else:
             try:
-                from anthropic import Anthropic
+                from anthropic import AsyncAnthropic
 
                 self.api_key = ProviderChecker.get_anthropic_api_key()
-                self.client = Anthropic(api_key=self.api_key)
+                self.client = AsyncAnthropic(api_key=self.api_key)
             except ImportError:
                 logger.warning("Anthropic SDK not installed. Install with: pip install anthropic", exc_info=True)
                 self.client = None
@@ -406,7 +406,7 @@ class AnthropicAdapter(ProviderAdapter):
         start_time = datetime.now(timezone.utc)
 
         try:
-            response = self.client.messages.create(
+            response = await self.client.messages.create(
                 model=model,
                 max_tokens=max_tokens,
                 messages=[{"role": "user", "content": prompt}],
@@ -456,10 +456,10 @@ class OpenAIAdapter(ProviderAdapter):
             self.client = None
         else:
             try:
-                from openai import OpenAI
+                from openai import AsyncOpenAI
 
                 self.api_key = ProviderChecker.get_openai_api_key()
-                self.client = OpenAI(api_key=self.api_key)
+                self.client = AsyncOpenAI(api_key=self.api_key)
             except ImportError:
                 logger.warning("OpenAI SDK not installed. Install with: pip install openai", exc_info=True)
                 self.client = None
@@ -488,7 +488,7 @@ class OpenAIAdapter(ProviderAdapter):
         start_time = datetime.now(timezone.utc)
 
         try:
-            response = self.client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=max_tokens,

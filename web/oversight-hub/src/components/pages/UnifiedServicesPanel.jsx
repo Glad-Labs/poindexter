@@ -9,7 +9,7 @@
  * @component
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import phase4Client from '../../services/phase4Client';
 import WorkflowCanvas from '../WorkflowCanvas';
 import * as workflowBuilderService from '../../services/workflowBuilderService';
@@ -117,6 +117,14 @@ const buildCapabilityDerivedPhases = (services = []) => {
 const UnifiedServicesPanel = () => {
   // Tabs state
   const [currentTab, setCurrentTab] = useState(0);
+  const pollingCancelledRef = useRef(false);
+
+  // Cancel polling on unmount
+  useEffect(() => {
+    return () => {
+      pollingCancelledRef.current = true;
+    };
+  }, []);
 
   // Services tab state
   const [services, setServices] = useState([]);
@@ -317,7 +325,9 @@ const UnifiedServicesPanel = () => {
       errorMessage: null,
     });
 
+    pollingCancelledRef.current = false;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      if (pollingCancelledRef.current) return;
       try {
         const statusResponse =
           await workflowBuilderService.getExecutionStatus(executionId);

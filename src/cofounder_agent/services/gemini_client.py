@@ -35,6 +35,7 @@ class GeminiClient:
             api_key: Google API key (defaults to GOOGLE_API_KEY env var)
         """
         self.api_key = api_key or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+        self._client = None  # Lazy-initialized shared client
         self.base_url = "https://generativelanguage.googleapis.com/v1"
         # NOTE: As of Jan 2025, these are the available Gemini models
         # gemini-1.5-pro and gemini-1.5-flash are DEPRECATED
@@ -99,11 +100,12 @@ class GeminiClient:
             )
 
         try:
-            import google.genai as genai
+            if self._client is None:
+                import google.genai as genai
+                self._client = genai.Client(api_key=self.api_key)
 
-            client = genai.Client(api_key=self.api_key)
             response = await asyncio.wait_for(
-                client.aio.models.generate_content(
+                self._client.aio.models.generate_content(
                     model=model,
                     contents=prompt,
                 ),
@@ -155,10 +157,12 @@ class GeminiClient:
             )
 
         try:
-            import google.genai as genai
             import google.genai.types as genai_types
 
-            client = genai.Client(api_key=self.api_key)
+            if self._client is None:
+                import google.genai as genai
+                self._client = genai.Client(api_key=self.api_key)
+
             contents = [
                 genai_types.Content(
                     role=msg["role"],
@@ -167,7 +171,7 @@ class GeminiClient:
                 for msg in messages
             ]
             response = await asyncio.wait_for(
-                client.aio.models.generate_content(
+                self._client.aio.models.generate_content(
                     model=model,
                     contents=contents,
                 ),

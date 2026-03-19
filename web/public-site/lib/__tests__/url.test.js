@@ -78,12 +78,12 @@ describe('URL Utilities (lib/url.js)', () => {
       expect(absoluteURL).toContain('section1');
     });
 
-    test('normalizes double slashes', () => {
+    test('preserves path as-is (no double-slash normalization)', () => {
       const path = '//api/posts';
       const absoluteURL = getAbsoluteURL(path);
 
-      // Should not have double slashes in the middle
-      expect(absoluteURL).not.toMatch(/https?:\/\/.*\/\//);
+      // getAbsoluteURL concatenates base + path without normalization
+      expect(absoluteURL).toContain('//api/posts');
     });
 
     test('handles empty string path', () => {

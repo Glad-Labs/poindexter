@@ -15,145 +15,115 @@ jest.mock('next/link', () => {
 });
 
 describe('Pagination Component', () => {
-  const mockPaginationProps = {
-    currentPage: 2,
-    totalPages: 5,
-    baseUrl: '/blog',
+  const defaultProps = {
+    pagination: { page: 2, pageCount: 5 },
+    basePath: '/archive',
   };
 
   it('should render pagination container', () => {
-    const { container } = render(<Pagination {...mockPaginationProps} />);
+    const { container } = render(<Pagination {...defaultProps} />);
     expect(container).toBeInTheDocument();
   });
 
   it('should render previous page link', () => {
-    render(<Pagination {...mockPaginationProps} />);
-    const prevLink = screen.getByRole('link', { name: /previous|prev/i });
+    render(<Pagination {...defaultProps} />);
+    const prevLink = screen.getByRole('link', { name: /previous|prev|←/i });
     expect(prevLink).toBeInTheDocument();
   });
 
   it('should render next page link', () => {
-    render(<Pagination {...mockPaginationProps} />);
-    const nextLink = screen.getByRole('link', { name: /next/i });
+    render(<Pagination {...defaultProps} />);
+    const nextLink = screen.getByRole('link', { name: /next|→/i });
     expect(nextLink).toBeInTheDocument();
   });
 
   it('should generate correct previous page link', () => {
-    render(<Pagination {...mockPaginationProps} />);
-    const prevLink = screen.getByRole('link', { name: /previous|prev/i });
-    expect(prevLink).toHaveAttribute('href', expect.stringContaining('1'));
+    render(<Pagination {...defaultProps} />);
+    const links = screen.getAllByRole('link');
+    // Should have a link pointing to page 1
+    const prevLink = links.find((l) => l.getAttribute('href')?.includes('/1'));
+    expect(prevLink).toBeDefined();
   });
 
   it('should generate correct next page link', () => {
-    render(<Pagination {...mockPaginationProps} />);
-    const nextLink = screen.getByRole('link', { name: /next/i });
-    expect(nextLink).toHaveAttribute('href', expect.stringContaining('3'));
+    render(<Pagination {...defaultProps} />);
+    const links = screen.getAllByRole('link');
+    // Should have a link pointing to page 3
+    const nextLink = links.find((l) => l.getAttribute('href')?.includes('/3'));
+    expect(nextLink).toBeDefined();
   });
 
-  it('should disable next button on last page', () => {
+  it('should not render next link on last page', () => {
     const lastPageProps = {
-      currentPage: 5,
-      totalPages: 5,
-      baseUrl: '/blog',
+      pagination: { page: 5, pageCount: 5 },
+      basePath: '/archive',
     };
     render(<Pagination {...lastPageProps} />);
-    const nextLink = screen.queryByRole('link', { name: /next/i });
-    expect(nextLink?.hasAttribute('disabled') || !nextLink).toBe(true);
+    const links = screen.getAllByRole('link');
+    // Should not have a link to page 6
+    const nextLink = links.find((l) => l.getAttribute('href')?.includes('/6'));
+    expect(nextLink).toBeUndefined();
   });
 
-  it('should disable previous button on first page', () => {
+  it('should not render previous link on first page', () => {
     const firstPageProps = {
-      currentPage: 1,
-      totalPages: 5,
-      baseUrl: '/blog',
+      pagination: { page: 1, pageCount: 5 },
+      basePath: '/archive',
     };
     render(<Pagination {...firstPageProps} />);
-    const prevLink = screen.queryByRole('link', { name: /previous|prev/i });
-    expect(prevLink?.hasAttribute('disabled') || !prevLink).toBe(true);
+    const links = screen.getAllByRole('link');
+    // Should not have a link to page 0
+    const prevLink = links.find((l) => l.getAttribute('href')?.includes('/0'));
+    expect(prevLink).toBeUndefined();
   });
 
   it('should display current page indicator', () => {
-    render(<Pagination {...mockPaginationProps} />);
-    expect(screen.getByText(/2/)).toBeInTheDocument();
+    render(<Pagination {...defaultProps} />);
+    expect(screen.getByText('2')).toBeInTheDocument();
   });
 
   it('should display total pages', () => {
-    render(<Pagination {...mockPaginationProps} />);
-    expect(screen.getByText(/5/)).toBeInTheDocument();
+    render(<Pagination {...defaultProps} />);
+    expect(screen.getByText('5')).toBeInTheDocument();
   });
 
   it('should render page number links', () => {
-    render(<Pagination {...mockPaginationProps} />);
-    const pageLinks = screen.queryAllByRole('link');
-    expect(pageLinks.length).toBeGreaterThan(0);
-  });
-
-  it('should highlight current page', () => {
-    const { container } = render(<Pagination {...mockPaginationProps} />);
-    const currentPageElement =
-      container.querySelector('[data-current]') ||
-      container.querySelector('[aria-current]');
-    expect(currentPageElement).toBeDefined();
-  });
-
-  it('should handle single page', () => {
-    const singlePageProps = {
-      currentPage: 1,
-      totalPages: 1,
-      baseUrl: '/blog',
-    };
-    render(<Pagination {...singlePageProps} />);
-    expect(screen.getByText(/1/)).toBeInTheDocument();
-  });
-
-  it('should adjust base URL correctly', () => {
-    const customBaseUrl = '/posts/category/tech';
-    const props = {
-      currentPage: 2,
-      totalPages: 3,
-      baseUrl: customBaseUrl,
-    };
-    render(<Pagination {...props} />);
+    render(<Pagination {...defaultProps} />);
     const links = screen.queryAllByRole('link');
     expect(links.length).toBeGreaterThan(0);
-    const hasCustomBase = links.some((link) => link.href.includes('tech'));
-    expect(hasCustomBase).toBe(true);
+  });
+
+  it('should highlight current page with aria-current', () => {
+    const { container } = render(<Pagination {...defaultProps} />);
+    const currentPage = container.querySelector('[aria-current="page"]');
+    expect(currentPage).toBeInTheDocument();
+  });
+
+  it('should return null for single page', () => {
+    const singlePageProps = {
+      pagination: { page: 1, pageCount: 1 },
+      basePath: '/archive',
+    };
+    const { container } = render(<Pagination {...singlePageProps} />);
+    // Component returns null when pageCount <= 1
+    expect(container.querySelector('nav')).toBeNull();
   });
 
   it('should be keyboard accessible', () => {
-    render(<Pagination {...mockPaginationProps} />);
+    render(<Pagination {...defaultProps} />);
     const links = screen.queryAllByRole('link');
     links.forEach((link) => {
       expect(link).toHaveAttribute('href');
     });
   });
 
-  it('should support compact layout', () => {
-    const { container } = render(
-      <Pagination {...mockPaginationProps} compact={true} />
-    );
-    expect(container).toBeInTheDocument();
-  });
-
   it('should handle large page numbers', () => {
     const largePageProps = {
-      currentPage: 50,
-      totalPages: 100,
-      baseUrl: '/blog',
+      pagination: { page: 50, pageCount: 100 },
+      basePath: '/archive',
     };
     render(<Pagination {...largePageProps} />);
-    expect(screen.getByText(/50/)).toBeInTheDocument();
-  });
-
-  it('should generate proper slug pagination links', () => {
-    const slugProps = {
-      currentPage: 2,
-      totalPages: 3,
-      baseUrl: '/category/technology',
-    };
-    render(<Pagination {...slugProps} />);
-    const links = screen.queryAllByRole('link');
-    expect(links.length).toBeGreaterThan(0);
+    expect(screen.getByText('50')).toBeInTheDocument();
   });
 });
 

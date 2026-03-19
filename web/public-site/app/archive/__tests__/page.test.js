@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import ArchivePage from '../[page]';
+import ArchivePage from '../[page]/page';
 
 // Mock next/link
 jest.mock('next/link', () => {

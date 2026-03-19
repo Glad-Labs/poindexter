@@ -85,6 +85,7 @@ CREATE TABLE IF NOT EXISTS content_tasks (
     progress JSONB DEFAULT '{}'::jsonb,
     tags JSONB DEFAULT '[]'::jsonb,
     task_metadata JSONB DEFAULT '{}'::jsonb,
+    request_type VARCHAR(100),
     -- From 009_add_multi_phase_model_tracking.sql
     models_used_by_phase JSONB DEFAULT '{}'::jsonb,
     model_selection_log JSONB DEFAULT '{}'::jsonb

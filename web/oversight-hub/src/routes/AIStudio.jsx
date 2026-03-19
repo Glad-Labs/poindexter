@@ -177,7 +177,12 @@ function AIStudio() {
         // Use centralized config with fallback to localhost:11434 for local Ollama
         const ollamaUrl =
           import.meta.env.VITE_OLLAMA_URL || 'http://localhost:11434';
-        const response = await fetch(`${ollamaUrl}/api/tags`);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const response = await fetch(`${ollamaUrl}/api/tags`, {
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
         if (!response.ok) throw new Error('Failed to fetch Ollama models');
 
         const data = await response.json();

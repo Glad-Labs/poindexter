@@ -111,7 +111,7 @@ npm run build                 # Build all workspaces
 
 ### Frontend
 
-**Oversight Hub** (`web/oversight-hub/`): Vite + React 18 admin app. Vitest for unit tests. Path alias `@/` → `src/`. State managed with Zustand. Real-time updates via WebSocket to `ws://localhost:8000/api/workflow-progress/{id}`.
+**Oversight Hub** (`web/oversight-hub/`): Vite + React 18 admin app. Vitest for unit tests. Path alias `@/` → `src/`. State managed with Zustand. Real-time updates via WebSocket to `/api/workflow-progress/ws/{execution_id}` (backend URL from `VITE_API_URL`).
 
 **Public Site** (`web/public-site/`): Next.js 15 app router (no `pages/` directory). Markdown content via gray-matter + marked. Static generation with ISR. Jest + React Testing Library for tests.
 

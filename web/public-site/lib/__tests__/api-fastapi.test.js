@@ -1,9 +1,4 @@
-import {
-  getPaginatedPosts,
-  getPostBySlug,
-  getLatestPosts,
-  getPostContent,
-} from '../api-fastapi';
+import { getPaginatedPosts, getPostBySlug } from '../api-fastapi';
 
 // Mock fetch globally
 global.fetch = jest.fn();
@@ -36,7 +31,7 @@ describe('FastAPI Client (lib/api-fastapi.js)', () => {
     test('calls API with correct endpoint', async () => {
       fetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ posts: mockPosts, total: 2, pages: 1 }),
+        json: async () => ({ posts: mockPosts, total: 2 }),
       });
 
       await getPaginatedPosts(1, 10);
@@ -47,36 +42,38 @@ describe('FastAPI Client (lib/api-fastapi.js)', () => {
       );
     });
 
-    test('returns paginated posts data', async () => {
+    test('returns paginated posts in { data, meta } shape', async () => {
       fetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ posts: mockPosts, total: 2, pages: 1 }),
+        json: async () => ({ posts: mockPosts, total: 2 }),
       });
 
       const result = await getPaginatedPosts(1, 10);
 
-      expect(result.posts).toBeDefined();
-      expect(Array.isArray(result.posts)).toBe(true);
+      expect(result.data).toBeDefined();
+      expect(Array.isArray(result.data)).toBe(true);
+      expect(result.meta.pagination).toBeDefined();
     });
 
-    test('handles page parameter correctly', async () => {
+    test('calculates offset from page parameter', async () => {
       fetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ posts: mockPosts, total: 2, pages: 1 }),
+        json: async () => ({ posts: mockPosts, total: 2 }),
       });
 
       await getPaginatedPosts(2, 10);
 
+      // page 2 with pageSize 10 -> offset=10
       expect(fetch).toHaveBeenCalledWith(
-        expect.stringContaining('page=2'),
+        expect.stringContaining('offset=10'),
         expect.any(Object)
       );
     });
 
-    test('handles limit parameter correctly', async () => {
+    test('passes limit parameter correctly', async () => {
       fetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ posts: mockPosts, total: 2, pages: 1 }),
+        json: async () => ({ posts: mockPosts, total: 2 }),
       });
 
       await getPaginatedPosts(1, 5);
@@ -87,24 +84,20 @@ describe('FastAPI Client (lib/api-fastapi.js)', () => {
       );
     });
 
-    test('returns empty array on API error', async () => {
+    test('throws on API error', async () => {
       fetch.mockResolvedValueOnce({
         ok: false,
         status: 500,
+        statusText: 'Internal Server Error',
       });
 
-      const result = await getPaginatedPosts(1, 10);
-
-      expect(result.posts || result).toBeDefined();
+      await expect(getPaginatedPosts(1, 10)).rejects.toThrow('API Error');
     });
 
-    test('handles network errors gracefully', async () => {
+    test('throws on network error', async () => {
       fetch.mockRejectedValueOnce(new Error('Network error'));
 
-      const result = await getPaginatedPosts(1, 10);
-
-      // Should return fallback data or empty array
-      expect(result).toBeDefined();
+      await expect(getPaginatedPosts(1, 10)).rejects.toThrow('Network error');
     });
   });
 
@@ -112,7 +105,7 @@ describe('FastAPI Client (lib/api-fastapi.js)', () => {
     test('calls API with correct slug', async () => {
       fetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => mockPosts[0],
+        json: async () => ({ data: mockPosts[0] }),
       });
 
       await getPostBySlug('first-post');
@@ -123,27 +116,31 @@ describe('FastAPI Client (lib/api-fastapi.js)', () => {
       );
     });
 
-    test('returns single post data', async () => {
+    test('returns single post data with normalized fields', async () => {
       fetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => mockPosts[0],
+        json: async () => ({ data: mockPosts[0] }),
       });
 
       const result = await getPostBySlug('first-post');
 
       expect(result.title).toBe('First Post');
       expect(result.slug).toBe('first-post');
+      // Normalized fields
+      expect(result).toHaveProperty('category');
+      expect(result).toHaveProperty('tags');
     });
 
-    test('handles post not found', async () => {
+    test('returns null on 404', async () => {
       fetch.mockResolvedValueOnce({
         ok: false,
         status: 404,
+        statusText: 'Not Found',
       });
 
       const result = await getPostBySlug('non-existent');
 
-      expect(result).toBeDefined();
+      expect(result).toBeNull();
     });
 
     test('includes post content if available', async () => {
@@ -154,7 +151,7 @@ describe('FastAPI Client (lib/api-fastapi.js)', () => {
 
       fetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => postWithContent,
+        json: async () => ({ data: postWithContent }),
       });
 
       const result = await getPostBySlug('first-post');
@@ -163,154 +160,11 @@ describe('FastAPI Client (lib/api-fastapi.js)', () => {
     });
   });
 
-  describe('getLatestPosts()', () => {
-    test('calls API with correct endpoint', async () => {
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockPosts,
-      });
-
-      await getLatestPosts(10);
-
-      expect(fetch).toHaveBeenCalledWith(
-        expect.stringContaining('/posts'),
-        expect.any(Object)
-      );
-    });
-
-    test('returns array of posts', async () => {
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockPosts,
-      });
-
-      const result = await getLatestPosts(10);
-
-      expect(Array.isArray(result)).toBe(true);
-      expect(result.length).toBeGreaterThan(0);
-    });
-
-    test('respects limit parameter', async () => {
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockPosts.slice(0, 5),
-      });
-
-      await getLatestPosts(5);
-
-      expect(fetch).toHaveBeenCalledWith(
-        expect.stringContaining('limit=5'),
-        expect.any(Object)
-      );
-    });
-
-    test('returns posts sorted by date descending', async () => {
-      const sortedPosts = [
-        { ...mockPosts[0], published_at: '2024-01-15' },
-        { ...mockPosts[1], published_at: '2024-01-14' },
-      ];
-
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => sortedPosts,
-      });
-
-      const result = await getLatestPosts(10);
-
-      // Verify first post is newer than second
-      expect(new Date(result[0].published_at)).toBeGreaterThan(
-        new Date(result[1].published_at)
-      );
-    });
-  });
-
-  describe('getPostContent()', () => {
-    test('returns full post content', async () => {
-      const postWithContent = {
-        ...mockPosts[0],
-        content: 'Full post content with markdown',
-      };
-
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => postWithContent,
-      });
-
-      const result = await getPostContent('first-post');
-
-      expect(result.content).toBeDefined();
-      expect(typeof result.content).toBe('string');
-    });
-
-    test('calls correct endpoint with slug', async () => {
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ ...mockPosts[0], content: 'test' }),
-      });
-
-      await getPostContent('test-post');
-
-      expect(fetch).toHaveBeenCalledWith(
-        expect.stringContaining('test-post'),
-        expect.any(Object)
-      );
-    });
-
-    test('handles missing content gracefully', async () => {
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockPosts[0],
-      });
-
-      const result = await getPostContent('first-post');
-
-      expect(result).toBeDefined();
-    });
-  });
-
-  describe('API Error Handling', () => {
-    test('handles 500 server errors', async () => {
-      fetch.mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-        statusText: 'Internal Server Error',
-      });
-
-      const result = await getPaginatedPosts(1, 10);
-
-      // Should return fallback data without throwing
-      expect(result).toBeDefined();
-    });
-
-    test('handles timeout/network errors', async () => {
-      fetch.mockRejectedValueOnce(new Error('Timeout'));
-
-      const result = await getPaginatedPosts(1, 10);
-
-      // Should return empty/fallback data without throwing
-      expect(result).toBeDefined();
-    });
-
-    test('handles malformed JSON responses', async () => {
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => {
-          throw new Error('Invalid JSON');
-        },
-      });
-
-      const result = await getPaginatedPosts(1, 10);
-
-      // Should handle gracefully
-      expect(result).toBeDefined();
-    });
-  });
-
   describe('API Request Format', () => {
     test('includes proper headers in requests', async () => {
       fetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => mockPosts,
+        json: async () => ({ posts: mockPosts, total: 2 }),
       });
 
       await getPaginatedPosts(1, 10);
@@ -318,21 +172,27 @@ describe('FastAPI Client (lib/api-fastapi.js)', () => {
       expect(fetch).toHaveBeenCalledWith(
         expect.any(String),
         expect.objectContaining({
-          method: expect.any(String),
+          headers: expect.objectContaining({
+            'Content-Type': 'application/json',
+          }),
         })
       );
     });
 
-    test('uses GET method for fetch operations', async () => {
+    test('includes credentials in requests', async () => {
       fetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => mockPosts,
+        json: async () => ({ posts: mockPosts, total: 2 }),
       });
 
       await getPaginatedPosts(1, 10);
 
-      const callArgs = fetch.mock.calls[0][1];
-      expect(callArgs.method || 'GET').toMatch(/GET|undefined/);
+      expect(fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          credentials: 'include',
+        })
+      );
     });
   });
 });
