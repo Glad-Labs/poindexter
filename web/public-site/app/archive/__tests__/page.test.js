@@ -22,7 +22,7 @@ jest.mock('@/components/PostCard', () => {
   };
 });
 
-describe.skip('Archive Page (/archive/[page]) — imports non-existent ../[page] module', () => {
+describe('Archive Page (/archive/[page])', () => {
   const mockParams = { page: '1' };
 
   test('renders archive page component', () => {

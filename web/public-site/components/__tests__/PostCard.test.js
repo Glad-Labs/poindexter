@@ -94,10 +94,10 @@ describe('PostCard Component', () => {
   });
 
   it('should handle invalid date format gracefully', () => {
-    // PostCard.js has a known bug: new Date('invalid-date').toISOString() throws RangeError.
-    // This test documents the bug — it should be fixed separately.
     const postWithBadDate = { ...mockPost, published_at: 'invalid-date' };
-    expect(() => render(<PostCard post={postWithBadDate} />)).toThrow();
+
+    render(<PostCard post={postWithBadDate} />);
+    expect(screen.getByText('Test Blog Post')).toBeInTheDocument();
   });
 
   it('should support minimal post data', () => {
