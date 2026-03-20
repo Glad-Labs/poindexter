@@ -6,15 +6,15 @@ Supports open-source models for blog post generation
 """
 
 import asyncio
-import logging
+from services.logger_config import get_logger
 import os
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import AsyncGenerator, List, Optional
 
 import aiohttp
 
-logger = logging.getLogger(__name__)
+from .error_handler import ServiceError
 
-
+logger = get_logger(__name__)
 class HuggingFaceClient:
     """Client for HuggingFace Inference API"""
 
@@ -86,7 +86,7 @@ class HuggingFaceClient:
             ) as response:
                 return response.status in [200, 302]  # 302 = model loading
         except Exception as e:
-            logger.debug(f"HuggingFace not available: {e}")
+            logger.error(f"[_is_available] HuggingFace not available: {e}", exc_info=True)
             return False
 
     async def generate(
@@ -151,17 +151,17 @@ class HuggingFaceClient:
                         return generated_text
 
                     logger.error(f"Unexpected response format: {data}")
-                    raise Exception(f"Unexpected response format: {data}")
+                    raise ValueError(f"Unexpected response format: {data}")
                 else:
                     error_text = await response.text()
                     logger.error(f"HuggingFace error ({response.status}): {error_text}")
-                    raise Exception(f"HuggingFace error: {response.status} - {error_text}")
+                    raise ServiceError(f"HuggingFace error: {response.status} - {error_text}")
 
         except asyncio.TimeoutError:
-            logger.error(f"HuggingFace request timeout for model {model}")
-            raise Exception("HuggingFace request timed out")
+            logger.error(f"HuggingFace request timeout for model {model}", exc_info=True)
+            raise TimeoutError("HuggingFace request timed out")
         except Exception as e:
-            logger.error(f"HuggingFace generation failed: {e}")
+            logger.error(f"[_generate] HuggingFace generation failed: {e}", exc_info=True)
             raise
 
     async def stream_generate(
@@ -191,7 +191,7 @@ class HuggingFaceClient:
             result = await self.generate(model, prompt, max_tokens, temperature, top_p)
             yield result
         except Exception as e:
-            logger.error(f"HuggingFace stream failed: {e}")
+            logger.error(f"[_stream_generate] HuggingFace stream failed: {e}", exc_info=True)
             raise
 
     async def chat_completion(
@@ -227,7 +227,9 @@ class HuggingFaceClient:
             return await self.generate(model, prompt, max_tokens, temperature, top_p)
 
         except Exception as e:
-            logger.error(f"HuggingFace chat completion failed: {e}")
+            logger.error(
+                f"[_chat_completion] HuggingFace chat completion failed: {e}", exc_info=True
+            )
             raise
 
     @classmethod
@@ -245,28 +247,27 @@ async def test_huggingface():
     """Test HuggingFace connection and generation"""
     client = HuggingFaceClient()
 
-    print("Testing HuggingFace connection...")
+    logger.info("Testing HuggingFace connection...")
     available = await client.is_available()
-    print(f"HuggingFace available: {available}")
+    logger.info("HuggingFace available: %s", available)
 
     if available:
-        print("\nAvailable free models:")
+        logger.info("Available free models:")
         for model_id, info in client.get_free_models().items():
-            print(f"  - {model_id}")
-            print(f"    {info['name']} ({info['size']})")
+            logger.info("  - %s: %s (%s)", model_id, info["name"], info["size"])
 
         # Try generation
         model = "mistralai/Mistral-7B-Instruct-v0.1"
-        print(f"\nGenerating with {model}...")
+        logger.info("Generating with %s...", model)
         try:
             result = await client.generate(
                 model=model,
                 prompt="Write a short blog title about AI",
                 max_tokens=100,
             )
-            print(f"Result: {result}")
+            logger.info("Result: %s", result)
         except Exception as e:
-            print(f"Generation failed: {e}")
+            logger.error(f"Generation failed: {e}", exc_info=True)
 
     await client.close()
 
@@ -281,7 +282,7 @@ async def _session_cleanup() -> None:
         try:
             await client.close()
         except Exception as e:
-            logger.warning(f"Error closing HuggingFace client: {e}")
+            logger.error(f"[_session_cleanup] Error closing HuggingFace client: {e}", exc_info=True)
     _active_clients.clear()
 
 

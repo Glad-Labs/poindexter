@@ -8,8 +8,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from src.cofounder_agent.tasks.base import TaskResult
-
 
 @dataclass
 class WorkflowRequest:
@@ -97,7 +95,7 @@ class WorkflowResponse:
     status: str  # COMPLETED, FAILED, PENDING, AWAITING_INPUT
     user_id: str
     output: Dict[str, Any]
-    task_results: List[TaskResult]
+    task_results: List[Any]
     start_time: datetime
     end_time: datetime
     duration_seconds: float
@@ -114,14 +112,18 @@ class WorkflowResponse:
             "user_id": self.user_id,
             "output": self.output,
             "task_results": [
-                {
-                    "task_id": tr.task_id,
-                    "task_name": tr.task_name,
-                    "status": tr.status,
-                    "output": tr.output,
-                    "error": tr.error,
-                    "duration_seconds": tr.duration_seconds,
-                }
+                (
+                    tr
+                    if isinstance(tr, dict)
+                    else {
+                        "task_id": getattr(tr, "task_id", None),
+                        "task_name": getattr(tr, "task_name", None),
+                        "status": getattr(tr, "status", None),
+                        "output": getattr(tr, "output", None),
+                        "error": getattr(tr, "error", None),
+                        "duration_seconds": getattr(tr, "duration_seconds", None),
+                    }
+                )
                 for tr in self.task_results
             ],
             "start_time": self.start_time.isoformat(),

@@ -222,29 +222,29 @@ class ModelRouter:
             "primary": "gpt-3.5-turbo",
             "fallback": "claude-haiku-3",
             "tier": ModelTier.BUDGET,
-            "ollama": "ollama/phi",  # Blazing fast, free local inference
+            "ollama": "ollama/qwen3:8b",  # Fast, good at extraction/summarization
         },
         TaskComplexity.MEDIUM: {
             "primary": "claude-haiku-3",
             "fallback": "gpt-3.5-turbo",
             "tier": ModelTier.BUDGET,
-            "ollama": "ollama/mistral",  # Excellent quality, free local inference
+            "ollama": "ollama/gemma3:27b",  # Strong analysis and critique
         },
         TaskComplexity.COMPLEX: {
             "primary": "claude-sonnet-3",
             "fallback": "gpt-4",
             "tier": ModelTier.PREMIUM,
-            "ollama": "ollama/mixtral",  # Outstanding reasoning, free local inference
+            "ollama": "ollama/qwen3.5:35b",  # Best prose quality in VRAM budget
         },
         TaskComplexity.CRITICAL: {
             "primary": "gpt-4-turbo",
             "fallback": "claude-opus-3",
             "tier": ModelTier.FLAGSHIP,
-            "ollama": "ollama/llama2:70b",  # Top-tier quality, free local inference
+            "ollama": "ollama/qwen3.5:122b",  # Top-tier quality (CPU offload needed)
         },
     }
 
-    def __init__(self, default_model: str = "ollama/mistral", use_ollama: bool | None = None):
+    def __init__(self, default_model: str = "ollama/qwen3:8b", use_ollama: bool | None = None):
         """
         Initialize model router.
 
@@ -272,9 +272,54 @@ class ModelRouter:
             "ollama_uses": 0,  # Track zero-cost local inference usage
         }
 
+        # Runtime provider failure tracking.
+        # Keyed by provider name; value is count of consecutive failures.
+        # Reset to 0 on any success from that provider.
+        self._provider_consecutive_failures: Dict[str, int] = {}
+        self._FAILURE_ALERT_THRESHOLD = 5  # logger.critical fires at this count
+
         logger.info(
             "Model router initialized", default_model=default_model, use_ollama=self.use_ollama
         )
+
+    def record_provider_failure(self, provider: str) -> None:
+        """
+        Record a runtime LLM call failure for a provider.
+
+        Increments the consecutive failure counter. When the counter reaches
+        _FAILURE_ALERT_THRESHOLD, emits a logger.critical so that log-based
+        alerting can fire without requiring database queries.
+
+        Call this from LLM client code after a failed API call.
+        """
+        count = self._provider_consecutive_failures.get(provider, 0) + 1
+        self._provider_consecutive_failures[provider] = count
+        if count >= self._FAILURE_ALERT_THRESHOLD:
+            logger.critical(
+                f"[llm_provider] Provider {provider!r} has failed {count} consecutive times — "
+                f"possible outage or quota exhaustion"
+            )
+
+    def record_provider_success(self, provider: str) -> None:
+        """
+        Record a successful LLM call for a provider.
+
+        Resets the consecutive failure counter so that a single success clears
+        a prior alert state.
+        """
+        if self._provider_consecutive_failures.get(provider, 0) > 0:
+            logger.info(
+                f"[llm_provider] Provider {provider!r} recovered after "
+                f"{self._provider_consecutive_failures[provider]} consecutive failures"
+            )
+        self._provider_consecutive_failures[provider] = 0
+
+    def get_provider_health(self) -> Dict[str, Any]:
+        """Return a dict of provider names to their current failure counts."""
+        return {
+            provider: {"consecutive_failures": count}
+            for provider, count in self._provider_consecutive_failures.items()
+        }
 
     def route_request(
         self, task_type: str, context: Optional[Dict[str, Any]] = None, estimated_tokens: int = 1000
@@ -532,7 +577,7 @@ def get_model_router() -> Optional[ModelRouter]:
     return _model_router
 
 
-def initialize_model_router(default_model: str = "ollama/mistral") -> ModelRouter:
+def initialize_model_router(default_model: str = "ollama/qwen3:8b") -> ModelRouter:
     """
     Initialize the global model router.
 
@@ -546,3 +591,72 @@ def initialize_model_router(default_model: str = "ollama/mistral") -> ModelRoute
     _model_router = ModelRouter(default_model=default_model)
     logger.info("Global model router initialized")
     return _model_router
+
+
+def get_model_for_phase(
+    phase: str, model_selections: Dict[str, str], quality_preference: str
+) -> str:
+    """
+    Get the appropriate LLM model for a given generation phase.
+
+    Moved from routes.task_routes to break the backwards service→route dependency.
+
+    Args:
+        phase: Generation phase ('draft', 'assess', 'refine', 'finalize')
+        model_selections: User's per-phase model selections (e.g., {"draft": "gpt-4"})
+        quality_preference: Fallback preference (fast, balanced, quality)
+
+    Returns:
+        Model identifier string (e.g., "gpt-4", "ollama/gpt-oss:20b")
+    """
+    # Phase-differentiated model tiers (#196):
+    # - research/assess/finalize: simple filtering/classification → fast 8B model
+    # - outline: structural planning → fast 8B model
+    # - draft/refine: creative generation & editing → best available model
+    # - assess: QA critique uses a DIFFERENT model family for genuine diversity
+    #
+    # Hardware: RTX 5090 32GB VRAM + 64GB RAM (R9 9950X3D)
+    # Models: qwen3.5:35b (prose), gemma3:27b (critique), qwen3:8b (fast tasks)
+    defaults_by_phase = {
+        "fast": {
+            # All phases use the smallest model for maximum speed
+            "research": "ollama/qwen3:8b",
+            "outline": "ollama/qwen3:8b",
+            "draft": "ollama/qwen3:8b",
+            "assess": "ollama/qwen3:8b",
+            "refine": "ollama/qwen3:8b",
+            "finalize": "ollama/qwen3:8b",
+        },
+        "balanced": {
+            # Draft/refine get best prose model; assess uses different family for diversity
+            "research": "ollama/qwen3:8b",       # SIMPLE: filtering/ranking snippets
+            "outline": "ollama/qwen3:8b",        # SIMPLE: structural planning
+            "draft": "ollama/qwen3.5:35b",       # COMPLEX: primary creative generation (best prose)
+            "assess": "ollama/gemma3:27b",       # QA: different model family catches different issues
+            "refine": "ollama/qwen3.5:35b",      # COMPLEX: editing needs same quality as draft
+            "finalize": "ollama/qwen3:8b",       # SIMPLE: cleanup and formatting
+        },
+        "quality": {
+            # All creative phases get best model; assess uses large alternative
+            "research": "ollama/qwen3:8b",       # SIMPLE: filtering/ranking snippets
+            "outline": "ollama/qwen3.5:35b",     # Better outlines → better drafts
+            "draft": "ollama/qwen3.5:35b",       # COMPLEX: primary creative generation
+            "assess": "ollama/gemma3:27b",       # QA: different model family for genuine critique
+            "refine": "ollama/qwen3.5:35b",      # COMPLEX: polish and improve draft
+            "finalize": "ollama/qwen3:8b",       # SIMPLE: cleanup and formatting
+        },
+    }
+
+    if model_selections and phase in model_selections:
+        selected = model_selections[phase]
+        if selected and selected != "auto":
+            logger.info(f"[MODEL_ROUTER] Using selected model for {phase}: {selected}")
+            return selected
+
+    quality = quality_preference or "balanced"
+    if quality not in defaults_by_phase:
+        quality = "balanced"
+
+    model = defaults_by_phase[quality].get(phase, "ollama/qwen3:8b")
+    logger.info(f"[MODEL_ROUTER] Using {quality} quality model for {phase}: {model}")
+    return model

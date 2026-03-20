@@ -25,7 +25,7 @@ import json
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -685,7 +685,7 @@ Example Response Format: tag1, tag2, tag3, tag4, tag5""",
 Your writing style is {style}.
 Your tone is {tone}.
 Write for an educated but general audience.
-Generate approximately {target_length} words.
+Generate approximately {target_length} words (minimum {min_words}, maximum {max_words}).
 Format as Markdown with proper headings (# for title, ## for sections, ### for subsections).
 
 ⭐ CRITICAL GUIDANCE ON SECTION TITLES:

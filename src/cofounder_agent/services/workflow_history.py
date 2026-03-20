@@ -11,14 +11,15 @@ Responsibilities:
 - Track execution patterns for optimization
 """
 
-import logging
-from datetime import datetime, timedelta
+from services.logger_config import get_logger
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-logger = logging.getLogger(__name__)
+# Import WebSocket event broadcaster (Phase 4 - Real-time updates)
+from .websocket_event_broadcaster import emit_workflow_status
 
-
+logger = get_logger(__name__)
 class WorkflowHistoryService:
     """
     Service for managing workflow execution history in PostgreSQL.
@@ -83,7 +84,7 @@ class WorkflowHistoryService:
             raise ValueError("workflow_id, workflow_type, user_id, status are required")
 
         execution_id = str(uuid4())
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # Use provided times or defaults
         start_time = start_time or now
@@ -94,32 +95,36 @@ class WorkflowHistoryService:
             duration_seconds = (end_time - start_time).total_seconds()
 
         execution_metadata = execution_metadata or {}
+        # Ensure workflow_type is persisted in the metadata JSON column, as expected by readers/metrics
+        combined_metadata = {**execution_metadata, "workflow_type": workflow_type}
 
         try:
+            # Convert duration from seconds to milliseconds for schema compatibility
+            duration_ms = int(duration_seconds * 1000) if duration_seconds is not None else None
+
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
                     """
                     INSERT INTO workflow_executions (
-                        id, workflow_id, workflow_type, user_id, status,
-                        input_data, output_data, task_results, error_message,
-                        start_time, end_time, duration_seconds, execution_metadata
+                        id, workflow_id, owner_id, execution_status,
+                        initial_input, final_output, phase_results, error_message,
+                        started_at, completed_at, duration_ms, metadata
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                     RETURNING *
                     """,
                     execution_id,
                     workflow_id,
-                    workflow_type,
                     user_id,
                     status,
                     input_data,
                     output_data,
-                    task_results or [],
+                    {"task_results": task_results or []},
                     error_message,
                     start_time,
                     end_time,
-                    duration_seconds,
-                    execution_metadata,
+                    duration_ms,
+                    combined_metadata,
                 )
 
                 logger.info(
@@ -127,10 +132,28 @@ class WorkflowHistoryService:
                     f"(user: {user_id}, status: {status}, duration: {duration_seconds}s)"
                 )
 
-                return self._row_to_dict(row)
+                # Emit WebSocket event for real-time workflow tracking (Phase 4)
+                try:
+                    await emit_workflow_status(
+                        workflow_id=workflow_id,
+                        status=status,
+                        duration=duration_seconds or 0,
+                        task_count=len(task_results) if task_results else 0,
+                        task_results=task_results or {},
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"[_save_workflow_execution] Failed to emit workflow status event: {e}",
+                        exc_info=True,
+                    )
+
+                return self._row_to_dict(row)  # type: ignore[return-value]
 
         except Exception as e:
-            logger.error(f"❌ Failed to save workflow execution: {e}")
+            logger.error(
+                f"[_save_workflow_execution] ❌ Failed to save workflow execution: {e}",
+                exc_info=True,
+            )
             raise
 
     async def get_workflow_execution(self, execution_id: str) -> Optional[Dict[str, Any]]:
@@ -151,7 +174,10 @@ class WorkflowHistoryService:
                 )
                 return self._row_to_dict(row) if row else None
         except Exception as e:
-            logger.error(f"❌ Failed to get workflow execution {execution_id}: {e}")
+            logger.error(
+                f"[_get_workflow_execution] ❌ Failed to get workflow execution {execution_id}: {e}",
+                exc_info=True,
+            )
             raise
 
     async def get_user_workflow_history(
@@ -178,53 +204,45 @@ class WorkflowHistoryService:
         """
         try:
             async with self.pool.acquire() as conn:
-                # Build query with optional status filter
-                where_clause = "user_id = $1"
-                params = [user_id, limit, offset]
+                # Single query: window function eliminates separate COUNT round-trip.
+                # Uses owner_id (physical column name); prior code incorrectly used user_id.
+                params: list = [user_id]
+                where_clause = "owner_id = $1"
 
                 if status_filter:
-                    where_clause += " AND status = $4"
-                    params = [user_id, limit, offset, status_filter]
+                    where_clause += " AND status = $2"
+                    params.append(status_filter)
 
-                # Get total count
-                count_row = await conn.fetchval(
-                    f"SELECT COUNT(*) FROM workflow_executions WHERE user_id = $1",
-                    user_id,
-                )
+                limit_idx = len(params) + 1
+                offset_idx = len(params) + 2
+                params.extend([limit, offset])
 
-                # Get paginated results
                 rows = await conn.fetch(
                     f"""
-                    SELECT * FROM workflow_executions
+                    SELECT *, COUNT(*) OVER () AS _total_count
+                    FROM workflow_executions
                     WHERE {where_clause}
                     ORDER BY created_at DESC
-                    LIMIT $2 OFFSET $3
+                    LIMIT ${limit_idx} OFFSET ${offset_idx}
                     """,
-                    *params[:3],  # Use only user_id, limit, offset for main query
+                    *params,
                 )
 
-                if status_filter:
-                    # Re-fetch with status filter
-                    rows = await conn.fetch(
-                        f"""
-                        SELECT * FROM workflow_executions
-                        WHERE user_id = $1 AND status = $4
-                        ORDER BY created_at DESC
-                        LIMIT $2 OFFSET $3
-                        """,
-                        *params,
-                    )
+                total = int(rows[0]["_total_count"]) if rows else 0
 
                 return {
                     "executions": [self._row_to_dict(row) for row in rows],
-                    "total": count_row,
+                    "total": total,
                     "limit": limit,
                     "offset": offset,
                     "status_filter": status_filter,
                 }
 
         except Exception as e:
-            logger.error(f"❌ Failed to get workflow history for user {user_id}: {e}")
+            logger.error(
+                f"[_get_user_workflow_history] ❌ Failed to get workflow history for user {user_id}: {e}",
+                exc_info=True,
+            )
             raise
 
     async def get_workflow_statistics(
@@ -251,7 +269,7 @@ class WorkflowHistoryService:
         """
         try:
             async with self.pool.acquire() as conn:
-                cutoff_date = datetime.utcnow() - timedelta(days=days)
+                cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
 
                 # Get overall stats
                 stats = await conn.fetchrow(
@@ -264,7 +282,7 @@ class WorkflowHistoryService:
                         MIN(start_time) as first_execution,
                         MAX(end_time) as last_execution
                     FROM workflow_executions
-                    WHERE user_id = $1 AND created_at >= $2
+                    WHERE owner_id = $1 AND created_at >= $2
                     """,
                     user_id,
                     cutoff_date,
@@ -280,7 +298,7 @@ class WorkflowHistoryService:
                         SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failed,
                         AVG(duration_seconds) as average_duration
                     FROM workflow_executions
-                    WHERE user_id = $1 AND created_at >= $2
+                    WHERE owner_id = $1 AND created_at >= $2
                     GROUP BY workflow_type
                     ORDER BY executions DESC
                     """,
@@ -331,7 +349,10 @@ class WorkflowHistoryService:
                 }
 
         except Exception as e:
-            logger.error(f"❌ Failed to get statistics for user {user_id}: {e}")
+            logger.error(
+                f"[_get_workflow_statistics] ❌ Failed to get statistics for user {user_id}: {e}",
+                exc_info=True,
+            )
             raise
 
     async def update_workflow_execution(
@@ -355,7 +376,7 @@ class WorkflowHistoryService:
         values = []
         param_count = 1
 
-        updates["updated_at"] = datetime.utcnow()
+        updates["updated_at"] = datetime.now(timezone.utc)
 
         for key, value in updates.items():
             set_clauses.append(f"{key} = ${param_count}")
@@ -380,7 +401,10 @@ class WorkflowHistoryService:
                 return self._row_to_dict(row) if row else None
 
         except Exception as e:
-            logger.error(f"❌ Failed to update workflow execution {execution_id}: {e}")
+            logger.error(
+                f"[_update_workflow_execution] ❌ Failed to update workflow execution {execution_id}: {e}",
+                exc_info=True,
+            )
             raise
 
     async def get_performance_metrics(
@@ -406,10 +430,10 @@ class WorkflowHistoryService:
         """
         try:
             async with self.pool.acquire() as conn:
-                cutoff_date = datetime.utcnow() - timedelta(days=days)
+                cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
 
                 # Query condition
-                where = "user_id = $1 AND created_at >= $2"
+                where = "owner_id = $1 AND created_at >= $2"
                 params = [user_id, cutoff_date]
                 param_idx = 3
 
@@ -476,10 +500,13 @@ class WorkflowHistoryService:
                 }
 
         except Exception as e:
-            logger.error(f"❌ Failed to get performance metrics for {user_id}: {e}")
+            logger.error(
+                f"[_get_performance_metrics] ❌ Failed to get performance metrics for {user_id}: {e}",
+                exc_info=True,
+            )
             raise
 
-    def _row_to_dict(self, row) -> Dict[str, Any]:
+    def _row_to_dict(self, row) -> Optional[Dict[str, Any]]:
         """Convert asyncpg row to dict with proper serialization"""
         if row is None:
             return None

@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Read(*)",
+      "Edit(*)",
+      "Write(*)",
+      "Glob(*)",
+      "Grep(*)",
+      "mcp__postgres__query",
+      "mcp__github__create_issue",
+      "mcp__github__update_issue",
+      "mcp__github__get_issue",
+      "mcp__github__list_issues",
+      "mcp__github__add_issue_comment",
+      "mcp__github__search_code",
+      "mcp__github__get_file_contents",
+      "mcp__github__search_issues",
+      "mcp__github__create_pull_request",
+      "mcp__github__get_pull_request",
+      "mcp__github__merge_pull_request",
+      "mcp__filesystem__read_file",
+      "mcp__filesystem__read_text_file",
+      "mcp__filesystem__read_multiple_files",
+      "mcp__filesystem__write_file",
+      "mcp__filesystem__edit_file",
+      "mcp__filesystem__list_directory",
+      "mcp__filesystem__list_directory_with_sizes",
+      "mcp__filesystem__directory_tree",
+      "mcp__filesystem__search_files",
+      "mcp__filesystem__create_directory",
+      "mcp__filesystem__move_file",
+      "mcp__filesystem__get_file_info",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_console_messages",
+      "mcp__playwright__browser_network_requests",
+      "mcp__playwright__browser_evaluate",
+      "mcp__playwright__browser_wait_for",
+      "mcp__playwright__browser_snapshot",
+      "mcp__playwright__browser_click"
+    ]
+  }
+}

@@ -1,8 +1,20 @@
 """
-Unified error handling utilities for API routes and services.
+Error handling utilities for API routes and services.
 
-Provides consistent error handling patterns across the application,
-reducing code duplication and improving maintainability.
+This module provides route/service-level error handling helpers:
+- handle_route_error(): Maps exceptions to HTTPException for route handlers
+- handle_service_error(): Logs errors and returns fallback values for services
+- create_error_response(): Creates standardized error response dicts
+- Convenience functions: not_found(), bad_request(), forbidden(), etc.
+
+For domain exception classes (AppError, DatabaseError, ServiceError, etc.),
+circuit breaker, retry logic, and error codes, import from:
+    from services.error_handler import AppError, DatabaseError, ...
+
+Import guide:
+    - Routes importing error helpers: from utils.error_handler import handle_route_error
+    - Routes importing exception classes: from services.error_handler import AppError
+    - Services (same package): from .error_handler import DatabaseError
 """
 
 import logging
@@ -11,14 +23,20 @@ from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
 
+# NOTE: This module is imported early in the chain (via services/__init__.py →
+# content_router_service → image_service → here). Using get_logger() here would
+# create a circular import through services/__init__.py. stdlib logger is used
+# intentionally for this base-layer utility.
 logger = logging.getLogger(__name__)
-
-
 class ErrorResponse:
     """Standardized error response format."""
 
     def __init__(
-        self, status_code: int, detail: str, operation: str = None, error_type: str = None
+        self,
+        status_code: int,
+        detail: str,
+        operation: Optional[str] = None,
+        error_type: Optional[str] = None,
     ):
         """
         Initialize error response.
@@ -53,8 +71,8 @@ class ErrorResponse:
 async def handle_route_error(
     error: Exception,
     operation: str,
-    logger_instance: logging.Logger = None,
-    default_detail: str = None,
+    logger_instance: Optional[logging.Logger] = None,
+    default_detail: Optional[str] = None,
 ) -> HTTPException:
     """
     Unified error handler for API routes.
@@ -98,15 +116,15 @@ async def handle_route_error(
     if isinstance(error, ValueError):
         status_code = 400
         error_type = "ValidationError"
-        detail = str(error) if str(error) else f"Invalid input for {operation}"
+        detail = default_detail or f"Invalid input for {operation}"
     elif isinstance(error, KeyError):
         status_code = 400
         error_type = "MissingFieldError"
-        detail = f"Missing required field: {str(error)}"
+        detail = default_detail or f"Missing required field for {operation}"
     elif isinstance(error, AttributeError):
         status_code = 400
         error_type = "InvalidAttributeError"
-        detail = f"Invalid attribute: {str(error)}"
+        detail = default_detail or f"Invalid request for {operation}"
     elif isinstance(error, TimeoutError):
         status_code = 504
         error_type = "TimeoutError"
@@ -139,7 +157,7 @@ async def handle_route_error(
 def handle_service_error(
     error: Exception,
     operation: str,
-    logger_instance: logging.Logger = None,
+    logger_instance: Optional[logging.Logger] = None,
     fallback_value: Any = None,
 ) -> Any:
     """
@@ -179,8 +197,8 @@ def handle_service_error(
         )
         return fallback_value
 
-    # If no fallback, re-raise as HTTPException
-    raise HTTPException(status_code=500, detail=f"Error during {operation}: {str(error)}")
+    # If no fallback, re-raise as HTTPException (generic message — no internal details)
+    raise HTTPException(status_code=500, detail=f"Error during {operation}")
 
 
 def create_error_response(
@@ -213,7 +231,7 @@ def create_error_response(
     """
     error_response = ErrorResponse(
         status_code=status_code,
-        detail=str(error) or "An error occurred",
+        detail="An error occurred",
         operation=operation,
         error_type=type(error).__name__,
     )
@@ -223,8 +241,8 @@ def create_error_response(
 def log_and_raise_http_error(
     status_code: int,
     detail: str,
-    operation: str = None,
-    logger_instance: logging.Logger = None,
+    operation: Optional[str] = None,
+    logger_instance: Optional[logging.Logger] = None,
 ) -> None:
     """
     Log an error and raise HTTPException.
@@ -257,28 +275,30 @@ def log_and_raise_http_error(
 
 
 # Convenience functions for common errors
-def not_found(detail: str = "Resource not found", operation: str = None) -> HTTPException:
+def not_found(detail: str = "Resource not found", operation: Optional[str] = None) -> HTTPException:
     """Raise 404 Not Found error."""
     if operation:
         logger.warning(f"[{operation}] Resource not found: {detail}")
     return HTTPException(status_code=404, detail=detail)
 
 
-def bad_request(detail: str = "Invalid request", operation: str = None) -> HTTPException:
+def bad_request(detail: str = "Invalid request", operation: Optional[str] = None) -> HTTPException:
     """Raise 400 Bad Request error."""
     if operation:
         logger.warning(f"[{operation}] Bad request: {detail}")
     return HTTPException(status_code=400, detail=detail)
 
 
-def forbidden(detail: str = "Access denied", operation: str = None) -> HTTPException:
+def forbidden(detail: str = "Access denied", operation: Optional[str] = None) -> HTTPException:
     """Raise 403 Forbidden error."""
     if operation:
         logger.warning(f"[{operation}] Forbidden: {detail}")
     return HTTPException(status_code=403, detail=detail)
 
 
-def internal_error(detail: str = "Internal server error", operation: str = None) -> HTTPException:
+def internal_error(
+    detail: str = "Internal server error", operation: Optional[str] = None
+) -> HTTPException:
     """Raise 500 Internal Server Error."""
     if operation:
         logger.error(f"[{operation}] Internal error: {detail}")
@@ -286,7 +306,7 @@ def internal_error(detail: str = "Internal server error", operation: str = None)
 
 
 def service_unavailable(
-    detail: str = "Service unavailable", operation: str = None
+    detail: str = "Service unavailable", operation: Optional[str] = None
 ) -> HTTPException:
     """Raise 503 Service Unavailable error."""
     if operation:

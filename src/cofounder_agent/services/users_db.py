@@ -8,8 +8,8 @@ Handles all user-related database operations including:
 """
 
 import json
-import logging
-from datetime import datetime
+from services.logger_config import get_logger
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -20,10 +20,9 @@ from schemas.model_converter import ModelConverter
 from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 
 from .database_mixin import DatabaseServiceMixin
+from .decorators import log_query_performance
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class UsersDatabase(DatabaseServiceMixin):
     """User-related database operations."""
 
@@ -36,6 +35,7 @@ class UsersDatabase(DatabaseServiceMixin):
         """
         self.pool = pool
 
+    @log_query_performance(operation="get_user_by_id", category="user_retrieval")
     async def get_user_by_id(self, user_id: str) -> Optional[UserResponse]:
         """
         Get user by ID.
@@ -54,6 +54,7 @@ class UsersDatabase(DatabaseServiceMixin):
             row = await conn.fetchrow(sql, *params)
             return ModelConverter.to_user_response(row) if row else None
 
+    @log_query_performance(operation="get_user_by_email", category="user_retrieval")
     async def get_user_by_email(self, email: str) -> Optional[UserResponse]:
         """
         Get user by email address.
@@ -72,6 +73,7 @@ class UsersDatabase(DatabaseServiceMixin):
             row = await conn.fetchrow(sql, *params)
             return ModelConverter.to_user_response(row) if row else None
 
+    @log_query_performance(operation="get_user_by_username", category="user_retrieval")
     async def get_user_by_username(self, username: str) -> Optional[UserResponse]:
         """
         Get user by username.
@@ -90,6 +92,7 @@ class UsersDatabase(DatabaseServiceMixin):
             row = await conn.fetchrow(sql, *params)
             return ModelConverter.to_user_response(row) if row else None
 
+    @log_query_performance(operation="create_user", category="user_write")
     async def create_user(self, user_data: Dict[str, Any]) -> UserResponse:
         """
         Create new user.
@@ -101,7 +104,7 @@ class UsersDatabase(DatabaseServiceMixin):
             UserResponse model with all fields
         """
         user_id = user_data.get("id") or str(uuid4())
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         builder = ParameterizedQueryBuilder()
         insert_data = {
@@ -119,6 +122,7 @@ class UsersDatabase(DatabaseServiceMixin):
             row = await conn.fetchrow(sql, *params)
             return ModelConverter.to_user_response(row)
 
+    @log_query_performance(operation="get_or_create_oauth_user", category="user_write")
     async def get_or_create_oauth_user(
         self,
         provider: str,
@@ -142,52 +146,98 @@ class UsersDatabase(DatabaseServiceMixin):
             UserResponse model with id, email, username, is_active, created_at, updated_at
         """
         async with self.pool.acquire() as conn:
-            # Check if OAuthAccount already linked
-            oauth_row = await conn.fetchrow(
-                """
-                SELECT oa.user_id 
-                FROM oauth_accounts oa
-                WHERE oa.provider = $1 AND oa.provider_user_id = $2
-                """,
-                provider,
-                provider_user_id,
-            )
+            # Use REPEATABLE READ isolation to close the read-check-write race window
+            # (issue #767). Two concurrent OAuth callbacks for the same identity can both
+            # pass the SELECT checks before either INSERT runs. The transaction prevents
+            # the second coroutine from seeing a stale snapshot, and ON CONFLICT on the
+            # oauth_accounts INSERT handles the case where both reach the INSERT simultaneously.
+            async with conn.transaction(isolation="repeatable_read"):
+                # Check if OAuthAccount already linked
+                oauth_row = await conn.fetchrow(
+                    """
+                    SELECT oa.user_id
+                    FROM oauth_accounts oa
+                    WHERE oa.provider = $1 AND oa.provider_user_id = $2
+                    """,
+                    provider,
+                    provider_user_id,
+                )
 
-            if oauth_row:
-                # OAuth account already linked, get existing user
-                user_id = oauth_row["user_id"]
-                logger.info("✅ OAuth account found, getting user: %s", user_id)
+                if oauth_row:
+                    # OAuth account already linked, get existing user
+                    user_id = oauth_row["user_id"]
+                    logger.info("✅ OAuth account found, getting user: %s", user_id)
 
+                    user = await conn.fetchrow(
+                        "SELECT id, email, username, is_active, created_at, updated_at FROM users WHERE id = $1",
+                        user_id,
+                    )
+                    return ModelConverter.to_user_response(user) if user else None
+
+                # Check if user with same email already exists
+                email = provider_data.get("email")
+                existing_user = None
+
+                if email:
+                    existing_user = await conn.fetchrow(
+                        "SELECT id, email, username, is_active, created_at, updated_at FROM users WHERE email = $1",
+                        email,
+                    )
+
+                if existing_user:
+                    # Email exists, link OAuth account to existing user
+                    user_id = existing_user["id"]
+                    logger.info("✅ Email found, linking OAuth to user: %s", user_id)
+
+                    # Create OAuth account link; ON CONFLICT guards against concurrent inserts
+                    provider_data_json = json.dumps(provider_data)
+                    await conn.execute(
+                        """
+                        INSERT INTO oauth_accounts (
+                            id, user_id, provider, provider_user_id,
+                            provider_data, created_at, last_used
+                        )
+                        VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+                        ON CONFLICT (provider, provider_user_id) DO NOTHING
+                        """,
+                        str(uuid4()),
+                        user_id,
+                        provider,
+                        provider_user_id,
+                        provider_data_json,
+                    )
+
+                    return ModelConverter.to_user_response(existing_user)
+
+                # Create new user and OAuth account
+                user_id = str(uuid4())
+                logger.info("✅ Creating new user from OAuth: %s", user_id)
+
+                # Create user
                 user = await conn.fetchrow(
-                    "SELECT * FROM users WHERE id = $1",
+                    """
+                    INSERT INTO users (
+                        id, email, username, is_active, created_at, updated_at
+                    )
+                    VALUES ($1, $2, $3, $4, NOW(), NOW())
+                    RETURNING *
+                    """,
                     user_id,
-                )
-                return ModelConverter.to_user_response(user) if user else None
-
-            # Check if user with same email already exists
-            email = provider_data.get("email")
-            existing_user = None
-
-            if email:
-                existing_user = await conn.fetchrow(
-                    "SELECT * FROM users WHERE email = $1",
                     email,
+                    provider_data.get("username", email.split("@")[0] if email else "user"),
+                    True,  # OAuth users are active by default
                 )
 
-            if existing_user:
-                # Email exists, link OAuth account to existing user
-                user_id = existing_user["id"]
-                logger.info("✅ Email found, linking OAuth to user: %s", user_id)
-
-                # Create OAuth account link
+                # ON CONFLICT handles the race window: if a concurrent coroutine won the
+                # INSERT race, DO NOTHING lets us fall through and re-fetch the winner's row.
                 provider_data_json = json.dumps(provider_data)
                 await conn.execute(
                     """
                     INSERT INTO oauth_accounts (
-                        id, user_id, provider, provider_user_id,
-                        provider_data, created_at, last_used
+                        id, user_id, provider, provider_user_id, provider_data, created_at, last_used
                     )
                     VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+                    ON CONFLICT (provider, provider_user_id) DO NOTHING
                     """,
                     str(uuid4()),
                     user_id,
@@ -196,46 +246,34 @@ class UsersDatabase(DatabaseServiceMixin):
                     provider_data_json,
                 )
 
-                return ModelConverter.to_user_response(existing_user)
-
-            # Create new user and OAuth account
-            user_id = str(uuid4())
-            logger.info("✅ Creating new user from OAuth: %s", user_id)
-
-            # Create user
-            user = await conn.fetchrow(
-                """
-                INSERT INTO users (
-                    id, email, username, is_active, created_at, updated_at
+                # Re-fetch oauth_accounts in case a concurrent winner beat us to the insert
+                winner_row = await conn.fetchrow(
+                    """
+                    SELECT oa.user_id
+                    FROM oauth_accounts oa
+                    WHERE oa.provider = $1 AND oa.provider_user_id = $2
+                    """,
+                    provider,
+                    provider_user_id,
                 )
-                VALUES ($1, $2, $3, $4, NOW(), NOW())
-                RETURNING *
-                """,
-                user_id,
-                email,
-                provider_data.get("username", email.split("@")[0] if email else "user"),
-                True,  # OAuth users are active by default
-            )
+                if winner_row and winner_row["user_id"] != user_id:
+                    # A concurrent coroutine won — return the winner's user
+                    winner_user = await conn.fetchrow(
+                        "SELECT id, email, username, is_active, created_at, updated_at FROM users WHERE id = $1",
+                        winner_row["user_id"],
+                    )
+                    logger.info(
+                        "✅ Concurrent OAuth create detected — returning winner user: %s",
+                        winner_row["user_id"],
+                    )
+                    return ModelConverter.to_user_response(winner_user) if winner_user else None
 
-            # Create OAuth account link
-            provider_data_json = json.dumps(provider_data)
-            await conn.execute(
-                """
-                INSERT INTO oauth_accounts (
-                    id, user_id, provider, provider_user_id, provider_data, created_at, last_used
-                )
-                VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-                """,
-                str(uuid4()),
-                user_id,
-                provider,
-                provider_user_id,
-                provider_data_json,
-            )
+                logger.info("✅ Created new OAuth user: %s", user_id)
+                return ModelConverter.to_user_response(user) if user else None
 
-            logger.info("✅ Created new OAuth user: %s", user_id)
-            return ModelConverter.to_user_response(user) if user else None
-
+    @log_query_performance(
+        operation="get_oauth_accounts", category="user_relationships", slow_threshold_ms=50
+    )
     async def get_oauth_accounts(self, user_id: str) -> List[OAuthAccountResponse]:
         """
         Get all OAuth accounts linked to a user.
@@ -264,6 +302,7 @@ class UsersDatabase(DatabaseServiceMixin):
             rows = await conn.fetch(sql, *params)
             return [ModelConverter.to_oauth_account_response(row) for row in rows]
 
+    @log_query_performance(operation="unlink_oauth_account", category="user_write")
     async def unlink_oauth_account(self, user_id: str, provider: str) -> bool:
         """
         Unlink OAuth account from user.
@@ -283,5 +322,8 @@ class UsersDatabase(DatabaseServiceMixin):
                 # Result is a string like "DELETE 1"
                 return "1" in result or "1" == result
         except Exception as e:
-            logger.warning(f"Error unlinking OAuth account: {str(e)}")
+            logger.error(
+                f"[unlink_oauth_account] Error unlinking OAuth account for user_id={user_id}, provider={provider}: {str(e)}",
+                exc_info=True,
+            )
             return False

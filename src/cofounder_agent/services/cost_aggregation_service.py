@@ -10,14 +10,11 @@ Provides advanced cost analytics by querying the cost_logs PostgreSQL table:
 Built on top of DatabaseService's log_cost() and get_task_costs() methods.
 """
 
-import logging
+from services.logger_config import get_logger
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class CostAggregationService:
     """
     Cost analytics service using PostgreSQL cost_logs table
@@ -55,56 +52,37 @@ class CostAggregationService:
                 return self._get_empty_summary()
 
             async with self.db.pool.acquire() as conn:
-                # Get today's costs
-                today_start = datetime.now(timezone.utc).replace(
-                    hour=0, minute=0, second=0, microsecond=0
-                )
-                today_row = await conn.fetchval(
+                now = datetime.now(timezone.utc)
+                today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                week_start = now - timedelta(days=7)
+                month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+                # Consolidate 4 sequential queries into 1 using FILTER aggregates
+                # (issue #492). A single sequential scan covers all three time windows
+                # simultaneously, avoiding repeated full-table reads.
+                summary_row = await conn.fetchrow(
                     """
-                    SELECT COALESCE(SUM(cost_usd), 0) as total
+                    SELECT
+                        COALESCE(SUM(cost_usd) FILTER (WHERE created_at >= $1 AND success = true), 0)
+                            AS today_cost,
+                        COALESCE(SUM(cost_usd) FILTER (WHERE created_at >= $2 AND success = true), 0)
+                            AS week_cost,
+                        COALESCE(SUM(cost_usd) FILTER (WHERE created_at >= $3 AND success = true), 0)
+                            AS month_cost,
+                        COUNT(DISTINCT task_id) FILTER (WHERE created_at >= $3 AND success = true)
+                            AS tasks_count
                     FROM cost_logs
-                    WHERE created_at >= $1 AND success = true
+                    WHERE created_at >= $2
                     """,
                     today_start,
-                )
-                today_cost = float(today_row or 0.0)
-
-                # Get this week's costs (last 7 days)
-                week_start = datetime.now(timezone.utc) - timedelta(days=7)
-                week_row = await conn.fetchval(
-                    """
-                    SELECT COALESCE(SUM(cost_usd), 0) as total
-                    FROM cost_logs
-                    WHERE created_at >= $1 AND success = true
-                    """,
                     week_start,
-                )
-                week_cost = float(week_row or 0.0)
-
-                # Get this month's costs
-                month_start = datetime.now(timezone.utc).replace(
-                    day=1, hour=0, minute=0, second=0, microsecond=0
-                )
-                month_row = await conn.fetchval(
-                    """
-                    SELECT COALESCE(SUM(cost_usd), 0) as total
-                    FROM cost_logs
-                    WHERE created_at >= $1 AND success = true
-                    """,
                     month_start,
                 )
-                month_cost = float(month_row or 0.0)
 
-                # Get task count
-                tasks_row = await conn.fetchval(
-                    """
-                    SELECT COUNT(DISTINCT task_id) as count
-                    FROM cost_logs
-                    WHERE created_at >= $1 AND success = true
-                    """,
-                    month_start,
-                )
-                tasks_count = int(tasks_row or 0)
+                today_cost = float(summary_row["today_cost"] or 0.0)
+                week_cost = float(summary_row["week_cost"] or 0.0)
+                month_cost = float(summary_row["month_cost"] or 0.0)
+                tasks_count = int(summary_row["tasks_count"] or 0)
 
                 # Calculate average cost per task
                 avg_cost_per_task = month_cost / tasks_count if tasks_count > 0 else 0.0
@@ -135,7 +113,7 @@ class CostAggregationService:
                     "last_updated": datetime.now(timezone.utc).isoformat(),
                 }
         except Exception as e:
-            logger.error(f"Error getting cost summary: {e}")
+            logger.error(f"[_get_summary] Error getting cost summary: {e}", exc_info=True)
             return self._get_empty_summary()
 
     async def get_breakdown_by_phase(
@@ -222,7 +200,10 @@ class CostAggregationService:
                     "last_updated": datetime.now(timezone.utc).isoformat(),
                 }
         except Exception as e:
-            logger.error(f"Error getting cost breakdown by phase: {e}")
+            logger.error(
+                f"[_get_breakdown_by_phase] Error getting cost breakdown by phase: {e}",
+                exc_info=True,
+            )
             return self._get_empty_breakdown_by_phase(period)
 
     async def get_breakdown_by_model(
@@ -306,7 +287,10 @@ class CostAggregationService:
                     "last_updated": datetime.now(timezone.utc).isoformat(),
                 }
         except Exception as e:
-            logger.error(f"Error getting cost breakdown by model: {e}")
+            logger.error(
+                f"[_get_breakdown_by_model] Error getting cost breakdown by model: {e}",
+                exc_info=True,
+            )
             return self._get_empty_breakdown_by_model(period)
 
     async def get_history(self, period: str = "week") -> Dict[str, Any]:
@@ -395,7 +379,7 @@ class CostAggregationService:
                     "last_updated": datetime.now(timezone.utc).isoformat(),
                 }
         except Exception as e:
-            logger.error(f"Error getting cost history: {e}")
+            logger.error(f"[_get_history] Error getting cost history: {e}", exc_info=True)
             return self._get_empty_history(period)
 
     async def get_budget_status(
@@ -521,7 +505,7 @@ class CostAggregationService:
                 "last_updated": datetime.now(timezone.utc).isoformat(),
             }
         except Exception as e:
-            logger.error(f"Error getting budget status: {e}")
+            logger.error(f"[_get_budget_status] Error getting budget status: {e}", exc_info=True)
             return self._get_empty_budget_status(monthly_budget)
 
     async def recalculate_all(self) -> Dict[str, Any]:

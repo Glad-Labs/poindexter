@@ -12,18 +12,16 @@ Purpose:
 Phase 3 of Unified Task Orchestration System.
 """
 
-import logging
-from dataclasses import dataclass
-from datetime import datetime
+from services.logger_config import get_logger
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from .model_router import ModelRouter
 from .task_intent_router import TaskIntentRequest
 from .unified_orchestrator import UnifiedOrchestrator
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 # ============================================================================
 # DATA STRUCTURES FOR EXECUTION PLANNING
 # ============================================================================
@@ -51,9 +49,9 @@ class ExecutionPlanStage:
     estimated_duration_ms: int
     estimated_cost: float
     model: str
-    parallelizable_with: List[str] = None  # Which other stages can run in parallel
-    depends_on: List[str] = None  # Which stages must complete first
-    quality_metrics: Dict[str, Any] = None  # Metrics to measure quality
+    parallelizable_with: Optional[List[str]] = None  # Which other stages can run in parallel
+    depends_on: Optional[List[str]] = None  # Which stages must complete first
+    quality_metrics: Optional[Dict[str, Any]] = None  # Metrics to measure quality
 
 
 @dataclass
@@ -68,10 +66,10 @@ class ExecutionPlan:
     stages: List[ExecutionPlanStage]
     parallelization_strategy: str  # "sequential", "parallel", "mixed"
     resource_requirements: Dict[str, Any]  # GPU, memory, etc.
-    alternative_strategies: List["ExecutionPlan"] = None  # Other ways to accomplish goal
-    estimated_quality_score: float  # 0-100
-    success_probability: float  # 0-1 based on historical data
-    created_at: str = None
+    estimated_quality_score: float = 0.0  # 0-100
+    success_probability: float = 0.0  # 0-1 based on historical data
+    alternative_strategies: Optional[List["ExecutionPlan"]] = None  # Other ways to accomplish goal
+    created_at: Optional[str] = None
     user_confirmed: bool = False
 
 
@@ -85,8 +83,8 @@ class ExecutionPlanSummary:
     estimated_cost: str  # "$1.25"
     confidence: str  # "High", "Medium", "Low"
     key_stages: List[str]  # Top-level stages to show
-    warnings: List[str] = None  # "May require manual image selection", etc.
-    opportunities: List[str] = None  # "Can save $0.50 by skipping QA", etc.
+    warnings: Optional[List[str]] = None  # "May require manual image selection", etc.
+    opportunities: Optional[List[str]] = None  # "Can save $0.50 by skipping QA", etc.
 
 
 # ============================================================================
@@ -125,13 +123,13 @@ class TaskPlanningService:
         "format": 0.02,  # GPT-3.5 ~40 tokens
     }
 
-    STAGE_MODELS = {
-        # Recommended model for each stage
-        "research": "gpt-4",
-        "creative": "claude-opus",  # Best for writing
-        "qa": "gpt-4",
-        "images": "gpt-4-vision",
-        "format": "gpt-3.5-turbo",  # Fast, cheap
+    # Map pipeline stages to model-router task types (fix #157: no hardcoded model names)
+    STAGE_TASK_TYPES = {
+        "research": "analyze",   # medium complexity → balanced tier
+        "creative": "create",    # complex → premium tier
+        "qa": "analyze",         # medium complexity → balanced tier
+        "images": "generate",    # complex → premium tier
+        "format": "summarize",   # simple → cheap tier
     }
 
     def __init__(self):
@@ -199,7 +197,7 @@ class TaskPlanningService:
         resource_requirements = self._determine_resource_requirements(stages, quality_preference)
 
         plan = ExecutionPlan(
-            task_id=task_intent_request.task_id or str(__import__("uuid").uuid4()),
+            task_id=task_intent_request.task_id or str(__import__("uuid").uuid4()),  # type: ignore[attr-defined]
             task_type=task_intent_request.task_type,
             total_estimated_duration_ms=total_duration,
             total_estimated_cost=total_cost,
@@ -209,7 +207,7 @@ class TaskPlanningService:
             resource_requirements=resource_requirements,
             estimated_quality_score=quality_score,
             success_probability=success_probability,
-            created_at=datetime.utcnow().isoformat(),
+            created_at=datetime.now(timezone.utc).isoformat(),
         )
 
         return plan
@@ -285,7 +283,9 @@ class TaskPlanningService:
                 required_inputs=self._determine_required_inputs(subtask_lower),
                 estimated_duration_ms=duration,
                 estimated_cost=cost,
-                model=self.STAGE_MODELS.get(subtask_lower, "gpt-4"),
+                model=self.model_router.route_request(
+                    self.STAGE_TASK_TYPES.get(subtask_lower, "create")
+                )[0],  # fix #157: use model router instead of hardcoded names
                 parallelizable_with=parallelizable.get(subtask_lower, []),
                 depends_on=dependencies.get(subtask_lower, []),
                 quality_metrics=self._determine_quality_metrics(subtask_lower, quality_preference),
@@ -358,7 +358,7 @@ class TaskPlanningService:
 
         # If deadline is tight, prefer parallel
         if deadline:
-            time_until_deadline = (deadline - datetime.utcnow()).total_seconds() * 1000
+            time_until_deadline = (deadline - datetime.now(timezone.utc)).total_seconds() * 1000
 
             if time_until_deadline < total_duration * 1.2:
                 # Not enough time for sequential - must parallelize
@@ -451,7 +451,8 @@ class TaskPlanningService:
     ) -> Dict[str, Any]:
         """Determine computational resource requirements."""
 
-        has_vision = any(s.model == "gpt-4-vision" for s in stages)
+        # fix #157: detect image/vision stages semantically instead of by hardcoded model name
+        has_vision = any("image" in (s.stage_name or "").lower() for s in stages)
 
         return {
             "gpu_required": has_vision,
@@ -553,13 +554,13 @@ class TaskPlanningService:
         # Strategy 1: Draft quality (fast, cheap)
         draft_metrics = {**business_metrics, "quality_preference": "draft"}
         plan_draft = await self.generate_plan(task_intent_request, draft_metrics)
-        plan_draft.title = "Fast & Budget-Friendly"
+        plan_draft.title = "Fast & Budget-Friendly"  # type: ignore[attr-defined]
         alternatives.append(plan_draft)
 
         # Strategy 2: High quality (slower, more expensive)
         high_metrics = {**business_metrics, "quality_preference": "high"}
         plan_high = await self.generate_plan(task_intent_request, high_metrics)
-        plan_high.title = "Premium Quality"
+        plan_high.title = "Premium Quality"  # type: ignore[attr-defined]
         alternatives.append(plan_high)
 
         # Strategy 3: Minimal (skip images and QA)

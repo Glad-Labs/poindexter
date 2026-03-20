@@ -1,10 +1,15 @@
+# ============================================================
 # IDE & OS
+# ============================================================
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+nul
 
+# ============================================================
 # Node.js
+# ============================================================
 node_modules/
 .next/
 build/
@@ -13,18 +18,44 @@ dist/
 npm-debug.log*
 yarn-error.log*
 
+# ============================================================
 # Python
+# ============================================================
 __pycache__/
 *.pyc
 .venv/
 .eggs/
 *.egg-info/
 *.egg
+.mypy_cache/
+.pytest_cache/
 
-# Temporary files
-.tmp/
+# ============================================================
+# Test artifacts & coverage
+# ============================================================
+test-results/
+playwright-report/
+oversight-report/
+htmlcov/
+coverage/
+*.coverage
+.coverage*
 
-# Environment variables
+# ============================================================
+# Log files (including rotated logs)
+# ============================================================
+logs/
+*.log
+*.log.[0-9]*
+
+# ============================================================
+# Screenshots (generated, not source)
+# ============================================================
+screenshots/
+
+# ============================================================
+# Environment variables & secrets
+# ============================================================
 .env
 .env.local
 .env.*.local
@@ -32,11 +63,25 @@ __pycache__/
 .env.development
 .env.test
 .env.staging
-
-# Environment & Credentials
+.env.old
+.env.local.mstr
 credentials.json
 service-account-key.json
 token.json
-*.log
-.env.old
-nul
+
+# ============================================================
+# AI & dev tooling state
+# ============================================================
+.agents/
+.continue/
+.claude/
+.roo/
+.playwright-mcp/
+playwright/.auth/
+.vercel/
+
+# ============================================================
+# Temporary / scratch files
+# ============================================================
+.tmp/
+tmpclaude*

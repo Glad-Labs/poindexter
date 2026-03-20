@@ -26,7 +26,7 @@ import logging
 import os
 import time
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 try:
     import httpx
@@ -42,8 +42,6 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
 
-import numpy as np
-from PIL import Image
 
 # Try to import diffusers - optional for SDXL generation
 try:
@@ -57,14 +55,14 @@ except (ImportError, RuntimeError) as e:
 
 # Optional optimization packages
 try:
-    import xformers
+    pass
 
     XFORMERS_AVAILABLE = True
 except ImportError:
     XFORMERS_AVAILABLE = False
 
 try:
-    from optimum.intel import OVModelForFeatureExtraction
+    pass
 
     OPTIMUM_AVAILABLE = True
 except ImportError:
@@ -149,6 +147,7 @@ class ImageService:
                 "Pexels API key not configured - featured image search will be unavailable"
             )
 
+        self.pexels_available = bool(self.pexels_api_key)
         self.pexels_base_url = "https://api.pexels.com/v1"
         self.pexels_headers = {"Authorization": self.pexels_api_key} if self.pexels_api_key else {}
 
@@ -219,7 +218,7 @@ class ImageService:
                             f"Falling back to CPU mode."
                         )
                 except Exception as e:
-                    logger.warning(f"Could not verify GPU capability: {e}. Using CPU mode.")
+                    logger.warning(f"Could not verify GPU capability: {e}. Using CPU mode.", exc_info=True)
             else:
                 logger.warning("CUDA not available - using CPU mode (slower)")
 
@@ -266,7 +265,7 @@ class ImageService:
             )
 
         except Exception as e:
-            logger.error(f"Failed to load Stable Diffusion XL models: {e}")
+            logger.error(f"Failed to load Stable Diffusion XL models: {e}", exc_info=True)
             self.sdxl_available = False
 
     def _apply_model_optimizations(self, pipe, device: str) -> None:
@@ -292,7 +291,7 @@ class ImageService:
                     pipe.enable_xformers_memory_efficient_attention()
                     logger.info("   ✓ xformers memory-efficient attention enabled (2-4x faster)")
                 except Exception as e:
-                    logger.warning(f"   ⚠️  Could not enable xformers: {e}")
+                    logger.warning(f"   ⚠️  Could not enable xformers: {e}", exc_info=True)
 
             # 3. Enable Flash Attention v2 if available (PyTorch 2.0+)
             try:
@@ -321,7 +320,7 @@ class ImageService:
                     logger.debug(f"   Model CPU offload not available: {e}")
 
         except Exception as e:
-            logger.warning(f"Error applying optimizations: {e}")
+            logger.warning(f"Error applying optimizations: {e}", exc_info=True)
 
     # =========================================================================
     # FEATURED IMAGE SEARCH (Pexels - Free, Unlimited)
@@ -410,7 +409,7 @@ class ImageService:
                     )
                     return metadata
             except Exception as e:
-                logger.warning(f"Error searching for '{query}': {e}")
+                logger.warning(f"Error searching for '{query}': {e}", exc_info=True)
 
         logger.warning(f"No featured image found for topic: {topic}")
         return None
@@ -452,7 +451,7 @@ class ImageService:
                     return all_images[:count]
 
             except Exception as e:
-                logger.warning(f"Error searching for gallery images '{query}': {e}")
+                logger.warning(f"Error searching for gallery images '{query}': {e}", exc_info=True)
 
         logger.info(f"Found {len(all_images)} gallery images (less than requested)")
         return all_images
@@ -522,7 +521,7 @@ class ImageService:
                 ]
 
         except Exception as e:
-            logger.error(f"Pexels search error: {e}")
+            logger.error(f"Pexels search error: {e}", exc_info=True)
             return []
 
     # =========================================================================
@@ -612,7 +611,7 @@ class ImageService:
                 progress_service.mark_complete(task_id, "Image generation complete")
 
                 # Broadcast via WebSocket
-                from routes.websocket_routes import broadcast_progress
+                from services.progress_broadcaster import broadcast_progress
 
                 progress = progress_service.get_progress(task_id)
                 await broadcast_progress(task_id, progress)
@@ -620,7 +619,7 @@ class ImageService:
             return True
 
         except Exception as e:
-            logger.error(f"❌ Error generating image: {e}")
+            logger.error(f"❌ Error generating image: {e}", exc_info=True)
 
             # Mark progress as failed if tracking
             if task_id:
@@ -630,10 +629,11 @@ class ImageService:
                 progress_service.mark_failed(task_id, str(e))
 
                 # Broadcast via WebSocket
-                from routes.websocket_routes import broadcast_progress
+                from services.progress_broadcaster import broadcast_progress
 
                 progress = progress_service.get_progress(task_id)
-                await broadcast_progress(task_id, progress)
+                if progress is not None:
+                    await broadcast_progress(task_id, progress)
 
             return False
 
@@ -764,14 +764,14 @@ class ImageService:
             except Exception as refine_error:
                 logger.warning(
                     f"   ⚠️  Refinement failed, falling back to base image: {refine_error}"
-                )
+, exc_info=True)
                 # Fallback: save base PIL image without refinement
                 try:
                     base_image_pil.save(output_path)
                     logger.info(f"   ✓ Saved base image without refinement (fallback)")
 
                 except Exception as save_error:
-                    logger.error(f"   ❌ Save failed: {save_error}")
+                    logger.error(f"   ❌ Save failed: {save_error}", exc_info=True)
                     raise
 
         else:
@@ -782,7 +782,7 @@ class ImageService:
                 logger.info(f"   ✓ Saved base image (refinement disabled)")
 
             except Exception as save_error:
-                logger.error(f"   ❌ Save failed: {save_error}")
+                logger.error(f"   ❌ Save failed: {save_error}", exc_info=True)
                 raise
 
     # =========================================================================

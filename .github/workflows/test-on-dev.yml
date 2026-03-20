@@ -10,21 +10,21 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      NODE_ENV: staging
+      NODE_ENV: test
       LOG_LEVEL: debug
 
     steps:
       - name: 📥 Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: 🔧 Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
           cache: "npm"
 
       - name: 🐍 Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@7f4fc3e22c37d6ff65e88745f38bd3157c663f7c # v4
         with:
           python-version: "3.12"
 
@@ -33,44 +33,47 @@ jobs:
       # ============================================
 
       - name: 📦 Install Node dependencies
-        run: npm ci && npm ci --workspaces
+        run: npm ci  # fix #145: root npm ci handles all workspaces
 
-      - name: 📦 Install Python dependencies (CI/CD - Optimized)
+      - name: 📦 Install Poetry
         run: |
-          python -m pip install --upgrade pip
-          pip install --no-cache-dir -r scripts/requirements-ci.txt
-        continue-on-error: false
+          python -m pip install --upgrade pip poetry
+          poetry config virtualenvs.create false
 
-      - name: 🗑️ Clean pip cache
-        run: pip cache purge
-
-      - name: 📦 Install backend-specific requirements
+      - name: 📦 Install Python dependencies via Poetry
+        # fix #146: use Poetry everywhere for consistency with production
         run: |
-          pip install --no-cache-dir -r src/cofounder_agent/requirements.txt
-        continue-on-error: false
-
-      - name: 🗑️ Clean pip cache again
-        run: pip cache purge
+          cd src/cofounder_agent
+          poetry install --no-root
+          cd ../..
 
       # ============================================
       # TEST PHASE
       # ============================================
 
-      - name: 🧪 Run tests
+      - name: 🧪 Run frontend tests with coverage
         run: npm run test:ci
-        continue-on-error: true
+        # fix #144: removed continue-on-error — failures should be visible on dev
 
-      - name: 🧪 Run backend tests
-        run: npm run test:python
-        continue-on-error: true
+      - name: 🧪 Enforce coverage thresholds (oversight-hub)
+        run: cd web/oversight-hub && npx vitest run --coverage --pool=forks --poolOptions.forks.maxForks=2
+        # #951: Vitest coverage thresholds in vitest.config.ts — CI fails if thresholds regress
+
+      - name: 🧪 Run backend unit tests
+        run: cd src/cofounder_agent && poetry run pytest tests/unit/ -v --tb=short
+        # fix #1019: unit tests must run in CI — no DATABASE_URL needed
+
+      - name: 🧪 Run backend integration tests
+        run: cd src/cofounder_agent && poetry run pytest tests/integration/ tests/e2e/ -v --tb=short
+        continue-on-error: true  # integration/e2e tests require DATABASE_URL — not available without service containers
 
       - name: 🔍 Run linting
-        run: npm run lint:fix
-        continue-on-error: true
+        run: npm run lint
+        continue-on-error: true  # lint warnings acceptable on dev, errors surfaced in logs
 
       - name: 🏗️ Build check (all workspaces)
         run: npm run build --if-present
-        continue-on-error: true
+        # No continue-on-error — build failures should block dev CI
 
-      - name: ✅ Testing complete for staging
+      - name: ✅ Testing complete for dev
         run: echo "Dev branch testing complete - ready for staging deployment"

@@ -1,5 +1,5 @@
+import asyncio
 import logging
-import subprocess
 
 from ..content_agent.utils.tools import CrewAIToolsFactory
 
@@ -18,7 +18,7 @@ class ComplianceAgent:
         ]
         logging.info("Compliance Agent initialized.")
 
-    def run_security_audit(self) -> str:
+    async def run_security_audit(self) -> str:
         """
         Runs a security audit on the codebase, including dependency scans.
         (This is a placeholder implementation)
@@ -27,15 +27,15 @@ class ComplianceAgent:
             logging.info("Running security audit...")
 
             # Run npm audit
-            npm_audit_result = self._run_command("npm audit")
+            npm_audit_result = await self._run_command(["npm", "audit"])
 
             # Run pip-audit
-            pip_audit_result = self._run_command("pip-audit")
+            pip_audit_result = await self._run_command(["pip-audit"])
 
             # Run linters
-            flake8_result = self._run_command("flake8 .")
+            flake8_result = await self._run_command(["flake8", "."])
             # Run ESLint against all workspaces that have a 'lint' script
-            eslint_result = self._run_command("npm run lint --workspaces")
+            eslint_result = await self._run_command(["npm", "run", "lint", "--workspaces"])
 
             response = (
                 "Compliance audit complete. Here is the summary:\\n\\n"
@@ -47,22 +47,22 @@ class ComplianceAgent:
             return response
 
         except Exception as e:
-            logging.error(f"Error during security audit: {e}")
+            logging.error(f"Error during security audit: {e}", exc_info=True)
             return "I'm sorry, I encountered an error while running the security audit."
 
-    def _run_command(self, command: str) -> str:
-        """A helper method to run a shell command and return its output."""
+    async def _run_command(self, args: list[str]) -> str:
+        """A helper method to run a subprocess command and return its output."""
         try:
-            # We run the command from the workspace root
-            result = subprocess.run(
-                command,
-                shell=True,
-                capture_output=True,
-                text=True,
+            proc = await asyncio.create_subprocess_exec(
+                *args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
                 cwd=self.workspace_root,
-                check=True,
             )
-            return result.stdout
-        except subprocess.CalledProcessError as e:
-            # Return the error message if the command fails
-            return e.stderr
+            stdout, stderr = await proc.communicate()
+            if proc.returncode != 0:
+                return stderr.decode(errors="replace")
+            return stdout.decode(errors="replace")
+        except Exception as e:
+            logging.error(f"[_run_command] Failed to run {args}: {e}", exc_info=True)
+            return f"Error running {args[0]}: {e}"

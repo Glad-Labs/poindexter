@@ -16,6 +16,7 @@ Routes:
 - GET  /api/auth/me             -> Get current user profile
 """
 
+import hashlib
 import logging
 import os
 import secrets
@@ -24,14 +25,27 @@ from typing import Any, Dict, Optional
 
 import httpx
 import jwt
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from utils.rate_limiter import limiter
+
+# Lazy-initialized httpx client for GitHub OAuth — avoids per-request connection overhead
+_github_http_client: httpx.AsyncClient | None = None
+
+
+def _get_github_client() -> httpx.AsyncClient:
+    global _github_http_client
+    if _github_http_client is None:
+        _github_http_client = httpx.AsyncClient(timeout=10.0)
+    return _github_http_client
+
+from config import get_config
 from schemas.auth_schemas import (
     GitHubCallbackRequest,
     LogoutResponse,
     UserProfile,
 )
+from services.jwt_blocklist_service import jwt_blocklist
 from services.token_validator import AuthConfig, JWTTokenValidator
 
 logger = logging.getLogger(__name__)
@@ -101,73 +115,78 @@ async def exchange_code_for_token(code: str) -> Dict[str, Any]:
     Raises:
         HTTPException: If token exchange fails
     """
-    # Handle mock auth codes for development
+    # Handle mock auth codes — only permitted in DEVELOPMENT_MODE
     if code.startswith("mock_auth_code_"):
-        logger.info("Mock auth code detected, returning mock token")
+        _cfg = get_config()
+        if _cfg.environment.lower() != "development" or os.getenv("DEVELOPMENT_MODE", "").lower() != "true":
+            logger.warning("[exchange_code_for_token] Mock auth code rejected outside DEVELOPMENT_MODE")
+            raise HTTPException(status_code=401, detail="Mock authentication is not permitted in this environment")
+        logger.info("Mock auth code detected (DEVELOPMENT_MODE), returning mock token")
         return {"access_token": "mock_github_token_dev", "expires_in": 3600}
 
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "https://github.com/login/oauth/access_token",
-                data={
-                    "client_id": GITHUB_CLIENT_ID,
-                    "client_secret": GITHUB_CLIENT_SECRET,
-                    "code": code,
-                },
-                headers={"Accept": "application/json"},
-                timeout=10.0,
+        response = await _get_github_client().post(
+            "https://github.com/login/oauth/access_token",
+            data={
+                "client_id": GITHUB_CLIENT_ID,
+                "client_secret": GITHUB_CLIENT_SECRET,
+                "code": code,
+            },
+            headers={"Accept": "application/json"},
+        )
+
+        logger.debug(f"GitHub token exchange response status: {response.status_code}")
+
+        if response.status_code != 200:
+            response_text = response.text
+            logger.error(
+                f"GitHub token exchange failed with status {response.status_code}: {response_text}"
+            )
+            raise HTTPException(
+                status_code=401,
+                detail="GitHub authentication failed - invalid code or credentials",
             )
 
-            logger.debug(f"GitHub token exchange response status: {response.status_code}")
+        data = response.json()
+        logger.debug(f"GitHub response keys: {data.keys()}")
 
-            if response.status_code != 200:
-                response_text = response.text
-                logger.error(
-                    f"GitHub token exchange failed with status {response.status_code}: {response_text}"
-                )
-                raise HTTPException(
-                    status_code=401,
-                    detail="GitHub authentication failed - invalid code or credentials",
-                )
+        if "error" in data:
+            error_description = data.get("error_description", "Unknown error")
+            logger.error(f"GitHub error: {data.get('error')} - {error_description}")
+            raise HTTPException(
+                status_code=401,
+                detail=f"GitHub rejected request: {error_description}",
+            )
 
-            data = response.json()
-            logger.debug(f"GitHub response keys: {data.keys()}")
+        access_token = data.get("access_token", "")
+        if not access_token:
+            logger.error(f"No access token in GitHub response. Keys: {list(data.keys())}")
+            raise HTTPException(status_code=401, detail="Invalid token response from GitHub")
 
-            if "error" in data:
-                error_description = data.get("error_description", "Unknown error")
-                logger.error(f"GitHub error: {data.get('error')} - {error_description}")
-                raise HTTPException(
-                    status_code=401,
-                    detail=f"GitHub rejected request: {error_description}",
-                )
-
-            access_token = data.get("access_token", "")
-            if not access_token:
-                logger.error(f"No access token in GitHub response. Keys: {list(data.keys())}")
-                raise HTTPException(status_code=401, detail="Invalid token response from GitHub")
-
-            logger.info("Successfully obtained GitHub access token")
-            # Return full response with expiration info
-            return {
-                "access_token": access_token,
-                "expires_in": data.get("expires_in"),
-                "token_type": data.get("token_type", "bearer"),
-                "scope": data.get("scope", ""),
-            }
+        logger.info("Successfully obtained GitHub access token")
+        return {
+            "access_token": access_token,
+            "expires_in": data.get("expires_in"),
+            "token_type": data.get("token_type", "bearer"),
+            "scope": data.get("scope", ""),
+        }
     except httpx.TimeoutException:
-        logger.error("GitHub token exchange timed out")
+        logger.error("GitHub token exchange timed out", exc_info=True)
         raise HTTPException(status_code=503, detail="GitHub authentication service unavailable")
     except httpx.HTTPError as e:
-        logger.error(f"GitHub token exchange HTTP error: {e}")
+        logger.error(f"GitHub token exchange HTTP error: {e}", exc_info=True)
         raise HTTPException(status_code=401, detail="Failed to exchange code for token")
 
 
 async def get_github_user(access_token: str) -> Dict[str, Any]:
     """Fetch GitHub user information using access token."""
-    # Handle mock auth tokens for development
+    # Handle mock auth tokens — only permitted in DEVELOPMENT_MODE
     if access_token == "mock_github_token_dev":
-        logger.info("Mock token detected, returning mock user data")
+        _cfg = get_config()
+        if _cfg.environment.lower() != "development" or os.getenv("DEVELOPMENT_MODE", "").lower() != "true":
+            logger.warning("[get_github_user] Mock token rejected outside DEVELOPMENT_MODE")
+            raise HTTPException(status_code=401, detail="Mock authentication is not permitted in this environment")
+        logger.info("Mock token detected (DEVELOPMENT_MODE), returning mock user data")
         return {
             "id": 999999,
             "login": "dev-user",
@@ -177,25 +196,23 @@ async def get_github_user(access_token: str) -> Dict[str, Any]:
             "bio": "Development user for testing",
         }
 
-    async with httpx.AsyncClient() as client:
-        response = await client.get(
-            "https://api.github.com/user",
-            headers={"Authorization": f"token {access_token}"},
-            timeout=10.0,
+    response = await _get_github_client().get(
+        "https://api.github.com/user",
+        headers={"Authorization": f"token {access_token}"},
+    )
+
+    logger.debug(f"GitHub user API response status: {response.status_code}")
+
+    if response.status_code != 200:
+        response_text = response.text
+        logger.error(f"GitHub API error: {response.status_code} - {response_text}")
+        raise HTTPException(
+            status_code=401, detail=f"Failed to fetch GitHub user: {response.status_code}"
         )
 
-        logger.debug(f"GitHub user API response status: {response.status_code}")
-
-        if response.status_code != 200:
-            response_text = response.text
-            logger.error(f"GitHub API error: {response.status_code} - {response_text}")
-            raise HTTPException(
-                status_code=401, detail=f"Failed to fetch GitHub user: {response.status_code}"
-            )
-
-        user_data = response.json()
-        logger.info(f"Successfully fetched GitHub user: {user_data.get('login')}")
-        return user_data
+    user_data = response.json()
+    logger.info(f"Successfully fetched GitHub user: {user_data.get('login')}")
+    return user_data
 
 
 def create_jwt_token(user_data: Dict[str, Any]) -> str:
@@ -271,7 +288,7 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
         try:
             claims = JWTTokenValidator.verify_token(token)
         except Exception as e:
-            logger.warning(f"[get_current_user] Token verification failed")
+            logger.warning(f"[get_current_user] Token verification failed", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired token",
@@ -282,6 +299,16 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Check JWT blocklist — reject tokens that were explicitly logged out
+        jti = claims.get("jti") or hashlib.sha256(token.encode()).hexdigest()[:16]
+        if await jwt_blocklist.is_blocked(jti):
+            logger.warning("[get_current_user] Blocked token presented (jti=%s)", jti)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has been revoked",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
@@ -315,13 +342,28 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
         )
 
 
+async def get_current_user_optional(request: Request) -> Optional[Dict[str, Any]]:
+    """
+    Optionally resolve current user from Authorization header.
+
+    Returns None when no/invalid auth is provided instead of raising 401.
+    Useful for endpoints that are public by default but may expose additional
+    data for authenticated users.
+    """
+    try:
+        return await get_current_user(request)
+    except HTTPException:
+        return None
+
+
 # ============================================================================
 # Unified Endpoints
 # ============================================================================
 
 
 @router.post("/github/callback")
-async def github_callback(request_data: GitHubCallbackRequest) -> Dict[str, Any]:
+@limiter.limit("10/minute")
+async def github_callback(request: Request, request_data: GitHubCallbackRequest) -> Dict[str, Any]:
     """
     Handle GitHub OAuth callback.
 
@@ -347,6 +389,11 @@ async def github_callback(request_data: GitHubCallbackRequest) -> Dict[str, Any]
     if not state:
         logger.warning("GitHub callback missing state parameter")
         raise HTTPException(status_code=400, detail="Missing state parameter")
+
+    # Validate CSRF state token (one-time use, expiry-checked)
+    if not validate_csrf_state(state):
+        logger.warning("GitHub callback CSRF state validation failed")
+        raise HTTPException(status_code=400, detail="Invalid or expired state parameter")
 
     try:
         # Exchange code for GitHub access token
@@ -397,7 +444,8 @@ async def github_callback(request_data: GitHubCallbackRequest) -> Dict[str, Any]
 
 
 @router.post("/github-callback")
-async def github_callback_fallback(request_data: GitHubCallbackRequest) -> Dict[str, Any]:
+@limiter.limit("10/minute")
+async def github_callback_fallback(request: Request, request_data: GitHubCallbackRequest) -> Dict[str, Any]:
     """
     Fallback endpoint for GitHub OAuth callback (old endpoint path).
 
@@ -410,12 +458,53 @@ async def github_callback_fallback(request_data: GitHubCallbackRequest) -> Dict[
     logger.warning(
         "Deprecated endpoint /api/auth/github-callback called. Use /api/auth/github/callback instead."
     )
-    # Forward to the main handler
-    return await github_callback(request_data)
+    # Forward to the main handler (pass request so rate limiter context is preserved)
+    return await github_callback(request, request_data)
+
+
+@router.post("/dev-token")
+@limiter.limit("30/minute")
+async def issue_dev_token(request: Request) -> Dict[str, Any]:
+    """
+    Issue a backend-signed JWT for local development.
+
+    This endpoint avoids misusing OAuth callback endpoints for dev token bootstrapping.
+    It is intentionally gated to development mode only.
+    """
+    # Gate on DEVELOPMENT_MODE=true explicitly — not just "not production".
+    # This prevents staging/test environments from exposing the dev-token endpoint.
+    is_dev_mode = os.getenv("DEVELOPMENT_MODE", "false").lower() in ("true", "1", "yes")
+
+    if not is_dev_mode:
+        logger.warning("[issue_dev_token] Attempted access outside development mode")
+        raise HTTPException(status_code=404, detail="Not found")
+
+    dev_user = {
+        "id": "dev_user_local",
+        "login": "dev-user",
+        "email": "dev@example.com",
+        "name": "Development User",
+        "avatar_url": "https://avatars.githubusercontent.com/u/1?v=4",
+    }
+
+    token = create_jwt_token(dev_user)
+    return {
+        "token": token,
+        "user": {
+            "user_id": dev_user["id"],
+            "username": dev_user["login"],
+            "email": dev_user["email"],
+            "name": dev_user["name"],
+            "avatar_url": dev_user["avatar_url"],
+            "auth_provider": "github",
+        },
+    }
 
 
 @router.post("/logout", response_model=LogoutResponse)
+@limiter.limit("30/minute")
 async def unified_logout(
+    request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> LogoutResponse:
     """
@@ -452,17 +541,37 @@ async def unified_logout(
     """
     auth_provider = current_user.get("auth_provider", "jwt")
     user_id = current_user.get("id", "unknown")
+    token = current_user.get("token", "")
 
     logger.info(f"Logout request for user {user_id} (auth_provider: {auth_provider})")
 
     try:
-        # In production, implement provider-specific logout:
-        # if auth_provider == "github":
-        #     await revoke_github_session(user_id)
-        # elif auth_provider == "oauth":
-        #     await revoke_oauth_refresh_token(current_user["token_id"])
-        # else:
-        #     await add_token_to_blacklist(current_user["token"])
+        # Server-side token invalidation — prevents session replay after logout (#721).
+        # Derive the JTI from the token claims; fall back to a hash of the raw token
+        # when the token does not carry a 'jti' claim (e.g. tokens issued before this
+        # change was deployed).
+        if token:
+            try:
+                claims = JWTTokenValidator.verify_token(token)
+                if claims:
+                    jti = claims.get("jti") or hashlib.sha256(token.encode()).hexdigest()[:16]
+                    exp_ts = claims.get("exp")
+                    if exp_ts:
+                        expires_at = datetime.fromtimestamp(exp_ts, tz=timezone.utc)
+                    else:
+                        # Fallback: treat as expiring in ACCESS_TOKEN_EXPIRE_MINUTES
+                        expires_at = datetime.now(timezone.utc) + timedelta(
+                            minutes=AuthConfig.ACCESS_TOKEN_EXPIRE_MINUTES
+                        )
+                    await jwt_blocklist.add_token(jti, user_id, expires_at)
+            except Exception:
+                # Token may already be expired; still mark logout as successful
+                logger.warning(
+                    "[unified_logout] Could not extract claims for blocklisting "
+                    "(token may already be expired) — user_id=%s",
+                    user_id,
+                    exc_info=True,
+                )
 
         logger.info(f"User {user_id} logged out successfully ({auth_provider})")
 
@@ -471,7 +580,7 @@ async def unified_logout(
         )
 
     except Exception as e:
-        logger.error(f"Logout error for user {user_id}: {str(e)}")
+        logger.error(f"[unified_logout] Logout error for user {user_id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Logout failed"
         )

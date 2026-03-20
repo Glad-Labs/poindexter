@@ -19,8 +19,8 @@ information about GDPR rights. In production, implement:
 
 import logging
 import re
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timezone
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -105,7 +105,7 @@ async def submit_data_request(request_data: DataSubjectRequest) -> Dict:
                 "Check your email for a verification link. "
                 "Once verified, we'll process your request within 30 days."
             ),
-            "request_id": datetime.utcnow().isoformat(),
+            "request_id": datetime.now(timezone.utc).isoformat(),
             "next_steps": [
                 "1. Verify your email address (link sent to your inbox)",
                 "2. We'll confirm receipt within 2 weeks",
@@ -116,7 +116,7 @@ async def submit_data_request(request_data: DataSubjectRequest) -> Dict:
         }
 
     except Exception as e:
-        logger.error(f"❌ Error processing data request: {e}")
+        logger.error(f"❌ Error processing data request: {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail="Failed to process request. Please email privacy@gladlabs.ai"
         ) from e

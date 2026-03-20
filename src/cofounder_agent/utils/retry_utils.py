@@ -6,12 +6,11 @@ in database connections and external API calls.
 """
 
 import asyncio
-import logging
+from services.logger_config import get_logger
 from datetime import datetime, timezone
-from typing import Any, Awaitable, Callable, TypeVar
+from typing import Any, Awaitable, Callable, Optional, TypeVar
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 T = TypeVar("T")
 
 
@@ -115,7 +114,7 @@ async def async_retry(
     operation: Callable[..., Awaitable[T]],
     *args,
     config: RetryConfig = DB_RETRY_CONFIG,
-    on_retry: Callable[[Exception, int, float], Awaitable[None]] = None,
+    on_retry: Optional[Callable[[Exception, int, float], Awaitable[None]]] = None,
     retryable_exceptions: tuple = (Exception,),
     **kwargs,
 ) -> T:
@@ -162,7 +161,7 @@ async def async_retry(
                 logger.error(
                     f"Operation failed permanently after {config.max_attempts} attempts: "
                     f"{type(e).__name__}: {str(e)}"
-                )
+, exc_info=True)
                 raise
 
             # Calculate delay for next attempt
@@ -182,7 +181,7 @@ async def async_retry(
 
         except Exception as e:
             # Non-retryable exception
-            logger.error(f"Unexpected error (not retried): {type(e).__name__}: {str(e)}")
+            logger.error(f"Unexpected error (not retried): {type(e).__name__}: {str(e)}", exc_info=True)
             raise
 
     # Should not reach here, but handle just in case
@@ -221,7 +220,7 @@ async def with_connection_retry(
     """
 
     async def _execute() -> T:
-        async with pool_acquire_func() as conn:
+        async with pool_acquire_func() as conn:  # type: ignore[attr-defined]
             return await query_func(conn)
 
     try:
@@ -231,13 +230,13 @@ async def with_connection_retry(
             retryable_exceptions=(asyncio.TimeoutError, ConnectionError, RuntimeError),
         )
     except asyncio.TimeoutError:
-        logger.error(f"Connection timeout during {operation_name}")
+        logger.error(f"Connection timeout during {operation_name}", exc_info=True)
         raise
     except ConnectionError as e:
-        logger.error(f"Connection error during {operation_name}: {e}")
+        logger.error(f"Connection error during {operation_name}: {e}", exc_info=True)
         raise
     except Exception as e:
-        logger.error(f"Failed {operation_name} after retries: {e}")
+        logger.error(f"Failed {operation_name} after retries: {e}", exc_info=True)
         raise
 
 

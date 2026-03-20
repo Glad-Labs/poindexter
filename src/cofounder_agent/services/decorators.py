@@ -1,0 +1,205 @@
+"""
+Performance Monitoring Decorators
+
+Provides decorators for tracking performance metrics across database operations,
+API calls, and agent executions.
+
+Environment Variables:
+    SLOW_QUERY_THRESHOLD_MS: Milliseconds to consider a query slow (default: 100ms)
+    LOG_ALL_QUERIES: Log all queries regardless of performance (default: false)
+    ENABLE_QUERY_MONITORING: Enable/disable query monitoring (default: true)
+
+Usage:
+    from services.decorators import log_query_performance
+
+    @log_query_performance(operation="get_tasks", category="task_retrieval")
+    async def get_tasks_paginated(self, offset, limit):
+        # Implementation
+        pass
+"""
+
+import functools
+from services.logger_config import get_logger
+import os
+import time
+from typing import Any, Callable, Optional
+
+logger = get_logger(__name__)
+# Configuration from environment
+SLOW_QUERY_THRESHOLD_MS = int(os.getenv("SLOW_QUERY_THRESHOLD_MS", "100"))
+LOG_ALL_QUERIES = os.getenv("LOG_ALL_QUERIES", "false").lower() == "true"
+ENABLE_QUERY_MONITORING = os.getenv("ENABLE_QUERY_MONITORING", "true").lower() == "true"
+
+
+def log_query_performance(
+    operation: str,
+    category: str = "database",
+    slow_threshold_ms: Optional[int] = None,
+):
+    """
+    Decorator to log query performance metrics.
+
+    Captures execution time, logs slow queries, and includes context about the operation.
+
+    Args:
+        operation: Name of the database operation (e.g., "get_tasks", "list_content")
+        category: Category of operation for grouping (e.g., "task_retrieval", "content")
+        slow_threshold_ms: Override threshold for slow query warning (default: from env)
+
+    Returns:
+        Decorator function that wraps the target async function
+
+    Example:
+        @log_query_performance(operation="get_tasks_paginated", category="task_retrieval")
+        async def get_tasks_paginated(self, offset, limit):
+            # Database query here
+            return results
+    """
+
+    def decorator(func: Callable) -> Callable:
+        @functools.wraps(func)
+        async def wrapper(*args, **kwargs) -> Any:
+            # Skip if monitoring disabled
+            if not ENABLE_QUERY_MONITORING:
+                return await func(*args, **kwargs)
+
+            # Start timing
+            start_time = time.perf_counter()
+            error_occurred = False
+            result = None
+            result_count = None
+
+            try:
+                result = await func(*args, **kwargs)
+
+                # Try to determine result count
+                if result is not None:
+                    if isinstance(result, list):
+                        result_count = len(result)
+                    elif isinstance(result, dict):
+                        if "results" in result and isinstance(result["results"], list):
+                            result_count = len(result["results"])
+                        elif "total" in result:
+                            result_count = result["total"]
+
+                return result
+
+            except Exception as e:
+                error_occurred = True
+                raise
+
+            finally:
+                # Calculate duration
+                end_time = time.perf_counter()
+                duration_ms = (end_time - start_time) * 1000
+
+                # Determine if this is a slow query
+                threshold = (
+                    slow_threshold_ms if slow_threshold_ms is not None else SLOW_QUERY_THRESHOLD_MS
+                )
+                is_slow = duration_ms > threshold
+
+                # Build context
+                context = {
+                    "operation": operation,
+                    "category": category,
+                    "duration_ms": round(duration_ms, 2),
+                    "slow": is_slow,
+                    "error": error_occurred,
+                }
+
+                # Add result count if available
+                if result_count is not None:
+                    context["result_count"] = result_count
+
+                # Add function arguments (sanitize sensitive data)
+                if kwargs:
+                    # Filter out sensitive fields
+                    safe_kwargs = {
+                        k: v
+                        for k, v in kwargs.items()
+                        if k not in ["password", "token", "secret", "api_key"]
+                    }
+                    if safe_kwargs:
+                        context["params"] = safe_kwargs
+
+                # Log based on performance
+                if error_occurred:
+                    logger.error(
+                        f"[{operation}] Query failed after {duration_ms:.2f}ms",
+                        extra=context,
+                        exc_info=True,
+                    )
+                elif is_slow:
+                    logger.warning(
+                        f"[{operation}] ⚠️  SLOW QUERY: {duration_ms:.2f}ms (threshold: {threshold}ms)",
+                        extra=context,
+                    )
+                elif LOG_ALL_QUERIES:
+                    logger.info(
+                        f"[{operation}] Query completed in {duration_ms:.2f}ms", extra=context
+                    )
+                else:
+                    # Log at debug level for fast queries when not logging all
+                    logger.debug(
+                        f"[{operation}] Query completed in {duration_ms:.2f}ms", extra=context
+                    )
+
+        return wrapper
+
+    return decorator
+
+
+def log_api_call(provider: str, operation: str):
+    """
+    Decorator to log API call performance (for LLM providers, external services).
+
+    Args:
+        provider: API provider name (e.g., "openai", "anthropic", "ollama")
+        operation: Operation name (e.g., "chat_completion", "embeddings")
+
+    Example:
+        @log_api_call(provider="openai", operation="chat_completion")
+        async def call_openai_api(self, prompt):
+            # API call here
+            return response
+    """
+
+    def decorator(func: Callable) -> Callable:
+        @functools.wraps(func)
+        async def wrapper(*args, **kwargs) -> Any:
+            start_time = time.perf_counter()
+            error_occurred = False
+
+            try:
+                result = await func(*args, **kwargs)
+                return result
+            except Exception as e:
+                error_occurred = True
+                raise
+            finally:
+                end_time = time.perf_counter()
+                duration_ms = (end_time - start_time) * 1000
+
+                context = {
+                    "provider": provider,
+                    "operation": operation,
+                    "duration_ms": round(duration_ms, 2),
+                    "error": error_occurred,
+                }
+
+                if error_occurred:
+                    logger.error(
+                        f"[{provider}:{operation}] API call failed after {duration_ms:.2f}ms",
+                        extra=context,
+                        exc_info=True,
+                    )
+                else:
+                    logger.info(
+                        f"[{provider}:{operation}] API call completed in {duration_ms:.2f}ms",
+                        extra=context,
+                    )
+
+        return wrapper
+
+    return decorator

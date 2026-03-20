@@ -60,22 +60,11 @@ except ImportError:
 
 # Check for Google Gemini availability and API key
 try:
-    # Try new SDK first, fall back to old one
-    use_new_sdk = False
-    try:
-        import google.genai as genai
-
-        use_new_sdk = True
-    except ImportError:
-        import google.generativeai as genai
+    import google.genai as genai
 
     GOOGLE_AVAILABLE = ProviderChecker.is_gemini_available()
     if GOOGLE_AVAILABLE:
-        # Configure API key based on SDK version
-        if use_new_sdk:
-            genai.api_key = ProviderChecker.get_gemini_api_key()
-        else:
-            genai.configure(api_key=ProviderChecker.get_gemini_api_key())
+        genai.api_key = ProviderChecker.get_gemini_api_key()
     else:
         logger.debug("⚠️  GOOGLE_API_KEY not set in environment")
 except ImportError:
@@ -286,7 +275,7 @@ class UnifiedMetadataService:
                     logger.info("LLM generated title: %s", title[:50])
                     return title
             except Exception as e:
-                logger.warning("LLM title generation failed: %s", e)
+                logger.warning("LLM title generation failed: %s", e, exc_info=True)
 
         # Strategy 5: Fallback to date
         title = f"Blog Post - {datetime.now().strftime('%B %d, %Y')}"
@@ -333,7 +322,7 @@ class UnifiedMetadataService:
             return result.text[:100] if result and result.text else None
 
         except Exception as e:
-            logger.warning("LLM title generation error: %s", e)
+            logger.warning("LLM title generation error: %s", e, exc_info=True)
             return None
 
     # ========================================================================
@@ -371,7 +360,7 @@ class UnifiedMetadataService:
                     logger.info("LLM generated excerpt")
                     return excerpt
             except Exception as e:
-                logger.warning("LLM excerpt generation failed: %s", e)
+                logger.warning("LLM excerpt generation failed: %s", e, exc_info=True)
 
         # Fallback: Use content start
         excerpt = content[:max_length]
@@ -431,7 +420,7 @@ class UnifiedMetadataService:
                 return excerpt[:max_length] if excerpt else None
 
         except Exception as e:
-            logger.warning("LLM excerpt generation error: %s", e)
+            logger.warning("LLM excerpt generation error: %s", e, exc_info=True)
             return None
 
     # ========================================================================
@@ -466,7 +455,7 @@ class UnifiedMetadataService:
                 else:
                     result["seo_description"] = content[:155]
             except Exception as e:
-                logger.warning("LLM SEO description failed: %s", e)
+                logger.warning("LLM SEO description failed: %s", e, exc_info=True)
                 result["seo_description"] = content[:155]
         else:
             result["seo_description"] = content[:155]
@@ -483,7 +472,7 @@ class UnifiedMetadataService:
                 if not keywords_list:
                     keywords_list = self._extract_keywords_fallback(title)
             except Exception as e:
-                logger.warning("LLM keywordd extraction error: %s", e)
+                logger.warning("LLM keywordd extraction error: %s", e, exc_info=True)
                 keywords_list = self._extract_keywords_fallback(title)
         else:
             keywords_list = self._extract_keywords_fallback(title)
@@ -514,7 +503,7 @@ class UnifiedMetadataService:
             return result.text[:155] if result and result.text else None
 
         except Exception as e:
-            logger.warning("LLM SEO description error: %s", e)
+            logger.warning("LLM SEO description error: %s", e, exc_info=True)
             return None
 
     async def _llm_extract_keywords(self, title: str, content: str) -> Optional[List[str]]:
@@ -540,7 +529,7 @@ class UnifiedMetadataService:
             return None
 
         except Exception as e:
-            logger.warning("LLM keyword extraction error: %s", e)
+            logger.warning("LLM keyword extraction error: %s", e, exc_info=True)
             return None
 
     def _extract_keywords_fallback(self, title: str) -> List[str]:
@@ -615,7 +604,7 @@ class UnifiedMetadataService:
                     logger.info("LLM matched category: %s", best_category.get("name"))
                     return best_category
             except Exception as e:
-                logger.warning("LLM category matching failed: %s", e)
+                logger.warning("LLM category matching failed: %s", e, exc_info=True)
 
         # Fallback: return first category
         logger.debug(f"✓ Using first category as fallback: {available_categories[0].get('name')}")
@@ -694,7 +683,7 @@ class UnifiedMetadataService:
                 return next((c for c in available_categories if c["name"] == category_name), None)
 
         except Exception as e:
-            logger.warning(f"⚠️  LLM category matching error: {e}")
+            logger.warning(f"⚠️  LLM category matching error: {e}", exc_info=True)
             return None
 
     # ========================================================================
@@ -739,7 +728,7 @@ class UnifiedMetadataService:
                     logger.info(f"✓ LLM extracted {len(llm_tags)} tags")
                     return llm_tags[:max_tags]
             except Exception as e:
-                logger.warning(f"⚠️  LLM tag extraction failed: {e}")
+                logger.warning(f"⚠️  LLM tag extraction failed: {e}", exc_info=True)
 
         # Fallback: return empty (better than random tags)
         logger.debug("✓ No tags matched")
@@ -818,7 +807,7 @@ class UnifiedMetadataService:
                 ]
 
         except Exception as e:
-            logger.warning(f"⚠️  LLM tag extraction error: {e}")
+            logger.warning(f"⚠️  LLM tag extraction error: {e}", exc_info=True)
             return []
 
     # ========================================================================

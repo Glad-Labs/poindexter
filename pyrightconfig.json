@@ -1,0 +1,9 @@
+{
+  "pythonVersion": "3.11",
+  "pythonPlatform": "Linux",
+  "include": ["src/cofounder_agent"],
+  "extraPaths": ["src/cofounder_agent"],
+  "typeCheckingMode": "basic",
+  "reportMissingImports": "none",
+  "reportMissingModuleSource": "none"
+}

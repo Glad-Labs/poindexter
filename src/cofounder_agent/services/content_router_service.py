@@ -15,16 +15,12 @@ Provides centralized blog post generation with:
 """
 
 import logging
-import uuid
-from datetime import datetime
-from enum import Enum
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Optional
 
-from schemas.content_schemas import ContentStyle, ContentTone, PublishMode
 
 from .ai_content_generator import get_content_generator
 from .database_service import DatabaseService
-from .image_service import ImageService, get_image_service
+from .image_service import get_image_service
 from .prompt_manager import get_prompt_manager
 from .quality_service import EvaluationMethod, UnifiedQualityService
 from .seo_content_generator import get_seo_content_generator
@@ -149,7 +145,7 @@ class ContentTaskStore:
     async def update_task(self, task_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Update task data in persistent storage (async, non-blocking)"""
         if not self.database_service:
-            return None
+            return False
 
         # Handle metadata updates by converting to JSON
         import json
@@ -180,7 +176,7 @@ class ContentTaskStore:
     async def get_drafts(self, limit: int = 20, offset: int = 0) -> tuple:
         """Get list of drafts from persistent storage (async, non-blocking)"""
         if not self.database_service:
-            return ([], 0)
+            return []
         return await self.database_service.get_drafts(limit=limit, offset=offset)
 
 
@@ -283,7 +279,7 @@ class ContentGenerationService:
             prompt = f"Create a visual representation for: {topic}\n\nContext: {content[:200]}"
             return prompt
         except Exception as e:
-            logger.warning(f"Error generating image prompt: {e}")
+            logger.warning(f"Error generating image prompt: {e}", exc_info=True)
             return f"Featured image for: {topic}"
 
 
@@ -340,7 +336,7 @@ async def _generate_canonical_title(
         return None
 
     except Exception as e:
-        logger.warning(f"Error generating canonical title: {e}")
+        logger.warning(f"Error generating canonical title: {e}", exc_info=True)
         return None
 
 
@@ -396,7 +392,6 @@ async def process_content_generation_task(
     Returns:
         Dict with complete task result including post_id, quality_score, image_url, cost_breakdown, etc.
     """
-    from asyncio import gather
     from uuid import uuid4
 
     # Generate task_id if not provided
@@ -452,7 +447,7 @@ async def process_content_generation_task(
                 logger.warning(f"⚠️  Task {task_id} not found - this should not happen")
                 result["stages"]["1_content_task_created"] = False
         except Exception as e:
-            logger.error(f"❌ Failed to verify task: {e}")
+            logger.error(f"❌ Failed to verify task: {e}", exc_info=True)
             result["stages"]["1_content_task_created"] = False
 
         # ================================================================================
@@ -637,7 +632,7 @@ async def process_content_generation_task(
                     result["stages"]["3_featured_image_found"] = False
                     logger.warning(f"⚠️  No featured image found for '{topic}'\n")
             except Exception as e:
-                logger.error(f"❌ Image search failed: {e}")
+                logger.error(f"❌ Image search failed: {e}", exc_info=True)
                 result["stages"]["3_featured_image_found"] = False
         else:
             result["stages"]["3_featured_image_found"] = False
@@ -882,7 +877,7 @@ async def process_content_generation_task(
                 task_id=task_id,
                 updates={
                     "status": "failed",
-                    "approval_status": "failed",
+                    "error_message": str(e),
                     "task_metadata": failure_metadata,  # ✅ Preserve all data
                 },
             )
@@ -1050,7 +1045,7 @@ async def _select_category_for_topic(
             )
         return cat_id
     except Exception as e:
-        logger.error(f"Error selecting category: {e}")
+        logger.error(f"Error selecting category: {e}", exc_info=True)
         return None
 
 
@@ -1090,5 +1085,5 @@ async def _get_or_create_default_author(database_service: DatabaseService) -> Op
             return fallback_id
 
     except Exception as e:
-        logger.error(f"Error getting/creating default author: {e}")
+        logger.error(f"Error getting/creating default author: {e}", exc_info=True)
         return None

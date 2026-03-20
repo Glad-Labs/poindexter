@@ -23,16 +23,15 @@ Endpoints:
 
 import asyncio
 import json
-import logging
+from services.logger_config import get_logger
 import os
 import uuid as uuid_lib
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from uuid import UUID
 
-import aiohttp
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from routes.auth_unified import get_current_user
 from schemas.model_converter import ModelConverter
@@ -41,17 +40,13 @@ from schemas.task_schemas import (
     MetricsResponse,
     TaskConfirmRequest,
     TaskConfirmResponse,
-    TaskCreateRequest,
     TaskIntentResponse,
     TaskListResponse,
     TaskStatusUpdateRequest,
     UnifiedTaskRequest,
 )
 from schemas.task_status_schemas import (
-    TaskStatusFilterRequest,
-    TaskStatusHistoryEntry,
     TaskStatusInfo,
-    TaskStatusStatistics,
     TaskStatusUpdateResponse,
 )
 from schemas.unified_task_response import UnifiedTaskResponse
@@ -59,24 +54,21 @@ from schemas.unified_task_response import UnifiedTaskResponse
 # Import async database service
 from services.database_service import DatabaseService
 from services.enhanced_status_change_service import EnhancedStatusChangeService
-from utils.error_responses import ErrorResponseBuilder
 from utils.json_encoder import convert_decimals, safe_json_dumps
 from utils.route_utils import get_database_dependency
+from utils.text_utils import extract_title_from_content
+from routes.revalidate_routes import trigger_nextjs_revalidation
 
 # Import task status utilities (ENTERPRISE)
 from utils.task_status import (
-    StatusTransitionValidator,
     TaskStatus,
     get_allowed_transitions,
-    get_status_description,
     is_terminal,
     is_valid_transition,
 )
 
 # Configure logging
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 # ============================================================================
 # HELPER FUNCTIONS FOR TASK RESPONSE FORMATTING
 # ============================================================================
@@ -101,6 +93,10 @@ def _normalize_seo_keywords_in_task(task: Dict[str, Any]) -> Dict[str, Any]:
         try:
             task["seo_keywords"] = json.loads(task["seo_keywords"])
         except (json.JSONDecodeError, TypeError):
+            logger.warning(
+                "[normalize_task_seo_keywords] seo_keywords is not valid JSON for task %s — defaulting to []",
+                task.get("id"),
+            )
             task["seo_keywords"] = []
 
     # Parse seo_keywords inside result field if present
@@ -109,6 +105,10 @@ def _normalize_seo_keywords_in_task(task: Dict[str, Any]) -> Dict[str, Any]:
             try:
                 task["result"]["seo_keywords"] = json.loads(task["result"]["seo_keywords"])
             except (json.JSONDecodeError, TypeError):
+                logger.warning(
+                    "[normalize_task_seo_keywords] result.seo_keywords is not valid JSON for task %s — defaulting to []",
+                    task.get("id"),
+                )
                 task["result"]["seo_keywords"] = []
 
     # Parse seo_keywords inside task_metadata field if present
@@ -121,9 +121,30 @@ def _normalize_seo_keywords_in_task(task: Dict[str, Any]) -> Dict[str, Any]:
                     task["task_metadata"]["seo_keywords"]
                 )
             except (json.JSONDecodeError, TypeError):
+                logger.warning(
+                    "[normalize_task_seo_keywords] task_metadata.seo_keywords is not valid JSON for task %s — defaulting to []",
+                    task.get("id"),
+                )
                 task["task_metadata"]["seo_keywords"] = []
 
     return task
+
+
+def _check_task_ownership(task: dict, current_user: dict) -> None:
+    """
+    Verify the current user owns the task.
+
+    Compares the task's user_id against the authenticated user's id.
+    Raises 403 if the user does not own the task.
+
+    Note: When a role/permission system is added, this should also allow
+    admin users to bypass the ownership check.
+    """
+    task_owner = task.get("user_id")
+    request_user = current_user.get("id")
+    # Allow access if ownership can't be determined (legacy tasks without user_id)
+    if task_owner and request_user and str(task_owner) != str(request_user):
+        raise HTTPException(status_code=403, detail="Access denied")
 
 
 # Configure router with prefix and tags
@@ -144,7 +165,7 @@ async def create_task(
     request: UnifiedTaskRequest,
     current_user: dict = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
-    background_tasks: BackgroundTasks = None,
+    background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
 ):
     """
     Unified task creation endpoint - routes to appropriate handler based on task_type.
@@ -231,59 +252,22 @@ async def create_task(
             logger.error("❌ Task creation failed: topic is empty")
             raise HTTPException(
                 status_code=422,
-                detail={
-                    "field": "topic",
-                    "message": "topic is required and cannot be empty",
-                    "type": "validation_error",
-                },
+                detail="topic is required and cannot be empty",
             )
 
         logger.info(
             f"📥 [UNIFIED_TASK_CREATE] Received: task_type={request.task_type}, topic={request.topic}"
         )
 
-        # Route based on task_type
-        if request.task_type == "blog_post":
-            return await _handle_blog_post_creation(request, current_user, db_service)
-
-        elif request.task_type == "social_media":
-            return await _handle_social_media_creation(request, current_user, db_service)
-
-        elif request.task_type == "email":
-            return await _handle_email_creation(request, current_user, db_service)
-
-        elif request.task_type == "newsletter":
-            return await _handle_newsletter_creation(request, current_user, db_service)
-
-        elif request.task_type == "business_analytics":
-            return await _handle_business_analytics_creation(request, current_user, db_service)
-
-        elif request.task_type == "data_retrieval":
-            return await _handle_data_retrieval_creation(request, current_user, db_service)
-
-        elif request.task_type == "market_research":
-            return await _handle_market_research_creation(request, current_user, db_service)
-
-        elif request.task_type == "financial_analysis":
-            return await _handle_financial_analysis_creation(request, current_user, db_service)
-
-        else:
+        # Route based on task_type using registry dict (Open/Closed — add new
+        # task types by registering a handler below, not by editing this block).
+        handler = _TASK_TYPE_REGISTRY.get(request.task_type)
+        if handler is None:
             raise HTTPException(
                 status_code=400,
-                detail={
-                    "message": f"Unknown task_type: {request.task_type}",
-                    "supported": [
-                        "blog_post",
-                        "social_media",
-                        "email",
-                        "newsletter",
-                        "business_analytics",
-                        "data_retrieval",
-                        "market_research",
-                        "financial_analysis",
-                    ],
-                },
+                detail=f"Unknown task_type: '{request.task_type}'. Supported: {', '.join(sorted(_TASK_TYPE_REGISTRY.keys()))}",
             )
+        return await handler(request, current_user, db_service)
 
     except HTTPException:
         raise
@@ -291,7 +275,7 @@ async def create_task(
         logger.error(f"❌ [UNIFIED_TASK_CREATE] Exception: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail={"message": f"Failed to create task: {str(e)}", "type": "internal_error"},
+            detail="Failed to create task",
         )
 
 
@@ -309,6 +293,10 @@ async def _handle_blog_post_creation(
     from services.content_router_service import process_content_generation_task
 
     task_id = str(uuid_lib.uuid4())
+
+    # Log model selections (#952) so we can confirm user choices are applied
+    if request.models_by_phase:
+        logger.info(f"[create_task] User model selections applied: {request.models_by_phase}")
 
     task_data = {
         "id": task_id,
@@ -335,7 +323,7 @@ async def _handle_blog_post_creation(
 
     # Store in database
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"✅ [BLOG_TASK] Created: {returned_task_id}")
+    logger.info(f"✅ [BLOG_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')}")
 
     # Schedule background generation
     async def _run_blog_generation():
@@ -398,7 +386,7 @@ async def _handle_social_media_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"✅ [SOCIAL_TASK] Created: {returned_task_id} - Platforms: {request.platforms}")
+    logger.info(f"✅ [SOCIAL_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')} - Platforms: {request.platforms}")
 
     return {
         "id": returned_task_id,
@@ -433,10 +421,11 @@ async def _handle_email_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"✅ [EMAIL_TASK] Created: {returned_task_id}")
+    logger.info(f"✅ [EMAIL_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')}")
 
     return {
         "id": returned_task_id,
+        "task_id": returned_task_id,
         "task_type": "email",
         "status": "pending",
         "created_at": task_data["created_at"],
@@ -465,10 +454,11 @@ async def _handle_newsletter_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"✅ [NEWSLETTER_TASK] Created: {returned_task_id}")
+    logger.info(f"✅ [NEWSLETTER_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')}")
 
     return {
         "id": returned_task_id,
+        "task_id": returned_task_id,
         "task_type": "newsletter",
         "status": "pending",
         "created_at": task_data["created_at"],
@@ -502,10 +492,11 @@ async def _handle_business_analytics_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"✅ [ANALYTICS_TASK] Created: {returned_task_id} - Metrics: {request.metrics}")
+    logger.info(f"✅ [ANALYTICS_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')} - Metrics: {request.metrics}")
 
     return {
         "id": returned_task_id,
+        "task_id": returned_task_id,
         "task_type": "business_analytics",
         "status": "pending",
         "created_at": task_data["created_at"],
@@ -537,10 +528,11 @@ async def _handle_data_retrieval_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"✅ [DATA_TASK] Created: {returned_task_id} - Sources: {request.data_sources}")
+    logger.info(f"✅ [DATA_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')} - Sources: {request.data_sources}")
 
     return {
         "id": returned_task_id,
+        "task_id": returned_task_id,
         "task_type": "data_retrieval",
         "status": "pending",
         "created_at": task_data["created_at"],
@@ -569,10 +561,11 @@ async def _handle_market_research_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"✅ [MARKET_RESEARCH_TASK] Created: {returned_task_id}")
+    logger.info(f"✅ [MARKET_RESEARCH_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')}")
 
     return {
         "id": returned_task_id,
+        "task_id": returned_task_id,
         "task_type": "market_research",
         "status": "pending",
         "created_at": task_data["created_at"],
@@ -601,15 +594,32 @@ async def _handle_financial_analysis_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"✅ [FINANCIAL_ANALYSIS_TASK] Created: {returned_task_id}")
+    logger.info(f"✅ [FINANCIAL_ANALYSIS_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')}")
 
     return {
         "id": returned_task_id,
+        "task_id": returned_task_id,
         "task_type": "financial_analysis",
         "status": "pending",
         "created_at": task_data["created_at"],
         "message": "Financial analysis task created and queued",
     }
+
+
+# ---------------------------------------------------------------------------
+# Task-type handler registry (Open/Closed Principle)
+# Add new task types here — the dispatch site (create_task) never changes.
+# ---------------------------------------------------------------------------
+_TASK_TYPE_REGISTRY = {
+    "blog_post": _handle_blog_post_creation,
+    "social_media": _handle_social_media_creation,
+    "email": _handle_email_creation,
+    "newsletter": _handle_newsletter_creation,
+    "business_analytics": _handle_business_analytics_creation,
+    "data_retrieval": _handle_data_retrieval_creation,
+    "market_research": _handle_market_research_creation,
+    "financial_analysis": _handle_financial_analysis_creation,
+}
 
 
 # ============================================================================
@@ -620,36 +630,42 @@ async def _handle_financial_analysis_creation(
 @router.get("", response_model=TaskListResponse, summary="List all tasks with pagination")
 async def list_tasks(
     offset: int = Query(0, ge=0, description="Pagination offset"),
-    limit: int = Query(20, ge=1, le=1000, description="Pagination limit"),
+    limit: int = Query(20, ge=1, le=100, description="Pagination limit (max 100)"),
     status: Optional[str] = Query(
         None, description="Filter by status (queued, pending, running, completed, failed)"
     ),
     category: Optional[str] = Query(None, description="Filter by category"),
+    search: Optional[str] = Query(
+        None,
+        max_length=200,
+        description="Keyword search across task name, topic, and category (trigram-indexed)",
+    ),
     current_user: dict = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
     List all tasks with pagination and optional filtering.
-    
+
     **Parameters:**
     - offset: Pagination offset (default: 0)
     - limit: Pagination limit (default: 20, max: 1000)
     - status: Optional status filter
     - category: Optional category filter
-    
+    - search: Optional keyword search (uses pg_trgm trigram index for efficiency)
+
     **Returns:**
     - List of tasks with total count
-    
+
     **Example cURL:**
     ```bash
-    curl -X GET "http://localhost:8000/api/tasks?offset=0&limit=20" \\
+    curl -X GET "http://localhost:8000/api/tasks?offset=0&limit=20&search=blog" \\
       -H "Authorization: Bearer TOKEN"
     ```
     """
     try:
         # get_tasks_paginated returns a tuple (tasks, total)
         tasks, total = await db_service.get_tasks_paginated(
-            offset=offset, limit=limit, status=status, category=category
+            offset=offset, limit=limit, status=status, category=category, search=search
         )
 
         # Convert raw task dicts to UnifiedTaskResponse objects if needed
@@ -675,6 +691,10 @@ async def list_tasks(
                     try:
                         task["cost_breakdown"] = json.loads(task["cost_breakdown"])
                     except (json.JSONDecodeError, TypeError):
+                        logger.warning(
+                            "[get_tasks] cost_breakdown is not valid JSON for task %s — defaulting to None",
+                            task.get("id"),
+                        )
                         task["cost_breakdown"] = None
 
                 validated_tasks.append(UnifiedTaskResponse(**task))
@@ -688,8 +708,8 @@ async def list_tasks(
             limit=limit,
         )
     except Exception as e:
-        logger.error(f"Failed to list tasks: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to list tasks: {str(e)}")
+        logger.error(f"Failed to list tasks: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to list tasks")
 
 
 # ============================================================================
@@ -697,49 +717,26 @@ async def list_tasks(
 # ============================================================================
 
 
-@router.get("/metrics", response_model=MetricsResponse, summary="Get task metrics (alias endpoint)")
+@router.get(
+    "/metrics",
+    summary="[Deprecated] Use GET /api/tasks/metrics/summary instead",
+    include_in_schema=False,
+)
 async def get_metrics_alias(
     time_range: Optional[str] = Query(None, description="Time range filter (optional)"),
+    current_user: dict = Depends(get_current_user),
 ):
-    """
-    Get aggregated metrics for all tasks (alias for /metrics/summary).
-    
-    **Returns:**
-    - Total tasks, completed, failed, pending
-    - Success rate percentage
-    - Average execution time
-    - Total estimated cost
-    
-    **Query Parameters:**
-    - `time_range` (optional): Time range filter (e.g., "7d", "30d", "90d") - for future use
-    
-    **Example cURL:**
-    ```bash
-    curl -X GET http://localhost:8000/api/tasks/metrics \
-      -H "Authorization: Bearer YOUR_JWT_TOKEN"
-    ```
-    """
-    logger.info(f"🔵 Metrics endpoint called with time_range={time_range}")
-    try:
-        # ✅ FIXED: Return operational metrics
-        # Note: Database integration available via get_services() but wrapped to avoid dependency injection issues
-        return MetricsResponse(
-            total_tasks=100,
-            completed_tasks=80,
-            failed_tasks=5,
-            pending_tasks=15,
-            success_rate=94.1,
-            avg_execution_time=45.2,
-            total_cost=125.50,
-        )
-    except Exception as e:
-        logger.error(f"❌ Failed to fetch metrics: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to fetch metrics: {str(e)}")
+    """Deprecated alias. Use GET /api/tasks/metrics/summary."""
+    from fastapi.responses import RedirectResponse
+
+    query = f"?time_range={time_range}" if time_range else ""
+    return RedirectResponse(url=f"/api/tasks/metrics/summary{query}", status_code=308)
 
 
 @router.get("/metrics/summary", response_model=MetricsResponse, summary="Get task metrics")
 async def get_metrics(
     time_range: Optional[str] = Query(None, description="Time range filter (optional)"),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get aggregated metrics for all tasks.
@@ -773,7 +770,7 @@ async def get_metrics(
         )
     except Exception as e:
         logger.error(f"Failed to fetch metrics: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to fetch metrics: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch metrics")
 
 
 # ============================================================================
@@ -807,6 +804,10 @@ async def get_task(
         if not task:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
+        # Ownership check: only the task owner can access their task
+        if isinstance(task, dict):
+            _check_task_ownership(task, current_user)
+
         # Convert task dict if needed, normalizing seo_keywords
         if isinstance(task, dict):
             task = _normalize_seo_keywords_in_task(task)
@@ -815,8 +816,8 @@ async def get_task(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to fetch task {task_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch task: {str(e)}")
+        logger.error(f"Failed to fetch task {task_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch task")
 
 
 @router.put(
@@ -898,6 +899,10 @@ async def update_task_status_enterprise(
                 detail=f"Task not found: {task_id}",
             )
 
+        # Ownership check
+        if isinstance(task, dict):
+            _check_task_ownership(task, current_user)
+
         # Get current and target status
         current_status_str = task.get("status", "pending")
         target_status_str = update_data.status
@@ -908,21 +913,19 @@ async def update_task_status_enterprise(
         except ValueError as e:
             raise HTTPException(
                 status_code=422,
-                detail=f"Invalid status value: {str(e)}",
+                detail="Invalid status value",
             )
 
-        # Validate transition
+        # Validate transition — 409 Conflict, not 422 (the request body is valid;
+        # the current resource state prevents the transition)
         if not is_valid_transition(current_status, target_status):
             allowed = get_allowed_transitions(current_status)
             raise HTTPException(
-                status_code=422,
-                detail={
-                    "error": "invalid_status_transition",
-                    "current_status": current_status.value,
-                    "target_status": target_status.value,
-                    "allowed_transitions": sorted(allowed),
-                    "message": f"Cannot transition from {current_status.value} to {target_status.value}",
-                },
+                status_code=409,
+                detail=(
+                    f"Cannot transition from '{current_status.value}' to '{target_status.value}'. "
+                    f"Allowed transitions from '{current_status.value}': {', '.join(sorted(allowed)) or 'none'}"
+                ),
             )
 
         # Prepare update dictionary
@@ -954,20 +957,6 @@ async def update_task_status_enterprise(
         # Update task in database
         await db_service.update_task(task_id, update_dict)
 
-        # Log status change to audit table
-        try:
-            await db_service.log_status_change(
-                task_id=task_id,
-                old_status=current_status.value,
-                new_status=target_status.value,
-                changed_by=updated_by,
-                reason=update_data.reason,
-                metadata=update_data.metadata,
-            )
-        except Exception as audit_error:
-            logger.warning(f"Failed to log status change for {task_id}: {audit_error}")
-            # Don't fail the status update if audit logging fails
-
         # Return success response
         return TaskStatusUpdateResponse(
             task_id=task_id,
@@ -984,7 +973,7 @@ async def update_task_status_enterprise(
         logger.error(f"Error updating task status for {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to update task status: {str(e)}",
+            detail="Failed to update task status",
         )
 
 
@@ -998,6 +987,7 @@ async def update_task_status_validated(
     task_id: str,
     update_data: TaskStatusUpdateRequest,
     current_user: dict = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
     status_service: EnhancedStatusChangeService = Depends(
         lambda: (
             __import__(
@@ -1041,6 +1031,13 @@ async def update_task_status_validated(
     ```
     """
     try:
+        # Ownership check: verify user owns this task
+        task = await db_service.get_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        if isinstance(task, dict):
+            _check_task_ownership(task, current_user)
+
         # Get user ID
         user_id = current_user.get("email") if current_user else "system"
 
@@ -1066,7 +1063,7 @@ async def update_task_status_validated(
         logger.error(f"Error in enhanced status update for {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to update task status: {str(e)}",
+            detail="Failed to update task status",
         )
 
 
@@ -1114,6 +1111,10 @@ async def get_task_status_info(
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
 
+        # Ownership check
+        if isinstance(task, dict):
+            _check_task_ownership(task, current_user)
+
         # Parse status
         status_str = task.get("status", "pending")
         try:
@@ -1135,9 +1136,9 @@ async def get_task_status_info(
         return TaskStatusInfo(
             task_id=task_id,
             current_status=status.value,
-            status_updated_at=status_updated_at or task.get("created_at"),
+            status_updated_at=status_updated_at or task.get("created_at"),  # type: ignore[arg-type]
             status_updated_by=task.get("status_updated_by"),
-            created_at=task.get("created_at"),
+            created_at=task.get("created_at"),  # type: ignore[arg-type]
             started_at=task.get("started_at"),
             completed_at=task.get("completed_at"),
             is_terminal=is_terminal(status),
@@ -1148,8 +1149,8 @@ async def get_task_status_info(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error fetching status info for {task_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch status info: {str(e)}")
+        logger.error(f"Error fetching status info for {task_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch status info")
 
 
 @router.get(
@@ -1203,11 +1204,18 @@ async def get_task_status_history(
     ```
     """
     try:
+        # Ownership check: verify user owns this task before returning history
+        task = await db_service.get_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        if isinstance(task, dict):
+            _check_task_ownership(task, current_user)
+
         # Get status history directly from database service which is more reliable
         # than the enhanced service dependency injection
         from services.tasks_db import TasksDatabase
 
-        task_db = TasksDatabase(db_service._pool if hasattr(db_service, "_pool") else None)
+        task_db = TasksDatabase(db_service._pool if hasattr(db_service, "_pool") else None)  # type: ignore[arg-type, attr-defined]
         history = await task_db.get_status_history(task_id, limit)
 
         return {
@@ -1218,7 +1226,7 @@ async def get_task_status_history(
 
     except Exception as e:
         logger.error(f"Error fetching status history for {task_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to fetch status history: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch status history")
 
 
 @router.get(
@@ -1231,6 +1239,7 @@ async def get_task_validation_failures(
     task_id: str,
     limit: int = Query(50, ge=1, le=200, description="Maximum number of failure records"),
     current_user: dict = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
     status_service: EnhancedStatusChangeService = Depends(
         lambda: (
             __import__(
@@ -1272,6 +1281,13 @@ async def get_task_validation_failures(
     ```
     """
     try:
+        # Ownership check: verify user owns this task
+        task = await db_service.get_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        if isinstance(task, dict):
+            _check_task_ownership(task, current_user)
+
         # Get validation failures
         failures = await status_service.get_validation_failures(task_id, limit=limit)
 
@@ -1283,7 +1299,7 @@ async def get_task_validation_failures(
     except Exception as e:
         logger.error(f"Error fetching validation failures for {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Failed to fetch validation failures: {str(e)}"
+            status_code=500, detail="Failed to fetch validation failures"
         )
 
 
@@ -1333,6 +1349,10 @@ async def update_task(
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
 
+        # Ownership check
+        if isinstance(task, dict):
+            _check_task_ownership(task, current_user)
+
         # Prepare update data
         update_dict = {
             "status": update_data.status,
@@ -1347,12 +1367,12 @@ async def update_task(
 
         # Add result if provided
         if update_data.result:
-            update_dict["result"] = update_data.result
+            update_dict["result"] = update_data.result  # type: ignore[assignment]
 
         # Merge metadata if provided
         if update_data.metadata:
             task["metadata"] = {**(task.get("metadata") or {}), **update_data.metadata}
-            update_dict["metadata"] = task["metadata"]
+            update_dict["metadata"] = task["metadata"]  # type: ignore[assignment]
 
         # Update task status - pass result dict (asyncpg handles JSONB conversion)
         await db_service.update_task_status(
@@ -1372,48 +1392,13 @@ async def update_task(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to update task: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update task")
 
 
 # ============================================================================
 # CONTENT CLEANING UTILITIES
 # ============================================================================
-
-
-def extract_title_from_content(content: str) -> tuple[str, str]:
-    """
-    Extract title from markdown content if present at the start.
-
-    LLMs often generate content with a markdown title like:
-    "#Building a PC in 2026: A Comprehensive Guide"
-
-    This function extracts that title and removes it from content.
-
-    Args:
-        content: Raw generated content
-
-    Returns:
-        Tuple of (extracted_title or None, cleaned_content)
-
-    Example:
-        >>> extract_title_from_content("#My Title\\n\\nContent here")
-        ("My Title", "Content here")
-    """
-    import re
-
-    if not content:
-        return None, content
-
-    # Match markdown title at start: # Title or ## Title
-    match = re.match(r"^#+\s+(.+?)(?:\n|$)", content.strip())
-
-    if match:
-        title = match.group(1).strip()
-        # Remove the title line from content
-        cleaned_content = re.sub(r"^#+\s+.+?(?:\n|$)", "", content.strip(), count=1)
-        return title, cleaned_content.strip()
-
-    return None, content
+# extract_title_from_content is imported from utils.text_utils (canonical copy).
 
 
 def clean_generated_content(content: str, title: str = "") -> str:
@@ -1622,7 +1607,7 @@ async def create_task_from_intent(
 
     except Exception as e:
         logger.error(f"[INTENT] Intent parsing failed: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Intent parsing failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Intent parsing failed")
 
 
 @router.post("/confirm-intent", response_model=TaskConfirmResponse)
@@ -1678,10 +1663,7 @@ async def confirm_and_execute_task(
             }
         )
 
-        logger.info(f"[CONFIRM] Created task {task_id} from intent plan")
-
-        # Queue background execution
-        background_tasks.add_task(execute_task_background, task_id, current_user)
+        logger.info(f"[CONFIRM] Created task {task_id} from intent plan — TaskExecutor will pick up automatically")
 
         return TaskConfirmResponse(
             task_id=task_id,
@@ -1692,7 +1674,7 @@ async def confirm_and_execute_task(
 
     except Exception as e:
         logger.error(f"[CONFIRM] Task confirmation failed: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Task confirmation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Task confirmation failed")
 
 
 # ============================================================================
@@ -1763,6 +1745,10 @@ async def approve_task(
         if not task:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
+        # Ownership check
+        if isinstance(task, dict):
+            _check_task_ownership(task, current_user)
+
         # Check if task is in a state that can be approved/rejected
         current_status = task.get("status", "unknown")
         # Allow approval for multiple statuses: awaiting_approval (ideal), but also handle failed,
@@ -1802,6 +1788,10 @@ async def approve_task(
             try:
                 task_metadata = json.loads(task_metadata) if task_metadata else {}
             except (json.JSONDecodeError, TypeError):
+                logger.warning(
+                    "[get_task_detail] task_metadata is not valid JSON for task %s — defaulting to {}",
+                    task.get("id"),
+                )
                 task_metadata = {}
         elif task_metadata is None:
             task_metadata = {}
@@ -1814,6 +1804,10 @@ async def approve_task(
             try:
                 task_result = json.loads(task_result) if task_result else {}
             except (json.JSONDecodeError, TypeError):
+                logger.warning(
+                    "[get_task_detail] result is not valid JSON for task %s — defaulting to {}",
+                    task.get("id"),
+                )
                 task_result = {}
         elif task_result is None:
             task_result = {}
@@ -1844,7 +1838,7 @@ async def approve_task(
             )
         except Exception as e:
             logger.error(f"Failed to update task status to {new_status}: {str(e)}", exc_info=True)
-            raise HTTPException(status_code=500, detail=f"Failed to update task status: {str(e)}")
+            raise HTTPException(status_code=500, detail="Failed to update task status")
 
         # Auto-publish if approved and auto_publish=True
         if approved and auto_publish:
@@ -1900,7 +1894,7 @@ async def approve_task(
 
                     logger.info(f"📝 Post title: {post_title}")
                     logger.info(f"   Extracted from content: {bool(extracted_title)}")
-                    logger.info(f"   Content length: {len(post_content)} chars")
+                    logger.info(f"   Content length: {len(post_content or '')} chars")
 
                     if post_content and post_title:
                         # Create slug from title
@@ -1939,13 +1933,20 @@ async def approve_task(
                                 "metadata": metadata,
                             }
                         )
-                        logger.info(f"✅ Post created with status='published': {post.id}")
+                        logger.info(f"✅ Post created with status='published': {post.id}")  # type: ignore[attr-defined]
                         logger.info(f"   Title: {post_title}")
                         logger.info(f"   Slug: {slug}")
+                        logger.info(
+                            "[content_published] task_id=%s post_id=%s user_id=%s slug=%s",
+                            task_id,
+                            str(post.id) if hasattr(post, "id") else post.get("id"),  # type: ignore[attr-defined]
+                            current_user.get("id"),
+                            slug,
+                        )
 
                         # Store post info in merged_result for response
                         merged_result["post_id"] = (
-                            str(post.id) if hasattr(post, "id") else str(post.get("id"))
+                            str(post.id) if hasattr(post, "id") else str(post.get("id"))  # type: ignore[attr-defined]
                         )
                         merged_result["post_slug"] = slug
                         merged_result["published_url"] = (
@@ -1981,10 +1982,23 @@ async def approve_task(
                 )
                 # Don't fail approval if auto-publish fails
 
+        # Trigger ISR revalidation after auto-publish (#955)
+        if approved and auto_publish:
+            try:
+                reval_paths = ["/", "/archive", "/posts"]
+                slug_val = merged_result.get("post_slug") if isinstance(merged_result, dict) else None
+                if slug_val:
+                    reval_paths.append(f"/posts/{slug_val}")
+                await trigger_nextjs_revalidation(reval_paths)
+            except Exception as reval_err:
+                logger.warning(f"[approve_task] ISR revalidation error (non-fatal): {reval_err}", exc_info=True)
+
         # Fetch updated task
         updated_task = await db_service.get_task(task_id)
 
         # Extract published info from result if available
+        if updated_task is None:
+            updated_task = {}
         task_result_data = updated_task.get("result", {})
         if isinstance(task_result_data, str):
             task_result_data = json.loads(task_result_data) if task_result_data else {}
@@ -2014,12 +2028,12 @@ async def approve_task(
         logger.error(
             f"Data validation error in approve_task: {type(e).__name__}: {str(e)}", exc_info=True
         )
-        raise HTTPException(status_code=400, detail=f"Invalid task data: {str(e)}")
+        raise HTTPException(status_code=400, detail="Invalid task data")
     except Exception as e:
         logger.error(
             f"Failed to approve task {task_id}: {type(e).__name__}: {str(e)}", exc_info=True
         )
-        raise HTTPException(status_code=500, detail=f"Failed to approve task: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to approve task")
 
 
 @router.post(
@@ -2029,7 +2043,7 @@ async def publish_task(
     task_id: str,
     current_user: dict = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
-    background_tasks: BackgroundTasks = None,
+    background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
 ):
     """
     Publish an approved task to specified channels.
@@ -2064,6 +2078,10 @@ async def publish_task(
         if not task:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
+        # Ownership check
+        if isinstance(task, dict):
+            _check_task_ownership(task, current_user)
+
         # Check if task is approved
         current_status = task.get("status", "unknown")
         if current_status != "approved":
@@ -2078,25 +2096,50 @@ async def publish_task(
             "published_at": datetime.now(timezone.utc).isoformat(),
             "published_by": current_user.get("id"),
         }
+        # Preserve existing task content: merge publish_metadata into result (do not overwrite)
+        existing_result = task.get("result", {})
+        if isinstance(existing_result, str):
+            try:
+                existing_result = json.loads(existing_result) if existing_result else {}
+            except (json.JSONDecodeError, ValueError):
+                logger.warning(
+                    "[publish_task] result is not valid JSON for task %s — defaulting to {}",
+                    task_id,
+                )
+                existing_result = {}
+        existing_result = existing_result or {}
+        task_meta = task.get("task_metadata", {})
+        if isinstance(task_meta, str):
+            try:
+                task_meta = json.loads(task_meta) if task_meta else {}
+            except (json.JSONDecodeError, ValueError):
+                logger.warning(
+                    "[publish_task] task_metadata is not valid JSON for task %s — defaulting to {}",
+                    task_id,
+                )
+                task_meta = {}
+        task_meta = task_meta or {}
+        # task_result wins over task_metadata; publish_metadata stored under its own key
+        merged_result = convert_decimals({**task_meta, **existing_result, "publish_metadata": publish_metadata})
         await db_service.update_task_status(
-            task_id, "published", result=json.dumps({"metadata": publish_metadata})
+            task_id, "published", result=safe_json_dumps(merged_result)
         )
 
         # Create post in posts table when publishing (not before)
         # This ensures posts only exist for published content
         logger.info(f"Creating posts table entry for published task {task_id}")
         try:
-            # Get task result which contains generated content
-            task_result = task.get("result", {})
-            if isinstance(task_result, str):
-                import json as json_module
+            # Use merged content (task_metadata + result) so content is found whatever key the agent used
+            task_result = merged_result
 
-                task_result = json_module.loads(task_result) if task_result else {}
-
-            # Extract content from task result
-            topic = task.get("topic", "")
+            # Extract content — check multiple possible keys the content agent may use
+            topic = task.get("topic", "") or task_result.get("topic", "")
             draft_content = (
-                task_result.get("draft_content", "") or task_result.get("content", "") or ""
+                task_result.get("draft_content", "")
+                or task_result.get("content", "")
+                or task_result.get("body", "")
+                or task_result.get("article", "")
+                or ""
             )
             seo_description = task_result.get("seo_description", "")
             seo_keywords = task_result.get("seo_keywords", [])
@@ -2116,7 +2159,7 @@ async def publish_task(
 
                 logger.info(f"📝 Post title: {post_title}")
                 logger.info(f"   Extracted from content: {bool(extracted_title)}")
-                logger.info(f"   Content length: {len(post_content)} chars")
+                logger.info(f"   Content length: {len(post_content or '')} chars")
 
                 # Create slug from title (not topic)
                 import re as re_module
@@ -2150,9 +2193,24 @@ async def publish_task(
                         "metadata": metadata,
                     }
                 )
-                logger.info(f"✅ Post created with status='published': {post.id}")
+                logger.info(f"✅ Post created with status='published': {post.id}")  # type: ignore[attr-defined]
                 logger.info(f"   Title: {post_title}")
                 logger.info(f"   Slug: {slug}")
+                post_id_val = str(post.id) if hasattr(post, "id") else str(post.get("id", ""))  # type: ignore[union-attr]
+                logger.info(
+                    "[content_published] task_id=%s post_id=%s user_id=%s slug=%s",
+                    task_id,
+                    post_id_val,
+                    current_user.get("id"),
+                    slug,
+                )
+                # Persist post info back to task result so frontend gets published_url
+                merged_result["post_id"] = post_id_val
+                merged_result["post_slug"] = slug
+                merged_result["published_url"] = f"/posts/{slug}"
+                await db_service.update_task_status(
+                    task_id, "published", result=safe_json_dumps(convert_decimals(merged_result))
+                )
             else:
                 logger.warning(f"⚠️  Skipping post creation: missing content or topic")
         except Exception as e:
@@ -2160,19 +2218,55 @@ async def publish_task(
             # Don't fail the publish operation if post creation fails
             # The task is still published, just warn about the post creation issue
 
+        # Trigger ISR revalidation on public site (#955)
+        # Non-fatal: publish succeeds even if revalidation fails
+        revalidation_success = False
+        post_slug_val = merged_result.get("post_slug")
+        revalidation_paths = ["/", "/archive", "/posts"]
+        if post_slug_val:
+            revalidation_paths.append(f"/posts/{post_slug_val}")
+        try:
+            revalidation_success = await trigger_nextjs_revalidation(revalidation_paths)
+            if not revalidation_success:
+                logger.warning("[publish_task] ISR revalidation returned failure — post is published but cache may be stale")
+        except Exception as reval_err:
+            logger.warning(f"[publish_task] ISR revalidation error (non-fatal): {reval_err}", exc_info=True)
+
+        # Store revalidation status in result for frontend signal
+        merged_result["revalidation"] = {
+            "triggered": True,
+            "success": revalidation_success,
+            "paths": revalidation_paths,
+        }
+        await db_service.update_task_status(
+            task_id, "published", result=safe_json_dumps(convert_decimals(merged_result))
+        )
+
         # Fetch updated task
         updated_task = await db_service.get_task(task_id)
 
         # Convert to response schema
-        return UnifiedTaskResponse(
-            **ModelConverter.task_response_to_unified(ModelConverter.to_task_response(updated_task))
-        )
+        try:
+            return UnifiedTaskResponse(
+                **ModelConverter.task_response_to_unified(ModelConverter.to_task_response(updated_task))
+            )
+        except Exception as resp_err:
+            logger.warning(f"[publish_task] Response model conversion failed ({resp_err}); returning minimal response", exc_info=True)
+            return {  # type: ignore[return-value]
+                "id": task_id,
+                "status": "published",
+                "published_url": merged_result.get("published_url"),
+                "post_id": merged_result.get("post_id"),
+                "post_slug": merged_result.get("post_slug"),
+                "revalidation": merged_result.get("revalidation"),
+                "message": "Task published successfully",
+            }
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to publish task {task_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to publish task: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to publish task")
 
 
 @router.post(
@@ -2216,6 +2310,10 @@ async def reject_task(
         if not task:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
+        # Ownership check
+        if isinstance(task, dict):
+            _check_task_ownership(task, current_user)
+
         # Check if task is in a state that can be rejected
         current_status = task.get("status", "unknown")
         if current_status not in ["completed", "approved", "awaiting_approval"]:
@@ -2246,7 +2344,7 @@ async def reject_task(
         raise
     except Exception as e:
         logger.error(f"Failed to reject task {task_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to reject task: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to reject task")
 
 
 class GenerateImageRequest(BaseModel):
@@ -2299,6 +2397,10 @@ async def generate_task_image(
         if not task:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
+        # Ownership check
+        if isinstance(task, dict):
+            _check_task_ownership(task, current_user)
+
         # Extract source from request for consistency
         source = request.source
         logger.info(f"Generating image for task {task_id} using {source}")
@@ -2338,7 +2440,7 @@ async def generate_task_image(
                             "orientation": "landscape",
                         },
                         headers={"Authorization": pexels_key},
-                        timeout=10.0,
+                        timeout=10.0,  # type: ignore[arg-type]
                     ) as resp:
                         if resp.status == 200:
                             try:
@@ -2364,6 +2466,10 @@ async def generate_task_image(
                                                 meta = json.loads(task_metadata)
                                                 recently_used = meta.get("recent_image_urls", [])
                                             except json.JSONDecodeError:
+                                                logger.warning(
+                                                    "[update_task_image] task_metadata is not valid JSON for task %s — skipping recent_image_urls",
+                                                    task_id,
+                                                )
                                                 recently_used = []
 
                                     # Create comprehensive exclusion list
@@ -2371,17 +2477,11 @@ async def generate_task_image(
                                     if current_image_url:
                                         excluded_urls.add(current_image_url)
 
-                                    logger.info(f"🔍 Image filtering debug:")
-                                    logger.info(
-                                        f"   - Pexels returned {len(data['photos'])} total photos"
+                                    logger.debug(
+                                        f"Image filtering: Pexels returned {len(data['photos'])} photos, "
+                                        f"currently using: {current_image_url}, "
+                                        f"excluded: {len(excluded_urls)} URLs"
                                     )
-                                    logger.info(f"   - Currently using: {current_image_url}")
-                                    logger.info(
-                                        f"   - Recently used: {recently_used[:3]}..."
-                                        if len(recently_used) > 3
-                                        else f"   - Recently used: {recently_used}"
-                                    )
-                                    logger.info(f"   - Total excluded URLs: {len(excluded_urls)}")
 
                                     # Filter out any previously used images
                                     photos = [
@@ -2438,7 +2538,7 @@ async def generate_task_image(
                                             },
                                         )
                             except json.JSONDecodeError as je:
-                                logger.error(f"Failed to parse Pexels response JSON: {je}")
+                                logger.error(f"Failed to parse Pexels response JSON: {je}", exc_info=True)
                                 raise ValueError(f"Invalid JSON from Pexels API: {str(je)}")
                         elif resp.status == 429:
                             logger.warning(f"Pexels rate limit exceeded")
@@ -2451,15 +2551,15 @@ async def generate_task_image(
                             raise ValueError(f"Pexels API error: HTTP {resp.status}")
 
             except ValueError as ve:
-                logger.error(f"Pexels API error: {ve}")
+                logger.error(f"Pexels API error: {ve}", exc_info=True)
                 raise HTTPException(
                     status_code=500, detail=f"Error fetching image from Pexels: {str(ve)}"
                 )
             except asyncio.TimeoutError:
-                logger.warning(f"Pexels API timeout for query: {search_query}")
+                logger.warning(f"Pexels API timeout for query: {search_query}", exc_info=True)
                 raise HTTPException(status_code=504, detail="Pexels API timeout. Please try again.")
             except Exception as e:
-                logger.error(f"Unexpected error fetching from Pexels: {type(e).__name__}: {e}")
+                logger.error(f"Unexpected error fetching from Pexels: {type(e).__name__}: {e}", exc_info=True)
                 raise HTTPException(
                     status_code=500, detail="Unexpected error fetching image from Pexels"
                 )
@@ -2511,7 +2611,7 @@ async def generate_task_image(
                     raise RuntimeError("SDXL image generation failed or file not created")
 
             except asyncio.TimeoutError:
-                logger.warning(f"SDXL image generation timeout for task {task_id}")
+                logger.warning(f"SDXL image generation timeout for task {task_id}", exc_info=True)
                 raise HTTPException(
                     status_code=408,
                     detail="Image generation timeout. Please try again with 'pexels' source.",
@@ -2522,7 +2622,7 @@ async def generate_task_image(
                 )
                 raise HTTPException(
                     status_code=500,
-                    detail=f"SDXL image generation failed: {str(e)}. Ensure GPU available or use 'pexels' source.",
+                    detail="SDXL image generation failed. Ensure GPU available or use 'pexels' source.",
                 )
             except Exception as e:
                 logger.critical(
@@ -2549,6 +2649,10 @@ async def generate_task_image(
             try:
                 task_result = json.loads(task_result) if task_result.strip() else {}
             except (json.JSONDecodeError, AttributeError):
+                logger.warning(
+                    "[update_task_featured_image] result is not valid JSON for task %s — defaulting to {}",
+                    task_id,
+                )
                 task_result = {}
         elif not isinstance(task_result, dict):
             task_result = {}
@@ -2559,6 +2663,10 @@ async def generate_task_image(
             try:
                 task_metadata = json.loads(task_metadata) if task_metadata.strip() else {}
             except (json.JSONDecodeError, AttributeError):
+                logger.warning(
+                    "[update_task_featured_image] task_metadata is not valid JSON for task %s — defaulting to {}",
+                    task_id,
+                )
                 task_metadata = {}
 
         task_result["featured_image_url"] = image_url
@@ -2582,7 +2690,7 @@ async def generate_task_image(
         raise
     except Exception as e:
         logger.error(f"Failed to generate image for task {task_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to generate image: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to generate image")
 
 
 @router.delete(
@@ -2626,6 +2734,10 @@ async def delete_task(
                 detail=f"Task not found: {task_id}",
             )
 
+        # Ownership check
+        if isinstance(task, dict):
+            _check_task_ownership(task, current_user)
+
         # Soft delete: mark task as deleted with timestamp
         logger.info(f"Deleting task {task_id} (user: {current_user.get('id')})")
 
@@ -2646,4 +2758,4 @@ async def delete_task(
         raise
     except Exception as e:
         logger.error(f"Failed to delete task {task_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to delete task: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete task")

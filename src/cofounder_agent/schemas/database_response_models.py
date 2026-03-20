@@ -129,6 +129,11 @@ class TaskResponse(BaseModel):
     completed_at: Optional[datetime] = Field(None, description="Completion timestamp")
     cost_breakdown: Optional[Dict[str, Any]] = Field(None, description="Task cost breakdown")
 
+    # Publishing fields (#954) — extracted from result JSON by ModelConverter
+    post_id: Optional[str] = Field(None, description="Post ID in CMS after publishing")
+    post_slug: Optional[str] = Field(None, description="Post slug for URL generation")
+    published_url: Optional[str] = Field(None, description="Published post URL")
+
 
 class TaskCountsResponse(BaseModel):
     """Task counts grouped by status."""
@@ -280,11 +285,11 @@ class CostLogResponse(BaseModel):
     id: str = Field(..., description="Cost log UUID")
     task_id: str = Field(..., description="Associated task UUID")
     user_id: Optional[str] = Field(None, description="Associated user UUID")
-    phase: Literal["research", "outline", "draft", "assess", "refine", "finalize"] = Field(
+    phase: Literal["research", "outline", "draft", "assess", "refine", "finalize", "content_generation"] = Field(
         ..., description="Execution phase"
     )
     model: str = Field(..., description="LLM model used (gpt-4, claude-3-opus, etc.)")
-    provider: Literal["ollama", "openai", "anthropic", "google"] = Field(
+    provider: Literal["ollama", "openai", "anthropic", "google", "gemini", "unknown"] = Field(
         ..., description="LLM provider"
     )
     input_tokens: int = Field(default=0, ge=0, description="Input token count")

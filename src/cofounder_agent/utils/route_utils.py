@@ -19,15 +19,12 @@ This eliminates the duplicate pattern of:
 Found in: content_routes, task_routes, subtask_routes, bulk_task_routes, settings_routes
 """
 
-import logging
-from functools import lru_cache
+from services.logger_config import get_logger
 from typing import Any, Optional
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import FastAPI
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 # ============================================================================
 # SERVICE CONTAINER
 # ============================================================================
@@ -50,7 +47,7 @@ class ServiceContainer:
         @app.get("/tasks")
         async def list_tasks(request: Request):
             db = request.state.services.get_database()
-            tasks = await db.pool.fetch("SELECT * FROM tasks")
+            tasks = await db.tasks.get_all_tasks(limit=100)
             return tasks
     """
 
@@ -61,6 +58,10 @@ class ServiceContainer:
         self._task_executor = None
         self._intelligent_orchestrator = None
         self._workflow_history = None
+        self._workflow_engine = None
+        self._redis_cache = None
+        self._custom_workflows_service = None
+        self._template_execution_service = None
         self._additional_services = {}
 
     def set_database(self, service: Any) -> None:
@@ -88,6 +89,26 @@ class ServiceContainer:
         self._workflow_history = service
         logger.info("Workflow history service registered with ServiceContainer")
 
+    def set_workflow_engine(self, service: Any) -> None:
+        """Set the workflow engine service"""
+        self._workflow_engine = service
+        logger.info("Workflow engine service registered with ServiceContainer")
+
+    def set_redis_cache(self, service: Any) -> None:
+        """Set the Redis cache service"""
+        self._redis_cache = service
+        logger.info("Redis cache service registered with ServiceContainer")
+
+    def set_custom_workflows_service(self, service: Any) -> None:
+        """Set the custom workflows service"""
+        self._custom_workflows_service = service
+        logger.info("Custom workflows service registered with ServiceContainer")
+
+    def set_template_execution_service(self, service: Any) -> None:
+        """Set the template execution service"""
+        self._template_execution_service = service
+        logger.info("Template execution service registered with ServiceContainer")
+
     def set_service(self, name: str, service: Any) -> None:
         """Set an arbitrary service by name"""
         self._additional_services[name] = service
@@ -113,6 +134,22 @@ class ServiceContainer:
         """Get the workflow history service"""
         return self._workflow_history
 
+    def get_workflow_engine(self) -> Optional[Any]:
+        """Get the workflow engine service"""
+        return self._workflow_engine
+
+    def get_redis_cache(self) -> Optional[Any]:
+        """Get the Redis cache service"""
+        return self._redis_cache
+
+    def get_custom_workflows_service(self) -> Optional[Any]:
+        """Get the custom workflows service"""
+        return self._custom_workflows_service
+
+    def get_template_execution_service(self) -> Optional[Any]:
+        """Get the template execution service"""
+        return self._template_execution_service
+
     def get_service(self, name: str) -> Optional[Any]:
         """Get an arbitrary service by name"""
         return self._additional_services.get(name)
@@ -125,6 +162,10 @@ class ServiceContainer:
             "task_executor": self._task_executor,
             "intelligent_orchestrator": self._intelligent_orchestrator,
             "workflow_history": self._workflow_history,
+            "workflow_engine": self._workflow_engine,
+            "redis_cache": self._redis_cache,
+            "custom_workflows_service": self._custom_workflows_service,
+            "template_execution_service": self._template_execution_service,
             **self._additional_services,
         }
 
@@ -153,7 +194,7 @@ def get_services() -> ServiceContainer:
         async def list_tasks():
             services = get_services()
             db = services.get_database()
-            tasks = await db.pool.fetch("SELECT * FROM tasks")
+            tasks = await db.tasks.get_all_tasks(limit=100)
             return tasks
     """
     return _services
@@ -171,7 +212,7 @@ def get_database_dependency() -> Any:
     Usage:
         @app.get("/tasks")
         async def list_tasks(db = Depends(get_database_dependency)):
-            tasks = await db.pool.fetch("SELECT * FROM tasks")
+            tasks = await db.tasks.get_all_tasks(limit=100)
             return tasks
     """
     db = _services.get_database()
@@ -229,6 +270,53 @@ def get_workflow_history_dependency() -> Any:
     return wh
 
 
+def get_workflow_engine_dependency() -> Any:
+    """FastAPI dependency for workflow engine service"""
+    engine = _services.get_workflow_engine()
+    if engine is None:
+        raise RuntimeError("Workflow engine service not initialized")
+    return engine
+
+
+def get_redis_cache_dependency() -> Any:
+    """FastAPI dependency for Redis cache service"""
+    cache = _services.get_redis_cache()
+    if cache is None:
+        raise RuntimeError("Redis cache service not initialized")
+    return cache
+
+
+def get_redis_cache_optional() -> Any:
+    """FastAPI dependency for Redis cache service (optional, returns None if not initialized)"""
+    return _services.get_redis_cache()
+
+
+def get_custom_workflows_service_dependency() -> Any:
+    """FastAPI dependency for custom workflows service"""
+    service = _services.get_custom_workflows_service()
+    if service is None:
+        raise RuntimeError("Custom workflows service not initialized")
+    return service
+
+
+def get_custom_workflows_service_optional() -> Any:
+    """FastAPI dependency for custom workflows service (optional, returns None if not initialized)"""
+    return _services.get_custom_workflows_service()
+
+
+def get_template_execution_service_dependency() -> Any:
+    """FastAPI dependency for template execution service"""
+    service = _services.get_template_execution_service()
+    if service is None:
+        raise RuntimeError("Template execution service not initialized")
+    return service
+
+
+def get_template_execution_service_optional() -> Any:
+    """FastAPI dependency for template execution service (optional, returns None if not initialized)"""
+    return _services.get_template_execution_service()
+
+
 def get_service_dependency(service_name: str) -> Any:
     """FastAPI dependency for arbitrary service by name"""
     service = _services.get_service(service_name)
@@ -271,6 +359,9 @@ def initialize_services(
     task_executor: Any = None,
     intelligent_orchestrator: Any = None,
     workflow_history: Any = None,
+    redis_cache: Any = None,
+    custom_workflows_service: Any = None,
+    template_execution_service: Any = None,
     **additional_services,
 ) -> ServiceContainer:
     """
@@ -285,6 +376,9 @@ def initialize_services(
         task_executor: Task executor instance
         intelligent_orchestrator: Intelligent orchestrator instance
         workflow_history: Workflow history service instance
+        redis_cache: Redis cache service instance
+        custom_workflows_service: Custom workflows service instance
+        template_execution_service: Template execution service instance
         **additional_services: Any additional services to register
 
     Returns:
@@ -301,7 +395,10 @@ def initialize_services(
             orchestrator=services['orchestrator'],
             task_executor=services['task_executor'],
             intelligent_orchestrator=services['intelligent_orchestrator'],
-            workflow_history=services['workflow_history']
+            workflow_history=services['workflow_history'],
+            redis_cache=services['redis_cache'],
+            custom_workflows_service=services['custom_workflows_service'],
+            template_execution_service=services['template_execution_service']
         )
     """
     if database_service:
@@ -319,6 +416,15 @@ def initialize_services(
     if workflow_history:
         _services.set_workflow_history(workflow_history)
 
+    if redis_cache:
+        _services.set_redis_cache(redis_cache)
+
+    if custom_workflows_service:
+        _services.set_custom_workflows_service(custom_workflows_service)
+
+    if template_execution_service:
+        _services.set_template_execution_service(template_execution_service)
+
     # Register additional services
     for name, service in additional_services.items():
         if service:
@@ -330,57 +436,6 @@ def initialize_services(
     logger.info(f"[OK] Services initialized: {list(_services.get_all_services().keys())}")
 
     return _services
-
-
-# ============================================================================
-# REQUEST-SCOPED SERVICE ACCESS
-# ============================================================================
-
-
-def get_db_from_request(request: Request) -> Any:
-    """
-    Get database service from request state.
-
-    Usage:
-        @app.get("/tasks")
-        async def list_tasks(request: Request):
-            db = get_db_from_request(request)
-            tasks = await db.pool.fetch("SELECT * FROM tasks")
-            return tasks
-
-    Args:
-        request: FastAPI Request object
-
-    Returns:
-        Database service instance
-
-    Raises:
-        RuntimeError: If services not initialized in request.state
-    """
-    if not hasattr(request.app.state, "services"):
-        raise RuntimeError("Services not initialized in app.state")
-    return request.app.state.services.get_database()
-
-
-def get_orchestrator_from_request(request: Request) -> Any:
-    """Get orchestrator from request state"""
-    if not hasattr(request.app.state, "services"):
-        raise RuntimeError("Services not initialized in app.state")
-    return request.app.state.services.get_orchestrator()
-
-
-def get_task_executor_from_request(request: Request) -> Any:
-    """Get task executor from request state"""
-    if not hasattr(request.app.state, "services"):
-        raise RuntimeError("Services not initialized in app.state")
-    return request.app.state.services.get_task_executor()
-
-
-def get_service_from_request(request: Request, service_name: str) -> Any:
-    """Get arbitrary service from request state"""
-    if not hasattr(request.app.state, "services"):
-        raise RuntimeError("Services not initialized in app.state")
-    return request.app.state.services.get_service(service_name)
 
 
 # ============================================================================
@@ -404,7 +459,7 @@ In task_routes.py:
     
     @app.get("/tasks")
     async def list_tasks():
-        tasks = await db_service.pool.fetch("SELECT * FROM tasks")
+        tasks = await db_service.tasks.get_all_tasks(limit=100)
         return tasks
 
 PROBLEMS:
@@ -434,7 +489,7 @@ In task_routes.py:
     @app.get("/tasks")
     async def list_tasks():
         db = get_services().get_database()
-        tasks = await db.pool.fetch("SELECT * FROM tasks")
+        tasks = await db.tasks.get_all_tasks(limit=100)
         return tasks
 
 BENEFITS:
@@ -458,7 +513,7 @@ In task_routes.py:
     
     @app.get("/tasks")
     async def list_tasks(db = Depends(get_database_dependency)):
-        tasks = await db.pool.fetch("SELECT * FROM tasks")
+        tasks = await db.tasks.get_all_tasks(limit=100)
         return tasks
 
 BENEFITS:
@@ -481,7 +536,7 @@ In task_routes.py:
     @app.get("/tasks")
     async def list_tasks(request: Request):
         db = get_db_from_request(request)
-        tasks = await db.pool.fetch("SELECT * FROM tasks")
+        tasks = await db.tasks.get_all_tasks(limit=100)
         return tasks
 
 BENEFITS:

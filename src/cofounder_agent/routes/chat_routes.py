@@ -10,19 +10,17 @@ Provides endpoints for:
 
 import logging
 import os
-import time
-from datetime import datetime
-from typing import Any, Dict, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException
 
+from routes.auth_unified import get_current_user
 from schemas.chat_schemas import (
-    ChatMessage,
     ChatRequest,
     ChatResponse,
 )
-from services.model_router import ModelRouter, TaskComplexity
+from services.model_router import ModelRouter
 from services.ollama_client import OllamaClient
 from services.gemini_client import GeminiClient
 from services.usage_tracker import get_usage_tracker
@@ -37,12 +35,16 @@ usage_tracker = get_usage_tracker()
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
-# Store conversations in memory (in production, use database)
+# Store conversations in memory keyed by "{user_id}:{conversation_id}"
+# (in production, use database for persistence across restarts)
 conversations: Dict[str, list] = {}
 
 
 @router.post("", response_model=ChatResponse)
-async def chat(request: ChatRequest) -> ChatResponse:
+async def chat(
+    request: ChatRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> ChatResponse:
     """
     Process a chat message and return AI response
 
@@ -91,13 +93,17 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
         logger.info(f"[Chat] PARSED MODEL - provider: '{provider}', model_name: '{model_name}'")
 
+        # Scope conversations by user_id to prevent cross-user access
+        user_id = current_user.get("id", "anonymous")
+        scoped_key = f"{user_id}:{request.conversationId}"
+
         # Initialize conversation if needed
-        if request.conversationId not in conversations:
-            conversations[request.conversationId] = []
+        if scoped_key not in conversations:
+            conversations[scoped_key] = []
 
         # Add user message to conversation history
-        conversations[request.conversationId].append(
-            {"role": "user", "content": request.message, "timestamp": datetime.utcnow().isoformat()}
+        conversations[scoped_key].append(
+            {"role": "user", "content": request.message, "timestamp": datetime.now(timezone.utc).isoformat()}
         )
 
         # Log the chat request
@@ -116,18 +122,23 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
                 # Check if model is available
                 try:
-                    available_models = await ollama_client.list_models()
-                    logger.debug(f"[Chat] Available Ollama models: {available_models}")
+                    models_raw = await ollama_client.list_models()
+                    # list_models() returns List[Dict[str, Any]]; extract name strings
+                    available_model_names: list[str] = [
+                        m.get("name", "") if isinstance(m, dict) else str(m)
+                        for m in models_raw
+                    ]
+                    logger.debug(f"[Chat] Available Ollama models: {available_model_names}")
 
-                    if actual_ollama_model not in available_models:
+                    if actual_ollama_model not in available_model_names:
                         # Model not found, suggest alternatives
                         alternatives = [
-                            m
-                            for m in available_models
-                            if "llama" in m.lower() or len(available_models) == 0
+                            name
+                            for name in available_model_names
+                            if "llama" in name.lower()
                         ]
                         if not alternatives:
-                            alternatives = available_models[:3] if available_models else ["llama2"]
+                            alternatives = available_model_names[:3] if available_model_names else ["llama2"]
 
                         logger.warning(
                             f"[Chat] Model '{actual_ollama_model}' not found. Available: {alternatives}"
@@ -140,13 +151,13 @@ async def chat(request: ChatRequest) -> ChatResponse:
                         tokens_used = len(response_text.split())
 
                         # Fall through to add response to history and return
-                        conversations[request.conversationId].append(
+                        conversations[scoped_key].append(
                             {
                                 "role": "assistant",
                                 "content": response_text,
                                 "model": request.model,
                                 "provider": provider,
-                                "timestamp": datetime.utcnow().isoformat(),
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
                             }
                         )
 
@@ -154,14 +165,14 @@ async def chat(request: ChatRequest) -> ChatResponse:
                             response=response_text,
                             model=request.model,
                             conversationId=request.conversationId,
-                            timestamp=datetime.utcnow().isoformat(),
+                            timestamp=datetime.now(timezone.utc).isoformat(),
                             tokens_used=tokens_used,
                         )
                 except Exception as e:
                     logger.debug(f"[Chat] Could not check available models: {str(e)}")
 
                 chat_result = await ollama_client.chat(
-                    messages=conversations[request.conversationId],
+                    messages=conversations[scoped_key],
                     model=actual_ollama_model,
                     temperature=request.temperature or 0.7,
                     max_tokens=request.max_tokens or 500,
@@ -214,7 +225,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
                 # Call Gemini API
                 response_text = await gemini_client.chat(
-                    messages=conversations[request.conversationId],
+                    messages=conversations[scoped_key],
                     model=actual_gemini_model,
                     temperature=request.temperature or 0.7,
                     max_tokens=request.max_tokens or 500,
@@ -247,13 +258,13 @@ async def chat(request: ChatRequest) -> ChatResponse:
             tokens_used = len(response_text.split())
 
         # Add AI response to conversation history
-        conversations[request.conversationId].append(
+        conversations[scoped_key].append(
             {
                 "role": "assistant",
                 "content": response_text,
                 "model": request.model,  # Keep original full model specification
                 "provider": provider,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
         )
 
@@ -261,21 +272,24 @@ async def chat(request: ChatRequest) -> ChatResponse:
             response=response_text,
             model=request.model,  # Return original full model specification
             conversationId=request.conversationId,
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
             tokens_used=len(response_text.split()),  # Rough estimate
         )
 
     except ValueError as e:
-        logger.error(f"[Chat] Validation error: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error(f"[Chat] Validation error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=400, detail="Invalid request parameters")
 
     except Exception as e:
         logger.error(f"[Chat] Error processing message: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Chat processing failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Chat processing failed")
 
 
 @router.get("/history/{conversation_id}")
-async def get_conversation(conversation_id: str) -> Dict[str, Any]:
+async def get_conversation(
+    conversation_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
     """
     Get the full conversation history for a conversation ID
 
@@ -290,7 +304,9 @@ async def get_conversation(conversation_id: str) -> Dict[str, Any]:
     - last_message: Timestamp of last message
     """
     try:
-        if conversation_id not in conversations:
+        user_id = current_user.get("id", "anonymous")
+        scoped_key = f"{user_id}:{conversation_id}"
+        if scoped_key not in conversations:
             return {
                 "messages": [],
                 "conversation_id": conversation_id,
@@ -299,7 +315,7 @@ async def get_conversation(conversation_id: str) -> Dict[str, Any]:
                 "last_message": None,
             }
 
-        msgs = conversations[conversation_id]
+        msgs = conversations[scoped_key]
         return {
             "messages": msgs,
             "conversation_id": conversation_id,
@@ -309,12 +325,15 @@ async def get_conversation(conversation_id: str) -> Dict[str, Any]:
         }
 
     except Exception as e:
-        logger.error(f"[Chat] Error retrieving conversation: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"[Chat] Error retrieving conversation: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.delete("/history/{conversation_id}")
-async def clear_conversation(conversation_id: str) -> Dict[str, str]:
+async def clear_conversation(
+    conversation_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, str]:
     """
     Clear conversation history
 
@@ -326,22 +345,26 @@ async def clear_conversation(conversation_id: str) -> Dict[str, str]:
     - conversation_id: The cleared conversation ID
     """
     try:
-        if conversation_id in conversations:
-            del conversations[conversation_id]
+        user_id = current_user.get("id", "anonymous")
+        scoped_key = f"{user_id}:{conversation_id}"
+        if scoped_key in conversations:
+            del conversations[scoped_key]
 
         return {
             "status": "success",
             "conversation_id": conversation_id,
-            "message": f"Conversation cleared",
+            "message": "Conversation cleared",
         }
 
     except Exception as e:
-        logger.error(f"[Chat] Error clearing conversation: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"[Chat] Error clearing conversation: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/models")
-async def get_available_models() -> Dict[str, Any]:
+async def get_available_models(
+    _current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
     """
     Get list of available chat models
 
@@ -383,7 +406,7 @@ async def get_available_models() -> Dict[str, Any]:
     return {
         "models": models_list,
         "available_count": len(models_list),
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 

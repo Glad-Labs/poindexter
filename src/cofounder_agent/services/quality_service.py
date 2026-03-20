@@ -23,20 +23,22 @@ Quality Framework (7 Criteria):
 6. Readability (0-10) - Grammar, flow, formatting?
 7. Engagement (0-10) - Is content compelling and interesting?
 
-Overall Score = Average of 7 criteria
+Overall Score = Average of 7 criteria (with minimum-dimension enforcement)
 Pass Threshold = 7.0/10 (70%)
+Critical Floor = 50/100 — if clarity, readability, or relevance falls below this
+  threshold the overall score is capped at that dimension's value, preventing
+  compensatory passing from high scores in other dimensions.
 """
 
-import logging
+import json
+from services.logger_config import get_logger
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class EvaluationMethod(str, Enum):
     """Supported evaluation methods"""
 
@@ -110,9 +112,27 @@ class QualityDimensions:
     readability: float  # 0-100
     engagement: float  # 0-100
 
+    # Critical dimensions that, if severely low, cap the overall score.
+    # Any critical dimension below CRITICAL_FLOOR causes overall score to be
+    # capped at that dimension's value, preventing high scores in other
+    # dimensions from masking critical weaknesses (issue #127).
+    CRITICAL_FLOOR: float = 50.0
+    CRITICAL_DIMENSIONS: tuple = ("clarity", "readability", "relevance")
+
     def average(self) -> float:
-        """Calculate average score"""
-        return (
+        """Calculate overall score with minimum-dimension enforcement.
+
+        Returns the arithmetic mean of all 7 dimensions, but caps the result
+        at the lowest critical dimension score if that score is below
+        CRITICAL_FLOOR. This prevents content with critically low readability
+        (e.g. 48/100) from receiving a passing overall score solely because
+        other dimensions scored well.
+
+        Examples:
+            clarity=80, readability=48 → overall capped at 48 → FAIL
+            clarity=80, readability=70 → normal average → may PASS
+        """
+        raw_average = (
             self.clarity
             + self.accuracy
             + self.completeness
@@ -121,6 +141,23 @@ class QualityDimensions:
             + self.readability
             + self.engagement
         ) / 7.0
+
+        # Enforce minimum-dimension constraint on critical dimensions
+        critical_values = {
+            "clarity": self.clarity,
+            "readability": self.readability,
+            "relevance": self.relevance,
+        }
+        for dim_name, dim_value in critical_values.items():
+            if dim_value < self.CRITICAL_FLOOR:
+                logger.debug(
+                    f"Quality cap applied: {dim_name}={dim_value:.1f} < "
+                    f"CRITICAL_FLOOR={self.CRITICAL_FLOOR} — "
+                    f"overall capped from {raw_average:.1f} to {dim_value:.1f}"
+                )
+                raw_average = min(raw_average, dim_value)
+
+        return raw_average
 
     def to_dict(self) -> Dict[str, float]:
         """Convert to dictionary"""
@@ -195,7 +232,7 @@ class UnifiedQualityService:
     - Complete audit trail
     """
 
-    def __init__(self, model_router=None, database_service=None, qa_agent=None):
+    def __init__(self, model_router=None, database_service=None, qa_agent=None, llm_client=None):
         """
         Initialize quality service
 
@@ -203,10 +240,12 @@ class UnifiedQualityService:
             model_router: Optional ModelRouter for LLM access
             database_service: Optional DatabaseService for persistence
             qa_agent: Optional QA Agent for binary approval
+            llm_client: Optional LLMClient for direct LLM evaluation calls
         """
         self.model_router = model_router
         self.database_service = database_service
         self.qa_agent = qa_agent
+        self.llm_client = llm_client
 
         # Statistics
         self.total_evaluations = 0
@@ -274,7 +313,7 @@ class UnifiedQualityService:
             return assessment
 
         except Exception as e:
-            logger.error(f"❌ Evaluation failed: {e}")
+            logger.error(f"[_evaluate] ❌ Evaluation failed: {e}", exc_info=True)
             # Return minimal assessment on error
             return QualityAssessment(
                 dimensions=QualityDimensions(
@@ -344,38 +383,131 @@ class UnifiedQualityService:
 
     async def _evaluate_llm_based(self, content: str, context: Dict[str, Any]) -> QualityAssessment:
         """
-        Accurate LLM-based evaluation using language model.
+        LLM-based evaluation using language model (issue #189).
 
-        Requires model_router to be configured.
+        Uses llm_client for direct calls.  Falls back to pattern-based if no
+        LLM client is available or if the LLM call fails.
         """
-        if not self.model_router:
+        if not self.llm_client:
             logger.warning(
-                "LLM evaluation requested but model_router not available, falling back to pattern-based"
+                "LLM evaluation requested but llm_client not available, falling back to pattern-based"
             )
             return await self._evaluate_pattern_based(content, context)
 
         logger.debug("Running LLM-based evaluation...")
 
-        # Using pattern-based heuristics for now (LLM evaluation can be added later if needed)
-        return await self._evaluate_pattern_based(content, context)
+        topic = context.get("topic", "unknown topic")
+        # Truncate very long content to avoid excessive token usage
+        content_excerpt = content[:4000] if len(content) > 4000 else content
+
+        evaluation_prompt = (
+            "You are a content quality evaluator. Score the following content on 7 dimensions, "
+            "each from 0 to 10 (integers only). Respond ONLY with a JSON object — no markdown, "
+            "no explanation.\n\n"
+            f"Topic: {topic}\n\n"
+            f"Content:\n{content_excerpt}\n\n"
+            "Return JSON with these keys:\n"
+            '{"clarity": N, "accuracy": N, "completeness": N, "relevance": N, '
+            '"seo_quality": N, "readability": N, "engagement": N, "feedback": "one sentence summary", '
+            '"suggestions": ["suggestion1", "suggestion2"]}'
+        )
+
+        try:
+            raw_response = await self.llm_client.generate_text(evaluation_prompt)
+
+            # Extract JSON from response (may contain markdown fences)
+            json_match = re.search(r"\{[^{}]*\}", raw_response, re.DOTALL)
+            if not json_match:
+                logger.warning("LLM evaluation returned no valid JSON, falling back to pattern-based")
+                return await self._evaluate_pattern_based(content, context)
+
+            scores = json.loads(json_match.group())
+
+            # Validate and clamp dimension scores to 0-10 range, then scale to 0-100
+            def _clamp_score(val: Any) -> float:
+                try:
+                    return max(0.0, min(10.0, float(val))) * 10
+                except (TypeError, ValueError):
+                    return 50.0  # neutral fallback
+
+            dimensions = QualityDimensions(
+                clarity=_clamp_score(scores.get("clarity", 5)),
+                accuracy=_clamp_score(scores.get("accuracy", 5)),
+                completeness=_clamp_score(scores.get("completeness", 5)),
+                relevance=_clamp_score(scores.get("relevance", 5)),
+                seo_quality=_clamp_score(scores.get("seo_quality", 5)),
+                readability=_clamp_score(scores.get("readability", 5)),
+                engagement=_clamp_score(scores.get("engagement", 5)),
+            )
+
+            overall_score = dimensions.average()
+            feedback = scores.get("feedback", self._generate_feedback(dimensions, context))
+            suggestions = scores.get("suggestions", self._generate_suggestions(dimensions))
+            if isinstance(suggestions, str):
+                suggestions = [suggestions]
+
+            return QualityAssessment(
+                dimensions=dimensions,
+                overall_score=overall_score,
+                passing=overall_score >= 70,
+                feedback=feedback,
+                suggestions=suggestions,
+                evaluation_method=EvaluationMethod.LLM_BASED,
+                content_length=len(content),
+                word_count=len(content.split()),
+            )
+
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+            logger.warning(f"LLM evaluation parsing failed ({e}), falling back to pattern-based", exc_info=True)
+            return await self._evaluate_pattern_based(content, context)
+        except Exception as e:
+            logger.error(f"[_evaluate_llm_based] LLM call failed: {e}", exc_info=True)
+            return await self._evaluate_pattern_based(content, context)
 
     async def _evaluate_hybrid(self, content: str, context: Dict[str, Any]) -> QualityAssessment:
         """
         Hybrid evaluation combining pattern-based and LLM-based.
 
-        Runs both evaluations and combines results with weighting.
+        Runs both evaluations and averages their dimension scores (50/50 weight).
+        Falls back to pattern-based only if no LLM client is available.
         """
         logger.debug("Running hybrid evaluation...")
 
-        # Get pattern-based assessment
         pattern_assessment = await self._evaluate_pattern_based(content, context)
 
-        # Get LLM-based assessment if available
-        if self.model_router:
-            llm_assessment = await self._evaluate_llm_based(content, context)
-            # Assessments combined (default: equal weight)
+        if not self.llm_client:
+            return pattern_assessment
 
-        return pattern_assessment
+        llm_assessment = await self._evaluate_llm_based(content, context)
+
+        # If LLM fell back to pattern-based, just return pattern (avoid double-counting)
+        if llm_assessment.evaluation_method == EvaluationMethod.PATTERN_BASED:
+            return pattern_assessment
+
+        # Average dimension scores (equal weight)
+        p = pattern_assessment.dimensions
+        l = llm_assessment.dimensions
+        combined_dims = QualityDimensions(
+            clarity=(p.clarity + l.clarity) / 2,
+            accuracy=(p.accuracy + l.accuracy) / 2,
+            completeness=(p.completeness + l.completeness) / 2,
+            relevance=(p.relevance + l.relevance) / 2,
+            seo_quality=(p.seo_quality + l.seo_quality) / 2,
+            readability=(p.readability + l.readability) / 2,
+            engagement=(p.engagement + l.engagement) / 2,
+        )
+
+        overall = combined_dims.average()
+        return QualityAssessment(
+            dimensions=combined_dims,
+            overall_score=overall,
+            passing=overall >= 70,
+            feedback=llm_assessment.feedback,
+            suggestions=llm_assessment.suggestions,
+            evaluation_method=EvaluationMethod.HYBRID,
+            content_length=len(content),
+            word_count=len(content.split()),
+        )
 
     # ========================================================================
     # SCORING METHODS (Pattern-Based Heuristics)
@@ -398,45 +530,109 @@ class UnifiedQualityService:
         return 5.0
 
     def _score_accuracy(self, content: str, context: Dict[str, Any]) -> float:
-        """Score accuracy - placeholder, would check facts in real implementation"""
-        # Pattern-based: check for citations, quotes, etc.
-        if '"' in content or "according to" in content.lower():
-            return 7.5
-        return 6.5  # Generic content, unknown accuracy
+        """Score accuracy based on citation patterns and factual anchors."""
+        score = 6.0  # Neutral baseline for unverifiable content
+        content_lower = content.lower()
+
+        # External links are a strong accuracy signal
+        link_count = len(re.findall(r"https?://\S+", content))
+        score += min(link_count * 0.5, 1.5)
+
+        # Citation/reference patterns: [1], (Smith 2023), Source:, References:
+        citation_patterns = [
+            r"\[\d+\]",            # [1], [12]
+            r"\(\w[^)]{1,40}\d{4}\)",  # (Author 2023)
+            r"(?:source|reference|cited|per|via):",
+            r"according to\b",
+            r"research (?:shows?|suggests?|finds?|indicates?)\b",
+            r"studies? (?:show|suggest|find|indicate)\b",
+            r"published (?:in|by)\b",
+        ]
+        for pat in citation_patterns:
+            if re.search(pat, content_lower):
+                score += 0.3
+
+        # Named quotes in proper context (not decorative use of quotation marks)
+        named_quote = re.search(r'"[^"]{10,}"[,\s]+(?:said|wrote|noted|according)', content)
+        if named_quote:
+            score += 0.5
+
+        return min(score, 10.0)
 
     def _score_completeness(self, content: str, context: Dict[str, Any]) -> float:
-        """Score completeness based on content depth"""
+        """Score completeness based on depth signals beyond raw word count."""
         word_count = len(content.split())
+        score = 0.0
 
+        # Word-count baseline (necessary but not sufficient)
         if word_count >= 2000:
-            return 9.0
-        if word_count >= 1500:
-            return 8.0
-        if word_count >= 1000:
-            return 7.5
-        if word_count >= 500:
-            return 6.5
-        return 5.0
+            score += 5.0
+        elif word_count >= 1500:
+            score += 4.5
+        elif word_count >= 1000:
+            score += 4.0
+        elif word_count >= 500:
+            score += 3.0
+        else:
+            score += 1.5
+
+        # Structural depth signals
+        heading_count = len(re.findall(r"^#{1,3}\s", content, re.MULTILINE))
+        score += min(heading_count * 0.4, 2.0)  # Up to +2 for 5+ headings
+
+        paragraphs = [p.strip() for p in content.split("\n\n") if p.strip()]
+        if len(paragraphs) >= 5:
+            score += 0.5
+
+        # Intro/conclusion present (first and last paragraphs are non-trivial)
+        if paragraphs and len(paragraphs[0].split()) >= 30:
+            score += 0.5
+        if len(paragraphs) > 1 and len(paragraphs[-1].split()) >= 20:
+            score += 0.5
+
+        # Contains lists (signals structured coverage)
+        if re.search(r"^[-*]\s", content, re.MULTILINE):
+            score += 0.5
+
+        return min(score, 10.0)
 
     def _score_relevance(self, content: str, context: Dict[str, Any]) -> float:
-        """Score relevance based on keyword presence and focus"""
-        topic = context.get("topic", "")
+        """Score relevance using topic-word family matching to resist keyword stuffing."""
+        topic = context.get("topic", "") or context.get("primary_keyword", "")
         if not topic:
             return 6.0
 
-        # Count topic mentions
-        topic_count = content.lower().count(topic.lower())
+        content_lower = content.lower()
+        topic_words = [w.lower() for w in re.findall(r"\b\w{4,}\b", topic)]
         word_count = len(content.split())
-        topic_density = topic_count / (word_count / 100) if word_count > 0 else 0
 
-        # Ideal: 1-3% keyword density
-        if 1 <= topic_density <= 3:
-            return 9.0
-        if 0.5 <= topic_density <= 5:
-            return 7.5
-        if topic_count > 0:
+        if not topic_words or word_count == 0:
             return 6.0
-        return 3.0  # Topic not mentioned
+
+        # Match each meaningful topic word (≥4 chars) — broader family
+        matched_words = sum(1 for w in topic_words if w in content_lower)
+        coverage = matched_words / len(topic_words)
+
+        # Density of exact topic phrase (penalise over-stuffing)
+        exact_count = content_lower.count(topic.lower())
+        density = exact_count / (word_count / 100)  # per 100 words
+
+        if coverage >= 0.8:
+            base = 8.5
+        elif coverage >= 0.5:
+            base = 7.0
+        elif coverage >= 0.25:
+            base = 5.5
+        else:
+            base = 3.0
+
+        # Penalise keyword stuffing (>5% density is suspicious)
+        if density > 5:
+            base = min(base, 5.5)
+        elif density > 3:
+            base = min(base, 7.0)
+
+        return min(base, 10.0)
 
     def _score_seo(self, content: str, context: Dict[str, Any]) -> float:
         """Score SEO quality"""
@@ -502,7 +698,16 @@ class UnifiedQualityService:
 
     def _check_keywords(self, content: str, context: Dict[str, Any]) -> bool:
         """Check if keywords are present in content"""
-        keywords = context.get("keywords", [])
+        context = context or {}
+        keywords = context.get("keywords")
+        if keywords is None:
+            keywords = []
+        elif isinstance(keywords, str):
+            keywords = [keywords]
+        elif not isinstance(keywords, list):
+            keywords = [str(keywords)]
+
+        keywords = [kw for kw in keywords if isinstance(kw, str) and kw.strip()]
         content_lower = content.lower()
 
         return any(kw.lower() in content_lower for kw in keywords)
@@ -561,16 +766,53 @@ class UnifiedQualityService:
     async def _store_evaluation(
         self, assessment: QualityAssessment, context: Dict[str, Any]
     ) -> None:
-        """Store evaluation result in database"""
+        """Store evaluation result in database for audit trail and learning loop."""
         try:
             if not self.database_service:
                 return
 
-            # Quality metrics tracked in memory and task metadata
-            # await self.database_service.create_quality_evaluation({...})
-            logger.debug("Evaluation stored in database")
+            task_id = context.get("task_id") or context.get("content_id")
+            if not task_id:
+                logger.debug("[_store_evaluation] No task_id in context — skipping persistence")
+                return
+
+            await self.database_service.create_quality_evaluation(
+                {
+                    "content_id": task_id,
+                    "task_id": task_id,
+                    "overall_score": assessment.overall_score,
+                    "criteria": {
+                        "clarity": assessment.dimensions.clarity,
+                        "accuracy": assessment.dimensions.accuracy,
+                        "completeness": assessment.dimensions.completeness,
+                        "relevance": assessment.dimensions.relevance,
+                        "seo_quality": assessment.dimensions.seo_quality,
+                        "readability": assessment.dimensions.readability,
+                        "engagement": assessment.dimensions.engagement,
+                    },
+                    "passing": assessment.passing,
+                    "feedback": assessment.feedback,
+                    "suggestions": assessment.suggestions,
+                    "evaluated_by": assessment.evaluated_by,
+                    "evaluation_method": assessment.evaluation_method.value
+                    if hasattr(assessment.evaluation_method, "value")
+                    else str(assessment.evaluation_method),
+                    "content_length": assessment.content_length,
+                    "context_data": {
+                        k: v
+                        for k, v in context.items()
+                        if k not in ("content",)  # exclude large content blob
+                    },
+                }
+            )
+            logger.debug(
+                "[_store_evaluation] Quality evaluation persisted: task_id=%s score=%.0f passing=%s",
+                task_id,
+                assessment.overall_score,
+                assessment.passing,
+            )
         except Exception as e:
-            logger.error(f"Failed to store evaluation: {e}")
+            logger.error(f"[_store_evaluation] Failed to store evaluation: {e}", exc_info=True)
 
     # ========================================================================
     # STATISTICS & REPORTING
@@ -596,15 +838,23 @@ class UnifiedQualityService:
 # ============================================================================
 
 
-def get_quality_service(model_router=None, database_service=None) -> UnifiedQualityService:
+def get_quality_service(
+    model_router=None, database_service=None, llm_client=None
+) -> UnifiedQualityService:
     """Factory function for UnifiedQualityService dependency injection"""
-    return UnifiedQualityService(model_router=model_router, database_service=database_service)
+    return UnifiedQualityService(
+        model_router=model_router, database_service=database_service, llm_client=llm_client
+    )
 
 
 # Backward compatibility alias
-def get_content_quality_service(model_router=None, database_service=None) -> UnifiedQualityService:
-    """Backward compatibility alias for get_quality_service (ContentQualityService renamed to UnifiedQualityService)"""
-    return UnifiedQualityService(model_router=model_router, database_service=database_service)
+def get_content_quality_service(
+    model_router=None, database_service=None, llm_client=None
+) -> UnifiedQualityService:
+    """Backward compatibility alias for get_quality_service"""
+    return UnifiedQualityService(
+        model_router=model_router, database_service=database_service, llm_client=llm_client
+    )
 
 
 # Backward compatibility alias for class name

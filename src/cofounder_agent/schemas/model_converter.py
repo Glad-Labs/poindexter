@@ -6,8 +6,7 @@ Provides type-safe conversion with automatic timestamp handling.
 """
 
 import json
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Type, TypeVar
+from typing import Any, Dict, List, Type, TypeVar
 from uuid import UUID
 
 from schemas.database_response_models import (
@@ -15,7 +14,6 @@ from schemas.database_response_models import (
     AuthorResponse,
     CategoryResponse,
     CostLogResponse,
-    ErrorResponse,
     FinancialEntryResponse,
     FinancialSummaryResponse,
     LogResponse,
@@ -27,7 +25,6 @@ from schemas.database_response_models import (
     QualityImprovementLogResponse,
     SettingResponse,
     TagResponse,
-    TaskCostBreakdownResponse,
     TaskCountsResponse,
     TaskResponse,
     UserResponse,
@@ -63,6 +60,11 @@ class ModelConverter:
             "business_state",
             "suggestions",
             "cost_breakdown",
+            # Model tracking JSON fields (#128): must be parsed from stored JSON string
+            # so get_model_for_phase() receives a dict, not a string
+            "model_selections",
+            "models_used_by_phase",
+            "model_selection_log",
         ]
         for key in json_fields:
             if key in data and data[key] is not None:
@@ -163,6 +165,9 @@ class ModelConverter:
             "primary_keyword",  # ADD: Primary SEO keyword
             "estimated_cost",  # ADD: Cost tracking
             "cost_breakdown",  # ADD: Cost breakdown
+            "model_used",  # ADD: Model tracking
+            "models_used_by_phase",  # ADD: Phase-level model tracking
+            "model_selection_log",  # ADD: Model selection decision log
         ]
 
         for field in normalized_fields:
@@ -175,6 +180,15 @@ class ModelConverter:
             if data.get("task_metadata") and isinstance(data["task_metadata"], dict):
                 if "constraint_compliance" in data["task_metadata"]:
                     data["constraint_compliance"] = data["task_metadata"]["constraint_compliance"]
+
+        # Extract publish fields from result dict to top level (#954)
+        # The publish endpoint stores post_id, post_slug, published_url inside the result JSON.
+        # Pull them up so UnifiedTaskResponse can expose them as top-level fields.
+        result_dict = data.get("result")
+        if isinstance(result_dict, dict):
+            for publish_field in ("post_id", "post_slug", "published_url"):
+                if not data.get(publish_field) and result_dict.get(publish_field):
+                    data[publish_field] = result_dict[publish_field]
 
         return TaskResponse(**data)
 
@@ -218,6 +232,43 @@ class ModelConverter:
     def to_cost_log_response(row: Any) -> CostLogResponse:
         """Convert row to CostLogResponse model."""
         data = ModelConverter._normalize_row_data(row)
+
+        if "id" in data and not isinstance(data["id"], str):
+            data["id"] = str(data["id"])
+
+        if (
+            "task_id" in data
+            and data["task_id"] is not None
+            and not isinstance(data["task_id"], str)
+        ):
+            data["task_id"] = str(data["task_id"])
+
+        if (
+            "user_id" in data
+            and data["user_id"] is not None
+            and not isinstance(data["user_id"], str)
+        ):
+            data["user_id"] = str(data["user_id"])
+
+        phase_map = {
+            "content_generation": "draft",
+            "generation": "draft",
+            "qa": "assess",
+            "publish": "finalize",
+        }
+        phase = data.get("phase")
+        if isinstance(phase, str):
+            data["phase"] = phase_map.get(phase, phase)
+
+        provider_map = {
+            "gemini": "google",
+            "hf": "google",
+            "unknown": "ollama",
+        }
+        provider = data.get("provider")
+        if isinstance(provider, str):
+            data["provider"] = provider_map.get(provider, provider)
+
         return CostLogResponse(**data)
 
     @staticmethod

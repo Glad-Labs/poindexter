@@ -19,15 +19,13 @@ Eliminates:
 - Unclear error semantics
 """
 
-import logging
-from datetime import datetime
+from services.logger_config import get_logger
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 # ============================================================================
 # RESPONSE MODELS
 # ============================================================================
@@ -160,7 +158,7 @@ class ErrorResponseBuilder:
 
     def timestamp(self) -> "ErrorResponseBuilder":
         """Add current timestamp"""
-        self._timestamp = datetime.utcnow().isoformat() + "Z"
+        self._timestamp = datetime.now(timezone.utc).isoformat() + "Z"
         return self
 
     def build(self) -> ErrorResponse:

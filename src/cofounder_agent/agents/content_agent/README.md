@@ -1,8 +1,12 @@
-# � Content Agent System
+# Content Agent System
 
-**Status:** ✅ ACTIVE & PRODUCTION-READY (NOT Legacy Code)  
-**Last Updated:** October 26, 2025  
-**Version:** 3.0  
+> **Note:** This README references Strapi CMS integration which has been replaced.
+> Content is now published directly to PostgreSQL via the `content_db` module.
+> Strapi client code (`strapi_client.py`) is deprecated dead code (#833).
+
+**Status:** ✅ ACTIVE & PRODUCTION-READY
+**Last Updated:** March 18, 2026
+**Version:** 3.0.66+
 **Architecture:** Self-Critiquing Multi-Agent Pipeline
 
 ---
@@ -282,9 +286,9 @@ curl http://localhost:11434/api/tags
 ## 📚 Related Documentation
 
 - **[Agent System Integration](../../docs/components/agents-system.md)** - Full integration guide
-- **[AI Agents & Integration](../../docs/05-AI_AGENTS_AND_INTEGRATION.md)** - Architecture
+- **[AI Agents & Integration](../../docs/02-Architecture/Multi-Agent-Pipeline.md)** - Architecture
 - **[Co-Founder Agent README](../../src/cofounder_agent/README.md)** - API reference
-- **[Testing Guide](../../docs/reference/TESTING.md)** - Testing strategies
+- **[Testing Guide](../../docs/04-Development/Testing-Guide.md)** - Testing strategies
 
 ---
 

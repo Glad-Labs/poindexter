@@ -3,6 +3,7 @@
 # Poetry sometimes breaks namespace package resolution (e.g., google.generativeai)
 # This MUST be done before any package imports
 # ============================================================================
+import logging as _logging
 import sys
 from pathlib import Path as _PathType
 
@@ -22,13 +23,13 @@ def _fix_sys_path():
 
             importlib.invalidate_caches()
     except Exception as e:
-        print(f"[WARNING] Failed to fix sys.path: {e}")
+        _logging.warning("Failed to fix sys.path: %s", e)
 
 
 _fix_sys_path()
 del _fix_sys_path, _PathType
 
-import logging
+from services.logger_config import get_logger
 import os
 from pathlib import Path
 
@@ -40,10 +41,8 @@ BASE_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__))
 )  # This gets us to src/agents/content_agent/
 
-# The logger is configured in `logging_config.py` and used throughout the application.
-logger = logging.getLogger(__name__)
-
-
+# Logging is configured centrally in services/logger_config.py
+logger = get_logger(__name__)
 class Config:
     """
     Central configuration class for the content agent.
@@ -57,9 +56,18 @@ class Config:
         # Load environment variables from a .env file into the environment.
         # This allows for secure and flexible configuration without hardcoding secrets.
 
-        # Path calculation: config.py is at src/cofounder_agent/agents/content_agent/config.py
-        # So we need to go up 4 levels to reach project root (glad-labs-website/)
-        project_root = Path(__file__).resolve().parents[4]
+        # Find project root by looking for a known marker file.
+        # In Docker (WORKDIR /app), config.py is at /app/agents/content_agent/config.py (3 parents).
+        # Locally, it's at glad-labs-website/src/cofounder_agent/agents/content_agent/config.py (4 parents).
+        config_path = Path(__file__).resolve()
+        project_root = None
+        for parent in config_path.parents:
+            if (parent / "pyproject.toml").exists() or (parent / "main.py").exists():
+                project_root = parent
+                break
+        if project_root is None:
+            # Fallback: use the working directory
+            project_root = Path.cwd()
 
         # Try .env.local first (development/local), then .env (committed version)
         dotenv_local_path = project_root / ".env.local"
@@ -77,7 +85,12 @@ class Config:
         self.PROMPTS_PATH = os.path.join(self.BASE_DIR, "prompts.json")
 
         # --- PostgreSQL Database for CMS ---
-        self.DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./tasks.db")
+        self.DATABASE_URL = os.getenv("DATABASE_URL")
+        if not self.DATABASE_URL:
+            raise ValueError(
+                "DATABASE_URL environment variable is required. "
+                "This project uses PostgreSQL only — SQLite is not supported."
+            )
         self.DATABASE_HOST = os.getenv("DATABASE_HOST", "localhost")
         self.DATABASE_PORT = os.getenv("DATABASE_PORT", "5432")
         self.DATABASE_NAME = os.getenv("DATABASE_NAME", "glad_labs")
@@ -99,11 +112,11 @@ class Config:
 
         # --- Model Selection per Task Type --
         # Allows configuration of which model to use for different task stages
-        self.MODEL_FOR_RESEARCH = os.getenv("MODEL_FOR_RESEARCH", "ollama/mistral")
-        self.MODEL_FOR_CREATIVE = os.getenv("MODEL_FOR_CREATIVE", "ollama/mistral")
-        self.MODEL_FOR_QA = os.getenv("MODEL_FOR_QA", "ollama/mistral")
-        self.MODEL_FOR_IMAGE = os.getenv("MODEL_FOR_IMAGE", "ollama/mistral")
-        self.MODEL_FOR_PUBLISHING = os.getenv("MODEL_FOR_PUBLISHING", "ollama/phi")
+        self.MODEL_FOR_RESEARCH = os.getenv("MODEL_FOR_RESEARCH", "ollama/gpt-oss:20b")
+        self.MODEL_FOR_CREATIVE = os.getenv("MODEL_FOR_CREATIVE", "ollama/gpt-oss:20b")
+        self.MODEL_FOR_QA = os.getenv("MODEL_FOR_QA", "ollama/gpt-oss:20b")
+        self.MODEL_FOR_IMAGE = os.getenv("MODEL_FOR_IMAGE", "ollama/gpt-oss:20b")
+        self.MODEL_FOR_PUBLISHING = os.getenv("MODEL_FOR_PUBLISHING", "ollama/gpt-oss:20b")
 
         # --- API Keys for LLM Providers ---
         # These are read from environment variables and used by the LLM client
@@ -120,7 +133,7 @@ class Config:
         # --- Local LLM (Ollama) Configuration --
         # For running a local quality assurance model if available.
         self.LOCAL_LLM_API_URL = os.getenv("LOCAL_LLM_API_URL", "http://localhost:11434")
-        self.LOCAL_LLM_MODEL_NAME = os.getenv("LOCAL_LLM_MODEL_NAME", "llava:13b")
+        self.LOCAL_LLM_MODEL_NAME = os.getenv("LOCAL_LLM_MODEL_NAME", "gpt-oss:20b")
 
         # --- Logging Configuration ---
         self.LOG_DIR = os.path.join(self.BASE_DIR, "content-agent", "logs")

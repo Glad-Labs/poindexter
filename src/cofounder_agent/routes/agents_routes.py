@@ -13,14 +13,12 @@ Endpoints:
 - GET /api/agents/health - Agent system health
 """
 
-import logging
-from datetime import datetime
-from enum import Enum
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timezone
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, Field, field_validator
 
+from routes.auth_unified import get_current_user
 from schemas.agent_schemas import (
     AgentCommand,
     AgentCommandResult,
@@ -28,8 +26,10 @@ from schemas.agent_schemas import (
     AgentLog,
     AgentLogs,
     AgentStatus,
+    AgentStatusEnum,
     AllAgentsStatus,
     MemoryStats,
+    SystemHealthEnum,
 )
 from services.logger_config import get_logger
 
@@ -79,7 +79,10 @@ def format_agent_status(agent_name: str, orchestrator) -> AgentStatus:
 
 
 @router.get("/status", response_model=AllAgentsStatus)
-async def get_all_agents_status(orchestrator=Depends(get_orchestrator)):
+async def get_all_agents_status(
+    orchestrator=Depends(get_orchestrator),
+    current_user: dict = Depends(get_current_user),
+):
     """
     Get status of all AI agents
 
@@ -130,7 +133,7 @@ async def get_all_agents_status(orchestrator=Depends(get_orchestrator)):
                 agent_status = format_agent_status(agent_name, orchestrator)
                 agents_status[agent_name] = agent_status
             except Exception as e:
-                logger.warning(f"Error fetching status for agent {agent_name}: {e}")
+                logger.warning(f"Error fetching status for agent {agent_name}: {e}", exc_info=True)
                 agents_status[agent_name] = AgentStatus(
                     name=agent_name,
                     type=agent_name.replace("_", " ").title(),
@@ -150,19 +153,23 @@ async def get_all_agents_status(orchestrator=Depends(get_orchestrator)):
 
         return AllAgentsStatus(
             status=overall_status,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             agents=agents_status,
             system_health=system_status,
         )
     except Exception as e:
-        logger.error(f"Error fetching all agents status: {e}")
+        logger.error(f"Error fetching all agents status: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Failed to fetch agents status: {str(e)}"
+            status_code=500, detail="Failed to fetch agents status"
         ) from e
 
 
 @router.get("/{agent_name}/status", response_model=AgentStatus)
-async def get_agent_status(agent_name: str, orchestrator=Depends(get_orchestrator)):
+async def get_agent_status(
+    agent_name: str,
+    orchestrator=Depends(get_orchestrator),
+    current_user: dict = Depends(get_current_user),
+):
     """
     Get status of a specific agent
 
@@ -196,15 +203,18 @@ async def get_agent_status(agent_name: str, orchestrator=Depends(get_orchestrato
         agent_status = format_agent_status(agent_name, orchestrator)
         return agent_status
     except Exception as e:
-        logger.error(f"Error fetching status for agent {agent_name}: {e}")
+        logger.error(f"Error fetching status for agent {agent_name}: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Failed to fetch agent status: {str(e)}"
+            status_code=500, detail="Failed to fetch agent status"
         ) from e
 
 
 @router.post("/{agent_name}/command", response_model=AgentCommandResult)
 async def send_agent_command(
-    agent_name: str, command: AgentCommand, orchestrator=Depends(get_orchestrator)
+    agent_name: str,
+    command: AgentCommand,
+    orchestrator=Depends(get_orchestrator),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Send a command to a specific agent
@@ -258,11 +268,11 @@ async def send_agent_command(
                 "agent": agent_name,
                 "command": command.command,
             },
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
         )
     except Exception as e:
-        logger.error(f"Error sending command to agent {agent_name}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to send command: {str(e)}") from e
+        logger.error(f"Error sending command to agent {agent_name}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to send command") from e
 
 
 @router.get("/logs", response_model=AgentLogs)
@@ -273,6 +283,7 @@ async def get_agent_logs(
     ),
     limit: int = Query(50, ge=1, le=500, description="Maximum number of logs to return"),
     offset: int = Query(0, ge=0, description="Number of logs to skip"),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get agent logs with optional filtering
@@ -325,12 +336,15 @@ async def get_agent_logs(
             },
         )
     except Exception as e:
-        logger.error(f"Error fetching agent logs: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch logs: {str(e)}")
+        logger.error(f"Error fetching agent logs: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch logs")
 
 
 @router.get("/memory/stats", response_model=MemoryStats)
-async def get_memory_stats(orchestrator=Depends(get_orchestrator)):
+async def get_memory_stats(
+    orchestrator=Depends(get_orchestrator),
+    current_user: dict = Depends(get_current_user),
+):
     """
     Get agent memory system statistics
 
@@ -397,12 +411,15 @@ async def get_memory_stats(orchestrator=Depends(get_orchestrator)):
             by_agent=by_agent,
         )
     except Exception as e:
-        logger.error(f"Error fetching memory stats: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch memory stats: {str(e)}")
+        logger.error(f"Error fetching memory stats: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch memory stats")
 
 
 @router.get("/health", response_model=AgentHealth)
-async def get_agent_system_health(orchestrator=Depends(get_orchestrator)):
+async def get_agent_system_health(
+    orchestrator=Depends(get_orchestrator),
+    current_user: dict = Depends(get_current_user),
+):
     """
     Get overall agent system health
 
@@ -473,7 +490,7 @@ async def get_agent_system_health(orchestrator=Depends(get_orchestrator)):
 
         return AgentHealth(
             status=overall_status,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             all_agents_running=error_count == 0,
             error_count=error_count,
             warning_count=warning_count,
@@ -481,5 +498,5 @@ async def get_agent_system_health(orchestrator=Depends(get_orchestrator)):
             details=details,
         )
     except Exception as e:
-        logger.error(f"Error fetching agent health: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch health: {str(e)}")
+        logger.error(f"Error fetching agent health: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch health")

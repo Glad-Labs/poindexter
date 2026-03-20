@@ -5,27 +5,32 @@ ASYNC REST endpoints for blog content, categories, and tags.
 Using pure asyncpg for non-blocking database access.
 """
 
-import logging
-import os
-from datetime import datetime
-from typing import Any, Optional
+from services.logger_config import get_logger
+from datetime import datetime, timezone
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 
-from routes.auth_unified import UserProfile, get_current_user
-from services.database_service import DatabaseService
+from routes.auth_unified import UserProfile, get_current_user, get_current_user_optional
 from utils.error_handler import handle_route_error
+from utils.route_utils import get_database_dependency
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 router = APIRouter(tags=["cms"])
 
 
 def convert_markdown_to_html(markdown_content: str) -> str:
     """
-    Convert markdown content to HTML for safe rendering.
-    Handles both pure markdown and HTML-wrapped markdown hybrid format.
-    Uses regex patterns for compatibility without external markdown library.
+    Convert markdown content to HTML for safe rendering (#956).
+
+    Uses the ``markdown`` library for reliable conversion (handles links,
+    images, code blocks, blockquotes, tables, etc.) instead of fragile
+    regex patterns.  Falls back to the raw content on error.
+
+    The canonical content boundary is: **markdown in, HTML out**.
+    Content is stored as markdown in the database; this function converts
+    on read so the frontend always receives HTML.
 
     Args:
         markdown_content: Markdown formatted text
@@ -37,82 +42,21 @@ def convert_markdown_to_html(markdown_content: str) -> str:
         return ""
 
     try:
-        import re
+        import markdown as md
 
-        content = markdown_content.strip()
-        html = content
+        # If content already looks like HTML (starts with a tag), return as-is
+        stripped = markdown_content.strip()
+        if stripped.startswith("<") and not stripped.startswith("<!["):
+            return markdown_content
 
-        # Handle setext-style headers (underlined with = or -)
-        # Level 1 headers (underlined with =)
-        html = re.sub(r"^(.*?)\n=+\s*$", r"<h1>\1</h1>", html, flags=re.MULTILINE)
-        # Level 2 headers (underlined with -)
-        html = re.sub(r"^(.*?)\n-+\s*$", r"<h2>\1</h2>", html, flags=re.MULTILINE)
-
-        # Convert ATX-style headers (# style)
-        html = re.sub(r"^### (.*?)$", r"<h3>\1</h3>", html, flags=re.MULTILINE)
-        html = re.sub(r"^## (.*?)$", r"<h2>\1</h2>", html, flags=re.MULTILINE)
-        html = re.sub(r"^# (.*?)$", r"<h1>\1</h1>", html, flags=re.MULTILINE)
-
-        # Remove standalone lines of dashes/equals (separator lines)
-        html = re.sub(r"^\s*={3,}\s*$", "", html, flags=re.MULTILINE)
-        html = re.sub(r"^\s*-{3,}\s*$", "", html, flags=re.MULTILINE)
-
-        # Convert bold (**, __, **text**, __text__)
-        html = re.sub(r"\*\*(.*?)\*\*", r"<strong>\1</strong>", html)
-        html = re.sub(r"__(.*?)__", r"<strong>\1</strong>", html)
-
-        # Convert italic (*, _)
-        html = re.sub(r"\*(.*?)\*", r"<em>\1</em>", html)
-        html = re.sub(r"_(.*?)_", r"<em>\1</em>", html)
-
-        # Convert line breaks to paragraphs
-        paragraphs = html.split("\n\n")
-        converted_paragraphs = []
-        for p in paragraphs:
-            p = p.strip()
-            if not p:
-                continue
-            # Skip if already an HTML element
-            if (
-                p.startswith("<h")
-                or p.startswith("<ol")
-                or p.startswith("<ul")
-                or p.startswith("<blockquote")
-            ):
-                converted_paragraphs.append(p)
-            # Handle numbered lists
-            elif re.match(r"^\d+\.", p):
-                items = []
-                for line in p.split("\n"):
-                    line = line.strip()
-                    if re.match(r"^\d+\.", line):
-                        item_text = re.sub(r"^\d+\.\s*", "", line)
-                        items.append(f"<li>{item_text}</li>")
-                converted_paragraphs.append("<ol>" + "".join(items) + "</ol>")
-            # Handle bullet lists
-            elif p.startswith("-") or p.startswith("*"):
-                items = []
-                for line in p.split("\n"):
-                    line = line.strip()
-                    if line.startswith("-"):
-                        item_text = re.sub(r"^-\s*", "", line)
-                        items.append(f"<li>{item_text}</li>")
-                    elif line.startswith("*"):
-                        item_text = re.sub(r"^\*\s*", "", line)
-                        items.append(f"<li>{item_text}</li>")
-                if items:
-                    converted_paragraphs.append("<ul>" + "".join(items) + "</ul>")
-            else:
-                # Regular paragraph
-                converted_paragraphs.append(f"<p>{p}</p>")
-
-        html = "\n".join(converted_paragraphs)
-
-        logger.info(f"Converted markdown to HTML (len={len(html)} chars)")
+        html = md.markdown(
+            stripped,
+            extensions=["extra", "codehilite", "sane_lists", "smarty"],
+            output_format="html",
+        )
         return html
     except Exception as e:
         logger.error(f"Error converting markdown: {e}", exc_info=True)
-        # Fallback: return as-is
         return markdown_content
 
 
@@ -185,17 +129,15 @@ def map_featured_image_to_coverimage(post: dict) -> dict:
     return post
 
 
-# Global database service instance
-_db_service: Optional[DatabaseService] = None
-
-
 async def get_db_pool():
-    """Get database pool from service"""
-    global _db_service
-    if _db_service is None:
-        _db_service = DatabaseService()
-        await _db_service.initialize()
-    return _db_service.pool
+    """Get database pool from the shared DatabaseService (injected at startup).
+
+    Uses the centralized service container instead of instantiating a new
+    DatabaseService mid-request, which would bypass the connection pool.
+    """
+    db_service = get_database_dependency()
+    return db_service.pool
+
 
 
 # ============================================================================
@@ -205,60 +147,55 @@ async def get_db_pool():
 
 @router.get("/api/posts")
 async def list_posts(
-    skip: int = Query(0, ge=0, le=10000),
+    offset: int = Query(0, ge=0, le=10000, description="Number of posts to skip"),
+    skip: int = Query(0, ge=0, le=10000, description="Alias for offset (deprecated — use offset)"),
     limit: int = Query(20, ge=1, le=100),
     published_only: bool = Query(True),
+    current_user: Optional[UserProfile] = Depends(get_current_user_optional),
 ):
     """
     List all blog posts with pagination (ASYNC).
-    Returns: {data: [...], meta: {pagination: {...}}}
+    Returns: {posts: [...], total: N, offset: N, limit: N}
+
+    Note: 'skip' is accepted as a deprecated alias for 'offset' for backwards compatibility.
+    Unauthenticated callers always receive published posts only (published_only=True enforced).
     """
+    # Resolve offset: explicit 'offset' param wins; fall back to legacy 'skip'
+    offset = offset if offset != 0 else skip
+    # Unauthenticated callers cannot request draft/unpublished posts
+    if current_user is None:
+        published_only = True
     try:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
-            # Count total
-            count_query = "SELECT COUNT(*) as total FROM posts"
             where_clauses = []
             params = []
 
             if published_only:
                 where_clauses.append("status = 'published'")
 
-            # if featured is not None:
-            #     where_clauses.append(f"featured = ${len(params) + 1}")
-            #     params.append(featured)
+            where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
-            if where_clauses:
-                count_query += " WHERE " + " AND ".join(where_clauses)
-
-            if params:
-                total_row = await conn.fetchrow(count_query, *params)
-            else:
-                total_row = await conn.fetchrow(count_query)
-
-            total = total_row["total"] if total_row else 0
-
-            # Get paginated posts
-            query = """
-                SELECT id, title, slug, excerpt, featured_image_url, cover_image_url, 
+            # Single query: COUNT(*) OVER () avoids a separate COUNT round-trip.
+            # Same pattern used in tasks_db.py (line ~506).
+            params.append(limit)
+            params.append(offset)
+            query = f"""
+                SELECT id, title, slug, excerpt, featured_image_url, cover_image_url,
                        category_id, published_at, created_at, updated_at,
-                       seo_title, seo_description, seo_keywords, status, content, author_id
+                       seo_title, seo_description, seo_keywords, status, content, author_id,
+                       COUNT(*) OVER () AS total_count
                 FROM posts
+                {where_sql}
+                ORDER BY COALESCE(published_at, created_at) DESC NULLS LAST
+                LIMIT ${len(params) - 1} OFFSET ${len(params)}
             """
 
-            if where_clauses:
-                query += " WHERE " + " AND ".join(where_clauses)
+            rows = await conn.fetch(query, *params)
+            total = rows[0]["total_count"] if rows else 0
 
-            # Sort by published_at (newest first), fallback to created_at if not published
-            query += " ORDER BY COALESCE(published_at, created_at) DESC NULLS LAST"
-            query += f" OFFSET {skip} LIMIT {limit}"
-
-            if params:
-                rows = await conn.fetch(query, *params)
-            else:
-                rows = await conn.fetch(query)
-
-            posts = [dict(row) for row in rows]
+            # Exclude the internal window-function column from API output
+            posts = [{k: v for k, v in dict(row).items() if k != "total_count"} for row in rows]
 
             # Format timestamps, generate missing excerpts, and convert markdown to HTML
             for post in posts:
@@ -279,15 +216,10 @@ async def list_posts(
                 map_featured_image_to_coverimage(post)
 
             return {
-                "data": posts,
-                "meta": {
-                    "pagination": {
-                        "page": skip // limit + 1,
-                        "pageSize": limit,
-                        "total": total,
-                        "pageCount": (total + limit - 1) // limit,
-                    }
-                },
+                "posts": posts,
+                "total": total,
+                "offset": offset,
+                "limit": limit,
             }
     except Exception as e:
         raise await handle_route_error(e, "list_posts", logger)
@@ -353,7 +285,7 @@ async def get_post_by_slug(
                 tags = [dict(row) for row in tag_rows]
             except Exception as tag_error:
                 # If tags table doesn't exist or query fails, just return empty tags
-                logger.warning(f"Could not fetch tags for post {post_id}: {str(tag_error)}")
+                logger.warning(f"Could not fetch tags for post {post_id}: {str(tag_error)}", exc_info=True)
                 tags = []
 
             # Get category
@@ -389,10 +321,13 @@ async def get_post_by_slug(
 
 
 @router.get("/api/categories")
-async def list_categories():
+async def list_categories(
+    offset: int = Query(0, ge=0, description="Number of categories to skip"),
+    limit: int = Query(100, ge=1, le=500, description="Maximum categories to return"),
+):
     """
-    List all categories (ASYNC).
-    Returns: {data: [...], meta: {}}
+    List categories with optional pagination (ASYNC).
+    Returns: {categories: [...], total: N, offset: N, limit: N}
     """
     try:
         pool = await get_db_pool()
@@ -405,14 +340,16 @@ async def list_categories():
             """
             )
 
-            categories = []
+            all_categories = []
             for row in rows:
                 cat = dict(row)
                 cat["created_at"] = cat["created_at"].isoformat() if cat["created_at"] else None
                 cat["updated_at"] = cat["updated_at"].isoformat() if cat["updated_at"] else None
-                categories.append(cat)
+                all_categories.append(cat)
 
-            return {"data": categories, "meta": {}}
+            total = len(all_categories)
+            categories = all_categories[offset : offset + limit]
+            return {"categories": categories, "total": total, "offset": offset, "limit": limit}
     except Exception as e:
         raise await handle_route_error(e, "list_categories", logger)
 
@@ -423,10 +360,13 @@ async def list_categories():
 
 
 @router.get("/api/tags")
-async def list_tags():
+async def list_tags(
+    offset: int = Query(0, ge=0, description="Number of tags to skip"),
+    limit: int = Query(100, ge=1, le=500, description="Maximum tags to return"),
+):
     """
-    List all tags (ASYNC).
-    Returns: {data: [...], meta: {}}
+    List tags with optional pagination (ASYNC).
+    Returns: {tags: [...], total: N, offset: N, limit: N}
     """
     try:
         pool = await get_db_pool()
@@ -439,14 +379,16 @@ async def list_tags():
             """
             )
 
-            tags = []
+            all_tags = []
             for row in rows:
                 tag = dict(row)
                 tag["created_at"] = tag["created_at"].isoformat() if tag["created_at"] else None
                 tag["updated_at"] = tag["updated_at"].isoformat() if tag["updated_at"] else None
-                tags.append(tag)
+                all_tags.append(tag)
 
-            return {"data": tags, "meta": {}}
+            total = len(all_tags)
+            tags = all_tags[offset : offset + limit]
+            return {"tags": tags, "total": total, "offset": offset, "limit": limit}
     except Exception as e:
         raise await handle_route_error(e, "list_tags", logger)
 
@@ -457,17 +399,19 @@ async def list_tags():
 
 
 @router.get("/api/cms/status")
-async def cms_status():
+async def cms_status(current_user: UserProfile = Depends(get_current_user)):
     """
     Check CMS database status and table existence (ASYNC).
-    Requires: Valid JWT authentication
+    Requires: Valid JWT authentication (admin health endpoint — not public)
     Returns: {status: "healthy"|"error", tables: {...}}
     """
     try:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
+            # Allowlist of tables — never interpolate user-controlled values into SQL
+            CMS_TABLES = frozenset(["posts", "categories", "tags", "post_tags"])
             tables = {}
-            for table_name in ["posts", "categories", "tags", "post_tags"]:
+            for table_name in CMS_TABLES:
                 # Check if table exists
                 exists_row = await conn.fetchrow(
                     """
@@ -492,16 +436,19 @@ async def cms_status():
             return {
                 "status": "healthy" if all_exist else "degraded",
                 "tables": tables,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
-    except Exception as e:
-        logger.error(f"Error checking CMS status: {str(e)}", exc_info=True)
-        return {
-            "status": "error",
-            "detail": str(e),
-            "tables": {},
-            "timestamp": datetime.now().isoformat(),
-        }
+    except Exception:
+        logger.error("[cms_status] CMS status check failed", exc_info=True)
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "error",
+                "detail": "CMS status check failed",
+                "tables": {},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+        )
 
 
 # ============================================================================

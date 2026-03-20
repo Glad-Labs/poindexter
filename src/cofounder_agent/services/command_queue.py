@@ -10,17 +10,14 @@ Features:
 """
 
 import asyncio
-import json
-import logging
+from services.logger_config import get_logger
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 from uuid import uuid4
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class CommandStatus(str, Enum):
     """Command execution status"""
 
@@ -42,8 +39,8 @@ class Command:  # pylint: disable=too-many-instance-attributes
     status: CommandStatus = CommandStatus.PENDING
     result: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
-    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
-    updated_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
     retry_count: int = 0
@@ -108,8 +105,8 @@ class CommandQueue:
 
             if command:
                 command.status = CommandStatus.PROCESSING
-                command.started_at = datetime.utcnow().isoformat()
-                command.updated_at = datetime.utcnow().isoformat()
+                command.started_at = datetime.now(timezone.utc).isoformat()
+                command.updated_at = datetime.now(timezone.utc).isoformat()
 
             return command
         except asyncio.TimeoutError:
@@ -141,8 +138,8 @@ class CommandQueue:
 
         command.status = CommandStatus.COMPLETED
         command.result = result
-        command.completed_at = datetime.utcnow().isoformat()
-        command.updated_at = datetime.utcnow().isoformat()
+        command.completed_at = datetime.now(timezone.utc).isoformat()
+        command.updated_at = datetime.now(timezone.utc).isoformat()
 
         logger.info(f"Command completed: {command_id}")
 
@@ -162,7 +159,7 @@ class CommandQueue:
             return None
 
         command.error = error
-        command.updated_at = datetime.utcnow().isoformat()
+        command.updated_at = datetime.now(timezone.utc).isoformat()
 
         # Retry logic
         if retry and command.retry_count < command.max_retries:
@@ -189,7 +186,7 @@ class CommandQueue:
             return command
 
         command.status = CommandStatus.CANCELLED
-        command.updated_at = datetime.utcnow().isoformat()
+        command.updated_at = datetime.now(timezone.utc).isoformat()
 
         logger.info(f"Command cancelled: {command_id}")
 
@@ -214,13 +211,16 @@ class CommandQueue:
                 else:
                     handler(command)
             except Exception as e:
-                logger.error(f"Handler error for {command.agent_type}: {e}")
+                logger.error(
+                    f"[_notify_handlers] Handler error for agent_type={command.agent_type}, command_id={command.id}: {e}",
+                    exc_info=True,
+                )
 
     async def clear_old_commands(self, max_age_hours: int = 24):
         """Clear old completed commands"""
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         cutoff = now - timedelta(hours=max_age_hours)
 
         to_delete = []
@@ -246,7 +246,7 @@ class CommandQueue:
             "total_commands": len(self.commands),
             "pending_commands": self.queue.qsize(),
             "by_status": by_status,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
 

@@ -7,7 +7,7 @@ This service integrates SearXNG for the research stage of content generation.
 
 import asyncio
 import json
-import logging
+from services.logger_config import get_logger
 from datetime import datetime
 from typing import Optional
 
@@ -15,22 +15,20 @@ import httpx
 
 # Optional dependencies for enhanced functionality
 try:
-    import feedparser
+    import feedparser  # type: ignore
 
     FEEDPARSER_AVAILABLE = True
 except ImportError:
     FEEDPARSER_AVAILABLE = False
 
 try:
-    from bs4 import BeautifulSoup
+    from bs4 import BeautifulSoup  # type: ignore
 
     BS4_AVAILABLE = True
 except ImportError:
     BS4_AVAILABLE = False
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class SearXNGResearchService:
     """Privacy-respecting research service using SearXNG metasearch."""
 
@@ -51,16 +49,17 @@ class SearXNGResearchService:
         self.searxng_instance = searxng_instance.rstrip("/")
         self.timeout = timeout
         self.max_results = max_results
-        self.client = None
+        # Initialise the client eagerly so it is shared across all method calls
+        # and connection pooling is effective. Closed in __aexit__.
+        self.client = httpx.AsyncClient(timeout=self.timeout)
 
     async def __aenter__(self):
         """Async context manager entry."""
-        self.client = httpx.AsyncClient(timeout=self.timeout)
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit."""
-        if self.client:
+        """Async context manager exit — closes the shared client."""
+        if self.client is not None:
             await self.client.aclose()
 
     async def search(self, query: str, category: str = "general") -> dict:
@@ -74,9 +73,6 @@ class SearXNGResearchService:
         Returns:
             Dictionary with search results and metadata
         """
-        if not self.client:
-            self.client = httpx.AsyncClient(timeout=self.timeout)
-
         try:
             url = f"{self.searxng_instance}/search"
             params = {
@@ -101,7 +97,7 @@ class SearXNGResearchService:
             }
 
         except Exception as e:
-            logger.error(f"SearXNG search failed: {e}")
+            logger.error(f"SearXNG search failed: {e}", exc_info=True)
             return {
                 "query": query,
                 "error": str(e),
@@ -185,14 +181,11 @@ class SearXNGResearchService:
             logger.debug("BeautifulSoup4 not available, skipping article content extraction")
             return None
 
-        if not self.client:
-            self.client = httpx.AsyncClient(timeout=self.timeout)
-
         try:
             response = await self.client.get(url, follow_redirects=True)
             response.raise_for_status()
 
-            soup = BeautifulSoup(response.text, "html.parser")
+            soup = BeautifulSoup(response.text, "html.parser")  # type: ignore
 
             # Remove script and style elements
             for script in soup(["script", "style"]):
@@ -209,7 +202,7 @@ class SearXNGResearchService:
             return text[:5000]  # Return first 5000 chars
 
         except Exception as e:
-            logger.warning(f"Failed to fetch article from {url}: {e}")
+            logger.warning(f"[fetch_article] Failed to fetch article from {url}: {e}", exc_info=True)
             return None
 
     async def get_news_feeds(self, keywords: list[str], limit: int = 5) -> dict:
@@ -245,9 +238,6 @@ class SearXNGResearchService:
                     "results": 3,
                 }
 
-                if not self.client:
-                    self.client = httpx.AsyncClient(timeout=self.timeout)
-
                 response = await self.client.get(url, params=params)
                 response.raise_for_status()
 
@@ -256,7 +246,7 @@ class SearXNGResearchService:
 
                 for result in results[:limit]:
                     try:
-                        feed = feedparser.parse(result.get("url", ""))
+                        feed = feedparser.parse(result.get("url", ""))  # type: ignore
                         if feed.entries:
                             entries.extend(
                                 {
@@ -277,7 +267,7 @@ class SearXNGResearchService:
                 }
 
             except Exception as e:
-                logger.error(f"Feed aggregation error for {keyword}: {e}")
+                logger.error(f"Feed aggregation error for {keyword}: {e}", exc_info=True)
                 feeds_data[keyword] = {"error": str(e), "entries": []}
 
         return {

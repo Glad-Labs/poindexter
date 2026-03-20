@@ -8,23 +8,22 @@ Endpoints:
 - POST /api/writing-style/upload - Upload new writing sample
 - GET /api/writing-style/samples - List user's writing samples
 - GET /api/writing-style/active - Get active writing sample
-- PUT /api/writing-style/{sample_id}/set-active - Set as active sample
+- POST /api/writing-style/{sample_id}/activate - Activate sample (deactivates all others)
 - PUT /api/writing-style/{sample_id} - Update sample
 - DELETE /api/writing-style/{sample_id} - Delete sample
 """
 
-import logging
+from services.logger_config import get_logger
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
 from routes.auth_unified import get_current_user
 from services.database_service import DatabaseService
 from utils.route_utils import get_database_dependency
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 router = APIRouter(prefix="/api/writing-style", tags=["writing-style"])
 
 
@@ -62,8 +61,33 @@ class WritingSamplesListResponse(BaseModel):
     """Response containing list of samples"""
 
     samples: List[WritingSampleResponse]
-    total_count: int
+    total: int  # project-standard field name; total_count alias removed (issue #604)
     active_sample_id: Optional[str]
+    offset: int = 0
+    limit: int = 100
+
+
+# ============================================================================
+# Helpers
+# ============================================================================
+
+
+def _require_writing_style_service(db_service: DatabaseService):
+    """Raise 503 if the writing_style sub-service was not initialised (no DB pool)."""
+    if db_service.writing_style is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Writing style service unavailable — database not initialised",
+        )
+    return db_service.writing_style
+
+
+def _get_user_id(current_user) -> str:
+    """Extract and validate user_id from the current_user token payload."""
+    user_id = current_user.get("id") if isinstance(current_user, dict) else current_user
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User identity could not be determined")
+    return str(user_id)
 
 
 # ============================================================================
@@ -122,7 +146,7 @@ async def upload_writing_sample(
             try:
                 sample_content = file_content.decode("utf-8")
             except UnicodeDecodeError:
-                logger.warning("File upload rejected: file is not valid UTF-8 text")
+                logger.warning("File upload rejected: file is not valid UTF-8 text", exc_info=True)
                 raise HTTPException(status_code=422, detail="File must be valid UTF-8 text")
 
         if not sample_content or not sample_content.strip():
@@ -131,8 +155,8 @@ async def upload_writing_sample(
             )
 
         # Create the writing sample
-        user_id = current_user.get("id") if isinstance(current_user, dict) else current_user
-        sample = await db_service.writing_style.create_writing_sample(
+        user_id = _get_user_id(current_user)
+        sample = await _require_writing_style_service(db_service).create_writing_sample(
             user_id=user_id,
             title=title,
             content=sample_content.strip(),
@@ -146,41 +170,49 @@ async def upload_writing_sample(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Error uploading writing sample: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to upload sample: {str(e)}")
+        logger.error(f"❌ Error uploading writing sample: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to upload sample")
 
 
 @router.get("/samples", response_model=WritingSamplesListResponse)
 async def list_writing_samples(
+    offset: int = Query(0, ge=0, description="Number of samples to skip"),
+    limit: int = Query(20, ge=1, le=100, description="Maximum samples to return"),
     current_user: str = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
-    Get all writing samples for the current user.
+    Get writing samples for the current user with optional pagination.
 
     Returns:
-        List of WritingSampleResponse objects
+        Paginated list of WritingSampleResponse objects
     """
     try:
-        user_id = current_user.get("id") if isinstance(current_user, dict) else current_user
-        samples = await db_service.writing_style.get_user_writing_samples(user_id)
+        user_id = _get_user_id(current_user)
+        all_samples = await _require_writing_style_service(db_service).get_user_writing_samples(user_id)
+
+        total = len(all_samples)
+        # Apply pagination
+        paginated = all_samples[offset : offset + limit]
 
         # Find active sample if any
         active_sample_id = None
-        for sample in samples:
+        for sample in all_samples:
             if sample.get("is_active"):
                 active_sample_id = sample.get("id")
                 break
 
         return WritingSamplesListResponse(
-            samples=[WritingSampleResponse(**s) for s in samples],
-            total_count=len(samples),
+            samples=[WritingSampleResponse(**s) for s in paginated],
+            total=total,
             active_sample_id=active_sample_id,
+            offset=offset,
+            limit=limit,
         )
 
     except Exception as e:
-        logger.error(f"❌ Error listing writing samples: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to list samples: {str(e)}")
+        logger.error(f"❌ Error listing writing samples: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to list samples")
 
 
 @router.get("/active", response_model=Optional[WritingSampleResponse])
@@ -195,8 +227,8 @@ async def get_active_writing_sample(
         Active WritingSampleResponse or null if no active sample
     """
     try:
-        user_id = current_user.get("id") if isinstance(current_user, dict) else current_user
-        sample = await db_service.writing_style.get_active_writing_sample(user_id)
+        user_id = _get_user_id(current_user)
+        sample = await _require_writing_style_service(db_service).get_active_writing_sample(user_id)
 
         if not sample:
             return None
@@ -204,18 +236,21 @@ async def get_active_writing_sample(
         return WritingSampleResponse(**sample)
 
     except Exception as e:
-        logger.error(f"❌ Error getting active writing sample: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get active sample: {str(e)}")
+        logger.error(f"❌ Error getting active writing sample: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get active sample")
 
 
-@router.put("/{sample_id}/set-active", response_model=WritingSampleResponse)
-async def set_active_writing_sample(
+@router.post("/{sample_id}/activate", response_model=WritingSampleResponse)
+async def activate_writing_sample(
     sample_id: str,
     current_user: str = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
-    Set a writing sample as the active one for the user.
+    Activate a writing sample as the user's current active style.
+
+    Activating a sample deactivates all other samples for the user — this is
+    a state-machine transition, not a field update, so POST is the correct method.
 
     Args:
         sample_id: ID of sample to activate
@@ -224,9 +259,9 @@ async def set_active_writing_sample(
         Updated WritingSampleResponse
     """
     try:
-        user_id = current_user.get("id") if isinstance(current_user, dict) else current_user
+        user_id = _get_user_id(current_user)
         # Verify sample belongs to user
-        sample = await db_service.writing_style.get_writing_sample(sample_id)
+        sample = await _require_writing_style_service(db_service).get_writing_sample(sample_id)
         if not sample:
             raise HTTPException(status_code=404, detail="Writing sample not found")
 
@@ -234,7 +269,7 @@ async def set_active_writing_sample(
             raise HTTPException(status_code=403, detail="Unauthorized")
 
         # Set as active
-        updated = await db_service.writing_style.set_active_writing_sample(user_id, sample_id)
+        updated = await _require_writing_style_service(db_service).set_active_writing_sample(user_id, sample_id)
 
         logger.info(f"✅ User {user_id} set writing sample {sample_id} as active")
         return WritingSampleResponse(**updated)
@@ -242,8 +277,8 @@ async def set_active_writing_sample(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Error setting active writing sample: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to set active sample: {str(e)}")
+        logger.error(f"❌ Error setting active writing sample: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to set active sample")
 
 
 @router.put("/{sample_id}", response_model=WritingSampleResponse)
@@ -264,9 +299,9 @@ async def update_writing_sample(
         Updated WritingSampleResponse
     """
     try:
-        user_id = current_user.get("id") if isinstance(current_user, dict) else current_user
+        user_id = _get_user_id(current_user)
         # Verify sample belongs to user
-        sample = await db_service.writing_style.get_writing_sample(sample_id)
+        sample = await _require_writing_style_service(db_service).get_writing_sample(sample_id)
         if not sample:
             raise HTTPException(status_code=404, detail="Writing sample not found")
 
@@ -274,7 +309,7 @@ async def update_writing_sample(
             raise HTTPException(status_code=403, detail="Unauthorized")
 
         # Update the sample
-        updated = await db_service.writing_style.update_writing_sample(
+        updated = await _require_writing_style_service(db_service).update_writing_sample(
             sample_id=sample_id,
             user_id=user_id,
             title=request.title,
@@ -288,11 +323,11 @@ async def update_writing_sample(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Error updating writing sample: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to update sample: {str(e)}")
+        logger.error(f"❌ Error updating writing sample: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to update sample")
 
 
-@router.delete("/{sample_id}")
+@router.delete("/{sample_id}", status_code=204)
 async def delete_writing_sample(
     sample_id: str,
     current_user: str = Depends(get_current_user),
@@ -308,9 +343,9 @@ async def delete_writing_sample(
         Success message
     """
     try:
-        user_id = current_user.get("id") if isinstance(current_user, dict) else current_user
+        user_id = _get_user_id(current_user)
         # Verify sample belongs to user
-        sample = await db_service.writing_style.get_writing_sample(sample_id)
+        sample = await _require_writing_style_service(db_service).get_writing_sample(sample_id)
         if not sample:
             raise HTTPException(status_code=404, detail="Writing sample not found")
 
@@ -318,19 +353,19 @@ async def delete_writing_sample(
             raise HTTPException(status_code=403, detail="Unauthorized")
 
         # Delete the sample
-        success = await db_service.writing_style.delete_writing_sample(sample_id, user_id)
+        success = await _require_writing_style_service(db_service).delete_writing_sample(sample_id, user_id)
 
         if not success:
             raise HTTPException(status_code=404, detail="Writing sample not found")
 
         logger.info(f"✅ User {user_id} deleted writing sample {sample_id}")
-        return {"status": "deleted", "sample_id": sample_id}
+        return None  # 204 No Content
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Error deleting writing sample: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to delete sample: {str(e)}")
+        logger.error(f"❌ Error deleting writing sample: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to delete sample")
 
 
 # ============================================================================
@@ -355,8 +390,8 @@ def _calculate_topic_similarity(content: str, query: str) -> float:
     return intersection / union if union > 0 else 0.0
 
 
-@router.post("/retrieve-relevant")
-async def retrieve_relevant_samples(
+@router.get("/relevant")
+async def get_relevant_samples(
     query_topic: str,
     preferred_style: Optional[str] = None,
     preferred_tone: Optional[str] = None,
@@ -399,7 +434,7 @@ async def retrieve_relevant_samples(
         user_id = current_user if isinstance(current_user, str) else current_user.get("id")
 
         # Get all user samples
-        samples = await db_service.writing_style.get_user_writing_samples(user_id)
+        samples = await _require_writing_style_service(db_service).get_user_writing_samples(user_id)
 
         if not samples:
             return {
@@ -454,11 +489,11 @@ async def retrieve_relevant_samples(
         }
 
     except Exception as e:
-        logger.error(f"❌ Error retrieving samples: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve samples: {str(e)}")
+        logger.error(f"❌ Error retrieving samples: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve samples")
 
 
-@router.get("/retrieve-by-style/{style}")
+@router.get("/by-style/{style}")
 async def retrieve_by_style(
     style: str,
     limit: int = 5,
@@ -495,7 +530,7 @@ async def retrieve_by_style(
         user_id = current_user if isinstance(current_user, str) else current_user.get("id")
 
         # Get all user samples
-        samples = await db_service.writing_style.get_user_writing_samples(user_id)
+        samples = await _require_writing_style_service(db_service).get_user_writing_samples(user_id)
 
         # Filter by style
         matching = []
@@ -525,11 +560,11 @@ async def retrieve_by_style(
         return {"style": style, "found_samples": len(matching), "samples": matching}
 
     except Exception as e:
-        logger.error(f"❌ Error retrieving samples by style: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve samples: {str(e)}")
+        logger.error(f"❌ Error retrieving samples by style: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve samples")
 
 
-@router.get("/retrieve-by-tone/{tone}")
+@router.get("/by-tone/{tone}")
 async def retrieve_by_tone(
     tone: str,
     limit: int = 5,
@@ -565,7 +600,7 @@ async def retrieve_by_tone(
         user_id = current_user if isinstance(current_user, str) else current_user.get("id")
 
         # Get all user samples
-        samples = await db_service.writing_style.get_user_writing_samples(user_id)
+        samples = await _require_writing_style_service(db_service).get_user_writing_samples(user_id)
 
         # Filter by tone
         matching = []
@@ -593,5 +628,5 @@ async def retrieve_by_tone(
         return {"tone": tone, "found_samples": len(matching), "samples": matching}
 
     except Exception as e:
-        logger.error(f"❌ Error retrieving samples by tone: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve samples: {str(e)}")
+        logger.error(f"❌ Error retrieving samples by tone: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve samples")

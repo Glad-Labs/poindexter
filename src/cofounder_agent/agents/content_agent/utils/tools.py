@@ -1,10 +1,11 @@
-import logging
+from services.logger_config import get_logger
 import os
 from typing import Optional
 
+logger = get_logger(__name__)
 # Try to import crewai_tools, fall back to mock if not available
 try:
-    from crewai_tools import (
+    from crewai_tools import (  # type: ignore
         CodeInterpreterTool,
         DirectoryReadTool,
         FileReadTool,
@@ -13,8 +14,8 @@ try:
     )
 
     CREWAI_TOOLS_AVAILABLE = True
+    logger.info("[crewai_tools] Real crewai_tools package loaded successfully")
 except ImportError:
-    # crewai_tools not available, using mock implementations instead
     from .crewai_tools_mock import (
         CodeInterpreterTool,
         DirectoryReadTool,
@@ -24,11 +25,14 @@ except ImportError:
     )
 
     CREWAI_TOOLS_AVAILABLE = False
+    logger.warning(
+        "[crewai_tools] crewai_tools package not installed — using STUB implementations. "
+        "Web search, file reading, and code execution tools will return placeholder strings "
+        "instead of real results. Install crewai-tools to enable real tool functionality."
+, exc_info=True)
 
-logger = logging.getLogger(__name__)
 
-
-class WebSearchTool(SerperDevTool):
+class WebSearchTool(SerperDevTool):  # type: ignore[misc]
     """
     A tool for performing web searches to gather real-time information,
     find external links, and enrich content. This is a direct integration
@@ -44,7 +48,7 @@ class WebSearchTool(SerperDevTool):
             logger.warning("SERPER_API_KEY not set - web search will be limited")
 
 
-class CompetitorContentSearchTool(WebsiteSearchTool):
+class CompetitorContentSearchTool(WebsiteSearchTool):  # type: ignore[misc]
     """
     RAG-based search tool for analyzing competitor websites and content.
     Uses semantic search to find relevant information within web pages.
@@ -59,16 +63,16 @@ class CompetitorContentSearchTool(WebsiteSearchTool):
             logger.info("CompetitorContentSearchTool initialized successfully")
         except Exception as e:
             # Handle missing CHROMA_OPENAI_API_KEY or other initialization errors gracefully
-            logger.warning(f"CompetitorContentSearchTool initialization failed: {str(e)[:200]}")
+            logger.warning(f"CompetitorContentSearchTool initialization failed: {str(e)[:200]}", exc_info=True)
             logger.warning(
                 "Competitor content search will be unavailable - continuing without this tool"
-            )
+, exc_info=True)
             # Store the error for later reference, but don't raise
             self._initialization_error = str(e)
             self._is_available = False
 
 
-class DocumentAccessTool(FileReadTool):
+class DocumentAccessTool(FileReadTool):  # type: ignore[misc]
     """
     Tool for reading and extracting content from various file formats.
     Supports: txt, md, json, csv, pdf, docx, and more.
@@ -81,21 +85,21 @@ class DocumentAccessTool(FileReadTool):
         super().__init__()
         logger.info("DocumentAccessTool initialized")
 
-    def read_research_file(self, file_path: str) -> str:
+    def read_research_file(self, file_path: str) -> Optional[str]:
         """Read a research document with error handling"""
         try:
             content = self.run(file_path)
             logger.info(f"Successfully read file: {file_path}")
             return content
         except FileNotFoundError:
-            logger.error(f"File not found: {file_path}")
+            logger.error(f"File not found: {file_path}", exc_info=True)
             return None
         except Exception as e:
-            logger.error(f"Error reading file {file_path}: {str(e)}")
+            logger.error(f"Error reading file {file_path}: {str(e)}", exc_info=True)
             return None
 
 
-class DirectoryAccessTool(DirectoryReadTool):
+class DirectoryAccessTool(DirectoryReadTool):  # type: ignore[misc]
     """
     Tool for navigating and analyzing directory structures.
     Useful for understanding content organization and finding related files.
@@ -112,7 +116,7 @@ class DirectoryAccessTool(DirectoryReadTool):
         logger.info(f"DirectoryAccessTool initialized for: {directory or './'}")
 
 
-class DataProcessingTool(CodeInterpreterTool):
+class DataProcessingTool(CodeInterpreterTool):  # type: ignore[misc]
     """
     Tool for executing Python code to process data, run calculations,
     and transform information. Useful for data cleaning and analysis.
@@ -126,14 +130,14 @@ class DataProcessingTool(CodeInterpreterTool):
         super().__init__()
         logger.info("DataProcessingTool initialized")
 
-    def process_data(self, code: str) -> str:
+    def process_data(self, code: str) -> Optional[str]:
         """Execute data processing code with error handling"""
         try:
             result = self.run(code)
             logger.info("Data processing completed successfully")
             return result
         except Exception as e:
-            logger.error(f"Error during data processing: {str(e)}")
+            logger.error(f"Error during data processing: {str(e)}", exc_info=True)
             return None
 
 

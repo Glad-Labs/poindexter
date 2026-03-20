@@ -5,13 +5,14 @@ Provides REST endpoints for command dispatch and monitoring
 Replaces Pub/Sub topic subscriptions with HTTP API calls
 """
 
-import logging
+from services.logger_config import get_logger
 import os
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from routes.auth_unified import get_current_user
 
 # Add parent directory to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -29,12 +30,15 @@ from services.command_queue import (
     get_command_queue,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+router = APIRouter(
+    prefix="/api/commands",
+    tags=["commands"],
+    dependencies=[Depends(get_current_user)],
+)
 
-router = APIRouter(prefix="/api/commands", tags=["commands"])
 
-
-@router.post("/", response_model=CommandResponse)
+@router.post("", response_model=CommandResponse)
 async def dispatch_command(request: CommandRequest) -> Dict[str, Any]:
     """
     Dispatch a command to an agent
@@ -57,8 +61,8 @@ async def dispatch_command(request: CommandRequest) -> Dict[str, Any]:
 
         return cmd.to_dict()
     except Exception as e:
-        logger.error(f"Failed to dispatch command: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error(f"Failed to dispatch command: {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail="An internal error occurred")
 
 
 @router.get("/{command_id}", response_model=CommandResponse)
@@ -84,19 +88,19 @@ async def get_command(command_id: str) -> Dict[str, Any]:
     return cmd.to_dict()
 
 
-@router.get("/", response_model=CommandListResponse)
+@router.get("", response_model=CommandListResponse)
 async def list_commands(
     status: Optional[str] = Query(None),
-    limit: int = Query(100, le=1000),
-    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
 ) -> Dict[str, Any]:
     """
     List commands with optional filtering
 
     Args:
         status: Filter by status (pending, processing, completed, failed)
-        limit: Number of results
-        skip: Number to skip
+        limit: Number of results (1-100, default: 20)
+        offset: Pagination offset
 
     Returns:
         List of commands
@@ -119,11 +123,13 @@ async def list_commands(
 
     # Apply pagination
     total = len(commands)
-    commands = commands[skip : skip + limit]
+    commands = commands[offset : offset + limit]
 
     return {
         "commands": [cmd.to_dict() for cmd in commands],
         "total": total,
+        "offset": offset,
+        "limit": limit,
         "status_filter": status,
     }
 

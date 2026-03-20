@@ -11,7 +11,7 @@ Cost:
 - Much cheaper than DALL-E ($0.02/image)
 """
 
-import base64
+import asyncio
 import logging
 import os
 import time
@@ -20,8 +20,10 @@ from datetime import datetime
 from io import BytesIO
 from typing import List, Optional
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
+
+from routes.auth_unified import get_current_user
 
 # Cloud storage imports
 try:
@@ -117,7 +119,7 @@ def get_s3_client():
                 )
                 logger.info("✅ S3 client initialized (fallback)")
             except Exception as e:
-                logger.warning(f"⚠️ S3 client initialization failed: {e}")
+                logger.warning(f"⚠️ S3 client initialization failed: {e}", exc_info=True)
                 _s3_client = False  # Mark as explicitly disabled
         else:
             logger.info("ℹ️ AWS S3 not configured (optional fallback)")
@@ -150,25 +152,30 @@ async def upload_to_s3(file_path: str, task_id: Optional[str] = None) -> Optiona
         # Generate unique key
         image_key = f"generated/{int(time.time())}-{uuid.uuid4()}.png"
 
-        # Read file
-        with open(file_path, "rb") as f:
-            file_data = f.read()
+        # Read file — offload blocking I/O to thread pool so event loop is not stalled
+        loop = asyncio.get_event_loop()
+        file_data = await loop.run_in_executor(
+            None, lambda: open(file_path, "rb").read()
+        )
 
         # Prepare metadata
         metadata = {"generated-date": datetime.now().isoformat()}
         if task_id:
             metadata["task-id"] = task_id
 
-        # Upload to S3
-        s3.upload_fileobj(
-            BytesIO(file_data),
-            bucket,
-            image_key,
-            ExtraArgs={
-                "ContentType": "image/png",
-                "CacheControl": "max-age=31536000, immutable",  # Cache 1 year
-                "Metadata": metadata,
-            },
+        # Upload to S3 — boto3 is synchronous; run in executor to avoid blocking
+        await loop.run_in_executor(
+            None,
+            lambda: s3.upload_fileobj(
+                BytesIO(file_data),
+                bucket,
+                image_key,
+                ExtraArgs={
+                    "ContentType": "image/png",
+                    "CacheControl": "max-age=31536000, immutable",  # Cache 1 year
+                    "Metadata": metadata,
+                },
+            ),
         )
 
         logger.info(f"✅ Uploaded to S3: s3://{bucket}/{image_key}")
@@ -357,7 +364,10 @@ def build_enhanced_search_prompt(
     summary="Generate or search for featured image",
     description="Search Pexels for free stock images, with optional SDXL fallback",
 )
-async def generate_featured_image(request: ImageGenerationRequest):
+async def generate_featured_image(
+    request: ImageGenerationRequest,
+    current_user: dict = Depends(get_current_user),
+):
     """
     Generate or search for a featured image.
     
@@ -405,7 +415,7 @@ async def generate_featured_image(request: ImageGenerationRequest):
             success=False,
             image_url="",
             image=None,
-            message=f"❌ Image service initialization failed: {str(e)}",
+            message="Image service initialization failed",
             generation_time=elapsed,
         )
 
@@ -438,7 +448,7 @@ async def generate_featured_image(request: ImageGenerationRequest):
                 else:
                     logger.warning(f"⚠️ STEP 1 FAILED: No Pexels image found for: {search_prompt}")
             except Exception as e:
-                logger.warning(f"⚠️ STEP 1 ERROR: Pexels search failed: {e}")
+                logger.warning(f"⚠️ STEP 1 ERROR: Pexels search failed: {e}", exc_info=True)
         else:
             logger.info(f"ℹ️ STEP 1 SKIPPED: use_pexels=false")
 
@@ -519,7 +529,7 @@ async def generate_featured_image(request: ImageGenerationRequest):
                     )
                     logger.info(f"✅ Created image metadata (local preview): {output_path}")
             except Exception as e:
-                logger.warning(f"⚠️ SDXL generation failed: {e}")
+                logger.warning(f"⚠️ SDXL generation failed: {e}", exc_info=True)
         elif image and not request.use_generation:
             logger.info(f"ℹ️ STEP 2 SKIPPED: Pexels found image, use_generation=false")
         elif not image and not request.use_generation:
@@ -585,7 +595,7 @@ async def generate_featured_image(request: ImageGenerationRequest):
             success=False,
             image_url="",
             image=None,
-            message=f"❌ Error: {str(e)}",
+            message="An internal error occurred",
             generation_time=elapsed,
         )
 
@@ -599,6 +609,7 @@ async def generate_featured_image(request: ImageGenerationRequest):
 async def search_images(
     query: str = Query(..., min_length=3, description="Search query"),
     count: int = Query(1, ge=1, le=20, description="Number of images (1-20)"),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Search for images by query.
@@ -678,7 +689,7 @@ async def search_images(
             success=False,
             image_url="",
             image=None,
-            message=f"❌ Error: {str(e)}",
+            message="An internal error occurred",
             generation_time=elapsed,
         )
 
@@ -734,5 +745,5 @@ async def health_check():
             status="error",
             pexels_available=False,
             sdxl_available=False,
-            message=f"Error checking services: {str(e)}",
+            message="Error checking services",
         )

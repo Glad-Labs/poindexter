@@ -1,9 +1,10 @@
 import json
-import logging  # Add logging import
 import re
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
-logger = logging.getLogger(__name__)  # Add logger
+from services.logger_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def load_prompts_from_file(file_path: str) -> Dict[str, str]:
@@ -14,12 +15,12 @@ def load_prompts_from_file(file_path: str) -> Dict[str, str]:
     except FileNotFoundError:
         logger.critical(
             f"FATAL: Prompts file not found at {file_path}. The application cannot start."
-        )
+, exc_info=True)
         raise
     except json.JSONDecodeError:
         logger.critical(
             f"FATAL: Prompts file at {file_path} is corrupted. The application cannot start."
-        )
+, exc_info=True)
         raise
 
 

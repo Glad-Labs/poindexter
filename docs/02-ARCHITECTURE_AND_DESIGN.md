@@ -1,7 +1,7 @@
 # 02 - Architecture & Design
 
-**Last Updated:** January 10, 2026  
-**Version:** 3.0.1  
+**Last Updated:** March 10, 2026
+**Version:** 3.0.81
 **Status:** ✅ Production Ready | Multi-Agent System | Fast API Backend
 
 ---
@@ -139,7 +139,7 @@ The backend is built with FastAPI and handles all asynchronous task execution an
 
 | Component         | Technology                       | Port | Status        |
 | ----------------- | -------------------------------- | ---- | ------------- |
-| **Public Site**   | Next.js 15 + React 19 + Tailwind | 3000 | ✅ Production |
+| **Public Site**   | Next.js 15 + React 18 + Tailwind | 3000 | ✅ Production |
 | **Oversight Hub** | React 18 + Material-UI + Zustand | 3001 | ✅ Production |
 
 **Frontend Features:**
@@ -161,7 +161,7 @@ The backend is built with FastAPI and handles all asynchronous task execution an
 
 **Backend Features:**
 
-- RESTful API (50+ endpoints)
+- RESTful API (160+ endpoints)
 - WebSocket support (planned)
 - Multi-agent orchestration
 - Model routing and fallback
@@ -174,7 +174,7 @@ The backend is built with FastAPI and handles all asynchronous task execution an
 
 | Service        | Provider/Tech                         | Purpose                        | Status       |
 | -------------- | ------------------------------------- | ------------------------------ | ------------ |
-| **Database**   | PostgreSQL (prod) / SQLite (local)    | Content and operational data   | ✅ Active    |
+| **Database**   | PostgreSQL (required, no SQLite)      | Content and operational data   | ✅ Active    |
 | **Cache**      | Redis                                 | Session management and caching | ✅ Available |
 | **Storage**    | File system / Cloud Storage           | Media files and assets         | ✅ Active    |
 | **Task Queue** | REST API + async workers (dev/prod)   | Async task processing          | ✅ Active    |
@@ -785,4 +785,4 @@ CREATE TABLE memories (
 
 **[← Back to Documentation Hub](./00-README.md)**
 
-[Setup](./01-SETUP_AND_OVERVIEW.md) • [Deployment](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md) • [Development](./04-DEVELOPMENT_WORKFLOW.md) • [Guides](./guides/)
+[Setup](./01-SETUP_AND_OVERVIEW.md) • [Deployment](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md) • [Development](./04-DEVELOPMENT_WORKFLOW.md)

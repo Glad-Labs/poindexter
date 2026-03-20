@@ -20,14 +20,17 @@ MODEL_COSTS: Dict[str, float] = {
     "claude-sonnet-3": 0.015,
     "claude-haiku-3": 0.0010,
     "claude-instant": 0.0016,
-    # Ollama models (FREE)
-    "ollama/llama2": 0.0,
-    "ollama/llama2:13b": 0.0,
-    "ollama/llama2:70b": 0.0,
-    "ollama/mistral": 0.0,
-    "ollama/mixtral": 0.0,
-    "ollama/codellama": 0.0,
-    "ollama/phi": 0.0,
+    # Ollama models (FREE — local inference on RTX 5090 32GB)
+    "ollama/qwen3.5:35b": 0.0,   # Best prose quality for blog writing
+    "ollama/qwen3.5:122b": 0.0,  # Top-tier (needs CPU offload)
+    "ollama/qwen3:8b": 0.0,      # Fast tasks: research, outline, finalize
+    "ollama/qwen3:30b": 0.0,     # Mid-tier alternative
+    "ollama/gemma3:27b": 0.0,    # QA/critique (different family for diversity)
+    "ollama/gemma3:12b": 0.0,    # Lighter Gemma option
+    "ollama/llama3:8b": 0.0,     # Llama 3 base
+    "ollama/deepseek-r1:32b": 0.0, # Reasoning tasks
+    "ollama/mixtral": 0.0,       # Legacy
+    "ollama/phi3:14b": 0.0,      # Lightweight
     # Gemini models
     "gemini-2.5-flash": 0.0001,
     "gemini-2.5-pro": 0.003,
@@ -51,5 +54,5 @@ MODEL_FAMILIES = {
     "openai": ["gpt-4", "gpt-3.5-turbo"],
     "anthropic": ["claude-opus", "claude-sonnet", "claude-haiku"],
     "google": ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"],
-    "ollama": ["llama2", "mistral", "mixtral", "codellama", "phi"],
+    "ollama": ["qwen3.5", "qwen3", "gemma3", "llama3", "deepseek-r1", "phi3", "mixtral"],
 }

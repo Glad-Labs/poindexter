@@ -18,6 +18,10 @@ from typing import Any, Dict, Optional, Tuple
 
 import jwt
 
+from services.logger_config import get_logger
+
+_logger = get_logger(__name__)
+
 
 class TokenType(str, Enum):
     """Token types"""
@@ -38,22 +42,20 @@ class AuthConfig:
         import sys
 
         if os.getenv("ENVIRONMENT", "development") == "production":
-            print(
-                "[ERROR] JWT_SECRET_KEY or JWT_SECRET environment variable is required",
-                file=sys.stderr,
+            _logger.critical(
+                "[AuthConfig] JWT_SECRET_KEY or JWT_SECRET environment variable is required"
             )
             sys.exit(1)  # Exit if JWT secret is missing in production
         else:
             # Development fallback - MUST MATCH .env.local JWT_SECRET value
             _from_env = "development-secret-key-change-in-production"
-            print(
-                "[WARNING] Using development JWT secret - SET JWT_SECRET in .env for production",
-                flush=True,
+            _logger.warning(
+                "[AuthConfig] Using development JWT secret — set JWT_SECRET in .env for production"
             )
             _secret_source = "FALLBACK (hardcoded development)"
     else:
         _secret_source = "JWT_SECRET_KEY" if os.getenv("JWT_SECRET_KEY") else "JWT_SECRET"
-        print(f"[INFO] JWT Secret loaded from {_secret_source}", flush=True)
+        _logger.info("[AuthConfig] JWT secret loaded from %s", _secret_source)
 
     SECRET_KEY = _from_env
     ALGORITHM = "HS256"
@@ -81,10 +83,12 @@ class JWTTokenValidator:
             jwt.ExpiredSignatureError: Token has expired
             jwt.InvalidTokenError: Token is invalid
         """
-        import sys
 
-        # Development: Allow disabling auth for testing
-        if os.getenv("DISABLE_AUTH_FOR_DEV") == "true":
+        # Development: Allow disabling auth for testing — ONLY in non-production environments
+        if (
+            os.getenv("DISABLE_AUTH_FOR_DEV") == "true"
+            and os.getenv("ENVIRONMENT", "development") != "production"
+        ):
             return {
                 "sub": "dev-user",
                 "user_id": "dev-user-id",
@@ -113,16 +117,10 @@ class JWTTokenValidator:
                 )
 
             return payload
-        except jwt.ExpiredSignatureError as e:
-            import sys
-
-            print(f"[DEBUG] Token expired: {str(e)}", file=sys.stderr, flush=True)
+        except jwt.ExpiredSignatureError:
             raise jwt.ExpiredSignatureError("Token has expired")
-        except jwt.InvalidTokenError as e:
-            import sys
-
-            print(f"[DEBUG] Invalid token error: {str(e)}", file=sys.stderr, flush=True)
-            raise jwt.InvalidTokenError(f"Invalid token: {str(e)}")
+        except jwt.InvalidTokenError:
+            raise jwt.InvalidTokenError("Invalid token")
 
     @staticmethod
     def validate_access_token(token: str) -> Tuple[bool, Optional[Dict[str, Any]]]:

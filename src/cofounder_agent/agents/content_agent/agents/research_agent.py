@@ -1,13 +1,14 @@
-import logging
+from services.logger_config import get_logger
+from typing import Any, Dict
 
 import httpx
+
+from services.research_quality_service import ResearchQualityService
 
 from ..config import config
 from ..utils.tools import CrewAIToolsFactory
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class ResearchAgent:
     """
     Performs initial research on a given topic to provide context
@@ -20,29 +21,31 @@ class ResearchAgent:
         """
         Initializes the ResearchAgent.
         """
-        logging.info("Initializing Research Agent...")
+        logger.info("Initializing Research Agent...")
         if not config.SERPER_API_KEY:
             raise ValueError("SERPER_API_KEY is not set in the environment.")
         self.serper_api_key = config.SERPER_API_KEY
+        self.research_quality_service = ResearchQualityService()
         try:
             self.tools = CrewAIToolsFactory.get_research_agent_tools()
-            logging.info("ResearchAgent: Initialized with all research agent tools")
+            logger.info("ResearchAgent: Initialized with all research agent tools")
         except Exception as e:
-            logging.warning(f"ResearchAgent: Failed to initialize tools: {e}")
-            logging.warning("ResearchAgent will continue without some tools")
+            logger.warning(f"ResearchAgent: Failed to initialize tools: {e}", exc_info=True)
+            logger.warning("ResearchAgent will continue without some tools", exc_info=True)
             self.tools = []
 
     async def run(self, topic: str, keywords: list[str]) -> str:
         """
         Conducts a web search using a combination of the topic and keywords
-        to get more targeted and relevant results.
+        to get more targeted and relevant results. Results are filtered and
+        scored for quality using ResearchQualityService.
 
         Args:
             topic (str): The core topic to research.
             keywords (list[str]): A list of supporting keywords to refine the search.
 
         Returns:
-            A string containing the formatted search results, or an empty string on failure.
+            A string containing the formatted research results, or an empty string on failure.
         """
         try:
             search_query = f"{topic} {' '.join(keywords)}"
@@ -61,19 +64,63 @@ class ResearchAgent:
 
             search_results = response.json()
 
-            # Format the results into a string for the LLM context
-            context = ""
-            if search_results.get("organic"):
-                for result in search_results.get("organic", [])[:5]:  # Get top 5 results
-                    context += f"Title: {result.get('title', 'N/A')}\n"
-                    context += f"Link: {result.get('link', 'N/A')}\n"
-                    context += f"Snippet: {result.get('snippet', 'N/A')}\n---\n"
+            # Filter, deduplicate, and score results using ResearchQualityService
+            raw_results = search_results.get("organic", [])[:7]  # Get top 7 for filtering
+            scored_results = self.research_quality_service.filter_and_score(
+                raw_results, query=search_query
+            )
 
-            logger.info(f"ResearchAgent: Found search results.")
+            # Format results using improved service formatter (top 5 after filtering)
+            context = self.research_quality_service.format_context(scored_results[:5])
+
+            logger.info(
+                f"ResearchAgent: Found and filtered {len(scored_results)} "
+                f"high-quality sources from {len(raw_results)} results"
+            )
             return context
         except httpx.HTTPError as e:
-            logger.error(f"An error occurred during research request: {e}")
+            logger.error(f"An error occurred during research request: {e}", exc_info=True)
             return ""
         except Exception as e:
-            logger.error(f"An unexpected error occurred during research: {e}")
+            logger.error(f"An unexpected error occurred during research: {e}", exc_info=True)
             return ""
+
+
+class _WorkflowResearchAgentAdapter:
+    """Adapter to make ResearchAgent compatible with workflow_executor `run(inputs)` contract."""
+
+    def __init__(self):
+        self._agent = None
+        self._init_error = None
+        try:
+            self._agent = ResearchAgent()
+        except Exception as e:
+            self._init_error = str(e)
+
+    async def run(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        topic = inputs.get("topic") or inputs.get("prompt") or "general topic"
+        keywords = inputs.get("keywords") or []
+        if not isinstance(keywords, list):
+            keywords = [str(keywords)]
+
+        if self._agent is None:
+            return {
+                "status": "success",
+                "research_data": "",
+                "notes": f"Research agent unavailable: {self._init_error}",
+                "topic": topic,
+                "keywords": keywords,
+            }
+
+        context = await self._agent.run(topic=topic, keywords=keywords)
+        return {
+            "status": "success",
+            "research_data": context,
+            "topic": topic,
+            "keywords": keywords,
+        }
+
+
+def get_research_agent():
+    """Factory used by workflow_executor dynamic agent loading."""
+    return _WorkflowResearchAgentAdapter()

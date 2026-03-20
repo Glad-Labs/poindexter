@@ -1,10 +1,15 @@
 # 📚 Glad Labs Documentation Hub
 
-**Last Updated:** February 10, 2026  
-**Status:** ✅ Production-Ready | Revamped Core Docs | Optimized Workflow  
-**Structure:** 7 Core Docs | Intelligence Layer | Infrastructure & Ops | Optimized Archive  
-**Project:** Glad Labs AI Co-Founder System v3.1.0 | AGPL-3.0 License  
+> ⚠️ **Migration in progress:** The documentation is moving to a section-based structure.
+> Start with [00-INDEX.md](00-INDEX.md).
+
+**Last Updated:** March 10, 2026
+**Status:** ✅ Production-Ready | Cleaned & Organized | Root Docs Archived
+**Structure:** 7 Core Docs | Maintenance Guide | Intelligence Layer | Infrastructure & Ops | Organized Archive
+**Project:** Glad Labs AI Co-Founder System v3.0.81 | AGPL-3.0 License
 **Policy:** 🎯 **HIGH-LEVEL ONLY** (Architecture-focused, source-of-truth documentation)
+
+> **Recent Update (Feb 23, 2026):** Second documentation cleanup pass completed. 54 additional Phase/Sprint/Session/Testing reports moved from root to `archive/root-cleanup-feb2026/`. Repository root now contains only `README.md`, `SECURITY.md`, and `CLAUDE.md`. See [archive/](archive/) for all archived files.
 
 > **Documentation Philosophy:** This hub contains only high-level, architecture-stable documentation. Implementation details belong in code. This set has been revamped to reflect the **Unified Task API** and **Async PostgreSQL Architecture**.
 
@@ -12,15 +17,22 @@
 
 ## 🎯 Core Documentation - 7 Essential Files
 
-| Component                 | File                                                                       |
-| ------------------------- | -------------------------------------------------------------------------- |
-| Fundamentals & Setup      | [01-SETUP_AND_OVERVIEW.md](01-SETUP_AND_OVERVIEW.md)                       |
-| System Architecture       | [02-ARCHITECTURE_AND_DESIGN.md](02-ARCHITECTURE_AND_DESIGN.md)             |
+| Component                   | File                                                                       |
+| --------------------------- | -------------------------------------------------------------------------- |
+| Fundamentals & Setup        | [01-SETUP_AND_OVERVIEW.md](01-SETUP_AND_OVERVIEW.md)                       |
+| System Architecture         | [02-ARCHITECTURE_AND_DESIGN.md](02-ARCHITECTURE_AND_DESIGN.md)             |
 | Deployment & Infrastructure | [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](03-DEPLOYMENT_AND_INFRASTRUCTURE.md) |
-| Development Workflow      | [04-DEVELOPMENT_WORKFLOW.md](04-DEVELOPMENT_WORKFLOW.md)                   |
-| AI Agents & Integration   | [05-AI_AGENTS_AND_INTEGRATION.md](05-AI_AGENTS_AND_INTEGRATION.md)         |
-| Operations & Maintenance  | [06-OPERATIONS_AND_MAINTENANCE.md](06-OPERATIONS_AND_MAINTENANCE.md)       |
-| Environment & Variables   | [07-BRANCH_SPECIFIC_VARIABLES.md](07-BRANCH_SPECIFIC_VARIABLES.md)         |
+| Development Workflow        | [04-DEVELOPMENT_WORKFLOW.md](04-DEVELOPMENT_WORKFLOW.md)                   |
+| AI Agents & Integration     | [05-AI_AGENTS_AND_INTEGRATION.md](05-AI_AGENTS_AND_INTEGRATION.md)         |
+| Operations & Maintenance    | [06-OPERATIONS_AND_MAINTENANCE.md](06-OPERATIONS_AND_MAINTENANCE.md)       |
+| Environment & Variables     | [07-BRANCH_SPECIFIC_VARIABLES.md](07-BRANCH_SPECIFIC_VARIABLES.md)         |
+
+---
+
+## 🛠️ Maintenance & Operations
+
+- **Documentation Maintenance:** [DOCUMENTATION_MAINTENANCE_GUIDE.md](DOCUMENTATION_MAINTENANCE_GUIDE.md) — Workflows and checklists for keeping all reference docs in sync
+- **Issue Tracking & Status:** [TECHNICAL_DEBT_TRACKER.md](TECHNICAL_DEBT_TRACKER.md) — Complete technical debt inventory with priorities and metrics
 
 ---
 
@@ -67,11 +79,12 @@
 - [components/oversight-hub/README.md](components/oversight-hub/README.md) - Oversight Hub
 - [components/public-site/README.md](components/public-site/README.md) - Public Site
 
-### 6. Archive (Updated) ✅ ORGANIZED
+### 6. Archive ✅ ORGANIZED
 
-- [archive/](archive-active/historical-reports/) - Historical session logs and reports
-- [ARCHIVE_INDEX.md](archive-active/historical-reports/ARCHIVE_INDEX.md) - Archive index
-
+- **[ARCHIVE_NAVIGATION.md](ARCHIVE_NAVIGATION.md)** ⭐ **START HERE** - Guide to finding archived documentation
+- [archive-active/](archive-active/) - All archived Phase/Sprint/Session reports
+- [archive-active/root-cleanup-feb2026/](archive-active/root-cleanup-feb2026/) - Root cleanup batches (Feb 2026)
+- [archive-active/historical-reports/](archive-active/historical-reports/) - Older session logs and reports
 
 ---
 
@@ -79,7 +92,7 @@
 
 ### Core Documentation (Updated within 30 days)
 
-- ✅ All 8 core docs present and current
+- ✅ All 7 core docs present and current (docs 01-07)
 - ✅ No broken links
 - ✅ Written at architecture level
 
@@ -126,11 +139,11 @@
 
 All components of the enterprise documentation framework are now active and maintained:
 
-- ✅ Core 8 documents (active, current)
+- ✅ Core 7 documents (01-07, active, current)
 - ✅ Decision record system (3 records, master index)
 - ✅ Comprehensive reference library (10+ technical specs)
 - ✅ Troubleshooting hub (4 documented solutions)
-- ✅ Component documentation (4 services documented)
+- ✅ Component documentation (3 services documented)
 - ✅ Archive organization (1150+ files organized)
 - ✅ Governance structure defined
 - ✅ Quality metrics established
@@ -145,11 +158,10 @@ All components of the enterprise documentation framework are now active and main
 | 📊 **Production Operations** | [06 - Operations & Maintenance](./06-OPERATIONS_AND_MAINTENANCE.md) |
 | ⚙️ **Environment Config** | [07 - Branch-Specific Variables](./07-BRANCH_SPECIFIC_VARIABLES.md) |
 
-### 📋 All 8 Core Docs at a Glance
+### 📋 All 7 Core Docs (01-07) at a Glance
 
 | #      | Document                                                             | Purpose                                                       | For Whom               |
 | ------ | -------------------------------------------------------------------- | ------------------------------------------------------------- | ---------------------- |
-| **00** | [Documentation Hub](./00-README.md)                                  | Navigation (you are here)                                     | Everyone               |
 | **01** | [Setup & Overview](./01-SETUP_AND_OVERVIEW.md)                       | Prerequisites, local development, quick start                 | Developers, DevOps     |
 | **02** | [Architecture & Design](./02-ARCHITECTURE_AND_DESIGN.md)             | System design, component relationships, AI agents, tech stack | Architects, Tech Leads |
 | **03** | [Deployment & Infrastructure](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md) | Cloud deployment, environments, scaling, CI/CD                | DevOps, Infrastructure |
@@ -175,12 +187,20 @@ All components of the enterprise documentation framework are now active and main
 - [Testing Guide](./reference/TESTING.md) - Test strategy & coverage
 - [Glad Labs Standards](./reference/GLAD-LABS-STANDARDS.md) - Code quality standards
 - [GitHub Secrets Setup](./reference/GITHUB_SECRETS_SETUP.md) - Production secrets management
+- [Environment Setup](./reference/ENVIRONMENT_SETUP.md) - Environment configuration guide
+- [Quick Start Guide](./reference/QUICK_START_GUIDE.md) - Quick reference for getting started
+- [Issue #31 Implementation](./reference/ISSUE_31_IMPLEMENTATION_SUMMARY.md) - Feature implementation summary
+- [Issue #32 Implementation](./reference/ISSUE_32_IMPLEMENTATION_SUMMARY.md) - Feature implementation summary
+- [Issue #35 Implementation](./reference/ISSUE_35_IMPLEMENTATION_SUMMARY.md) - Feature implementation summary
+- [Issue #44 Implementation](./reference/ISSUE_44_IMPLEMENTATION_SUMMARY.md) - Feature implementation summary
 
 ### Component Documentation
 
 - [Co-founder Agent](./components/cofounder-agent/README.md) - AI agent architecture
 - [Oversight Hub](./components/oversight-hub/README.md) - Admin dashboard
 - [Public Site](./components/public-site/README.md) - Customer website
+- [Co-founder Agent Quick Fixes](./components/cofounder-agent/troubleshooting/QUICK_FIX_COMMANDS.md) - Common fixes
+- [Railway Web Console](./components/cofounder-agent/troubleshooting/RAILWAY_WEB_CONSOLE_STEPS.md) - Railway deployment guidance
 
 ### Troubleshooting & Support
 
@@ -193,10 +213,11 @@ All components of the enterprise documentation framework are now active and main
 
 ## 📦 Historical Archive
 
-- **[Archive Folder](./archive-old/)** - Session notes, status updates, superseded documentation
-  - **December 30, 2025:** Root-level session files archived (DATABASE_SERVICE_REFACTORING, DOCS_CLEANUP, etc.)
-  - **December 23+:** Previous session files preserved for historical context
-  - **Status:** "Not maintained—reference only for historical context"
+- **[Archive Navigation Guide](./ARCHIVE_NAVIGATION.md)** ⭐ Start here for finding archived docs
+- **[Archive Folder](./archive/)** - Phase/Sprint/Session reports and historical documentation
+  - **February 2026:** Root-level session files archived to improve organization
+  - **February 23, 2025:** Archive structure refined with clear navigation
+  - **Status:** Well-organized; reference for historical context only
 
 ---
 

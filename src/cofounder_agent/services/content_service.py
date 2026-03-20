@@ -12,19 +12,23 @@ This service consolidates:
 - ResearchAgent (agents/content_agent/agents/research_agent.py)
 - CreativeAgent (agents/content_agent/agents/creative_agent.py)
 - QAAgent (agents/content_agent/agents/qa_agent.py)
-- ImageAgent (agents/content_agent/agents/image_agent.py)
+- PostgreSQLImageAgent (agents/content_agent/agents/postgres_image_agent.py)
 - PublishingAgent (agents/content_agent/agents/postgres_publishing_agent.py)
 """
 
-import logging
+from services.logger_config import get_logger
 from typing import Any, Dict, Optional
 
-logger = logging.getLogger(__name__)
+from services.service_base import ServiceBase
 
-
-class ContentService:
+logger = get_logger(__name__)
+class ContentService(ServiceBase):
     """
     Unified content generation service with phase-based execution.
+
+    Extends ServiceBase to participate in service-registry discovery.
+    The action-schema registry (get_actions) is intentionally empty;
+    capabilities are surfaced via get_service_metadata() instead.
 
     Provides methods for each phase of content generation, enabling
     dynamic phase selection and custom LLM routing per phase.
@@ -63,6 +67,14 @@ class ContentService:
         ```
     """
 
+    # ServiceBase metadata — used by ServiceRegistry and get_service_metadata()
+    name: str = "content_service"
+    version: str = "1.0.0"
+    description: str = (
+        "Unified content generation service with research, draft, assess, "
+        "refine, image, and finalize phases"
+    )
+
     def __init__(
         self,
         database_service: Optional[Any] = None,
@@ -79,6 +91,7 @@ class ContentService:
             writing_style_service: Writing style adaptation service
             quality_service: Quality assessment service for refinement loops
         """
+        super().__init__()
         self.database_service = database_service
         self.model_router = model_router
         self.writing_style_service = writing_style_service
@@ -128,7 +141,7 @@ class ContentService:
             }
 
         except Exception as e:
-            logger.error(f"Research phase failed: {e}", exc_info=True)
+            logger.error(f"[_execute_research] Research phase failed: {e}", exc_info=True)
             raise
 
     # ========================================================================
@@ -161,7 +174,6 @@ class ContentService:
         try:
             from agents.content_agent.agents.creative_agent import CreativeAgent
             from agents.content_agent.services.llm_client import LLMClient
-            from services.writing_style_integration import WritingStyleIntegrationService
 
             # Select LLM for draft phase
             draft_model = model or (
@@ -185,15 +197,18 @@ class ContentService:
                         style_data.get("writing_style_guidance", "") if style_data else ""
                     )
                 except Exception as e:
-                    logger.warning(f"Could not retrieve writing style: {e}")
+                    logger.error(
+                        f"[_execute_draft] Could not retrieve writing style: {e}",
+                        exc_info=True,
+                    )
 
             # Execute draft
             research_text = research_context.get("research_text", "")
-            draft_content = await creative_agent.run(
+            draft_content = await creative_agent.run(  # type: ignore[call-arg]
                 research_text,
                 is_refinement=False,
                 word_count_target=word_count_target,
-                writing_style=writing_style or writing_style_guidance,
+                writing_style=writing_style or writing_style_guidance,  # type: ignore[call-arg]
             )
 
             logger.info(f"Draft phase completed")
@@ -207,7 +222,7 @@ class ContentService:
             }
 
         except Exception as e:
-            logger.error(f"Draft phase failed: {e}", exc_info=True)
+            logger.error(f"[_execute_draft] Draft phase failed: {e}", exc_info=True)
             raise
 
     # ========================================================================
@@ -238,8 +253,8 @@ class ContentService:
         try:
             from agents.content_agent.agents.qa_agent import QAAgent
 
-            qa_agent = QAAgent()
-            assessment = await qa_agent.run(content)
+            qa_agent = QAAgent()  # type: ignore[call-arg]
+            assessment = await qa_agent.run(content)  # type: ignore[call-arg]
 
             # Extract quality score from assessment
             quality_score = 0.75  # Default, would be extracted from assessment
@@ -257,7 +272,7 @@ class ContentService:
             }
 
         except Exception as e:
-            logger.error(f"Assessment phase failed: {e}", exc_info=True)
+            logger.error(f"[_execute_assess] Assessment phase failed: {e}", exc_info=True)
             raise
 
     # ========================================================================
@@ -298,11 +313,11 @@ class ContentService:
             creative_agent = CreativeAgent(llm_client=llm_client)
 
             # Execute refinement
-            refined_content = await creative_agent.run(
+            refined_content = await creative_agent.run(  # type: ignore[call-arg]
                 content,
                 is_refinement=True,
                 word_count_target=word_count_target,
-                feedback=feedback,
+                feedback=feedback,  # type: ignore[call-arg]
             )
 
             logger.info(f"Refinement phase completed")
@@ -316,7 +331,7 @@ class ContentService:
             }
 
         except Exception as e:
-            logger.error(f"Refinement phase failed: {e}", exc_info=True)
+            logger.error(f"[_execute_refine] Refinement phase failed: {e}", exc_info=True)
             raise
 
     # ========================================================================
@@ -343,10 +358,10 @@ class ContentService:
             Dictionary with image_urls, metadata, alt_text
         """
         try:
-            from agents.content_agent.agents.image_agent import ImageAgent
+            from agents.content_agent.agents.postgres_image_agent import PostgreSQLImageAgent
 
-            image_agent = ImageAgent()
-            image_result = await image_agent.run(topic)
+            image_agent = PostgreSQLImageAgent()  # type: ignore[call-arg]
+            image_result = await image_agent.run(topic)  # type: ignore[arg-type]
 
             logger.info(f"Image selection phase completed for topic: {topic}")
 
@@ -358,7 +373,10 @@ class ContentService:
             }
 
         except Exception as e:
-            logger.warning(f"Image selection phase failed (non-critical): {e}")
+            logger.error(
+                f"[_execute_image_selection] Image selection phase failed (non-critical): {e}",
+                exc_info=True,
+            )
             # Return empty result - image selection is optional
             return {
                 "phase": "image_selection",
@@ -413,7 +431,7 @@ class ContentService:
             }
 
         except Exception as e:
-            logger.error(f"Finalize phase failed: {e}", exc_info=True)
+            logger.error(f"[_execute_finalize] Finalize phase failed: {e}", exc_info=True)
             raise
 
     # ========================================================================
@@ -540,7 +558,7 @@ class ContentService:
             }
 
         except Exception as e:
-            logger.error(f"Content workflow failed: {e}", exc_info=True)
+            logger.error(f"[_execute_full_workflow] Content workflow failed: {e}", exc_info=True)
             return {
                 "status": "failed",
                 "topic": topic,

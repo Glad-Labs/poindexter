@@ -5,7 +5,7 @@ Replaces Strapi image upload with direct database storage of image metadata and 
 """
 
 import json
-import logging
+from services.logger_config import get_logger
 from pathlib import Path
 from typing import List, Optional
 
@@ -15,9 +15,7 @@ from ..services.pexels_client import PexelsClient
 from ..utils.data_models import BlogPost, ImageDetails
 from ..utils.helpers import extract_json_from_string, load_prompts_from_file
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class PostgreSQLImageAgent:
     """
     PostgreSQL-based image agent that stores image metadata directly to the database.
@@ -45,7 +43,7 @@ class PostgreSQLImageAgent:
         try:
             self.prompts = load_prompts_from_file(config.PROMPTS_PATH)
         except Exception as e:
-            logger.warning(f"Could not load prompts: {e}. Using defaults.")
+            logger.warning(f"[load_prompts] Could not load prompts: {e}. Using defaults.", exc_info=True)
             self.prompts = {}
 
         # Create local image storage if needed
@@ -181,7 +179,7 @@ Only return the JSON array, no other text."""
                         return result
                     return [parsed] if isinstance(parsed, dict) else []
                 except json.JSONDecodeError as e:
-                    logger.error(f"❌ Failed to parse JSON from extracted text: {e}")
+                    logger.error(f"❌ Failed to parse JSON from extracted text: {e}", exc_info=True)
                     logger.debug(f"Extracted JSON was: {metadata_json[:200]}...")
                     return []
             else:
@@ -200,16 +198,16 @@ Only return the JSON array, no other text."""
                         ]
                     return [parsed] if isinstance(parsed, dict) else []
                 except json.JSONDecodeError as e:
-                    logger.error(f"❌ Raw JSON parse also failed: {e}")
+                    logger.error(f"❌ Raw JSON parse also failed: {e}", exc_info=True)
                     logger.debug(f"Raw response was: {metadata_text[:300]}...")
                     return []
 
         except (json.JSONDecodeError, TypeError) as e:
-            logger.error(f"❌ Failed to parse image metadata from LLM response: {e}")
+            logger.error(f"❌ Failed to parse image metadata from LLM response: {e}", exc_info=True)
             logger.debug(f"LLM response was: {metadata_text if metadata_text else 'unknown'}")
             return []
         except Exception as e:
-            logger.error(f"❌ Error generating image metadata: {e}", exc_info=True)
+            logger.error(f"[_generate_image_metadata] post_slug={post.slug} title={post.title or post.topic}: {e}", exc_info=True)
             return []
 
     async def _process_single_image_async(
@@ -241,7 +239,7 @@ Only return the JSON array, no other text."""
 
             # Try to get image from Pexels API (async)
             try:
-                images = await self.pexels_client.search_images(
+                images = await self.pexels_client.search_images(  # type: ignore[attr-defined]
                     query, per_page=1, orientation="landscape", size="large"
                 )
 
@@ -262,14 +260,14 @@ Only return the JSON array, no other text."""
                     return image_details
                 logger.warning(f"⚠️  No images found on Pexels for '{query}'")
             except Exception as e:
-                logger.warning(f"⚠️  Pexels search failed for '{query}': {e}")
+                logger.warning(f"[_process_single_image_async] Pexels search failed post_slug={slug} index={index} query={query!r}: {e}", exc_info=True)
 
             # No fallback placeholder - return None instead
             logger.info(f"ℹ️  No image available for '{query}' - skipping")
             return None
 
         except Exception as e:
-            logger.error(f"❌ Error processing image at index {index}: {e}", exc_info=True)
+            logger.error(f"[_process_single_image_async] post_slug={slug} index={index}: {e}", exc_info=True)
             return None
 
     def _process_single_image(
@@ -309,6 +307,21 @@ Only return the JSON array, no other text."""
             return None
 
         except Exception as e:
-            logger.error(f"Error processing image at index {index}: {e}")
+            logger.error(f"[_process_single_image] post_slug={slug} index={index}: {e}", exc_info=True)
             # Return None instead of fallback image
             return None
+
+
+def get_image_agent() -> "PostgreSQLImageAgent":
+    """Factory used by workflow_executor dynamic loading.
+
+    Returns a PostgreSQLImageAgent configured from application settings.
+    Note: caller must supply llm_client and pexels_client before use.
+    """
+    from ..config import config
+    from ..services.llm_client import LLMClient
+    from ..services.pexels_client import PexelsClient
+
+    llm_client = LLMClient()
+    pexels_client = PexelsClient(api_key=getattr(config, "PEXELS_API_KEY", ""))
+    return PostgreSQLImageAgent(llm_client=llm_client, pexels_client=pexels_client)

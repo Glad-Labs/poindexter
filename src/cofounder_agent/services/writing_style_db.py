@@ -7,16 +7,17 @@ Handles all writing sample operations including:
 - Retrieve writing samples for style matching
 """
 
-import logging
+from services.logger_config import get_logger
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from asyncpg import Pool
 
 from .database_mixin import DatabaseServiceMixin
+from .decorators import log_query_performance
+from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class WritingStyleDatabase(DatabaseServiceMixin):
     """Writing style/sample-related database operations."""
 
@@ -29,6 +30,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
         """
         self.pool = pool
 
+    @log_query_performance(operation="create_writing_sample", category="writing_style_write")
     async def create_writing_sample(
         self,
         user_id: str,
@@ -86,9 +88,13 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                 return self._format_sample(row)
 
         except Exception as e:
-            logger.error("Failed to create writing sample: %s", e)
+            logger.error(
+                f"[create_writing_sample] Failed to create sample for user_id={user_id}, title='{title}': {str(e)}",
+                exc_info=True,
+            )
             raise
 
+    @log_query_performance(operation="get_writing_sample", category="writing_style_retrieval")
     async def get_writing_sample(self, sample_id: str) -> Optional[Dict[str, Any]]:
         """
         Get a specific writing sample by ID.
@@ -107,19 +113,24 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                            word_count, char_count, metadata, created_at, updated_at
                     FROM writing_samples WHERE id = $1
                     """,
-                    sample_id,
+                    int(sample_id),
                 )
                 return self._format_sample(row) if row else None
         except Exception as e:
-            logger.error("Failed to get writing sample: %s", e)
+            logger.error(
+                f"[get_writing_sample] Failed to get sample_id={sample_id}: {str(e)}",
+                exc_info=True,
+            )
             raise
 
-    async def get_user_writing_samples(self, user_id: str) -> List[Dict[str, Any]]:
+    @log_query_performance(operation="get_user_writing_samples", category="writing_style_retrieval")
+    async def get_user_writing_samples(self, user_id: str, limit: int = 100) -> List[Dict[str, Any]]:
         """
-        Get all writing samples for a user.
+        Get writing samples for a user.
 
         Args:
             user_id: User ID
+            limit: Maximum samples to return (default 100)
 
         Returns:
             List of sample dicts
@@ -128,19 +139,25 @@ class WritingStyleDatabase(DatabaseServiceMixin):
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(
                     """
-                    SELECT id, user_id, title, description, content, is_active, 
+                    SELECT id, user_id, title, description, content, is_active,
                            word_count, char_count, metadata, created_at, updated_at
-                    FROM writing_samples 
+                    FROM writing_samples
                     WHERE user_id = $1
                     ORDER BY created_at DESC
+                    LIMIT $2
                     """,
                     user_id,
+                    limit,
                 )
                 return [self._format_sample(row) for row in rows]
         except Exception as e:
-            logger.error("Failed to get user writing samples: %s", e)
+            logger.error(
+                f"[get_user_writing_samples] Failed to get samples for user_id={user_id}: {str(e)}",
+                exc_info=True,
+            )
             raise
 
+    @log_query_performance(operation="get_active_writing_sample", category="writing_style_retrieval")
     async def get_active_writing_sample(self, user_id: str) -> Optional[Dict[str, Any]]:
         """
         Get the active/current writing sample for a user.
@@ -165,9 +182,13 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                 )
                 return self._format_sample(row) if row else None
         except Exception as e:
-            logger.error("Failed to get active writing sample: %s", e)
+            logger.error(
+                f"[get_active_writing_sample] Failed to get active sample for user_id={user_id}: {str(e)}",
+                exc_info=True,
+            )
             raise
 
+    @log_query_performance(operation="set_active_writing_sample", category="writing_style_write")
     async def set_active_writing_sample(self, user_id: str, sample_id: str) -> Dict[str, Any]:
         """
         Set a writing sample as the active one for a user.
@@ -185,7 +206,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                 await conn.execute(
                     "UPDATE writing_samples SET is_active = FALSE WHERE user_id = $1 AND id != $2",
                     user_id,
-                    sample_id,
+                    int(sample_id),
                 )
 
                 # Activate the specified sample
@@ -194,10 +215,10 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                     UPDATE writing_samples 
                     SET is_active = TRUE, updated_at = NOW()
                     WHERE id = $1 AND user_id = $2
-                    RETURNING id, user_id, title, description, content, is_active, 
+                    RETURNING id, user_id, title, description, content, is_active,
                               word_count, char_count, metadata, created_at, updated_at
                     """,
-                    sample_id,
+                    int(sample_id),
                     user_id,
                 )
 
@@ -208,9 +229,13 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                 return self._format_sample(row)
 
         except Exception as e:
-            logger.error("Failed to set active writing sample: %s", e)
+            logger.error(
+                f"[set_active_writing_sample] Failed to set active sample_id={sample_id} for user_id={user_id}: {str(e)}",
+                exc_info=True,
+            )
             raise
 
+    @log_query_performance(operation="update_writing_sample", category="writing_style_write")
     async def update_writing_sample(
         self,
         sample_id: str,
@@ -233,51 +258,42 @@ class WritingStyleDatabase(DatabaseServiceMixin):
             Updated sample dict
         """
         try:
-            # Build dynamic update query
-            updates = []
-            params = [sample_id, user_id]
-            param_count = 2
-
+            # Collect only the fields being changed
+            update_dict: Dict[str, Any] = {}
             if title is not None:
-                param_count += 1
-                updates.append(f"title = ${param_count}")
-                params.append(title)
-
+                update_dict["title"] = title
             if description is not None:
-                param_count += 1
-                updates.append(f"description = ${param_count}")
-                params.append(description)
-
+                update_dict["description"] = description
             if content is not None:
-                word_count = len(content.split())
-                char_count = len(content)
-                param_count += 1
-                updates.append(f"content = ${param_count}")
-                params.append(content)
-                param_count += 1
-                updates.append(f"word_count = ${param_count}")
-                params.append(word_count)
-                param_count += 1
-                updates.append(f"char_count = ${param_count}")
-                params.append(char_count)
+                update_dict["content"] = content
+                update_dict["word_count"] = len(content.split())
+                update_dict["char_count"] = len(content)
 
-            if not updates:
+            if not update_dict:
                 raise ValueError("No fields to update")
 
-            updates.append("updated_at = NOW()")
-            update_clause = ", ".join(updates)
+            # Always refresh updated_at with a Python datetime (not raw NOW())
+            update_dict["updated_at"] = datetime.now(timezone.utc)
+
+            # Use ParameterizedQueryBuilder so every column name passes
+            # through SQLIdentifierValidator.safe_identifier() before execution.
+            builder = ParameterizedQueryBuilder()
+            sql, params = builder.update(
+                table="writing_samples",
+                updates=update_dict,
+                where_clauses=[
+                    ("id", SQLOperator.EQ, int(sample_id)),
+                    ("user_id", SQLOperator.EQ, user_id),
+                ],
+                return_columns=[
+                    "id", "user_id", "title", "description", "content",
+                    "is_active", "word_count", "char_count", "metadata",
+                    "created_at", "updated_at",
+                ],
+            )
 
             async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    f"""
-                    UPDATE writing_samples 
-                    SET {update_clause}
-                    WHERE id = $1 AND user_id = $2
-                    RETURNING id, user_id, title, description, content, is_active, 
-                              word_count, char_count, metadata, created_at, updated_at
-                    """,
-                    *params,
-                )
+                row = await conn.fetchrow(sql, *params)
 
                 if not row:
                     raise ValueError(f"Writing sample {sample_id} not found for user {user_id}")
@@ -286,9 +302,13 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                 return self._format_sample(row)
 
         except Exception as e:
-            logger.error("Failed to update writing sample: %s", e)
+            logger.error(
+                f"[update_writing_sample] Failed to update sample_id={sample_id} for user_id={user_id}: {str(e)}",
+                exc_info=True,
+            )
             raise
 
+    @log_query_performance(operation="delete_writing_sample", category="writing_style_write")
     async def delete_writing_sample(self, sample_id: str, user_id: str) -> bool:
         """
         Delete a writing sample.
@@ -303,7 +323,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
         try:
             async with self.pool.acquire() as conn:
                 result = await conn.execute(
-                    "DELETE FROM writing_samples WHERE id = $1 AND user_id = $2", sample_id, user_id
+                    "DELETE FROM writing_samples WHERE id = $1 AND user_id = $2", int(sample_id), user_id
                 )
 
                 # Parse result to check if row was deleted
@@ -318,7 +338,10 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                 return success
 
         except Exception as e:
-            logger.error("Failed to delete writing sample: %s", e)
+            logger.error(
+                f"[delete_writing_sample] Failed to delete sample_id={sample_id} for user_id={user_id}: {str(e)}",
+                exc_info=True,
+            )
             raise
 
     @staticmethod

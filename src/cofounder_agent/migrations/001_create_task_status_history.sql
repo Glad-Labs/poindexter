@@ -2,12 +2,8 @@
 -- Created: 2025-12-22
 -- Purpose: Log all task status changes for audit trail and compliance
 
--- Drop existing table if it exists (for development/testing)
--- In production, use careful migration approach
-DROP TABLE IF EXISTS task_status_history CASCADE;
-
--- Create task_status_history table
-CREATE TABLE task_status_history (
+-- Create task_status_history table (idempotent — safe to run on existing databases)
+CREATE TABLE IF NOT EXISTS task_status_history (
     id BIGSERIAL PRIMARY KEY,
     task_id VARCHAR(255) NOT NULL,
     old_status VARCHAR(50) NOT NULL,
@@ -24,10 +20,10 @@ CREATE TABLE task_status_history (
 );
 
 -- Create indexes
-CREATE INDEX idx_task_status_history_task_id ON task_status_history(task_id);
-CREATE INDEX idx_task_status_history_timestamp ON task_status_history(timestamp DESC);
-CREATE INDEX idx_task_status_history_new_status ON task_status_history(new_status);
-CREATE INDEX idx_task_status_history_task_timestamp ON task_status_history(task_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_task_status_history_task_id ON task_status_history(task_id);
+CREATE INDEX IF NOT EXISTS idx_task_status_history_timestamp ON task_status_history(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_task_status_history_new_status ON task_status_history(new_status);
+CREATE INDEX IF NOT EXISTS idx_task_status_history_task_timestamp ON task_status_history(task_id, timestamp DESC);
 
 -- Add comment for documentation
 COMMENT ON TABLE task_status_history IS 'Audit trail for all task status changes - includes validation failures, state transitions, and change reasons';

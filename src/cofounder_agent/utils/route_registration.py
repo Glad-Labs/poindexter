@@ -17,12 +17,78 @@ Includes:
 - Optional routes (workflow history, intelligent orchestrator)
 """
 
-import logging
+import importlib
+
+from services.logger_config import get_logger
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+
+# ---------------------------------------------------------------------------
+# Route manifest — (module_path, router_attr, status_key, description)
+#
+# ORDER MATTERS: approval_router must precede task_router so that the concrete
+# path /api/tasks/pending-approval is matched before the wildcard /{task_id}.
+# ---------------------------------------------------------------------------
+
+_ROUTE_MANIFEST = [
+    # ----- Authentication -----
+    ("routes.auth_unified", "router", "auth_router", "auth"),
+    # ----- Approval workflow (MUST be before task_router) -----
+    ("routes.approval_routes", "router", "approval_router", "task approval workflow"),
+    # ----- Task management (core) -----
+    ("routes.task_routes", "router", "task_router", "task management"),
+    # ----- Bulk task operations -----
+    ("routes.bulk_task_routes", "router", "bulk_task_router", "bulk task operations"),
+    # ----- Writing style / RAG -----
+    ("routes.writing_style_routes", "router", "writing_style_router", "RAG style matching"),
+    # ----- Media & image management -----
+    ("routes.media_routes", "media_router", "media_router", "image generation & search"),
+    # ----- CMS -----
+    ("routes.cms_routes", "router", "cms_router", "FastAPI CMS"),
+    # ----- Models & AI backends -----
+    ("routes.model_routes", "models_router", "models_router", "AI model backends"),
+    # ----- Settings -----
+    ("routes.settings_routes", "router", "settings_router", "user settings"),
+    # ----- Command queue -----
+    ("routes.command_queue_routes", "router", "command_queue_router", "command queue"),
+    # ----- Chat & AI integration -----
+    ("routes.chat_routes", "router", "chat_router", "chat & AI integration"),
+    # ----- Ollama integration -----
+    ("routes.ollama_routes", "router", "ollama_router", "Ollama integration"),
+    # ----- Social media management -----
+    ("routes.social_routes", "social_router", "social_router", "social media management"),
+    # ----- Metrics & analytics -----
+    ("routes.metrics_routes", "metrics_router", "metrics_router", "metrics & analytics"),
+    # ----- KPI dashboard analytics -----
+    ("routes.analytics_routes", "analytics_router", "analytics_router", "KPI dashboard"),
+    # ----- Performance profiling -----
+    ("routes.profiling_routes", "router", "profiling_router", "performance profiling"),
+    # ----- AI agent management -----
+    ("routes.agents_routes", "router", "agents_router", "agent management"),
+    # ----- Privacy & GDPR compliance -----
+    ("routes.privacy_routes", "router", "privacy_router", "GDPR data subject requests"),
+    # ----- Newsletter & email campaigns -----
+    ("routes.newsletter_routes", "router", "newsletter_router", "email campaigns & subscriptions"),
+    # ----- Service registry -----
+    ("routes.service_registry_routes", "router", "service_registry_router", "service discovery"),
+    # ----- Agent registry -----
+    ("routes.agent_registry_routes", "router", "agent_registry_router", "agent discovery"),
+    # ----- Workflow orchestration -----
+    ("routes.workflow_routes", "router", "workflow_router", "workflow orchestration"),
+    # ----- Custom workflow builder -----
+    ("routes.custom_workflows_routes", "router", "custom_workflows_router", "custom workflow builder"),
+    # ----- Real-time workflow progress -----
+    ("routes.workflow_progress_routes", "router", "workflow_progress_router", "progress tracking & WebSocket broadcasting"),
+    # ----- Capability-based tasks -----
+    ("routes.capability_tasks_routes", "router", "capability_tasks_router", "capability composition"),
+    # ----- WebSocket real-time tracking -----
+    ("routes.websocket_routes", "websocket_router", "websocket_router", "real-time progress tracking"),
+    # ----- Cache revalidation -----
+    ("routes.revalidate_routes", "router", "revalidate_router", "secure cache invalidation"),
+]
 
 
 def register_all_routes(
@@ -43,7 +109,6 @@ def register_all_routes(
         app: FastAPI application instance
         database_service: Optional database service to inject into routes
         workflow_history_service: Optional workflow history service
-        intelligent_orchestrator: Optional intelligent orchestrator service
 
     Returns:
         Dictionary with route registration status for each router
@@ -59,340 +124,68 @@ def register_all_routes(
             app,
             database_service=db,
             workflow_history_service=wh,
-            intelligent_orchestrator=io
         )
 
         # Check which routes were registered
         if registration_status['task_router']:
-            logger.info("✅ Task routes available")
+            logger.info("Task routes available")
     """
+    status: Dict[str, bool] = {}
 
-    status = {}
-
-    try:
-        # ===== AUTHENTICATION =====
-        from routes.auth_unified import router as auth_router
-
-        app.include_router(auth_router)
-        logger.info(" auth_unified registered")
-        status["auth_router"] = True
-    except Exception as e:
-        logger.error(f" auth_unified failed: {e}")
-        status["auth_router"] = False
-
-    try:
-        # ===== TASK MANAGEMENT (CORE) =====
-        from routes.task_routes import router as task_router
-
-        # Database service now injected via Depends(get_database_dependency) in routes
-        app.include_router(task_router)
-        logger.info(" task_router registered")
-        status["task_router"] = True
-    except Exception as e:
-        logger.error(f" task_router failed: {e}")
-        status["task_router"] = False
-
-    try:
-        # ===== BULK TASK OPERATIONS =====
-        from routes.bulk_task_routes import router as bulk_task_router
-
-        app.include_router(bulk_task_router)
-        logger.info(" bulk_task_router registered")
-        status["bulk_task_router"] = True
-    except Exception as e:
-        logger.error(f" bulk_task_router failed: {e}")
-        status["bulk_task_router"] = False
-
-    try:
-        # ===== WRITING STYLE MANAGEMENT (RAG) =====
-        from routes.writing_style_routes import router as writing_style_router
-
-        # Database service now injected via Depends(get_database_dependency) in routes
-        app.include_router(writing_style_router)
-        logger.info(" writing_style_router registered (RAG style matching)")
-        status["writing_style_router"] = True
-    except Exception as e:
-        logger.error(f" writing_style_router failed: {e}")
-        status["writing_style_router"] = False
-
-    # ===== WRITING SAMPLE UPLOAD (Phase 3.1) - REMOVED =====
-    # Note: sample_upload_routes.py was removed in previous cleanup
-    # Functionality moved to writing_style_routes.py if needed
+    # Routes that are intentionally absent (module removed or registered elsewhere)
+    # sample_upload_routes.py removed — functionality moved to writing_style_routes.py
     status["sample_upload_router"] = False
+    # workflow_history registered via register_workflow_history_routes() in lifespan
+    status["workflow_history_router"] = False
 
-    try:
-        # ===== MEDIA & IMAGE MANAGEMENT =====
-        from routes.media_routes import media_router
+    for module_path, router_attr, status_key, description in _ROUTE_MANIFEST:
+        try:
+            module = importlib.import_module(module_path)
+            router = getattr(module, router_attr)
+            app.include_router(router)
+            logger.info(" %s registered (%s)", status_key, description)
+            status[status_key] = True
+        except Exception as e:
+            logger.error(" %s failed: %s", status_key, e, exc_info=True)
+            status[status_key] = False
 
-        # Image service injected via Depends(get_image_service) in routes
-        app.include_router(media_router)
-        logger.info(" media_router registered (image generation & search)")
-        status["media_router"] = True
-    except Exception as e:
-        logger.error(f" media_router failed: {e}")
-        status["media_router"] = False
-
-    try:
-        # ===== CMS (FastAPI handles all CMS operations) =====
-        from routes.cms_routes import router as cms_router
-
-        app.include_router(cms_router)
-        logger.info(" cms_router registered (FastAPI CMS)")
-        status["cms_router"] = True
-    except Exception as e:
-        logger.error(f" cms_router failed: {e}")
-        status["cms_router"] = False
-
-    try:
-        # ===== MODELS & AI BACKENDS =====
-        from routes.model_routes import models_list_router, models_router
-
-        app.include_router(models_router)
-        app.include_router(models_list_router)
-        logger.info(" models_router registered")
-        status["models_router"] = True
-    except Exception as e:
-        logger.error(f" models_router failed: {e}")
-        status["models_router"] = False
-
-    try:
-        # ===== SETTINGS =====
-        from routes.settings_routes import router as settings_router
-
-        # Database service now injected via Depends(get_database_dependency) in routes
-        app.include_router(settings_router)
-        logger.info(" settings_router registered")
-        status["settings_router"] = True
-    except Exception as e:
-        logger.error(f" settings_router failed: {e}")
-        status["settings_router"] = False
-
-    try:
-        # ===== COMMAND QUEUE =====
-        from routes.command_queue_routes import router as command_queue_router
-
-        app.include_router(command_queue_router)
-        logger.info(" command_queue_router registered")
-        status["command_queue_router"] = True
-    except Exception as e:
-        logger.error(f" command_queue_router failed: {e}")
-        status["command_queue_router"] = False
-
-    try:
-        # ===== CHAT & AI INTEGRATION =====
-        from routes.chat_routes import router as chat_router
-
-        app.include_router(chat_router)
-        logger.info(" chat_router registered")
-        status["chat_router"] = True
-    except Exception as e:
-        logger.error(f" chat_router failed: {e}")
-        status["chat_router"] = False
-
-    try:
-        # ===== OLLAMA INTEGRATION =====
-        from routes.ollama_routes import router as ollama_router
-
-        app.include_router(ollama_router)
-        logger.info(" ollama_router registered")
-        status["ollama_router"] = True
-    except Exception as e:
-        logger.error(f" ollama_router failed: {e}")
-        status["ollama_router"] = False
-
-    try:
-        # ===== WEBHOOKS =====
-        from routes.webhooks import webhook_router
-
-        app.include_router(webhook_router)
-        logger.info(" webhook_router registered")
-        status["webhook_router"] = True
-    except Exception as e:
-        logger.error(f" webhook_router failed: {e}")
-        status["webhook_router"] = False
-
-    try:
-        # ===== SOCIAL MEDIA MANAGEMENT =====
-        from routes.social_routes import social_router
-
-        app.include_router(social_router)
-        logger.info(" social_router registered")
-        status["social_router"] = True
-    except Exception as e:
-        logger.error(f" social_router failed: {e}")
-        status["social_router"] = False
-
-    try:
-        # ===== METRICS & ANALYTICS =====
-        from routes.metrics_routes import metrics_router
-
-        app.include_router(metrics_router)
-        logger.info(" metrics_router registered")
-        status["metrics_router"] = True
-    except Exception as e:
-        logger.error(f" metrics_router failed: {e}")
-        status["metrics_router"] = False
-
-    try:
-        # ===== ANALYTICS - KPI Dashboard =====
-        from routes.analytics_routes import analytics_router
-
-        app.include_router(analytics_router)
-        logger.info(" analytics_router registered (KPI dashboard)")
-        status["analytics_router"] = True
-    except Exception as e:
-        logger.error(f" analytics_router failed: {e}")
-        status["analytics_router"] = False
-
-    try:
-        # ===== AI AGENT MANAGEMENT =====
-        from routes.agents_routes import router as agents_router
-
-        app.include_router(agents_router)
-        logger.info(" agents_router registered")
-        status["agents_router"] = True
-    except Exception as e:
-        logger.error(f" agents_router failed: {e}")
-        status["agents_router"] = False
-
-    try:
-        # ===== PRIVACY & GDPR COMPLIANCE =====
-        from routes.privacy_routes import router as privacy_router
-
-        app.include_router(privacy_router)
-        logger.info(" privacy_router registered (GDPR data subject requests)")
-        status["privacy_router"] = True
-    except Exception as e:
-        logger.error(f" privacy_router failed: {e}")
-        status["privacy_router"] = False
-
-    try:
-        # ===== NEWSLETTER & EMAIL CAMPAIGNS =====
-        from routes.newsletter_routes import router as newsletter_router
-
-        app.include_router(newsletter_router)
-        logger.info(" newsletter_router registered (email campaigns & subscriptions)")
-        status["newsletter_router"] = True
-    except Exception as e:
-        logger.error(f" newsletter_router failed: {e}")
-        status["newsletter_router"] = False
-
-    # ===== OPTIONAL ROUTES (Conditional on availability) =====
-
-    try:
-        # ===== WORKFLOW HISTORY (Phase 5) =====
-        from routes.workflow_history import alias_router as workflow_history_alias_router
-        from routes.workflow_history import (
-            initialize_history_service,
-        )
-        from routes.workflow_history import router as workflow_history_router
-        from services.workflow_history import WorkflowHistoryService
-
-        if database_service and workflow_history_service:
-            initialize_history_service(database_service.pool)
-            app.include_router(workflow_history_router)
-            app.include_router(workflow_history_alias_router)
-            logger.info(
-                " workflow_history_router registered (both /api/workflow/* and /api/workflows/* paths)"
-            )
-            status["workflow_history_router"] = True
-        else:
-            logger.warning(" workflow_history not available (dependencies missing)")
-            status["workflow_history_router"] = False
-    except ImportError as e:
-        logger.warning(f" workflow_history not available: {e}")
-        status["workflow_history_router"] = False
-    except Exception as e:
-        logger.error(f" workflow_history registration failed: {e}")
-        status["workflow_history_router"] = False
-
-    # ===== INTELLIGENT ORCHESTRATOR (DEPRECATED - replaced by UnifiedOrchestrator) =====
-    # This router is no longer registered. Use orchestrator_routes instead.
-    logger.info(" intelligent_orchestrator_routes SKIPPED (deprecated, use orchestrator_routes)")
-    status["intelligent_orchestrator_router"] = False
-
-    try:
-        # ===== SERVICE REGISTRY - Service discovery and introspection =====
-        from routes.service_registry_routes import router as service_registry_router
-
-        app.include_router(service_registry_router)
-        logger.info(" service_registry_router registered (service discovery)")
-        status["service_registry_router"] = True
-    except Exception as e:
-        logger.error(f" service_registry_router failed: {e}")
-        status["service_registry_router"] = False
-
-    try:
-        # ===== AGENT REGISTRY - Agent discovery and metadata =====
-        from routes.agent_registry_routes import router as agent_registry_router
-
-        app.include_router(agent_registry_router)
-        logger.info(" agent_registry_router registered (agent discovery)")
-        status["agent_registry_router"] = True
-    except Exception as e:
-        logger.error(f" agent_registry_router failed: {e}")
-        status["agent_registry_router"] = False
-
-    try:
-        # ===== WORKFLOW MANAGEMENT - Workflow execution and orchestration =====
-        from routes.workflow_routes import router as workflow_router
-
-        app.include_router(workflow_router)
-        logger.info(" workflow_router registered (workflow orchestration)")
-        status["workflow_router"] = True
-    except Exception as e:
-        logger.error(f" workflow_router failed: {e}")
-        status["workflow_router"] = False
-
-    try:
-        # ===== CUSTOM WORKFLOWS - User-defined workflow builder and executor =====
-        from routes.custom_workflows_routes import router as custom_workflows_router
-
-        app.include_router(custom_workflows_router)
-        logger.info(" custom_workflows_router registered (custom workflow builder)")
-        status["custom_workflows_router"] = True
-    except Exception as e:
-        logger.error(f" custom_workflows_router failed: {e}")
-        status["custom_workflows_router"] = False
-
-    try:
-        # ===== CAPABILITY TASKS - Composable capability-based task system =====
-        from routes.capability_tasks_routes import router as capability_tasks_router
-
-        app.include_router(capability_tasks_router)
-        logger.info(" capability_tasks_router registered (capability composition)")
-        status["capability_tasks_router"] = True
-    except Exception as e:
-        logger.error(f" capability_tasks_router failed: {e}")
-        status["capability_tasks_router"] = False
-
-    try:
-        # ===== WEBSOCKET - Real-time progress tracking =====
-        from routes.websocket_routes import websocket_router
-
-        app.include_router(websocket_router)
-        logger.info(" websocket_router registered (real-time progress tracking)")
-        status["websocket_router"] = True
-    except Exception as e:
-        logger.error(f" websocket_router failed: {e}")
-        status["websocket_router"] = False
-
-    try:
-        # ===== CACHE REVALIDATION - Secure public site cache invalidation =====
-        from routes.revalidate_routes import router as revalidate_router
-
-        app.include_router(revalidate_router)
-        logger.info(" revalidate_router registered (secure cache invalidation)")
-        status["revalidate_router"] = True
-    except Exception as e:
-        logger.error(f" revalidate_router failed: {e}")
-        status["revalidate_router"] = False
-
-    # Log registration summary
     total_routes = len(status)
     registered_routes = sum(1 for v in status.values() if v)
     logger.info(
-        f"✅ Route registration complete: {registered_routes}/{total_routes} routers registered"
+        " Route registration complete: %d/%d routers registered",
+        registered_routes,
+        total_routes,
     )
 
     return status
+
+
+def register_workflow_history_routes(
+    app: FastAPI, database_service: Any, workflow_history_service: Any
+) -> bool:
+    """
+    Register workflow history routes once services are available during lifespan.
+
+    Called from main.py lifespan after database and workflow_history services are initialized.
+    Separated from register_all_routes because those services aren't available at module load time.
+    """
+    try:
+        from routes.workflow_history import initialize_history_service
+        from routes.workflow_history import router as workflow_history_router
+
+        if not database_service or not workflow_history_service:
+            logger.warning(
+                "workflow_history routes skipped: database or workflow_history service not available"
+            )
+            return False
+
+        initialize_history_service(database_service.pool)
+        app.include_router(workflow_history_router)
+        logger.info("workflow_history_router registered (/api/workflows/* paths)")
+        return True
+    except ImportError as e:
+        logger.warning(f"workflow_history routes not available: {e}", exc_info=True)
+        return False
+    except Exception as e:
+        logger.error(f"workflow_history route registration failed: {e}", exc_info=True)
+        return False

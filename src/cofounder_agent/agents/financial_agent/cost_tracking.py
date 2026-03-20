@@ -13,7 +13,7 @@ Features:
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -115,10 +115,10 @@ class CostTrackingService:
                 return data.get("costs", {})
 
         except httpx.HTTPError as e:
-            logger.error("Failed to fetch cost metrics", error=str(e), api_url=self.api_url)
+            logger.error("Failed to fetch cost metrics", error=str(e), api_url=self.api_url, exc_info=True)
             return None
         except Exception as e:
-            logger.error("Unexpected error fetching cost metrics", error=str(e))
+            logger.error("Unexpected error fetching cost metrics", error=str(e), exc_info=True)
             return None
 
     def check_monthly_reset(self):
@@ -442,7 +442,7 @@ class CostTrackingService:
         except Exception as e:
             logger.error(
                 "Failed to publish budget alert", error=str(e), alert_level=alert.level.value
-            )
+, exc_info=True)
 
     def get_monthly_summary(self) -> Dict[str, Any]:
         """

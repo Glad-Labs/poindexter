@@ -12,16 +12,15 @@ This service bridges the gap between the sample upload system (Phase 3.1/3.2)
 and content generation (Phase 3.3).
 """
 
-import logging
+from services.logger_config import get_logger
 import re
+from collections import Counter
 from typing import Any, Dict, Optional
 
 from services.database_service import DatabaseService
 from services.writing_style_service import WritingStyleService
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class WritingStyleIntegrationService:
     """Service for integrating writing samples into content generation"""
 
@@ -36,7 +35,7 @@ class WritingStyleIntegrationService:
         self.writing_style_service = WritingStyleService(database_service)
 
     async def get_sample_for_content_generation(
-        self, writing_style_id: str, user_id: Optional[str] = None
+        self, writing_style_id: Optional[str], user_id: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Get writing sample for use in content generation with full analysis.
@@ -82,7 +81,10 @@ class WritingStyleIntegrationService:
             return sample_data
 
         except Exception as e:
-            logger.error(f"Error getting sample for content generation: {e}")
+            logger.error(
+                f"[_get_sample_for_content_generation] Error getting sample for content generation: {e}",
+                exc_info=True,
+            )
             return None
 
     def _analyze_sample(self, sample_text: str) -> Dict[str, Any]:
@@ -173,7 +175,9 @@ class WritingStyleIntegrationService:
             "conversational": conversational_count,
         }
         detected_tone = (
-            max(tone_scores, key=tone_scores.get) if max(tone_scores.values()) > 0 else "neutral"
+            max(tone_scores, key=lambda k: tone_scores[k])
+            if max(tone_scores.values()) > 0
+            else "neutral"
         )
 
         # Detect style characteristics
@@ -194,7 +198,9 @@ class WritingStyleIntegrationService:
             "thought-leadership": has_quotes or authoritative_count > casual_count,
         }
         detected_style = (
-            max(style_markers, key=style_markers.get) if any(style_markers.values()) else "general"
+            max(style_markers, key=lambda k: style_markers[k])
+            if any(style_markers.values())
+            else "general"
         )
 
         # Calculate vocabulary complexity
@@ -265,7 +271,10 @@ class WritingStyleIntegrationService:
             return enhanced_prompt
 
         except Exception as e:
-            logger.error(f"Error generating creative agent prompt injection: {e}")
+            logger.error(
+                f"[_generate_creative_agent_prompt_injection] Error generating creative agent prompt injection: {e}",
+                exc_info=True,
+            )
             return base_prompt
 
     @staticmethod
@@ -342,7 +351,7 @@ class WritingStyleIntegrationService:
             return results
 
         except Exception as e:
-            logger.error(f"Error verifying style match: {e}")
+            logger.error(f"[_verify_style_match] Error verifying style match: {e}", exc_info=True)
             return {"matched": False, "reason": f"Verification error: {str(e)}"}
 
     @staticmethod

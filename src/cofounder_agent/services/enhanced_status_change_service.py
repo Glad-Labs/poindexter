@@ -1,16 +1,14 @@
 """Enhanced status change validation and logging service."""
 
-import json
-import logging
-from datetime import datetime
+from services.logger_config import get_logger
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from services.tasks_db import TasksDatabase
-from utils.task_status import StatusTransitionValidator, TaskStatus, is_valid_transition
+from utils.task_status import StatusTransitionValidator
+from utils.json_encoder import safe_json_load
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class EnhancedStatusChangeService:
     """Service for validated status changes with comprehensive logging."""
 
@@ -74,7 +72,7 @@ class EnhancedStatusChangeService:
                 "user_id": user_id,
                 "reason": reason,
                 "validation_context": metadata or {},
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
 
             # Log to history table
@@ -90,10 +88,32 @@ class EnhancedStatusChangeService:
                 logger.warning(f"⚠️  Failed to log status change for {task_id}")
 
             # Update task
-            update_data = {"status": new_status, "updated_at": datetime.utcnow()}
+            update_data = {"status": new_status, "updated_at": datetime.now(timezone.utc)}
 
             if metadata:
-                update_data["task_metadata"] = metadata
+                # Merge incoming metadata with existing task_metadata to avoid overwriting
+                # previously persisted generation results and validation diagnostics.
+                existing_metadata = safe_json_load(
+                    task.get("task_metadata") or {}, fallback={}
+                )
+                if not isinstance(existing_metadata, dict):
+                    existing_metadata = {}
+
+                merged_metadata = {**existing_metadata, **metadata}
+
+                # Persist retry counters for UI badge and auditability.
+                if str(metadata.get("action", "")).lower() == "retry":
+                    prior_retry_count = existing_metadata.get("retry_count", 0)
+                    try:
+                        prior_retry_count = int(prior_retry_count)
+                    except (TypeError, ValueError):
+                        prior_retry_count = 0
+
+                    merged_metadata["retry_count"] = prior_retry_count + 1
+                    merged_metadata["last_retry_at"] = datetime.now(timezone.utc).isoformat()
+                    merged_metadata["last_retry_by"] = user_id
+
+                update_data["task_metadata"] = merged_metadata
 
             updated = await self.db_service.update_task(task_id, update_data)
 
@@ -107,7 +127,7 @@ class EnhancedStatusChangeService:
 
         except Exception as e:
             error = f"Error during status change: {str(e)}"
-            logger.error(f"❌ {error}", exc_info=True)
+            logger.error(f"[_validate_and_change_status] ❌ {error}", exc_info=True)
             return False, error, ["internal_error"]
 
     async def get_status_audit_trail(self, task_id: str, limit: int = 50) -> Dict[str, Any]:
@@ -126,7 +146,9 @@ class EnhancedStatusChangeService:
 
             return {"task_id": task_id, "history_count": len(history), "history": history}
         except Exception as e:
-            logger.error(f"❌ Failed to get audit trail: {e}")
+            logger.error(
+                f"[_get_status_audit_trail] ❌ Failed to get audit trail: {e}", exc_info=True
+            )
             return {"task_id": task_id, "history_count": 0, "history": [], "error": str(e)}
 
     async def get_validation_failures(self, task_id: str, limit: int = 50) -> Dict[str, Any]:
@@ -145,5 +167,8 @@ class EnhancedStatusChangeService:
 
             return {"task_id": task_id, "failure_count": len(failures), "failures": failures}
         except Exception as e:
-            logger.error(f"❌ Failed to get validation failures: {e}")
+            logger.error(
+                f"[_get_validation_failures] ❌ Failed to get validation failures: {e}",
+                exc_info=True,
+            )
             return {"task_id": task_id, "failure_count": 0, "failures": [], "error": str(e)}

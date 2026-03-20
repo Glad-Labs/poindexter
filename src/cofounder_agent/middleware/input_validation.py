@@ -6,16 +6,14 @@ Provides request size limits, content-type validation, and payload inspection.
 """
 
 import json
-import logging
+from services.logger_config import get_logger
 from typing import Callable
 
 from fastapi import HTTPException, Request, status
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class InputValidationMiddleware(BaseHTTPMiddleware):
     """
     Middleware for validating all incoming requests.
@@ -40,6 +38,8 @@ class InputValidationMiddleware(BaseHTTPMiddleware):
     # Routes that skip validation (health checks, etc.)
     SKIP_VALIDATION_PATHS = {
         "/api/health",
+        "/dev/tasks",
+        "/api/public/tasks",
         "/api/tasks/metrics",
         "/api/tasks/metrics/summary",
         "/docs",
@@ -47,10 +47,15 @@ class InputValidationMiddleware(BaseHTTPMiddleware):
         "/openapi.json",
     }
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Callable:
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:  # type: ignore[override]
         """Process incoming request with validation"""
 
         try:
+            # Skip validation for WebSocket connections (upgrade requests)
+            # WebSocket handshakes use the HTTP Upgrade mechanism
+            if request.headers.get("upgrade", "").lower() == "websocket":
+                return await call_next(request)
+
             # Skip validation for certain paths
             if request.url.path in self.SKIP_VALIDATION_PATHS:
                 return await call_next(request)
@@ -75,7 +80,7 @@ class InputValidationMiddleware(BaseHTTPMiddleware):
             raise
         except ValueError as e:
             # Return 400 for validation errors
-            logger.warning(f"Request validation error: {str(e)}")
+            logger.warning(f"Request validation error: {str(e)}", exc_info=True)
             return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 content={"detail": str(e)},
@@ -199,13 +204,18 @@ class PayloadInspectionMiddleware(BaseHTTPMiddleware):
         "/api/content",
     }
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Callable:
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:  # type: ignore[override]
         """
         Pass through without payload inspection.
 
         NOTE: InputValidationMiddleware already validates requests.
         This middleware is kept for future logging needs but currently disabled.
+        Also skips WebSocket upgrade requests.
         """
+        # Skip WebSocket connections
+        if request.headers.get("upgrade", "").lower() == "websocket":
+            return await call_next(request)
+
         # Skip all inspection - InputValidationMiddleware handles validation
         response = await call_next(request)
         return response

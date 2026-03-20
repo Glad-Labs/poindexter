@@ -48,14 +48,19 @@ class BlogPost(BaseModel):
     # Publishing data
     strapi_id: Optional[int] = None
     strapi_url: Optional[str] = None
-    published_posts_map: Optional[Dict[str, str]] = {}
-
     # --- Internal State ---
     # Holds a map of {post_title: post_url} for internal linking, excluded from serialization
     published_posts_map: Dict[str, str] = Field(default_factory=dict, exclude=True)
 
     # --- Refinement & State Tracking ---
     qa_feedback: List[str] = Field(default_factory=list)
+
+    # --- NEW: Quality Score Tracking ---
+    quality_scores: List[float] = Field(
+        default_factory=list,
+        description="Quality scores from each QA evaluation (0-100 scale). "
+        "Allows tracking improvement trend across refinement iterations.",
+    )
 
     # --- Metadata for Agent Coordination ---
     metadata: Optional[Dict[str, Any]] = Field(

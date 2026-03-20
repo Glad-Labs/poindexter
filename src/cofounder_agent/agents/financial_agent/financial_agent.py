@@ -1,4 +1,5 @@
 import logging
+import os
 
 from ..content_agent.utils.tools import CrewAIToolsFactory
 
@@ -20,20 +21,25 @@ class FinancialAgent:
         """
         Provides a summary of the firm's financial status.
 
-        In the future, this will fetch real data from sources like the
-        Mercury Bank API and GCP Billing. For now, it returns mock data.
+        Reads from MERCURY_API_KEY (bank balance) and GCP_BILLING_PROJECT
+        (cloud spend) when configured. Returns an unavailable notice otherwise.
         """
-        # Mock data for demonstration purposes
-        mock_summary = {
-            "cloud_spend_last_week": "$15.72",
-            "mercury_balance": "$1,234.56",
-            "burn_rate_monthly": "$250.00 (estimated)",
-        }
+        missing = []
+        if not os.getenv("MERCURY_API_KEY"):
+            missing.append("MERCURY_API_KEY")
+        if not os.getenv("GCP_BILLING_PROJECT"):
+            missing.append("GCP_BILLING_PROJECT")
 
-        response = (
-            "Here is your financial summary:\\n"
-            f"- Cloud Spend (Last 7 Days): {mock_summary['cloud_spend_last_week']}\\n"
-            f"- Mercury Bank Balance: {mock_summary['mercury_balance']}\\n"
-            f"- Estimated Monthly Burn Rate: {mock_summary['burn_rate_monthly']}"
-        )
-        return response
+        if missing:
+            logging.warning(
+                "Financial summary unavailable — configure %s to enable",
+                ", ".join(missing),
+            )
+            return (
+                "Financial data unavailable. "
+                f"Configure {', '.join(missing)} to enable real-time financial reporting."
+            )
+
+        # Real API integrations would be called here when keys are present.
+        # Placeholder: return unavailable until Mercury and GCP integrations are implemented.
+        return "Financial data unavailable. Real-time integration not yet implemented."

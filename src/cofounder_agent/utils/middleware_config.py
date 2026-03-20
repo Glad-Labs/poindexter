@@ -10,22 +10,21 @@ Configures:
 All middleware can be optionally enabled/disabled and configured via environment variables.
 """
 
-import logging
+from services.logger_config import get_logger
 import os
-from typing import List, Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class MiddlewareConfig:
     """Manages middleware configuration and registration"""
 
     def __init__(self):
         self.limiter = None
+        self.profiling_middleware = None
 
     def register_all_middleware(self, app: FastAPI) -> None:
         """
@@ -35,10 +34,12 @@ class MiddlewareConfig:
         (middleware added last is executed first).
 
         Order of execution (first to last):
-        1. CORS middleware (handles cross-origin requests)
-        2. Rate limiting (protects against abuse)
-        3. Input validation (sanitizes requests)
-        4. Payload inspection (logs payloads for debugging)
+        1. Profiling middleware (tracks request latency)
+        2. CORS middleware (handles cross-origin requests)
+        3. Token validation (validates JWT tokens on protected endpoints)
+        4. Rate limiting (protects against abuse)
+        5. Input validation (sanitizes requests)
+        6. Payload inspection (logs payloads for debugging)
 
         Args:
             app: FastAPI application instance
@@ -51,12 +52,72 @@ class MiddlewareConfig:
             middleware_config.register_all_middleware(app)
         """
         # Register in reverse order (last added = first executed)
-        # CORS should execute FIRST, so it's added LAST
+        # Profiling should execute FIRST, so it's added LAST
+        self._setup_cache_control(app)
         self._setup_input_validation(app)
         self._setup_rate_limiting(app)
+        self._setup_token_validation(app)
+        self._setup_security_headers(app)
         self._setup_cors(app)
+        # Request ID must execute before profiling so the ID is available when
+        # the profiling middleware logs request completion.
+        self._setup_request_id(app)
+        self._setup_profiling(app)
 
         logger.info("✅ All middleware registered successfully")
+
+    def _setup_request_id(self, app: FastAPI) -> None:
+        """
+        Setup request ID middleware and logging filter.
+
+        - Generates / propagates X-Request-ID for every request.
+        - Injects request_id into every log record via a stdlib logging.Filter.
+        """
+        import logging
+
+        from middleware.request_id import RequestIDFilter, RequestIDMiddleware
+
+        # Apply the filter to the root logger so ALL loggers inherit it.
+        # Using addFilter on root ensures it propagates to every child logger.
+        logging.getLogger().addFilter(RequestIDFilter())
+
+        app.add_middleware(RequestIDMiddleware)
+        logger.info("Request ID middleware initialized")
+
+    def _setup_profiling(self, app: FastAPI) -> None:
+        """
+        Setup performance profiling middleware.
+
+        Tracks request latency and identifies slow endpoints.
+        Data is accessible via /api/profiling endpoints.
+        """
+        try:
+            from middleware.profiling_middleware import ProfilingMiddleware
+
+            self.profiling_middleware = ProfilingMiddleware(app)
+            app.add_middleware(ProfilingMiddleware)
+
+            # Store middleware reference in app state for route access
+            app.state.profiling_middleware = self.profiling_middleware
+
+            logger.info("✅ Profiling middleware initialized")
+        except ImportError as e:
+            logger.warning(f"⚠️  Profiling middleware not available: {e}", exc_info=True)
+
+    def _setup_cache_control(self, app: FastAPI) -> None:
+        """
+        Setup HTTP Cache-Control middleware.
+
+        Sets Cache-Control headers on all responses based on route category:
+        - Mutations (POST/PUT/PATCH/DELETE): no-store
+        - Auth / WebSocket routes: no-store
+        - Private data (tasks, workflows, user): private, max-age=60
+        - Public content (posts, cms, analytics): public, max-age=300
+        """
+        from middleware.cache_control import CacheControlMiddleware
+
+        app.add_middleware(CacheControlMiddleware)
+        logger.info("✅ Cache-Control middleware initialized")
 
     def _setup_input_validation(self, app: FastAPI) -> None:
         """
@@ -80,7 +141,7 @@ class MiddlewareConfig:
 
             logger.info("✅ Input validation middleware initialized")
         except ImportError as e:
-            logger.warning(f"⚠️  Input validation middleware not available: {e}")
+            logger.warning(f"⚠️  Input validation middleware not available: {e}", exc_info=True)
 
     def _setup_cors(self, app: FastAPI) -> None:
         """
@@ -120,13 +181,42 @@ class MiddlewareConfig:
             allow_credentials=True,
             # SECURITY: Restricted from ["*"] to specific methods
             allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-            # SECURITY: Restricted from ["*"] to specific headers
-            allow_headers=["*"],
-            expose_headers=["*"],
+            # SECURITY: Explicit header list required — allow_headers=["*"] with
+            # allow_credentials=True violates the CORS spec (#220)
+            allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With", "X-Request-ID"],
+            expose_headers=["X-Request-ID"],
             max_age=600,
         )
 
         logger.info("✅ CORS middleware initialized")
+
+    def _setup_security_headers(self, app: FastAPI) -> None:
+        """
+        Setup HTTP security response headers.
+
+        Adds defense-in-depth headers to all API responses:
+        - X-Content-Type-Options: nosniff — prevents MIME-sniffing
+        - X-Frame-Options: DENY — prevents clickjacking
+        - Referrer-Policy: strict-origin-when-cross-origin
+        - X-XSS-Protection: 0 — disable legacy XSS auditors (CSP is preferred)
+        """
+
+        class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+            async def dispatch(self, request: Request, call_next):
+                response: Response = await call_next(request)
+                response.headers["X-Content-Type-Options"] = "nosniff"
+                response.headers["X-Frame-Options"] = "DENY"
+                response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+                # Disable legacy XSS auditor; CSP is the modern protection
+                response.headers["X-XSS-Protection"] = "0"
+                # HSTS: enforce HTTPS for 1 year, include subdomains
+                response.headers["Strict-Transport-Security"] = (
+                    "max-age=31536000; includeSubDomains"
+                )
+                return response
+
+        app.add_middleware(SecurityHeadersMiddleware)
+        logger.info("✅ Security headers middleware initialized")
 
     def _setup_rate_limiting(self, app: FastAPI) -> None:
         """
@@ -138,12 +228,13 @@ class MiddlewareConfig:
         Uses slowapi library for efficient rate limiting.
         """
         try:
-            from slowapi import Limiter
             from slowapi.errors import RateLimitExceeded
-            from slowapi.util import get_remote_address
 
-            # Create limiter instance
-            self.limiter = Limiter(key_func=get_remote_address)
+            # Use the shared singleton so route @limiter.limit() decorators
+            # reference the same instance that is registered with app.state.
+            from utils.rate_limiter import limiter as _limiter
+
+            self.limiter = _limiter
 
             # Store limiter in app state for use in route decorators
             app.state.limiter = self.limiter
@@ -163,8 +254,28 @@ class MiddlewareConfig:
             logger.warning(
                 "⚠️  slowapi not installed - rate limiting disabled. "
                 "Install with: pip install slowapi"
-            )
+, exc_info=True)
             self.limiter = None
+
+    def _setup_token_validation(self, app: FastAPI) -> None:
+        """
+        Setup token validation middleware.
+
+        Validates JWT tokens on protected endpoints:
+        - Checks Authorization header format
+        - Validates token presence on protected routes
+        - Full token expiration/signature validation happens at dependency level
+
+        Phase 1 OAuth Security: Ensures tokens are present and formatted correctly
+        before reaching route handlers.
+        """
+        try:
+            from middleware.token_validation import TokenValidationMiddleware
+
+            app.add_middleware(TokenValidationMiddleware)
+            logger.info("✅ Token validation middleware initialized")
+        except ImportError as e:
+            logger.warning(f"⚠️  Token validation middleware not available: {e}", exc_info=True)
 
     def get_limiter(self):
         """

@@ -1,28 +1,25 @@
 """
-Comprehensive Error Handling and Recovery System
+Domain Error Classes and Recovery System
 
-Provides:
-- StandardError codes and error classification
-- AppError base exception class with full context
-- Domain-specific exception classes for all error scenarios
-- Retry logic with exponential backoff for resilience
-- Circuit breaker pattern for external service protection
-- Graceful error handling with structured context
-- Request error tracking and correlation
-- Database connection recovery
-- Timeout management
-- Validation utilities with field-level error reporting
-- Standardized error response formatting
+Provides domain exception classes, error codes, retry logic, and circuit breaker:
+- AppError base class + subclasses: ValidationError, NotFoundError, DatabaseError, etc.
+- ErrorCode/ErrorCategory enums for classification
+- CircuitBreaker for external service protection
+- retry_with_backoff decorator for resilience
+- Validation helpers (validate_string_field, validate_integer_field, etc.)
 
-All routes should use AppError classes for consistent error responses.
-Integrate retry_with_backoff and CircuitBreaker for resilience.
+Import guide:
+    - Routes: from services.error_handler import AppError, NotFoundError
+    - Services (same package): from .error_handler import DatabaseError, ServiceError
+    - For route/service error handling helpers (handle_route_error, handle_service_error):
+      from utils.error_handler import handle_route_error, handle_service_error
 """
 
 import asyncio
-import logging
+from services.logger_config import get_logger
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
 from enum import Enum
 from functools import wraps
 from typing import Any, Callable, Coroutine, Dict, Optional, TypeVar
@@ -35,9 +32,10 @@ try:
 
     SENTRY_AVAILABLE = True
 except ImportError:
+    sentry_sdk = None  # type: ignore[assignment]
     SENTRY_AVAILABLE = False
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 T = TypeVar("T")
 
 
@@ -117,13 +115,13 @@ class ErrorContext:
     max_attempts: int = 3
     request_id: Optional[str] = None
     user_id: Optional[str] = None
-    timestamp: datetime = None
+    timestamp: Optional[datetime] = None
     error: Optional[Exception] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         if self.timestamp is None:
-            self.timestamp = datetime.utcnow()
+            self.timestamp = datetime.now(timezone.utc)
         if self.metadata is None:
             self.metadata = {}
 
@@ -136,7 +134,9 @@ class ErrorContext:
             "attempt": self.attempt,
             "request_id": self.request_id,
             "user_id": self.user_id,
-            "timestamp": self.timestamp.isoformat(),
+            "timestamp": (
+                self.timestamp.isoformat() if self.timestamp else datetime.now(timezone.utc).isoformat()
+            ),
             "error_type": type(self.error).__name__ if self.error else None,
             "error_message": str(self.error) if self.error else None,
             **self.metadata,
@@ -397,12 +397,12 @@ def handle_error(
     if log_exception:
         logger.error(f"Unhandled exception: {error}", exc_info=True)
 
-    # Convert to ServiceError
+    # Convert to ServiceError — do not expose raw exception message in HTTP response
     details = context or {}
-    details["original_error"] = str(error)
+    details["error_type"] = type(error).__name__
 
     return ServiceError(
-        message=f"Service error: {str(error)}",
+        message="An internal service error occurred",
         error_code=default_code,
         details=details,
         cause=error,
@@ -429,7 +429,7 @@ class CircuitBreaker:
         name: str,
         failure_threshold: int = 5,
         recovery_timeout: int = 60,
-        expected_exception: type = Exception,
+        expected_exception: type[BaseException] = Exception,
     ):
         self.name = name
         self.failure_threshold = failure_threshold
@@ -439,7 +439,7 @@ class CircuitBreaker:
         self.failure_count = 0
         self.last_failure_time = None
         self.is_open = False
-        self.last_state_change = datetime.utcnow()
+        self.last_state_change = datetime.now(timezone.utc)
 
     def call(self, func: Callable[..., T], *args, **kwargs) -> T:
         """
@@ -484,20 +484,21 @@ class CircuitBreaker:
 
         except self.expected_exception as e:
             self.failure_count += 1
-            self.last_failure_time = datetime.utcnow()
+            self.last_failure_time = datetime.now(timezone.utc)
 
-            logger.warning(
-                f"⚠️  Circuit breaker '{self.name}' - failure {self.failure_count}/{self.failure_threshold}: {e}"
+            logger.error(
+                f"[call] Circuit breaker '{self.name}' - failure {self.failure_count}/{self.failure_threshold}: {e}",
+                exc_info=True,
             )
 
             # Open circuit if threshold reached
             if self.failure_count >= self.failure_threshold:
                 self.is_open = True
-                self.last_state_change = datetime.utcnow()
-                logger.error(f"🔴 Circuit breaker '{self.name}' is now OPEN")
+                self.last_state_change = datetime.now(timezone.utc)
+                logger.error(f"🔴 Circuit breaker '{self.name}' is now OPEN", exc_info=True)
 
                 # Report to Sentry if available
-                if SENTRY_AVAILABLE:
+                if sentry_sdk is not None:
                     sentry_sdk.capture_exception(e)
 
             raise
@@ -532,20 +533,21 @@ class CircuitBreaker:
 
         except self.expected_exception as e:
             self.failure_count += 1
-            self.last_failure_time = datetime.utcnow()
+            self.last_failure_time = datetime.now(timezone.utc)
 
-            logger.warning(
-                f"⚠️  Circuit breaker '{self.name}' - failure {self.failure_count}/{self.failure_threshold}: {e}"
+            logger.error(
+                f"[call_async] Circuit breaker '{self.name}' - failure {self.failure_count}/{self.failure_threshold}: {e}",
+                exc_info=True,
             )
 
             # Open circuit if threshold reached
             if self.failure_count >= self.failure_threshold:
                 self.is_open = True
-                self.last_state_change = datetime.utcnow()
-                logger.error(f"🔴 Circuit breaker '{self.name}' is now OPEN")
+                self.last_state_change = datetime.now(timezone.utc)
+                logger.error(f"🔴 Circuit breaker '{self.name}' is now OPEN", exc_info=True)
 
                 # Report to Sentry if available
-                if SENTRY_AVAILABLE:
+                if sentry_sdk is not None:
                     sentry_sdk.capture_exception(e)
 
             raise
@@ -554,7 +556,7 @@ class CircuitBreaker:
         """Check if enough time has passed to attempt recovery"""
         if not self.last_failure_time:
             return False
-        return (datetime.utcnow() - self.last_failure_time).total_seconds() >= self.recovery_timeout
+        return (datetime.now(timezone.utc) - self.last_failure_time).total_seconds() >= self.recovery_timeout
 
     def get_status(self) -> Dict[str, Any]:
         """Get circuit breaker status for monitoring"""
@@ -602,7 +604,7 @@ def retry_with_backoff(
             for attempt in range(max_retries + 1):
                 try:
                     return await func(*args, **kwargs)
-                except on_exception as e:
+                except on_exception as e:  # type: ignore[misc]
                     last_exception = e
 
                     if attempt >= max_retries:
@@ -618,7 +620,7 @@ def retry_with_backoff(
                     # Wait before retry with exponential backoff
                     logger.warning(
                         f"⚠️  {func.__name__} attempt {attempt + 1} failed, retrying in {delay}s: {e}"
-                    )
+, exc_info=True)
 
                     if on_error_callback:
                         on_error_callback(e, attempt + 1, max_retries + 1)
@@ -633,7 +635,7 @@ def retry_with_backoff(
             for attempt in range(max_retries + 1):
                 try:
                     return func(*args, **kwargs)
-                except on_exception as e:
+                except on_exception as e:  # type: ignore[misc]
                     if attempt >= max_retries:
                         logger.error(
                             f"❌ {func.__name__} failed after {max_retries + 1} attempts: {e}",
@@ -645,11 +647,15 @@ def retry_with_backoff(
 
                     logger.warning(
                         f"⚠️  {func.__name__} attempt {attempt + 1} failed, retrying in {delay}s: {e}"
-                    )
+, exc_info=True)
 
                     if on_error_callback:
                         on_error_callback(e, attempt + 1, max_retries + 1)
 
+                    # NOTE: sync_wrapper is for non-async functions only. If called from
+                    # an async FastAPI handler, use the async-decorated version instead to
+                    # avoid blocking the event loop. time.sleep is intentional here for
+                    # truly synchronous (non-event-loop) execution contexts.
                     time.sleep(delay)
                     delay = min(delay * exponential_base, max_delay)
 
@@ -686,8 +692,8 @@ class ErrorResponseFormatter:
         """
         error_dict = {
             "error": type(error).__name__,
-            "message": str(error),
-            "timestamp": datetime.utcnow().isoformat(),
+            "message": "An error occurred",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
         if request_id:
@@ -723,7 +729,7 @@ def log_error_context(context: ErrorContext) -> None:
     logger.error(log_message, extra=context_dict, exc_info=context.error)
 
     # Send to Sentry if available
-    if SENTRY_AVAILABLE and context.error:
+    if sentry_sdk is not None and context.error:
         with sentry_sdk.push_scope() as scope:
             scope.set_context("error_context", context_dict)
             if context.request_id:

@@ -56,7 +56,6 @@ async def create_phase_handler(phase_name: str, agent_name: str, database_servic
         Returns:
             PhaseResult with execution status and output
         """
-        import inspect
         import time
 
         start_time = time.time()
@@ -130,7 +129,7 @@ async def _get_agent_instance_async(agent_name: str) -> Any:
         return orchestrator._get_agent_instance(agent_name)
 
     except Exception as e:
-        logger.warning(f"Could not instantiate agent {agent_name}: {e}")
+        logger.warning(f"Could not instantiate agent {agent_name}: {e}", exc_info=True)
         return None
 
 
@@ -643,3 +642,184 @@ def convert_phases_to_schemas(phases: List[Dict[str, Any]]) -> List[Dict[str, An
         validated_phases.append(validated)
 
     return validated_phases
+
+
+# ---------------------------------------------------------------------------
+# Pure utility functions — no I/O, no LLM calls
+# ---------------------------------------------------------------------------
+
+import re as _re
+
+PHASE_TO_AGENT_MAP: Dict[str, str] = {
+    "research": "research_agent",
+    "draft": "creative_agent",
+    "assess": "qa_agent",
+    "refine": "creative_agent",
+    "image": "image_agent",
+    "image_selection": "image_agent",
+    "publish": "publishing_agent",
+    "finalize": "publishing_agent",
+}
+
+_CONTENT_PHASES: frozenset = frozenset(PHASE_TO_AGENT_MAP)
+
+
+def _normalize_phase_alias(name: Any) -> str:
+    """Lowercase, strip, convert separators to underscores, strip trailing digits."""
+    if not isinstance(name, str):
+        return ""
+    name = name.strip().lower()
+    name = name.replace("-", "_").replace(" ", "_")
+    name = _re.sub(r"_\d+$", "", name)
+    return name
+
+
+def _is_resolvable_agent_name(name: str) -> bool:
+    """Return True if name looks like a concrete agent name (ends with _agent)."""
+    return isinstance(name, str) and name.endswith("_agent")
+
+
+def resolve_phase_agent_name(
+    configured_agent: Optional[str],
+    phase_name: Optional[str] = None,
+    phase_metadata: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Resolve a phase to a concrete agent name.
+
+    Priority:
+    1. configured_agent already ends with _agent → use it directly
+    2. PHASE_TO_AGENT_MAP lookup via normalised phase_name
+    3. phase_metadata["phase_type"] lookup
+    4. Fallback to creative_agent
+    """
+    if configured_agent and _is_resolvable_agent_name(configured_agent):
+        return configured_agent
+
+    if phase_name:
+        normalised = _normalize_phase_alias(phase_name)
+        if normalised in PHASE_TO_AGENT_MAP:
+            return PHASE_TO_AGENT_MAP[normalised]
+
+    if phase_metadata:
+        meta_type = _normalize_phase_alias(phase_metadata.get("phase_type", ""))
+        if meta_type in PHASE_TO_AGENT_MAP:
+            return PHASE_TO_AGENT_MAP[meta_type]
+
+    return "creative_agent"
+
+
+def _json_default_serializer(obj: Any) -> Any:
+    """JSON default handler: datetime, Enum, model_dump, to_dict, str fallback."""
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    from enum import Enum as _Enum
+    if isinstance(obj, _Enum):
+        return obj.value
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump()
+    if hasattr(obj, "to_dict"):
+        return obj.to_dict()
+    return str(obj)
+
+
+def _to_json_safe(obj: Any) -> Any:
+    """Convert obj to a JSON-serialisable form using _json_default_serializer."""
+    if obj is None:
+        return None
+    if isinstance(obj, (str, int, float, bool)):
+        return obj
+    try:
+        return json.loads(json.dumps(obj, default=_json_default_serializer))
+    except Exception:
+        return str(obj)
+
+
+def _is_content_phase_for_fallback(
+    phase_name: Optional[str],
+    phase_metadata: Optional[Dict[str, Any]] = None,
+) -> bool:
+    """Return True if this phase is a known content pipeline phase."""
+    if phase_metadata:
+        meta_type = _normalize_phase_alias(phase_metadata.get("phase_type", ""))
+        if meta_type:
+            return meta_type in _CONTENT_PHASES
+    if not isinstance(phase_name, str):
+        return False
+    return _normalize_phase_alias(phase_name) in _CONTENT_PHASES
+
+
+_PHASE_INSTRUCTIONS: Dict[str, str] = {
+    "research": "Research the topic thoroughly and provide comprehensive findings.",
+    "draft": "Write a first draft of the content based on the research.",
+    "assess": "Assess the quality of the content and provide feedback.",
+    "refine": "Refine the content based on assessment feedback.",
+    "image": "Generate or select an appropriate image for the content.",
+    "image_selection": "Select the best image for the content.",
+    "publish": "Prepare the content for publishing.",
+    "finalize": "Finalize and prepare the content for publishing.",
+}
+
+
+def _build_content_fallback_prompt(
+    phase_name: str, input_data: Dict[str, Any]
+) -> str:
+    """Build a fallback prompt for a content phase."""
+    normalised = _normalize_phase_alias(phase_name)
+    instruction = _PHASE_INSTRUCTIONS.get(normalised, f"Execute the {phase_name} phase.")
+    input_summary = json.dumps(input_data, default=_json_default_serializer) if input_data else "{}"
+    return f"Phase: {phase_name}\n\nInstruction: {instruction}\n\nInput: {input_summary}"
+
+
+def _extract_text_from_output(output: Any) -> str:
+    """Extract a plain-text string from various output formats."""
+    if isinstance(output, str):
+        return output
+    if isinstance(output, dict):
+        for key in ("output", "content", "draft_content", "research_findings", "text", "result"):
+            if key in output:
+                val = output[key]
+                if isinstance(val, str):
+                    return val
+        # Try nested dicts one level deep
+        for val in output.values():
+            if isinstance(val, dict) and "summary" in val:
+                return str(val["summary"])
+        return json.dumps(output, default=_json_default_serializer)
+    if isinstance(output, list):
+        return json.dumps(output, default=_json_default_serializer)
+    return str(output) if output is not None else ""
+
+
+def _build_content_phase_fallback_result(
+    phase_name: str,
+    output_text: str,
+    fallback_source: str,
+    fallback_reason: str,
+) -> Dict[str, Any]:
+    """Build a phase fallback result dict with common and phase-specific fields."""
+    normalised = _normalize_phase_alias(phase_name)
+    result: Dict[str, Any] = {
+        "phase": phase_name,
+        "output": output_text,
+        "fallback_source": fallback_source,
+        "fallback_reason": fallback_reason,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    if normalised == "research":
+        result["research_findings"] = output_text
+    elif normalised in ("draft",):
+        result["content"] = output_text
+        result["draft_content"] = output_text
+    elif normalised == "refine":
+        result["content"] = output_text
+    elif normalised == "assess":
+        result["assessment"] = {"summary": output_text, "quality_score": 0.7}
+        result["quality_score"] = 0.7
+    elif normalised in ("image", "image_selection"):
+        result["image_notes"] = output_text
+        result["image_prompt"] = output_text
+    elif normalised in ("publish", "finalize"):
+        result["publish_ready_content"] = output_text
+        result["title"] = "Workflow Generated Draft"
+        result["summary"] = output_text[:240]
+    return result

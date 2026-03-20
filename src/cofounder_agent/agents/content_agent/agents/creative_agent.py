@@ -1,17 +1,16 @@
 import json
-import logging
+from services.logger_config import get_logger
 import re
+from typing import Optional
 
-from ....services.prompt_manager import get_prompt_manager
-from ..config import config
+from services.prompt_manager import get_prompt_manager
+
 from ..services.llm_client import LLMClient
 from ..utils.data_models import BlogPost
 from ..utils.helpers import extract_json_from_string, slugify
 from ..utils.tools import CrewAIToolsFactory
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class CreativeAgent:
     def _extract_asset(self, text: str, asset_name: str) -> str:
         """
@@ -27,12 +26,13 @@ class CreativeAgent:
     def __init__(self, llm_client: LLMClient):
         self.llm_client = llm_client
         self.pm = get_prompt_manager()
+        self.prompts = {}  # Defensive stub — use self.pm for all prompt access
         try:
             self.tools = CrewAIToolsFactory.get_content_agent_tools()
             logger.info("CreativeAgent: Initialized with all content agent tools")
         except Exception as e:
-            logger.warning(f"CreativeAgent: Failed to initialize tools: {e}")
-            logger.warning("CreativeAgent will continue without some tools")
+            logger.warning(f"[init_tools] CreativeAgent: Failed to initialize tools: {e}", exc_info=True)
+            logger.warning("CreativeAgent will continue without some tools", exc_info=True)
             # Initialize with empty tools list - LLMClient can still generate content
             self.tools = []
 
@@ -40,7 +40,7 @@ class CreativeAgent:
         self,
         post: BlogPost,
         is_refinement: bool = False,
-        word_count_target: int = None,
+        word_count_target: Optional[int] = None,
         constraints=None,
     ) -> BlogPost:
         """
@@ -57,27 +57,72 @@ class CreativeAgent:
         """
         raw_draft = ""
         if is_refinement and post.qa_feedback:
+            # NEW: BUILD ACCUMULATED FEEDBACK from ALL QA rounds (not just the last one)
+            accumulated_feedback = "QA FEEDBACK HISTORY:\n" + "\n".join(
+                [f"Round {i+1}: {feedback}" for i, feedback in enumerate(post.qa_feedback)]
+            )
+
+            logger.info(
+                f"CreativeAgent: Using accumulated QA feedback ({len(post.qa_feedback)} rounds)"
+            )
+            logger.debug(f"Accumulated feedback:\n{accumulated_feedback}")
+
+            # Enforce maximum refinement iterations (issue #188)
+            max_refinements = getattr(post, "refinement_loops", 3)
+            current_iteration = len(post.qa_feedback)
+            if current_iteration > max_refinements:
+                logger.warning(
+                    f"CreativeAgent: Max refinements reached ({current_iteration}/{max_refinements}) "
+                    f"— returning best draft"
+                )
+                return post
+
+            # Score improvement check (if quality scores tracked)
+            if hasattr(post, "quality_scores") and len(post.quality_scores) > 1:
+                latest_score = post.quality_scores[-1]
+                previous_score = post.quality_scores[-2]
+                score_improvement = latest_score - previous_score
+
+                logger.info(
+                    f"Quality score improvement: {previous_score:.1f} → {latest_score:.1f} "
+                    f"(+{score_improvement:.1f} points)"
+                )
+
+                # Exit if content is good enough OR improvement has truly stalled (issue #187).
+                # Previous logic exited when delta < 5 regardless of absolute score,
+                # allowing 68/100 content to publish below the 70-point threshold.
+                if latest_score >= 75.0:
+                    logger.info(
+                        f"CreativeAgent: Content meets quality bar ({latest_score:.1f}/100 >= 75). "
+                        f"Stopping refinement."
+                    )
+                    return post
+                if score_improvement < 2.0 and len(post.qa_feedback) > 1:
+                    logger.info(
+                        f"CreativeAgent: Stopping refinement - improvement stalled "
+                        f"({score_improvement:.1f} points). "
+                        f"Returning current content (score: {latest_score:.1f}/100)"
+                    )
+                    return post  # Return without further refinement
+
+            if word_count_target and constraints:
+                tolerance = constraints.word_count_tolerance
+                min_words = int(word_count_target * (1 - tolerance / 100))
+                max_words = int(word_count_target * (1 + tolerance / 100))
+                word_count_constraint = f"{min_words}–{max_words} words (target: {word_count_target} ±{tolerance}%)"
+            else:
+                word_count_constraint = "No strict word count constraint"
             refinement_prompt = self.pm.get_prompt(
                 "blog_generation.iterative_refinement",
                 draft=post.raw_content,
-                critique=post.qa_feedback[-1],
+                critique=accumulated_feedback,
                 target_audience=post.target_audience or "General",
-                primary_keyword=post.primary_keyword or "topic",
+                word_count_constraint=word_count_constraint,
             )
 
             # Include writing sample guidance in refinement too
             if post.metadata and post.metadata.get("writing_sample_guidance"):
                 refinement_prompt += f"\n\n{post.metadata['writing_sample_guidance']}"
-
-            # Inject word count constraint for refinement
-            if word_count_target and constraints:
-                tolerance = constraints.word_count_tolerance
-                min_words = int(word_count_target * (1 - tolerance / 100))
-                max_words = int(word_count_target * (1 + tolerance / 100))
-                refinement_prompt = (
-                    f"[WORD COUNT CONSTRAINT: {min_words}-{max_words} words (target: {word_count_target})]\n\n"
-                    + refinement_prompt
-                )
 
             logger.info(f"CreativeAgent: Refining content for '{post.topic}' based on QA feedback.")
             raw_draft = await self.llm_client.generate_text(refinement_prompt)
@@ -87,6 +132,7 @@ class CreativeAgent:
                 topic=post.topic,
                 target_audience=post.target_audience or "General",
                 primary_keyword=post.primary_keyword or "topic",
+                word_count=word_count_target or 1500,
                 research_context=post.research_data or "No research data provided",
                 internal_link_titles=(
                     list(post.published_posts_map.keys()) if post.published_posts_map else []
@@ -169,8 +215,9 @@ class CreativeAgent:
 
     async def _generate_seo_assets(self, post: BlogPost) -> BlogPost:
         """Generates and assigns SEO assets (title, meta description, slug) for the post."""
-        seo_prompt = self.prompts["seo_and_social_media"].format(
-            draft=post.raw_content,
+        seo_prompt = self.pm.get_prompt(
+            "blog_generation.seo_and_social",
+            draft=post.raw_content or "",
         )
         logger.info(f"CreativeAgent: Generating SEO assets for '{post.topic}'.")
         seo_assets_text = await self.llm_client.generate_text(seo_prompt)
@@ -180,16 +227,48 @@ class CreativeAgent:
         if seo_assets_json:
             try:
                 seo_assets = json.loads(seo_assets_json)
+            except json.JSONDecodeError:
+                # Some model outputs escape markdown underscores in JSON keys
+                # (e.g., meta\_description). Normalize and retry once.
+                try:
+                    normalized_json = seo_assets_json.replace("\\_", "_")
+                    seo_assets = json.loads(normalized_json)
+                except json.JSONDecodeError:
+                    logger.error(
+                        f"CreativeAgent: Failed to decode JSON from SEO assets response: {seo_assets_json}",
+                        exc_info=True,
+                    )
+                    seo_assets = None
+
+            if seo_assets:
                 post.title = seo_assets.get("title", "")
                 post.meta_description = seo_assets.get("meta_description", "")
-                post.slug = slugify(post.title)  # Generate slug from title
-            except json.JSONDecodeError:
-                logger.error(
-                    f"CreativeAgent: Failed to decode JSON from SEO assets response: {seo_assets_json}"
-                )
+                post.slug = slugify(post.title or "")  # Generate slug from title
         else:
             logger.error(
                 f"CreativeAgent: Could not extract JSON from SEO assets response: {seo_assets_text}"
             )
 
+        # Fallback: ensure SEO fields are never empty (issue #195).
+        # Posts with empty title/meta_description cause SEO damage and broken URLs.
+        if not post.title:
+            post.title = (post.topic[:60] if post.topic else "Untitled Post").strip()
+            logger.warning(f"CreativeAgent: Using fallback title from topic: '{post.title}'")
+        if not post.meta_description:
+            post.meta_description = f"An in-depth guide covering {post.topic}."[:160] if post.topic else "Read more about this topic."
+            logger.warning(f"CreativeAgent: Using fallback meta_description")
+        if not post.slug:
+            post.slug = slugify(post.title)
+            logger.warning(f"CreativeAgent: Using fallback slug: '{post.slug}'")
+
         return post
+
+
+def get_creative_agent():
+    """Factory used by workflow_executor dynamic loading.
+
+    Uses the workflow-compatible blog content generator agent implementation.
+    """
+    from agents.blog_content_generator_agent import get_blog_content_generator_agent
+
+    return get_blog_content_generator_agent()

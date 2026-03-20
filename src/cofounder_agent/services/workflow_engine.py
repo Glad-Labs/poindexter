@@ -19,15 +19,15 @@ Architecture:
 
 import asyncio
 import json
-import logging
+from services.logger_config import get_logger
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+from services.websocket_event_broadcaster import WebSocketEventBroadcaster
 
-
+logger = get_logger(__name__)
 class PhaseStatus(str, Enum):
     """Execution status of a phase"""
 
@@ -276,7 +276,7 @@ class WorkflowEngine:
             Updated WorkflowContext with results and status
         """
         context.status = WorkflowStatus.RUNNING
-        start_time = asyncio.get_event_loop().time()
+        start_time = asyncio.get_running_loop().time()
 
         logger.info(
             "[%s] Starting workflow with %d phases: %s",
@@ -284,6 +284,15 @@ class WorkflowEngine:
             len(phases),
             ", ".join(p.name for p in phases),
         )
+
+        try:
+            await WebSocketEventBroadcaster.broadcast_workflow_status(
+                workflow_id=context.workflow_id,
+                status="running",
+                task_count=len(phases),
+            )
+        except Exception as _ws_err:
+            logger.error(f"[_run] Broadcast workflow start failed: {_ws_err}", exc_info=True)
 
         for phase in phases:
             if context.status in (WorkflowStatus.CANCELLED, WorkflowStatus.PAUSED):
@@ -303,7 +312,7 @@ class WorkflowEngine:
                         context.workflow_id,
                         phase.name,
                         callback_error,
-                    )
+                        exc_info=True)
 
             # Check if we should continue
             if phase_result.status == PhaseStatus.FAILED:
@@ -323,7 +332,7 @@ class WorkflowEngine:
                     )
 
         # Mark as completed
-        duration_ms = (asyncio.get_event_loop().time() - start_time) * 1000
+        duration_ms = (asyncio.get_running_loop().time() - start_time) * 1000
 
         if context.status == WorkflowStatus.RUNNING:
             if context.has_failures():
@@ -337,6 +346,17 @@ class WorkflowEngine:
             context.status.value,
             duration_ms,
         )
+
+        try:
+            await WebSocketEventBroadcaster.broadcast_workflow_status(
+                workflow_id=context.workflow_id,
+                status=context.status.value,
+                duration=duration_ms / 1000,
+                task_count=len(phases),
+                task_results={n: r.to_dict() for n, r in context.results.items()},
+            )
+        except Exception as _ws_err:
+            logger.error(f"[_run] Broadcast workflow end failed: {_ws_err}", exc_info=True)
 
         # Store in memory
         self.executed_workflows[context.workflow_id] = context
@@ -360,9 +380,18 @@ class WorkflowEngine:
         """
         context.current_phase = phase.name
         result = PhaseResult(phase_name=phase.name, status=PhaseStatus.PENDING)
-        start_time = asyncio.get_event_loop().time()
+        start_time = asyncio.get_running_loop().time()
 
         logger.info("[%s] Starting phase: %s", context.workflow_id, phase.name)
+
+        try:
+            await WebSocketEventBroadcaster.broadcast_workflow_status(
+                workflow_id=context.workflow_id,
+                status="running",
+                task_results={phase.name: {"status": "running", "phase": phase.name}},
+            )
+        except Exception as _ws_err:
+            logger.error(f"[_execute_phase] Broadcast phase start failed: {_ws_err}", exc_info=True)
 
         for attempt in range(phase.max_retries + 1):
             try:
@@ -400,7 +429,19 @@ class WorkflowEngine:
                     context.results[phase.name] = result
 
                     # Set duration
-                    result.duration_ms = (asyncio.get_event_loop().time() - start_time) * 1000
+                    result.duration_ms = (asyncio.get_running_loop().time() - start_time) * 1000
+
+                    try:
+                        await WebSocketEventBroadcaster.broadcast_workflow_status(
+                            workflow_id=context.workflow_id,
+                            status="running",
+                            task_results={phase.name: result.to_dict()},
+                        )
+                    except Exception as _ws_err:
+                        logger.error(
+                            f"[_execute_phase] Broadcast phase complete failed: {_ws_err}",
+                            exc_info=True,
+                        )
 
                     return result
 
@@ -410,13 +451,13 @@ class WorkflowEngine:
                     )
 
             except Exception as e:
-                result.duration_ms = (asyncio.get_event_loop().time() - start_time) * 1000
+                result.duration_ms = (asyncio.get_running_loop().time() - start_time) * 1000
                 result.error = f"{type(e).__name__}: {str(e)}"
 
                 if attempt < phase.max_retries:
                     # Calculate exponential backoff: 2^attempt seconds
                     wait_time = 2**attempt
-                    logger.warning(
+                    logger.error(
                         "[%s] Phase '%s' failed (attempt %d/%d): %s. Retrying in %ds...",
                         context.workflow_id,
                         phase.name,
@@ -424,6 +465,7 @@ class WorkflowEngine:
                         phase.max_retries + 1,
                         result.error,
                         wait_time,
+                        exc_info=True,
                     )
                     await asyncio.sleep(wait_time)
                     result.status = PhaseStatus.RETRY
@@ -434,9 +476,22 @@ class WorkflowEngine:
                         phase.name,
                         phase.max_retries + 1,
                         result.error,
+                        exc_info=True,
                     )
                     result.status = PhaseStatus.FAILED
                     result.completed_at = datetime.now(timezone.utc)
+
+                    try:
+                        await WebSocketEventBroadcaster.broadcast_workflow_status(
+                            workflow_id=context.workflow_id,
+                            status="failed",
+                            task_results={phase.name: result.to_dict()},
+                        )
+                    except Exception as _ws_err:
+                        logger.error(
+                            f"[_execute_phase] Broadcast phase fail failed: {_ws_err}",
+                            exc_info=True,
+                        )
 
                     # Call custom error handler if provided
                     if self.error_handler:
@@ -447,6 +502,7 @@ class WorkflowEngine:
                                 "[%s] Error handler failed: %s",
                                 context.workflow_id,
                                 handler_error,
+                                exc_info=True,
                             )
 
                     # Update context
@@ -520,11 +576,46 @@ class WorkflowEngine:
                 json.dumps(workflow_data, indent=2)[:500],
             )
 
-            # TODO: Implement persistent storage via database_service
-            # This would store results for training data collection and analysis
+            # Persist workflow execution to database
+            from .workflow_history import WorkflowHistoryService
+
+            pool = await self.database_service.get_connection_pool()
+            history_service = WorkflowHistoryService(pool)
+
+            await history_service.save_workflow_execution(
+                workflow_id=context.workflow_id,
+                workflow_type="standard",
+                user_id=context.request_id,  # Use request_id as proxy for user_id
+                status=context.status.value.upper(),
+                input_data=context.initial_input,
+                output_data={name: result.output for name, result in context.results.items()},
+                task_results=[
+                    {
+                        "phase": name,
+                        "status": result.status.value,
+                        "duration_ms": result.duration_ms,
+                        "error": result.error,
+                    }
+                    for name, result in context.results.items()
+                ],
+                error_message=next(
+                    (result.error for result in context.results.values() if result.error), None
+                ),
+                start_time=context.started_at,
+                duration_seconds=total_duration_ms / 1000.0,
+                execution_metadata={
+                    "phases_executed": context.phases_executed,
+                    "has_failures": context.has_failures(),
+                    "tags": context.tags,
+                },
+            )
+
+            logger.info("[%s] Workflow result stored successfully", context.workflow_id)
 
         except Exception as e:
-            logger.warning("[%s] Failed to store workflow result: %s", context.workflow_id, e)
+            logger.error(
+                f"[_store_workflow_result] Failed to store workflow result: {e}", exc_info=True
+            )
 
     async def execute_phase_with_quality_feedback(
         self,
@@ -587,11 +678,12 @@ class WorkflowEngine:
                     result.retry_count += 1
 
             except Exception as e:
-                logger.warning(
+                logger.error(
                     "[%s] Quality assessment failed for phase '%s': %s",
                     context.workflow_id,
                     phase.name,
                     e,
+                    exc_info=True,
                 )
                 # Continue with current result even if quality assessment fails
 

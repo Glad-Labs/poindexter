@@ -22,7 +22,6 @@ For local development, set SENTRY_ENABLED=false to disable reporting.
 
 import logging
 import os
-from datetime import datetime
 from typing import Optional
 
 from fastapi import FastAPI
@@ -32,12 +31,23 @@ try:
     from sentry_sdk.integrations.asyncio import AsyncioIntegration
     from sentry_sdk.integrations.fastapi import FastApiIntegration
     from sentry_sdk.integrations.logging import LoggingIntegration
-    from sentry_sdk.integrations.sqlalchemy import SqlAlchemyIntegration
     from sentry_sdk.integrations.starlette import StarletteIntegration
     from sentry_sdk.integrations.threading import ThreadingIntegration
 
+    try:
+        from sentry_sdk.integrations.sqlalchemy import SqlAlchemyIntegration  # type: ignore
+    except ImportError:
+        SqlAlchemyIntegration = None  # type: ignore[assignment,misc]
+
     SENTRY_AVAILABLE = True
 except ImportError:
+    sentry_sdk = None  # type: ignore[assignment]
+    AsyncioIntegration = None  # type: ignore[assignment,misc]
+    FastApiIntegration = None  # type: ignore[assignment,misc]
+    LoggingIntegration = None  # type: ignore[assignment,misc]
+    SqlAlchemyIntegration = None  # type: ignore[assignment,misc]
+    StarletteIntegration = None  # type: ignore[assignment,misc]
+    ThreadingIntegration = None  # type: ignore[assignment,misc]
     SENTRY_AVAILABLE = False
     logging.warning(
         "Sentry SDK not installed. Error tracking disabled. Install with: pip install sentry-sdk[fastapi]"
@@ -69,7 +79,7 @@ class SentryIntegration:
         Returns:
             bool: True if Sentry was successfully initialized, False otherwise
         """
-        if not SENTRY_AVAILABLE:
+        if not SENTRY_AVAILABLE or sentry_sdk is None:
             logger.warning("[ERROR] Sentry SDK not available - error tracking disabled")
             return False
 
@@ -105,18 +115,18 @@ class SentryIntegration:
                 dsn=sentry_dsn,
                 integrations=[
                     # Framework integrations
-                    FastApiIntegration(),
-                    StarletteIntegration(),
-                    AsyncioIntegration(),
+                    FastApiIntegration(),  # type: ignore[misc]
+                    StarletteIntegration(),  # type: ignore[misc]
+                    AsyncioIntegration(),  # type: ignore[misc]
                     # Database and ORM integrations
-                    SqlAlchemyIntegration(),
+                    SqlAlchemyIntegration(),  # type: ignore[misc]
                     # Logging integration with custom level
-                    LoggingIntegration(
+                    LoggingIntegration(  # type: ignore[misc]
                         level=logging.INFO,  # Capture info level and above
                         event_level=logging.ERROR,  # Send error level events to Sentry
                     ),
                     # Threading integration for background tasks
-                    ThreadingIntegration(propagate_hub=True),
+                    ThreadingIntegration(propagate_hub=True),  # type: ignore[misc]
                 ],
                 # Environment and release information
                 environment=environment,
@@ -129,7 +139,7 @@ class SentryIntegration:
                     0.1 if environment == "production" else 1.0
                 ),  # Profile 10% of transactions
                 # Before sending event to Sentry (filter sensitive data)
-                before_send=cls._before_send,
+                before_send=cls._before_send,  # type: ignore[arg-type]
                 # Include local variables in stack traces
                 include_local_variables=True,
                 # Error attachment configurations
@@ -153,7 +163,9 @@ class SentryIntegration:
             return True
 
         except Exception as e:
-            logger.error(f"[ERROR] Failed to initialize Sentry: {str(e)}")
+            logger.error(
+                f"[_initialize] [ERROR] Failed to initialize Sentry: {str(e)}", exc_info=True
+            )
             cls._initialized = True
             cls._sentry_enabled = False
             return False
@@ -203,7 +215,7 @@ class SentryIntegration:
             context: Additional context dictionary
             level: Severity level (fatal, error, warning, info, debug)
         """
-        if not cls._sentry_enabled:
+        if not cls._sentry_enabled or sentry_sdk is None:
             return
 
         try:
@@ -212,10 +224,12 @@ class SentryIntegration:
                     for key, value in context.items():
                         scope.set_context(key, value)
 
-                scope.set_level(level)
+                scope.set_level(level)  # type: ignore[arg-type]
                 sentry_sdk.capture_exception(error)
         except Exception as e:
-            logger.debug(f"Failed to capture exception in Sentry: {e}")
+            logger.error(
+                f"[_capture_exception] Failed to capture exception in Sentry: {e}", exc_info=True
+            )
 
     @classmethod
     def capture_message(cls, message: str, level: str = "info", context: Optional[dict] = None):
@@ -227,7 +241,7 @@ class SentryIntegration:
             level: Severity level (fatal, error, warning, info, debug)
             context: Additional context dictionary
         """
-        if not cls._sentry_enabled:
+        if not cls._sentry_enabled or sentry_sdk is None:
             return
 
         try:
@@ -236,9 +250,11 @@ class SentryIntegration:
                     for key, value in context.items():
                         scope.set_context(key, value)
 
-                sentry_sdk.capture_message(message, level=level)
+                sentry_sdk.capture_message(message, level=level)  # type: ignore[arg-type]
         except Exception as e:
-            logger.debug(f"Failed to capture message in Sentry: {e}")
+            logger.error(
+                f"[_capture_message] Failed to capture message in Sentry: {e}", exc_info=True
+            )
 
     @classmethod
     def set_user_context(cls, user_id: str, email: str = "", username: str = ""):
@@ -251,24 +267,28 @@ class SentryIntegration:
             email: User email address
             username: User's username
         """
-        if not cls._sentry_enabled:
+        if not cls._sentry_enabled or sentry_sdk is None:
             return
 
         try:
             sentry_sdk.set_user({"id": user_id, "email": email, "username": username})
         except Exception as e:
-            logger.debug(f"Failed to set user context in Sentry: {e}")
+            logger.error(
+                f"[_set_user_context] Failed to set user context in Sentry: {e}", exc_info=True
+            )
 
     @classmethod
     def clear_user_context(cls):
         """Clear user context after logout."""
-        if not cls._sentry_enabled:
+        if not cls._sentry_enabled or sentry_sdk is None:
             return
 
         try:
             sentry_sdk.set_user(None)
         except Exception as e:
-            logger.debug(f"Failed to clear user context in Sentry: {e}")
+            logger.error(
+                f"[_clear_user_context] Failed to clear user context in Sentry: {e}", exc_info=True
+            )
 
     @classmethod
     def add_breadcrumb(
@@ -284,7 +304,7 @@ class SentryIntegration:
             level: Severity level (critical, error, warning, info, debug)
             data: Additional data dictionary
         """
-        if not cls._sentry_enabled:
+        if not cls._sentry_enabled or sentry_sdk is None:
             return
 
         try:
@@ -292,7 +312,9 @@ class SentryIntegration:
                 category=category, message=message, level=level, data=data or {}
             )
         except Exception as e:
-            logger.debug(f"Failed to add breadcrumb in Sentry: {e}")
+            logger.error(
+                f"[_add_breadcrumb] Failed to add breadcrumb in Sentry: {e}", exc_info=True
+            )
 
     @classmethod
     def start_transaction(cls, name: str, op: str = "http.request", description: str = ""):
@@ -307,13 +329,15 @@ class SentryIntegration:
         Returns:
             Sentry transaction object or None
         """
-        if not cls._sentry_enabled:
+        if not cls._sentry_enabled or sentry_sdk is None:
             return None
 
         try:
             return sentry_sdk.start_transaction(name=name, op=op, description=description)
         except Exception as e:
-            logger.debug(f"Failed to start Sentry transaction: {e}")
+            logger.error(
+                f"[_start_transaction] Failed to start Sentry transaction: {e}", exc_info=True
+            )
             return None
 
     @classmethod

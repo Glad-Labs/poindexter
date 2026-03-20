@@ -1,0 +1,62 @@
+name: Action SHA Guard
+
+on:
+    pull_request:
+    push:
+        branches:
+            - main
+            - dev
+            - staging
+            - "release/**"
+            - "feature/**"
+
+permissions:
+    contents: read
+
+jobs:
+    enforce-sha-pinning:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+            - name: Validate action refs are full SHAs
+              shell: bash
+              run: |
+                  set -euo pipefail
+
+                  echo "Scanning workflow files for action refs..."
+
+                  violations=0
+
+                  while IFS= read -r file; do
+                    while IFS= read -r line; do
+                      target="$(echo "$line" | sed -E 's/^[[:space:]]*uses:[[:space:]]*//' | sed -E 's/[[:space:]]+#.*$//' | xargs)"
+
+                      # Allow local and docker actions
+                      if [[ "$target" == ./* ]] || [[ "$target" == docker://* ]]; then
+                        continue
+                      fi
+
+                      # Must contain @ref for remote actions
+                      if [[ "$target" != *@* ]]; then
+                        continue
+                      fi
+
+                      ref="${target##*@}"
+
+                      # Require full 40-char commit SHA
+                      if [[ ! "$ref" =~ ^[0-9a-fA-F]{40}$ ]]; then
+                        echo "::error file=$file::Action ref is not pinned to full SHA: $target"
+                        violations=$((violations + 1))
+                      fi
+                    done < <(grep -E '^[[:space:]]*uses:[[:space:]]*' "$file" || true)
+                  done < <(find .github/workflows -type f \( -name "*.yml" -o -name "*.yaml" \) | sort)
+
+                  if [[ "$violations" -gt 0 ]]; then
+                    echo "Found $violations action reference(s) not pinned to full commit SHA."
+                    exit 1
+                  fi
+
+                  echo "All workflow actions are pinned to full commit SHAs."

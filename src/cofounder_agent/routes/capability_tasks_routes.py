@@ -14,20 +14,34 @@ Endpoints:
 - GET /api/tasks/capability/{id}/executions - List execution history
 """
 
+import logging
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from routes.auth_unified import get_current_user
 from services.capability_natural_language_composer import get_composer
-from services.capability_registry import CapabilityMetadata, ParameterSchema, get_registry
+from utils.route_utils import get_database_dependency
+from services.capability_registry import get_registry
 from services.capability_task_executor import (
     CapabilityStep,
-    CapabilityTaskDefinition,
     execute_capability_task,
 )
 from services.capability_tasks_service import CapabilityTasksService
+
+logger = logging.getLogger(__name__)
+
+
+def _get_capability_tasks_service(db=Depends(get_database_dependency)) -> CapabilityTasksService:
+    """
+    FastAPI dependency that constructs a CapabilityTasksService backed by
+    the application-level asyncpg connection pool (issue #795).
+    """
+    if db.pool is None:
+        raise HTTPException(status_code=503, detail="Database pool not initialized")
+    return CapabilityTasksService(pool=db.pool)
 
 # ============ Request/Response Models ============
 
@@ -127,7 +141,7 @@ class TaskListResponse(BaseModel):
 
     tasks: List[TaskResponse]
     total: int
-    skip: int
+    offset: int
     limit: int
 
 
@@ -161,6 +175,14 @@ class ExecutionResponse(BaseModel):
 # ============ Router ============
 
 router = APIRouter(prefix="/api", tags=["capabilities"])
+
+
+def get_owner_id(current_user: Dict[str, Any] = Depends(get_current_user)) -> str:
+    """Extract and validate owner_id from the authenticated user."""
+    user_id = current_user.get("id") if isinstance(current_user, dict) else current_user
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User identity could not be determined")
+    return str(user_id)
 
 
 # ============ Capability Discovery Endpoints ============
@@ -281,7 +303,8 @@ class NaturalLanguageResponse(BaseModel):
 )
 async def compose_task_from_natural_language(
     payload: NaturalLanguageRequest,
-    owner_id: str = Depends(lambda: "user-123"),  # TODO: Extract from auth
+    owner_id: str = Depends(get_owner_id),
+    service: CapabilityTasksService = Depends(_get_capability_tasks_service),
 ):
     """
     Compose a capability task from a natural language request.
@@ -328,10 +351,21 @@ async def compose_task_from_natural_language(
                 "tags": result.task_definition.tags,
             }
 
-        # Optionally save the task
+        # Optionally save the task to database
         if payload.save_task and result.task_definition:
-            # TODO: Save to database
-            pass
+            try:
+                await service.create_task(
+                    name=result.task_definition.name,
+                    description=result.task_definition.description,
+                    steps=result.task_definition.steps,
+                    owner_id=owner_id,
+                    tags=result.task_definition.tags,
+                )
+            except Exception:
+                logger.error(
+                    "[compose_task_from_natural_language] Failed to persist composed task",
+                    exc_info=True,
+                )
 
         return NaturalLanguageResponse(
             success=True,
@@ -342,10 +376,11 @@ async def compose_task_from_natural_language(
         )
 
     except Exception as e:
+        logger.error("[compose_task_from_natural_language] Composition failed", exc_info=True)
         return NaturalLanguageResponse(
             success=False,
             explanation="Error composing task from natural language",
-            error=str(e),
+            error="An internal error occurred",
             confidence=0.0,
         )
 
@@ -353,7 +388,8 @@ async def compose_task_from_natural_language(
 @router.post("/tasks/capability/compose-and-execute", response_model=NaturalLanguageResponse)
 async def compose_and_execute(
     payload: NaturalLanguageRequest,
-    owner_id: str = Depends(lambda: "user-123"),  # TODO: Extract from auth
+    owner_id: str = Depends(get_owner_id),
+    service: CapabilityTasksService = Depends(_get_capability_tasks_service),
 ):
     """
     Compose and immediately execute a task from natural language.
@@ -363,7 +399,7 @@ async def compose_and_execute(
     # Use the same endpoint but force auto_execute
     payload.auto_execute = True
     payload.save_task = True
-    return await compose_task_from_natural_language(payload, owner_id)
+    return await compose_task_from_natural_language(payload, owner_id, service)
 
 
 # ============ Task Management Endpoints ============
@@ -372,7 +408,8 @@ async def compose_and_execute(
 @router.post("/tasks/capability", response_model=TaskResponse)
 async def create_capability_task(
     request: CreateTaskRequest,
-    owner_id: str = Depends(lambda: "user-123"),  # TODO: Extract from auth
+    owner_id: str = Depends(get_owner_id),
+    service: CapabilityTasksService = Depends(_get_capability_tasks_service),
 ):
     """
     Create a new capability-based task.
@@ -399,16 +436,18 @@ async def create_capability_task(
         for i, step in enumerate(request.steps)
     ]
 
-    # Create task
-    task = CapabilityTaskDefinition(
-        name=request.name,
-        description=request.description or "",
-        steps=steps,
-        tags=request.tags or [],
-        owner_id=owner_id,
-    )
-
-    # TODO: Persist to database via CapabilityTasksService
+    # Persist task to database
+    try:
+        task = await service.create_task(
+            name=request.name,
+            description=request.description or "",
+            steps=steps,
+            owner_id=owner_id,
+            tags=request.tags or [],
+        )
+    except Exception:
+        logger.error("[create_capability_task] Failed to persist task", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to create task")
 
     return TaskResponse(
         id=task.id,
@@ -431,17 +470,43 @@ async def create_capability_task(
 
 @router.get("/tasks/capability", response_model=TaskListResponse)
 async def list_capability_tasks(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=100),
-    owner_id: str = Depends(lambda: "user-123"),  # TODO: Extract from auth
+    offset: Optional[int] = Query(None, ge=0),
+    skip: Optional[int] = Query(None, ge=0, include_in_schema=False),
+    limit: int = Query(20, ge=1, le=100),
+    owner_id: str = Depends(get_owner_id),
+    service: CapabilityTasksService = Depends(_get_capability_tasks_service),
 ):
     """List capability tasks for the current user."""
-    # TODO: Query from database via CapabilityTasksService
+    try:
+        effective_offset = offset if offset is not None else (skip if skip is not None else 0)
+        tasks, total = await service.list_tasks(owner_id, skip=effective_offset, limit=limit)
+    except Exception:
+        logger.error("[list_capability_tasks] Failed to list tasks", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to list tasks")
 
     return TaskListResponse(
-        tasks=[],
-        total=0,
-        skip=skip,
+        tasks=[
+            TaskResponse(
+                id=t.id,
+                name=t.name,
+                description=t.description,
+                steps=[
+                    StepInputModel(
+                        capability_name=s.capability_name,
+                        inputs=s.inputs,
+                        output_key=s.output_key,
+                        order=s.order,
+                    )
+                    for s in t.steps
+                ],
+                tags=t.tags,
+                owner_id=t.owner_id,
+                created_at=t.created_at.isoformat() if hasattr(t.created_at, "isoformat") else str(t.created_at),
+            )
+            for t in tasks
+        ],
+        total=total,
+        offset=effective_offset,
         limit=limit,
     )
 
@@ -449,31 +514,86 @@ async def list_capability_tasks(
 @router.get("/tasks/capability/{task_id}", response_model=TaskResponse)
 async def get_capability_task(
     task_id: str,
-    owner_id: str = Depends(lambda: "user-123"),  # TODO: Extract from auth
+    owner_id: str = Depends(get_owner_id),
+    service: CapabilityTasksService = Depends(_get_capability_tasks_service),
 ):
     """Get details of a specific task."""
-    # TODO: Query from database
-    raise HTTPException(status_code=404, detail="Task not found")
+    task = await service.get_task(task_id, owner_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return TaskResponse(
+        id=task.id,
+        name=task.name,
+        description=task.description,
+        steps=[
+            StepInputModel(
+                capability_name=s.capability_name,
+                inputs=s.inputs,
+                output_key=s.output_key,
+                order=s.order,
+            )
+            for s in task.steps
+        ],
+        tags=task.tags,
+        owner_id=task.owner_id,
+        created_at=task.created_at.isoformat() if hasattr(task.created_at, "isoformat") else str(task.created_at),
+    )
 
 
 @router.put("/tasks/capability/{task_id}", response_model=TaskResponse)
 async def update_capability_task(
     task_id: str,
     request: CreateTaskRequest,
-    owner_id: str = Depends(lambda: "user-123"),  # TODO: Extract from auth
+    owner_id: str = Depends(get_owner_id),
+    service: CapabilityTasksService = Depends(_get_capability_tasks_service),
 ):
     """Update a capability task."""
-    # TODO: Update in database
-    raise HTTPException(status_code=404, detail="Task not found")
+    # Validate all capabilities exist
+    registry = get_registry()
+    for step in request.steps:
+        if not registry.get_metadata(step.capability_name):
+            raise HTTPException(
+                status_code=400, detail=f"Capability '{step.capability_name}' not found"
+            )
+    # Verify task exists before updating
+    existing = await service.get_task(task_id, owner_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    task = await service.update_task(task_id, owner_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return TaskResponse(
+        id=task.id,
+        name=task.name,
+        description=task.description,
+        steps=[
+            StepInputModel(
+                capability_name=s.capability_name,
+                inputs=s.inputs,
+                output_key=s.output_key,
+                order=s.order,
+            )
+            for s in task.steps
+        ],
+        tags=task.tags,
+        owner_id=task.owner_id,
+        created_at=task.created_at.isoformat() if hasattr(task.created_at, "isoformat") else str(task.created_at),
+    )
 
 
 @router.delete("/tasks/capability/{task_id}")
 async def delete_capability_task(
     task_id: str,
-    owner_id: str = Depends(lambda: "user-123"),  # TODO: Extract from auth
+    owner_id: str = Depends(get_owner_id),
+    service: CapabilityTasksService = Depends(_get_capability_tasks_service),
 ):
     """Delete a capability task."""
-    # TODO: Delete from database
+    # Verify task exists before deleting
+    existing = await service.get_task(task_id, owner_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Task not found")
+    await service.delete_task(task_id, owner_id)
     return {"message": "Task deleted"}
 
 
@@ -483,7 +603,8 @@ async def delete_capability_task(
 @router.post("/tasks/capability/{task_id}/execute", response_model=ExecutionResponse)
 async def execute_capability_task_endpoint(
     task_id: str,
-    owner_id: str = Depends(lambda: "user-123"),  # TODO: Extract from auth
+    owner_id: str = Depends(get_owner_id),
+    service: CapabilityTasksService = Depends(_get_capability_tasks_service),
 ):
     """
     Execute a capability task.
@@ -491,38 +612,117 @@ async def execute_capability_task_endpoint(
     Runs all steps in sequence, passing outputs between steps according to
     the task definition. Returns execution result with all outputs.
     """
-    # TODO: Get task from database
-    # TODO: Execute task using CapabilityTaskExecutor
-    # TODO: Persist result using CapabilityTasksService
+    task = await service.get_task(task_id, owner_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
 
-    raise HTTPException(status_code=404, detail="Task not found")
+    try:
+        result = await execute_capability_task(task)
+    except Exception:
+        logger.error("[execute_capability_task_endpoint] Execution failed", exc_info=True)
+        return ExecutionResponse(
+            execution_id="",
+            task_id=task_id,
+            status="failed",
+            step_results=[],
+            final_outputs={},
+            total_duration_ms=0.0,
+            progress_percent=0,
+            error="Execution failed",
+            started_at=datetime.now().isoformat(),
+        )
+
+    return ExecutionResponse(
+        execution_id=result.execution_id,
+        task_id=result.task_id,
+        status=result.status,
+        step_results=[
+            StepResultModel(
+                step_index=s.step_index,
+                capability_name=s.capability_name,
+                output_key=s.output_key,
+                output=s.output,
+                duration_ms=s.duration_ms,
+                error=s.error,
+                status=s.status,
+            )
+            for s in result.step_results
+        ],
+        final_outputs=result.final_outputs,
+        total_duration_ms=result.total_duration_ms,
+        progress_percent=result.progress_percent,
+        error=result.error,
+        started_at=result.started_at.isoformat() if hasattr(result.started_at, "isoformat") else str(result.started_at),
+        completed_at=result.completed_at.isoformat() if result.completed_at and hasattr(result.completed_at, "isoformat") else None,
+    )
 
 
 @router.get("/tasks/capability/{task_id}/executions/{exec_id}", response_model=ExecutionResponse)
 async def get_execution_result(
     task_id: str,
     exec_id: str,
-    owner_id: str = Depends(lambda: "user-123"),  # TODO: Extract from auth
+    owner_id: str = Depends(get_owner_id),
+    service: CapabilityTasksService = Depends(_get_capability_tasks_service),
 ):
     """Get the result of a specific task execution."""
-    # TODO: Query from database
-    raise HTTPException(status_code=404, detail="Execution not found")
+    execution = await service.get_execution(exec_id, owner_id)
+    if not execution:
+        raise HTTPException(status_code=404, detail="Execution not found")
+    return ExecutionResponse(
+        execution_id=execution.execution_id,
+        task_id=execution.task_id,
+        status=execution.status,
+        step_results=[
+            StepResultModel(
+                step_index=s.step_index,
+                capability_name=s.capability_name,
+                output_key=s.output_key,
+                output=s.output,
+                duration_ms=s.duration_ms,
+                error=s.error,
+                status=s.status,
+            )
+            for s in execution.step_results
+        ],
+        final_outputs=execution.final_outputs,
+        total_duration_ms=execution.total_duration_ms,
+        progress_percent=execution.progress_percent,
+        error=execution.error,
+        started_at=execution.started_at.isoformat() if hasattr(execution.started_at, "isoformat") else str(execution.started_at),
+        completed_at=execution.completed_at.isoformat() if execution.completed_at and hasattr(execution.completed_at, "isoformat") else None,
+    )
 
 
 @router.get("/tasks/capability/{task_id}/executions")
 async def list_executions(
     task_id: str,
-    skip: int = Query(0, ge=0),
+    offset: Optional[int] = Query(None, ge=0),
+    skip: Optional[int] = Query(None, ge=0, include_in_schema=False),
     limit: int = Query(50, ge=1, le=100),
     status: Optional[str] = Query(None),
-    owner_id: str = Depends(lambda: "user-123"),  # TODO: Extract from auth
+    owner_id: str = Depends(get_owner_id),
+    service: CapabilityTasksService = Depends(_get_capability_tasks_service),
 ):
     """List execution history for a task."""
-    # TODO: Query from database
+    effective_offset = offset if offset is not None else (skip if skip is not None else 0)
+    task = await service.get_task(task_id, owner_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    executions, total = await service.list_executions(
+        task_id, owner_id, skip=effective_offset, limit=limit, status_filter=status
+    )
 
     return {
-        "executions": [],
-        "total": 0,
-        "skip": skip,
+        "executions": [
+            {
+                "execution_id": e.execution_id,
+                "task_id": e.task_id,
+                "status": e.status,
+            }
+            for e in executions
+        ],
+        "total": total,
+        "offset": effective_offset,
         "limit": limit,
     }

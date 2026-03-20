@@ -71,6 +71,7 @@ from .database_response_models import (
     AuthorResponse,
     CategoryResponse,
     CostLogResponse,
+    ErrorResponse,
     FinancialEntryResponse,
     FinancialSummaryResponse,
     LogResponse,
@@ -144,7 +145,6 @@ from .quality_schemas import (
 
 # Settings schemas
 from .settings_schemas import (
-    ErrorResponse,
     SettingBase,
     SettingBulkUpdateRequest,
     SettingCategoryEnum,
@@ -328,11 +328,9 @@ __all__ = [
     "ProviderStatus",
     "ProvidersStatusResponse",
     # Database Response Models (Phase 2)
-    "UserResponse",
     "OAuthAccountResponse",
     "TaskResponse",
     "TaskCountsResponse",
-    "PostResponse",
     "CategoryResponse",
     "TagResponse",
     "AuthorResponse",
@@ -344,7 +342,6 @@ __all__ = [
     "TaskCostBreakdownResponse",
     "QualityEvaluationResponse",
     "QualityImprovementLogResponse",
-    "AgentStatusResponse",
     "OrchestratorTrainingDataResponse",
     "SettingResponse",
     "ErrorResponse",

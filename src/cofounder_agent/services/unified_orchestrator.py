@@ -32,122 +32,29 @@ Architecture:
 import asyncio
 import json
 import logging
+import re
 import uuid
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from enum import Enum
 from typing import Any, Dict, Optional
+
+from services.orchestrator_types import (
+    ExecutionContext,
+    ExecutionResult,
+    ExecutionStatus,
+    Request,
+    RequestType,
+)
+from services.websocket_event_broadcaster import emit_task_progress
 
 logger = logging.getLogger(__name__)
 
-
-# ============================================================================
-# ENUMERATIONS & DATA STRUCTURES
-# ============================================================================
-
-
-class RequestType(str, Enum):
-    """High-level request types for routing"""
-
-    CONTENT_CREATION = "content_creation"  # Blog posts, articles, copy
-    CONTENT_SUBTASK = "content_subtask"  # Research, creative, QA, format individually
-    FINANCIAL_ANALYSIS = "financial_analysis"
-    COMPLIANCE_CHECK = "compliance_check"
-    TASK_MANAGEMENT = "task_management"  # Create/manage tasks
-    INFORMATION_RETRIEVAL = "information_retrieval"  # Look up data, show results
-    DECISION_SUPPORT = "decision_support"  # "What should I..."
-    SYSTEM_OPERATION = "system_operation"  # Status, health, help
-    INTERVENTION = "intervention"  # Manual override, stop, etc.
-
-
-class ExecutionStatus(str, Enum):
-    """Status of request execution"""
-
-    PENDING = "pending"
-    PLANNING = "planning"
-    EXECUTING = "executing"
-    ASSESSING = "assessing"
-    REFINEMENT = "refinement"
-    PENDING_APPROVAL = "pending_approval"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-
-
-@dataclass
-class Request:
-    """Unified request object"""
-
-    request_id: str
-    original_text: str
-    request_type: RequestType
-    extracted_intent: str
-    parameters: Dict[str, Any] = field(default_factory=dict)
-    context: Dict[str, Any] = field(default_factory=dict)
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    user_id: Optional[str] = None  # User ID from auth context
-
-
-@dataclass
-class ExecutionContext:
-    """Context for execution"""
-
-    request_id: str
-    request_type: RequestType
-    database_service: Any = None
-    model_router: Any = None
-    orchestrator_agents: Dict[str, Any] = field(default_factory=dict)
-    quality_service: Any = None
-    memory_system: Any = None
-
-
-@dataclass
-class ExecutionResult:
-    """Result of executing a request"""
-
-    request_id: str
-    request_type: RequestType
-    status: ExecutionStatus
-
-    # Result data
-    output: Any  # Content, analysis, decision, etc.
-    task_id: Optional[str] = None  # For content tasks
-
-    # Quality metrics
-    quality_score: Optional[float] = None
-    passed_quality: Optional[bool] = None
-    feedback: Optional[str] = None
-
-    # Execution details
-    duration_ms: float = 0
-    cost_usd: float = 0.0
-    refinement_attempts: int = 0
-
-    # Training data
-    training_example: Optional[Dict[str, Any]] = None  # For model improvement
-
-    # Metadata
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for storage"""
-        return {
-            "request_id": self.request_id,
-            "request_type": self.request_type.value,
-            "status": self.status.value,
-            "output": self.output,
-            "task_id": self.task_id,
-            "quality_score": self.quality_score,
-            "passed_quality": self.passed_quality,
-            "feedback": self.feedback,
-            "duration_ms": self.duration_ms,
-            "cost_usd": self.cost_usd,
-            "refinement_attempts": self.refinement_attempts,
-            "training_example": self.training_example,
-            "metadata": self.metadata,
-            "created_at": self.created_at.isoformat(),
-        }
+# Per-stage timeout budgets (seconds) for asyncio.wait_for in content pipeline.
+# Tune these based on observed P99 latencies per LLM provider.
+RESEARCH_TIMEOUT_S = 120
+DRAFT_TIMEOUT_S = 180
+QA_TIMEOUT_S = 120
+REFINEMENT_TIMEOUT_S = 180
+FORMATTING_TIMEOUT_S = 120
 
 
 # ============================================================================
@@ -275,7 +182,7 @@ class UnifiedOrchestrator:
             "research_agent": "agents.content_agent.agents.research_agent:ResearchAgent",
             "creative_agent": "agents.content_agent.agents.creative_agent:CreativeAgent",
             "qa_agent": "agents.content_agent.agents.qa_agent:QAAgent",
-            "image_agent": "agents.content_agent.agents.image_agent:ImageAgent",
+            "image_agent": "agents.content_agent.agents.postgres_image_agent:PostgreSQLImageAgent",
             "publishing_agent": "agents.content_agent.agents.postgres_publishing_agent:PostgreSQLPublishingAgent",
             "financial_agent": "agents.financial_agent:FinancialAgent",
             "market_agent": "agents.market_insight_agent:MarketInsightAgent",
@@ -300,7 +207,7 @@ class UnifiedOrchestrator:
                     )
                     return agent_class()
             except (ImportError, AttributeError) as e:
-                logger.error(f"Failed to import agent '{agent_name}': {e}")
+                logger.error(f"Failed to import agent '{agent_name}': {e}", exc_info=True)
                 raise ValueError(
                     f"Agent '{agent_name}' not found in registry or importable via fallback"
                 )
@@ -524,25 +431,56 @@ class UnifiedOrchestrator:
             )
 
     def _extract_content_params(self, text: str) -> Dict[str, Any]:
-        """Extract content parameters from natural language"""
-        # Simple extraction - can be enhanced with LLM
-        params = {"topic": text}
+        """Extract content parameters from natural language or structured format."""
+        params: Dict[str, Any] = {}
 
-        if "professional" in text.lower():
-            params["style"] = "professional"
-        elif "casual" in text.lower():
-            params["style"] = "casual"
-        elif "technical" in text.lower():
-            params["style"] = "technical"
-        else:
-            params["style"] = "professional"
+        # Try structured format first: "Key: value\n..."
+        _FIELD_MAP = {
+            "topic": "topic",
+            "primary keyword": "primary_keyword",
+            "target audience": "target_audience",
+            "category": "category",
+            "style": "style",
+            "tone": "tone",
+        }
+        structured = False
+        for line in text.splitlines():
+            for label, key in _FIELD_MAP.items():
+                m = re.match(rf"^{label}\s*:\s*(.+)$", line, re.IGNORECASE)
+                if m:
+                    params[key] = m.group(1).strip()
+                    structured = True
+            # Target Length: 1500 words
+            m = re.match(r"^target length\s*:\s*(\d+)", line, re.IGNORECASE)
+            if m:
+                params["target_length"] = int(m.group(1))
+                structured = True
 
-        if "educational" in text.lower():
-            params["tone"] = "educational"
-        elif "entertaining" in text.lower():
-            params["tone"] = "entertaining"
-        else:
-            params["tone"] = "informative"
+        if not structured:
+            # Unstructured fallback — use full text as topic
+            params["topic"] = text
+
+        # Style detection for unstructured text
+        if "style" not in params:
+            lower = text.lower()
+            if "professional" in lower:
+                params["style"] = "professional"
+            elif "casual" in lower:
+                params["style"] = "casual"
+            elif "technical" in lower:
+                params["style"] = "technical"
+            else:
+                params["style"] = "professional"
+
+        # Tone detection
+        if "tone" not in params:
+            lower = text.lower()
+            if "educational" in lower:
+                params["tone"] = "educational"
+            elif "entertaining" in lower:
+                params["tone"] = "entertaining"
+            else:
+                params["tone"] = "informative"
 
         return params
 
@@ -619,7 +557,7 @@ class UnifiedOrchestrator:
             logger.info("   - Quality Preference: %s", quality_preference)
 
             # Generate task ID
-            task_id = "task_%s_%s" % (int(datetime.utcnow().timestamp()), uuid.uuid4().hex[:6])
+            task_id = "task_%s_%s" % (int(datetime.now(timezone.utc).timestamp()), uuid.uuid4().hex[:6])
 
             logger.info("[%s] Starting 5-stage pipeline for: %s", request.request_id, topic)
 
@@ -652,11 +590,22 @@ class UnifiedOrchestrator:
             # STAGE 1: RESEARCH (10% → 25%)
             # ====================================================================
             logger.info("[%s] STAGE 1: Research", request.request_id)
+            try:
+                await emit_task_progress(task_id, stage="research", progress=10, status="running")
+            except Exception:
+                pass
 
             # Instantiate research agent (with registry fallback support)
             research_agent = self._get_agent_instance("research_agent")
-            research_data = await research_agent.run(topic, keywords[:5])
-            research_text = research_data if isinstance(research_data, str) else str(research_data)
+            try:
+                research_data = await asyncio.wait_for(
+                    research_agent.run(topic, keywords[:5]),
+                    timeout=RESEARCH_TIMEOUT_S,
+                )
+                research_text = research_data if isinstance(research_data, str) else str(research_data)
+            except (TimeoutError, asyncio.TimeoutError):
+                logger.warning("[%s] Research timed out, continuing with empty research", request.request_id, exc_info=True)
+                research_text = ""
 
             research_compliance = validate_constraints(
                 research_text,
@@ -675,6 +624,10 @@ class UnifiedOrchestrator:
             # STAGE 2: CREATIVE DRAFT (25% → 45%)
             # ====================================================================
             logger.info("[%s] STAGE 2: Creative Draft", request.request_id)
+            try:
+                await emit_task_progress(task_id, stage="draft", progress=25, status="running")
+            except Exception:
+                pass
             from agents.content_agent.services.llm_client import (  # pylint: disable=import-outside-toplevel
                 LLMClient,
             )
@@ -736,7 +689,7 @@ class UnifiedOrchestrator:
                 except Exception as e:
                     logger.warning(
                         "[%s] Could not retrieve writing sample: %s", request.request_id, e
-                    )
+, exc_info=True)
 
             post = BlogPost(
                 topic=topic,
@@ -754,9 +707,17 @@ class UnifiedOrchestrator:
 
             # Pass constraints with phase-specific word count target
             phase_target = phase_targets.get("creative", 300)
-            draft_post = await creative_agent.run(
-                post, is_refinement=False, word_count_target=phase_target, constraints=constraints
-            )
+            try:
+                draft_post = await asyncio.wait_for(
+                    creative_agent.run(
+                        post, is_refinement=False, word_count_target=phase_target, constraints=constraints
+                    ),
+                    timeout=DRAFT_TIMEOUT_S,
+                )
+            except asyncio.TimeoutError:
+                raise TimeoutError(
+                    "Creative draft timed out after %ds" % DRAFT_TIMEOUT_S
+                ) from None
             draft_text = draft_post.body if hasattr(draft_post, "body") else str(draft_post)
 
             creative_compliance = validate_constraints(
@@ -776,15 +737,17 @@ class UnifiedOrchestrator:
             # STAGE 3: QA REVIEW LOOP (45% → 60%)
             # ====================================================================
             logger.info("[%s] STAGE 3: QA Review", request.request_id)
-            from services.database_service import (  # pylint: disable=import-outside-toplevel
-                DatabaseService,
-            )
+            try:
+                await emit_task_progress(task_id, stage="qa", progress=45, status="running")
+            except Exception:
+                pass
             from services.quality_service import (  # pylint: disable=import-outside-toplevel
                 get_content_quality_service,
             )
 
-            database_service = DatabaseService()
-            quality_service = get_content_quality_service(database_service=database_service)
+            # Use the application-level database_service (initialized once at startup)
+            # to avoid creating a new connection pool per request (issue #783).
+            quality_service = get_content_quality_service(database_service=self.database_service)
 
             content = draft_post
             feedback = ""
@@ -796,10 +759,18 @@ class UnifiedOrchestrator:
                 if writing_style_guidance:
                     quality_context["writing_style_guidance"] = writing_style_guidance
 
-                quality_result = await quality_service.evaluate(
-                    content=getattr(content, "raw_content", str(content)),
-                    context=quality_context,
-                )
+                try:
+                    quality_result = await asyncio.wait_for(
+                        quality_service.evaluate(
+                            content=getattr(content, "raw_content", str(content)),
+                            context=quality_context,
+                        ),
+                        timeout=QA_TIMEOUT_S,
+                    )
+                except asyncio.TimeoutError:
+                    raise TimeoutError(
+                        "QA evaluation timed out after %ds (iteration %d)" % (QA_TIMEOUT_S, iteration)
+                    ) from None
 
                 approval_bool = quality_result.passing
                 feedback = quality_result.feedback
@@ -847,12 +818,20 @@ class UnifiedOrchestrator:
                         creative_agent = self._get_agent_instance(
                             "creative_agent", llm_client=refine_llm_client
                         )
-                    content = await creative_agent.run(
-                        content,
-                        is_refinement=True,
-                        word_count_target=phase_targets.get("creative", 300),
-                        constraints=constraints,
-                    )
+                    try:
+                        content = await asyncio.wait_for(
+                            creative_agent.run(
+                                content,
+                                is_refinement=True,
+                                word_count_target=phase_targets.get("creative", 300),
+                                constraints=constraints,
+                            ),
+                            timeout=REFINEMENT_TIMEOUT_S,
+                        )
+                    except asyncio.TimeoutError:
+                        raise TimeoutError(
+                            "Creative refinement timed out after %ds (iteration %d)" % (REFINEMENT_TIMEOUT_S, iteration)
+                        ) from None
 
             qa_compliance = validate_constraints(
                 getattr(content, "body", str(content)),
@@ -866,6 +845,10 @@ class UnifiedOrchestrator:
             # STAGE 4: IMAGE SELECTION (60% → 75%)
             # ====================================================================
             logger.info("[%s] STAGE 4: Image Selection", request.request_id)
+            try:
+                await emit_task_progress(task_id, stage="images", progress=60, status="running")
+            except Exception:
+                pass
             featured_image_url = None
             try:
                 from services.image_service import (  # pylint: disable=import-outside-toplevel
@@ -878,16 +861,28 @@ class UnifiedOrchestrator:
                     featured_image_url = featured_image.url
                     logger.info("[%s] Featured image selected", request.request_id)
             except Exception as e:
-                logger.warning("[%s] Image selection failed: %s", request.request_id, e)
+                logger.warning("[%s] Image selection failed: %s", request.request_id, e, exc_info=True)
 
             # ====================================================================
             # STAGE 5: FORMATTING (75% → 90%)
             # ====================================================================
             logger.info("[%s] STAGE 5: Formatting", request.request_id)
+            try:
+                await emit_task_progress(task_id, stage="formatting", progress=75, status="running")
+            except Exception:
+                pass
 
             # Instantiate publishing agent (with registry fallback support)
             publishing_agent = self._get_agent_instance("publishing_agent")
-            result_post = await publishing_agent.run(content)
+            try:
+                result_post = await asyncio.wait_for(
+                    publishing_agent.run(content),
+                    timeout=FORMATTING_TIMEOUT_S,
+                )
+            except asyncio.TimeoutError:
+                raise TimeoutError(
+                    "Formatting/publishing timed out after %ds" % FORMATTING_TIMEOUT_S
+                ) from None
 
             formatted_content = getattr(result_post, "raw_content", str(content))
             excerpt = getattr(result_post, "meta_description", "Article about %s" % topic)
@@ -999,7 +994,7 @@ class UnifiedOrchestrator:
                 feedback="Financial analysis complete",
             )
         except Exception as e:  # pylint: disable=broad-except
-            logger.error("[%s] Financial analysis failed: %s", request.request_id, e)
+            logger.error("[%s] Financial analysis failed: %s", request.request_id, e, exc_info=True)
             return ExecutionResult(
                 request_id=request.request_id,
                 request_type=request.request_type,
@@ -1034,7 +1029,7 @@ class UnifiedOrchestrator:
                 feedback="Compliance audit complete",
             )
         except Exception as e:  # pylint: disable=broad-except
-            logger.error("[%s] Compliance check failed: %s", request.request_id, e)
+            logger.error("[%s] Compliance check failed: %s", request.request_id, e, exc_info=True)
             return ExecutionResult(
                 request_id=request.request_id,
                 request_type=request.request_type,
@@ -1144,7 +1139,7 @@ class UnifiedOrchestrator:
             logger.info("Storing execution result: %s", result.request_id)
             # Result storage is handled by TaskExecutor service after processing
         except Exception as e:  # pylint: disable=broad-except
-            logger.error("Failed to store execution result: %s", e)
+            logger.error("Failed to store execution result: %s", e, exc_info=True)
 
     def _result_to_dict(self, result: ExecutionResult) -> Dict[str, Any]:
         """Convert ExecutionResult to dictionary"""

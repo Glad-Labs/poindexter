@@ -3,25 +3,21 @@ Social Media Management Routes
 Handles integration with social media platforms, content generation, posting, and analytics
 """
 
-import logging
+from services.logger_config import get_logger
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
+from routes.auth_unified import get_current_user
 from schemas.social_schemas import (
     CrossPostRequest,
     GenerateContentRequest,
-    SocialAnalytics,
     SocialPlatformConnection,
-    SocialPlatformEnum,
     SocialPost,
-    ToneEnum,
 )
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 # ============================================================================
 # Router and Storage
 # ============================================================================
@@ -62,8 +58,11 @@ async def get_platforms() -> Dict[str, Any]:
     }
 
 
-@social_router.post("/connect")
-async def connect_platform(request: SocialPlatformConnection) -> Dict[str, Any]:
+@social_router.post("/connect", status_code=201)
+async def connect_platform(
+    request: SocialPlatformConnection,
+    current_user: dict = Depends(get_current_user),
+) -> Dict[str, Any]:
     """
     Connect a social media platform
 
@@ -91,7 +90,9 @@ async def connect_platform(request: SocialPlatformConnection) -> Dict[str, Any]:
 
 
 @social_router.get("/posts")
-async def get_posts() -> Dict[str, Any]:
+async def get_posts(
+    current_user: dict = Depends(get_current_user),
+) -> Dict[str, Any]:
     """
     Get all social media posts
 
@@ -116,8 +117,12 @@ async def get_posts() -> Dict[str, Any]:
     }
 
 
-@social_router.post("/posts")
-async def create_post(request: SocialPost, background_tasks: BackgroundTasks) -> Dict[str, Any]:
+@social_router.post("/posts", status_code=201)
+async def create_post(
+    request: SocialPost,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user),
+) -> Dict[str, Any]:
     """
     Create a new social media post
 
@@ -128,11 +133,7 @@ async def create_post(request: SocialPost, background_tasks: BackgroundTasks) ->
     Returns:
         Created post details
     """
-    if not request.content.strip():
-        raise HTTPException(status_code=400, detail="Post content cannot be empty")
-
-    if not request.platforms:
-        raise HTTPException(status_code=400, detail="At least one platform must be selected")
+    # Content and platforms validated by Pydantic schema (SocialPost)
 
     # Generate post ID
     post_id = f"post_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -163,32 +164,29 @@ async def create_post(request: SocialPost, background_tasks: BackgroundTasks) ->
     }
 
 
-@social_router.delete("/posts/{post_id}")
-async def delete_post(post_id: str) -> Dict[str, Any]:
+@social_router.delete("/posts/{post_id}", status_code=204)
+async def delete_post(
+    post_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> None:
     """
-    Delete a social media post
+    Delete a social media post.
 
-    Args:
-        post_id: Post identifier
-
-    Returns:
-        Deletion status
+    Returns 204 No Content on success, 404 if not found.
     """
     if post_id not in _posts_store:
-        raise HTTPException(status_code=404, detail=f"Post not found: {post_id}")
+        raise HTTPException(status_code=404, detail="Post not found")
 
     del _posts_store[post_id]
-    logger.info(f"✅ Post deleted: {post_id}")
-
-    return {
-        "success": True,
-        "post_id": post_id,
-        "message": "Post deleted successfully",
-    }
+    logger.info(f"Post deleted: {post_id}")
+    return None  # 204 No Content
 
 
 @social_router.get("/posts/{post_id}/analytics")
-async def get_post_analytics(post_id: str) -> Dict[str, Any]:
+async def get_post_analytics(
+    post_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> Dict[str, Any]:
     """
     Get analytics for a specific post
 
@@ -221,7 +219,10 @@ async def get_post_analytics(post_id: str) -> Dict[str, Any]:
 
 
 @social_router.post("/generate")
-async def generate_content(request: GenerateContentRequest) -> Dict[str, Any]:
+async def generate_content(
+    request: GenerateContentRequest,
+    current_user: dict = Depends(get_current_user),
+) -> Dict[str, Any]:
     """
     Generate AI-powered social media content
 
@@ -231,8 +232,7 @@ async def generate_content(request: GenerateContentRequest) -> Dict[str, Any]:
     Returns:
         Generated content
     """
-    if not request.topic.strip():
-        raise HTTPException(status_code=400, detail="Topic cannot be empty")
+    # Topic validated by Pydantic schema (GenerateContentRequest)
 
     # In production, this would call the orchestrator to generate content
     # For now, return a template response
@@ -314,9 +314,11 @@ async def get_trending_topics(platform: str = "twitter") -> Dict[str, Any]:
     }
 
 
-@social_router.post("/cross-post")
+@social_router.post("/cross-post", status_code=201)
 async def cross_post(
-    request: CrossPostRequest, background_tasks: BackgroundTasks
+    request: CrossPostRequest,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """
     Cross-post content to multiple platforms
@@ -328,8 +330,7 @@ async def cross_post(
     Returns:
         Cross-posting status
     """
-    if not request.content.strip():
-        raise HTTPException(status_code=400, detail="Content cannot be empty")
+    # Content validated by Pydantic schema (CrossPostRequest)
 
     if not request.platforms or len(request.platforms) < 2:
         raise HTTPException(

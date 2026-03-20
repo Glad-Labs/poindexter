@@ -28,50 +28,44 @@ def _fix_sys_path_for_venv():
             site.main()  # Reinitialize site package processing
     except Exception as e:
         # If sys.path fixing fails, log but continue - fallback imports may still work
-        print(f"[WARNING] Failed to fix sys.path for venv: {e}")
+        # logging is not yet available at this point, so use warnings module
+        import warnings
+        warnings.warn(f"Failed to fix sys.path for venv: {e}", stacklevel=2)
 
 
 # Execute the fix immediately when this module is imported
 _fix_sys_path_for_venv()
 
+import asyncio
 import hashlib
 import json
 import logging
 import os
+import time
 
+import aiofiles
 import httpx
 
 from agents.content_agent.config import config
 from agents.content_agent.utils.helpers import extract_json_from_string
 
-# Now try to import google-genai (new package, replaces deprecated google.generativeai)
-# With the sys.path fix above, this should work even with poetry run
+# Import google-genai (official SDK — google-generativeai removed, see Issue #404)
 genai = None
 try:
     import google.genai as genai_module
 
     genai = genai_module
-    logging.info("✅ google.genai successfully imported")
+    logging.info("google.genai successfully imported")
 except (ImportError, ModuleNotFoundError) as e:
-    # Fallback to old deprecated package if new one not available
-    try:
-        import google.generativeai as genai_module
-
-        genai = genai_module
-        logging.warning(
-            f"⚠️  Using deprecated google.generativeai. Please upgrade to google.genai: {e}"
-        )
-    except (ImportError, ModuleNotFoundError) as e2:
-        logging.warning(
-            f"⚠️ Could not import google.genai or google.generativeai: {e2}. Will fall back to Ollama."
-        )
-        genai = None
+    logging.warning(
+        f"google.genai not available: {e}. Gemini provider will fall back to Ollama."
+    )
 
 
 class LLMClient:
     """Client for interacting with a configured Large Language Model."""
 
-    def __init__(self, model_name: str = None):
+    def __init__(self, model_name: "str | None" = None):
         """
         Initializes the LLM client based on the provider specified in the config.
 
@@ -88,11 +82,11 @@ class LLMClient:
 
         try:
             if self.provider == "gemini":
-                # Check if google-generativeai is available
+                # Check if google-genai is available
                 # If Poetry broke the import, fall back to Ollama gracefully
                 if not genai:
                     logging.warning(
-                        f"⚠️ Gemini provider requested but google-generativeai module unavailable. "
+                        f"⚠️ Gemini provider requested but google-genai module unavailable. "
                         f"This is often due to Poetry's namespace package handling. "
                         f"Falling back to Ollama for content generation."
                     )
@@ -108,8 +102,8 @@ class LLMClient:
 
                     # Use override model if provided, otherwise use config default
                     model_to_use = model_name if model_name else config.GEMINI_MODEL
-                    self.model = genai.GenerativeModel(model_to_use)
-                    self.summarizer_model = genai.GenerativeModel(config.SUMMARIZER_MODEL)
+                    self.model = genai.GenerativeModel(model_to_use)  # type: ignore[attr-defined]
+                    self.summarizer_model = genai.GenerativeModel(config.SUMMARIZER_MODEL)  # type: ignore[attr-defined]
                     logging.info(f"✅ Initialized Gemini client with model: {model_to_use}")
 
             if self.provider == "local" or self.provider == "ollama":
@@ -130,36 +124,52 @@ class LLMClient:
         return self.cache_dir / f"{prompt_hash}.{format}.cache"
 
     async def generate_json(self, prompt: str) -> dict:
-        """Generates JSON content using the configured LLM, with caching (async)."""
+        """Generates JSON content using the configured LLM, with async caching."""
         cache_path = self._get_cache_path(prompt, "json")
         if cache_path.exists():
-            logging.info(f"Returning cached JSON response for prompt.")
-            with open(cache_path, "r") as f:
-                return json.load(f)
+            logging.info("Returning cached JSON response for prompt.")
+            async with aiofiles.open(cache_path, "r") as f:
+                content = await f.read()
+                return json.loads(content)
 
-        if self.provider == "gemini":
-            result = self._generate_json_gemini(prompt)
-        elif self.provider == "local" or self.provider == "ollama":
-            result = await self._generate_json_local(prompt)
-        else:
-            logging.error(f"Unsupported LLM provider: {self.provider}")
-            return {}
+        _llm_start = time.perf_counter()
+        _status = "success"
+        try:
+            if self.provider == "gemini":
+                # Run the synchronous Gemini SDK call in a thread so it does
+                # not block the event loop (issue #780).
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(None, self._generate_json_gemini, prompt)
+            elif self.provider == "local" or self.provider == "ollama":
+                result = await self._generate_json_local(prompt)
+            else:
+                logging.error(f"Unsupported LLM provider: {self.provider}")
+                return {}
+        except Exception:
+            _status = "error"
+            raise
+        finally:
+            _llm_latency_ms = int((time.perf_counter() - _llm_start) * 1000)
+            logging.info(
+                f"[llm_call] provider={self.provider} method=generate_json "
+                f"latency_ms={_llm_latency_ms} status={_status}"
+            )
 
         if result:
-            with open(cache_path, "w") as f:
-                json.dump(result, f)
+            async with aiofiles.open(cache_path, "w") as f:
+                await f.write(json.dumps(result))
 
         return result
 
     def _generate_json_gemini(self, prompt: str) -> dict:
         try:
-            response = self.model.generate_content(prompt)
+            response = self.model.generate_content(prompt)  # type: ignore[union-attr]
             return json.loads(response.text)
         except json.JSONDecodeError:
-            logging.error("Failed to decode JSON from Gemini response.")
+            logging.error("Failed to decode JSON from Gemini response.", exc_info=True)
             return {}
         except Exception as e:
-            logging.error(f"Error generating JSON content from Gemini: {e}")
+            logging.error(f"Error generating JSON content from Gemini: {e}", exc_info=True)
             return {}
 
     async def _generate_json_local(self, prompt: str) -> dict:
@@ -197,20 +207,38 @@ class LLMClient:
         cache_path = self._get_cache_path(prompt, "txt")
         if cache_path.exists():
             logging.info(f"Returning cached text response for prompt.")
-            return cache_path.read_text(encoding="utf-8")
+            # Use aiofiles to avoid blocking the event loop on file reads (issue #789).
+            async with aiofiles.open(cache_path, "r", encoding="utf-8") as f:
+                return await f.read()
 
-        if self.provider == "gemini":
-            result = self._generate_text_gemini(prompt)
-        elif self.provider == "local" or self.provider == "ollama":
-            result = await self._generate_text_local(prompt)
-        else:
-            logging.error(f"Unsupported LLM provider: {self.provider}")
-            return ""
+        _llm_start = time.perf_counter()
+        _status = "success"
+        try:
+            if self.provider == "gemini":
+                # Run the synchronous Gemini SDK call in a thread so it does
+                # not block the event loop (issue #780).
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(None, self._generate_text_gemini, prompt)
+            elif self.provider == "local" or self.provider == "ollama":
+                result = await self._generate_text_local(prompt)
+            else:
+                logging.error(f"Unsupported LLM provider: {self.provider}")
+                return ""
+        except Exception:
+            _status = "error"
+            raise
+        finally:
+            _llm_latency_ms = int((time.perf_counter() - _llm_start) * 1000)
+            logging.info(
+                f"[llm_call] provider={self.provider} method=generate_text "
+                f"latency_ms={_llm_latency_ms} status={_status}"
+            )
 
         if result:
             try:
-                # Use UTF-8 encoding explicitly to avoid charmap errors on Windows
-                cache_path.write_text(result, encoding="utf-8")
+                # Use aiofiles to avoid blocking the event loop on file writes (issue #789).
+                async with aiofiles.open(cache_path, "w", encoding="utf-8") as f:
+                    await f.write(result)
             except Exception as e:
                 logging.warning(f"Failed to cache result: {e}")
 
@@ -218,10 +246,10 @@ class LLMClient:
 
     def _generate_text_gemini(self, prompt: str) -> str:
         try:
-            response = self.model.generate_content(prompt)
+            response = self.model.generate_content(prompt)  # type: ignore[union-attr]
             return response.text
         except Exception as e:
-            logging.error(f"Error generating text content from Gemini: {e}")
+            logging.error(f"Error generating text content from Gemini: {e}", exc_info=True)
             return ""
 
     async def _generate_text_local(self, prompt: str) -> str:
@@ -249,30 +277,52 @@ class LLMClient:
         cache_path = self._get_cache_path(prompt, "summary.txt")
         if cache_path.exists():
             logging.info(f"Returning cached summary for prompt.")
-            return cache_path.read_text()
+            # Use aiofiles to avoid blocking the event loop on file reads (issue #789).
+            async with aiofiles.open(cache_path, "r", encoding="utf-8") as f:
+                return await f.read()
 
-        if self.provider == "gemini":
-            result = self._generate_summary_gemini(prompt)
-        elif self.provider == "local" or self.provider == "ollama":
-            # For local/ollama provider, we can reuse the text generation with the summarizer model if needed
-            # or use a specific endpoint if available. For now, we use the main model.
-            logging.warning(
-                "Summarization with local/ollama provider falls back to the main model."
+        _llm_start = time.perf_counter()
+        _status = "success"
+        try:
+            if self.provider == "gemini":
+                # Run the synchronous Gemini SDK call in a thread so it does
+                # not block the event loop (issue #780).
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(None, self._generate_summary_gemini, prompt)
+            elif self.provider == "local" or self.provider == "ollama":
+                # For local/ollama provider, we can reuse the text generation with the summarizer model if needed
+                # or use a specific endpoint if available. For now, we use the main model.
+                logging.warning(
+                    "Summarization with local/ollama provider falls back to the main model."
+                )
+                result = await self._generate_text_local(prompt)
+            else:
+                logging.error(f"Unsupported LLM provider: {self.provider}")
+                return ""
+        except Exception:
+            _status = "error"
+            raise
+        finally:
+            _llm_latency_ms = int((time.perf_counter() - _llm_start) * 1000)
+            logging.info(
+                f"[llm_call] provider={self.provider} method=generate_summary "
+                f"latency_ms={_llm_latency_ms} status={_status}"
             )
-            result = await self._generate_text_local(prompt)
-        else:
-            logging.error(f"Unsupported LLM provider: {self.provider}")
-            return ""
 
         if result:
-            cache_path.write_text(result)
+            try:
+                # Use aiofiles to avoid blocking the event loop on file writes (issue #789).
+                async with aiofiles.open(cache_path, "w", encoding="utf-8") as f:
+                    await f.write(result)
+            except Exception as e:
+                logging.warning(f"Failed to cache summary: {e}")
 
         return result
 
     def _generate_summary_gemini(self, prompt: str) -> str:
         try:
-            response = self.summarizer_model.generate_content(prompt)
+            response = self.summarizer_model.generate_content(prompt)  # type: ignore[union-attr]
             return response.text
         except Exception as e:
-            logging.error(f"Error generating summary from Gemini: {e}")
+            logging.error(f"Error generating summary from Gemini: {e}", exc_info=True)
             return ""

@@ -6,7 +6,7 @@ Consolidates all Pydantic models for task management endpoints
 
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from schemas.unified_task_response import UnifiedTaskResponse
 
@@ -60,7 +60,7 @@ class UnifiedTaskRequest(BaseModel):
         True, description="Search for featured image (blog_post only)"
     )
     tags: Optional[List[str]] = Field(
-        None, min_items=0, max_items=10, description="Tags for categorization (max 10)"
+        None, min_items=0, max_items=10, description="Tags for categorization (max 10)"  # type: ignore[call-overload]
     )
 
     # SOCIAL MEDIA SPECIFIC
@@ -87,6 +87,11 @@ class UnifiedTaskRequest(BaseModel):
     filters: Optional[Dict[str, Any]] = Field(None, description="Data filters and query parameters")
 
     # COMMON OPTIONAL
+    description: Optional[str] = Field(
+        None,
+        description="Human-written task description (distinct from AI-generated excerpt). Useful for campaign briefs, e.g. 'Write a blog post about X for our Q1 campaign'.",
+        max_length=1000,
+    )
     category: Optional[str] = Field("general", description="Content category", max_length=50)
     target_audience: Optional[str] = Field(
         "General",
@@ -97,8 +102,31 @@ class UnifiedTaskRequest(BaseModel):
     models_by_phase: Optional[Dict[str, str]] = Field(
         None, description="Per-phase model selection (research, creative, qa, etc.)"
     )
+    # Legacy alias — callers using model_selections are mapped to models_by_phase (#952)
+    model_selections: Optional[Dict[str, str]] = Field(
+        None, description="DEPRECATED: Use models_by_phase. Legacy per-phase model selections.",
+        exclude=True,
+    )
     quality_preference: Optional[Literal["fast", "balanced", "quality"]] = Field(
         "balanced", description="Quality vs speed preference"
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_model_selections(cls, values: Any) -> Any:
+        """Map legacy model_selections to models_by_phase (#952)."""
+        if isinstance(values, dict):
+            legacy = values.get("model_selections")
+            canonical = values.get("models_by_phase")
+            if legacy and not canonical:
+                values["models_by_phase"] = legacy
+        return values
+    enforce_constraints: Optional[bool] = Field(
+        True,
+        description="Whether to enforce word count and style validation gates. Set False to skip validation failures.",
+    )
+    context: Optional[Dict[str, Any]] = Field(
+        None, description="Request context (writing_style_id, user_id, etc.)"
     )
     metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata for task")
 
@@ -230,12 +258,12 @@ class TaskCreateRequest(BaseModel):
                 "category": "healthcare",
                 "writing_style_id": "550e8400-e29b-41d4-a716-446655440000",
                 "model_selections": {
-                    "research": "ollama",
-                    "outline": "ollama",
-                    "draft": "gpt-3.5-turbo",
-                    "assess": "gpt-4",
-                    "refine": "gpt-4",
-                    "finalize": "gpt-4",
+                    "research": "ultra_cheap",
+                    "outline": "cheap",
+                    "draft": "premium",
+                    "assess": "cheap",
+                    "refine": "balanced",
+                    "finalize": "balanced",
                 },
                 "quality_preference": "balanced",
                 "estimated_cost": 0.015,
@@ -392,3 +420,27 @@ class TaskConfirmResponse(BaseModel):
     status: str
     message: str
     execution_plan_id: str
+
+
+class ApproveTaskRequest(BaseModel):
+    """Request to approve or reject a task."""
+
+    approved: bool = Field(True, description="True to approve, False to reject")
+    auto_publish: bool = Field(False, description="Automatically publish after approval")
+    human_feedback: Optional[str] = Field(None, description="Feedback from reviewer")
+    reviewer_id: Optional[str] = Field(None, description="ID of the reviewer")
+    featured_image_url: Optional[str] = Field(None, description="Featured image URL for the post")
+    image_source: Optional[str] = Field(None, description="Source of image (pexels, sdxl, etc.)")
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "approved": True,
+                "auto_publish": True,
+                "human_feedback": "Great content, ready to publish!",
+                "reviewer_id": "user@example.com",
+                "featured_image_url": "https://example.com/image.jpg",
+                "image_source": "pexels",
+            }
+        }
+    )

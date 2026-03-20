@@ -16,8 +16,7 @@ Handles all startup and shutdown operations for the Glad Labs AI Co-Founder:
 
 import logging
 import os
-from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +34,30 @@ class StartupManager:
         self.training_data_service = None
         self.fine_tuning_service = None
         self.custom_workflows_service = None
+        self.template_execution_service = None
         self.startup_error = None
+
+    def _validate_secrets(self) -> None:
+        """Validate that default secret values are not used in production."""
+        _DEFAULTS = {
+            "JWT_SECRET_KEY": "development-secret-key-change-in-production",
+            "JWT_SECRET": "development-secret-key-change-in-production",
+            "SECRET_KEY": "your-secret-key-here",
+            "REVALIDATE_SECRET": "dev-secret-key",
+        }
+        env = os.getenv("ENVIRONMENT", "production")
+        is_production = env == "production"
+        violations = []
+        for var, default_value in _DEFAULTS.items():
+            actual = os.getenv(var, "")
+            if actual and actual == default_value:
+                violations.append(var)
+        if violations and is_production:
+            raise RuntimeError(
+                f"Refusing to start in production with default secret values: {', '.join(violations)}"
+            )
+        if violations:
+            logger.warning(f"[startup] Default secret values detected (non-production): {', '.join(violations)}")
 
     async def initialize_all_services(self) -> Dict[str, Any]:
         """
@@ -55,6 +77,9 @@ class StartupManager:
         try:
             logger.info("🚀 Starting Glad Labs AI Co-Founder application...")
             logger.info(f"  Environment: {os.getenv('ENVIRONMENT', 'production')}")
+
+            # Step 0: Validate secrets before any heavy initialization
+            self._validate_secrets()
 
             # Step 1: Initialize PostgreSQL database (MANDATORY)
             await self._initialize_database()
@@ -92,7 +117,10 @@ class StartupManager:
             # Step 12: Initialize custom workflows service
             await self._initialize_custom_workflows_service()
 
-            # Step 13: Warmup SDXL models (async, non-blocking)
+            # Step 13: Initialize template execution service
+            await self._initialize_template_execution_service()
+
+            # Step 14: Warmup SDXL models (async, non-blocking)
             # Only if GPU is available - this prevents timeout issues when users first request SDXL
             try:
                 await self._warmup_sdxl_models()
@@ -101,7 +129,7 @@ class StartupManager:
 
                 logger.warning(
                     f"[WARNING] SDXL warmup failed (non-critical): {type(e).__name__}: {e}"
-                )
+, exc_info=True)
                 logger.debug(f"    Traceback: {traceback.format_exc()}")
                 # Continue anyway - SDXL will load lazily when first used
 
@@ -116,6 +144,7 @@ class StartupManager:
                 "training_data_service": self.training_data_service,
                 "fine_tuning_service": self.fine_tuning_service,
                 "custom_workflows_service": self.custom_workflows_service,
+                "template_execution_service": self.template_execution_service,
                 "startup_error": self.startup_error,
             }
 
@@ -157,14 +186,30 @@ class StartupManager:
             logger.info(f"     Tasks DB initialized: {self.database_service.tasks is not None}")
             logger.info(f"     Users DB initialized: {self.database_service.users is not None}")
             logger.info(f"     Content DB initialized: {self.database_service.content is not None}")
+
+            # Start connection pool health monitor if pool is available
+            if self.database_service.pool is not None:
+                try:
+                    from utils.connection_health import ConnectionPoolHealth
+
+                    pool_monitor = ConnectionPoolHealth(self.database_service.pool)
+                    import asyncio
+
+                    asyncio.create_task(pool_monitor.auto_health_check())
+                    logger.info("   ConnectionPoolHealth monitor started")
+                except Exception as monitor_err:
+                    logger.warning(
+                        f"  ConnectionPoolHealth monitor failed to start: {monitor_err}",
+                        exc_info=True,
+                    )
         except Exception as e:
             startup_error = f"FATAL: PostgreSQL connection failed: {str(e)}"
             logger.error(f"  {startup_error}", exc_info=True)
-            logger.error("  [FATAL] PostgreSQL is REQUIRED - cannot continue")
-            logger.error("   Set DATABASE_URL or DATABASE_USER environment variables")
+            logger.error("  [FATAL] PostgreSQL is REQUIRED - cannot continue", exc_info=True)
+            logger.error("   Set DATABASE_URL or DATABASE_USER environment variables", exc_info=True)
             logger.error(
                 "  Example DATABASE_URL: postgresql://user:password@localhost:5432/glad_labs_dev"
-            )
+, exc_info=True)
             raise SystemExit(1)
 
     async def _run_migrations(self) -> None:
@@ -179,7 +224,7 @@ class StartupManager:
             else:
                 logger.warning("   [WARNING] Database migrations failed (proceeding anyway)")
         except Exception as e:
-            logger.warning(f"   [WARNING] Migration error: {str(e)} (proceeding anyway)")
+            logger.warning(f"   [WARNING] Migration error: {str(e)} (proceeding anyway)", exc_info=True)
 
         # Inject database service into content task store
         try:
@@ -187,7 +232,18 @@ class StartupManager:
 
             get_content_task_store(self.database_service)
         except Exception as e:
-            logger.warning(f"   [WARNING] Content task store setup failed: {str(e)}")
+            logger.warning(f"   [WARNING] Content task store setup failed: {str(e)}", exc_info=True)
+
+        # Initialize JWT blocklist service (issue #721 — server-side token invalidation)
+        try:
+            from services.jwt_blocklist_service import jwt_blocklist
+
+            await jwt_blocklist.initialize(self.database_service.pool)
+            # Purge any expired rows carried over from previous runs
+            await jwt_blocklist.cleanup()
+            logger.info("   [OK] JWT blocklist service initialized")
+        except Exception as e:
+            logger.warning(f"   [WARNING] JWT blocklist init failed: {str(e)}", exc_info=True)
 
     async def _setup_redis_cache(self) -> None:
         """Initialize Redis cache for query optimization"""
@@ -205,7 +261,7 @@ class StartupManager:
                     "   [INFO] Redis cache not available (system will continue without caching)"
                 )
         except Exception as e:
-            logger.warning(f"   [WARNING] Redis cache error: {str(e)} (continuing without cache)")
+            logger.warning(f"   [WARNING] Redis cache error: {str(e)} (continuing without cache)", exc_info=True)
 
     async def _initialize_model_consolidation(self) -> None:
         """Initialize unified model consolidation service"""
@@ -357,7 +413,7 @@ class StartupManager:
         except Exception as e:
             logger.warning(
                 f"[WARNING] Agent registry initialization failed (non-critical): {type(e).__name__}: {e}"
-            )
+, exc_info=True)
             # Continue anyway - system can function without agent registry
 
     async def _initialize_custom_workflows_service(self) -> None:
@@ -379,8 +435,26 @@ class StartupManager:
         except Exception as e:
             logger.warning(
                 f"   Custom workflows service initialization failed (non-critical): {type(e).__name__}: {e}"
-            )
+, exc_info=True)
             self.custom_workflows_service = None
+
+    async def _initialize_template_execution_service(self) -> None:
+        """Initialize template execution service for workflow templates."""
+        logger.info("  🔧 Initializing template execution service...")
+        try:
+            from services.template_execution_service import TemplateExecutionService
+
+            if self.custom_workflows_service:
+                self.template_execution_service = TemplateExecutionService(self.custom_workflows_service)
+                logger.info("   Template execution service initialized")
+            else:
+                logger.warning("   Template execution service not available - custom workflows service required")
+                self.template_execution_service = None
+        except Exception as e:
+            logger.warning(
+                f"   Template execution service initialization failed (non-critical): {type(e).__name__}: {e}"
+, exc_info=True)
+            self.template_execution_service = None
 
     async def _warmup_sdxl_models(self) -> None:
         """Warmup SDXL models to avoid timeout on first request"""
@@ -450,8 +524,8 @@ class StartupManager:
         except Exception as e:
             import traceback
 
-            logger.warning(f"  [WARNING] SDXL warmup error (non-critical): {type(e).__name__}: {e}")
-            logger.warning(f"     Full traceback:\n{traceback.format_exc()}")
+            logger.warning(f"  [WARNING] SDXL warmup error (non-critical): {type(e).__name__}: {e}", exc_info=True)
+            logger.warning(f"     Full traceback:\n{traceback.format_exc()}", exc_info=True)
             logger.info("     SDXL will initialize on first request")
 
     def _log_startup_summary(self) -> None:
@@ -507,7 +581,6 @@ class StartupManager:
                 logger.info("  Closing HuggingFace client sessions...")
                 # The model consolidation service may have cached adapters
                 # We'll clean up any aiohttp sessions they created
-                import asyncio
 
                 # Get all tasks and look for lingering aiohttp sessions
                 try:

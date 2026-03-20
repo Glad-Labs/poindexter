@@ -20,6 +20,7 @@ import logging
 import os
 import re
 import time
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
 import httpx
@@ -88,7 +89,7 @@ class AIContentGenerator:
             else:
                 logger.warning(f"⚠️ Ollama returned non-200 status: {response.status_code}")
         except Exception as e:
-            logger.warning(f"⚠️ Ollama health check failed: {type(e).__name__}: {e}")
+            logger.warning(f"⚠️ Ollama health check failed: {type(e).__name__}: {e}", exc_info=True)
             self.ollama_available = False
         finally:
             self.ollama_checked = True
@@ -115,13 +116,17 @@ class AIContentGenerator:
 
         # 1. Check length
         word_count = len(content.split())
-        min_words = int(target_length * 0.7)
-        max_words = int(target_length * 1.3)
+        critical_min = int(target_length * 0.7)
+        soft_min = int(target_length * 0.9)
+        soft_max = int(target_length * 1.1)
 
-        if word_count < min_words:
+        if word_count < critical_min:
+            issues.append(f"CRITICAL: Content too short: {word_count} words (target: {target_length})")
+            score -= 3.0
+        elif word_count < soft_min:
             issues.append(f"Content too short: {word_count} words (target: {target_length})")
             score -= 2.0
-        elif word_count > max_words:
+        elif word_count > soft_max:
             issues.append(f"Content too long: {word_count} words (target: {target_length})")
             score -= 1.0
 
@@ -259,23 +264,27 @@ class AIContentGenerator:
             pm = get_prompt_manager()
             logger.info("✓ Prompt manager loaded successfully")
         except Exception as e:
-            logger.error(f"Failed to load prompt manager: {e}")
+            logger.error(f"Failed to load prompt manager: {e}", exc_info=True)
             raise
 
         # Fetch prompts from centralized manager instead of hardcoding
         # This ensures all prompts are versioned, documented, and easy to maintain
         try:
             logger.info("📝 Loading system prompt...")
+            min_words = int(target_length * 0.9)
+            max_words = int(target_length * 1.1)
             system_prompt = pm.get_prompt(
                 "blog_generation.blog_system_prompt",
                 style=style,
                 tone=tone,
                 target_length=target_length,
+                min_words=min_words,
+                max_words=max_words,
                 tags=", ".join(tags) if tags else "general",
             )
             logger.info(f"✓ System prompt loaded ({len(system_prompt)} chars)")
         except Exception as e:
-            logger.error(f"Failed to load system prompt: {e}")
+            logger.error(f"Failed to load system prompt: {e}", exc_info=True)
             raise
 
         try:
@@ -299,7 +308,7 @@ class AIContentGenerator:
             )
             logger.info(f"✓ Generation prompt loaded ({len(generation_prompt)} chars)")
         except Exception as e:
-            logger.error(f"Failed to load generation prompt: {type(e).__name__}: {e}")
+            logger.error(f"Failed to load generation prompt: {type(e).__name__}: {e}", exc_info=True)
             raise
 
         # Create a callable refinement prompt getter
@@ -313,7 +322,7 @@ class AIContentGenerator:
                     target_audience=style,
                 )
             except Exception as e:
-                logger.error(f"Failed to load refinement prompt: {e}")
+                logger.error(f"Failed to load refinement prompt: {e}", exc_info=True)
                 raise
 
         # Track metrics
@@ -382,28 +391,10 @@ class AIContentGenerator:
             )
             metrics["model_selection_log"]["decision_tree"]["gemini_attempted"] = True
             try:
-                # Import google-genai library (new package, replaces deprecated google-generativeai)
-                use_new_sdk = False
-                try:
-                    import google.genai as genai
+                # Import google-genai library (official SDK)
+                import google.genai as genai
 
-                    use_new_sdk = True
-                    logger.info("✅ Using google.genai (new SDK) for Gemini API calls")
-                except ImportError:
-                    # Fallback to older google.generativeai if new one not available
-                    import google.generativeai as genai
-
-                    logger.warning(
-                        "⚠️  Using google.generativeai (legacy/deprecated SDK) - upgrade to google-genai for better support"
-                    )
-
-                # Configure API key based on SDK version
-                if use_new_sdk:
-                    # New google.genai SDK: Pass API key directly
-                    genai.api_key = ProviderChecker.get_gemini_api_key()
-                else:
-                    # Old google.generativeai SDK: Use configure() method
-                    genai.configure(api_key=ProviderChecker.get_gemini_api_key())
+                genai.api_key = ProviderChecker.get_gemini_api_key()
 
                 # Map generic model names to actual Gemini API models
                 model_name = (
@@ -454,57 +445,35 @@ class AIContentGenerator:
                         f"   Gemini max_output_tokens: {max_tokens} (target_length: {target_length}, multiplier: 6.0x, capped at 32k)"
                     )
 
-                    if use_new_sdk:
-                        # New google.genai SDK: Use client.models.generate_content()
-                        client = genai.Client(api_key=ProviderChecker.get_gemini_api_key())
-                        response = client.models.generate_content(
-                            model=f"models/{model_name}",
-                            contents=f"{system_prompt}\n\n{generation_prompt}",
-                            config={
-                                "max_output_tokens": max_tokens,
-                                "temperature": 0.7,
-                            },
-                        )
-                    else:
-                        # Old google.generativeai SDK: Use GenerativeModel
-                        model = genai.GenerativeModel(model_name)
-                        response = model.generate_content(
-                            f"{system_prompt}\n\n{generation_prompt}",
-                            generation_config=genai.types.GenerationConfig(
-                                max_output_tokens=max_tokens,
-                                temperature=0.7,
-                            ),
-                        )
+                    # google.genai SDK: Use client.models.generate_content()
+                    client = genai.Client(api_key=ProviderChecker.get_gemini_api_key())
+                    response = client.models.generate_content(
+                        model=f"models/{model_name}",
+                        contents=f"{system_prompt}\n\n{generation_prompt}",
+                        config={
+                            "max_output_tokens": max_tokens,
+                            "temperature": 0.7,
+                        },
+                    )
 
                     return response
 
                 response = await asyncio.to_thread(_gemini_generate)
 
-                # Extract text from response - handle both old and new SDK response formats
+                # Extract text from response
                 generated_content = ""
                 try:
-                    if use_new_sdk:
-                        # New google.genai SDK: response.text
-                        if hasattr(response, "text"):
-                            generated_content = response.text or ""
-                        elif hasattr(response, "content"):
-                            generated_content = response.content or ""
-                        else:
-                            logger.error(
-                                f"Gemini response missing text/content attribute. Keys: {dir(response)}"
-                            )
-                            generated_content = ""
+                    if hasattr(response, "text"):
+                        generated_content = response.text or ""
+                    elif hasattr(response, "content"):
+                        generated_content = response.content or ""
                     else:
-                        # Old google.generativeai SDK: response.text
-                        if hasattr(response, "text"):
-                            generated_content = response.text or ""
-                        else:
-                            logger.error(
-                                f"Gemini response missing text attribute. Type: {type(response)}"
-                            )
-                            generated_content = ""
+                        logger.error(
+                            f"Gemini response missing text/content attribute. Keys: {dir(response)}"
+                        )
+                        generated_content = ""
                 except AttributeError as e:
-                    logger.error(f"Failed to extract text from Gemini response: {e}")
+                    logger.error(f"Failed to extract text from Gemini response: {e}", exc_info=True)
                     generated_content = ""
 
                 if generated_content and len(generated_content) > 100:
@@ -557,7 +526,7 @@ class AIContentGenerator:
             except Exception as e:
                 import traceback
 
-                logger.warning(f"User-selected Gemini failed: {type(e).__name__}: {str(e)}")
+                logger.warning(f"User-selected Gemini failed: {type(e).__name__}: {str(e)}", exc_info=True)
                 logger.debug(f"Gemini error traceback: {traceback.format_exc()}")
                 metrics["model_selection_log"]["decision_tree"]["gemini_error"] = str(e)[
                     :200
@@ -815,18 +784,18 @@ class AIContentGenerator:
                     except asyncio.TimeoutError as e:
                         # Explicitly catch timeout - model too slow or server unresponsive
                         error_msg = f"Timeout (120s exceeded) with {model_name}"
-                        logger.warning(f"Ollama model {model_name} timed out: {error_msg}")
+                        logger.warning(f"Ollama model {model_name} timed out: {error_msg}", exc_info=True)
                         attempts.append(("Ollama", error_msg))
                         continue
                     except Exception as e:
                         # Catch other errors (500 errors, connection issues, etc.)
                         error_msg = str(e)[:150]  # Truncate long error messages
-                        logger.warning(f"Ollama model {model_name} failed: {error_msg}")
+                        logger.warning(f"Ollama model {model_name} failed: {error_msg}", exc_info=True)
                         attempts.append(("Ollama", f"{model_name}: {error_msg}"))
                         continue
 
             except Exception as e:
-                logger.warning(f"Ollama generation failed: {e}")
+                logger.warning(f"Ollama generation failed: {e}", exc_info=True)
                 if not attempts:  # Only append if attempts list is still empty
                     attempts.append(("Ollama", str(e)[:150]))
 
@@ -892,7 +861,7 @@ class AIContentGenerator:
                         continue
 
             except Exception as e:
-                logger.warning(f"HuggingFace generation failed: {e}")
+                logger.warning(f"HuggingFace generation failed: {e}", exc_info=True)
                 attempts.append(("HuggingFace", str(e)))
 
         # 3. Fall back to Google Gemini (paid, but reliable)
@@ -904,62 +873,28 @@ class AIContentGenerator:
             logger.info(f"   ├─ Model: gemini-2.5-flash")
             logger.info(f"   └─ Status: Initializing...\n")
             try:
-                # Try the updated Gemini API format
-                try:
-                    # Import google.generativeai library (stable SDK)
-                    import google.generativeai as genai
+                # Import google-genai SDK
+                import google.genai as genai
 
-                    logger.debug("Using google.generativeai (stable SDK)")
-                    use_new_sdk = False
-                except ImportError:
-                    # Fallback to newer google.genai if available
-                    try:
-                        import google.genai as genai
-
-                        use_new_sdk = True
-                        logger.debug("Using google.genai (new SDK)")
-                    except ImportError as e:
-                        raise ImportError(
-                            "Neither google.generativeai nor google.genai found"
-                        ) from e
-                logger.debug(f"Configuring Gemini with API key...")
-                if use_new_sdk:
-                    genai.api_key = ProviderChecker.get_gemini_api_key()
-                    client = genai.Client(api_key=ProviderChecker.get_gemini_api_key())
-                    logger.debug(f"✓ Gemini client initialized (new SDK)")
-                else:
-                    genai.configure(api_key=ProviderChecker.get_gemini_api_key())
-                    # Use model from environment or default to latest flash
-                    gemini_model_name = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash")
-                    model = genai.GenerativeModel(gemini_model_name)
-                    logger.debug(f"✓ Gemini model initialized (legacy SDK): {gemini_model_name}")
+                logger.debug("Configuring Gemini with API key...")
+                client = genai.Client(api_key=ProviderChecker.get_gemini_api_key())
+                logger.debug("✓ Gemini client initialized")
 
                 metrics["generation_attempts"] += 1
                 logger.info(f"   Generating content...")
-                # Calculate max tokens for Claude/fallback generation - 2.5x multiplier for full content
+                # Calculate max tokens for fallback generation - 3x multiplier for full content
                 max_tokens_fallback = int(target_length * 3.0)
 
-                if use_new_sdk:
-                    # New google.genai SDK
-                    # Use model from environment or default to latest flash
-                    gemini_model_name = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash")
-                    response = client.models.generate_content(
-                        model=f"models/{gemini_model_name}",
-                        contents=f"{system_prompt}\n\n{generation_prompt}",
-                        config={
-                            "max_output_tokens": max_tokens_fallback,
-                            "temperature": 0.7,
-                        },
-                    )
-                else:
-                    # Old google.generativeai SDK
-                    response = model.generate_content(
-                        f"{system_prompt}\n\n{generation_prompt}",
-                        generation_config=genai.types.GenerationConfig(
-                            max_output_tokens=max_tokens_fallback,
-                            temperature=0.7,
-                        ),
-                    )
+                # Use model from environment or default to latest flash
+                gemini_model_name = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash")
+                response = client.models.generate_content(
+                    model=f"models/{gemini_model_name}",
+                    contents=f"{system_prompt}\n\n{generation_prompt}",
+                    config={
+                        "max_output_tokens": max_tokens_fallback,
+                        "temperature": 0.7,
+                    },
+                )
 
                 generated_content = response.text
                 logger.info(f"   Generated {len(generated_content)} characters")
@@ -989,16 +924,11 @@ class AIContentGenerator:
                         ("Gemini", f"Content too short: {len(generated_content)} chars")
                     )
 
-            except (AttributeError, ImportError) as e:
-                # Fallback for older SDK versions - try client API
-                logger.warning(f"Gemini SDK format not supported: {e}")
-                attempts.append(("Gemini", f"SDK error: {str(e)[:100]}"))
-
             except ImportError as e:
-                logger.warning(f"google.generativeai not installed: {e}")
+                logger.warning(f"google-genai not installed: {e}", exc_info=True)
                 attempts.append(("Gemini", "SDK not installed"))
             except Exception as e:
-                logger.warning(f"Gemini generation failed: {e}")
+                logger.warning(f"Gemini generation failed: {e}", exc_info=True)
                 attempts.append(("Gemini", str(e)[:150]))
 
         # If all models fail, use fallback
@@ -1015,6 +945,23 @@ class AIContentGenerator:
             f"   - HuggingFace: {ProviderChecker.is_huggingface_available()} (token available)"
         )
         logger.error(f"{'='*80}\n")
+
+        # Capture in Sentry as a distinct message so alert rules can target it.
+        # Generated content will be a stub template, not AI output (issue #556).
+        try:
+            import sentry_sdk  # pylint: disable=import-outside-toplevel
+            if sentry_sdk.is_initialized():  # type: ignore[attr-defined]
+                sentry_sdk.capture_message(  # type: ignore[attr-defined]
+                    "ALL AI MODELS FAILED — serving fallback template content",
+                    level="error",
+                    extras={"attempts": [{"provider": p, "error": e} for p, e in attempts]},
+                )
+        except Exception:  # pylint: disable=broad-except
+            # Never let Sentry integration block content delivery, but do log the failure
+            logger.error(
+                "[ai_content_generator] Failed to capture all-models-failed event in Sentry",
+                exc_info=True,
+            )
 
         fallback_content = self._generate_fallback_content(topic, style, tone, tags)
         metrics["model_used"] = "Fallback (no AI models available)"
@@ -1088,7 +1035,7 @@ Take action today—the insights you gain will compound over time.
 ---
 
 *Tags: {tag_str}*
-*Last updated: {os.popen('date').read().strip()}*
+*Last updated: {datetime.now(timezone.utc).strftime('%Y-%m-%d')}*
 """
 
 

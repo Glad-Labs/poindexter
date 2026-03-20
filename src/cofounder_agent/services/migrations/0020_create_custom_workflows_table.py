@@ -5,6 +5,7 @@ This migration adds support for storing and retrieving custom workflows
 that users create in the workflow builder.
 """
 
+
 async def up(pool):
     """Create custom_workflows table"""
     await pool.execute(

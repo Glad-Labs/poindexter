@@ -10,9 +10,10 @@ This follows the same pattern as service_registry_routes.py but for agents inste
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from agents.registry import get_agent_registry
+from routes.auth_unified import get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,9 @@ router = APIRouter(
 
 
 @router.get("/registry", response_model=Dict[str, Any], name="Get Agent Registry")
-async def get_agent_registry_endpoint():
+async def get_agent_registry_endpoint(
+    current_user: dict = Depends(get_current_user),
+):
     """
     Get the complete agent registry with all agents and their metadata.
 
@@ -99,11 +102,13 @@ async def get_agent_registry_endpoint():
         }
     except Exception as e:
         logger.error(f"Error retrieving agent registry: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve agent registry: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve agent registry")
 
 
 @router.get("/list", response_model=List[str], name="List Agent Names")
-async def list_agents():
+async def list_agents(
+    current_user: dict = Depends(get_current_user),
+):
     """
     Get a simple list of all available agent names.
 
@@ -132,11 +137,42 @@ async def list_agents():
         return agents
     except Exception as e:
         logger.error(f"Error listing agents: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to list agents: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to list agents")
+
+
+@router.get("/search", response_model=List[Dict[str, Any]], name="Search Agents")
+async def search_agents(
+    capability: Optional[str] = Query(None, description="Filter by capability"),
+    phase: Optional[str] = Query(None, description="Filter by phase"),
+    category: Optional[str] = Query(None, description="Filter by category"),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Search for agents by optional filters.
+
+    Registered before /{agent_name} to avoid path parameter shadowing.
+    Allows combining multiple filters (AND logic).
+    """
+    try:
+        registry = get_agent_registry()
+        all_agents = registry.list_all_with_metadata()
+        if capability:
+            all_agents = [a for a in all_agents if capability in a.get("capabilities", [])]
+        if phase:
+            all_agents = [a for a in all_agents if phase in a.get("phases", [])]
+        if category:
+            all_agents = [a for a in all_agents if a.get("category") == category]
+        return all_agents
+    except Exception as e:
+        logger.error(f"Error searching agents: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to search agents")
 
 
 @router.get("/{agent_name}", response_model=Dict[str, Any], name="Get Agent Metadata")
-async def get_agent_metadata(agent_name: str):
+async def get_agent_metadata(
+    agent_name: str,
+    current_user: dict = Depends(get_current_user),
+):
     """
     Get metadata for a specific agent.
 
@@ -181,11 +217,14 @@ async def get_agent_metadata(agent_name: str):
         raise
     except Exception as e:
         logger.error(f"Error retrieving agent '{agent_name}': {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve agent: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve agent")
 
 
 @router.get("/{agent_name}/phases", response_model=List[str], name="Get Agent Phases")
-async def get_agent_phases(agent_name: str):
+async def get_agent_phases(
+    agent_name: str,
+    current_user: dict = Depends(get_current_user),
+):
     """
     Get the pipeline phases that an agent handles.
 
@@ -217,11 +256,14 @@ async def get_agent_phases(agent_name: str):
         raise
     except Exception as e:
         logger.error(f"Error retrieving phases for agent '{agent_name}': {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve agent phases: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve agent phases")
 
 
 @router.get("/{agent_name}/capabilities", response_model=List[str], name="Get Agent Capabilities")
-async def get_agent_capabilities(agent_name: str):
+async def get_agent_capabilities(
+    agent_name: str,
+    current_user: dict = Depends(get_current_user),
+):
     """
     Get the capabilities/skills of an agent.
 
@@ -254,12 +296,15 @@ async def get_agent_capabilities(agent_name: str):
     except Exception as e:
         logger.error(f"Error retrieving capabilities for agent '{agent_name}': {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Failed to retrieve agent capabilities: {str(e)}"
+            status_code=500, detail="Failed to retrieve agent capabilities"
         )
 
 
 @router.get("/by-phase/{phase}", name="Get Agents by Phase")
-async def get_agents_by_phase(phase: str):
+async def get_agents_by_phase(
+    phase: str,
+    current_user: dict = Depends(get_current_user),
+):
     """
     Get all agents that handle a specific pipeline phase.
 
@@ -303,12 +348,15 @@ async def get_agents_by_phase(phase: str):
     except Exception as e:
         logger.error(f"Error retrieving agents for phase '{phase}': {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Failed to retrieve agents for phase: {str(e)}"
+            status_code=500, detail="Failed to retrieve agents for phase"
         )
 
 
 @router.get("/by-capability/{capability}", name="Get Agents by Capability")
-async def get_agents_by_capability(capability: str):
+async def get_agents_by_capability(
+    capability: str,
+    current_user: dict = Depends(get_current_user),
+):
     """
     Get all agents that have a specific capability.
 
@@ -351,14 +399,17 @@ async def get_agents_by_capability(capability: str):
     except Exception as e:
         logger.error(f"Error retrieving agents for capability '{capability}': {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Failed to retrieve agents for capability: {str(e)}"
+            status_code=500, detail="Failed to retrieve agents for capability"
         )
 
 
 @router.get(
     "/by-category/{category}", response_model=List[Dict[str, Any]], name="Get Agents by Category"
 )
-async def get_agents_by_category(category: str):
+async def get_agents_by_category(
+    category: str,
+    current_user: dict = Depends(get_current_user),
+):
     """
     Get all agents in a specific category.
 
@@ -400,62 +451,7 @@ async def get_agents_by_category(category: str):
     except Exception as e:
         logger.error(f"Error retrieving agents in category '{category}': {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Failed to retrieve agents for category: {str(e)}"
+            status_code=500, detail="Failed to retrieve agents for category"
         )
 
 
-@router.get("/search", response_model=List[Dict[str, Any]], name="Search Agents")
-async def search_agents(
-    capability: Optional[str] = Query(None, description="Filter by capability"),
-    phase: Optional[str] = Query(None, description="Filter by phase"),
-    category: Optional[str] = Query(None, description="Filter by category"),
-):
-    """
-    Search for agents by optional filters.
-
-    Allows combining multiple filters (AND logic) to find agents matching specific criteria.
-
-    Query Parameters:
-        capability: Optional capability to filter by
-        phase: Optional phase to filter by
-        category: Optional category to filter by
-
-    Returns:
-        List of agent metadata dicts matching all specified filters
-
-    Example:
-        ```
-        GET /api/agents/search?phase=draft&category=content
-
-        [
-            {
-                "name": "creative_agent",
-                "category": "content",
-                "phases": ["draft", "refine"],
-                "capabilities": ["content_generation", "writing", "style_adaptation"],
-                "description": "Generates and refines creative content with style guidance",
-                "version": "1.0"
-            }
-        ]
-        ```
-    """
-    try:
-        registry = get_agent_registry()
-        all_agents = registry.list_all_with_metadata()
-
-        # Filter by capability if specified
-        if capability:
-            all_agents = [a for a in all_agents if capability in a.get("capabilities", [])]
-
-        # Filter by phase if specified
-        if phase:
-            all_agents = [a for a in all_agents if phase in a.get("phases", [])]
-
-        # Filter by category if specified
-        if category:
-            all_agents = [a for a in all_agents if a.get("category") == category]
-
-        return all_agents
-    except Exception as e:
-        logger.error(f"Error searching agents: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to search agents: {str(e)}")

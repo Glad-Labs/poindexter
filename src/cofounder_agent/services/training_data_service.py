@@ -6,18 +6,17 @@ Supports organizing data by quality, date, intent, and custom tags.
 """
 
 import json
-import logging
+from services.logger_config import get_logger
 import os
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+import aiofiles
 import asyncpg
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class DataTag(str, Enum):
     """Tags for training data"""
 
@@ -295,20 +294,23 @@ class TrainingDataService:
             return 0
 
         async with self.db_pool.acquire() as conn:
-            # Remove each tag individually
-            count = 0
-            for tag in tags:
-                result = await conn.execute(
-                    """
-                    UPDATE orchestrator_training_data
-                    SET tags = array_remove(tags, $2::text),
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE execution_id = ANY($1::text[])
-                    """,
-                    execution_ids,
-                    tag,
-                )
-                count += int(result.split()[-1]) if result else 0
+            # Remove all tags in a single UPDATE using array subtraction instead of
+            # one UPDATE per tag (eliminates N+1 for large tag lists).
+            result = await conn.execute(
+                """
+                UPDATE orchestrator_training_data
+                SET tags = (
+                    SELECT COALESCE(array_agg(t), ARRAY[]::text[])
+                    FROM unnest(tags) AS t
+                    WHERE t <> ALL($2::text[])
+                ),
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE execution_id = ANY($1::text[])
+                """,
+                execution_ids,
+                tags,
+            )
+            count = int(result.split()[-1]) if result else 0
 
         return count
 
@@ -469,8 +471,8 @@ class TrainingDataService:
         else:
             data = await self.get_all_training_data(limit=10000)
 
-        # Write JSONL
-        with open(output_path, "w") as f:
+        # Write JSONL asynchronously to avoid blocking the event loop
+        async with aiofiles.open(output_path, "w") as f:
             for example in data:
                 # Prepare for fine-tuning (format works with most providers)
                 training_obj = {
@@ -499,7 +501,7 @@ class TrainingDataService:
                         "patterns": example.patterns_discovered,
                     },
                 }
-                f.write(json.dumps(training_obj) + "\n")
+                await f.write(json.dumps(training_obj) + "\n")
 
         file_size = os.path.getsize(output_path)
 
@@ -574,10 +576,17 @@ class TrainingDataService:
             "file_size": export_result["file_size"],
         }
 
-    async def list_datasets(self) -> List[Dict[str, Any]]:
-        """List all versioned datasets"""
+    async def list_datasets(self, limit: int = 500) -> List[Dict[str, Any]]:
+        """List versioned datasets, most recent version per name first.
+
+        Args:
+            limit: Maximum number of datasets to return (default 500).
+        """
         async with self.db_pool.acquire() as conn:
-            rows = await conn.fetch("SELECT * FROM training_datasets ORDER BY name, version DESC")
+            rows = await conn.fetch(
+                "SELECT * FROM training_datasets ORDER BY name, version DESC LIMIT $1",
+                limit,
+            )
 
         return [dict(row) for row in rows]
 
@@ -662,7 +671,7 @@ class TrainingDataService:
             quality_score=float(row["quality_score"] or 0),
             success=row["success"],
             tags=row["tags"] or [],
-            created_at=row["created_at"].isoformat() if row["created_at"] else None,
+            created_at=row["created_at"].isoformat() if row["created_at"] else None,  # type: ignore[arg-type]
             post_publication_metrics=row.get("post_publication_metrics"),
             patterns_discovered=row.get("patterns_discovered"),
         )

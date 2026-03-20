@@ -4,9 +4,11 @@ Health Service for Glad Labs AI Co-Founder
 This module provides centralized health check functionality.
 """
 
-import asyncio
-from datetime import datetime
+import logging
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 from fastapi import FastAPI
 
@@ -36,7 +38,7 @@ class HealthService:
             "status": "healthy",
             "service": "cofounder-agent",
             "version": config.app_version,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "components": {},
         }
 
@@ -57,10 +59,22 @@ class HealthService:
                 health_data["components"]["database"] = db_health.get("status", "unknown")
             except Exception as e:  # pylint: disable=broad-except
                 # Log the error but don't fail the health check
-                print(f"Database health check failed: {str(e)}")
+                logger.error("[health_service] Database health check failed", exc_info=True)
                 health_data["components"]["database"] = "degraded"
         else:
             health_data["components"]["database"] = "unavailable"
+
+        # Include Redis cache status if available
+        redis_cache = getattr(self.app.state, "redis_cache", None)
+        if redis_cache:
+            try:
+                redis_health = await redis_cache.health_check()
+                health_data["components"]["redis"] = redis_health.get("status", "unknown")
+            except Exception as e:  # pylint: disable=broad-except
+                logger.error("[health_service] Redis health check failed", exc_info=True)
+                health_data["components"]["redis"] = "degraded"
+        else:
+            health_data["components"]["redis"] = "unavailable"
 
         return health_data
 

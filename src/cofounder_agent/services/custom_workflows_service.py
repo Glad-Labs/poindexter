@@ -15,11 +15,14 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from schemas.custom_workflow_schemas import (
-    AvailablePhase,
     CustomWorkflow,
-    PhaseConfig,
+    WorkflowPhase,
     WorkflowValidationResult,
 )
+from services.phase_registry import PhaseRegistry
+from services.workflow_validator import WorkflowValidator
+from services.workflow_executor import WorkflowExecutor
+from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +33,10 @@ class CustomWorkflowsService:
     def __init__(self, database_service):
         """Initialize with database service"""
         self.database_service = database_service
-        self._available_phases_cache: Optional[List[AvailablePhase]] = None
+        self._available_phases_cache: Optional[List[Dict[str, Any]]] = None
+        self.phase_registry = PhaseRegistry.get_instance()
+        self.workflow_validator = WorkflowValidator()
+        self.workflow_executor = WorkflowExecutor()
         logger.info("CustomWorkflowsService initialized")
 
     async def create_workflow(self, workflow: CustomWorkflow, owner_id: str) -> CustomWorkflow:
@@ -101,6 +107,39 @@ class CustomWorkflowsService:
             logger.error(f"Error retrieving workflow {workflow_id}: {str(e)}", exc_info=True)
             raise
 
+    async def get_workflow_by_name(
+        self, name: str, owner_id: str
+    ) -> Optional[CustomWorkflow]:
+        """
+        Retrieve a workflow by name for a given owner.
+
+        Args:
+            name: Workflow name
+            owner_id: Requesting user ID
+
+        Returns:
+            CustomWorkflow or None if not found
+        """
+        try:
+            row = await self.database_service.pool.fetchrow(
+                """
+                SELECT id, name, description, phases, owner_id, created_at, updated_at, tags, is_template
+                FROM custom_workflows
+                WHERE name = $1 AND owner_id = $2
+                """,
+                name,
+                owner_id,
+            )
+            if not row:
+                logger.warning(
+                    f"Workflow '{name}' not found for user {owner_id}"
+                )
+                return None
+            return self._row_to_workflow(row)
+        except Exception as e:
+            logger.error(f"Error retrieving workflow by name '{name}': {str(e)}", exc_info=True)
+            raise
+
     async def list_workflows(
         self, owner_id: str, include_templates: bool = True, page: int = 1, page_size: int = 20
     ) -> Dict[str, Any]:
@@ -119,48 +158,39 @@ class CustomWorkflowsService:
         try:
             offset = (page - 1) * page_size
 
-            # Get workflows owned by user or public templates
-            if include_templates:
-                rows = await self.database_service.pool.fetch(
-                    """
-                    SELECT id, name, description, phases, owner_id, created_at, updated_at, tags, is_template
-                    FROM custom_workflows
-                    WHERE owner_id = $1 OR is_template = true
-                    ORDER BY updated_at DESC
-                    LIMIT $2 OFFSET $3
-                    """,
-                    owner_id,
-                    page_size,
-                    offset,
-                )
-                total_count_row = await self.database_service.pool.fetchval(
-                    """
-                    SELECT COUNT(*) FROM custom_workflows
-                    WHERE owner_id = $1 OR is_template = true
-                    """,
-                    owner_id,
-                )
-            else:
-                rows = await self.database_service.pool.fetch(
-                    """
-                    SELECT id, name, description, phases, owner_id, created_at, updated_at, tags, is_template
-                    FROM custom_workflows
-                    WHERE owner_id = $1
-                    ORDER BY updated_at DESC
-                    LIMIT $2 OFFSET $3
-                    """,
-                    owner_id,
-                    page_size,
-                    offset,
-                )
-                total_count_row = await self.database_service.pool.fetchval(
-                    """
-                    SELECT COUNT(*) FROM custom_workflows WHERE owner_id = $1
-                    """,
-                    owner_id,
-                )
+            # Single acquire: window function avoids a second COUNT round-trip and keeps
+            # both count and data under the same connection snapshot.
+            async with self.database_service.pool.acquire() as conn:
+                if include_templates:
+                    rows = await conn.fetch(
+                        """
+                        SELECT id, name, description, phases, owner_id, created_at, updated_at,
+                               tags, is_template, COUNT(*) OVER () AS total_count
+                        FROM custom_workflows
+                        WHERE owner_id = $1 OR is_template = true
+                        ORDER BY updated_at DESC
+                        LIMIT $2 OFFSET $3
+                        """,
+                        owner_id,
+                        page_size,
+                        offset,
+                    )
+                else:
+                    rows = await conn.fetch(
+                        """
+                        SELECT id, name, description, phases, owner_id, created_at, updated_at,
+                               tags, is_template, COUNT(*) OVER () AS total_count
+                        FROM custom_workflows
+                        WHERE owner_id = $1
+                        ORDER BY updated_at DESC
+                        LIMIT $2 OFFSET $3
+                        """,
+                        owner_id,
+                        page_size,
+                        offset,
+                    )
 
-            total_count = total_count_row or 0
+            total_count = rows[0]["total_count"] if rows else 0
             workflows = [self._row_to_workflow(row) for row in rows]
 
             logger.info(f"Listed {len(workflows)} workflows for user {owner_id}")
@@ -173,7 +203,13 @@ class CustomWorkflowsService:
             }
         except Exception as e:
             logger.error(f"Error listing workflows: {str(e)}", exc_info=True)
-            raise
+            return {
+                "workflows": [],
+                "total_count": 0,
+                "page": page,
+                "page_size": page_size,
+                "has_next": False,
+            }
 
     async def update_workflow(
         self, workflow_id: str, workflow: CustomWorkflow, owner_id: str
@@ -256,12 +292,7 @@ class CustomWorkflowsService:
         """
         Validate a workflow definition.
 
-        Checks:
-        - Name and description not empty
-        - At least one phase defined
-        - No duplicate phase names
-        - Phases are sequential (no cycles)
-        - All referenced agents exist
+        Delegates to the injected WorkflowValidator instance.
 
         Args:
             workflow: Workflow to validate
@@ -269,126 +300,37 @@ class CustomWorkflowsService:
         Returns:
             ValidationResult with errors and warnings
         """
-        errors: List[str] = []
-        warnings: List[str] = []
-
-        # Basic validation
-        if not workflow.name or not workflow.name.strip():
-            errors.append("Workflow name cannot be empty")
-
-        if not workflow.description or not workflow.description.strip():
-            errors.append("Workflow description cannot be empty")
-
-        if not workflow.phases or len(workflow.phases) == 0:
-            errors.append("Workflow must have at least one phase")
-            return WorkflowValidationResult(valid=False, errors=errors, warnings=warnings)
-
-        # Check for duplicate phase names
-        phase_names = [p.name for p in workflow.phases]
-        if len(phase_names) != len(set(phase_names)):
-            errors.append("Duplicate phase names in workflow")
-
-        # Validate each phase
-        for i, phase in enumerate(workflow.phases):
-            try:
-                # Validate component-level constraints
-                if phase.timeout_seconds < 10:
-                    warnings.append(
-                        f"Phase '{phase.name}' timeout {phase.timeout_seconds}s is very short"
-                    )
-                if phase.timeout_seconds > 3600:
-                    warnings.append(
-                        f"Phase '{phase.name}' timeout {phase.timeout_seconds}s is very long"
-                    )
-
-                # TODO: Validate agent exists in registry when available
-                # For now, just warn if agent looks invalid
-                if not phase.agent or not phase.agent.strip():
-                    errors.append(f"Phase '{phase.name}' must specify an agent")
-
-            except Exception as e:
-                errors.append(f"Error validating phase '{phase.name}': {str(e)}")
-
-        # Workflow is valid if no errors (warnings don't block)
-        valid = len(errors) == 0
+        valid, errors, warnings = self.workflow_validator.validate_workflow(workflow)
         return WorkflowValidationResult(valid=valid, errors=errors, warnings=warnings)
 
-    async def get_available_phases(self) -> List[AvailablePhase]:
+    async def get_available_phases(self) -> List[Dict[str, Any]]:
         """
         Get list of available phases that can be used in workflows.
 
-        This will be populated from agents/phases discovered at startup.
-        For MVP, returns hardcoded list of known phases.
+        Delegates to the PhaseRegistry for the authoritative list of phases.
 
         Returns:
-            List of available phases
+            List of available phase dicts
         """
         # Use cached version if available
-        if self._available_phases_cache:
+        if self._available_phases_cache is not None:
             return self._available_phases_cache
 
-        # Hardcoded known phases (TODO: Derive from agent registry)
+        phases = self.phase_registry.list_phases()
         available_phases = [
-            AvailablePhase(
-                name="research",
-                description="Web search and research phase - gathers information on topic",
-                category="content",
-                default_timeout_seconds=300,
-                compatible_agents=["ResearchAgent"],
-                capabilities=["web_search", "data_analysis"],
-                default_retries=3,
-                version="1.0",
-            ),
-            AvailablePhase(
-                name="draft",
-                description="Creative draft generation - produces initial content",
-                category="content",
-                default_timeout_seconds=300,
-                compatible_agents=["CreativeAgent"],
-                capabilities=["content_generation", "style_matching"],
-                default_retries=2,
-                version="1.0",
-            ),
-            AvailablePhase(
-                name="assess",
-                description="Quality assessment - evaluates content quality",
-                category="quality",
-                default_timeout_seconds=240,
-                compatible_agents=["QAAgent", "QualityService"],
-                capabilities=["quality_scoring", "feedback"],
-                default_retries=1,
-                version="1.0",
-            ),
-            AvailablePhase(
-                name="refine",
-                description="Content refinement - improves based on feedback",
-                category="content",
-                default_timeout_seconds=300,
-                compatible_agents=["CreativeAgent"],
-                capabilities=["content_refinement", "iteration"],
-                default_retries=2,
-                version="1.0",
-            ),
-            AvailablePhase(
-                name="image",
-                description="Image selection and generation - adds visual elements",
-                category="media",
-                default_timeout_seconds=600,
-                compatible_agents=["ImageAgent"],
-                capabilities=["image_generation", "image_selection"],
-                default_retries=2,
-                version="1.0",
-            ),
-            AvailablePhase(
-                name="publish",
-                description="Publishing - publishes to configured CMS",
-                category="distribution",
-                default_timeout_seconds=180,
-                compatible_agents=["PublishingAgent"],
-                capabilities=["publishing", "seo_optimization"],
-                default_retries=1,
-                version="1.0",
-            ),
+            {
+                "name": p.name,
+                "agent_type": p.agent_type,
+                "description": p.description,
+                "timeout_seconds": p.timeout_seconds,
+                "max_retries": p.max_retries,
+                "required": p.required,
+                "quality_threshold": p.quality_threshold,
+                "tags": p.tags,
+                "input_schema": p.input_schema,
+                "output_schema": p.output_schema,
+            }
+            for p in phases
         ]
 
         self._available_phases_cache = available_phases
@@ -405,14 +347,14 @@ class CustomWorkflowsService:
             [
                 {
                     "name": p.name,
-                    "agent": p.agent,
-                    "description": p.description,
-                    "timeout_seconds": p.timeout_seconds,
-                    "max_retries": p.max_retries,
-                    "skip_on_error": p.skip_on_error,
-                    "required": p.required,
-                    "quality_threshold": p.quality_threshold,
-                    "metadata": p.metadata,
+                    "agent": getattr(p, "agent", ""),
+                    "description": getattr(p, "description", ""),
+                    "timeout_seconds": getattr(p, "timeout_seconds", 300),
+                    "max_retries": getattr(p, "max_retries", 2),
+                    "skip_on_error": getattr(p, "skip_on_error", False),
+                    "required": getattr(p, "required", True),
+                    "quality_threshold": getattr(p, "quality_threshold", None),
+                    "metadata": getattr(p, "metadata", {}),
                 }
                 for p in workflow.phases
             ]
@@ -441,14 +383,14 @@ class CustomWorkflowsService:
             [
                 {
                     "name": p.name,
-                    "agent": p.agent,
-                    "description": p.description,
-                    "timeout_seconds": p.timeout_seconds,
-                    "max_retries": p.max_retries,
-                    "skip_on_error": p.skip_on_error,
-                    "required": p.required,
-                    "quality_threshold": p.quality_threshold,
-                    "metadata": p.metadata,
+                    "agent": getattr(p, "agent", ""),
+                    "description": getattr(p, "description", ""),
+                    "timeout_seconds": getattr(p, "timeout_seconds", 300),
+                    "max_retries": getattr(p, "max_retries", 2),
+                    "skip_on_error": getattr(p, "skip_on_error", False),
+                    "required": getattr(p, "required", True),
+                    "quality_threshold": getattr(p, "quality_threshold", None),
+                    "metadata": getattr(p, "metadata", {}),
                 }
                 for p in workflow.phases
             ]
@@ -474,20 +416,28 @@ class CustomWorkflowsService:
         phases_data = json.loads(row["phases"]) if isinstance(row["phases"], str) else row["phases"]
         tags = json.loads(row["tags"]) if isinstance(row["tags"], str) else row.get("tags", [])
 
-        phases = [
-            PhaseConfig(
-                name=p["name"],
-                agent=p["agent"],
-                description=p.get("description"),
-                timeout_seconds=p.get("timeout_seconds", 300),
-                max_retries=p.get("max_retries", 3),
-                skip_on_error=p.get("skip_on_error", False),
-                required=p.get("required", True),
-                quality_threshold=p.get("quality_threshold"),
-                metadata=p.get("metadata", {}),
-            )
-            for p in phases_data
-        ]
+        phases = []
+        for i, p in enumerate(phases_data):
+            if "index" in p:
+                # New WorkflowPhase format
+                phases.append(
+                    WorkflowPhase(
+                        index=p["index"],
+                        name=p["name"],
+                        user_inputs=p.get("user_inputs", {}),
+                        input_mapping=p.get("input_mapping", {}),
+                    )
+                )
+            else:
+                # Legacy PhaseConfig format — convert to WorkflowPhase using list position
+                phases.append(
+                    WorkflowPhase(
+                        index=i,
+                        name=p["name"],
+                        user_inputs={},
+                        input_mapping={},
+                    )
+                )
 
         return CustomWorkflow(
             id=row["id"],
@@ -639,7 +589,7 @@ class CustomWorkflowsService:
             return self._row_to_execution(row)
 
         except Exception as e:
-            logger.error(f"Failed to get workflow execution {execution_id}: {e}")
+            logger.error(f"Failed to get workflow execution {execution_id}: {e}", exc_info=True)
             return None
 
     async def get_workflow_executions(
@@ -664,36 +614,31 @@ class CustomWorkflowsService:
             List of execution records and total count
         """
         try:
-            # Build query
-            where_clauses = ["workflow_id = $1", "owner_id = $2"]
-            params = [workflow_id, owner_id]
-            param_index = 3
-
+            # Use ParameterizedQueryBuilder for safe, consistent parameterization.
+            # Window function keeps COUNT and data in one round-trip.
+            builder = ParameterizedQueryBuilder()
+            where_conditions: List[tuple] = [
+                ("workflow_id", SQLOperator.EQ, workflow_id),
+                ("owner_id", SQLOperator.EQ, owner_id),
+            ]
             if status:
-                where_clauses.append(f"execution_status = ${param_index}")
-                params.append(status)
-                param_index += 1
+                where_conditions.append(("execution_status", SQLOperator.EQ, status))
 
-            where_sql = " AND ".join(where_clauses)
-
-            # Get total count
-            total_count = await self.database_service.pool.fetchval(
-                f"SELECT COUNT(*) FROM workflow_executions WHERE {where_sql}",
-                *params,
+            _base_sql, base_params = builder.select(
+                columns=["*", "COUNT(*) OVER () AS total_count"],
+                table="workflow_executions",
+                where_clauses=where_conditions,
+                order_by=[("created_at", "DESC")],
             )
+            # Append LIMIT/OFFSET as the final parameters
+            limit_ph = builder.add_param(limit)
+            offset_ph = builder.add_param(offset)
+            full_sql = _base_sql + f" LIMIT {limit_ph} OFFSET {offset_ph}"
 
-            # Get paginated results
-            rows = await self.database_service.pool.fetch(
-                f"""
-                SELECT * FROM workflow_executions
-                WHERE {where_sql}
-                ORDER BY created_at DESC
-                LIMIT ${param_index} OFFSET ${param_index + 1}
-                """,
-                *params,
-                limit,
-                offset,
-            )
+            async with self.database_service.pool.acquire() as conn:
+                rows = await conn.fetch(full_sql, *builder.params)
+
+            total_count = rows[0]["total_count"] if rows else 0
 
             executions = [self._row_to_execution(row) for row in rows]
 
@@ -705,7 +650,10 @@ class CustomWorkflowsService:
             }
 
         except Exception as e:
-            logger.error(f"Failed to get workflow executions for {workflow_id}: {e}")
+            logger.error(
+                f"[get_workflow_executions] Failed to get workflow executions for {workflow_id}: {e}",
+                exc_info=True,
+            )
             return {
                 "total": 0,
                 "executions": [],

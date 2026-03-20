@@ -1,0 +1,64 @@
+name: 🔄 Auto-Bump Version (Dev Only)
+
+on:
+    push:
+        branches:
+            - "dev"
+            - "dev/**"
+            - "feature/**"
+        paths-ignore:
+            - "docs/**"
+            - "*.md"
+            - ".gitignore"
+
+concurrency:
+    group: version-bump-${{ github.ref }}
+
+jobs:
+    auto-bump-version:
+        runs-on: ubuntu-latest
+
+        # Prevent running on version bump commits (they have [skip ci] tag)
+        if: "!contains(github.event.head_commit.message, '[skip ci]')"
+
+        permissions:
+            contents: write
+
+        steps:
+            - name: 📥 Checkout code
+              uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+              with:
+                  fetch-depth: 0
+                  ref: ${{ github.ref_name }}
+
+            - name: 🔧 Setup Node.js
+              uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+              with:
+                  node-version: "22"
+
+            - name: 🔐 Configure git
+              run: |
+                  git config user.name "github-actions[bot]"
+                  git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+            - name: 📊 Detect branch tier
+              id: branch-tier
+              run: |
+                  BRANCH="${{ github.ref_name }}"
+                  echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+                  # Dev and feature branches always get patch bumps.
+                  # Staging inherits dev's version on merge (no independent bump).
+                  # Main is handled by release-please (semantic versioning from commits).
+                  echo "tier=dev (patch bump)"
+                  echo "tier_name=dev" >> $GITHUB_OUTPUT
+
+            - name: 🔄 Auto-bump version
+              run: |
+                  npm run bump-version:auto
+              env:
+                  CI: true
+
+            - name: 📤 Push version bump commit and tag
+              run: |
+                  git push origin HEAD:${{ github.ref_name }}
+                  git push origin --tags

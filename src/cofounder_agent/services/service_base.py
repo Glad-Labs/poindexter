@@ -16,19 +16,18 @@ This layer allows LLMs to:
 """
 
 import asyncio
-import json
-import logging
-from abc import ABC, abstractmethod
-from dataclasses import asdict, dataclass, field
+from services.logger_config import get_logger
+from abc import ABC
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Coroutine, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional
+
+from services.error_handler import ServiceError as _CanonicalServiceError
 
 from pydantic import BaseModel, Field
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 # ============================================================================
 # SERVICE ACTION DEFINITIONS
 # ============================================================================
@@ -104,14 +103,36 @@ class ActionResult(BaseModel):
         json_encoders = {datetime: lambda v: v.isoformat()}
 
 
-class ServiceError(Exception):
-    """Base exception for service errors"""
+class ServiceError(_CanonicalServiceError):
+    """Service-layer exception.
 
-    def __init__(self, error_code: str, message: str, details: Optional[Dict] = None):
-        self.error_code = error_code
-        self.message = message
-        self.details = details or {}
-        super().__init__(message)
+    Thin subclass of the canonical error_handler.ServiceError so that a
+    single class is catchable regardless of which module raises it (issue #657).
+
+    Constructor accepts either:
+      - ServiceError(message, error_code=..., details=...)   — canonical form
+      - ServiceError(error_code=..., message=..., details=...) — legacy kwargs form
+    """
+
+    def __init__(
+        self,
+        message: str = "",
+        error_code: Optional[str] = None,
+        details: Optional[Dict] = None,
+        **kwargs,
+    ):
+        # The canonical AppError stores message as self.message; expose details too.
+        super().__init__(message=message, details=details, **kwargs)
+        if error_code is not None:
+            self.error_code = error_code
+
+    def __str__(self) -> str:
+        """String representation — handles both str and ErrorCode enum codes."""
+        code = getattr(self.error_code, "value", self.error_code)
+        msg = f"[{code}] {self.message}" if code else self.message
+        if self.details:
+            msg += f" | Details: {self.details}"
+        return msg
 
 
 # ============================================================================
@@ -155,7 +176,7 @@ class ServiceBase(ABC):
     version: str = "0.1.0"
     description: str = ""
 
-    def __init__(self, service_registry: "ServiceRegistry" = None):
+    def __init__(self, service_registry: Optional["ServiceRegistry"] = None):
         """
         Initialize service with optional registry reference.
 
@@ -163,19 +184,24 @@ class ServiceBase(ABC):
             service_registry: Reference to global ServiceRegistry for calling other services
         """
         self.service_registry = service_registry
-        self.logger = logging.getLogger(f"{self.__class__.__module__}.{self.__class__.__name__}")
+        self.logger = get_logger(f"{self.__class__.__module__}.{self.__class__.__name__}")
         self._actions: Dict[str, ServiceAction] = {}
         self._load_actions()
 
-    @abstractmethod
     def get_actions(self) -> List[ServiceAction]:
         """
         Define all actions this service provides.
 
+        Override in subclasses to expose discoverable actions to the
+        ServiceRegistry and LLM-agent tooling.  The default implementation
+        returns an empty list so that domain services (ContentService,
+        FinancialService, etc.) can extend ServiceBase without being
+        forced to implement the full action-schema pattern immediately.
+
         Returns:
-            List of ServiceAction objects
+            List of ServiceAction objects (empty by default)
         """
-        pass
+        return []
 
     def _load_actions(self):
         """Load and register actions from get_actions()"""
@@ -247,7 +273,8 @@ class ServiceBase(ABC):
         except Exception as e:
             execution_time = (datetime.now() - start_time).total_seconds() * 1000
             self.logger.error(
-                f"Unexpected error in action '{action_name}': {str(e)}", exc_info=True
+                f"[execute_action] Unexpected error in action '{action_name}': {str(e)}",
+                exc_info=True,
             )
             return ActionResult(
                 action=action_name,
@@ -303,6 +330,25 @@ class ServiceBase(ABC):
         """Get all actions provided by this service"""
         return list(self._actions.values())
 
+    def get_service_metadata(self) -> Dict[str, Any]:
+        """
+        Return a dict describing this service for registry discovery.
+
+        Subclasses should override this to provide richer metadata
+        (capabilities, model tiers used, etc.).  The base implementation
+        returns the minimum required by ServiceRegistry.
+
+        Returns:
+            Dict with at least: name, version, description, action_count
+        """
+        return {
+            "name": self.name,
+            "version": self.version,
+            "description": self.description,
+            "action_count": len(self._actions),
+            "actions": [a.name for a in self._actions.values()],
+        }
+
 
 # ============================================================================
 # SERVICE REGISTRY
@@ -322,7 +368,7 @@ class ServiceRegistry:
 
     def __init__(self):
         self.services: Dict[str, ServiceBase] = {}
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger(__name__)
 
     def register(self, service: ServiceBase) -> None:
         """Register a service"""

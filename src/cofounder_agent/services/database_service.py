@@ -105,7 +105,7 @@ class DatabaseService:
                 "✅ All database modules initialized (users, tasks, content, admin, writing_style)"
             )
         except Exception as e:
-            logger.error(f"❌ Failed to initialize database: {e}")
+            logger.error(f"❌ Failed to initialize database: {e}", exc_info=True)
             raise
 
     async def close(self) -> None:
@@ -166,6 +166,16 @@ class DatabaseService:
         """Delegate to tasks module."""
         return await self.tasks.update_task_status(task_id, status, result)
 
+    async def get_tasks_by_ids(self, task_ids: list) -> dict:
+        """Delegate bulk task fetch to tasks module (1 query for all IDs)."""
+        return await self.tasks.get_tasks_by_ids(task_ids)
+
+    async def bulk_update_task_statuses(
+        self, task_ids: list, new_status: str
+    ) -> dict:
+        """Delegate bulk status update to tasks module (2 queries regardless of batch size)."""
+        return await self.tasks.bulk_update_task_statuses(task_ids, new_status)
+
     async def update_task(self, task_id: str, updates: dict) -> bool:
         """Delegate to tasks module."""
         return await self.tasks.update_task(task_id, updates)
@@ -176,9 +186,10 @@ class DatabaseService:
         limit: int = 20,
         status: Optional[str] = None,
         category: Optional[str] = None,
+        search: Optional[str] = None,
     ) -> Dict:
         """Delegate to tasks module."""
-        return await self.tasks.get_tasks_paginated(offset, limit, status, category)
+        return await self.tasks.get_tasks_paginated(offset, limit, status, category, search)
 
     async def get_task_counts(self) -> Dict:
         """Delegate to tasks module."""
@@ -197,10 +208,16 @@ class DatabaseService:
         return await self.tasks.get_queued_tasks(limit)
 
     async def get_tasks_by_date_range(
-        self, start_date=None, end_date=None, status: Optional[str] = None, limit: int = 10000
+        self, start_date=None, end_date=None, status: Optional[str] = None, limit: int = 500
     ) -> List[Dict]:
         """Delegate to tasks module."""
         return await self.tasks.get_tasks_by_date_range(start_date, end_date, status, limit)
+
+    async def get_kpi_aggregates(
+        self, start_date=None, end_date=None
+    ) -> Dict:
+        """Delegate to tasks module — single-query KPI aggregation (issue #696)."""
+        return await self.tasks.get_kpi_aggregates(start_date, end_date)
 
     async def delete_task(self, task_id: str) -> bool:
         """Delegate to tasks module."""

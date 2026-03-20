@@ -16,11 +16,10 @@ Error Handling: Comprehensive with proper HTTP status codes
 Async: Full async/await support
 """
 
-import logging
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from services.logger_config import get_logger
+from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
 from routes.auth_unified import get_current_user
 from schemas.workflow_history_schemas import (
@@ -31,14 +30,9 @@ from schemas.workflow_history_schemas import (
 )
 from services.workflow_history import WorkflowHistoryService
 
-logger = logging.getLogger(__name__)
-
-# Initialize router - using /api/workflow prefix
-# NOTE: Also creates alias /api/workflows for backward compatibility
-router = APIRouter(prefix="/api/workflow", tags=["workflow-history"])
-
-# Also create alias router for backward compatibility with /api/workflows
-alias_router = APIRouter(prefix="/api/workflows", tags=["workflow-history"])
+logger = get_logger(__name__)
+# Initialize router - using /api/workflows prefix (plural, consistent with all other workflow routes)
+router = APIRouter(prefix="/api/workflows", tags=["workflow-history"])
 
 # Workflow history service (initialized with db_pool from main)
 _history_service: Optional[WorkflowHistoryService] = None
@@ -69,7 +63,7 @@ def initialize_history_service(db_pool) -> None:
 @router.get("/history", response_model=WorkflowHistoryResponse)
 async def get_workflow_history(
     current_user: Dict[str, Any] = Depends(get_current_user),
-    limit: int = Query(50, ge=1, le=500, description="Number of results to return"),
+    limit: int = Query(20, ge=1, le=100, description="Number of results to return"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
     status: Optional[str] = Query(
         None, description="Filter by status: PENDING, RUNNING, COMPLETED, FAILED, PAUSED"
@@ -80,7 +74,7 @@ async def get_workflow_history(
     Get workflow execution history for the current user.
 
     Query Parameters:
-    - limit: Number of results (1-500, default: 50)
+    - limit: Number of results (1-100, default: 20)
     - offset: Pagination offset (default: 0)
     - status: Optional status filter
 
@@ -111,9 +105,9 @@ async def get_workflow_history(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Failed to get workflow history: {e}")
+        logger.error(f"❌ Failed to get workflow history: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Failed to retrieve workflow history: {str(e)}"
+            status_code=500, detail="Failed to retrieve workflow history"
         )
 
 
@@ -152,9 +146,9 @@ async def get_execution_details(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Failed to get execution details: {e}")
+        logger.error(f"❌ Failed to get execution details: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Failed to retrieve execution details: {str(e)}"
+            status_code=500, detail="Failed to retrieve execution details"
         )
 
 
@@ -190,8 +184,8 @@ async def get_workflow_statistics(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Failed to get workflow statistics: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve statistics: {str(e)}")
+        logger.error(f"❌ Failed to get workflow statistics: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve statistics")
 
 
 @router.get("/performance-metrics", response_model=PerformanceMetrics)
@@ -229,9 +223,9 @@ async def get_performance_metrics(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Failed to get performance metrics: {e}")
+        logger.error(f"❌ Failed to get performance metrics: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Failed to retrieve performance metrics: {str(e)}"
+            status_code=500, detail="Failed to retrieve performance metrics"
         )
 
 
@@ -239,7 +233,7 @@ async def get_performance_metrics(
 async def get_workflow_type_history(
     workflow_id: str = Path(..., description="ID of the workflow"),
     current_user: Dict[str, Any] = Depends(get_current_user),
-    limit: int = Query(50, ge=1, le=500),
+    limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     history_service: WorkflowHistoryService = Depends(get_history_service),
 ) -> Dict[str, Any]:
@@ -250,7 +244,7 @@ async def get_workflow_type_history(
     - workflow_id: ID of the workflow to get history for
 
     Query Parameters:
-    - limit: Number of results (1-500, default: 50)
+    - limit: Number of results (1-100, default: 20)
     - offset: Pagination offset (default: 0)
 
     Returns:
@@ -284,38 +278,9 @@ async def get_workflow_type_history(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Failed to get workflow history: {e}")
+        logger.error(f"❌ Failed to get workflow history: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Failed to retrieve workflow history: {str(e)}"
+            status_code=500, detail="Failed to retrieve workflow history"
         )
 
 
-# ============================================================================
-# BACKWARD COMPATIBILITY ALIAS ROUTES (/api/workflows/*)
-# ============================================================================
-
-
-@alias_router.get("/history", response_model=WorkflowHistoryResponse)
-async def get_workflow_history_alias(
-    current_user: Dict[str, Any] = Depends(get_current_user),
-    limit: int = Query(50, ge=1, le=500),
-    offset: int = Query(0, ge=0),
-    status: Optional[str] = Query(None),
-    history_service: WorkflowHistoryService = Depends(get_history_service),
-):
-    """Alias for /api/workflow/history - maintains backward compatibility"""
-    user_id = current_user.get("id")
-    if not user_id:
-        raise HTTPException(status_code=401, detail="User ID not found in token")
-
-    result = await history_service.get_user_workflow_history(
-        user_id=user_id, limit=limit, offset=offset, status_filter=status
-    )
-
-    return WorkflowHistoryResponse(
-        executions=result["executions"],
-        total=result["total"],
-        limit=limit,
-        offset=offset,
-        status_filter=status,
-    )

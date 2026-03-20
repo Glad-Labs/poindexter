@@ -25,7 +25,8 @@
         "panel": "dedicated",
         "reveal": "always",
         "clear": false
-      }
+      },
+      "group": "build"
     },
     {
       "label": "Start Public Site",
@@ -45,7 +46,7 @@
     {
       "label": "Start Oversight Hub",
       "type": "shell",
-      "command": "npm start",
+      "command": "npm run dev",
       "options": {
         "cwd": "${workspaceFolder}/web/oversight-hub"
       },
@@ -59,7 +60,11 @@
     },
     {
       "label": "Start All Services",
-      "dependsOn": ["Start Co-founder Agent", "Start Public Site", "Start Oversight Hub"],
+      "dependsOn": [
+        "Start Co-founder Agent",
+        "Start Public Site",
+        "Start Oversight Hub"
+      ],
       "problemMatcher": [],
       "group": {
         "kind": "build",

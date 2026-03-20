@@ -11,8 +11,8 @@ Handles all content-related database operations including:
 """
 
 import json
-import logging
-from datetime import datetime
+from services.logger_config import get_logger
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -33,10 +33,10 @@ from schemas.model_converter import ModelConverter
 from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 
 from .database_mixin import DatabaseServiceMixin
+from .decorators import log_query_performance
+from .error_handler import DatabaseError
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class ContentDatabase(DatabaseServiceMixin):
     """Content-related database operations (posts, quality, metrics)."""
 
@@ -49,6 +49,7 @@ class ContentDatabase(DatabaseServiceMixin):
         """
         self.pool = pool
 
+    @log_query_performance(operation="create_post", category="content_write")
     async def create_post(self, post_data: Dict[str, Any]) -> PostResponse:
         """
         Create new post in posts table with all metadata fields.
@@ -81,20 +82,18 @@ class ContentDatabase(DatabaseServiceMixin):
         # ✅ Log all values being inserted for debugging
         logger.info(f"🔍 INSERTING POST WITH THESE VALUES:")
         logger.info(f"   - id: {post_id}")
-        logger.info(
-            f"   - title: {post_data.get('title')[:50] if post_data.get('title') else 'EMPTY'}"
-        )
+        logger.info(f"   - title: {str(post_data.get('title') or 'EMPTY')[:50]}")
         logger.info(f"   - slug: {post_data.get('slug')}")
         logger.info(f"   - featured_image_url: {post_data.get('featured_image_url')}")
         logger.info(f"   - seo_title: {post_data.get('seo_title')}")
         logger.info(
-            f"   - seo_description: {post_data.get('seo_description')[:50] if post_data.get('seo_description') else 'EMPTY'}"
+            f"   - seo_description: {str(post_data.get('seo_description') or 'EMPTY')[:50]}"
         )
         logger.info(f"   - seo_keywords: {seo_keywords}")
         logger.info(f"   - status: {post_data.get('status', 'draft')}")
         logger.info(f"   - author_id: {post_data.get('author_id')}")
         logger.info(f"   - category_id: {post_data.get('category_id')}")
-        logger.info(f"   - tag_ids: {tag_ids}")
+        logger.info(f"   - tag_ids (post_tags): {tag_ids}")
 
         async with self.pool.acquire() as conn:
             try:
@@ -104,29 +103,28 @@ class ContentDatabase(DatabaseServiceMixin):
                 row = await conn.fetchrow(
                     """
                     INSERT INTO posts (
-                        id, 
-                        title, 
-                        slug, 
-                        content, 
-                        excerpt, 
+                        id,
+                        title,
+                        slug,
+                        content,
+                        excerpt,
                         featured_image_url,
                         cover_image_url,
                         author_id,
                         category_id,
-                        tag_ids,
-                        status, 
+                        status,
                         published_at,
                         seo_title,
                         seo_description,
                         seo_keywords,
                         created_by,
                         updated_by,
-                        created_at, 
+                        created_at,
                         updated_at
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW(), NOW())
-                    RETURNING id, title, slug, content, excerpt, featured_image_url, cover_image_url, 
-                              author_id, category_id, tag_ids, status, published_at, created_at, updated_at
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), NOW())
+                    RETURNING id, title, slug, content, excerpt, featured_image_url, cover_image_url,
+                              author_id, category_id, status, published_at, created_at, updated_at
                     """,
                     post_id,
                     post_data.get("title"),
@@ -137,10 +135,9 @@ class ContentDatabase(DatabaseServiceMixin):
                     post_data.get("cover_image_url"),
                     post_data.get("author_id"),
                     post_data.get("category_id"),
-                    tag_ids,
                     post_data.get("status", "draft"),
                     # published_at: Set to NOW() if published, None if draft
-                    datetime.utcnow() if is_published else None,
+                    datetime.now(timezone.utc) if is_published else None,
                     post_data.get("seo_title"),
                     post_data.get("seo_description"),
                     seo_keywords,
@@ -148,7 +145,26 @@ class ContentDatabase(DatabaseServiceMixin):
                     post_data.get("updated_by"),
                 )
                 if not row:
-                    raise Exception("Insert query returned no row - post creation failed")
+                    raise DatabaseError("Insert query returned no row - post creation failed")
+
+                # Also write to the post_tags junction table (authoritative source per migration 014).
+                # tag_ids on posts is kept in sync for backward compat but post_tags is canonical.
+                # Single INSERT with unnest() replaces N per-tag round-trips (issue #703).
+                if tag_ids:
+                    clean_ids = [str(tid) for tid in tag_ids if tid]
+                    if clean_ids:
+                        await conn.execute(
+                            """
+                            INSERT INTO post_tags (post_id, tag_id)
+                            SELECT $1, unnest($2::text[])
+                            ON CONFLICT (post_id, tag_id) DO NOTHING
+                            """,
+                            post_id,
+                            clean_ids,
+                        )
+                        logger.info(
+                            f"   - Inserted {len(clean_ids)} tag(s) into post_tags for post {post_id}"
+                        )
 
                 logger.info(f"✅ POST CREATED SUCCESSFULLY in database with ID: {post_id}")
                 logger.info(f"   - Status: {post_data.get('status', 'draft')}")
@@ -156,8 +172,11 @@ class ContentDatabase(DatabaseServiceMixin):
                 return ModelConverter.to_post_response(row)
             except Exception as db_error:
                 logger.error(f"❌ DATABASE ERROR while creating post: {db_error}", exc_info=True)
-                raise Exception(f"Failed to create post in database: {str(db_error)}")
+                raise DatabaseError(f"Failed to create post in database: {str(db_error)}")
 
+    @log_query_performance(
+        operation="get_post_by_slug", category="content_retrieval", slow_threshold_ms=50
+    )
     async def get_post_by_slug(self, slug: str) -> Optional[PostResponse]:
         """
         Get post by slug - used to check for existing posts before creation.
@@ -190,9 +209,12 @@ class ContentDatabase(DatabaseServiceMixin):
                 row = await conn.fetchrow(sql, *params)
                 return ModelConverter.to_post_response(row) if row else None
         except Exception as e:
-            logger.error(f"❌ Error getting post by slug '{slug}': {e}")
+            logger.error(
+                f"[_get_post_by_slug] ❌ Error getting post by slug '{slug}': {e}", exc_info=True
+            )
             return None
 
+    @log_query_performance(operation="update_post", category="content_write")
     async def update_post(self, post_id: int, updates: Dict[str, Any]) -> bool:
         """
         Update a post with new values (e.g., featured_image_url, status).
@@ -205,58 +227,49 @@ class ContentDatabase(DatabaseServiceMixin):
             True if updated, False otherwise
         """
         try:
-            # Build SET clause dynamically
-            set_clauses = []
-            values = []
-            param_count = 1
+            # Allowlist of columns that may be updated via this method
+            _ALLOWED_POST_COLUMNS = frozenset(
+                ["title", "slug", "content", "excerpt", "featured_image_url", "status", "tags"]
+            )
 
-            for key, value in updates.items():
-                # Validate column exists
-                if key not in [
-                    "title",
-                    "slug",
-                    "content",
-                    "excerpt",
-                    "featured_image_url",
-                    "status",
-                    "tags",
-                ]:
-                    logger.warning(f"Skipping invalid column for update: {key}")
-                    continue
+            # Filter to only allowed fields; ParameterizedQueryBuilder will also
+            # run SQLIdentifierValidator.safe_identifier() on each column name.
+            filtered: Dict[str, Any] = {
+                k: v for k, v in updates.items() if k in _ALLOWED_POST_COLUMNS
+            }
+            for skipped in set(updates) - _ALLOWED_POST_COLUMNS:
+                logger.warning("Skipping invalid column for update: %s", skipped)
 
-                set_clauses.append(f"{key} = ${param_count}")
-                values.append(value)
-                param_count += 1
-
-            if not set_clauses:
-                logger.warning(f"No valid columns to update for post {post_id}")
+            if not filtered:
+                logger.warning("No valid columns to update for post %s", post_id)
                 return False
 
-            # Add post_id as final parameter
-            values.append(post_id)
-            param_count += 1
+            # Always refresh updated_at using a Python datetime
+            filtered["updated_at"] = datetime.now(timezone.utc)
 
-            query = f"""
-                UPDATE posts
-                SET {', '.join(set_clauses)}, updated_at = NOW()
-                WHERE id = ${param_count - 1}
-                RETURNING id, title, slug, featured_image_url, status
-            """
+            builder = ParameterizedQueryBuilder()
+            sql, params = builder.update(
+                table="posts",
+                updates=filtered,
+                where_clauses=[("id", SQLOperator.EQ, post_id)],
+                return_columns=["id", "title", "slug", "featured_image_url", "status"],
+            )
 
             async with self.pool.acquire() as conn:
-                result = await conn.fetchrow(query, *values)
+                result = await conn.fetchrow(sql, *params)
 
                 if result:
-                    logger.info(f"✅ Updated post {post_id}: {dict(result)}")
+                    logger.info("Updated post %s: %s", post_id, dict(result))
                     return True
                 else:
-                    logger.warning(f"⚠️ Post not found for update: {post_id}")
+                    logger.warning("Post not found for update: %s", post_id)
                     return False
 
         except Exception as e:
-            logger.error(f"❌ Error updating post {post_id}: {e}")
+            logger.error(f"[_update_post] ❌ Error updating post {post_id}: {e}", exc_info=True)
             return False
 
+    @log_query_performance(operation="get_all_categories", category="content_retrieval")
     async def get_all_categories(self) -> List[CategoryResponse]:
         """
         Get all categories for matching.
@@ -267,13 +280,14 @@ class ContentDatabase(DatabaseServiceMixin):
         try:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(
-                    "SELECT id, name, slug, description FROM categories ORDER BY name"
+                    "SELECT id, name, slug, description FROM categories ORDER BY name LIMIT 1000"
                 )
                 return [ModelConverter.to_category_response(row) for row in rows]
         except Exception as e:
-            logger.warning(f"Could not fetch categories: {e}")
+            logger.error(f"[_get_all_categories] Failed to fetch categories: {e}", exc_info=True)
             return []
 
+    @log_query_performance(operation="get_all_tags", category="content_retrieval")
     async def get_all_tags(self) -> List[TagResponse]:
         """
         Get all tags for matching.
@@ -284,13 +298,14 @@ class ContentDatabase(DatabaseServiceMixin):
         try:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(
-                    "SELECT id, name, slug, description FROM tags ORDER BY name"
+                    "SELECT id, name, slug, description FROM tags ORDER BY name LIMIT 500"
                 )
                 return [ModelConverter.to_tag_response(row) for row in rows]
         except Exception as e:
-            logger.warning(f"Could not fetch tags: {e}")
+            logger.error(f"[_get_all_tags] Failed to fetch tags: {e}", exc_info=True)
             return []
 
+    @log_query_performance(operation="get_author_by_name", category="content_retrieval")
     async def get_author_by_name(self, name: str) -> Optional[AuthorResponse]:
         """
         Get author by name.
@@ -307,9 +322,12 @@ class ContentDatabase(DatabaseServiceMixin):
                 row = await conn.fetchrow(sql, name)
                 return ModelConverter.to_author_response(row) if row else None
         except Exception as e:
-            logger.warning(f"Could not fetch author by name: {e}")
+            logger.error(
+                f"[_get_author_by_name] Failed to fetch author by name: {e}", exc_info=True
+            )
             return None
 
+    @log_query_performance(operation="create_quality_evaluation", category="content_write")
     async def create_quality_evaluation(
         self, eval_data: Dict[str, Any]
     ) -> QualityEvaluationResponse:
@@ -357,7 +375,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 criteria.get("seo_quality", 0),
                 criteria.get("readability", 0),
                 criteria.get("engagement", 0),
-                eval_data["overall_score"] >= 70,
+                eval_data["overall_score"] >= 70,  # 0-100 scale; 70 = passing (7.0/10)
                 eval_data.get("feedback"),
                 json.dumps(eval_data.get("suggestions", [])),
                 eval_data.get("evaluated_by", "QualityEvaluator"),
@@ -371,9 +389,13 @@ class ContentDatabase(DatabaseServiceMixin):
                 logger.info(f"✅ Created quality_evaluation for {eval_data['content_id']}")
                 return ModelConverter.to_quality_evaluation_response(row)
         except Exception as e:
-            logger.error(f"❌ Error creating quality_evaluation: {e}")
+            logger.error(
+                f"[_create_quality_evaluation] ❌ Error creating quality_evaluation: {e}",
+                exc_info=True,
+            )
             raise
 
+    @log_query_performance(operation="create_quality_improvement_log", category="content_write")
     async def create_quality_improvement_log(
         self, log_data: Dict[str, Any]
     ) -> QualityImprovementLogResponse:
@@ -405,7 +427,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 improved - initial,
                 log_data.get("refinement_type", "auto-critique"),
                 log_data.get("changes_made"),
-                improved >= 70,
+                improved >= 70,  # 0-100 scale; 70 = passing (7.0/10)
             ]
 
             async with self.pool.acquire() as conn:
@@ -413,9 +435,13 @@ class ContentDatabase(DatabaseServiceMixin):
                 logger.info(f"✅ Created quality_improvement_log: {initial:.0f} → {improved:.0f}")
                 return ModelConverter.to_quality_improvement_log_response(row)
         except Exception as e:
-            logger.error(f"❌ Error creating quality_improvement_log: {e}")
+            logger.error(
+                f"[_create_quality_improvement_log] ❌ Error creating quality_improvement_log: {e}",
+                exc_info=True,
+            )
             raise
 
+    @log_query_performance(operation="get_metrics", category="analytics", slow_threshold_ms=200)
     async def get_metrics(self) -> MetricsResponse:
         """
         Get system metrics from content_tasks database.
@@ -425,24 +451,25 @@ class ContentDatabase(DatabaseServiceMixin):
         """
         try:
             async with self.pool.acquire() as conn:
-                # Get task counts from content_tasks
-                total_tasks = await conn.fetchval("SELECT COUNT(*) FROM content_tasks")
+                # Consolidate task counts into a single query using FILTER to avoid
+                # 3 sequential COUNT scans (issue #472).
+                counts_row = await conn.fetchrow(
+                    """
+                    SELECT
+                        COUNT(*)                                              AS total_tasks,
+                        COUNT(*) FILTER (WHERE status = 'completed')         AS completed_tasks,
+                        COUNT(*) FILTER (WHERE status = 'failed')            AS failed_tasks,
+                        AVG(
+                            EXTRACT(EPOCH FROM (updated_at - created_at))
+                        ) FILTER (WHERE status = 'completed'
+                                    AND updated_at IS NOT NULL)              AS avg_seconds
+                    FROM content_tasks
+                    """
+                )
 
-                # Use parameterized queries for status-based counts
-                completed_tasks = await conn.fetchval(
-                    "SELECT COUNT(*) FROM content_tasks WHERE status = $1", "completed"
-                )
-                failed_tasks = await conn.fetchval(
-                    "SELECT COUNT(*) FROM content_tasks WHERE status = $1", "failed"
-                )
-
-                # Get pending/in-progress tasks
-                pending_tasks = await conn.fetchval(
-                    "SELECT COUNT(*) FROM content_tasks WHERE status IN ($1, $2, $3)",
-                    "pending",
-                    "in_progress",
-                    "queued",
-                )
+                total_tasks = int(counts_row["total_tasks"] or 0)
+                completed_tasks = int(counts_row["completed_tasks"] or 0)
+                failed_tasks = int(counts_row["failed_tasks"] or 0)
 
                 # Calculate rates
                 success_rate = (
@@ -451,58 +478,61 @@ class ContentDatabase(DatabaseServiceMixin):
                     else 0
                 )
 
-                # Calculate average execution time from completed tasks
+                # Average execution time (already computed in the same query)
                 avg_execution_time = 0
                 try:
-                    time_query = "SELECT AVG(EXTRACT(EPOCH FROM (updated_at - created_at))) as avg_seconds FROM content_tasks WHERE status = $1 AND updated_at IS NOT NULL"
-                    time_result = await conn.fetchrow(time_query, "completed")
-                    if time_result and time_result["avg_seconds"]:
-                        avg_execution_time = round(float(time_result["avg_seconds"]), 2)
+                    raw_avg = counts_row["avg_seconds"]
+                    if raw_avg is not None:
+                        avg_execution_time = round(float(raw_avg), 2)
                 except (ValueError, TypeError, AttributeError) as e:
-                    logger.warning(f"Could not calculate avg execution time (data type error): {e}")
-                except Exception as e:
                     logger.error(
-                        f"Unexpected error calculating avg execution time: {type(e).__name__}: {e}"
+                        f"Could not calculate avg execution time (data type error): {e}",
+                        exc_info=True,
                     )
 
-                # Calculate total cost from financial tracking (if implemented)
+                # Calculate total cost from financial tracking (if implemented).
+                # Kept as a separate query because cost_logs is a different table and
+                # may not exist in all environments.
                 total_cost = 0
                 try:
-                    cost_query = "SELECT SUM(cost_usd) as total FROM task_costs WHERE created_at >= NOW() - INTERVAL '30 days'"
+                    cost_query = "SELECT SUM(cost_usd) as total FROM cost_logs WHERE created_at >= NOW() - INTERVAL '30 days'"
                     cost_result = await conn.fetchrow(cost_query)
                     if cost_result and cost_result["total"]:
                         total_cost = round(float(cost_result["total"]), 2)
                 except (ValueError, TypeError, AttributeError) as e:
-                    logger.debug(f"Could not calculate total cost (data type error): {e}")
+                    logger.error(
+                        f"Could not calculate total cost (data type error): {e}",
+                        exc_info=True,
+                    )
                 except asyncpg.PostgresError as e:
                     # Table may not exist or permissions issue
-                    logger.debug(
-                        f"Cost tracking not available (database error): {type(e).__name__}"
+                    logger.error(
+                        f"Cost tracking not available (database error): {type(e).__name__}",
+                        exc_info=True,
                     )
                 except Exception as e:
                     logger.error(
-                        f"Unexpected error calculating total cost: {type(e).__name__}: {e}"
+                        f"[get_metrics] Unexpected error calculating total cost: {type(e).__name__}: {e}",
+                        exc_info=True,
                     )
 
                 return MetricsResponse(
-                    total_tasks=total_tasks or 0,
-                    completed_tasks=completed_tasks or 0,
-                    failed_tasks=failed_tasks or 0,
-                    pending_tasks=pending_tasks or 0,
-                    success_rate=round(success_rate, 2),
-                    avg_execution_time=avg_execution_time,
-                    total_cost=total_cost,
+                    totalTasks=total_tasks,
+                    completedTasks=completed_tasks,
+                    failedTasks=failed_tasks,
+                    successRate=round(success_rate, 2),
+                    avgExecutionTime=avg_execution_time,
+                    totalCost=total_cost,
                 )
         except Exception as e:
-            logger.error(f"❌ Failed to get metrics: {e}")
+            logger.error(f"[_get_metrics] ❌ Failed to get metrics: {e}", exc_info=True)
             return MetricsResponse(
-                total_tasks=0,
-                completed_tasks=0,
-                failed_tasks=0,
-                pending_tasks=0,
-                success_rate=0,
-                avg_execution_time=0,
-                total_cost=0,
+                totalTasks=0,
+                completedTasks=0,
+                failedTasks=0,
+                successRate=0,
+                avgExecutionTime=0,
+                totalCost=0,
             )
 
     async def create_orchestrator_training_data(
@@ -548,5 +578,8 @@ class ContentDatabase(DatabaseServiceMixin):
                 logger.info(f"✅ Created orchestrator_training_data: {train_data['execution_id']}")
                 return ModelConverter.to_orchestrator_training_data_response(row)
         except Exception as e:
-            logger.error(f"❌ Error creating orchestrator_training_data: {e}")
+            logger.error(
+                f"[_create_orchestrator_training_data] ❌ Error creating orchestrator_training_data: {e}",
+                exc_info=True,
+            )
             raise

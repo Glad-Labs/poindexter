@@ -6,7 +6,7 @@ Implements PostgreSQL database with REST API command queue integration
 
 import sys
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 # Third-party imports
@@ -19,7 +19,6 @@ from config import get_config
 # Load configuration
 config = get_config()
 
-from services.auth import AuthService
 from services.container import service_container
 
 # Import services
@@ -94,12 +93,6 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         app.state.startup_complete = True
         logger.debug("[LIFESPAN] ✅ All services injected into app.state")
 
-        # Initialize auth service
-        logger.info("[LIFESPAN] Initializing authentication service. ..")
-        auth_service = AuthService()
-        service_container.register("auth", auth_service)
-        logger.info("[LIFESPAN] ✅ Authentication service initialized")
-
         # Initialize capability system
         logger.info("[LIFESPAN] Initializing capability system. ..")
         try:
@@ -108,7 +101,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             register_example_capabilities()
             logger.info("[LIFESPAN] ✅ Capability system initialized with example capabilities")
         except Exception as e:
-            logger.warning(f"[LIFESPAN] ⚠️ Failed to initialize capabilities: {e}")
+            logger.warning(f"[LIFESPAN] ⚠️ Failed to initialize capabilities: {e}", exc_info=True)
 
         # Initialize quality service
         logger.info("[LIFESPAN] Initializing quality service. ..")
@@ -128,6 +121,11 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         )
         logger.info("[LIFESPAN] ✅ Services registered in global DI container")
 
+        # Start the background task executor now that all services are wired up
+        logger.info("[LIFESPAN] Starting background task executor...")
+        await services["task_executor"].start()
+        logger.info("[LIFESPAN] ✅ Task executor started")
+
         logger.info("[OK] Lifespan: Yielding control to FastAPI application. ..")
         try:
             logger.info("[OK] Application is now running")
@@ -139,9 +137,9 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
     except Exception as e:
         logger.error(f"Critical startup failure: {str(e)}", exc_info=True)
         try:
-            logger.error(f"[ERROR] EXCEPTION IN LIFESPAN: {str(e)}")
+            logger.error(f"[ERROR] EXCEPTION IN LIFESPAN: {str(e)}", exc_info=True)
         except UnicodeEncodeError:
-            logger.error(f"[ERROR] EXCEPTION IN LIFESPAN: {str(e)}")
+            logger.error(f"[ERROR] EXCEPTION IN LIFESPAN: {str(e)}", exc_info=True)
         app.state.startup_error = str(e)
         app.state.startup_complete = True
         raise
@@ -178,7 +176,7 @@ for complete business operations including:
 Most endpoints require JWT authentication via the `Authorization: Bearer <token>` header.
 Use the `/api/auth/logout` or GitHub OAuth endpoints to obtain tokens.
 """,
-    version="3.0.1",
+    version=config.app_version,
     lifespan=lifespan,
     contact={
         "name": "Glad Labs Support",
@@ -238,8 +236,8 @@ async def api_health():
         health_data = {
             "status": "healthy",
             "service": "cofounder-agent",
-            "version": "3.0.1",
-            "timestamp": datetime.utcnow().isoformat(),
+            "version": config.app_version,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "components": {},
         }
 
@@ -263,10 +261,43 @@ async def api_health():
                 db_health = await database_service.health_check()
                 health_data["components"]["database"] = db_health.get("status", "unknown")
             except Exception as e:  # pylint: disable=broad-except
-                logger.warning("Database health check failed in /api/health: %s", str(e))
+                logger.warning("Database health check failed in /api/health: %s", str(e), exc_info=True)
                 health_data["components"]["database"] = "degraded"
         else:
             health_data["components"]["database"] = "unavailable"
+
+        # Include task executor liveness and queue depth (#580)
+        task_executor = getattr(app.state, "task_executor", None)
+        if task_executor is not None:
+            try:
+                executor_stats = task_executor.get_stats()
+                # Fetch pending/in-progress counts from DB for queue-depth monitoring
+                pending_count = 0
+                in_progress_count = 0
+                if database_service:
+                    try:
+                        task_counts = await database_service.tasks.get_task_counts()
+                        pending_count = getattr(task_counts, "pending", 0)
+                        in_progress_count = getattr(task_counts, "in_progress", 0)
+                    except Exception:  # pylint: disable=broad-except
+                        pass  # Non-critical — executor stats still returned
+                health_data["components"]["task_executor"] = {
+                    "running": executor_stats.get("running", False),
+                    "pending_task_count": pending_count,
+                    "in_progress_count": in_progress_count,
+                    "total_processed": executor_stats.get("task_count", 0),
+                    "success_count": executor_stats.get("success_count", 0),
+                    "error_count": executor_stats.get("error_count", 0),
+                }
+                # Degrade overall status if executor is not running
+                if not executor_stats.get("running", False) and health_data["status"] == "healthy":
+                    health_data["status"] = "degraded"
+                    health_data["components"]["task_executor"]["degraded_reason"] = "executor_not_running"
+            except Exception as e:  # pylint: disable=broad-except
+                logger.warning("Task executor health check failed: %s", str(e), exc_info=True)
+                health_data["components"]["task_executor"] = "unavailable"
+        else:
+            health_data["components"]["task_executor"] = "unavailable"
 
         return health_data
     except Exception as e:  # pylint: disable=broad-except
@@ -402,7 +433,7 @@ async def process_command(
             metadata=response.get("metadata"),
         )
     except Exception as e:  # pylint: disable=broad-except
-        logger.error(f"Error processing command: {str(e)} | command={command.command}")
+        logger.error(f"Error processing command: {str(e)} | command={command.command}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"An internal error occurred: {str(e)}") from e
 
 
@@ -413,7 +444,7 @@ async def root():
     """
     return {
         "message": "Glad Labs AI Co-Founder is running",
-        "version": "3.0.1",
+        "version": config.app_version,
         "database_enabled": hasattr(app.state, "database") and app.state.database is not None,
     }
 

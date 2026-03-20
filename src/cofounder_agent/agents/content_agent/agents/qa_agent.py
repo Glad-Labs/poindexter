@@ -1,14 +1,11 @@
-import logging
+from services.logger_config import get_logger
+from services.prompt_manager import get_prompt_manager
 
-from ....services.prompt_manager import get_prompt_manager
-from ..config import config
 from ..services.llm_client import LLMClient
 from ..utils.data_models import BlogPost
 from ..utils.tools import CrewAIToolsFactory
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class QAAgent:
     def __init__(self, llm_client: LLMClient):
         logger.info("Initializing QAAgent (v2 - Using centralized prompt manager)")
@@ -47,7 +44,7 @@ class QAAgent:
         try:
             response_data = await self.llm_client.generate_json(prompt)
         except Exception as e:
-            logger.error(f"QAAgent: Failed to get JSON from LLM: {e}")
+            logger.error(f"QAAgent: Failed to get JSON from LLM: {e}", exc_info=True)
             # Fallback: return generic rejection with error message
             return (
                 False,
@@ -64,6 +61,37 @@ class QAAgent:
             approved = response_data.get("approved", False)
             feedback = response_data.get("feedback", "No feedback provided.")
 
+            # Read and track the numerical quality score (issue #190).
+            # Previously the score was computed by the LLM but silently discarded;
+            # only the binary approved flag was used.
+            quality_score = 0.0
+            try:
+                quality_score = float(response_data.get("quality_score", 0))
+            except (TypeError, ValueError):
+                quality_score = 0.0
+
+            # Store score for trend tracking across refinement iterations
+            if hasattr(post, "quality_scores"):
+                post.quality_scores.append(quality_score)
+                logger.info(
+                    f"QAAgent: Quality score {quality_score:.1f}/100 "
+                    f"(history: {[f'{s:.0f}' for s in post.quality_scores]})"
+                )
+
+            # Enforce numeric threshold: approval requires both boolean AND score >= 70
+            if not isinstance(approved, bool):
+                approved = str(approved).lower() in ["true", "yes", "1"]
+
+            if approved and quality_score < 70.0 and quality_score > 0:
+                logger.warning(
+                    f"QAAgent: LLM approved but score {quality_score:.1f} < 70 threshold — overriding to rejected"
+                )
+                approved = False
+                feedback = (
+                    f"Score {quality_score:.1f}/100 below 70-point threshold. "
+                    f"Original feedback: {feedback}"
+                )
+
             # Validate feedback is a string
             if not isinstance(feedback, str):
                 feedback = str(feedback) if feedback else "No feedback provided."
@@ -72,16 +100,25 @@ class QAAgent:
             feedback = feedback.strip() if feedback else "No feedback provided."
             if not feedback or feedback == "null" or feedback == "None":
                 feedback = "QA review completed. Content ready for approval decision."
-
-            # Validate approved is boolean
-            if not isinstance(approved, bool):
-                approved = str(approved).lower() in ["true", "yes", "1"]
         except Exception as e:
-            logger.error(f"QAAgent: Error parsing response data: {e}")
-            return False, f"QA feedback parsing error. Content requires manual review."
+            logger.error(f"QAAgent: Error parsing response data: {e}", exc_info=True)
+            return False, "QA feedback parsing error. Content requires manual review."
 
-        logger.info(f"QAAgent: Review complete - Approved={approved}, Feedback={feedback[:100]}...")
+        logger.info(
+            f"QAAgent: Review complete - Approved={approved}, Score={quality_score:.1f}/100, "
+            f"Feedback={feedback[:100]}..."
+        )
 
         if approved:
-            return True, "Content approved by QA."
+            return True, f"Content approved by QA (score: {quality_score:.1f}/100)."
         return False, feedback
+
+
+def get_qa_agent():
+    """Factory used by workflow_executor dynamic loading.
+
+    Uses the workflow-compatible blog quality agent implementation.
+    """
+    from agents.blog_quality_agent import get_blog_quality_agent
+
+    return get_blog_quality_agent()

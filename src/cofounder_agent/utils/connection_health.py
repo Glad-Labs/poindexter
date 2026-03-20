@@ -6,13 +6,11 @@ for stale connections and pool exhaustion.
 """
 
 import asyncio
-import logging
-from datetime import datetime, timedelta, timezone
+from services.logger_config import get_logger
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class ConnectionPoolHealth:
     """Monitor and report on connection pool health."""
 
@@ -43,13 +41,13 @@ class ConnectionPoolHealth:
 
         try:
             # Try to acquire and release a connection
-            start_time = asyncio.get_event_loop().time()
+            start_time = asyncio.get_running_loop().time()
             async with asyncio.timeout(5):  # 5-second timeout for health check
                 async with self.pool.acquire() as conn:
                     # Simple query to verify connection works
                     result = await conn.fetchval("SELECT 1")
 
-            check_duration = asyncio.get_event_loop().time() - start_time
+            check_duration = asyncio.get_running_loop().time() - start_time
 
             # Get pool stats
             pool_size = self.pool.get_size()
@@ -84,7 +82,7 @@ class ConnectionPoolHealth:
             logger.warning(
                 f"⚠️  Pool health check timeout "
                 f"(consecutive failures: {self.consecutive_failures})"
-            )
+, exc_info=True)
             return status
 
         except Exception as e:
@@ -99,7 +97,7 @@ class ConnectionPoolHealth:
             logger.error(
                 f"❌ Pool health check failed: {e} "
                 f"(consecutive failures: {self.consecutive_failures})"
-            )
+, exc_info=True)
             return status
 
     async def auto_health_check(self) -> None:
@@ -127,7 +125,7 @@ class ConnectionPoolHealth:
                 logger.info("🏥 Connection pool health checks stopped")
                 break
             except Exception as e:
-                logger.error(f"Error in health check loop: {e}")
+                logger.error(f"Error in health check loop: {e}", exc_info=True)
                 await asyncio.sleep(self.check_interval)
 
     def get_health_summary(self) -> Dict[str, Any]:

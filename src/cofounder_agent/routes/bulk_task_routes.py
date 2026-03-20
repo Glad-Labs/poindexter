@@ -7,13 +7,10 @@ Provides endpoints for performing bulk operations on multiple tasks such as:
 - Rejecting multiple tasks (for audit tracking)
 """
 
-import logging
-from datetime import datetime, timezone
-from typing import List, Optional
+from services.logger_config import get_logger
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 
 from routes.auth_unified import get_current_user
 from schemas.bulk_task_schemas import (
@@ -26,8 +23,7 @@ from services.database_service import DatabaseService
 from utils.error_responses import ErrorResponseBuilder
 from utils.route_utils import get_database_dependency
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 router = APIRouter(prefix="/api/tasks", tags=["tasks-bulk"])
 
 
@@ -117,39 +113,36 @@ async def bulk_task_operations(
     }
     new_status = status_map[request.action]
 
-    updated_count = 0
-    failed_count = 0
+    # Validate UUID formats before hitting the DB — collect invalid IDs up-front.
     errors = []
-
+    valid_ids = []
     for task_id in request.task_ids:
         try:
-            # Validate UUID format
-            try:
-                UUID(task_id)
-            except ValueError:
-                errors.append({"task_id": task_id, "error": "Invalid UUID format"})
+            UUID(task_id)
+            valid_ids.append(task_id)
+        except ValueError:
+            errors.append({"task_id": task_id, "error": "Invalid UUID format"})
+
+    # Replace N+1 loop (2N queries) with 2 bulk queries regardless of batch size (#700).
+    updated_count = 0
+    failed_count = len(errors)
+
+    if valid_ids:
+        try:
+            result = await db_service.bulk_update_task_statuses(valid_ids, new_status)
+            updated_count = len(result["updated_ids"])
+            for missing_id in result["missing_ids"]:
+                errors.append({"task_id": missing_id, "error": "Task not found"})
                 failed_count += 1
-                continue
-
-            # Check if task exists
-            task = await db_service.get_task(task_id)
-            if not task:
-                errors.append({"task_id": task_id, "error": "Task not found"})
-                failed_count += 1
-                continue
-
-            # Update task status
-            await db_service.update_task_status(task_id, new_status)
-            updated_count += 1
-            logger.info(f"Updated task {task_id} status to {new_status}")
-
-        except HTTPException as e:
-            errors.append({"task_id": task_id, "error": e.detail})
-            failed_count += 1
+            logger.info(
+                f"Bulk {request.action}: updated {updated_count} tasks to '{new_status}'"
+            )
         except Exception as e:
-            errors.append({"task_id": task_id, "error": str(e)})
-            failed_count += 1
-            logger.error(f"Failed to update task {task_id}: {str(e)}")
+            logger.error(
+                f"[bulk_task_action] Bulk update failed for action={request.action}: {e}",
+                exc_info=True,
+            )
+            raise HTTPException(status_code=500, detail="Bulk update failed")
 
     return BulkTaskResponse(
         message=f"Bulk {request.action} completed: {updated_count} updated, {failed_count} failed",
@@ -184,44 +177,44 @@ async def bulk_create_tasks(
     **Returns:** List of created tasks with their IDs
     """
     try:
-        created_tasks = []
-        errors = []
+        user_id = current_user.get("user_id") if current_user else "system"
 
-        for i, task in enumerate(request.tasks):
-            try:
-                # Create task in database
-                result = await db_service.create_task(
-                    title=task.task_name,
-                    description=task.description or task.topic,
-                    status="pending",
-                    priority=task.priority,
-                    metadata={
-                        "topic": task.topic,
-                        "primary_keyword": task.primary_keyword,
-                        "target_audience": task.target_audience,
-                        "category": task.category,
-                    },
-                    created_by=current_user.get("user_id") if current_user else "system",
-                )
+        # Build task data dicts for batch insert
+        task_data_list = []
+        for task in request.tasks:
+            task_data_list.append({
+                "task_name": task.task_name,
+                "title": task.task_name,
+                "topic": task.topic,
+                "status": "pending",
+                "primary_keyword": task.primary_keyword,
+                "target_audience": task.target_audience,
+                "category": task.category,
+                "metadata": {
+                    "topic": task.topic,
+                    "primary_keyword": task.primary_keyword,
+                    "target_audience": task.target_audience,
+                    "category": task.category,
+                    "priority": task.priority,
+                    "created_by": user_id,
+                },
+            })
 
-                created_tasks.append(
-                    {
-                        "id": str(result.get("id")) if isinstance(result, dict) else str(result),
-                        "name": task.task_name,
-                        "status": "pending",
-                    }
-                )
-            except Exception as e:
-                logger.error(f"Error creating task {i+1}: {str(e)}")
-                errors.append({"index": i, "task_name": task.task_name, "error": str(e)})
+        # Single batch insert instead of N individual INSERTs
+        task_ids = await db_service.tasks.bulk_add_tasks(task_data_list)
+
+        created_tasks = [
+            {"id": tid, "name": task.task_name, "status": "pending"}
+            for tid, task in zip(task_ids, request.tasks)
+        ]
 
         return BulkCreateTasksResponse(
             created=len(created_tasks),
-            failed=len(errors),
+            failed=0,
             total=len(request.tasks),
             tasks=created_tasks if created_tasks else None,
-            errors=errors if errors else None,
+            errors=None,
         )
     except Exception as e:
-        logger.error(f"Bulk create error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Bulk create failed: {str(e)}")
+        logger.error(f"Bulk create error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Bulk create failed")

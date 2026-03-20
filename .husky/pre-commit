@@ -1,0 +1,6 @@
+#!/usr/bin/env sh
+# Glad Labs pre-commit hook
+# Runs lint-staged (format + lint on changed files) before every commit.
+# To skip in emergencies: git commit --no-verify
+
+npx lint-staged

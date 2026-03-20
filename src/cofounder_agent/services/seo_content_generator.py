@@ -11,21 +11,17 @@ Integrates all missing features from the original content agent:
 - Social media optimization (OG tags, Twitter cards)
 """
 
-import asyncio
-import json
-import logging
-import os
+from services.logger_config import get_logger
 import re
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from .prompt_manager import get_prompt_manager
+from utils.text_utils import extract_keywords_from_text
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 @dataclass
 class ContentMetadata:
     """Comprehensive content metadata"""
@@ -156,7 +152,18 @@ class ContentMetadataGenerator:
         return combined
 
     def _extract_keywords(self, content: str, count: int = 5) -> List[str]:
-        """Extract relevant keywords from content using enhanced filtering"""
+        """Extract relevant keywords from content.
+
+        Delegates to ``utils.text_utils.extract_keywords_from_text`` which
+        holds the canonical implementation shared across service files.
+        """
+        return extract_keywords_from_text(content, count=count)
+
+    def _extract_keywords_LEGACY(self, content: str, count: int = 5) -> List[str]:
+        """LEGACY — kept for reference only; do not call directly.
+
+        The implementation was moved to utils/text_utils.py (issue #288).
+        """
         # Comprehensive stopwords list - eliminates common words that aren't useful SEO keywords
         stopwords = {
             # Common pronouns and determiners

@@ -14,9 +14,8 @@ All handlers include:
 - Proper logging with context
 """
 
-import logging
+from services.logger_config import get_logger
 import uuid
-from typing import Callable
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
@@ -28,13 +27,12 @@ try:
 
     SENTRY_AVAILABLE = True
 except ImportError:
+    sentry_sdk = None  # type: ignore[assignment]
     SENTRY_AVAILABLE = False
 
-from services.error_handler import AppError, NotFoundError, ValidationError, create_error_response
+from services.error_handler import AppError, create_error_response
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 async def app_error_handler(request, exc: AppError):
     """
     Handle application-specific errors with structured response.
@@ -62,44 +60,70 @@ async def validation_error_handler(request, exc: RequestValidationError):
     Handle Pydantic request validation errors.
 
     Extracts field-level errors and returns them in structured format.
+    All field errors are included in the response under the ``errors`` key
+    so callers can surface field-specific validation feedback.
     """
     request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
 
-    # Extract field-level errors
+    # Extract all field-level errors (not just the first one)
     errors = {}
     for error in exc.errors():
-        field = ".".join(str(x) for x in error["loc"][1:])
+        # loc[0] is "body"/"query"/"path" — skip it; the rest is the field path
+        field_parts = error["loc"][1:]
+        field = ".".join(str(x) for x in field_parts) if field_parts else "unknown"
         errors[field] = error["msg"]
-
-    response = create_error_response(
-        ValidationError(
-            "Request validation failed", field=list(errors.keys())[0] if errors else "unknown"
-        ),
-        request_id=request_id,
-    )
 
     logger.warning(f"Request validation error: {errors}", extra={"request_id": request_id})
 
+    response_body = {
+        "error_code": "VALIDATION_ERROR",
+        "message": "Request validation failed",
+        "errors": errors,
+        "request_id": request_id,
+    }
+
     return JSONResponse(
         status_code=400,
-        content=response.model_dump(exclude_none=True),
+        content=response_body,
         headers={"X-Request-ID": request_id},
     )
+
+
+_STATUS_TO_ERROR_CODE = {
+    400: "VALIDATION_ERROR",
+    401: "UNAUTHORIZED",
+    403: "FORBIDDEN",
+    404: "NOT_FOUND",
+    409: "CONFLICT",
+    422: "INVALID_STATE",
+    429: "RATE_LIMITED",
+    500: "INTERNAL_ERROR",
+    502: "SERVICE_ERROR",
+    503: "SERVICE_UNAVAILABLE",
+    504: "TIMEOUT_ERROR",
+}
 
 
 async def http_exception_handler(request, exc: StarletteHTTPException):
     """
     Handle HTTPException from Starlette with structured response.
 
-    Converts HTTPException to standardized error format.
+    Maps HTTP status codes to semantic error codes so callers receive
+    consistent, machine-readable codes rather than the generic "HTTP_ERROR".
     """
     request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
+    error_code = _STATUS_TO_ERROR_CODE.get(exc.status_code, "HTTP_ERROR")
 
-    response = {
-        "error_code": "HTTP_ERROR",
-        "message": exc.detail or "HTTP Error",
-        "request_id": request_id,
-    }
+    # If detail is already a structured dict (e.g. from AppError.to_http_exception()),
+    # use it directly so the structured payload isn't double-wrapped.
+    if isinstance(exc.detail, dict):
+        response = {**exc.detail, "request_id": request_id}
+    else:
+        response = {
+            "error_code": error_code,
+            "message": exc.detail or "HTTP Error",
+            "request_id": request_id,
+        }
 
     logger.warning(f"HTTP Error {exc.status_code}: {exc.detail}", extra={"request_id": request_id})
 
@@ -122,7 +146,7 @@ async def generic_exception_handler(request, exc: Exception):
     )
 
     # Send to Sentry if available
-    if SENTRY_AVAILABLE:
+    if SENTRY_AVAILABLE and sentry_sdk is not None:
         with sentry_sdk.push_scope() as scope:
             scope.set_tag("request_id", request_id)
             scope.set_context(
@@ -161,9 +185,9 @@ def register_exception_handlers(app: FastAPI) -> None:
         app.include_router(...)
     """
     # Register handlers in order of specificity (most specific first)
-    app.add_exception_handler(AppError, app_error_handler)
-    app.add_exception_handler(RequestValidationError, validation_error_handler)
-    app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+    app.add_exception_handler(AppError, app_error_handler)  # type: ignore[arg-type]
+    app.add_exception_handler(RequestValidationError, validation_error_handler)  # type: ignore[arg-type]
+    app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # type: ignore[arg-type]
     app.add_exception_handler(Exception, generic_exception_handler)
 
     logger.info("✅ Exception handlers registered successfully")

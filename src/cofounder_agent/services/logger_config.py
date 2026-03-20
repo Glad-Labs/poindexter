@@ -27,15 +27,17 @@ This ensures all loggers use the centralized configuration.
 import logging
 import os
 import sys
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from typing import Optional
 
 # Try to import structlog for structured logging support
 try:
-    import structlog
-
-    STRUCTLOG_AVAILABLE = True
+    import structlog  # type: ignore[import-untyped]
 except ImportError:
-    STRUCTLOG_AVAILABLE = False
+    structlog = None  # type: ignore[assignment]
+
+STRUCTLOG_AVAILABLE = structlog is not None
 
 # ============================================================================
 # CONFIGURATION
@@ -44,6 +46,24 @@ except ImportError:
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 LOG_FORMAT = os.getenv("LOG_FORMAT", "json" if ENVIRONMENT == "production" else "text")
+LOG_DIR = Path(os.getenv("LOG_DIR", "logs"))
+LOG_FILE_NAME = os.getenv("LOG_FILE_NAME", "cofounder_agent.log")
+
+
+def _safe_int_env(name: str, default: int) -> int:
+    """Get integer environment variable with safe fallback."""
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+LOG_MAX_BYTES = _safe_int_env("LOG_MAX_BYTES", 10 * 1024 * 1024)
+LOG_BACKUP_COUNT = _safe_int_env("LOG_BACKUP_COUNT", 10)
+LOG_TO_FILE = os.getenv("LOG_TO_FILE", "true").lower() == "true"
 
 # Validate log level
 VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
@@ -61,7 +81,7 @@ def configure_structlog() -> bool:
     Configure structlog for structured JSON logging.
     Returns True if successful, False if structlog unavailable.
     """
-    if not STRUCTLOG_AVAILABLE:
+    if structlog is None:
         return False
 
     try:
@@ -112,35 +132,68 @@ def configure_standard_logging() -> None:
     """
     # Define format based on environment
     if LOG_FORMAT == "json":
-        # JSON format for production
+        # JSON format for production — includes request_id for log correlation.
+        # request_id is injected by middleware.request_id.RequestIDFilter;
+        # it defaults to '-' when no request is active (e.g., startup/shutdown).
         log_format = (
             '{"timestamp": "%(asctime)s", '
             '"level": "%(levelname)s", '
             '"logger": "%(name)s", '
+            '"request_id": "%(request_id)s", '
             '"message": "%(message)s"}'
         )
     else:
         # Human-readable format for development
-        log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        log_format = "%(asctime)s [%(request_id)s] %(name)s %(levelname)s - %(message)s"
+
+    class _RequestIDFormatter(logging.Formatter):
+        """Formatter that supplies a '-' request_id when the filter hasn't run."""
+
+        def format(self, record: logging.LogRecord) -> str:
+            if not hasattr(record, "request_id"):
+                record.request_id = "-"
+            return super().format(record)
+
+    # Use a UTF-8 stream to avoid UnicodeEncodeError on Windows (cp1252)
+    # when log messages contain emoji or other non-ASCII characters.
+    utf8_stream = open(sys.stdout.fileno(), mode="w", encoding="utf-8", closefd=False)
+    handlers: list[logging.Handler] = [logging.StreamHandler(utf8_stream)]
+
+    if LOG_TO_FILE:
+        try:
+            LOG_DIR.mkdir(parents=True, exist_ok=True)
+            file_handler = RotatingFileHandler(
+                LOG_DIR / LOG_FILE_NAME,
+                maxBytes=LOG_MAX_BYTES,
+                backupCount=LOG_BACKUP_COUNT,
+                encoding="utf-8",
+            )
+            handlers.append(file_handler)
+        except Exception as e:
+            print(f"Warning: Failed to configure rotating file logging: {e}", file=sys.stderr)
+
+    # Apply the request-ID-aware formatter to every handler
+    formatter = _RequestIDFormatter(log_format)
+    for handler in handlers:
+        handler.setFormatter(formatter)
 
     # Configure root logger
-    logging.basicConfig(
-        level=getattr(logging, LOG_LEVEL),
-        format=log_format,
-        handlers=[
-            logging.StreamHandler(sys.stdout),
-        ],
-    )
+    root = logging.getLogger()
+    root.setLevel(getattr(logging, LOG_LEVEL))
+    # Remove any handlers added by previous basicConfig calls
+    root.handlers.clear()
+    for handler in handlers:
+        root.addHandler(handler)
 
 
 # ============================================================================
 # INITIALIZATION
 # ============================================================================
 
-# Try to configure structlog first, fall back to standard logging
+# Always configure standard logging handlers first (stdout + rotating files).
+# Structlog (if available) then wraps standard logging for structured output.
+configure_standard_logging()
 _structlog_configured = configure_structlog()
-if not _structlog_configured:
-    configure_standard_logging()
 
 
 # ============================================================================
@@ -172,7 +225,7 @@ def get_logger(name: Optional[str] = None):
         logger = logger.bind(user_id=123)
         logger.info("user_action", action="login")
     """
-    if STRUCTLOG_AVAILABLE and _structlog_configured:
+    if structlog is not None and _structlog_configured:
         return structlog.get_logger(name)
     else:
         return logging.getLogger(name)
@@ -193,7 +246,7 @@ def set_log_level(level: str) -> None:
     if level_upper not in VALID_LOG_LEVELS:
         raise ValueError(f"Invalid log level: {level}. Must be one of {VALID_LOG_LEVELS}")
 
-    if STRUCTLOG_AVAILABLE and _structlog_configured:
+    if structlog is not None and _structlog_configured:
         # For structlog, we need to update the processors
         # This is a simplified approach - a full implementation would be more complex
         structlog.configure(
@@ -234,11 +287,11 @@ def set_log_level(level: str) -> None:
 if __name__ == "__main__":
     # Show configuration when module is run directly
     logger = get_logger("logger_config")
-    logger.info(
+    logger.info(  # type: ignore[call-arg]
         "Logger configuration initialized",
-        environment=ENVIRONMENT,
-        log_level=LOG_LEVEL,
-        log_format=LOG_FORMAT,
-        structlog_available=STRUCTLOG_AVAILABLE,
-        using_structlog=_structlog_configured,
+        environment=ENVIRONMENT,  # type: ignore[call-arg]
+        log_level=LOG_LEVEL,  # type: ignore[call-arg]
+        log_format=LOG_FORMAT,  # type: ignore[call-arg]
+        structlog_available=STRUCTLOG_AVAILABLE,  # type: ignore[call-arg]
+        using_structlog=_structlog_configured,  # type: ignore[call-arg]
     )

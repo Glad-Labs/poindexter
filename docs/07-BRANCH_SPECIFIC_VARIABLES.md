@@ -1,7 +1,7 @@
 # 07 - Environment & Configuration
 
-**Last Updated:** February 11, 2026  
-**Version:** 2.0.0  
+**Last Updated:** March 10, 2026
+**Version:** 3.0.81
 **Status:** ✅ Branch-Specific Reference
 
 ---
@@ -36,35 +36,35 @@ This is the **complete, authoritative guide** covering:
 DATABASE_URL=postgresql://postgres:password@localhost:5432/glad_labs
 OLLAMA_BASE_URL=http://localhost:11434
 LOG_LEVEL=debug
-REACT_APP_API_URL=http://localhost:8000
-NEXT_PUBLIC_API_URL=http://localhost:8000
+VITE_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 ```
 
 ### Staging (`dev` branch)
 
 - **Deployment:** GitHub Actions → Railway (auto on push)
-- **Config source:** GitHub Secrets (STAGING_*)
+- **Config source:** GitHub Secrets (STAGING\_\*)
 - **Database:** Railway PostgreSQL staging instance
 - **Services:** Public Site (Vercel), Backend (Railway)
 
 **Variables stored in GitHub Secrets:**
 
-- `STAGING_DATABASE_URL`
-- `STAGING_OPENAI_API_KEY`
+- `DATABASE_STAGING_URL`
+- `COFOUNDER_STAGING_OPENAI_API_KEY`
 
 ### Production (`main` branch)
 
 - **Deployment:** GitHub Actions → Vercel/Railway (auto on push)
-- **Config source:** GitHub Secrets (PROD_*)
+- **Config source:** GitHub Secrets (PROD\_\*)
 - **Database:** Production PostgreSQL instance
 - **Services:** Public Site (Vercel), Backend (Railway), Oversight Hub (Vercel)
 
 **Variables stored in GitHub Secrets:**
 
-- `PROD_DATABASE_URL`
-- `PROD_OPENAI_API_KEY`
-- `PROD_ANTHROPIC_API_KEY`
-- `PROD_GOOGLE_API_KEY`
+- `DATABASE_PROD_URL`
+- `COFOUNDER_PROD_OPENAI_API_KEY`
+- `COFOUNDER_PROD_ANTHROPIC_API_KEY`
+- `COFOUNDER_PROD_GOOGLE_API_KEY`
 
 ---
 
@@ -98,11 +98,11 @@ TASK_TIMEOUT_SECONDS=60
 
 ## 📊 Variable Inheritance
 
-| Variable | Source | Local | Staging | Production |
-|----------|--------|-------|---------|---------|
-| Database URL | .env.local / Secrets | localhost | Railway staging | Production DB |
-| LLM Keys | .env.local / Secrets | One key | Multiple keys | All keys |
-| Log Level | .env.local / Secrets | debug | info | warning |
+| Variable     | Source               | Local          | Staging             | Production      |
+| ------------ | -------------------- | -------------- | ------------------- | --------------- |
+| Database URL | .env.local / Secrets | localhost      | Railway staging     | Production DB   |
+| LLM Keys     | .env.local / Secrets | One key        | Multiple keys       | All keys        |
+| Log Level    | .env.local / Secrets | debug          | info                | warning         |
 | API Endpoint | .env.local / Secrets | localhost:8000 | staging.railway.app | api.gladlabs.ai |
 
 ---

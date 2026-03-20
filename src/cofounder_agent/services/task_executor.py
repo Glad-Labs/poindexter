@@ -17,10 +17,10 @@ import json
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
-# Import model selection helper
-from routes.task_routes import get_model_for_phase
+# Import model selection helper (from services layer, not routes)
+from services.model_router import get_model_for_phase
 
 # Import AI content generator for fallback
 from .ai_content_generator import AIContentGenerator
@@ -29,12 +29,27 @@ from .ai_content_generator import AIContentGenerator
 from .prompt_manager import get_prompt_manager
 
 # Import unified quality service for content validation
-from .quality_service import UnifiedQualityService
+from .quality_service import QualityAssessment, UnifiedQualityService
 
 # Import usage tracking
 from .usage_tracker import get_usage_tracker
 
+# Import task metrics for per-task LLM and phase instrumentation (issue #837)
+from .metrics_service import TaskMetrics
+
+from .error_handler import ServiceError
+
+# Import WebSocket progress emission (re-exported so tests can patch at this module)
+from .websocket_event_broadcaster import emit_notification, emit_task_progress  # noqa: F401
+
 logger = logging.getLogger(__name__)
+
+# Tasks stuck in "processing" for longer than this are considered stale and reset to "pending"
+STALE_TASK_TIMEOUT_MINUTES: int = 60
+# Maximum number of automatic retry attempts before a task is marked as failed
+MAX_TASK_RETRIES: int = 3
+# How often (seconds) to run the stale-task sweep within the process loop
+SWEEP_INTERVAL_SECONDS: int = 300
 
 
 class TaskExecutor:
@@ -69,6 +84,15 @@ class TaskExecutor:
         self.published_count = 0
         self._processor_task = None
         self.usage_tracker = get_usage_tracker()  # Initialize usage tracking
+        self.critique_loop: Optional[Any] = None  # Optional critique loop (not wired in current version)
+        self.last_poll_at: Optional[float] = None  # monotonic timestamp of last poll
+        self._poll_cycle: int = 0  # incremented each loop iteration
+        # Monotonic timestamp of the last time a task was picked up for processing.
+        # Used to detect executor stalls (issue #841).
+        self._last_task_started_at: Optional[float] = None
+        # How long (seconds) the queue may have pending tasks without any being
+        # picked up before we fire a CRITICAL alert.
+        self._IDLE_ALERT_THRESHOLD_S: int = 300  # 5 minutes
 
         logger.info(
             f"TaskExecutor initialized: orchestrator={'✅' if orchestrator else '❌'}, "
@@ -89,6 +113,10 @@ class TaskExecutor:
             if orch is not None:
                 return orch
         return self.orchestrator_initial
+
+    def inject_orchestrator(self, orchestrator) -> None:
+        """Inject or replace the orchestrator at runtime."""
+        self.orchestrator_initial = orchestrator
 
     async def start(self):
         """Start the background task processor"""
@@ -134,16 +162,30 @@ class TaskExecutor:
 
         while self.running:
             try:
+                import time as _time
+                self.last_poll_at = _time.monotonic()
+                self._poll_cycle += 1
                 # Get pending tasks from database
                 logger.debug(f"🔍 [TASK_EXEC_LOOP] Polling for pending tasks...")
                 pending_tasks = await self.database_service.get_pending_tasks(limit=10)
 
                 if pending_tasks:
-                    logger.info(f"� [TASK_EXEC_LOOP] Found {len(pending_tasks)} pending task(s)")
+                    logger.info(f"📋 [TASK_EXEC_LOOP] Found {len(pending_tasks)} pending task(s)")
                     for idx, task in enumerate(pending_tasks, 1):
                         logger.info(
                             f"   [{idx}] Task ID: {task.get('id')}, Name: {task.get('task_name')}, Status: {task.get('status')}"
                         )
+
+                    # Check whether this executor has been sitting on pending tasks
+                    # without starting any for longer than the idle threshold (#841).
+                    if self._last_task_started_at is not None:
+                        idle_s = _time.monotonic() - self._last_task_started_at
+                        if idle_s > self._IDLE_ALERT_THRESHOLD_S:
+                            logger.critical(
+                                f"[task_executor] Executor has not started a task in "
+                                f"{idle_s:.0f}s with {len(pending_tasks)} pending task(s) "
+                                f"in the queue — possible stall or hang"
+                            )
 
                     # Process each task
                     for task in pending_tasks:
@@ -156,6 +198,7 @@ class TaskExecutor:
 
                         try:
                             logger.info(f"⚡ [TASK_EXEC_LOOP] Starting to process task: {task_id}")
+                            self._last_task_started_at = _time.monotonic()
                             await self._process_single_task(task)
                             self.success_count += 1
                             logger.info(
@@ -184,7 +227,7 @@ class TaskExecutor:
                             except Exception as update_err:
                                 logger.error(
                                     f"❌ [TASK_EXEC_LOOP] Failed to update task status: {str(update_err)}"
-                                )
+, exc_info=True)
                             self.error_count += 1
                             logger.info(
                                 f"❌ [TASK_EXEC_LOOP] Task failed (total errors: {self.error_count})"
@@ -200,7 +243,12 @@ class TaskExecutor:
                 await asyncio.sleep(self.poll_interval)
 
             except asyncio.CancelledError:
-                logger.info("[TASK_EXEC_LOOP] Task executor processor loop cancelled")
+                # Log at CRITICAL so Sentry's default "new issue" alert fires and
+                # on-call engineers are paged when the executor loop exits (issue #556).
+                logger.critical(
+                    "[TASK_EXEC_LOOP] Task executor processor loop cancelled — "
+                    "background task processing has stopped"
+, exc_info=True)
                 break
             except Exception as e:
                 logger.error(
@@ -212,24 +260,46 @@ class TaskExecutor:
                 )
                 await asyncio.sleep(self.poll_interval)
 
-        logger.info("📋 [TASK_EXEC_LOOP] Task executor processor loop stopped")
+        # Log at CRITICAL so Sentry alerts fire immediately on loop exit (issue #556).
+        logger.critical(
+            "[TASK_EXEC_LOOP] Task executor processor loop stopped — "
+            f"processed={self.task_count} success={self.success_count} errors={self.error_count}"
+        )
 
     async def _process_single_task(self, task: Dict[str, Any]):
         """Process a single task through the pipeline"""
-        task_id = task.get("id")
+        task_id = task.get("id") or task.get("task_id")
+        if not task_id:
+            logger.warning("[TASK_SINGLE] Task has no id or task_id — skipping")
+            return
+
         task_name = task.get("task_name", "Untitled")
         topic = task.get("topic", "")
         category = task.get("category", "general")
 
-        logger.info(f"⏳ [TASK_SINGLE] Processing task: {task_id}")
-        logger.info(f"   Name: {task_name}")
-        logger.info(f"   Topic: {topic}")
-        logger.info(f"   Category: {category}")
+        # Bind a synthetic trace ID for the duration of this task's processing.
+        # Background tasks run outside any HTTP request context so _request_id_var
+        # would otherwise remain None (logged as "-"), making it impossible to
+        # correlate executor log lines with the API request that created the task.
+        # Using "task-<id>" as the trace ID allows `grep request_id=task-<id>` to
+        # find all log lines emitted by both the route handler and the executor.
+        from middleware.request_id import _request_id_var
 
-        # Set per-task timeout (15 minutes max for content generation)
-        TASK_TIMEOUT_SECONDS = 900  # 15 minutes
+        trace_id = f"task-{task_id}"
+        _trace_token = _request_id_var.set(trace_id)
 
+        # All execution is wrapped in try/finally so _trace_token is always reset
+        # when this task finishes — prevents the synthetic trace ID from leaking
+        # into the next task processed by the same asyncio worker.
         try:
+            logger.info(f"⏳ [TASK_SINGLE] Processing task: {task_id}")
+            logger.info(f"   Name: {task_name}")
+            logger.info(f"   Topic: {topic}")
+            logger.info(f"   Category: {category}")
+
+            # Set per-task timeout (15 minutes max for content generation)
+            TASK_TIMEOUT_SECONDS = 900  # 15 minutes
+
             # 1. Update task status to 'in_progress'
             logger.info(f"📝 [TASK_SINGLE] Marking task as in_progress...")
             await self.database_service.update_task(
@@ -242,6 +312,7 @@ class TaskExecutor:
                     },
                 },
             )
+            await self.database_service.tasks.log_status_change(task_id, "pending", "in_progress")
             logger.info(f"✅ [TASK_SINGLE] Task marked as in_progress")
 
             # 2. Process through orchestrator/agent pipeline with timeout
@@ -255,7 +326,7 @@ class TaskExecutor:
             except asyncio.TimeoutError:
                 logger.error(
                     f"⏱️  [TASK_SINGLE] Task execution timed out after {TASK_TIMEOUT_SECONDS}s: {task_id}"
-                )
+, exc_info=True)
                 result = {
                     "status": "failed",
                     "orchestrator_error": f"Task execution timeout ({TASK_TIMEOUT_SECONDS}s exceeded)",
@@ -304,7 +375,7 @@ class TaskExecutor:
                 task_metadata_updates["output"] = str(result)
 
             # DEBUG: Log all extracted metadata
-            logger.info(f"🔍 [DEBUG] Extracted metadata for task {task_id}:")
+            logger.debug(f"🔍 Extracted metadata for task {task_id}:")
             logger.info(f"   - Fields extracted: {list(task_metadata_updates.keys())}")
             logger.info(f"   - Has 'content': {'content' in task_metadata_updates}")
             if "content" in task_metadata_updates:
@@ -330,37 +401,57 @@ class TaskExecutor:
                 task_metadata_updates.pop("featured_image_data", None)
 
             # Use update_task to ensure normalization of content into columns
-            logger.info(
-                f"📝 [DEBUG] Calling update_task with status={final_status}, metadata keys={list(task_metadata_updates.keys())}"
+            logger.debug(
+                f"📝 Calling update_task with status={final_status}, metadata keys={list(task_metadata_updates.keys())}"
             )
 
             # Also store model_used in the normalized column if it's in the result
             update_payload = {"status": final_status, "task_metadata": task_metadata_updates}
             if isinstance(result, dict) and "model_used" in result:
                 update_payload["model_used"] = result["model_used"]
-                logger.info(
-                    f"📝 [DEBUG] Including model_used in database update: {result['model_used']}"
+                logger.debug(
+                    f"📝 Including model_used in database update: {result['model_used']}"
                 )
 
             await self.database_service.update_task(task_id, update_payload)
-            logger.info(f"✅ [DEBUG] update_task completed for {task_id}")
+            logger.debug(f"✅ update_task completed for {task_id}")
 
+            quality_score_preview = (
+                task_metadata_updates.get("quality_score") if isinstance(task_metadata_updates, dict) else None
+            )
+            user_id = task.get("user_id")
             if final_status == "failed":
-                logger.error(f"❌ [TASK_SINGLE] Task failed: {task_id}")
-                # Extract error message for better logging
                 error_msg = (
                     result.get("orchestrator_error", "Unknown error")
                     if isinstance(result, dict)
                     else "Unknown error"
                 )
-                logger.error(f"   Error: {error_msg}")
+                logger.error(
+                    "❌ [TASK_SINGLE] Task failed: task_id=%s user_id=%s category=%s error=%r",
+                    task_id,
+                    user_id,
+                    category,
+                    error_msg,
+                )
             else:
-                logger.info(f"✅ [TASK_SINGLE] Task awaiting approval: {task_id}")
+                logger.info(
+                    "✅ [TASK_SINGLE] Task %s: task_id=%s user_id=%s category=%s quality_score=%s",
+                    final_status,
+                    task_id,
+                    user_id,
+                    category,
+                    quality_score_preview,
+                )
 
+        except ServiceError:
+            raise
         except Exception as e:
             logger.error(f"❌ [TASK_SINGLE] Task failed: {task_id} - {str(e)}", exc_info=True)
-            # Status already updated to 'failed' in _process_loop
-            raise
+            raise ServiceError(message=str(e), details={"task_id": task_id}) from e
+        finally:
+            # Reset the ContextVar so the synthetic trace ID does not bleed into
+            # subsequent tasks that may run in the same asyncio worker.
+            _request_id_var.reset(_trace_token)
 
     async def _execute_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -406,10 +497,14 @@ class TaskExecutor:
             f"task_execution_{task_id}", "content_generation", "multi-agent-orchestrator"
         )
 
+        # Per-task structured metrics instrumentation (issue #837)
+        task_metrics = TaskMetrics(str(task_id))
+
         # ===== PHASE 1: Generate Content via Orchestrator =====
         generated_content = None
         orchestrator_error = None
         generation_start_time = time.time()
+        _phase1_start = task_metrics.record_phase_start("content_generation")
 
         logger.info(f"📝 [TASK_EXECUTE] PHASE 1: Generating content via orchestrator...")
         if self.orchestrator:
@@ -469,7 +564,7 @@ class TaskExecutor:
                     logger.info(f"   Result attributes: {list(result.__dict__.keys())}")
 
                 if hasattr(result, "final_formatting"):
-                    final_formatting = result.final_formatting
+                    final_formatting = result.final_formatting  # type: ignore[reportAttributeAccessIssue]
                     logger.debug(
                         f"   Found final_formatting attribute: {len(str(final_formatting)) if final_formatting else 0} chars"
                     )
@@ -585,7 +680,7 @@ class TaskExecutor:
                             f"   ✅ Fallback generation succeeded: {len(generated_content)} chars"
                         )
                     except Exception as fallback_err:
-                        logger.error(f"   ❌ Fallback generation also failed: {fallback_err}")
+                        logger.error(f"   ❌ Fallback generation also failed: {fallback_err}", exc_info=True)
                         orchestrator_error = f"Orchestrator failed with: {orchestrator_error or 'Unknown error'}. Fallback also failed: {fallback_err}"
                         generated_content = None
 
@@ -608,7 +703,15 @@ class TaskExecutor:
                 f"✅ [TASK_EXECUTE] PHASE 1 Complete (fallback): Generated {len(generated_content)} chars"
             )
 
+        task_metrics.record_phase_end(
+            "content_generation",
+            _phase1_start,
+            status="success" if generated_content and not orchestrator_error else "error",
+            error=str(orchestrator_error) if orchestrator_error else None,
+        )
+
         # ===== PHASE 2: Quality Validation =====
+        _phase2_start = task_metrics.record_phase_start("quality_validation")
         logger.info(f"🔍 [TASK_EXECUTE] PHASE 2: Validating content quality...")
         logger.info(
             f"   Input content length: {len(generated_content) if generated_content else 0} chars"
@@ -637,21 +740,40 @@ class TaskExecutor:
                 "suggestions": ["Content is empty or None"],
             }
 
-        quality_score = quality_result.get("score", 0)
-        approved = quality_result.get("approved", False)
+        # Normalise quality_result — evaluate() returns QualityAssessment; fallback path returns dict
+        if isinstance(quality_result, QualityAssessment):
+            quality_score = quality_result.overall_score
+            approved = quality_result.passing
+            quality_feedback = quality_result.feedback
+            quality_needs_refinement = not quality_result.passing
+            quality_result_keys = list(vars(quality_result).keys())
+        else:
+            quality_score = quality_result.get("score", 0)
+            approved = quality_result.get("approved", False)
+            quality_feedback = quality_result.get("feedback", "")
+            quality_needs_refinement = quality_result.get("needs_refinement", not approved)
+            quality_result_keys = list(quality_result.keys())
 
         logger.info(f"   Quality Score: {quality_score}/100")
         logger.info(f"   Approved: {approved}")
-        logger.debug(f"   Quality result keys: {list(quality_result.keys())}")
+        logger.debug(f"   Quality result keys: {quality_result_keys}")
+        # Structured quality gate event for log aggregation and threshold reporting
+        logger.info(
+            "[quality_gate] task_id=%s user_id=%s score=%s passed=%s",
+            task_id,
+            task.get("user_id"),
+            quality_score,
+            approved,
+        )
 
         if approved:
             logger.info(f"✅ [TASK_EXECUTE] PHASE 2 Complete: Content approved")
         else:
             logger.warning(f"⚠️ [TASK_EXECUTE] PHASE 2 Complete: Content needs improvement")
-            logger.debug(f"   Feedback: {critique_result.get('feedback')}")
+            logger.debug(f"   Feedback: {quality_feedback}")
 
             # If not approved but can refine, attempt refinement
-            if critique_result.get("needs_refinement") and self.orchestrator:
+            if quality_needs_refinement and self.orchestrator:
                 logger.info(
                     f"🔄 [TASK_EXECUTE] Attempting refinement based on critique feedback..."
                 )
@@ -665,10 +787,10 @@ class TaskExecutor:
                     ):
                         # UnifiedOrchestrator
                         refinement_result = await self.orchestrator.process_request(
-                            user_input=f"Refine content about '{topic}' based on feedback: {critique_result.get('feedback')}",
+                            user_input=f"Refine content about '{topic}' based on feedback: {quality_feedback}",
                             context={
                                 "original_content": generated_content,
-                                "feedback": critique_result.get("feedback"),
+                                "feedback": quality_feedback,
                                 "task_id": str(task_id),
                                 "model_selections": model_selections,
                             },
@@ -682,8 +804,12 @@ class TaskExecutor:
                                 user_id="system_task_executor",
                                 business_metrics={
                                     "original_content": generated_content,
-                                    "feedback": critique_result.get("feedback"),
-                                    "suggestions": critique_result.get("suggestions"),
+                                    "feedback": quality_feedback,
+                                    "suggestions": (
+                                        quality_result.suggestions
+                                        if isinstance(quality_result, QualityAssessment)
+                                        else quality_result.get("suggestions", [])
+                                    ),
                                     "topic": topic,
                                     "model_selections": model_selections,
                                 },
@@ -691,7 +817,7 @@ class TaskExecutor:
                         else:
                             # Fallback to process_command_async
                             refinement_result = await self.orchestrator.process_command_async(
-                                command=f"Refine content about '{topic}' based on feedback: {critique_result.get('feedback')}",
+                                command=f"Refine content about '{topic}' based on feedback: {quality_feedback}",
                                 context={"original_content": generated_content},
                             )
 
@@ -742,18 +868,20 @@ class TaskExecutor:
                         )
                         logger.info(f"   ✅ Using refined content ({len(generated_content)} chars)")
 
-                        # Re-critique refined content
-                        critique_result = await self.critique_loop.critique(
-                            content=generated_content,
-                            context={
-                                "topic": topic,
-                                "keywords": primary_keyword,
-                            },
-                        )
-
-                        quality_score = critique_result.get("quality_score", 0)
-                        approved = critique_result.get("approved", False)
-                        logger.info(f"   Refined Quality Score: {quality_score}/100")
+                        # Re-critique refined content if critique_loop is available
+                        if self.critique_loop is not None:
+                            critique_result = await self.critique_loop.critique(
+                                content=generated_content,
+                                context={
+                                    "topic": topic,
+                                    "keywords": primary_keyword,
+                                },
+                            )
+                            quality_score = critique_result.get("quality_score", 0)
+                            approved = critique_result.get("approved", False)
+                            logger.info(f"   Refined Quality Score: {quality_score}/100")
+                        else:
+                            logger.debug("   critique_loop not available — skipping re-critique of refined content")
                     else:
                         logger.warning(
                             f"   ⚠️  Refined content too short ({len(str(refined_content).strip()) if refined_content else 0} chars), keeping original"
@@ -765,7 +893,7 @@ class TaskExecutor:
                     )
                     logger.warning(
                         f"   Keeping original content ({len(generated_content) if generated_content else 0} chars)"
-                    )
+, exc_info=True)
 
                 logger.info(
                     f"🔄 Refinement complete: approved={approved}, score={quality_score}/100, content_len={len(generated_content) if generated_content else 0}"
@@ -849,21 +977,60 @@ class TaskExecutor:
                     "task_id": str(task_id),
                     "user_id": task.get("user_id"),
                     "phase": "content_generation",  # Single phase for overall task
-                    "model": operation_metrics.get("model_name", "unknown"),
-                    "provider": operation_metrics.get("model_provider", "unknown"),
-                    "input_tokens": operation_metrics.get("input_tokens", 0),
-                    "output_tokens": operation_metrics.get("output_tokens", 0),
-                    "total_tokens": operation_metrics.get("input_tokens", 0)
-                    + operation_metrics.get("output_tokens", 0),
-                    "cost_usd": operation_metrics.get("total_cost_usd", 0.0),
+                    "model": operation_metrics.model_name,
+                    "provider": operation_metrics.model_provider,
+                    "input_tokens": operation_metrics.input_tokens,
+                    "output_tokens": operation_metrics.output_tokens,
+                    "total_tokens": operation_metrics.input_tokens + operation_metrics.output_tokens,
+                    "cost_usd": operation_metrics.total_cost_usd,
                     "quality_score": quality_score,
-                    "duration_ms": int(operation_metrics.get("duration_ms", 0)),
+                    "duration_ms": operation_metrics.duration_ms,
                     "success": True,
                 }
                 await self.database_service.log_cost(cost_log)
                 logger.debug(f"✅ Logged task cost: ${cost_log['cost_usd']:.6f} to database")
             except Exception as e:
-                logger.warning(f"⚠️ Failed to persist cost metrics: {e}")
+                logger.warning(f"⚠️ Failed to persist cost metrics: {e}", exc_info=True)
+
+        # Record LLM call metrics for structured per-task tracking (issue #974)
+        if operation_metrics:
+            _llm_status = "success" if generated_content and not orchestrator_error else "error"
+            task_metrics.record_llm_call(
+                phase="content_generation",
+                model=getattr(operation_metrics, "model_name", "unknown"),
+                provider=getattr(operation_metrics, "model_provider", "unknown"),
+                tokens_in=getattr(operation_metrics, "input_tokens", 0),
+                tokens_out=getattr(operation_metrics, "output_tokens", 0),
+                cost_usd=getattr(operation_metrics, "total_cost_usd", 0.0),
+                duration_ms=getattr(operation_metrics, "duration_ms", 0.0),
+                status=_llm_status,
+                error=orchestrator_error if _llm_status == "error" else None,
+            )
+
+        # Close Phase 2 and log structured metrics summary (issue #837)
+        task_metrics.record_phase_end(
+            "quality_validation",
+            _phase2_start,
+            status="success" if approved else "error",
+        )
+        task_metrics.end_time = time.time()
+        logger.info(
+            "[task_executor] task_metrics summary task_id=%s phases=%s total_duration_ms=%.1f",
+            task_id,
+            task_metrics.get_phase_breakdown(),
+            task_metrics.get_total_duration_ms(),
+        )
+
+        # Structured completion event for log aggregation and P50/P95 computation
+        logger.info(
+            "[task_completed] task_id=%s user_id=%s duration_ms=%.0f quality_score=%s approved=%s status=%s",
+            task_id,
+            task.get("user_id"),
+            task_duration_ms,
+            quality_score,
+            approved,
+            result.get("status") if isinstance(result, dict) else "unknown",
+        )
 
         # Store metadata in result
         metadata = {
@@ -1023,14 +1190,45 @@ The key to success with {topic} is staying informed, adapting to changes, and co
             # Emergency minimal content
             return f"# {topic}\n\nContent generation service temporarily unavailable. Please try again later.\n\nError: {str(e)[:100]}"
 
+    async def _sweep_stale_tasks(self) -> None:
+        """Reset tasks stuck in processing state back to pending."""
+        if not self.database_service:
+            return
+        try:
+            result = await self.database_service.sweep_stale_tasks(
+                timeout_minutes=STALE_TASK_TIMEOUT_MINUTES,
+                max_retries=MAX_TASK_RETRIES,
+            )
+            if result and result.get("total_stale", 0) > 0:
+                logger.warning(
+                    f"[_sweep_stale_tasks] Reset {result['reset']} stale tasks "
+                    f"(timeout: {STALE_TASK_TIMEOUT_MINUTES}m)"
+                )
+        except Exception:
+            logger.error("[_sweep_stale_tasks] Failed to sweep stale tasks", exc_info=True)
+
     def get_stats(self) -> Dict[str, Any]:
         """Get executor statistics"""
+        import time
+        last_poll_age: Optional[float] = None
+        if self.last_poll_at is not None:
+            last_poll_age = time.monotonic() - self.last_poll_at
+        last_task_age: Optional[float] = None
+        if self._last_task_started_at is not None:
+            last_task_age = time.monotonic() - self._last_task_started_at
         return {
             "running": self.running,
-            "total_processed": self.task_count,
-            "successful": self.success_count,
-            "failed": self.error_count,
-            "published": self.published_count,
+            "task_count": self.task_count,
+            "success_count": self.success_count,
+            "error_count": self.error_count,
+            "published_count": self.published_count,
             "poll_interval": self.poll_interval,
+            "orchestrator_available": self.orchestrator is not None,
+            "quality_service_available": self.quality_service is not None,
+            "last_poll_age_s": last_poll_age,
+            # Time since last task was picked up; None if no tasks have run yet.
+            # Exposed for external health monitors (issue #841).
+            "last_task_started_age_s": last_task_age,
+            "idle_alert_threshold_s": self._IDLE_ALERT_THRESHOLD_S,
             "critique_stats": self.critique_loop.get_stats() if self.critique_loop else {},
         }

@@ -5,6 +5,7 @@ This migration adds support for tracking workflow execution history,
 including execution status, phase results, and performance metrics.
 """
 
+
 async def up(pool):
     """Create workflow_executions table"""
     await pool.execute(

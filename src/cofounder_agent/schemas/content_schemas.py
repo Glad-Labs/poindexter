@@ -69,10 +69,10 @@ class CreateBlogPostRequest(BaseModel):
         examples=[1500, 2000, 3000],
     )
     tags: Optional[List[str]] = Field(
-        None, min_items=0, max_items=10, description="Tags for categorization (max 10)"
+        None, min_items=0, max_items=10, description="Tags for categorization (max 10)"  # type: ignore[call-overload]
     )
     categories: Optional[List[str]] = Field(
-        None, min_items=0, max_items=5, description="Categories for blog posts (max 5)"
+        None, min_items=0, max_items=5, description="Categories for blog posts (max 5)"  # type: ignore[call-overload]
     )
     generate_featured_image: bool = Field(
         True, description="Search Pexels for featured image (free)"
@@ -91,8 +91,8 @@ class CreateBlogPostRequest(BaseModel):
     )
     model: Optional[str] = Field(
         None,
-        description="Optional: Specific model to use (e.g., 'ollama/mistral', 'gpt-4', 'claude-opus'). If not specified, uses default from config.",
-        examples=["ollama/mistral", "ollama/phi", "gpt-4", "claude-opus"],
+        description="Optional: Specific model or cost tier to use. Prefer cost tiers (ultra_cheap, cheap, balanced, premium) over model names. If not specified, uses default from config.",
+        examples=["ultra_cheap", "cheap", "balanced", "premium"],
     )
 
     # Model Selection Fields (NEW - for Week 1 cost tracking)
@@ -101,22 +101,21 @@ class CreateBlogPostRequest(BaseModel):
         description="Optional: Per-phase model selection. Allows fine-grained control over which model is used for each pipeline step.",
         examples=[
             {
-                "research": "ollama",
-                "outline": "gpt-3.5-turbo",
-                "draft": "gpt-4",
-                "assess": "gpt-4",
-                "refine": "gpt-4",
-                "finalize": "gpt-4",
+                "research": "ultra_cheap",
+                "outline": "cheap",
+                "draft": "premium",
+                "assess": "cheap",
+                "refine": "balanced",
+                "finalize": "balanced",
             }
         ],
         json_schema_extra={
             "phases": ["research", "outline", "draft", "assess", "refine", "finalize"],
-            "available_models": [
-                "ollama",
-                "gpt-3.5-turbo",
-                "gpt-4",
-                "claude-3-opus",
-                "claude-3-sonnet",
+            "available_tiers": [
+                "ultra_cheap",
+                "cheap",
+                "balanced",
+                "premium",
             ],
         },
     )
@@ -143,14 +142,14 @@ class CreateBlogPostRequest(BaseModel):
                 "enhanced": True,
                 "target_environment": "production",
                 "llm_provider": "ollama",
-                "model": "ollama/mistral",
+                "model": "balanced",
                 "models_by_phase": {
-                    "research": "ollama",
-                    "outline": "gpt-3.5-turbo",
-                    "draft": "gpt-4",
-                    "assess": "gpt-4",
-                    "refine": "gpt-4",
-                    "finalize": "gpt-4",
+                    "research": "ultra_cheap",
+                    "outline": "cheap",
+                    "draft": "premium",
+                    "assess": "cheap",
+                    "refine": "balanced",
+                    "finalize": "balanced",
                 },
                 "quality_preference": "balanced",
             }

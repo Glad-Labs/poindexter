@@ -39,3 +39,4 @@ class ChatResponse(BaseModel):
     conversationId: str
     timestamp: str
     tokens_used: Optional[int] = None
+    cached: Optional[bool] = False  # True if response was from cache

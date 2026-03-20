@@ -9,17 +9,13 @@ Cost: $0/month (vs $0.02/image with DALL-E)
 ASYNC-FIRST: All operations use httpx async client (no blocking I/O)
 """
 
-import asyncio
-import logging
+from services.logger_config import get_logger
 import os
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import httpx
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class PexelsClient:
     """
     Pexels API client for searching and retrieving royalty-free images.
@@ -146,7 +142,7 @@ class PexelsClient:
                 ]
 
         except Exception as e:
-            logger.error(f"Pexels search failed: {e}")
+            logger.error(f"[_search_images] Pexels search failed: {e}", exc_info=True)
             return []
 
     async def get_featured_image(
@@ -173,9 +169,11 @@ class PexelsClient:
                     logger.info(f"Found featured image for '{query}' via Pexels")
                     return images[0]
             except Exception as e:
-                logger.warning(f"Error searching for '{query}': {e}")
+                logger.error(
+                    f"[_get_featured_image] Error searching for '{query}': {e}", exc_info=True
+                )
 
-        logger.warning(f"No featured image found for topic: {topic}")
+        logger.error(f"No featured image found for topic: {topic}", exc_info=True)
         return None
 
     async def get_images_for_gallery(
@@ -200,14 +198,17 @@ class PexelsClient:
 
         for query in search_queries[:3]:  # Try up to 3 queries
             try:
-                images = await self.search_images(query, per_page=count, page=1)
+                images = await self.search_images(query, per_page=count)
                 all_images.extend(images)
 
                 if len(all_images) >= count:
                     logger.info(f"Found {len(all_images)} images for gallery")
                     return all_images[:count]
             except Exception as e:
-                logger.warning(f"Error searching for gallery images '{query}': {e}")
+                logger.error(
+                    f"[get_images_for_gallery] Error searching for gallery images '{query}': {e}",
+                    exc_info=True,
+                )
 
         logger.info(f"Found {len(all_images)} gallery images")
         return all_images

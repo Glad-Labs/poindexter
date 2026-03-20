@@ -5,6 +5,7 @@ This module provides centralized configuration loading and access for the entire
 """
 
 import os
+import sys
 from dataclasses import dataclass
 from typing import Optional
 
@@ -40,8 +41,8 @@ class Config:
     enable_tracing: bool = False
     otlp_endpoint: str = "http://localhost:4318/v1/traces"
 
-    # Application settings
-    app_version: str = "3.0.1"
+    # Application settings — version is read from APP_VERSION env var or pyproject.toml
+    app_version: str = "0.0.0"
     secret_key: str = "your-secret-key-here"
 
 
@@ -88,10 +89,43 @@ def load_env() -> None:
     _ENV_LOADED = True
 
 
+_PLACEHOLDER_SECRET = "your-secret-key-here"
+
+
+def _read_pyproject_version() -> str:
+    """Read version from pyproject.toml as fallback when APP_VERSION env var is not set."""
+    try:
+        # In Docker: /app/pyproject.toml, locally: src/cofounder_agent/pyproject.toml
+        config_dir = os.path.dirname(os.path.abspath(__file__))
+        pyproject_path = os.path.join(config_dir, "..", "pyproject.toml")
+        if os.path.exists(pyproject_path):
+            with open(pyproject_path, "r") as f:
+                for line in f:
+                    if line.strip().startswith("version"):
+                        # Parse: version = "3.0.55"
+                        return line.split("=", 1)[1].strip().strip('"')
+    except Exception:
+        pass
+    return "0.0.0"
+
+
 def get_config() -> Config:
     """Get application configuration."""
     # Load environment variables if not already loaded
     load_env()
+
+    environment = os.getenv("ENVIRONMENT", "development")
+    secret_key = os.getenv("SECRET_KEY", _PLACEHOLDER_SECRET)
+
+    # Production guard: refuse to start with a placeholder SECRET_KEY.
+    # Mirrors the same check in token_validator.py (AuthConfig).
+    if environment == "production" and secret_key == _PLACEHOLDER_SECRET:
+        import logging
+        logging.getLogger(__name__).critical(
+            "[Config] SECRET_KEY is the insecure placeholder value. "
+            "Set a strong SECRET_KEY environment variable before running in production."
+        )
+        sys.exit(1)
 
     return Config(
         database_url=os.getenv("DATABASE_URL", ""),
@@ -99,15 +133,15 @@ def get_config() -> Config:
         anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
         google_api_key=os.getenv("GOOGLE_API_KEY"),
         ollama_base_url=os.getenv("OLLAMA_BASE_URL"),
-        environment=os.getenv("ENVIRONMENT", "development"),
+        environment=environment,
         log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
         log_format=os.getenv(
-            "LOG_FORMAT", "json" if os.getenv("ENVIRONMENT") == "production" else "text"
+            "LOG_FORMAT", "json" if environment == "production" else "text"
         ),
         sentry_dsn=os.getenv("SENTRY_DSN"),
         sentry_enabled=os.getenv("SENTRY_ENABLED", "true").lower() in ("true", "1", "yes"),
         enable_tracing=os.getenv("ENABLE_TRACING", "false").lower() == "true",
         otlp_endpoint=os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318/v1/traces"),
-        app_version=os.getenv("APP_VERSION", "3.0.1"),
-        secret_key=os.getenv("SECRET_KEY", "your-secret-key-here"),
+        app_version=os.getenv("APP_VERSION", _read_pyproject_version()),
+        secret_key=secret_key,
     )

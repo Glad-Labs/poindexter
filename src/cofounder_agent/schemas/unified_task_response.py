@@ -14,7 +14,7 @@ Benefits:
 """
 
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -76,12 +76,12 @@ class ModelSelection(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "research": "mistral",
-                "outline": "mistral",
-                "draft": "gpt-4",
-                "assess": "claude-3-sonnet",
-                "refine": "gpt-4",
-                "finalize": "mistral",
+                "research": "ultra_cheap",
+                "outline": "cheap",
+                "draft": "premium",
+                "assess": "cheap",
+                "refine": "balanced",
+                "finalize": "balanced",
             }
         }
 
@@ -252,12 +252,12 @@ class UnifiedTaskResponse(BaseModel):
                 "target_length": 2000,
                 "quality_preference": "quality",
                 "models_by_phase": {
-                    "research": "mistral",
-                    "outline": "mistral",
-                    "draft": "gpt-4",
-                    "assess": "claude-3-sonnet",
-                    "refine": "gpt-4",
-                    "finalize": "mistral",
+                    "research": "ultra_cheap",
+                    "outline": "cheap",
+                    "draft": "premium",
+                    "assess": "cheap",
+                    "refine": "balanced",
+                    "finalize": "balanced",
                 },
                 "estimated_cost": 0.0125,
                 "cost_breakdown": {

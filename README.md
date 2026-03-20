@@ -1,14 +1,16 @@
 # Glad Labs - AI Co-Founder System
 
-**Status:** Enterprise-Ready ✅  
-**Last Updated:** January 23, 2026  
-**Documentation:** Consolidated & Streamlined
+**Status:** Enterprise-Ready ✅
+**Last Updated:** March 10, 2026
+**Documentation:** Cleaned Up & Organized
 
 Production-ready AI orchestration system with autonomous agents, multi-provider LLM routing, and full-stack web applications.
 
+> **Documentation Cleanup (March 2026):** Root directory streamlined from 20+ files to 7 essential documents. All completed phase reports, session summaries, and testing documentation moved to `archive/` for improved organization. See [Version History](docs/07-Appendices/Version-History.md) for comprehensive project timeline.
+
 ## 📁 Project Structure
 
-```
+```bash
 .
 ├── src/cofounder_agent/        # Main orchestrator (FastAPI, port 8000)
 ├── web/public-site/           # Content distribution (Next.js, port 3000)
@@ -21,18 +23,19 @@ Production-ready AI orchestration system with autonomous agents, multi-provider 
 
 ## 📚 Documentation Structure
 
-**Start here:** `docs/00-README.md` - Documentation navigation hub
+**Start here:** `docs/00-INDEX.md` - Section-based documentation index
 
-### Core Documentation (8 files in `docs/`)
+### Primary Documentation Sections
 
-- 📌 00-README.md - Navigation hub
-- 📦 01-SETUP_AND_OVERVIEW.md - Getting started
-- 🏗️ 02-ARCHITECTURE_AND_DESIGN.md - System architecture
-- 🚀 03-DEPLOYMENT_AND_INFRASTRUCTURE.md - Deployment procedures
-- 🔄 04-DEVELOPMENT_WORKFLOW.md - Development process
-- 🤖 05-AI_AGENTS_AND_INTEGRATION.md - AI architecture
-- 🛠️ 06-OPERATIONS_AND_MAINTENANCE.md - Operations
-- 🔐 07-BRANCH_SPECIFIC_VARIABLES.md - Environment variables
+- 📦 `docs/01-Getting-Started/` - Setup, quick start, environment configuration
+- 🏗️ `docs/02-Architecture/` - System design, API design, data model, decisions
+- 🤖 `docs/03-Features/` - Feature catalog and component feature maps
+- 🔄 `docs/04-Development/` - Workflow, testing, standards, CI/CD
+- 🛠️ `docs/05-Operations/` - Deployment, monitoring, maintenance, runbooks
+- 🧯 `docs/06-Troubleshooting/` - Common issues and fixes
+- 📎 `docs/07-Appendices/` - Indexes, catalogs, debt tracker, governance
+
+Legacy numbered core docs remain during migration and will be folded into the sectioned structure.
 
 ### Organized Archive Folders
 
@@ -50,6 +53,11 @@ Production-ready AI orchestration system with autonomous agents, multi-provider 
 - See `docs/ARCHIVE_INDEX.md` for extraction instructions
 
 ## 🚀 Quick Start
+
+Environment setup references:
+
+- `docs/reference/ENVIRONMENT_SETUP.md`
+- `docs/reference/GITHUB_SECRETS_SETUP.md`
 
 ```bash
 npm run dev

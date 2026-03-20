@@ -9,14 +9,14 @@ Supports fine-tuning with:
 """
 
 import asyncio
-import json
 import logging
 import os
-import subprocess
 import tempfile
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
+
+import aiofiles
 
 logger = logging.getLogger(__name__)
 
@@ -76,9 +76,14 @@ class FineTuningService:
 
         try:
             # Check if Ollama is running
-            result = subprocess.run(["ollama", "list"], capture_output=True, text=True, timeout=5)
+            check_proc = await asyncio.create_subprocess_exec(
+                "ollama", "list",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            await check_proc.communicate()
 
-            if result.returncode != 0:
+            if check_proc.returncode != 0:
                 return {
                     "job_id": job_id,
                     "status": "failed",
@@ -137,7 +142,7 @@ PARAMETER learning_rate {learning_rate}
                 "error": "Ollama not found. Please install Ollama first.",
             }
         except Exception as e:
-            logger.error(f"Failed to start Ollama fine-tuning: {e}")
+            logger.error(f"Failed to start Ollama fine-tuning: {e}", exc_info=True)
             return {"job_id": job_id, "status": "failed", "error": str(e)}
 
     # ========================================================================
@@ -155,12 +160,8 @@ PARAMETER learning_rate {learning_rate}
         job_id = f"gemini_finetune_{datetime.now().timestamp()}"
 
         try:
-            # Import google-genai library (new package, replaces deprecated google.generativeai)
-            try:
-                import google.genai as genai
-            except ImportError:
-                # Fallback to old deprecated package if new one not available
-                import google.generativeai as genai
+            # Import google-genai library
+            import google.genai as genai
 
             key = api_key or os.getenv("GOOGLE_API_KEY")
             if not key:
@@ -170,20 +171,7 @@ PARAMETER learning_rate {learning_rate}
                     "error": "GOOGLE_API_KEY not configured",
                 }
 
-            # Try new SDK first, fall back to old one
-            use_new_sdk = False
-            try:
-                import google.genai as genai
-
-                use_new_sdk = True
-            except ImportError:
-                import google.generativeai as genai
-
-            # Configure API key based on SDK version
-            if use_new_sdk:
-                genai.api_key = key
-            else:
-                genai.configure(api_key=key)
+            genai.api_key = key
 
             # Upload training data
             media = genai.upload_file(dataset_path)
@@ -217,10 +205,10 @@ PARAMETER learning_rate {learning_rate}
             return {
                 "job_id": job_id,
                 "status": "failed",
-                "error": "google-generativeai not installed. Run: pip install google-generativeai",
+                "error": "google-genai not installed. Run: pip install google-genai",
             }
         except Exception as e:
-            logger.error(f"Failed to start Gemini fine-tuning: {e}")
+            logger.error(f"Failed to start Gemini fine-tuning: {e}", exc_info=True)
             return {"job_id": job_id, "status": "failed", "error": str(e)}
 
     # ========================================================================
@@ -250,18 +238,24 @@ PARAMETER learning_rate {learning_rate}
 
             client = anthropic.Anthropic(api_key=key)
 
-            # Upload training data
-            with open(dataset_path, "rb") as f:
-                file_response = client.beta.files.upload(
-                    file=(os.path.basename(dataset_path), f, "text/jsonl")
+            # Upload training data — read file async, then offload blocking SDK call
+            async with aiofiles.open(dataset_path, "rb") as f:
+                file_bytes = await f.read()
+
+            file_response = await asyncio.to_thread(
+                lambda: client.beta.files.upload(
+                    file=(os.path.basename(dataset_path), file_bytes, "text/jsonl")
                 )
+            )
 
             file_id = file_response.id
 
-            # Start fine-tuning job
-            job_response = client.beta.fine_tuning.jobs.create(
-                model="claude-3-5-sonnet-20241022",
-                training_data={"type": "file", "file_id": file_id},
+            # Start fine-tuning job — offload blocking SDK call to thread
+            job_response = await asyncio.to_thread(
+                lambda: client.beta.fine_tuning.jobs.create(
+                    model="claude-3-5-sonnet-20241022",
+                    training_data={"type": "file", "file_id": file_id},
+                )
             )
 
             job_id_api = job_response.id
@@ -290,7 +284,7 @@ PARAMETER learning_rate {learning_rate}
                 "error": "anthropic not installed. Run: pip install anthropic",
             }
         except Exception as e:
-            logger.error(f"Failed to start Claude fine-tuning: {e}")
+            logger.error(f"[fine_tune_claude] Failed to start Claude fine-tuning: {e}", exc_info=True)
             return {"job_id": job_id, "status": "failed", "error": str(e)}
 
     # ========================================================================
@@ -308,7 +302,7 @@ PARAMETER learning_rate {learning_rate}
         job_id = f"gpt4_finetune_{datetime.now().timestamp()}"
 
         try:
-            import openai
+            from openai import AsyncOpenAI
 
             key = api_key or os.getenv("OPENAI_API_KEY")
             if not key:
@@ -318,16 +312,22 @@ PARAMETER learning_rate {learning_rate}
                     "error": "OPENAI_API_KEY not configured",
                 }
 
-            openai.api_key = key
+            client = AsyncOpenAI(api_key=key)
 
             # Upload training file
-            with open(dataset_path, "rb") as f:
-                file_response = openai.File.create(file=f, purpose="fine-tune")
+            async with aiofiles.open(dataset_path, "rb") as f:
+                file_bytes = await f.read()
+
+            file_response = await client.files.create(
+                file=("training_data.jsonl", file_bytes), purpose="fine-tune"
+            )
 
             file_id = file_response.id
 
             # Start fine-tuning job
-            job_response = openai.FineTuningJob.create(training_file=file_id, model="gpt-4")
+            job_response = await client.fine_tuning.jobs.create(
+                training_file=file_id, model="gpt-4o"
+            )
 
             job_id_api = job_response.id
             self.jobs[job_id] = {
@@ -356,7 +356,7 @@ PARAMETER learning_rate {learning_rate}
                 "error": "openai not installed. Run: pip install openai",
             }
         except Exception as e:
-            logger.error(f"Failed to start GPT-4 fine-tuning: {e}")
+            logger.error(f"[fine_tune_gpt4] Failed to start GPT-4 fine-tuning: {e}", exc_info=True)
             return {"job_id": job_id, "status": "failed", "error": str(e)}
 
     # ========================================================================
@@ -431,19 +431,19 @@ PARAMETER learning_rate {learning_rate}
                     ),
                 }
             except Exception as e:
-                logger.error(f"Failed to get Claude job status: {e}")
+                logger.error(f"Failed to get Claude job status: {e}", exc_info=True)
                 return {"status": "error", "error": str(e)}
 
         elif job["target"] == "gpt4":
             try:
-                import openai
+                from openai import AsyncOpenAI
 
                 key = os.getenv("OPENAI_API_KEY")
                 if not key:
                     return {"status": "error", "error": "OPENAI_API_KEY not set"}
 
-                openai.api_key = key
-                job_api = openai.FineTuningJob.retrieve(job["job_id_api"])
+                client = AsyncOpenAI(api_key=key)
+                job_api = await client.fine_tuning.jobs.retrieve(job["job_id_api"])
 
                 status_map = {
                     "queued": "queued",
@@ -461,7 +461,7 @@ PARAMETER learning_rate {learning_rate}
                     ),
                 }
             except Exception as e:
-                logger.error(f"Failed to get GPT-4 job status: {e}")
+                logger.error(f"Failed to get GPT-4 job status: {e}", exc_info=True)
                 return {"status": "error", "error": str(e)}
 
         return {"job_id": job_id, "status": "unknown"}
@@ -498,7 +498,7 @@ PARAMETER learning_rate {learning_rate}
                         "note": "Job may still be running on Claude servers",
                     }
             except Exception as e:
-                logger.error(f"Failed to cancel Claude job: {e}")
+                logger.error(f"Failed to cancel Claude job: {e}", exc_info=True)
 
         return {"success": False, "error": "Cannot cancel this job type"}
 

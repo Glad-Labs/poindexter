@@ -7,28 +7,21 @@ All endpoints require JWT authentication
 Integrates with UsageTracker service for real-time metrics collection.
 """
 
-import logging
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+from services.logger_config import get_logger
+from datetime import datetime, timezone
+from typing import Any, Dict
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from routes.auth_unified import get_current_user
 from schemas.auth_schemas import UserProfile
-from schemas.metrics_schemas import (
-    CostMetric,
-    CostsResponse,
-    HealthMetrics,
-    PerformanceMetrics,
-)
 from services.cost_aggregation_service import CostAggregationService
 from services.database_service import DatabaseService
 from services.usage_tracker import get_usage_tracker
 from utils.route_utils import get_database_dependency
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 # Create metrics router
 metrics_router = APIRouter(prefix="/api/metrics", tags=["metrics"])
 
@@ -83,7 +76,7 @@ async def get_usage_metrics(
 
         if not completed_ops:
             return {
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "period": period,
                 "total_operations": 0,
                 "tokens": {"total": 0, "input": 0, "output": 0, "avg_per_operation": 0.0},
@@ -99,50 +92,42 @@ async def get_usage_metrics(
             }
 
         # Calculate metrics
-        total_input = sum(op.get("tokens_in", 0) for op in completed_ops)
-        total_output = sum(op.get("tokens_out", 0) for op in completed_ops)
+        total_input = sum(op.input_tokens for op in completed_ops)
+        total_output = sum(op.output_tokens for op in completed_ops)
         total_tokens = total_input + total_output
-        total_cost = sum(op.get("cost_estimate", 0.0) for op in completed_ops)
+        total_cost = sum(op.total_cost_usd for op in completed_ops)
         total_ops = len(completed_ops)
-        successful_ops = sum(1 for op in completed_ops if op.get("success", False))
+        successful_ops = sum(1 for op in completed_ops if op.success)
         failed_ops = total_ops - successful_ops
 
         # Group by model
-        by_model = {}
+        by_model: dict[str, dict[str, Any]] = {}
         for op in completed_ops:
-            model = op.get("model", "unknown")
+            model = op.model_name or "unknown"
             if model not in by_model:
                 by_model[model] = {"operations": 0, "tokens": 0, "cost": 0.0}
             by_model[model]["operations"] += 1
-            by_model[model]["tokens"] += op.get("tokens_in", 0) + op.get("tokens_out", 0)
-            by_model[model]["cost"] += op.get("cost_estimate", 0.0)
+            by_model[model]["tokens"] += op.input_tokens + op.output_tokens
+            by_model[model]["cost"] += op.total_cost_usd
 
         # Group by operation type
-        by_operation = {}
+        by_operation: dict[str, dict[str, Any]] = {}
         for op in completed_ops:
-            op_type = op.get("operation_type", "unknown")
+            op_type = op.operation_type or "unknown"
             if op_type not in by_operation:
                 by_operation[op_type] = {"count": 0, "cost": 0.0, "success": 0}
             by_operation[op_type]["count"] += 1
-            by_operation[op_type]["cost"] += op.get("cost_estimate", 0.0)
-            if op.get("success", False):
+            by_operation[op_type]["cost"] += op.total_cost_usd
+            if op.success:
                 by_operation[op_type]["success"] += 1
 
         # Projections
-        days_active = max(
-            1,
-            (
-                datetime.utcnow()
-                - datetime.fromisoformat(
-                    completed_ops[0].get("started_at", datetime.utcnow().isoformat())
-                )
-            ).days
-            or 1,
-        )
+        first_op_time = datetime.fromisoformat(completed_ops[0].created_at)
+        days_active = max(1, (datetime.now(first_op_time.tzinfo) - first_op_time).days or 1)
         projected_monthly = (total_cost / days_active * 30) if days_active > 0 else 0
 
         return {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "period": period,
             "total_operations": total_ops,
             "tokens": {
@@ -171,7 +156,7 @@ async def get_usage_metrics(
 
     except Exception as e:
         logger.error(f"Error retrieving usage metrics: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve metrics: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve metrics")
 
 
 @metrics_router.get("/costs")
@@ -249,7 +234,7 @@ async def get_cost_metrics(
                     "by_provider": {},
                 }
             except Exception as db_error:
-                logger.warning(f"Database costs failed, falling back to tracker: {db_error}")
+                logger.warning(f"Database costs failed, falling back to tracker: {db_error}", exc_info=True)
                 use_db = False
 
         # Fallback to legacy usage tracker
@@ -269,19 +254,17 @@ async def get_cost_metrics(
                 }
 
             # Calculate totals
-            total_cost = sum(op.get("cost_estimate", 0.0) for op in completed_ops)
-            total_tokens = sum(
-                op.get("tokens_in", 0) + op.get("tokens_out", 0) for op in completed_ops
-            )
+            total_cost = sum(op.total_cost_usd for op in completed_ops)
+            total_tokens = sum(op.input_tokens + op.output_tokens for op in completed_ops)
 
             # Group by model
-            by_model = {}
+            by_model: dict[str, dict[str, Any]] = {}
             for op in completed_ops:
-                model = op.get("model", "unknown")
+                model = op.model_name or "unknown"
                 if model not in by_model:
                     by_model[model] = {"tokens": 0, "cost": 0.0, "provider": "unknown"}
-                by_model[model]["tokens"] += op.get("tokens_in", 0) + op.get("tokens_out", 0)
-                by_model[model]["cost"] += op.get("cost_estimate", 0.0)
+                by_model[model]["tokens"] += op.input_tokens + op.output_tokens
+                by_model[model]["cost"] += op.total_cost_usd
 
                 # Infer provider from model name
                 if "ollama" in model.lower() or model == "mistral" or model == "llama2":
@@ -321,7 +304,7 @@ async def get_cost_metrics(
 
     except Exception as e:
         logger.error(f"Error retrieving cost metrics: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve metrics: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve metrics")
 
 
 @metrics_router.get("")
@@ -343,7 +326,7 @@ async def get_metrics(current_user: UserProfile = Depends(get_current_user)) -> 
 
         # Calculate uptime
         uptime = (datetime.now() - _start_time).total_seconds()
-        failed_ops = sum(1 for op in completed_ops if not op.get("success", False))
+        failed_ops = sum(1 for op in completed_ops if not op.success)
 
         return {
             "status": "healthy",
@@ -361,11 +344,11 @@ async def get_metrics(current_user: UserProfile = Depends(get_current_user)) -> 
             },
             "latest_operations": [
                 {
-                    "id": op.get("operation_id"),
-                    "type": op.get("operation_type"),
-                    "model": op.get("model"),
-                    "success": op.get("success"),
-                    "timestamp": op.get("completed_at", op.get("started_at")),
+                    "id": op.operation_id,
+                    "type": op.operation_type,
+                    "model": op.model_name,
+                    "success": op.success,
+                    "timestamp": op.created_at,
                 }
                 for op in completed_ops[-5:]  # Last 5 operations
             ],
@@ -373,7 +356,7 @@ async def get_metrics(current_user: UserProfile = Depends(get_current_user)) -> 
 
     except Exception as e:
         logger.error(f"Error retrieving metrics: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve metrics: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve metrics")
 
 
 @metrics_router.get("/summary")
@@ -417,37 +400,38 @@ async def get_metrics_summary(
     }
 
 
+class TrackUsageRequest(BaseModel):
+    """Request body for POST /api/metrics/track-usage."""
+
+    model: str = Field(..., description="AI model identifier")
+    tokens: int = Field(..., ge=0, description="Number of tokens consumed")
+    cost: float = Field(..., ge=0.0, description="Cost in USD")
+
+
 @metrics_router.post("/track-usage")
 async def track_usage(
-    model: str,
-    tokens: int,
-    cost: float,
+    body: TrackUsageRequest,
     current_user: UserProfile = Depends(get_current_user),
-) -> Dict[str, str]:
+) -> Dict[str, Any]:
     """
-    Track AI model usage for cost analysis
-    Requires: Valid JWT authentication
+    Track AI model usage for cost analysis.
 
-    Args:
-        model: Model name
-        tokens: Number of tokens used
-        cost: Cost in USD
-
-    Returns:
-        Confirmation of tracking
+    Accepts a JSON request body (not query parameters) so that sensitive
+    cost/token data is not written to access logs or proxy caches.
+    Requires: Valid JWT authentication.
     """
-    if model not in _cost_metrics["models"]:
-        _cost_metrics["models"][model] = {"tokens": 0, "cost": 0.0}
+    if body.model not in _cost_metrics["models"]:
+        _cost_metrics["models"][body.model] = {"tokens": 0, "cost": 0.0}
 
-    _cost_metrics["models"][model]["tokens"] += tokens
-    _cost_metrics["models"][model]["cost"] += cost
-    _cost_metrics["total"] += cost
+    _cost_metrics["models"][body.model]["tokens"] += body.tokens
+    _cost_metrics["models"][body.model]["cost"] += body.cost
+    _cost_metrics["total"] += body.cost
 
-    logger.info(f"✅ Tracked usage: {model} - {tokens} tokens, ${cost}")
+    logger.info(f"Tracked usage: {body.model} - {body.tokens} tokens, ${body.cost}")
 
     return {
-        "success": "true",
-        "message": f"Tracked usage for {model}",
+        "success": True,
+        "message": f"Tracked usage for {body.model}",
     }
 
 
@@ -479,8 +463,8 @@ async def get_costs_by_phase(
 
         return result
     except Exception as e:
-        logger.error(f"Error getting phase breakdown: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error getting phase breakdown: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred")
 
 
 @metrics_router.get("/costs/breakdown/model")
@@ -507,8 +491,8 @@ async def get_costs_by_model(
 
         return result
     except Exception as e:
-        logger.error(f"Error getting model breakdown: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error getting model breakdown: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred")
 
 
 @metrics_router.get("/costs/history")
@@ -534,8 +518,8 @@ async def get_cost_history(
 
         return result
     except Exception as e:
-        logger.error(f"Error getting cost history: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error getting cost history: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred")
 
 
 @metrics_router.get("/costs/budget")
@@ -566,175 +550,276 @@ async def get_budget_status(
 
         return result
     except Exception as e:
-        logger.error(f"Error getting budget status: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error getting budget status: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred")
 
 
-@metrics_router.get("/analytics/kpis")
-async def get_kpi_analytics(
+# NOTE: GET /api/metrics/analytics/kpis was removed (duplicate of GET /api/analytics/kpis).
+# Use GET /api/analytics/kpis for executive KPI dashboard data.
+# See: src/cofounder_agent/routes/analytics_routes.py
+#
+# Tombstone retained for 2 releases; delete after 2026-06-01.
+@metrics_router.get(
+    "/analytics/kpis",
+    deprecated=True,
+    summary="[Deprecated] Use GET /api/analytics/kpis instead",
+    include_in_schema=False,
+)
+async def get_kpi_analytics_deprecated(
     current_user: UserProfile = Depends(get_current_user),
-    range: str = Query("30d", description="Time range: 1d, 7d, 30d, 90d, all"),
-    db_service: DatabaseService = Depends(get_database_dependency),
+):
+    """Deprecated. Redirects callers to the canonical endpoint."""
+    from fastapi.responses import RedirectResponse
+
+    return RedirectResponse(url="/api/analytics/kpis", status_code=308)
+
+
+
+
+@metrics_router.get("/performance", response_model=Dict[str, Any])
+async def get_performance_metrics(
+    request: Request,
+    current_user: UserProfile = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """
-    Get key performance indicator (KPI) metrics for executive dashboard.
+    Get real-time performance metrics from the running application.
 
     **Authentication:** Requires valid JWT token
 
-    **Parameters:**
-    - range: Time range for aggregation (1d, 7d, 30d, 90d, all)
+    **Data sources:**
+    - Request latency (p50/p95/p99) from ProfilingMiddleware in-process telemetry.
+      Tracks the last 1,000 requests across all endpoints.
+    - Model router decisions from the in-process ModelRouter metrics counter.
+    - Redis cache stats are omitted (the Redis client does not track hit rates).
 
-    **Returns:**
-    - Business KPI metrics including:
-      - Revenue (current, previous, change %)
-      - Content published count
-      - Tasks completed count
-      - AI cost savings
-      - Engagement rate
-      - Agent uptime
+    **Response shape** (consumed by PerformanceDashboard.jsx):
+    ```json
+    {
+      "overall_stats": {
+        "total_requests": 3420,
+        "avg_latency_ms": 212.5,
+        "p95_latency_ms": 890.0,
+        "p99_latency_ms": 1250.0,
+        "error_rate_pct": 0.8
+      },
+      "route_latencies": {
+        "/api/tasks": {"p50": 180, "p95": 750, "p99": 1100, "cache_hit_rate": 0},
+        ...
+      },
+      "model_router_decisions": {
+        "budget": 3200,
+        "premium": 220
+      },
+      "cache_stats": {}
+    }
+    ```
     """
     try:
-        cost_service = CostAggregationService(db_service=db_service)
+        # --- latency data from ProfilingMiddleware ---
+        profiling_mw = getattr(request.app.state, "profiling_middleware", None)
 
-        # Calculate date range
-        from datetime import datetime, timedelta
+        route_latencies: Dict[str, Any] = {}
+        overall_total = 0
+        overall_durations: list = []
 
-        now = datetime.utcnow()
+        if profiling_mw is not None:
+            endpoint_stats = profiling_mw.get_endpoint_stats()
 
-        # Validate range parameter
-        valid_ranges = {"1d", "7d", "30d", "90d", "all"}
-        if range not in valid_ranges:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid range '{range}'. Must be one of: {', '.join(sorted(valid_ranges))}",
-            )
+            for endpoint, stats in endpoint_stats.items():
+                # Reconstruct a sorted duration list to compute p50.
+                # ProfilingMiddleware stores all ProfileData objects; we have
+                # pre-computed p95/p99 but p50 is the median we approximate
+                # from avg when individual samples are not available.
+                durations_for_ep = [
+                    p.duration_ms
+                    for p in profiling_mw.profiles
+                    if p.endpoint == endpoint
+                ]
+                if durations_for_ep:
+                    sorted_d = sorted(durations_for_ep)
+                    n = len(sorted_d)
+                    p50 = round(sorted_d[n // 2], 2)
+                else:
+                    p50 = stats.get("avg_duration_ms", 0)
 
-        if range == "1d":
-            start_date = now - timedelta(days=1)
-        elif range == "7d":
-            start_date = now - timedelta(days=7)
-        elif range == "30d":
-            start_date = now - timedelta(days=30)
-        elif range == "90d":
-            start_date = now - timedelta(days=90)
-        else:  # all
-            start_date = datetime.utcfromtimestamp(0)
+                route_latencies[endpoint] = {
+                    "p50": p50,
+                    "p95": stats.get("p95_duration_ms", 0),
+                    "p99": stats.get("p99_duration_ms", 0),
+                    # Cache hit rate not tracked at request level; 0 indicates unavailable
+                    "cache_hit_rate": 0,
+                    "total_requests": stats.get("total_requests", 0),
+                    "error_count": stats.get("error_count", 0),
+                }
 
-        # Get cost metrics using available method
-        cost_summary = await cost_service.get_summary()
-        total_cost = cost_summary.get("month_cost", 0.0) if cost_summary else 0.0
+                overall_total += stats.get("total_requests", 0)
+                overall_durations.extend(durations_for_ep)
 
-        # Query task counts from database
-        from sqlalchemy import and_, func, select
+        # Compute overall stats
+        if overall_durations:
+            sorted_all = sorted(overall_durations)
+            n_all = len(sorted_all)
+            avg_latency = round(sum(sorted_all) / n_all, 2)
+            p95_all = round(sorted_all[int(n_all * 0.95)], 2) if n_all >= 2 else sorted_all[-1]
+            p99_all = round(sorted_all[int(n_all * 0.99)], 2) if n_all >= 2 else sorted_all[-1]
+            errors_all = sum(s.get("error_count", 0) for s in route_latencies.values())
+            error_rate = round((errors_all / n_all * 100) if n_all > 0 else 0, 2)
+        else:
+            avg_latency = 0.0
+            p95_all = 0.0
+            p99_all = 0.0
+            error_rate = 0.0
 
-        from schemas.common_schemas import ContentTask
+        overall_stats = {
+            "total_requests": overall_total,
+            "avg_latency_ms": avg_latency,
+            "p95_latency_ms": p95_all,
+            "p99_latency_ms": p99_all,
+            "error_rate_pct": error_rate,
+            "profiling_available": profiling_mw is not None,
+        }
 
-        async with db_service.get_session() as session:
-            # Count completed tasks
-            completed_count = await session.execute(
-                select(func.count(ContentTask.id)).where(
-                    and_(ContentTask.status == "completed", ContentTask.updated_at >= start_date)
-                )
-            )
-            tasks_completed = completed_count.scalar() or 0
+        # --- model router decisions ---
+        from services.model_router import get_model_router
 
-            # Get previous period count (same duration, one cycle back)
-            period_days = int((now - start_date).total_seconds() / 86400)
-            prev_start = start_date - timedelta(days=period_days)
-
-            prev_completed = await session.execute(
-                select(func.count(ContentTask.id)).where(
-                    and_(
-                        ContentTask.status == "completed",
-                        ContentTask.updated_at >= prev_start,
-                        ContentTask.updated_at < start_date,
-                    )
-                )
-            )
-            prev_tasks = prev_completed.scalar() or 0
-
-        # Calculate KPIs
-        tasks_change = (
-            ((tasks_completed - prev_tasks) / prev_tasks * 100)
-            if prev_tasks > 0
-            else (100 if tasks_completed > 0 else 0)
-        )
-
-        # Estimate revenue ($150 per task base rate)
-        revenue_current = int(tasks_completed * 150)
-        revenue_previous = int(prev_tasks * 150)
-        revenue_change = (
-            ((revenue_current - revenue_previous) / revenue_previous * 100)
-            if revenue_previous > 0
-            else (100 if revenue_current > 0 else 0)
-        )
-
-        # AI savings = estimated hours saved * hourly rate
-        # Assume each task saves ~3 hours at $50/hour = $150 per task
-        ai_savings_current = int(tasks_completed * 150)
-        ai_savings_previous = int(prev_tasks * 150)
-
-        # Mock engagement and uptime (would come from analytics/monitoring)
-        engagement_current = 4.8
-        engagement_previous = 3.2
+        router = get_model_router()
+        if router is not None:
+            router_metrics = router.get_metrics()
+            model_router_decisions = {
+                "budget": router_metrics.get("budget_model_uses", 0),
+                "premium": router_metrics.get("premium_model_uses", 0),
+                "total": router_metrics.get("total_requests", 0),
+                "budget_pct": router_metrics.get("budget_model_percentage", 0),
+                "estimated_cost_saved_usd": router_metrics.get("estimated_cost_saved", 0),
+            }
+        else:
+            model_router_decisions = {}
 
         return {
-            "kpis": {
-                "revenue": {
-                    "current": revenue_current,
-                    "previous": revenue_previous,
-                    "change": int(revenue_change),
-                    "currency": "USD",
-                    "icon": "📈",
-                },
-                "contentPublished": {
-                    "current": tasks_completed,
-                    "previous": prev_tasks,
-                    "change": int(tasks_change),
-                    "unit": "posts",
-                    "icon": "📝",
-                },
-                "tasksCompleted": {
-                    "current": tasks_completed,
-                    "previous": prev_tasks,
-                    "change": int(tasks_change),
-                    "unit": "tasks",
-                    "icon": "✅",
-                },
-                "aiSavings": {
-                    "current": ai_savings_current,
-                    "previous": ai_savings_previous,
-                    "change": int(
-                        ((ai_savings_current - ai_savings_previous) / ai_savings_previous * 100)
-                        if ai_savings_previous > 0
-                        else (100 if ai_savings_current > 0 else 0)
-                    ),
-                    "currency": "USD",
-                    "icon": "💰",
-                    "description": "Estimated value of AI-generated content",
-                },
-                "engagementRate": {
-                    "current": engagement_current,
-                    "previous": engagement_previous,
-                    "change": int(
-                        ((engagement_current - engagement_previous) / engagement_previous * 100)
-                        if engagement_previous > 0
-                        else 0
-                    ),
-                    "unit": "%",
-                    "icon": "📊",
-                },
-                "agentUptime": {
-                    "current": 99.8,
-                    "previous": 99.2,
-                    "change": 1,
-                    "unit": "%",
-                    "icon": "⚙️",
-                },
-            },
-            "timestamp": datetime.utcnow().isoformat(),
-            "range": range,
+            "overall_stats": overall_stats,
+            "route_latencies": route_latencies,
+            "model_router_decisions": model_router_decisions,
+            # Redis does not expose hit-rate counters; omit rather than fabricate
+            "cache_stats": {},
+            "timestamp": datetime.now().isoformat(),
+            "note": (
+                "Latency data is from in-process ProfilingMiddleware (last 1,000 requests). "
+                "Resets on server restart."
+            ),
         }
+
     except Exception as e:
-        logger.error(f"Error getting KPI analytics: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"[get_performance_metrics] Error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve performance metrics")
+
+
+@metrics_router.get(
+    "/operational",
+    summary="Operational gauges — task queue depth, executor health, WebSocket connections",
+    description=(
+        "Returns in-memory operational metrics without requiring a database query. "
+        "Designed for external monitoring scraping (Railway, Datadog, Loki). "
+        "Requires authentication for consistency with other metrics endpoints."
+    ),
+    include_in_schema=True,
+)
+async def get_operational_metrics(
+    request: Request,
+    current_user: UserProfile = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
+) -> Dict[str, Any]:
+    """
+    Return structured operational gauges for alerting and dashboards.
+
+    Emits a structured INFO log alongside the JSON response so that
+    log-based metric pipelines (Railway/Loki) can create dashboards
+    without a Prometheus scraper.
+
+    Metrics included:
+    - task_queue_depth: pending + in_progress task counts from DB
+    - executor: task_count, success_count, error_count from TaskExecutor
+    - websocket_connections: total active WebSocket connections
+    - uptime_seconds: process uptime
+    - timestamp: ISO 8601 UTC
+    """
+    try:
+        now = datetime.now()
+        uptime = (now - _start_time).total_seconds()
+
+        # --- Task queue depth from DB ---
+        task_counts: Dict[str, int] = {}
+        try:
+            if db_service and db_service.tasks:
+                raw = await db_service.tasks.get_task_counts()
+                task_counts = {str(k): int(v) for k, v in (raw or {}).items()}
+        except Exception as db_err:
+            logger.warning(f"[operational_metrics] DB task count unavailable: {db_err}", exc_info=True)
+
+        pending = task_counts.get("pending", 0)
+        in_progress = task_counts.get("in_progress", 0)
+        failed = task_counts.get("failed", 0)
+        completed = task_counts.get("completed", 0)
+
+        # --- Task executor in-memory stats ---
+        executor_stats: Dict[str, Any] = {}
+        try:
+            from services.service_container import get_service_container  # type: ignore[import-untyped]
+
+            container = get_service_container()
+            if container and hasattr(container, "task_executor") and container.task_executor:
+                executor_stats = container.task_executor.get_stats()
+        except Exception as ex_err:
+            logger.debug(f"[operational_metrics] Executor stats unavailable: {ex_err}")
+
+        # --- WebSocket connections ---
+        ws_total = 0
+        try:
+            from services.websocket_manager import websocket_manager
+
+            ws_total = sum(
+                len(conns) for conns in websocket_manager.active_connections.values()
+            )
+        except Exception as ws_err:
+            logger.debug(f"[operational_metrics] WebSocket count unavailable: {ws_err}")
+
+        metrics: Dict[str, Any] = {
+            "timestamp": now.isoformat(),
+            "uptime_seconds": round(uptime, 1),
+            "task_queue": {
+                "pending": pending,
+                "in_progress": in_progress,
+                "failed": failed,
+                "completed": completed,
+            },
+            "executor": {
+                "task_count": executor_stats.get("task_count", 0),
+                "success_count": executor_stats.get("success_count", 0),
+                "error_count": executor_stats.get("error_count", 0),
+                "is_running": executor_stats.get("is_running", False),
+            },
+            "websocket_connections": ws_total,
+        }
+
+        # Emit a structured log line so log-based alerting can detect queue build-up.
+        # Log at WARNING if queue is deep to make it filter-friendly.
+        queue_depth = pending + in_progress
+        if queue_depth > 50:
+            logger.warning(
+                f"[operational_metrics] queue_depth={queue_depth} "
+                f"pending={pending} in_progress={in_progress} "
+                f"errors={executor_stats.get('error_count', 0)} "
+                f"ws_connections={ws_total}",
+            )
+        else:
+            logger.info(
+                f"[operational_metrics] queue_depth={queue_depth} "
+                f"pending={pending} in_progress={in_progress} "
+                f"errors={executor_stats.get('error_count', 0)} "
+                f"ws_connections={ws_total}",
+            )
+
+        return metrics
+
+    except Exception as e:
+        logger.error(f"[get_operational_metrics] Error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve operational metrics")

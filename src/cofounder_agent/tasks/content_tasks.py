@@ -87,7 +87,7 @@ class ResearchTask(PureTask):
             research_data = json.loads(cleaned_response)
         except (json.JSONDecodeError, ValueError, TypeError) as e:
             # Fallback if not valid JSON
-            logger.warning(f"Failed to parse research data as JSON: {e}")
+            logger.warning(f"Failed to parse research data as JSON: {e}", exc_info=True)
             research_data = {
                 "key_points": [response[:200]],
                 "trends": [],
@@ -256,7 +256,7 @@ class QATask(PureTask):
             qa_result = json.loads(response_obj.text)
             overall_score = qa_result.get("overall_score", 5.0)
         except (json.JSONDecodeError, ValueError, TypeError, AttributeError) as e:
-            logger.warning(f"Failed to parse QA result: {e}")
+            logger.warning(f"Failed to parse QA result: {e}", exc_info=True)
             overall_score = 5.0
             qa_result = {
                 "feedback": response_obj.text,
@@ -332,7 +332,7 @@ class ImageSelectionTask(PureTask):
             suggestions = json.loads(response_obj.text)
             search_queries = suggestions.get("search_queries", [topic])
         except (json.JSONDecodeError, ValueError, TypeError, AttributeError) as e:
-            logger.warning(f"Failed to parse image suggestions: {e}")
+            logger.warning(f"Failed to parse image suggestions: {e}", exc_info=True)
             search_queries = [topic]
 
         # In production, would search Pexels/Unsplash API
@@ -431,7 +431,7 @@ class PublishTask(PureTask):
                 "images_published": len(images),
             }
         except Exception as e:
-            logger.error(f"Publishing failed: {str(e)}")
+            logger.error(f"Publishing failed: {str(e)}", exc_info=True)
             return {
                 "content_title": title,
                 "status": "failed",

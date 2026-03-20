@@ -5,14 +5,12 @@ Provides callbacks and storage for tracking generation progress
 to be streamed to WebSocket clients in real-time.
 """
 
-import logging
+from services.logger_config import get_logger
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 @dataclass
 class GenerationProgress:
     """Represents the current state of a generation task"""
@@ -31,7 +29,7 @@ class GenerationProgress:
 
     def __post_init__(self):
         if not self.timestamp:
-            self.timestamp = datetime.now().isoformat()
+            self.timestamp = datetime.now(timezone.utc).isoformat()
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization"""
@@ -102,7 +100,7 @@ class ProgressService:
         if message:
             progress.message = message
 
-        progress.timestamp = datetime.now().isoformat()
+        progress.timestamp = datetime.now(timezone.utc).isoformat()
 
         # Call registered callbacks
         self._notify_callbacks(task_id, progress)
@@ -111,7 +109,7 @@ class ProgressService:
 
     def mark_complete(
         self, task_id: str, message: str = "Generation complete"
-    ) -> GenerationProgress:
+    ) -> Optional[GenerationProgress]:
         """Mark a task as completed"""
         progress = self._progress.get(task_id)
         if progress:
@@ -120,21 +118,21 @@ class ProgressService:
             progress.percentage = 100.0
             progress.message = message
             progress.estimated_remaining = 0.0
-            progress.timestamp = datetime.now().isoformat()
+            progress.timestamp = datetime.now(timezone.utc).isoformat()
 
             # Call registered callbacks
             self._notify_callbacks(task_id, progress)
 
         return progress
 
-    def mark_failed(self, task_id: str, error: str) -> GenerationProgress:
+    def mark_failed(self, task_id: str, error: str) -> Optional[GenerationProgress]:
         """Mark a task as failed"""
         progress = self._progress.get(task_id)
         if progress:
             progress.status = "failed"
             progress.error = error
             progress.message = f"Generation failed: {error}"
-            progress.timestamp = datetime.now().isoformat()
+            progress.timestamp = datetime.now(timezone.utc).isoformat()
 
             # Call registered callbacks
             self._notify_callbacks(task_id, progress)
@@ -156,7 +154,7 @@ class ProgressService:
             try:
                 callback(progress)
             except Exception as e:
-                logger.error(f"Error in progress callback: {e}")
+                logger.error(f"[_notify_callbacks] Error in progress callback: {e}", exc_info=True)
 
     def cleanup(self, task_id: str) -> None:
         """Clean up progress and callbacks for a task"""

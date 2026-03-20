@@ -6,6 +6,7 @@ inputs of the next step (pipeline data flow).
 """
 
 import asyncio
+import logging
 import re
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -13,6 +14,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from .capability_registry import get_registry
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -230,6 +233,10 @@ class CapabilityTaskExecutor:
 
                 except Exception as e:
                     # Record failed step
+                    logger.error(
+                        f"[capability_task_executor] Step {step_index} ({step.capability_name}) failed",
+                        exc_info=True,
+                    )
                     step_duration = (time.time() - step_start) * 1000
                     step_result = StepResult(
                         step_index=step_index,
@@ -253,6 +260,7 @@ class CapabilityTaskExecutor:
                 result.final_outputs = context.copy()
 
         except Exception as e:
+            logger.error("[capability_task_executor] Task execution failed", exc_info=True)
             result.status = "failed"
             result.error = f"Task execution failed: {str(e)}"
 
@@ -310,7 +318,12 @@ class CapabilityTaskExecutor:
 
                 for (step_idx, step), step_result in zip(group_steps, step_results):
                     if isinstance(step_result, Exception):
-                        # Failed
+                        # Failed — log with full traceback so it appears in Sentry/logs
+                        logger.error(
+                            f"[execute_capability_task] Step {step_idx} "
+                            f"({step.capability_name}) failed",
+                            exc_info=step_result,
+                        )
                         result.step_results.append(
                             StepResult(
                                 step_index=step_idx,
@@ -338,6 +351,7 @@ class CapabilityTaskExecutor:
                 result.final_outputs = context.copy()
 
         except Exception as e:
+            logger.error("[capability_task_executor] execute_capability_task failed", exc_info=True)
             result.status = "failed"
             result.error = str(e)
 

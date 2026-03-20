@@ -4,8 +4,7 @@ PostgreSQL-based CMS client for storing content directly to the database.
 Replaces Strapi with direct PostgreSQL storage for posts, categories, tags, and media.
 """
 
-import json
-import logging
+from services.logger_config import get_logger
 from typing import Any, Dict, Optional
 from uuid import uuid4
 
@@ -14,9 +13,7 @@ import asyncpg
 from ..config import config
 from ..utils.data_models import BlogPost, ImageDetails
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class PostgresCMSClient:
     """
     Direct PostgreSQL CMS client for storing and retrieving content.
@@ -35,7 +32,7 @@ class PostgresCMSClient:
         Args:
             database_url: PostgreSQL connection string. If not provided, uses config.DATABASE_URL
         """
-        self.database_url = database_url or config.DATABASE_URL
+        self.database_url: str = database_url or config.DATABASE_URL or ""
         self.pool: Optional[asyncpg.Pool] = None
         logger.info(
             f"PostgresCMSClient initialized (Database: {self._mask_url(self.database_url)})"
@@ -65,7 +62,7 @@ class PostgresCMSClient:
             logger.info("✅ PostgreSQL CMS client pool initialized")
             await self._ensure_schema()
         except Exception as e:
-            logger.error(f"❌ Failed to initialize PostgreSQL pool: {e}")
+            logger.error(f"❌ Failed to initialize PostgreSQL pool: {e}", exc_info=True)
             raise
 
     async def close(self):
@@ -202,7 +199,7 @@ class PostgresCMSClient:
 
                 # Add tags if provided (from category)
                 if post.category:
-                    tag_id = await self._get_or_create_tag(conn, post.category)
+                    tag_id = await self._get_or_create_tag(conn, post.category)  # type: ignore[arg-type]
                     await conn.execute(
                         """
                         INSERT INTO post_tags (post_id, tag_id) VALUES ($1, $2)
@@ -231,7 +228,7 @@ class PostgresCMSClient:
             return post_id, slug
 
         except Exception as e:
-            logger.error(f"❌ Failed to create post: {e}")
+            logger.error(f"❌ Failed to create post: {e}", exc_info=True)
             raise
 
     async def _get_or_create_tag(self, conn: asyncpg.Connection, tag_name: str) -> str:
@@ -287,7 +284,7 @@ class PostgresCMSClient:
                 return None
 
         except Exception as e:
-            logger.error(f"❌ Failed to get post: {e}")
+            logger.error(f"❌ Failed to get post: {e}", exc_info=True)
             return None
 
     async def upload_image_metadata(
@@ -327,7 +324,7 @@ class PostgresCMSClient:
             return image_id
 
         except Exception as e:
-            logger.error(f"❌ Failed to store image metadata: {e}")
+            logger.error(f"❌ Failed to store image metadata: {e}", exc_info=True)
             return None
 
     async def get_or_create_category(self, category_name: str) -> str:
@@ -356,7 +353,7 @@ class PostgresCMSClient:
                 return category_id
 
         except Exception as e:
-            logger.error(f"❌ Failed to get/create category: {e}")
+            logger.error(f"❌ Failed to get/create category: {e}", exc_info=True)
             raise
 
     async def health_check(self) -> bool:
@@ -369,5 +366,5 @@ class PostgresCMSClient:
                 result = await conn.fetchval("SELECT 1")
                 return result == 1
         except Exception as e:
-            logger.error(f"❌ Health check failed: {e}")
+            logger.error(f"❌ Health check failed: {e}", exc_info=True)
             return False

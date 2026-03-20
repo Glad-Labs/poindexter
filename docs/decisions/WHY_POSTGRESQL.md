@@ -1,18 +1,19 @@
 # 💡 Why PostgreSQL? Decision Document
 
-**Decision:** Use PostgreSQL for production database  
-**Date Decided:** Q3 2025  
-**Status:** ✅ ACTIVE  
-**Review Date:** February 2026
+**Decision:** Use PostgreSQL for all environments (production and local)
+**Date Decided:** Q3 2025
+**Updated:** March 2026 — Standardized on PostgreSQL only (no SQLite fallback)
+**Status:** ✅ ACTIVE
+**Review Date:** March 2026
 
 ---
 
 ## 🎯 The Decision
 
-**Chosen:** PostgreSQL with SQLAlchemy ORM  
-**Alternatives Considered:** MongoDB, MySQL, Firebase Firestore  
-**Local Development:** SQLite for speed  
-**Impact:** All persistent data, Strapi CMS backend, audit logs
+**Chosen:** PostgreSQL with SQLAlchemy 2.0 async ORM
+**Alternatives Considered:** MongoDB, MySQL, Firebase Firestore
+**Local Development:** PostgreSQL required (no SQLite fallback)
+**Impact:** All persistent data, database-backed CMS, audit logs, real-time features
 
 ---
 

@@ -7,11 +7,10 @@ input/output schemas for data flow validation.
 """
 
 import inspect
-import json
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, Generic, List, Optional, TypeVar
+from typing import Any, Callable, Dict, List, Optional
 
 
 class ParameterType(str, Enum):
@@ -114,19 +113,16 @@ class Capability(ABC):
     @abstractmethod
     def metadata(self) -> CapabilityMetadata:
         """Return capability metadata."""
-        pass
 
     @property
     @abstractmethod
     def input_schema(self) -> InputSchema:
         """Return input schema."""
-        pass
 
     @property
     @abstractmethod
     def output_schema(self) -> OutputSchema:
         """Return output schema."""
-        pass
 
     @abstractmethod
     async def execute(self, **inputs) -> Any:
@@ -139,7 +135,6 @@ class Capability(ABC):
         Returns:
             Output matching output_schema
         """
-        pass
 
 
 class CapabilityRegistry:

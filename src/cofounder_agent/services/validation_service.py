@@ -5,14 +5,12 @@ Provides centralized input validation functions for API endpoints.
 Prevents SQL injection, XSS, oversized payloads, and invalid data.
 """
 
-import logging
+from services.logger_config import get_logger
 import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
-
-
+logger = get_logger(__name__)
 class ValidationError(Exception):
     """Custom exception for validation failures"""
 

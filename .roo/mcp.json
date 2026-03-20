@@ -1,0 +1,271 @@
+{
+  "servers": {
+    "io.github.upstash/context7": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["@upstash/context7-mcp@1.0.31"],
+      "env": {
+        "CONTEXT7_API_KEY": "${input:CONTEXT7_API_KEY}"
+      },
+      "gallery": "https://api.mcp.github.com",
+      "version": "1.0.31"
+    },
+    "microsoft/markitdown": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["markitdown-mcp@0.0.1a4"],
+      "gallery": "https://api.mcp.github.com",
+      "version": "1.0.0"
+    },
+    "microsoft/playwright-mcp": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["@playwright/mcp@latest"],
+      "gallery": "https://api.mcp.github.com",
+      "version": "0.0.1-seed"
+    },
+    "io.github.github/github-mcp-server": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "gallery": "https://api.mcp.github.com",
+      "version": "0.31.0"
+    },
+    "io.github.vercel/next-devtools-mcp": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["next-devtools-mcp@0.3.6"],
+      "gallery": "https://api.mcp.github.com",
+      "version": "0.3.6"
+    }
+  },
+  "inputs": [
+    {
+      "id": "unity_mcp_server_src",
+      "type": "promptString",
+      "description": "Absolute path to the Unity MCP Server 'src' folder installed by the Unity package (e.g., macOS: ~/Library/Application Support/UnityMCP/UnityMcpServer/src; Windows: %USERPROFILE%/AppData/Local/UnityMCP/UnityMcpServer/src; Linux: ~/.local/share/UnityMCP/UnityMcpServer/src).",
+      "password": false
+    },
+    {
+      "id": "context7_api_key",
+      "type": "promptString",
+      "description": "Context7 API key (optional; increases rate limits). Get one at https://context7.com/dashboard",
+      "password": true
+    },
+    {
+      "id": "stackhawk_api_key",
+      "type": "promptString",
+      "description": "StackHawk API key",
+      "password": true
+    },
+    {
+      "id": "logfire_token",
+      "type": "promptString",
+      "description": "Pydantic Logfire read token (project-specific)",
+      "password": true
+    },
+    {
+      "id": "logfire_base_url",
+      "type": "promptString",
+      "description": "Self-hosted Logfire base URL (omit for cloud)",
+      "password": false
+    },
+    {
+      "id": "tfe_token",
+      "type": "promptString",
+      "description": "Terraform API Token",
+      "password": true
+    },
+    {
+      "id": "tfe_hostname",
+      "type": "promptString",
+      "description": "Terraform hostname",
+      "password": false
+    },
+    {
+      "id": "api_key",
+      "type": "promptString",
+      "description": "your API key",
+      "password": true
+    },
+    {
+      "id": "browser_url",
+      "type": "promptString",
+      "description": "Optional: connect to an already-running Chrome (remote debugging / port-forward). Example: http://127.0.0.1:9222",
+      "password": false
+    },
+    {
+      "id": "headless",
+      "type": "promptString",
+      "description": "Run Chrome headless (true/false). Default: false",
+      "password": false,
+      "default": "false"
+    },
+    {
+      "id": "isolated",
+      "type": "promptString",
+      "description": "Use a temporary user-data-dir (true/false). Default: false",
+      "password": false,
+      "default": "false"
+    },
+    {
+      "id": "chrome_channel",
+      "type": "promptString",
+      "description": "Chrome channel: stable | canary | beta | dev (default: stable).",
+      "password": false,
+      "default": "stable"
+    },
+    {
+      "id": "chroma_client_type",
+      "type": "promptString",
+      "description": "Client type: ephemeral (default), persistent, cloud, or http.",
+      "password": false
+    },
+    {
+      "id": "chroma_dotenv_path",
+      "type": "promptString",
+      "description": "Optional path to .env (defaults to ./.chroma_env).",
+      "password": false
+    },
+    {
+      "id": "chroma_data_dir",
+      "type": "promptString",
+      "description": "Data directory for persistent client.",
+      "password": false
+    },
+    {
+      "id": "chroma_tenant",
+      "type": "promptString",
+      "description": "Chroma Cloud tenant ID.",
+      "password": false
+    },
+    {
+      "id": "chroma_database",
+      "type": "promptString",
+      "description": "Chroma Cloud database name.",
+      "password": false
+    },
+    {
+      "id": "chroma_api_key",
+      "type": "promptString",
+      "description": "Chroma Cloud API key.",
+      "password": true
+    },
+    {
+      "id": "chroma_host",
+      "type": "promptString",
+      "description": "Self-hosted Chroma host.",
+      "password": false
+    },
+    {
+      "id": "chroma_port",
+      "type": "promptString",
+      "description": "Self-hosted Chroma port.",
+      "password": false
+    },
+    {
+      "id": "chroma_custom_auth",
+      "type": "promptString",
+      "description": "Custom auth credentials for self-hosted Chroma.",
+      "password": true
+    },
+    {
+      "id": "chroma_ssl",
+      "type": "promptString",
+      "description": "Use SSL (true/false) for self-hosted HTTP.",
+      "password": false
+    },
+    {
+      "id": "sentry_auth_token",
+      "type": "promptString",
+      "description": "Sentry auth token for mcp-server-sentry.",
+      "password": true
+    },
+    {
+      "id": "postgres_connection_string",
+      "type": "promptString",
+      "description": "PostgreSQL connection string for MCP Postgres server.",
+      "password": true
+    },
+    {
+      "id": "github_personal_access_token",
+      "type": "promptString",
+      "description": "GitHub Personal Access Token for github-mcp-server.",
+      "password": true
+    },
+    {
+      "id": "CONTEXT7_API_KEY",
+      "type": "promptString",
+      "description": "API key for authentication",
+      "password": true
+    }
+  ],
+  "mcpServers": {
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"],
+      "env": {
+        "DEFAULT_MINIMUM_TOKENS": ""
+      }
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/"]
+    },
+    "sequentialthinking": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+    },
+    "puppeteer": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-puppeteer"]
+    },
+    "time": {
+      "command": "uvx",
+      "args": ["mcp-server-time"]
+    },
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"]
+    },
+    "sentry": {
+      "command": "uvx",
+      "args": [
+        "mcp-server-sentry",
+        "--auth-token",
+        "${input:sentry_auth_token}"
+      ]
+    },
+    "postgres": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-postgres",
+        "${input:postgres_connection_string}"
+      ]
+    },
+    "github": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e",
+        "GITHUB_PERSONAL_ACCESS_TOKEN",
+        "-e",
+        "GITHUB_TOOLSETS",
+        "-e",
+        "GITHUB_READ_ONLY",
+        "ghcr.io/github/github-mcp-server"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${input:github_personal_access_token}",
+        "GITHUB_TOOLSETS": "",
+        "GITHUB_READ_ONLY": "0"
+      }
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@0.0.38"]
+    }
+  }
+}

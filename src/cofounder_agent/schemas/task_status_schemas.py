@@ -124,7 +124,7 @@ class TaskStatusFilterRequest(BaseModel):
     statuses: List[str] = Field(
         ...,
         description="List of statuses to filter by",
-        min_items=1,
+        min_items=1,  # type: ignore[call-overload]
     )
     limit: int = Field(
         100,

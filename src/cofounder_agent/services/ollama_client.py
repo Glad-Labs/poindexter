@@ -100,19 +100,16 @@ MODEL_PROFILES = {
 class OllamaError(Exception):
     """Base exception for Ollama errors."""
 
-    pass
 
 
 class OllamaConnectionError(OllamaError):
     """Raised when cannot connect to Ollama server."""
 
-    pass
 
 
 class OllamaModelNotFoundError(OllamaError):
     """Raised when requested model is not available."""
 
-    pass
 
 
 class OllamaClient:
@@ -155,7 +152,7 @@ class OllamaClient:
                 response = await client.get(f"{self.base_url}/api/tags", timeout=5.0)
                 return response.status_code == 200
         except Exception as e:
-            logger.warning("Ollama health check failed", error=str(e))
+            logger.error(f"[_check_health] Ollama health check failed: {e}", exc_info=True)
             return False
 
     async def list_models(self) -> List[Dict[str, Any]]:
@@ -176,7 +173,7 @@ class OllamaClient:
                 return models
 
         except Exception as e:
-            logger.error("Failed to list models", error=str(e))
+            logger.error(f"[_list_models] Failed to list models", error=str(e), exc_info=True)
             return []
 
     async def generate(
@@ -249,7 +246,7 @@ class OllamaClient:
                 }
 
         except httpx.HTTPError as e:
-            logger.error("Ollama generation failed", error=str(e), model=model)
+            logger.error(f"[generate] Ollama generation failed: {e}", exc_info=True, model=model)
             raise
 
     async def chat(
@@ -337,7 +334,7 @@ class OllamaClient:
                 }
 
         except httpx.HTTPError as e:
-            logger.error("Ollama chat failed", error=str(e), model=model)
+            logger.error(f"[chat] Ollama chat failed: {e}", exc_info=True, model=model)
             raise
 
     async def pull_model(self, model: str) -> bool:
@@ -365,7 +362,7 @@ class OllamaClient:
                 return True
 
         except Exception as e:
-            logger.error(f"Failed to pull model {model}", error=str(e))
+            logger.error(f"[_pull_model] Failed to pull model {model}", error=str(e), exc_info=True)
             return False
 
     def get_model_profile(self, model: str) -> Optional[Dict[str, Any]]:
@@ -440,7 +437,6 @@ class OllamaClient:
             Dictionary with response text, tokens, and timing
         """
         import asyncio
-        import time
 
         model = model or self.model
         last_error = None
@@ -475,56 +471,55 @@ class OllamaClient:
                 last_error = e
                 if attempt < max_retries - 1:
                     delay = base_delay * (2**attempt)
-                    logger.warning(
-                        f"Ollama connection failed (attempt {attempt + 1}), "
-                        f"retrying in {delay}s...",
-                        error=str(e),
+                    logger.error(
+                        f"[generate_with_retry] Ollama connection failed (attempt {attempt + 1}), retrying in {delay}s: {e}",
+                        exc_info=True,
                     )
                     await asyncio.sleep(delay)
                 else:
                     logger.error(
-                        "Ollama connection failed after all retries",
+                        f"[generate_with_retry] Ollama connection failed after all retries: {e}",
+                        exc_info=True,
                         attempts=max_retries,
-                        error=str(e),
                     )
 
             except httpx.ReadTimeout as e:
                 last_error = e
                 if attempt < max_retries - 1:
                     delay = base_delay * (2**attempt)
-                    logger.warning(
-                        f"Ollama request timeout (attempt {attempt + 1}), "
-                        f"retrying in {delay}s...",
-                        error=str(e),
+                    logger.error(
+                        f"[generate_with_retry] Ollama request timeout (attempt {attempt + 1}), retrying in {delay}s: {e}",
+                        exc_info=True,
                     )
                     await asyncio.sleep(delay)
                 else:
                     logger.error(
-                        "Ollama timeout after all retries", attempts=max_retries, error=str(e)
+                        f"[generate_with_retry] Ollama timeout after all retries: {e}",
+                        exc_info=True,
+                        attempts=max_retries,
                     )
 
             except Exception as e:
                 last_error = e
                 if attempt < max_retries - 1:
                     delay = base_delay * (2**attempt)
-                    logger.warning(
-                        f"Ollama generation failed (attempt {attempt + 1}), "
-                        f"retrying in {delay}s...",
-                        error=str(e),
+                    logger.error(
+                        f"[generate_with_retry] Ollama generation failed (attempt {attempt + 1}), retrying in {delay}s: {e}",
+                        exc_info=True,
                     )
                     await asyncio.sleep(delay)
                 else:
                     logger.error(
-                        "Ollama generation failed after all retries",
+                        f"[generate_with_retry] Ollama generation failed after all retries: {e}",
+                        exc_info=True,
                         attempts=max_retries,
-                        error=str(e),
                     )
 
         # All retries exhausted
         logger.error(
-            "All Ollama generation attempts exhausted",
+            f"[generate_with_retry] All Ollama generation attempts exhausted: {last_error}",
+            exc_info=True,
             max_retries=max_retries,
-            last_error=str(last_error),
         )
         raise last_error if last_error else OllamaError("Generation failed after all retries")
 
@@ -580,10 +575,15 @@ class OllamaClient:
                                 if "response" in data:
                                     yield data["response"]
                             except json.JSONDecodeError:
+                                logger.debug(
+                                    f"[stream_generate] Skipping malformed JSON line: {line[:80]!r}"
+                                )
                                 continue
 
         except httpx.HTTPError as e:
-            logger.error("Ollama streaming failed", error=str(e), model=model)
+            logger.error(
+                f"[stream_generate] Ollama streaming failed: {e}", exc_info=True, model=model
+            )
             raise
 
 

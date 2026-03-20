@@ -14,7 +14,7 @@ Features:
 import json
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from services.capability_registry import get_registry
 from services.capability_task_executor import (
@@ -194,7 +194,7 @@ Now generate the task JSON for the user's request:"""
                     execution_id = result.execution_id
                     logger.info(f"[Composer] Task executed: {execution_id}")
                 except Exception as e:
-                    logger.error(f"[Composer] Execution failed: {e}")
+                    logger.error(f"[Composer] Execution failed: {e}", exc_info=True)
                     return TaskCompositionResult(
                         success=False,
                         suggested_task=task_dict,
@@ -293,7 +293,7 @@ Now generate the task JSON for the user's request:"""
             json_str = response[start_idx:end_idx]
             return json.loads(json_str)
         except json.JSONDecodeError as e:
-            logger.error(f"[Composer] Failed to parse LLM JSON: {e}")
+            logger.error(f"[Composer] Failed to parse LLM JSON: {e}", exc_info=True)
             return {"error": f"Invalid JSON from LLM: {str(e)}"}
 
     def _validate_task_definition(self, task_dict: Dict[str, Any]) -> Dict[str, Any]:

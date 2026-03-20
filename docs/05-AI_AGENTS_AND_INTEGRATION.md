@@ -1,7 +1,7 @@
 # 05 - AI Agents & Integration
 
-**Last Updated:** February 10, 2026  
-**Version:** 3.1.0  
+**Last Updated:** March 10, 2026
+**Version:** 3.0.81
 **Status:** ✅ Production Ready | Multi-Agent Orchestration | Self-Critiquing Pipeline Active
 
 ---
@@ -72,12 +72,12 @@ The system attempts providers in the following order (based on keys available in
 
 Instead of hardcoding model names, the system uses **Cost Tiers** for intelligent execution:
 
-| Tier | Primary Model | Usage Case |
-|---|---|---|
-| **Ultra Cheap** | Ollama (Llama 3) | Drafting, Initial Research |
-| **Cheap** | Gemini 1.5 Flash | Classification, Tagging |
-| **Balanced** | Claude 3.5 Sonnet | Writing, QA (Standard) |
-| **Premium** | Claude 3 Opus / GPT-4o | Complex Reasoning, Final Review |
+| Tier            | Primary Model          | Usage Case                      |
+| --------------- | ---------------------- | ------------------------------- |
+| **Ultra Cheap** | Ollama (Llama 3)       | Drafting, Initial Research      |
+| **Cheap**       | Gemini 1.5 Flash       | Classification, Tagging         |
+| **Balanced**    | Claude 3.5 Sonnet      | Writing, QA (Standard)          |
+| **Premium**     | Claude 3 Opus / GPT-4o | Complex Reasoning, Final Review |
 
 ---
 
