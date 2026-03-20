@@ -100,19 +100,16 @@ MODEL_PROFILES = {
 class OllamaError(Exception):
     """Base exception for Ollama errors."""
 
-    pass
 
 
 class OllamaConnectionError(OllamaError):
     """Raised when cannot connect to Ollama server."""
 
-    pass
 
 
 class OllamaModelNotFoundError(OllamaError):
     """Raised when requested model is not available."""
 
-    pass
 
 
 class OllamaClient:
@@ -440,7 +437,6 @@ class OllamaClient:
             Dictionary with response text, tokens, and timing
         """
         import asyncio
-        import time
 
         model = model or self.model
         last_error = None

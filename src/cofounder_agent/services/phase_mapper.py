@@ -15,7 +15,6 @@ logger = get_logger(__name__)
 class PhaseMappingError(Exception):
     """Raised when phase mapping fails"""
 
-    pass
 
 
 class PhaseMapper:

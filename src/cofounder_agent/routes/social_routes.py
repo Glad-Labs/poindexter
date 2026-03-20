@@ -5,7 +5,7 @@ Handles integration with social media platforms, content generation, posting, an
 
 from services.logger_config import get_logger
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
@@ -13,11 +13,8 @@ from routes.auth_unified import get_current_user
 from schemas.social_schemas import (
     CrossPostRequest,
     GenerateContentRequest,
-    SocialAnalytics,
     SocialPlatformConnection,
-    SocialPlatformEnum,
     SocialPost,
-    ToneEnum,
 )
 
 logger = get_logger(__name__)

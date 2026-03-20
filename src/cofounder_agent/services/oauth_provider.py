@@ -24,7 +24,6 @@ from typing import Any, Dict, Optional
 class OAuthException(Exception):
     """Raised when OAuth operations fail."""
 
-    pass
 
 
 @dataclass
@@ -99,7 +98,6 @@ class OAuthProvider(ABC):
             url = provider.get_authorization_url("abc123state")
             redirect to url
         """
-        pass
 
     @abstractmethod
     def exchange_code_for_token(self, code: str) -> str:
@@ -122,7 +120,6 @@ class OAuthProvider(ABC):
         Example:
             token = provider.exchange_code_for_token("auth_code_abc123")
         """
-        pass
 
     @abstractmethod
     def get_user_info(self, access_token: str) -> OAuthUser:
@@ -145,4 +142,3 @@ class OAuthProvider(ABC):
             user = provider.get_user_info("access_token_xyz")
             # user.email, user.display_name, user.provider_id available
         """
-        pass

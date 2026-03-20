@@ -26,8 +26,7 @@ import json
 import logging
 from services.logger_config import get_logger
 import os
-from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 
 try:
     import redis.asyncio as aioredis  # type: ignore[import-untyped]

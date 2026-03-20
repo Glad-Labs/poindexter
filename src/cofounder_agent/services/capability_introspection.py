@@ -13,8 +13,6 @@ from typing import Any, Callable, List, Optional, get_type_hints
 logger = logging.getLogger(__name__)
 
 from .capability_registry import (
-    Capability,
-    CapabilityMetadata,
     CapabilityRegistry,
     InputSchema,
     OutputSchema,

@@ -40,7 +40,7 @@ from .metrics_service import TaskMetrics
 from .error_handler import ServiceError
 
 # Import WebSocket progress emission (re-exported so tests can patch at this module)
-from .websocket_event_broadcaster import emit_notification, emit_task_progress
+from .websocket_event_broadcaster import emit_notification, emit_task_progress  # noqa: F401
 
 logger = logging.getLogger(__name__)
 

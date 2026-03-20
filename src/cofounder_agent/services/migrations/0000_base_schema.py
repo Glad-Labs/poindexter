@@ -504,4 +504,3 @@ async def up(pool):
 
 async def down(pool):
     """Rollback is intentionally a no-op — dropping base tables is too dangerous."""
-    pass

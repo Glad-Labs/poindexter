@@ -27,12 +27,11 @@ from services.logger_config import get_logger
 import os
 import uuid as uuid_lib
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from uuid import UUID
 
-import aiohttp
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from routes.auth_unified import get_current_user
 from schemas.model_converter import ModelConverter
@@ -41,17 +40,13 @@ from schemas.task_schemas import (
     MetricsResponse,
     TaskConfirmRequest,
     TaskConfirmResponse,
-    TaskCreateRequest,
     TaskIntentResponse,
     TaskListResponse,
     TaskStatusUpdateRequest,
     UnifiedTaskRequest,
 )
 from schemas.task_status_schemas import (
-    TaskStatusFilterRequest,
-    TaskStatusHistoryEntry,
     TaskStatusInfo,
-    TaskStatusStatistics,
     TaskStatusUpdateResponse,
 )
 from schemas.unified_task_response import UnifiedTaskResponse
@@ -59,7 +54,6 @@ from schemas.unified_task_response import UnifiedTaskResponse
 # Import async database service
 from services.database_service import DatabaseService
 from services.enhanced_status_change_service import EnhancedStatusChangeService
-from utils.error_responses import ErrorResponseBuilder
 from utils.json_encoder import convert_decimals, safe_json_dumps
 from utils.route_utils import get_database_dependency
 from utils.text_utils import extract_title_from_content
@@ -67,10 +61,8 @@ from routes.revalidate_routes import trigger_nextjs_revalidation
 
 # Import task status utilities (ENTERPRISE)
 from utils.task_status import (
-    StatusTransitionValidator,
     TaskStatus,
     get_allowed_transitions,
-    get_status_description,
     is_terminal,
     is_valid_transition,
 )

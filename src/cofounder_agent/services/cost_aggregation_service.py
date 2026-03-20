@@ -12,8 +12,7 @@ Built on top of DatabaseService's log_cost() and get_task_costs() methods.
 
 from services.logger_config import get_logger
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 logger = get_logger(__name__)
 class CostAggregationService:

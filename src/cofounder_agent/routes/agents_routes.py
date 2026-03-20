@@ -13,10 +13,8 @@ Endpoints:
 - GET /api/agents/health - Agent system health
 """
 
-import logging
 from datetime import datetime, timezone
-from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 

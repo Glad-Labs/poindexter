@@ -7,7 +7,7 @@ workflow configurations. Phase 3 component for advanced user interaction.
 from services.logger_config import get_logger
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 logger = get_logger(__name__)
 @dataclass

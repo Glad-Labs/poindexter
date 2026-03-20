@@ -174,7 +174,6 @@ class ContentService(ServiceBase):
         try:
             from agents.content_agent.agents.creative_agent import CreativeAgent
             from agents.content_agent.services.llm_client import LLMClient
-            from services.writing_style_integration import WritingStyleIntegrationService
 
             # Select LLM for draft phase
             draft_model = model or (

@@ -83,7 +83,6 @@ class JWTTokenValidator:
             jwt.ExpiredSignatureError: Token has expired
             jwt.InvalidTokenError: Token is invalid
         """
-        import sys
 
         # Development: Allow disabling auth for testing — ONLY in non-production environments
         if (

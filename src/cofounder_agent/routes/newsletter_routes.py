@@ -5,8 +5,6 @@ Endpoints for managing email campaign subscriptions and newsletter signups.
 """
 
 import logging
-import re
-from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status

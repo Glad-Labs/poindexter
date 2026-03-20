@@ -6,7 +6,7 @@ Handle post creation, publication, and metadata updates.
 
 from services.logger_config import get_logger
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Tuple
 
 from .base_phase import (
     BasePhase,

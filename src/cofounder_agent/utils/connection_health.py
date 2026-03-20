@@ -7,7 +7,7 @@ for stale connections and pool exhaustion.
 
 import asyncio
 from services.logger_config import get_logger
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 logger = get_logger(__name__)

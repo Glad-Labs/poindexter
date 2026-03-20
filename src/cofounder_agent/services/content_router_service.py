@@ -15,16 +15,12 @@ Provides centralized blog post generation with:
 """
 
 import logging
-import uuid
-from datetime import datetime
-from enum import Enum
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Optional
 
-from schemas.content_schemas import ContentStyle, ContentTone, PublishMode
 
 from .ai_content_generator import get_content_generator
 from .database_service import DatabaseService
-from .image_service import ImageService, get_image_service
+from .image_service import get_image_service
 from .prompt_manager import get_prompt_manager
 from .quality_service import EvaluationMethod, UnifiedQualityService
 from .seo_content_generator import get_seo_content_generator
@@ -396,7 +392,6 @@ async def process_content_generation_task(
     Returns:
         Dict with complete task result including post_id, quality_score, image_url, cost_breakdown, etc.
     """
-    from asyncio import gather
     from uuid import uuid4
 
     # Generate task_id if not provided
