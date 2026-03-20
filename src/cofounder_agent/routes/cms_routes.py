@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 
 from routes.auth_unified import UserProfile, get_current_user, get_current_user_optional
 from utils.error_handler import handle_route_error
@@ -439,12 +440,15 @@ async def cms_status(current_user: UserProfile = Depends(get_current_user)):
             }
     except Exception as e:
         logger.error("[cms_status] CMS status check failed", exc_info=True)
-        return {
-            "status": "error",
-            "detail": "CMS status check failed",
-            "tables": {},
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "error",
+                "detail": "CMS status check failed",
+                "tables": {},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+        )
 
 
 # ============================================================================
