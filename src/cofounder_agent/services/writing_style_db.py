@@ -138,11 +138,12 @@ class WritingStyleDatabase(DatabaseServiceMixin):
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(
                     """
-                    SELECT id, user_id, title, description, content, is_active, 
+                    SELECT id, user_id, title, description, content, is_active,
                            word_count, char_count, metadata, created_at, updated_at
-                    FROM writing_samples 
+                    FROM writing_samples
                     WHERE user_id = $1
                     ORDER BY created_at DESC
+                    LIMIT 100
                     """,
                     user_id,
                 )
