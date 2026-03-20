@@ -42,13 +42,9 @@ import {
   Stop as StopIcon,
   Refresh as RefreshIcon,
 } from '@mui/icons-material';
-import {
-  getAvailablePhases,
-  executeWorkflow as runWorkflow,
-  getExecutionStatus,
-} from '../services/workflowBuilderService';
+import { makeRequest } from '../services/cofounderAgentClient';
+import { getAvailablePhases } from '../services/workflowBuilderService';
 import { getWorkflowHistory } from '../services/workflowManagementService';
-import phase4Client from '../services/phase4Client';
 
 /**
  * Blog Workflow Page
@@ -199,7 +195,11 @@ function BlogWorkflowPage() {
       const workflowDef = buildWorkflowDefinition();
       logger.log('Executing workflow:', workflowDef);
 
-      const result = await runWorkflow(workflowDef);
+      const result = await makeRequest(
+        '/api/workflows/execute/blog_post',
+        'POST',
+        workflowDef.metadata
+      );
       setExecutionId(result.execution_id || result.id);
       setActiveStep(2); // Move to Execute step
 
@@ -227,14 +227,20 @@ function BlogWorkflowPage() {
           abortControllerRef.current.abort();
         }
         abortControllerRef.current = new AbortController();
-        const progress = await getExecutionStatus(execId);
+        const progress = await makeRequest(
+          `/api/workflows/executions/${execId}/progress`,
+          'GET'
+        );
         setExecutionProgress(progress);
 
         // If workflow is complete, get results
         if (progress.status === 'completed' || progress.status === 'failed') {
           clearInterval(pollIntervalRef.current);
           pollIntervalRef.current = null;
-          const results = await getExecutionStatus(execId);
+          const results = await makeRequest(
+            `/api/workflows/executions/${execId}`,
+            'GET'
+          );
           setExecutionResults(results);
           setActiveStep(3); // Move to Results step
           setIsExecuting(false);
@@ -249,7 +255,10 @@ function BlogWorkflowPage() {
 
   const handleCancelExecution = async () => {
     try {
-      await phase4Client.workflowClient.cancelWorkflow(executionId);
+      await makeRequest(
+        `/api/workflows/executions/${executionId}/cancel`,
+        'POST'
+      );
       setIsExecuting(false);
       setExecutionProgress({ ...executionProgress, status: 'cancelled' });
     } catch (err) {

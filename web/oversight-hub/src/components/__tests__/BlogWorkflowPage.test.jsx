@@ -21,37 +21,31 @@ import {
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import BlogWorkflowPage from '../../pages/BlogWorkflowPage';
+import * as cofounderAgentClient from '../../services/cofounderAgentClient';
 import * as workflowBuilderService from '../../services/workflowBuilderService';
 import * as workflowManagementService from '../../services/workflowManagementService';
-import phase4Client from '../../services/phase4Client';
 
-// Mock the workflow services (previously apiClient)
+// Mock the services used by BlogWorkflowPage
+vi.mock('../../services/cofounderAgentClient', () => ({
+  makeRequest: vi.fn(),
+}));
+
 vi.mock('../../services/workflowBuilderService', () => ({
   getAvailablePhases: vi.fn(),
-  executeWorkflow: vi.fn(),
-  getExecutionStatus: vi.fn(),
 }));
 
 vi.mock('../../services/workflowManagementService', () => ({
   getWorkflowHistory: vi.fn(),
 }));
 
-vi.mock('../../services/phase4Client', () => ({
-  default: {
-    workflowClient: {
-      cancelWorkflow: vi.fn(),
-    },
-  },
-}));
-
-// Convenience aliases matching old apiClient shape for existing test assertions
+// Convenience aliases for existing test assertions
 const apiClient = {
   getAvailablePhases: workflowBuilderService.getAvailablePhases,
-  executeWorkflow: workflowBuilderService.executeWorkflow,
-  getWorkflowProgress: workflowBuilderService.getExecutionStatus,
-  getWorkflowResults: workflowBuilderService.getExecutionStatus,
+  executeWorkflow: cofounderAgentClient.makeRequest,
+  getWorkflowProgress: cofounderAgentClient.makeRequest,
+  getWorkflowResults: cofounderAgentClient.makeRequest,
   listWorkflowExecutions: workflowManagementService.getWorkflowHistory,
-  cancelWorkflowExecution: phase4Client.workflowClient.cancelWorkflow,
+  cancelWorkflowExecution: cofounderAgentClient.makeRequest,
 };
 
 // ============================================================================
