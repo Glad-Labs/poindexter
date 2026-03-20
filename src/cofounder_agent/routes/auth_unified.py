@@ -29,8 +29,15 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from utils.rate_limiter import limiter
 
-# Reusable httpx client for GitHub OAuth — avoids per-request connection overhead
-_github_http_client = httpx.AsyncClient(timeout=10.0)
+# Lazy-initialized httpx client for GitHub OAuth — avoids per-request connection overhead
+_github_http_client: httpx.AsyncClient | None = None
+
+
+def _get_github_client() -> httpx.AsyncClient:
+    global _github_http_client
+    if _github_http_client is None:
+        _github_http_client = httpx.AsyncClient(timeout=10.0)
+    return _github_http_client
 
 from config import get_config
 from schemas.auth_schemas import (
@@ -118,7 +125,7 @@ async def exchange_code_for_token(code: str) -> Dict[str, Any]:
         return {"access_token": "mock_github_token_dev", "expires_in": 3600}
 
     try:
-        response = await _github_http_client.post(
+        response = await _get_github_client().post(
             "https://github.com/login/oauth/access_token",
             data={
                 "client_id": GITHUB_CLIENT_ID,
@@ -189,7 +196,7 @@ async def get_github_user(access_token: str) -> Dict[str, Any]:
             "bio": "Development user for testing",
         }
 
-    response = await _github_http_client.get(
+    response = await _get_github_client().get(
         "https://api.github.com/user",
         headers={"Authorization": f"token {access_token}"},
     )
