@@ -46,7 +46,7 @@ STRUCTLOG_AVAILABLE = structlog is not None
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 LOG_FORMAT = os.getenv("LOG_FORMAT", "json" if ENVIRONMENT == "production" else "text")
-LOG_DIR = Path(os.getenv("LOG_DIR", "logs"))
+LOG_DIR = Path(os.getenv("LOG_DIR", str(Path(__file__).resolve().parent.parent / "logs")))
 LOG_FILE_NAME = os.getenv("LOG_FILE_NAME", "cofounder_agent.log")
 
 
