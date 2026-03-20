@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Glad Labs is an AI orchestration system (v3.0.43) — a monorepo with three integrated services:
+Glad Labs is an AI orchestration system (v3.0.81) — a monorepo with three integrated services:
 
 - **Backend:** Python FastAPI orchestrator with 118 service modules (port 8000)
 - **Admin UI:** React 18 + Material-UI dashboard for agent monitoring (port 3001)
