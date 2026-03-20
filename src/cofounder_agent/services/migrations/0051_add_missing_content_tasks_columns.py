@@ -75,4 +75,3 @@ async def up(pool):
 
 async def down(pool):
     """Rollback is a no-op — dropping columns risks data loss."""
-    pass

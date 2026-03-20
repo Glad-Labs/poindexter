@@ -7,7 +7,7 @@ output when running against these mocks. Install crewai-tools for real functiona
 """
 
 from services.logger_config import get_logger
-from typing import List, Optional
+from typing import Optional
 
 logger = get_logger(__name__)
 class BaseTool:

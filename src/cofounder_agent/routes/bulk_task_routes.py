@@ -8,12 +8,9 @@ Provides endpoints for performing bulk operations on multiple tasks such as:
 """
 
 from services.logger_config import get_logger
-from datetime import datetime, timezone
-from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 
 from routes.auth_unified import get_current_user
 from schemas.bulk_task_schemas import (

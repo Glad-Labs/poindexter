@@ -19,7 +19,7 @@ All endpoints require:
 5. Audit logging of all changes
 """
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Any, List, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
@@ -29,7 +29,6 @@ from routes.auth_unified import get_current_user
 
 logger = get_logger(__name__)
 from schemas.settings_schemas import (
-    SettingBase,
     SettingBulkUpdateRequest,
     SettingCategoryEnum,
     SettingCreate,
@@ -41,7 +40,6 @@ from schemas.settings_schemas import (
     SettingUpdate,
 )
 from services.database_service import DatabaseService
-from utils.error_responses import ErrorResponseBuilder
 from utils.route_utils import get_database_dependency
 
 

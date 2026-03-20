@@ -10,7 +10,7 @@ This agent:
 """
 
 from services.logger_config import get_logger
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from services.quality_service import EvaluationMethod, get_quality_service
 

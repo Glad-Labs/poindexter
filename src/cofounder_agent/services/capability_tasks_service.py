@@ -10,7 +10,7 @@ rather than SQLAlchemy, which is not part of the production dependency set
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from asyncpg import Pool
 

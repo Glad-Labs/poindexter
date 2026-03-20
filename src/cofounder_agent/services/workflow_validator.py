@@ -19,7 +19,6 @@ logger = get_logger(__name__)
 class WorkflowValidationError(Exception):
     """Raised when workflow validation fails"""
 
-    pass
 
 
 class WorkflowValidator:

@@ -7,7 +7,7 @@ and allowing them time to recover.
 
 import asyncio
 from services.logger_config import get_logger
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Awaitable, Callable, Dict, Optional, TypeVar
 

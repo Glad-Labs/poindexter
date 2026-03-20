@@ -5,7 +5,7 @@ Consolidated schemas for content webhook processing from CMS.
 
 from typing import Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 
 class WebhookEntry(BaseModel):

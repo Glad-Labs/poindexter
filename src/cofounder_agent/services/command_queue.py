@@ -10,7 +10,6 @@ Features:
 """
 
 import asyncio
-import json
 from services.logger_config import get_logger
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone

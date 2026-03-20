@@ -22,7 +22,6 @@ from services.logger_config import get_logger
 import re as re_module
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
-from uuid import uuid4 as uuid_lib_uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse

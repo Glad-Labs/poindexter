@@ -1,12 +1,11 @@
 """Enhanced status change validation and logging service."""
 
-import json
 from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from services.tasks_db import TasksDatabase
-from utils.task_status import StatusTransitionValidator, TaskStatus, is_valid_transition
+from utils.task_status import StatusTransitionValidator
 from utils.json_encoder import safe_json_load
 
 logger = get_logger(__name__)

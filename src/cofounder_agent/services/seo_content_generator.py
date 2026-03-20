@@ -11,15 +11,12 @@ Integrates all missing features from the original content agent:
 - Social media optimization (OG tags, Twitter cards)
 """
 
-import asyncio
-import json
 from services.logger_config import get_logger
-import os
 import re
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from .prompt_manager import get_prompt_manager
 from utils.text_utils import extract_keywords_from_text

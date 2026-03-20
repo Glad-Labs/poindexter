@@ -9,10 +9,8 @@ Cost: $0/month (vs $0.02/image with DALL-E)
 ASYNC-FIRST: All operations use httpx async client (no blocking I/O)
 """
 
-import asyncio
 from services.logger_config import get_logger
 import os
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import httpx

@@ -3,9 +3,9 @@
 Consolidated schemas for cost, health, and performance metrics.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class CostMetric(BaseModel):

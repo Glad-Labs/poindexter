@@ -8,10 +8,9 @@ Replaces Pub/Sub topic subscriptions with HTTP API calls
 from services.logger_config import get_logger
 import os
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
 
 from routes.auth_unified import get_current_user
 
