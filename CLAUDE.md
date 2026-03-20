@@ -93,7 +93,7 @@ npm run build                 # Build all workspaces
 
 ### Backend (`src/cofounder_agent/`)
 
-**Entry point:** `main.py` — FastAPI app initializing service container, database pools, orchestrator, and registering all 28 route modules via `register_all_routes()`.
+**Entry point:** `main.py` — FastAPI app initializing service container, database pools, orchestrator, and registering all 27 route modules via `register_all_routes()`.
 
 **Key services:**
 
@@ -107,7 +107,7 @@ npm run build                 # Build all workspaces
 
 **Database:** asyncpg for direct PostgreSQL interaction + raw SQL migration files in `services/migrations/`. Five domain modules delegate from `DatabaseService`.
 
-**Python toolchain:** Poetry for dependency management. Run with `poetry run` inside `src/cofounder_agent/`. pytest markers: `unit`, `integration`, `api`, `e2e`, `performance`, `slow`, `voice`.
+**Python toolchain:** Poetry for dependency management. Run with `poetry run` inside `src/cofounder_agent/`. pytest markers: `unit`, `integration`, `api`, `e2e`, `performance`, `slow`, `voice`, `websocket`.
 
 ### Frontend
 
@@ -132,7 +132,7 @@ DATABASE_URL=postgresql://user:pass@localhost:5432/glad_labs_dev
 # Plus at least ONE of: ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY, or OLLAMA_BASE_URL
 ```
 
-**Key feature flags:** `ENABLE_TRACING`, `ENABLE_QUERY_MONITORING`, `ENABLE_TRAINING_CAPTURE`, `SENTRY_ENABLED`, `REDIS_ENABLED`.
+**Key feature flags:** `ENABLE_TRACING`, `ENABLE_QUERY_MONITORING` (in `.env.example`); `ENABLE_TRAINING_CAPTURE`, `SENTRY_ENABLED`, `REDIS_ENABLED` (code-only, not in `.env.example`).
 
 ### Monorepo Structure
 
@@ -151,7 +151,7 @@ npm workspaces cover `web/public-site` and `web/oversight-hub`. `npm install` at
 - **PostgreSQL as source of truth:** All task results, agent memories, and content stored there
 - **Model router first:** Use cost tiers (`free`/`budget`/`standard`/`premium`/`flagship`) not hardcoded model names
 - **Monorepo with workspaces:** `npm install` once at root covers everything
-- **API versioning policy:** All 160+ endpoints live at `/api/{resource}` (no `/v1/` prefix). This is the current v1 surface, documented via `version="3.0.x"` in `main.py` and OpenAPI at `/api/openapi.json`. **Policy:** Breaking changes to any public endpoint (field renames, status code changes, required field additions) MUST introduce a new URL version prefix (`/api/v2/`). Non-breaking additions (new optional fields, new endpoints) do not require a new version. Document breaking changes in `CHANGELOG.md`.
+- **API versioning policy:** All 190+ endpoints live at `/api/{resource}` (no `/v1/` prefix). This is the current v1 surface, documented via `version="3.0.x"` in `main.py` and OpenAPI at `/api/openapi.json`. **Policy:** Breaking changes to any public endpoint (field renames, status code changes, required field additions) MUST introduce a new URL version prefix (`/api/v2/`). Non-breaking additions (new optional fields, new endpoints) do not require a new version. Document breaking changes in `CHANGELOG.md`.
 
 ## Reference Documentation
 
