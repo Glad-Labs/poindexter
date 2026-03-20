@@ -47,7 +47,7 @@ class NewsletterUnsubscribeRequest(BaseModel):
     reason: Optional[str] = None
 
 
-@router.post("/subscribe")
+@router.post("/subscribe", response_model=NewsletterSubscribeResponse)
 @limiter.limit("5/minute")
 async def subscribe_to_newsletter(
     request: Request, payload: NewsletterSubscribeRequest, db=Depends(get_database_dependency)
