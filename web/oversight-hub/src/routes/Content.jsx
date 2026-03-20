@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getPosts, updatePost, deletePost } from '../lib/apiClient';
+import { getPosts, updatePost, deletePost } from '../services/postService';
 import PostEditor from '../components/modals/PostEditor';
 import './Content.css';
 import { logError } from '../services/errorLoggingService';

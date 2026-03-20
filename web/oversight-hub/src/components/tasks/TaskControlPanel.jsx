@@ -17,8 +17,12 @@ import {
   Stop as StopIcon,
   Delete as DeleteIcon,
 } from '@mui/icons-material';
-import { deleteContentTask } from '../../services/taskService';
-import { pauseTask, resumeTask, cancelTask } from '../../lib/apiClient';
+import {
+  deleteContentTask,
+  pauseTask,
+  resumeTask,
+  cancelTask,
+} from '../../services/taskService';
 import useStore from '../../store/useStore';
 
 /**

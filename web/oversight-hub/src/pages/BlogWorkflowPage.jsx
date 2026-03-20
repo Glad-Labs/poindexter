@@ -42,7 +42,13 @@ import {
   Stop as StopIcon,
   Refresh as RefreshIcon,
 } from '@mui/icons-material';
-import apiClient from '../lib/apiClient';
+import {
+  getAvailablePhases,
+  executeWorkflow as runWorkflow,
+  getExecutionStatus,
+  listExecutions,
+} from '../services/workflowBuilderService';
+import phase4Client from '../services/phase4Client';
 
 /**
  * Blog Workflow Page
@@ -102,7 +108,7 @@ function BlogWorkflowPage() {
   const loadAvailablePhases = async () => {
     try {
       setLoading(true);
-      const phases = await apiClient.getAvailablePhases();
+      const phases = await getAvailablePhases();
       // Filter for blog phases
       const blogPhases = phases.filter((p) => p.tags?.includes('blog'));
       setAvailablePhases(blogPhases);
@@ -115,7 +121,7 @@ function BlogWorkflowPage() {
 
   const loadWorkflowHistory = async () => {
     try {
-      const executions = await apiClient.listWorkflowExecutions({ limit: 10 });
+      const executions = await listExecutions(null, { limit: 10 });
       setWorkflowHistory(executions.executions || executions || []);
     } catch (err) {
       logger.error('Failed to load workflow history:', err);
@@ -193,7 +199,7 @@ function BlogWorkflowPage() {
       const workflowDef = buildWorkflowDefinition();
       logger.log('Executing workflow:', workflowDef);
 
-      const result = await apiClient.executeWorkflow(workflowDef);
+      const result = await runWorkflow(workflowDef);
       setExecutionId(result.execution_id || result.id);
       setActiveStep(2); // Move to Execute step
 
@@ -221,16 +227,14 @@ function BlogWorkflowPage() {
           abortControllerRef.current.abort();
         }
         abortControllerRef.current = new AbortController();
-        const progress = await apiClient.getWorkflowProgress(execId, {
-          signal: abortControllerRef.current.signal,
-        });
+        const progress = await getExecutionStatus(execId);
         setExecutionProgress(progress);
 
         // If workflow is complete, get results
         if (progress.status === 'completed' || progress.status === 'failed') {
           clearInterval(pollIntervalRef.current);
           pollIntervalRef.current = null;
-          const results = await apiClient.getWorkflowResults(execId);
+          const results = await getExecutionStatus(execId);
           setExecutionResults(results);
           setActiveStep(3); // Move to Results step
           setIsExecuting(false);
@@ -245,7 +249,7 @@ function BlogWorkflowPage() {
 
   const handleCancelExecution = async () => {
     try {
-      await apiClient.cancelWorkflowExecution(executionId);
+      await phase4Client.workflowClient.cancelWorkflow(executionId);
       setIsExecuting(false);
       setExecutionProgress({ ...executionProgress, status: 'cancelled' });
     } catch (err) {
