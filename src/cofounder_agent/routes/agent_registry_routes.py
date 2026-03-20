@@ -140,16 +140,18 @@ async def list_agents(
         raise HTTPException(status_code=500, detail="Failed to list agents")
 
 
-@router.get("/search", response_model=List[Dict[str, Any]], name="Search Agents (moved before path param)")
-async def search_agents_alias(
+@router.get("/search", response_model=List[Dict[str, Any]], name="Search Agents")
+async def search_agents(
     capability: Optional[str] = Query(None, description="Filter by capability"),
     phase: Optional[str] = Query(None, description="Filter by phase"),
     category: Optional[str] = Query(None, description="Filter by category"),
     current_user: dict = Depends(get_current_user),
 ):
     """
-    Search for agents by optional filters (alias registered before /{agent_name} to avoid shadowing).
-    See the primary search_agents definition at the bottom for full docs.
+    Search for agents by optional filters.
+
+    Registered before /{agent_name} to avoid path parameter shadowing.
+    Allows combining multiple filters (AND logic).
     """
     try:
         registry = get_agent_registry()
@@ -453,59 +455,3 @@ async def get_agents_by_category(
         )
 
 
-@router.get("/search", response_model=List[Dict[str, Any]], name="Search Agents")
-async def search_agents(
-    capability: Optional[str] = Query(None, description="Filter by capability"),
-    phase: Optional[str] = Query(None, description="Filter by phase"),
-    category: Optional[str] = Query(None, description="Filter by category"),
-    current_user: dict = Depends(get_current_user),
-):
-    """
-    Search for agents by optional filters.
-
-    Allows combining multiple filters (AND logic) to find agents matching specific criteria.
-
-    Query Parameters:
-        capability: Optional capability to filter by
-        phase: Optional phase to filter by
-        category: Optional category to filter by
-
-    Returns:
-        List of agent metadata dicts matching all specified filters
-
-    Example:
-        ```
-        GET /api/agents/search?phase=draft&category=content
-
-        [
-            {
-                "name": "creative_agent",
-                "category": "content",
-                "phases": ["draft", "refine"],
-                "capabilities": ["content_generation", "writing", "style_adaptation"],
-                "description": "Generates and refines creative content with style guidance",
-                "version": "1.0"
-            }
-        ]
-        ```
-    """
-    try:
-        registry = get_agent_registry()
-        all_agents = registry.list_all_with_metadata()
-
-        # Filter by capability if specified
-        if capability:
-            all_agents = [a for a in all_agents if capability in a.get("capabilities", [])]
-
-        # Filter by phase if specified
-        if phase:
-            all_agents = [a for a in all_agents if phase in a.get("phases", [])]
-
-        # Filter by category if specified
-        if category:
-            all_agents = [a for a in all_agents if a.get("category") == category]
-
-        return all_agents
-    except Exception as e:
-        logger.error(f"Error searching agents: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to search agents")
