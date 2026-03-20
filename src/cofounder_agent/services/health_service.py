@@ -4,7 +4,6 @@ Health Service for Glad Labs AI Co-Founder
 This module provides centralized health check functionality.
 """
 
-import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
