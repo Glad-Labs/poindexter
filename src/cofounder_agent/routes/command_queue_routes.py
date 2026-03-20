@@ -38,7 +38,7 @@ router = APIRouter(
 )
 
 
-@router.post("/", response_model=CommandResponse)
+@router.post("", response_model=CommandResponse)
 async def dispatch_command(request: CommandRequest) -> Dict[str, Any]:
     """
     Dispatch a command to an agent
@@ -88,7 +88,7 @@ async def get_command(command_id: str) -> Dict[str, Any]:
     return cmd.to_dict()
 
 
-@router.get("/", response_model=CommandListResponse)
+@router.get("", response_model=CommandListResponse)
 async def list_commands(
     status: Optional[str] = Query(None),
     limit: int = Query(20, ge=1, le=100),
