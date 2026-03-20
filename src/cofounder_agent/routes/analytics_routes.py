@@ -13,13 +13,12 @@ All endpoints aggregate real data from PostgreSQL database.
 
 from services.logger_config import get_logger
 from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from routes.auth_unified import get_current_user
-from schemas.auth_schemas import UserProfile
 from services.database_service import DatabaseService
 from utils.error_handler import handle_route_error
 from utils.route_utils import get_database_dependency

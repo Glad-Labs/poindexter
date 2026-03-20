@@ -14,7 +14,7 @@ The registry is extensible and supports dynamic phase addition.
 """
 
 from services.logger_config import get_logger
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 

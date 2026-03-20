@@ -56,7 +56,6 @@ async def create_phase_handler(phase_name: str, agent_name: str, database_servic
         Returns:
             PhaseResult with execution status and output
         """
-        import inspect
         import time
 
         start_time = time.time()

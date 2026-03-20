@@ -24,10 +24,9 @@ from pydantic import BaseModel, Field
 from routes.auth_unified import get_current_user
 from services.capability_natural_language_composer import get_composer
 from utils.route_utils import get_database_dependency
-from services.capability_registry import CapabilityMetadata, ParameterSchema, get_registry
+from services.capability_registry import get_registry
 from services.capability_task_executor import (
     CapabilityStep,
-    CapabilityTaskDefinition,
     execute_capability_task,
 )
 from services.capability_tasks_service import CapabilityTasksService

@@ -6,14 +6,12 @@ Using pure asyncpg for non-blocking database access.
 """
 
 from services.logger_config import get_logger
-import os
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from routes.auth_unified import UserProfile, get_current_user, get_current_user_optional
-from services.database_service import DatabaseService
 from utils.error_handler import handle_route_error
 from utils.route_utils import get_database_dependency
 

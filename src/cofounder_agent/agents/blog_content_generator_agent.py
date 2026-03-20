@@ -10,7 +10,7 @@ This agent:
 """
 
 from services.logger_config import get_logger
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from services.ai_content_generator import get_content_generator
 

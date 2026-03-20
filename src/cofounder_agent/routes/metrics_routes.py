@@ -9,7 +9,7 @@ Integrates with UsageTracker service for real-time metrics collection.
 
 from services.logger_config import get_logger
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field

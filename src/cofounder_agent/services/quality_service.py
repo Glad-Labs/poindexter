@@ -33,10 +33,10 @@ Critical Floor = 50/100 — if clarity, readability, or relevance falls below th
 import json
 from services.logger_config import get_logger
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 logger = get_logger(__name__)
 class EvaluationMethod(str, Enum):

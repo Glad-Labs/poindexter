@@ -17,10 +17,9 @@ Async: Full async/await support
 """
 
 from services.logger_config import get_logger
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
 from routes.auth_unified import get_current_user
 from schemas.workflow_history_schemas import (

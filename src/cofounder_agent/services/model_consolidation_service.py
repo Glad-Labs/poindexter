@@ -34,7 +34,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import structlog
 
@@ -99,7 +99,6 @@ class ProviderAdapter(ABC):
     @abstractmethod
     async def is_available(self) -> bool:
         """Check if provider is operational"""
-        pass
 
     @abstractmethod
     async def generate(
@@ -111,12 +110,10 @@ class ProviderAdapter(ABC):
         **kwargs,
     ) -> ModelResponse:
         """Generate text using this provider"""
-        pass
 
     @abstractmethod
     def list_models(self) -> List[str]:
         """List available models"""
-        pass
 
 
 class OllamaAdapter(ProviderAdapter):

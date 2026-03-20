@@ -8,9 +8,8 @@ Provides endpoints for:
 """
 
 from services.logger_config import get_logger
-import os
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -18,8 +17,6 @@ from routes.auth_unified import get_current_user
 from schemas.models_schemas import (
     ModelInfo,
     ModelsListResponse,
-    ProvidersStatusResponse,
-    ProviderStatus,
 )
 from services.model_consolidation_service import get_model_consolidation_service
 from services.model_constants import PROVIDER_ICONS

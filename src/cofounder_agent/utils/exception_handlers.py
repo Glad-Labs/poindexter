@@ -16,7 +16,6 @@ All handlers include:
 
 from services.logger_config import get_logger
 import uuid
-from typing import Callable
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
@@ -31,7 +30,7 @@ except ImportError:
     sentry_sdk = None  # type: ignore[assignment]
     SENTRY_AVAILABLE = False
 
-from services.error_handler import AppError, NotFoundError, ValidationError, create_error_response
+from services.error_handler import AppError, create_error_response
 
 logger = get_logger(__name__)
 async def app_error_handler(request, exc: AppError):
