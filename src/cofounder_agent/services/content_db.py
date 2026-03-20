@@ -49,6 +49,7 @@ class ContentDatabase(DatabaseServiceMixin):
         """
         self.pool = pool
 
+    @log_query_performance(operation="create_post", category="content_write")
     async def create_post(self, post_data: Dict[str, Any]) -> PostResponse:
         """
         Create new post in posts table with all metadata fields.
@@ -213,6 +214,7 @@ class ContentDatabase(DatabaseServiceMixin):
             )
             return None
 
+    @log_query_performance(operation="update_post", category="content_write")
     async def update_post(self, post_id: int, updates: Dict[str, Any]) -> bool:
         """
         Update a post with new values (e.g., featured_image_url, status).
@@ -267,6 +269,7 @@ class ContentDatabase(DatabaseServiceMixin):
             logger.error(f"[_update_post] ❌ Error updating post {post_id}: {e}", exc_info=True)
             return False
 
+    @log_query_performance(operation="get_all_categories", category="content_retrieval")
     async def get_all_categories(self) -> List[CategoryResponse]:
         """
         Get all categories for matching.
@@ -284,6 +287,7 @@ class ContentDatabase(DatabaseServiceMixin):
             logger.error(f"[_get_all_categories] Failed to fetch categories: {e}", exc_info=True)
             return []
 
+    @log_query_performance(operation="get_all_tags", category="content_retrieval")
     async def get_all_tags(self) -> List[TagResponse]:
         """
         Get all tags for matching.
