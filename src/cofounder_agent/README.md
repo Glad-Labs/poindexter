@@ -31,7 +31,7 @@ src/cofounder_agent/
 │   ├── unified_orchestrator.py # Master agent choreography
 │   ├── workflow_executor.py   # Phase-based workflow execution
 │   ├── capability_registry.py # Intent-based task routing
-│   ├── migrations/            # Raw SQL migration files
+│   ├── migrations/            # Python migration modules (raw SQL inside)
 │   └── phases/                # Workflow phase implementations
 ├── agents/                    # AI agent implementations
 │   ├── content_agent/         # 6-stage content pipeline
@@ -61,7 +61,7 @@ src/cofounder_agent/
 
 Key endpoint groups: `/api/tasks`, `/api/posts`, `/api/workflows`, `/api/agents`, `/api/metrics`, `/api/analytics`, `/api/social`, `/api/settings`.
 
-All endpoints require JWT auth except `/api/health`.
+Most endpoints require JWT auth. Public endpoints: `/api/health`, `/api/auth/*`, `/api/docs`, `/api/openapi.json`.
 
 ## Testing
 

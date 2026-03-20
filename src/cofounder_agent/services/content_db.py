@@ -305,6 +305,7 @@ class ContentDatabase(DatabaseServiceMixin):
             logger.error(f"[_get_all_tags] Failed to fetch tags: {e}", exc_info=True)
             return []
 
+    @log_query_performance(operation="get_author_by_name", category="content_retrieval")
     async def get_author_by_name(self, name: str) -> Optional[AuthorResponse]:
         """
         Get author by name.
@@ -326,6 +327,7 @@ class ContentDatabase(DatabaseServiceMixin):
             )
             return None
 
+    @log_query_performance(operation="create_quality_evaluation", category="content_write")
     async def create_quality_evaluation(
         self, eval_data: Dict[str, Any]
     ) -> QualityEvaluationResponse:
@@ -393,6 +395,7 @@ class ContentDatabase(DatabaseServiceMixin):
             )
             raise
 
+    @log_query_performance(operation="create_quality_improvement_log", category="content_write")
     async def create_quality_improvement_log(
         self, log_data: Dict[str, Any]
     ) -> QualityImprovementLogResponse:

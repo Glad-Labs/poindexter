@@ -438,7 +438,7 @@ async def cms_status(current_user: UserProfile = Depends(get_current_user)):
                 "tables": tables,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
-    except Exception as e:
+    except Exception:
         logger.error("[cms_status] CMS status check failed", exc_info=True)
         return JSONResponse(
             status_code=503,
