@@ -2,6 +2,8 @@
 
 Get started with the capability-based task system in under 5 minutes.
 
+**For complete system overview, see:** [System Overview](../02-Architecture/System-Design.md)
+
 ---
 
 ## 1. List Available Capabilities
@@ -395,6 +397,19 @@ curl http://localhost:8000/api/tasks/capability/$TASK_ID/executions/$EXEC_ID | j
 | `/api/tasks/capability/{id}/execute`              | POST   | Execute task            |
 | `/api/tasks/capability/{id}/executions/{exec_id}` | GET    | Get execution result    |
 | `/api/tasks/capability/{id}/executions`           | GET    | List execution history  |
+
+---
+
+## Need More Info?
+
+- **Full Documentation:** `docs/03-Features/Capability-Based-Tasks.md`
+- **Architecture Details:** `docs/CAPABILITIES_PHASE_1_SUMMARY.md`
+- **Example Code:** `services/capability_examples.py`
+- **Source Code:** `services/capability_*.py`, `routes/capability_tasks_routes.py`
+
+---
+
+**Ready to build? Start with Step 1 above!**
 
 ---
 

@@ -62,7 +62,6 @@
 - [reference/GLAD-LABS-STANDARDS.md](reference/GLAD-LABS-STANDARDS.md) - Code standards
 - [reference/TESTING.md](reference/TESTING.md) - Testing strategy
 - [reference/GITHUB_SECRETS_SETUP.md](reference/GITHUB_SECRETS_SETUP.md) - Secrets management
-- [reference/TASK_STATUS_AUDIT_REPORT.md](reference/TASK_STATUS_AUDIT_REPORT.md) - Task status system
 - [reference/TASK_STATUS_QUICK_START.md](reference/TASK_STATUS_QUICK_START.md) - Task status quick reference
 - [reference/ci-cd/](reference/ci-cd/) - CI/CD documentation
 
