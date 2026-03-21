@@ -289,8 +289,9 @@ class TemplateExecutionService:
             )
 
             # Build response from phase results
+            # PhaseResult uses .status ("completed"/"failed"), not .success (bool)
             all_succeeded = all(
-                getattr(pr, "success", False) for pr in phase_results.values()
+                getattr(pr, "status", "") == "completed" for pr in phase_results.values()
             )
             result = {
                 "execution_id": execution_id,
@@ -299,7 +300,7 @@ class TemplateExecutionService:
                 "status": "completed" if all_succeeded else "failed",
                 "phases": {
                     name: {
-                        "success": getattr(pr, "success", False),
+                        "success": getattr(pr, "status", "") == "completed",
                         "output": getattr(pr, "output", None),
                         "error": getattr(pr, "error", None),
                     }
