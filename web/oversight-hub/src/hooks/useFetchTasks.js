@@ -131,6 +131,12 @@ export const useFetchTasks = (
     }
   }, [fetchTasks, autoRefreshInterval, isAuthenticated, authInitialized]);
 
+  // Optimistically prepend a newly created task so it appears instantly
+  const prependTask = useCallback((newTask) => {
+    setTasks((prev) => [newTask, ...prev]);
+    setTotal((prev) => prev + 1);
+  }, []);
+
   return {
     tasks,
     total,
@@ -138,6 +144,7 @@ export const useFetchTasks = (
     error,
     refetch: fetchTasks,
     updateTask,
+    prependTask,
   };
 };
 

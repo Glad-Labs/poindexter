@@ -40,6 +40,7 @@ function TaskManagement() {
     total,
     loading,
     refetch: refreshTasks,
+    prependTask,
   } = useFetchTasks(
     page,
     limit,
@@ -647,11 +648,21 @@ function TaskManagement() {
           isOpen={showCreateModal}
           onClose={() => {
             setShowCreateModal(false);
-            refreshTasks();
           }}
-          onTaskCreated={() => {
+          onTaskCreated={(newTask) => {
             setShowCreateModal(false);
-            refreshTasks();
+            // Show the new task instantly in the table
+            if (newTask) {
+              prependTask({
+                ...newTask,
+                task_id: newTask.task_id || newTask.id,
+                status: newTask.status || 'pending',
+                topic: newTask.topic || newTask.task_name || '',
+                created_at: newTask.created_at || new Date().toISOString(),
+              });
+            }
+            // Full refresh from server after 2s to get accurate data
+            setTimeout(() => refreshTasks(), 2000);
           }}
         />
       )}
@@ -662,6 +673,8 @@ function TaskManagement() {
           onClose={() => {
             setShowDetailModal(false);
             setSelectedTask(null);
+            // Refresh task list to reflect any approve/publish/reject actions
+            refreshTasks();
           }}
           onUpdate={handleTaskDetailUpdate}
         />
