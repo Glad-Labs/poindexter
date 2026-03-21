@@ -321,36 +321,9 @@ async def _handle_blog_post_creation(
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    # Store in database
+    # Store in database as pending — task executor will pick it up
     returned_task_id = await db_service.add_task(task_data)
     logger.info(f"✅ [BLOG_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')}")
-
-    # Mark as in_progress immediately so the task_executor polling loop doesn't
-    # also pick it up (race condition: both would process the same task)
-    await db_service.update_task(returned_task_id, {"status": "in_progress"})
-
-    # Schedule background generation
-    async def _run_blog_generation():
-        try:
-            await process_content_generation_task(
-                topic=request.topic,
-                style=request.style or "narrative",
-                tone=request.tone or "professional",
-                target_length=request.target_length or 1500,
-                tags=request.tags,
-                generate_featured_image=request.generate_featured_image or True,
-                database_service=db_service,
-                task_id=task_id,
-                models_by_phase=request.models_by_phase,
-                quality_preference=request.quality_preference or "balanced",
-                category=request.category or "general",
-                target_audience=request.target_audience or "General",
-            )
-        except Exception as e:
-            logger.error(f"Blog generation failed: {e}", exc_info=True)
-            await db_service.update_task(task_id, {"status": "failed", "error_message": str(e)})
-
-    asyncio.create_task(_run_blog_generation())
 
     return {
         "id": returned_task_id,
