@@ -50,7 +50,7 @@ class ContentValidationResult:
 class AIContentGenerator:
     """Unified content generation with provider fallback and self-checking"""
 
-    def __init__(self, quality_threshold: float = 7.0):
+    def __init__(self, quality_threshold: float = 5.0):
         """Initialize content generator
 
         Args:
@@ -549,14 +549,12 @@ class AIContentGenerator:
                 ollama = OllamaClient()
                 logger.info(f"   ✓ OllamaClient initialized")
 
-                # Try stable, fast models first, avoid slow/problematic ones
-                # neural-chat:latest - PROVEN RELIABLE & FAST ✓✓✓
-                # llama2:latest - Reasonable but occasional timeouts
-                # qwen2.5:14b - TOO SLOW (10-20 tokens/sec), causes timeouts
-                # qwen3:14b - Better than qwen2.5 but still slow
-                # deepseek-r1:14b - REMOVED (causes 500 errors, requires 16GB+ VRAM)
-                # Priority: neural-chat (best) → llama2 → qwen2.5 (with timeout)
-                model_list = ["neural-chat:latest", "llama2:latest", "qwen2:7b"]
+                # Model priority — must match actual installed Ollama models
+                # neural-chat:latest - fast, reliable for short content
+                # gemma3:12b - good balance of quality and speed
+                # qwen2.5:14b - higher quality, slower
+                # llama3:8b - solid fallback
+                model_list = ["gemma3:12b", "qwen2.5:14b", "llama3:8b", "neural-chat:latest"]
                 for model_idx, model_name in enumerate(model_list, 1):
                     try:
                         logger.info(
