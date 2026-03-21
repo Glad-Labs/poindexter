@@ -652,15 +652,12 @@ async def list_tasks(
                 # Normalize seo_keywords in all nested locations
                 task = _normalize_seo_keywords_in_task(task)
 
-                # CRITICAL: Ensure 'id' field is always populated
-                # Local database uses 'task_id' (UUID), Railway prod has integer 'id' column
-                # Frontend expects 'id' to be the primary identifier
-                if not task.get("id") or task["id"] is None:
-                    # Use task_id (UUID string) as fallback for id
-                    if task.get("task_id"):
-                        task["id"] = task["task_id"]
-                elif isinstance(task["id"], int):
-                    # Convert integer id to string for consistency
+                # CRITICAL: 'id' must match what POST /api/tasks returns so the
+                # frontend can correlate optimistic inserts with server data.
+                # POST returns task_id as id, so list must too.
+                if task.get("task_id"):
+                    task["id"] = str(task["task_id"])
+                elif task.get("id"):
                     task["id"] = str(task["id"])
 
                 # CRITICAL: Parse cost_breakdown from JSON string to dict
