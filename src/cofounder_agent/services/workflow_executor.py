@@ -423,8 +423,8 @@ class WorkflowExecutor:
                     "get_blog_image_agent",
                 ),
                 "publishing_agent": (
-                    "agents.content_agent.agents.postgres_publishing_agent",
-                    "get_publishing_agent",
+                    "agents.blog_publisher_agent",
+                    "get_blog_publisher_agent",
                 ),
             }
 
