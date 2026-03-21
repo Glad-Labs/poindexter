@@ -14,7 +14,6 @@ Use this section for user-facing and platform-facing feature documentation with 
 - `OAuth-Integration.md`
 - `Service-Registry.md`
 - `Task-Retry-And-Status-Visibility.md` ✅
-- `WhatsApp.md` ✅ **NEW**
 - `Components/`
 
 ## Current Source Documents
@@ -28,6 +27,5 @@ Use this section for user-facing and platform-facing feature documentation with 
 - `docs/03-Features/OAuth-Integration.md`
 - `docs/03-Features/Service-Registry.md`
 - `docs/03-Features/Model-Selection.md`
-- `docs/03-Features/WhatsApp.md` ✅ **NEW**
 - `docs/02-Architecture/Multi-Agent-Pipeline.md`
 - `docs/components/`

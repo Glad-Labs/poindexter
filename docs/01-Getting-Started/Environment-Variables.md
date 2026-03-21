@@ -42,10 +42,6 @@ OPENAI_API_KEY=your_openai_key
 ANTHROPIC_API_KEY=your_anthropic_key
 GOOGLE_API_KEY=your_google_key
 
-# OpenClaw WhatsApp Integration
-OPENCLAW_WHATSAPP_API_KEY=your_whatsapp_api_key
-OPENCLAW_WHATSAPP_PHONE_NUMBER=your_phone_number
-
 # Logging
 LOG_LEVEL=debug
 

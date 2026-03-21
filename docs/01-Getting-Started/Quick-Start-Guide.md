@@ -409,25 +409,7 @@ curl http://localhost:8000/api/tasks/capability/$TASK_ID/executions/$EXEC_ID | j
 
 ---
 
-**Ready to build? Start with Step 1 above!** 🚀
-horization: Bearer YOUR_JWT_TOKEN"
-
-````
-
-### Request Human Approval
-
-```bash
-curl -X POST http://localhost:8000/api/whatsapp/request-approval \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "task_id": "task_abc123",
-    "suggestion": "I recommend running a $200 ad campaign. Approve?"
-  }'
-````
-
-**See:** [Environment Variables](Environment-Variables.md) for WhatsApp configuration
-**Full WhatsApp docs:** [src/cofounder_agent/services/whatsapp/README.md](../../src/cofounder_agent/services/whatsapp/README.md)
+**Ready to build? Start with Step 1 above!**
 
 ---
 
