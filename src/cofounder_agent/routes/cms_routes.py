@@ -315,6 +315,68 @@ async def get_post_by_slug(
         raise await handle_route_error(e, "get_post_by_slug", logger)
 
 
+@router.patch("/api/posts/{post_id}")
+async def update_post(
+    post_id: str,
+    updates: dict,
+    current_user: UserProfile = Depends(get_current_user),
+):
+    """
+    Update a blog post by ID.
+    Allowed fields: title, slug, content, excerpt, featured_image_url, status,
+    tags, seo_title, seo_description, seo_keywords.
+    """
+    try:
+        allowed = {"title", "slug", "content", "excerpt", "featured_image_url",
+                   "status", "tags", "seo_title", "seo_description", "seo_keywords"}
+        filtered = {k: v for k, v in updates.items() if k in allowed}
+        if not filtered:
+            raise HTTPException(status_code=400, detail="No valid fields to update")
+
+        # Build parameterized SET clause
+        set_parts = []
+        params = []
+        for i, (col, val) in enumerate(filtered.items(), 1):
+            set_parts.append(f"{col} = ${i}")
+            params.append(val)
+        params.append(post_id)
+        set_clause = ", ".join(set_parts)
+
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            result = await conn.execute(
+                f"UPDATE posts SET {set_clause}, updated_at = NOW() WHERE id = ${len(params)}",
+                *params,
+            )
+            if result == "UPDATE 0":
+                raise HTTPException(status_code=404, detail="Post not found")
+        return {"success": True, "message": "Post updated"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise await handle_route_error(e, "update_post", logger)
+
+
+@router.delete("/api/posts/{post_id}", status_code=204)
+async def delete_post(
+    post_id: str,
+    current_user: UserProfile = Depends(get_current_user),
+):
+    """Delete a blog post by ID."""
+    try:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM posts WHERE id = $1", post_id
+            )
+            if result == "DELETE 0":
+                raise HTTPException(status_code=404, detail="Post not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise await handle_route_error(e, "delete_post", logger)
+
+
 # ============================================================================
 # CATEGORIES ENDPOINTS
 # ============================================================================

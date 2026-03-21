@@ -229,7 +229,8 @@ class ContentDatabase(DatabaseServiceMixin):
         try:
             # Allowlist of columns that may be updated via this method
             _ALLOWED_POST_COLUMNS = frozenset(
-                ["title", "slug", "content", "excerpt", "featured_image_url", "status", "tags"]
+                ["title", "slug", "content", "excerpt", "featured_image_url", "status",
+                 "tags", "seo_title", "seo_description", "seo_keywords"]
             )
 
             # Filter to only allowed fields; ParameterizedQueryBuilder will also
