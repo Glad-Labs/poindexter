@@ -266,6 +266,20 @@ class WorkflowExecutor:
                             auto_mapped=True,
                         )
 
+        # Strategy 2.5: Carry forward all previous phase outputs as fallback
+        # (e.g., draft outputs "content" which assess needs as input)
+        if phase_index > 0:
+            for prev_name in reversed(list(previous_outputs.keys())):
+                for key, value in previous_outputs[prev_name].items():
+                    if key not in inputs:
+                        inputs[key] = value
+                        traces[key] = InputTrace(
+                            source_phase=prev_name,
+                            source_field=key,
+                            user_provided=False,
+                            auto_mapped=True,
+                        )
+
         # Strategy 3: Add initial inputs as fallback for all phases
         # (topic, style, tone, target_length should be available throughout pipeline)
         for key, value in initial_inputs.items():
