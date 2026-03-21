@@ -541,7 +541,6 @@ class AIContentGenerator:
         else:
             logger.info(f"🔄 [ATTEMPT 1/3] Trying Ollama (Local, GPU-accelerated)...")
             logger.info(f"   ├─ Endpoint: http://localhost:11434")
-            logger.info(f"   ├─ Model preference order: [neural-chat, llama2, qwen2]")
             logger.info(f"   └─ Status: Connecting...\n")
             try:
                 from .ollama_client import OllamaClient
@@ -549,12 +548,13 @@ class AIContentGenerator:
                 ollama = OllamaClient()
                 logger.info(f"   ✓ OllamaClient initialized")
 
-                # Model priority — must match actual installed Ollama models
-                # neural-chat:latest - fast, reliable for short content
-                # gemma3:12b - good balance of quality and speed
-                # qwen2.5:14b - higher quality, slower
-                # llama3:8b - solid fallback
-                model_list = ["gemma3:12b", "qwen2.5:14b", "llama3:8b", "neural-chat:latest"]
+                # Use preferred_model if provided (from UI selection), otherwise fallback list
+                if preferred_model:
+                    model_list = [preferred_model]
+                    logger.info(f"   ├─ Using UI-selected model: {preferred_model}")
+                else:
+                    model_list = ["gemma3:12b", "qwen2.5:14b", "llama3:8b", "neural-chat:latest"]
+                    logger.info(f"   ├─ No model selected, trying: {model_list}")
                 for model_idx, model_name in enumerate(model_list, 1):
                     try:
                         logger.info(
