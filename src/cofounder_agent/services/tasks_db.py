@@ -409,8 +409,15 @@ class TasksDatabase(DatabaseServiceMixin):
         now = datetime.now(timezone.utc)
 
         try:
-            # Always look up by task_id (the actual primary key). Numeric id fallback
-            # removed: content_tasks.id is UUID not INTEGER. (See issue #301)
+            # Resolve actual task_id — caller may pass either id or task_id column value
+            async with self.pool.acquire() as conn:
+                resolved = await conn.fetchval(
+                    "SELECT task_id FROM content_tasks WHERE task_id = $1 OR id::text = $1 LIMIT 1",
+                    str(task_id),
+                )
+                if resolved:
+                    task_id = str(resolved)
+
             builder = ParameterizedQueryBuilder()
 
             updates = {"status": status, "updated_at": now}
@@ -535,8 +542,15 @@ class TasksDatabase(DatabaseServiceMixin):
             )
 
         try:
-            # Always look up by task_id (the actual primary key). Numeric id fallback
-            # removed: content_tasks.id is UUID not INTEGER. (See issue #301)
+            # Resolve the actual task_id — caller may pass either id or task_id column value
+            async with self.pool.acquire() as conn:
+                resolved = await conn.fetchval(
+                    "SELECT task_id FROM content_tasks WHERE task_id = $1 OR id::text = $1 LIMIT 1",
+                    str(task_id),
+                )
+                if resolved:
+                    task_id = str(resolved)
+
             builder = ParameterizedQueryBuilder()
             sql, params = builder.update(
                 table="content_tasks",
