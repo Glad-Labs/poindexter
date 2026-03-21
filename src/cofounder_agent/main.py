@@ -109,6 +109,20 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         service_container.register("quality", quality_service)
         logger.info("[LIFESPAN] ✅ Quality service initialized")
 
+        # Initialize template execution service for blog_post workflow
+        logger.info("[LIFESPAN] Initializing template execution service...")
+        try:
+            from services.template_execution_service import TemplateExecutionService
+
+            custom_workflows_svc = services.get("custom_workflows_service")
+            template_execution_service = TemplateExecutionService(
+                custom_workflows_service=custom_workflows_svc,
+            )
+            logger.info("[LIFESPAN] ✅ Template execution service initialized")
+        except Exception as e:
+            template_execution_service = None
+            logger.warning(f"[LIFESPAN] ⚠️ Template execution service failed: {e}", exc_info=True)
+
         # Register services in the global DI container for dependency injection
         logger.info("[LIFESPAN] Registering services in global DI container. ..")
         initialize_services(
@@ -118,6 +132,8 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             task_executor=services["task_executor"],
             intelligent_orchestrator=services.get("intelligent_orchestrator"),
             workflow_history=services["workflow_history"],
+            custom_workflows_service=services.get("custom_workflows_service"),
+            template_execution_service=template_execution_service,
         )
         logger.info("[LIFESPAN] ✅ Services registered in global DI container")
 
