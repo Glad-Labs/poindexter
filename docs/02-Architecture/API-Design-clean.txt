@@ -50,7 +50,6 @@ curl -H "Authorization: Bearer dev-token" \
 ### Protected Routes
 
 The following routes require authentication:
-
 - `/api/tasks` - Task management
 - `/api/workflows` - Workflow execution
 - `/api/agents` - Agent control

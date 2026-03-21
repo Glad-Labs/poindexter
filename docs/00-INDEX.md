@@ -7,7 +7,7 @@ This is the new documentation entrypoint for the section-based documentation arc
 - [01 Getting Started](01-Getting-Started/README.md) — Setup, quick-start, environment configuration
 - [02 Tutorials](02-Tutorials/README.md) — Guided learning goals (execute first workflow, build custom workflows, OAuth integration, capability-based tasks)
 - [03 Architecture](02-Architecture/README.md) — System design, API contracts, database schema, agent pipeline
-- [04 Features](03-Features/README.md) — Detailed feature documentation with examples (workflows, WebSocket, custom workflows, OAuth, service registry, model selection, analytics, capabilities)
+- [04 Features](03-Features/README.md) — Detailed feature documentation with examples (workflows, WebSocket, custom workflows, OAuth, service registry, model selection, analytics, capabilities, WhatsApp)
 - [05 Development](04-Development/README.md) — Development workflow, testing, CI/CD, code quality
 - [06 Operations](05-Operations/README.md) — Deployment, monitoring, maintenance, troubleshooting
 - [07 Troubleshooting](06-Troubleshooting/README.md) — Common errors, debugging strategies, diagnostics
@@ -32,6 +32,9 @@ This is the new documentation entrypoint for the section-based documentation arc
 
 **I'm troubleshooting an issue:**
 → Check [06-Troubleshooting](06-Troubleshooting/README.md)
+
+**I need to check WhatsApp integration:**
+→ See [WhatsApp Feature Guide](03-Features/WhatsApp.md) or [API Design](02-Architecture/API-Design.md#-4-whatsapp-integration-api)
 
 ## Migration Status
 

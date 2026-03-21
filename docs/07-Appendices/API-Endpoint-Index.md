@@ -48,6 +48,15 @@ This index provides a quick map of high-value API surfaces used across workflows
 - `POST /api/auth/github-callback` (fallback/deprecated)
 - `POST /api/auth/logout`
 
+## WhatsApp Integration
+
+- `POST /api/whatsapp/send` - Send message to client
+- `GET /api/whatsapp/status` - Check connection status
+- `POST /api/whatsapp/request-approval` - Request human approval
+
+**See:** [WhatsApp Integration Guide](../02-Architecture/API-Design.md#%F0%9F%9B%94-whatsapp-integration-api) for detailed documentation
+**Implementation:** [WhatsApp Service](../../src/cofounder_agent/services/whatsapp/README.md)
+
 ## Related Files
 
 - `src/cofounder_agent/routes/workflow_routes.py`
