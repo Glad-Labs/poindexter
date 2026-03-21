@@ -869,6 +869,7 @@ class TaskExecutor:
                         logger.info(f"   ✅ Using refined content ({len(generated_content)} chars)")
 
                         # Re-critique refined content if critique_loop is available
+                        critique_result = None
                         if self.critique_loop is not None:
                             critique_result = await self.critique_loop.critique(
                                 content=generated_content,
@@ -941,8 +942,8 @@ class TaskExecutor:
             # Critique phase
             "quality_score": quality_score,
             "content_approved": approved,
-            "critique_feedback": critique_result.get("feedback", ""),
-            "critique_suggestions": critique_result.get("suggestions", []),
+            "critique_feedback": critique_result.get("feedback", "") if critique_result else "",
+            "critique_suggestions": critique_result.get("suggestions", []) if critique_result else [],
             # Metadata
             "word_count": len(generated_content.split()) if generated_content else 0,
             "completed_at": datetime.now(timezone.utc).isoformat(),
