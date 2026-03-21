@@ -149,7 +149,8 @@ const TaskDetailModal = ({ onClose, onUpdate }) => {
         showSuccess(
           `Task approved (${result.status}). Ready to publish when you are.`
         );
-        // Reset form state
+        // Notify parent for optimistic update before closing
+        if (onUpdate) onUpdate(selectedTask.id, 'approved');
         setApprovalFeedback('');
         setReviewerId('oversight_hub_user');
         setImageSource('pexels');
@@ -176,7 +177,8 @@ const TaskDetailModal = ({ onClose, onUpdate }) => {
         result.published_url ||
         `${window.location.origin}/posts/${result.post_slug || 'published'}`;
       showSuccess(`Task published! URL: ${publishedUrl}`);
-      // Reset form state
+      // Notify parent for optimistic update before closing
+      if (onUpdate) onUpdate(selectedTask.id, 'published');
       setApprovalFeedback('');
       setReviewerId('oversight_hub_user');
       setImageSource('pexels');
