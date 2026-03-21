@@ -44,7 +44,7 @@ function TaskManagement() {
   } = useFetchTasks(
     page,
     limit,
-    30000 // Auto-refresh every 30 seconds
+    10000 // Auto-refresh every 10 seconds
   );
 
   const normalizeDisplayText = (value) => {

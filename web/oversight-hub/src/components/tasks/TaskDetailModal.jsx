@@ -1,5 +1,5 @@
 import logger from '@/lib/logger';
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -69,6 +69,21 @@ const TaskDetailModal = ({ onClose, onUpdate }) => {
     message: '',
     severity: 'success',
   });
+
+  // Fetch fresh task data when modal opens to avoid stale status
+  useEffect(() => {
+    if (selectedTask?.id) {
+      getContentTask(selectedTask.id)
+        .then((freshTask) => {
+          if (freshTask && freshTask.status !== selectedTask.status) {
+            setSelectedTask({ ...selectedTask, ...freshTask });
+          }
+        })
+        .catch(() => {
+          // Silently fail — modal will show stale data which is still usable
+        });
+    }
+  }, [selectedTask?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const showSuccess = (message) =>
     setSnackbar({ open: true, message, severity: 'success' });
