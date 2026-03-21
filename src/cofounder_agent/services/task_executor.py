@@ -462,6 +462,7 @@ class TaskExecutor:
         task_id = task.get("id")
         task_name = task.get("task_name", "")
         topic = task.get("topic", "")
+        critique_result = None  # Must be initialized before any code path that references it
         primary_keyword = task.get("primary_keyword", "")
         target_audience = task.get("target_audience", "")
         category = task.get("category", "general")
