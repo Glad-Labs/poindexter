@@ -2132,18 +2132,25 @@ async def publish_task(
             # Use merged content (task_metadata + result) so content is found whatever key the agent used
             task_result = merged_result
 
-            # Extract content — check multiple possible keys the content agent may use
+            # Extract content — check task columns first, then metadata/result
             topic = task.get("topic", "") or task_result.get("topic", "")
             draft_content = (
-                task_result.get("draft_content", "")
+                task.get("content", "")
+                or task_result.get("draft_content", "")
                 or task_result.get("content", "")
                 or task_result.get("body", "")
                 or task_result.get("article", "")
                 or ""
             )
-            seo_description = task_result.get("seo_description", "")
+            seo_description = (
+                task_result.get("seo_description", "")
+                or task.get("seo_description", "")
+            )
             seo_keywords = task_result.get("seo_keywords", [])
-            featured_image_url = task_result.get("featured_image_url")
+            featured_image_url = (
+                task_result.get("featured_image_url")
+                or task.get("featured_image_url")
+            )
             metadata = task_result.get("metadata", {})
 
             if draft_content and topic:
