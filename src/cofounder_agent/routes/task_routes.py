@@ -325,6 +325,10 @@ async def _handle_blog_post_creation(
     returned_task_id = await db_service.add_task(task_data)
     logger.info(f"✅ [BLOG_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')}")
 
+    # Mark as in_progress immediately so the task_executor polling loop doesn't
+    # also pick it up (race condition: both would process the same task)
+    await db_service.update_task(returned_task_id, {"status": "in_progress"})
+
     # Schedule background generation
     async def _run_blog_generation():
         try:
