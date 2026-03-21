@@ -41,10 +41,11 @@ function TaskManagement() {
     loading,
     refetch: refreshTasks,
     prependTask,
+    updateTask: optimisticUpdateTask,
   } = useFetchTasks(
     page,
     limit,
-    10000 // Auto-refresh every 10 seconds
+    5000 // Auto-refresh every 5 seconds for responsive status updates
   );
 
   const normalizeDisplayText = (value) => {
@@ -95,11 +96,16 @@ function TaskManagement() {
     }
   };
 
-  // Handler for task detail modal updates
-  const handleTaskDetailUpdate = async () => {
+  // Handler for task detail modal updates — optimistic status change
+  const handleTaskDetailUpdate = async (taskId, newStatus) => {
+    // Optimistically update the task in local state for instant feedback
+    if (taskId && newStatus) {
+      optimisticUpdateTask(taskId, { status: newStatus });
+    }
     setShowDetailModal(false);
     setSelectedTask(null);
-    refreshTasks();
+    // Also refresh to get full server data
+    setTimeout(() => refreshTasks(), 1000);
   };
 
   // Handler for task actions (pause, resume, cancel)
