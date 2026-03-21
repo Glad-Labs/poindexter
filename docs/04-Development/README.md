@@ -9,7 +9,6 @@ Use this section for developer workflow, testing, contribution, and CI/CD proces
 - `Code-Standards.md`
 - `Branching-Strategy.md`
 - `CI-CD-Pipeline.md`
-- `Development-Workflow-WhatsApp.md` ✅ **NEW**
 
 ## Current Source Documents
 
@@ -18,7 +17,6 @@ Use this section for developer workflow, testing, contribution, and CI/CD proces
 - `docs/04-Development/Debugging-Guide.md`
 - `docs/04-Development/Package-JSON-Integration-Guide.md`
 - `docs/04-Development/Package-JSON-Review.md`
-- `docs/04-Development/Development-Workflow-WhatsApp.md` ✅ **NEW**
 - `docs/04-Development/Testing/` — Playwright guides, testing architecture, completion reports
 - `docs/reference/GLAD-LABS-STANDARDS.md`
 - `docs/reference/ci-cd/`
