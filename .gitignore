@@ -86,3 +86,9 @@ playwright/.auth/
 .tmp/
 tmpclaude*
 docs/archive/
+
+# ============================================================
+# Ollama / local model files
+# ============================================================
+Modelfile*
+*.gguf
