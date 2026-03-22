@@ -128,14 +128,13 @@ jobs:
           curl -fsSL https://railway.app/install.sh | sh
           export PATH="$HOME/.railway/bin:$PATH"
           railway --version
-          echo "Token length: ${#RAILWAY_TOKEN}"
-          railway whoami || echo "⚠️ railway whoami failed — token may need 'railway login' format"
-          railway link --project "$RAILWAY_PROJECT_ID" --environment staging --service cofounder
           railway up --service cofounder
           echo "✅ Co-Founder Agent production deployment completed"
         env:
+          # Project Token: scoped to project+environment, no 'link' needed.
+          # Generate at: Railway → Project → Settings → Tokens → Create Project Token
+          # Account Token goes in RAILWAY_API_TOKEN (for link/whoami).
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROD_PROJECT_ID }}
           ENVIRONMENT: production
 
       # ============================================
