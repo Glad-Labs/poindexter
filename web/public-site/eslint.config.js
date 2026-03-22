@@ -28,10 +28,14 @@ export default [
       // OS files
       '.DS_Store',
       'Thumbs.db',
+      // Test files — excluded from Next.js build lint pass
+      '**/__tests__/**',
+      '**/*.test.{js,jsx,ts,tsx}',
+      '**/*.spec.{js,jsx,ts,tsx}',
+      'jest.setup.js',
       // Config files
       '*.config.js',
       'jest.config.js',
-      'jest.setup.js',
     ],
   },
   {
