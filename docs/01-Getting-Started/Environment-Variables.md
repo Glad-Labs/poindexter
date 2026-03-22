@@ -33,9 +33,19 @@ This is the **complete, authoritative guide** covering:
 **Example `.env.local` for local development:**
 
 ```env
+# Database
 DATABASE_URL=postgresql://postgres:password@localhost:5432/glad_labs
+
+# LLM Providers
 OLLAMA_BASE_URL=http://localhost:11434
+OPENAI_API_KEY=your_openai_key
+ANTHROPIC_API_KEY=your_anthropic_key
+GOOGLE_API_KEY=your_google_key
+
+# Logging
 LOG_LEVEL=debug
+
+# API Endpoints
 VITE_API_URL=http://localhost:8000
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 ```

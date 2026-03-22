@@ -138,10 +138,12 @@ class WorkflowExecutor:
                         )
 
                 # Prepare inputs for this phase
+                # Pass initial_inputs to ALL phases as fallback (topic, style, tone, etc.
+                # should be available throughout the pipeline)
                 phase_inputs, input_traces = self._prepare_phase_inputs(
                     phase,
                     i,
-                    first_phase_inputs if i == 0 else {},
+                    first_phase_inputs,
                     phase_outputs,
                     phase_mappings.get(phase.name, {}),
                 )
@@ -264,14 +266,28 @@ class WorkflowExecutor:
                             auto_mapped=True,
                         )
 
-        # Strategy 3: Add initial inputs for first phase
-        if phase_index == 0:
-            for key, value in initial_inputs.items():
-                if key not in inputs:
-                    inputs[key] = value
-                    traces[key] = InputTrace(
-                        source_phase=None, source_field=None, user_provided=True, auto_mapped=False
-                    )
+        # Strategy 2.5: Carry forward all previous phase outputs as fallback
+        # (e.g., draft outputs "content" which assess needs as input)
+        if phase_index > 0:
+            for prev_name in reversed(list(previous_outputs.keys())):
+                for key, value in previous_outputs[prev_name].items():
+                    if key not in inputs:
+                        inputs[key] = value
+                        traces[key] = InputTrace(
+                            source_phase=prev_name,
+                            source_field=key,
+                            user_provided=False,
+                            auto_mapped=True,
+                        )
+
+        # Strategy 3: Add initial inputs as fallback for all phases
+        # (topic, style, tone, target_length should be available throughout pipeline)
+        for key, value in initial_inputs.items():
+            if key not in inputs:
+                inputs[key] = value
+                traces[key] = InputTrace(
+                    source_phase=None, source_field=None, user_provided=True, auto_mapped=False
+                )
 
         # Strategy 4: Fill defaults from phase definition
         phase_def = self.registry.get_phase(phase.name)
@@ -403,12 +419,12 @@ class WorkflowExecutor:
                 ),
                 "qa_agent": ("agents.content_agent.agents.qa_agent", "get_qa_agent"),
                 "image_agent": (
-                    "agents.content_agent.agents.postgres_image_agent",
-                    "get_image_agent",
+                    "agents.blog_image_agent",
+                    "get_blog_image_agent",
                 ),
                 "publishing_agent": (
-                    "agents.content_agent.agents.postgres_publishing_agent",
-                    "get_publishing_agent",
+                    "agents.blog_publisher_agent",
+                    "get_blog_publisher_agent",
                 ),
             }
 

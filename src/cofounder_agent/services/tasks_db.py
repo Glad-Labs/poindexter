@@ -339,19 +339,13 @@ class TasksDatabase(DatabaseServiceMixin):
         Returns:
             Task dict or None if not found
         """
-        # Always look up by task_id (the actual primary key, VARCHAR/UUID).
-        # The legacy numeric id path was removed: content_tasks.id is UUID not INTEGER,
-        # so int(task_id) always raised a DataError. (See issue #301)
-        builder = ParameterizedQueryBuilder()
-        sql, params = builder.select(
-            columns=["*"],
-            table="content_tasks",
-            where_clauses=[("task_id", SQLOperator.EQ, str(task_id))],
-        )
-
+        # Search by task_id OR id — the UI sends whichever field it rendered from.
         try:
             async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(sql, *params)
+                row = await conn.fetchrow(
+                    "SELECT * FROM content_tasks WHERE task_id = $1 OR id::text = $1 LIMIT 1",
+                    str(task_id),
+                )
                 if row:
                     task_response = ModelConverter.to_task_response(row)
                     return ModelConverter.to_dict(task_response)
@@ -415,8 +409,15 @@ class TasksDatabase(DatabaseServiceMixin):
         now = datetime.now(timezone.utc)
 
         try:
-            # Always look up by task_id (the actual primary key). Numeric id fallback
-            # removed: content_tasks.id is UUID not INTEGER. (See issue #301)
+            # Resolve actual task_id — caller may pass either id or task_id column value
+            async with self.pool.acquire() as conn:
+                resolved = await conn.fetchval(
+                    "SELECT task_id FROM content_tasks WHERE task_id = $1 OR id::text = $1 LIMIT 1",
+                    str(task_id),
+                )
+                if resolved:
+                    task_id = str(resolved)
+
             builder = ParameterizedQueryBuilder()
 
             updates = {"status": status, "updated_at": now}
@@ -541,8 +542,15 @@ class TasksDatabase(DatabaseServiceMixin):
             )
 
         try:
-            # Always look up by task_id (the actual primary key). Numeric id fallback
-            # removed: content_tasks.id is UUID not INTEGER. (See issue #301)
+            # Resolve the actual task_id — caller may pass either id or task_id column value
+            async with self.pool.acquire() as conn:
+                resolved = await conn.fetchval(
+                    "SELECT task_id FROM content_tasks WHERE task_id = $1 OR id::text = $1 LIMIT 1",
+                    str(task_id),
+                )
+                if resolved:
+                    task_id = str(resolved)
+
             builder = ParameterizedQueryBuilder()
             sql, params = builder.update(
                 table="content_tasks",

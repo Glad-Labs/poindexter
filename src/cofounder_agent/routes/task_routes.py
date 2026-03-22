@@ -321,32 +321,9 @@ async def _handle_blog_post_creation(
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    # Store in database
+    # Store in database as pending — task executor will pick it up
     returned_task_id = await db_service.add_task(task_data)
     logger.info(f"✅ [BLOG_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')}")
-
-    # Schedule background generation
-    async def _run_blog_generation():
-        try:
-            await process_content_generation_task(
-                topic=request.topic,
-                style=request.style or "narrative",
-                tone=request.tone or "professional",
-                target_length=request.target_length or 1500,
-                tags=request.tags,
-                generate_featured_image=request.generate_featured_image or True,
-                database_service=db_service,
-                task_id=task_id,
-                models_by_phase=request.models_by_phase,
-                quality_preference=request.quality_preference or "balanced",
-                category=request.category or "general",
-                target_audience=request.target_audience or "General",
-            )
-        except Exception as e:
-            logger.error(f"Blog generation failed: {e}", exc_info=True)
-            await db_service.update_task(task_id, {"status": "failed", "error_message": str(e)})
-
-    asyncio.create_task(_run_blog_generation())
 
     return {
         "id": returned_task_id,
@@ -675,15 +652,12 @@ async def list_tasks(
                 # Normalize seo_keywords in all nested locations
                 task = _normalize_seo_keywords_in_task(task)
 
-                # CRITICAL: Ensure 'id' field is always populated
-                # Local database uses 'task_id' (UUID), Railway prod has integer 'id' column
-                # Frontend expects 'id' to be the primary identifier
-                if not task.get("id") or task["id"] is None:
-                    # Use task_id (UUID string) as fallback for id
-                    if task.get("task_id"):
-                        task["id"] = task["task_id"]
-                elif isinstance(task["id"], int):
-                    # Convert integer id to string for consistency
+                # CRITICAL: 'id' must match what POST /api/tasks returns so the
+                # frontend can correlate optimistic inserts with server data.
+                # POST returns task_id as id, so list must too.
+                if task.get("task_id"):
+                    task["id"] = str(task["task_id"])
+                elif task.get("id"):
                     task["id"] = str(task["id"])
 
                 # CRITICAL: Parse cost_breakdown from JSON string to dict
@@ -1393,6 +1367,54 @@ async def update_task(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail="Failed to update task")
+
+
+@router.patch(
+    "/{task_id}/content",
+    response_model=UnifiedTaskResponse,
+    summary="Edit task content fields (title, content, metadata)",
+)
+async def update_task_content(
+    task_id: str,
+    updates: Dict[str, Any],
+    current_user: dict = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
+):
+    """
+    Edit task content without requiring a status change.
+    Used by the content editor in the task detail modal.
+
+    Allowed fields: topic, content, title, excerpt, featured_image_url,
+    seo_title, seo_description, seo_keywords, task_metadata.
+    """
+    try:
+        task = await db_service.get_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+
+        if isinstance(task, dict):
+            _check_task_ownership(task, current_user)
+
+        # Filter to allowed content fields only
+        allowed = {
+            "topic", "content", "title", "excerpt", "featured_image_url",
+            "seo_title", "seo_description", "seo_keywords", "task_metadata",
+            "style", "tone", "target_length", "primary_keyword", "target_audience",
+        }
+        filtered = {k: v for k, v in updates.items() if k in allowed}
+        if not filtered:
+            raise HTTPException(status_code=400, detail="No valid content fields to update")
+
+        await db_service.update_task(task_id, filtered)
+        updated_task = await db_service.get_task(task_id)
+        if not updated_task:
+            raise HTTPException(status_code=404, detail="Task not found after update")
+        return UnifiedTaskResponse(**_normalize_seo_keywords_in_task(updated_task))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update task content: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to update task content")
 
 
 # ============================================================================
@@ -2132,18 +2154,25 @@ async def publish_task(
             # Use merged content (task_metadata + result) so content is found whatever key the agent used
             task_result = merged_result
 
-            # Extract content — check multiple possible keys the content agent may use
+            # Extract content — check task columns first, then metadata/result
             topic = task.get("topic", "") or task_result.get("topic", "")
             draft_content = (
-                task_result.get("draft_content", "")
+                task.get("content", "")
+                or task_result.get("draft_content", "")
                 or task_result.get("content", "")
                 or task_result.get("body", "")
                 or task_result.get("article", "")
                 or ""
             )
-            seo_description = task_result.get("seo_description", "")
+            seo_description = (
+                task_result.get("seo_description", "")
+                or task.get("seo_description", "")
+            )
             seo_keywords = task_result.get("seo_keywords", [])
-            featured_image_url = task_result.get("featured_image_url")
+            featured_image_url = (
+                task_result.get("featured_image_url")
+                or task.get("featured_image_url")
+            )
             metadata = task_result.get("metadata", {})
 
             if draft_content and topic:

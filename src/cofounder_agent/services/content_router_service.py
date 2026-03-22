@@ -549,7 +549,7 @@ async def process_content_generation_task(
         await database_service.update_task(
             task_id=task_id,
             updates={
-                "status": "generated",
+                "status": "in_progress",
                 "content": content_text,
                 "title": title,
                 "model_used": model_used,
@@ -791,7 +791,7 @@ async def process_content_generation_task(
             task_id=task_id,
             updates={
                 "status": "awaiting_approval",
-                "approval_status": "pending_human_review",
+                "approval_status": "pending",
                 "quality_score": int(quality_result.overall_score),
                 "featured_image_url": result.get("featured_image_url"),
                 "seo_title": seo_title,
@@ -824,7 +824,7 @@ async def process_content_generation_task(
         )
 
         result["status"] = "awaiting_approval"
-        result["approval_status"] = "pending_human_review"
+        result["approval_status"] = "pending"
 
         logger.info(f"{'='*80}")
         logger.info(f"✅ COMPLETE CONTENT GENERATION PIPELINE FINISHED")

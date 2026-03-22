@@ -323,5 +323,5 @@ def get_image_agent() -> "PostgreSQLImageAgent":
     from ..services.pexels_client import PexelsClient
 
     llm_client = LLMClient()
-    pexels_client = PexelsClient(api_key=getattr(config, "PEXELS_API_KEY", ""))
+    pexels_client = PexelsClient()
     return PostgreSQLImageAgent(llm_client=llm_client, pexels_client=pexels_client)
