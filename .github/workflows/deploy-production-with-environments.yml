@@ -125,11 +125,11 @@ jobs:
       - name: 🚀 Deploy Co-Founder Agent to Railway (Production)
         run: |
           echo "📤 Deploying Co-Founder Agent to production environment..."
-          npm install -g @railway/cli
-          echo "Railway CLI version: $(railway version)"
+          curl -fsSL https://railway.app/install.sh | sh
+          export PATH="$HOME/.railway/bin:$PATH"
+          railway --version
           echo "Token length: ${#RAILWAY_TOKEN}"
-          echo "Project ID length: ${#RAILWAY_PROJECT_ID}"
-          railway whoami || echo "⚠️ railway whoami failed"
+          railway whoami || echo "⚠️ railway whoami failed — token may need 'railway login' format"
           railway link --project "$RAILWAY_PROJECT_ID" --environment staging --service cofounder
           railway up --service cofounder
           echo "✅ Co-Founder Agent production deployment completed"
