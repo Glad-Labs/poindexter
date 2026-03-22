@@ -104,10 +104,9 @@ jobs:
         run: cd src/cofounder_agent && poetry run pytest tests/integration/ tests/e2e/ -v --tb=short
         continue-on-error: true  # integration/e2e tests require DATABASE_URL — not available without service containers
 
-      - name: 🏗️ Build all workspaces
-        run: npm run build --if-present
-        env:
-          NODE_ENV: production
+      # Build step skipped — Vercel and Railway run their own builds with
+      # proper env vars (NEXT_PUBLIC_API_BASE_URL, etc.). CI build fails
+      # without those secrets and duplicates work the deploy steps already do.
 
       - name: 🔍 Run security checks
         run: npm audit --audit-level=moderate
