@@ -6,10 +6,11 @@
  * Tests cover:
  * - getTasks — success, pagination params, status/category filters, response.error throws, propagates network error
  * - getTask — success, response.error throws
- * - createTask — success (data.id path, id path, raw result path), response.error throws
+ * - createTask — returns full result object, calls POST /api/tasks, response.error throws
  * - updateTask — success, response.error throws
+ * - updateTaskContent — success, calls PATCH /api/tasks/:id/content, response.error throws
  * - approveTask — success with feedback, defaults, response.error throws
- * - publishTask — success, triggers non-blocking revalidation, response.error throws
+ * - publishTask — success, triggers non-blocking revalidation via makeRequest, response.error throws
  * - rejectTask — success, defaults, response.error throws
  * - deleteTask — success, response.error throws
  * - getContentTask — success, response.error throws
@@ -17,9 +18,9 @@
  * - pauseTask — success, response.error throws
  * - resumeTask — success, response.error throws
  * - cancelTask — success, response.error throws
- * - revalidatePublicSite — success, non-ok status returns failure object, fetch throws returns failure object
+ * - revalidatePublicSite — success, error response, makeRequest throws
  *
- * makeRequest and global.fetch are mocked; no network calls.
+ * makeRequest is mocked; no network calls.
  */
 
 import { vi } from 'vitest';
@@ -45,6 +46,7 @@ import {
   getTask,
   createTask,
   updateTask,
+  updateTaskContent,
   approveTask,
   publishTask,
   rejectTask,
@@ -63,11 +65,6 @@ const _throw = (msg) => mockMakeRequest.mockRejectedValue(new Error(msg));
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // Default fetch mock for revalidatePublicSite
-  global.fetch = vi.fn().mockResolvedValue({
-    ok: true,
-    json: async () => ({ revalidated: true }),
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -166,31 +163,27 @@ describe('getTask', () => {
 // ---------------------------------------------------------------------------
 
 describe('createTask', () => {
-  it('returns data.id when ActionResult has data.id', async () => {
-    _ok({ data: { id: 'new-task-id' } });
+  it('returns full result object on success', async () => {
+    const response = { id: 'new-task-id', status: 'pending', topic: 'AI' };
+    _ok(response);
     const result = await createTask({ task_name: 'Test', topic: 'AI' });
-    expect(result).toBe('new-task-id');
+    expect(result).toEqual(response);
   });
 
-  it('returns id when top-level id present (no data property)', async () => {
-    _ok({ id: 'direct-id' });
+  it('returns result with nested data when present', async () => {
+    const response = { data: { id: 'new-task-id' } };
+    _ok(response);
     const result = await createTask({ task_name: 'Test', topic: 'AI' });
-    expect(result).toBe('direct-id');
+    expect(result).toEqual(response);
+    expect(result.data.id).toBe('new-task-id');
   });
 
-  it('returns raw result when neither data.id nor id present', async () => {
-    const raw = { status: 'queued' };
-    _ok(raw);
-    const result = await createTask({ task_name: 'Test', topic: 'AI' });
-    expect(result).toBe(raw);
-  });
-
-  it('wraps task data in service layer format', async () => {
-    _ok({ data: { id: 'x' } });
+  it('passes taskData directly as request body', async () => {
+    _ok({ id: 'x' });
     await createTask({ task_name: 'Blog Post', topic: 'Tech' });
     const body = mockMakeRequest.mock.calls[0][2];
-    expect(body.params).toEqual({ task_name: 'Blog Post', topic: 'Tech' });
-    expect(body.context.source).toBe('manual_form');
+    expect(body.task_name).toBe('Blog Post');
+    expect(body.topic).toBe('Tech');
   });
 
   it('throws when response contains error field', async () => {
@@ -200,13 +193,18 @@ describe('createTask', () => {
     );
   });
 
-  it('calls POST /api/services/tasks/actions/create_task', async () => {
-    _ok({ data: { id: 'z' } });
+  it('calls POST /api/tasks', async () => {
+    _ok({ id: 'z' });
     await createTask({});
-    expect(mockMakeRequest.mock.calls[0][0]).toBe(
-      '/api/services/tasks/actions/create_task'
-    );
+    expect(mockMakeRequest.mock.calls[0][0]).toBe('/api/tasks');
     expect(mockMakeRequest.mock.calls[0][1]).toBe('POST');
+  });
+
+  it('uses 60s timeout for background generation', async () => {
+    _ok({ id: 'z' });
+    await createTask({});
+    // 6th arg is timeout
+    expect(mockMakeRequest.mock.calls[0][5]).toBe(60000);
   });
 });
 
@@ -234,6 +232,37 @@ describe('updateTask', () => {
     expect(mockMakeRequest.mock.calls[0][0]).toBe('/api/tasks/task-5');
     expect(mockMakeRequest.mock.calls[0][1]).toBe('PATCH');
     expect(mockMakeRequest.mock.calls[0][2]).toEqual({ status: 'done' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// updateTaskContent
+// ---------------------------------------------------------------------------
+
+describe('updateTaskContent', () => {
+  it('returns updated task on success', async () => {
+    _ok({ id: 'task-1', topic: 'New Title' });
+    const result = await updateTaskContent('task-1', { topic: 'New Title' });
+    expect(result.topic).toBe('New Title');
+  });
+
+  it('calls PATCH /api/tasks/:id/content with content fields', async () => {
+    _ok({ id: 'task-5' });
+    const updates = {
+      topic: 'Updated',
+      task_metadata: { content: 'Body text' },
+    };
+    await updateTaskContent('task-5', updates);
+    expect(mockMakeRequest.mock.calls[0][0]).toBe('/api/tasks/task-5/content');
+    expect(mockMakeRequest.mock.calls[0][1]).toBe('PATCH');
+    expect(mockMakeRequest.mock.calls[0][2]).toEqual(updates);
+  });
+
+  it('throws when response contains error field', async () => {
+    _error('No valid content fields');
+    await expect(updateTaskContent('task-1', {})).rejects.toThrow(
+      'Could not update task content: No valid content fields'
+    );
   });
 });
 
@@ -293,12 +322,21 @@ describe('publishTask', () => {
     expect(result.status).toBe('published');
   });
 
-  it('triggers non-blocking revalidatePublicSite after success', async () => {
-    _ok({ id: 'task-1', status: 'published', slug: 'my-post' });
+  it('triggers non-blocking revalidation after success', async () => {
+    // First call: publishTask, second call: revalidatePublicSite
+    mockMakeRequest
+      .mockResolvedValueOnce({
+        id: 'task-1',
+        status: 'published',
+        post_slug: 'my-post',
+      })
+      .mockResolvedValueOnce({ revalidated: true });
     await publishTask('task-1');
-    // Flush any pending promises from the non-blocking revalidation call
+    // Flush microtask queue for the non-blocking revalidation
     await new Promise((r) => setTimeout(r, 0));
-    expect(global.fetch).toHaveBeenCalled();
+    // Second makeRequest call should be the revalidation
+    expect(mockMakeRequest).toHaveBeenCalledTimes(2);
+    expect(mockMakeRequest.mock.calls[1][0]).toBe('/api/revalidate-cache');
   });
 
   it('throws when response contains error field', async () => {
@@ -538,59 +576,43 @@ describe('cancelTask', () => {
 
 describe('revalidatePublicSite', () => {
   it('returns revalidation result on success', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ revalidated: true, count: 3 }),
-    });
+    _ok({ revalidated: true, count: 3 });
     const result = await revalidatePublicSite(['/archive']);
     expect(result.revalidated).toBe(true);
   });
 
-  it('returns failure object when fetch response is not ok', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 500,
-      json: async () => ({}),
-    });
+  it('returns failure object when makeRequest returns error', async () => {
+    _ok({ error: 'Internal error' });
     const result = await revalidatePublicSite();
     expect(result.success).toBe(false);
-    expect(result.status).toBe(500);
+    expect(result.error).toBe('Internal error');
   });
 
-  it('returns failure object when fetch throws', async () => {
-    global.fetch = vi.fn().mockRejectedValue(new Error('ECONNREFUSED'));
+  it('returns failure object when makeRequest throws', async () => {
+    _throw('ECONNREFUSED');
     const result = await revalidatePublicSite();
     expect(result.success).toBe(false);
     expect(result.error).toBe('ECONNREFUSED');
   });
 
-  it('calls /api/revalidate-cache via POST', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({}),
-    });
+  it('calls /api/revalidate-cache via POST through makeRequest', async () => {
+    _ok({ revalidated: true });
     await revalidatePublicSite(['/']);
-    expect(global.fetch.mock.calls[0][0]).toContain('/api/revalidate-cache');
-    expect(global.fetch.mock.calls[0][1].method).toBe('POST');
+    expect(mockMakeRequest.mock.calls[0][0]).toBe('/api/revalidate-cache');
+    expect(mockMakeRequest.mock.calls[0][1]).toBe('POST');
   });
 
   it('sends paths in request body', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({}),
-    });
+    _ok({ revalidated: true });
     await revalidatePublicSite(['/archive', '/']);
-    const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+    const body = mockMakeRequest.mock.calls[0][2];
     expect(body.paths).toEqual(['/archive', '/']);
   });
 
   it('uses empty paths array by default', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({}),
-    });
+    _ok({ revalidated: true });
     await revalidatePublicSite();
-    const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+    const body = mockMakeRequest.mock.calls[0][2];
     expect(body.paths).toEqual([]);
   });
 });
