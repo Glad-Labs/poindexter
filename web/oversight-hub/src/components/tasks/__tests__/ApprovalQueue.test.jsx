@@ -533,6 +533,7 @@ describe('ApprovalQueue Component', () => {
     });
 
     test('shows error on failed bulk approval', async () => {
+      // 1st fetch: initial task list load
       global.fetch.mockResolvedValueOnce({
         ok: true,
         json: async () => ({
@@ -541,9 +542,17 @@ describe('ApprovalQueue Component', () => {
         }),
       });
 
+      // 2nd fetch: bulk approve API call — returns failure
       global.fetch.mockResolvedValueOnce({
         ok: false,
+        statusText: 'Internal Server Error',
         json: async () => ({ detail: 'Server error' }),
+      });
+
+      // 3rd+ fetches: any re-fetch after error (return empty to prevent crash)
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ tasks: mockTasks, total: 2 }),
       });
 
       render(<ApprovalQueue />);
