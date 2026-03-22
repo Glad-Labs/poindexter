@@ -126,7 +126,7 @@ jobs:
         run: |
           echo "📤 Deploying Co-Founder Agent to production environment..."
           npm install -g @railway/cli  # fix #148: cached above
-          railway link --project ${{ secrets.RAILWAY_PROD_PROJECT_ID }} --environment production
+          railway link --project ${{ secrets.RAILWAY_PROD_PROJECT_ID }} --environment staging
           railway up --service cofounder
           echo "✅ Co-Founder Agent production deployment completed"
         env:
