@@ -21,7 +21,7 @@ import {
   Snackbar,
   Alert,
 } from '@mui/material';
-import { updateTask } from '../../services/taskService';
+import { updateTaskContent } from '../../services/taskService';
 
 const TaskContentPreview = ({ task, onTaskUpdate }) => {
   const [isEditing, setIsEditing] = useState(false);
@@ -29,8 +29,13 @@ const TaskContentPreview = ({ task, onTaskUpdate }) => {
   const [editedContent, setEditedContent] = useState('');
   const [showPreview, setShowPreview] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
-  const handleSnackbarClose = () => setSnackbar((prev) => ({ ...prev, open: false }));
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: '',
+    severity: 'success',
+  });
+  const handleSnackbarClose = () =>
+    setSnackbar((prev) => ({ ...prev, open: false }));
 
   // Extract title from content if it starts with markdown title
   const extractTitleFromContent = (content) => {
@@ -138,7 +143,7 @@ const TaskContentPreview = ({ task, onTaskUpdate }) => {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const updatedTask = await updateTask(task.id, {
+      const updatedTask = await updateTaskContent(task.id, {
         topic: editedTitle,
         task_metadata: {
           ...task.task_metadata,
@@ -147,10 +152,18 @@ const TaskContentPreview = ({ task, onTaskUpdate }) => {
       });
       setIsEditing(false);
       if (onTaskUpdate) onTaskUpdate(updatedTask);
-      setSnackbar({ open: true, message: 'Changes saved successfully', severity: 'success' });
+      setSnackbar({
+        open: true,
+        message: 'Changes saved successfully',
+        severity: 'success',
+      });
     } catch (error) {
       logger.error('Failed to save changes:', error);
-      setSnackbar({ open: true, message: 'Failed to save changes', severity: 'error' });
+      setSnackbar({
+        open: true,
+        message: 'Failed to save changes',
+        severity: 'error',
+      });
     } finally {
       setSaving(false);
     }
@@ -309,7 +322,9 @@ const TaskContentPreview = ({ task, onTaskUpdate }) => {
               '& strong': { fontWeight: 'bold', color: '#fff' },
               '& em': { fontStyle: 'italic' },
             }}
-            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderMarkdown(editedContent)) }}
+            dangerouslySetInnerHTML={{
+              __html: DOMPurify.sanitize(renderMarkdown(editedContent)),
+            }}
           />
         ) : (
           <Box

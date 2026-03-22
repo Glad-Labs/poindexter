@@ -1369,6 +1369,54 @@ async def update_task(
         raise HTTPException(status_code=500, detail="Failed to update task")
 
 
+@router.patch(
+    "/{task_id}/content",
+    response_model=UnifiedTaskResponse,
+    summary="Edit task content fields (title, content, metadata)",
+)
+async def update_task_content(
+    task_id: str,
+    updates: Dict[str, Any],
+    current_user: dict = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
+):
+    """
+    Edit task content without requiring a status change.
+    Used by the content editor in the task detail modal.
+
+    Allowed fields: topic, content, title, excerpt, featured_image_url,
+    seo_title, seo_description, seo_keywords, task_metadata.
+    """
+    try:
+        task = await db_service.get_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+
+        if isinstance(task, dict):
+            _check_task_ownership(task, current_user)
+
+        # Filter to allowed content fields only
+        allowed = {
+            "topic", "content", "title", "excerpt", "featured_image_url",
+            "seo_title", "seo_description", "seo_keywords", "task_metadata",
+            "style", "tone", "target_length", "primary_keyword", "target_audience",
+        }
+        filtered = {k: v for k, v in updates.items() if k in allowed}
+        if not filtered:
+            raise HTTPException(status_code=400, detail="No valid content fields to update")
+
+        await db_service.update_task(task_id, filtered)
+        updated_task = await db_service.get_task(task_id)
+        if not updated_task:
+            raise HTTPException(status_code=404, detail="Task not found after update")
+        return UnifiedTaskResponse(**_normalize_seo_keywords_in_task(updated_task))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update task content: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to update task content")
+
+
 # ============================================================================
 # CONTENT CLEANING UTILITIES
 # ============================================================================

@@ -110,7 +110,7 @@ export const createTask = async (taskData) => {
  * Update task status via the backend API
  *
  * @param {string} taskId - Task ID to update
- * @param {object} updates - Fields to update
+ * @param {object} updates - Fields to update (must include status)
  * @returns {Promise<object>} Updated task object
  * @throws {Error} If update fails
  */
@@ -126,6 +126,31 @@ export const updateTask = async (taskId, updates) => {
 
   if (result.error) {
     throw new Error(`Could not update task: ${result.error}`);
+  }
+
+  return result;
+};
+
+/**
+ * Update task content fields (title, content, metadata) without changing status
+ *
+ * @param {string} taskId - Task ID to update
+ * @param {object} updates - Content fields to update
+ * @returns {Promise<object>} Updated task object
+ * @throws {Error} If update fails
+ */
+export const updateTaskContent = async (taskId, updates) => {
+  const result = await makeRequest(
+    `/api/tasks/${taskId}/content`,
+    'PATCH',
+    updates,
+    false,
+    null,
+    API_TIMEOUT
+  );
+
+  if (result.error) {
+    throw new Error(`Could not update task content: ${result.error}`);
   }
 
   return result;
