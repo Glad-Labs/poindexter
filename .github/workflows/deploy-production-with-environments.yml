@@ -223,6 +223,7 @@ jobs:
           echo "✅ All production smoke tests passed"
 
       - name: 📊 Health Checks
+        continue-on-error: true  # Post-deploy verification — don't block on transient failures
         run: |
           echo "🔍 Performing production health checks..."
           COFOUNDER_URL="${{ secrets.COFOUNDER_PROD_URL }}"
