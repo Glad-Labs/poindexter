@@ -12,7 +12,9 @@ vi.mock('@/lib/logger', () => ({
   },
 }));
 
-const mockUpdateTaskContent = vi.fn();
+const { mockUpdateTaskContent } = vi.hoisted(() => ({
+  mockUpdateTaskContent: vi.fn(),
+}));
 vi.mock('../../services/taskService', () => ({
   updateTaskContent: (...args) => mockUpdateTaskContent(...args),
 }));

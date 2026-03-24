@@ -134,7 +134,7 @@ describe('TaskDetailModal — with task', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSelectedTask = SAMPLE_TASK;
-    // TaskDetailModal calls getContentTask(selectedTask.id) in a useEffect on mount
+    // Modal fetches fresh task data on open — mock it to prevent unhandled rejection
     mockGetContentTask.mockResolvedValue(SAMPLE_TASK);
   });
 
@@ -226,14 +226,15 @@ describe('TaskDetailModal — task with metadata', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockSelectedTask = {
+    const taskWithMeta = {
       ...SAMPLE_TASK,
       task_metadata: {
         retry_count: 2,
         content: 'Some content here',
       },
     };
-    mockGetContentTask.mockResolvedValue(mockSelectedTask);
+    mockSelectedTask = taskWithMeta;
+    mockGetContentTask.mockResolvedValue(taskWithMeta);
   });
 
   it('renders without crashing when task has metadata', () => {

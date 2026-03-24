@@ -533,17 +533,19 @@ describe('ApprovalQueue Component', () => {
     });
 
     test('shows error on failed bulk approval', async () => {
-      global.fetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          tasks: mockTasks,
-          total: 2,
-        }),
-      });
-
-      global.fetch.mockResolvedValueOnce({
-        ok: false,
-        json: async () => ({ detail: 'Server error' }),
+      // URL-aware mock: fail on bulk-approve, succeed on everything else
+      global.fetch.mockImplementation((url) => {
+        if (typeof url === 'string' && url.includes('bulk-approve')) {
+          return Promise.resolve({
+            ok: false,
+            statusText: 'Internal Server Error',
+            json: async () => ({ detail: 'Server error' }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ tasks: mockTasks, total: 2 }),
+        });
       });
 
       render(<ApprovalQueue />);

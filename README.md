@@ -1,5 +1,7 @@
 # Glad Labs - AI Co-Founder System
 
+[![gitcgr](https://gitcgr.com/badge/Glad-Labs/glad-labs-codebase.svg)](https://gitcgr.com/Glad-Labs/glad-labs-codebase)
+
 **Status:** Enterprise-Ready ✅
 **Last Updated:** March 21, 2026
 **Documentation:** Cleaned Up & Organized

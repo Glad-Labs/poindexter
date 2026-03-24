@@ -82,9 +82,11 @@ const PostCard = ({ post, headingLevel = 3 }) => {
   const href = slug ? `/posts/${slug}` : '#';
   const isClickable = Boolean(slug);
   const displayDate = safeFormatDate(published_at);
-  const dateISO = published_at
-    ? new Date(published_at).toISOString().split('T')[0]
-    : new Date().toISOString().split('T')[0];
+  const parsedDate = published_at ? new Date(published_at) : null;
+  const dateISO =
+    parsedDate && !isNaN(parsedDate.getTime())
+      ? parsedDate.toISOString().split('T')[0]
+      : new Date().toISOString().split('T')[0];
 
   return (
     <article

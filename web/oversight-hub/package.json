@@ -64,7 +64,6 @@
     "autoprefixer": "^10.4.27",
     "cross-env": "^7.0.3",
     "eslint": "^9.39.2",
-    "eslint-plugin-jest": "^28.14.0",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^5.0.0",
     "globals": "^15.14.0",
