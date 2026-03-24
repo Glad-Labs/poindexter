@@ -1,13 +1,13 @@
 /**
  * helpers.test.js
  *
- * Unit tests for utils/helpers.js
+ * Unit tests for lib/date.js formatTimestamp
  *
  * Tests cover:
- * - formatTimestamp — Firestore Timestamp-like object with .toDate(), plain object without .toDate()
+ * - formatTimestamp — null/undefined, object with .seconds, object without .seconds
  */
 
-import { formatTimestamp } from '../helpers';
+import { formatTimestamp } from '../../lib/date';
 
 describe('formatTimestamp', () => {
   it('returns N/A for null', () => {
@@ -18,26 +18,25 @@ describe('formatTimestamp', () => {
     expect(formatTimestamp(undefined)).toBe('N/A');
   });
 
-  it('returns N/A for plain object without toDate method', () => {
-    expect(formatTimestamp({ seconds: 1234567890 })).toBe('N/A');
-  });
-
-  it('calls .toDate() and returns locale string for Firestore Timestamp-like object', () => {
-    const mockTimestamp = {
-      toDate: () => new Date('2026-03-12T10:00:00Z'),
-    };
-    const result = formatTimestamp(mockTimestamp);
+  it('returns locale string for object with .seconds property', () => {
+    const ts = { seconds: 1741770000 }; // 2025-03-12T10:00:00Z approx
+    const result = formatTimestamp(ts);
     expect(typeof result).toBe('string');
     expect(result).not.toBe('N/A');
-    // Result should contain something date-like
     expect(result.length).toBeGreaterThan(0);
   });
 
-  it('returns a locale-formatted string from the .toDate() result', () => {
-    const fixedDate = new Date('2026-03-12T10:00:00Z');
-    const mockTimestamp = { toDate: () => fixedDate };
-    const result = formatTimestamp(mockTimestamp);
-    // Should match the locale string of the date
-    expect(result).toBe(fixedDate.toLocaleString());
+  it('returns a locale-formatted string matching Date construction from .seconds', () => {
+    const seconds = 1741770000;
+    const ts = { seconds };
+    const result = formatTimestamp(ts);
+    const expected = new Date(seconds * 1000).toLocaleString();
+    expect(result).toBe(expected);
+  });
+
+  it('returns Invalid Date string for object without .seconds', () => {
+    // When .seconds is undefined, new Date(undefined * 1000) => Invalid Date
+    const result = formatTimestamp({ foo: 'bar' });
+    expect(result).toBe('Invalid Date');
   });
 });

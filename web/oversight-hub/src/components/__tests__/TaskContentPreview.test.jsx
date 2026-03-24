@@ -12,9 +12,9 @@ vi.mock('@/lib/logger', () => ({
   },
 }));
 
-const mockUpdateTask = vi.fn();
+const mockUpdateTaskContent = vi.fn();
 vi.mock('../../services/taskService', () => ({
-  updateTask: (...args) => mockUpdateTask(...args),
+  updateTaskContent: (...args) => mockUpdateTaskContent(...args),
 }));
 
 import TaskContentPreview from '../tasks/TaskContentPreview';
@@ -67,7 +67,9 @@ describe('TaskContentPreview', () => {
   it('renders the content section header', () => {
     render(<TaskContentPreview task={baseTask} />);
     // The h3 shows "Content Preview" (or "Content Editor" in edit mode)
-    expect(screen.getByRole('heading', { name: /Content/i, level: 3 })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: /Content/i, level: 3 })
+    ).toBeInTheDocument();
   });
 
   it('exits edit mode when Cancel is clicked', () => {
@@ -97,12 +99,17 @@ describe('TaskContentPreview', () => {
     render(<TaskContentPreview task={baseTask} />);
     fireEvent.click(screen.getByText(/Edit Content/i));
 
-    const contentArea = screen.getByPlaceholderText(/Write your content in Markdown/i);
+    const contentArea = screen.getByPlaceholderText(
+      /Write your content in Markdown/i
+    );
     expect(contentArea).toBeInTheDocument();
   });
 
   it('saves changes when Save Changes is clicked', async () => {
-    mockUpdateTask.mockResolvedValueOnce({ ...baseTask, topic: 'Updated Topic' });
+    mockUpdateTaskContent.mockResolvedValueOnce({
+      ...baseTask,
+      topic: 'Updated Topic',
+    });
 
     const onTaskUpdate = vi.fn();
     render(<TaskContentPreview task={baseTask} onTaskUpdate={onTaskUpdate} />);
@@ -111,26 +118,31 @@ describe('TaskContentPreview', () => {
     fireEvent.click(screen.getByText(/Save Changes/i));
 
     await waitFor(() => {
-      expect(mockUpdateTask).toHaveBeenCalledWith('task-123', expect.objectContaining({
-        topic: 'Test Topic',
-      }));
+      expect(mockUpdateTaskContent).toHaveBeenCalledWith(
+        'task-123',
+        expect.objectContaining({
+          topic: 'Test Topic',
+        })
+      );
     });
   });
 
   it('shows success snackbar after save', async () => {
-    mockUpdateTask.mockResolvedValueOnce(baseTask);
+    mockUpdateTaskContent.mockResolvedValueOnce(baseTask);
 
     render(<TaskContentPreview task={baseTask} />);
     fireEvent.click(screen.getByText(/Edit Content/i));
     fireEvent.click(screen.getByText(/Save Changes/i));
 
     await waitFor(() => {
-      expect(screen.getByText('Changes saved successfully')).toBeInTheDocument();
+      expect(
+        screen.getByText('Changes saved successfully')
+      ).toBeInTheDocument();
     });
   });
 
   it('shows error snackbar when save fails', async () => {
-    mockUpdateTask.mockRejectedValueOnce(new Error('Network error'));
+    mockUpdateTaskContent.mockRejectedValueOnce(new Error('Network error'));
 
     render(<TaskContentPreview task={baseTask} />);
     fireEvent.click(screen.getByText(/Edit Content/i));
@@ -143,7 +155,7 @@ describe('TaskContentPreview', () => {
 
   it('calls onTaskUpdate callback after successful save', async () => {
     const updatedTask = { ...baseTask, topic: 'New Topic' };
-    mockUpdateTask.mockResolvedValueOnce(updatedTask);
+    mockUpdateTaskContent.mockResolvedValueOnce(updatedTask);
 
     const onTaskUpdate = vi.fn();
     render(<TaskContentPreview task={baseTask} onTaskUpdate={onTaskUpdate} />);
@@ -178,13 +190,15 @@ describe('TaskContentPreview', () => {
 
   it('does not render featured image section when no image url', () => {
     render(<TaskContentPreview task={baseTask} />);
-    expect(screen.queryByRole('img', { name: /Featured/ })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('img', { name: /Featured/ })
+    ).not.toBeInTheDocument();
   });
 
   it('shows Saving... while save is in progress', async () => {
     // Return a promise that resolves after assertions
     let resolveUpdate;
-    mockUpdateTask.mockReturnValueOnce(
+    mockUpdateTaskContent.mockReturnValueOnce(
       new Promise((res) => {
         resolveUpdate = res;
       })

@@ -134,6 +134,8 @@ describe('TaskDetailModal — with task', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSelectedTask = SAMPLE_TASK;
+    // TaskDetailModal calls getContentTask(selectedTask.id) in a useEffect on mount
+    mockGetContentTask.mockResolvedValue(SAMPLE_TASK);
   });
 
   it('renders a Dialog when selectedTask is set', () => {
@@ -231,6 +233,7 @@ describe('TaskDetailModal — task with metadata', () => {
         content: 'Some content here',
       },
     };
+    mockGetContentTask.mockResolvedValue(mockSelectedTask);
   });
 
   it('renders without crashing when task has metadata', () => {
