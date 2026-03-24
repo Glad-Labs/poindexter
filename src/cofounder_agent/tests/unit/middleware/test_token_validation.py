@@ -54,7 +54,7 @@ class TestDevBypass:
             resp.status_code = 200
             return resp
 
-        with patch.dict("os.environ", {"DISABLE_AUTH_FOR_DEV": "true"}):
+        with patch.dict("os.environ", {"DISABLE_AUTH_FOR_DEV": "true", "DEVELOPMENT_MODE": "true"}):
             await mw.dispatch(req, call_next)
 
         assert called
@@ -319,7 +319,7 @@ class TestProductionModeBypass:
 
     @pytest.mark.asyncio
     async def test_disable_auth_honoured_in_development_env(self):
-        """DISABLE_AUTH_FOR_DEV=true is allowed only in non-production environments."""
+        """DISABLE_AUTH_FOR_DEV=true is allowed only when DEVELOPMENT_MODE=true."""
         mw = _make_mw()
         req = _make_request(path="/api/tasks")  # no auth header
 
@@ -333,7 +333,7 @@ class TestProductionModeBypass:
 
         with patch.dict(
             "os.environ",
-            {"DISABLE_AUTH_FOR_DEV": "true", "ENVIRONMENT": "development"},
+            {"DISABLE_AUTH_FOR_DEV": "true", "DEVELOPMENT_MODE": "true"},
         ):
             await mw.dispatch(req, call_next)
 
