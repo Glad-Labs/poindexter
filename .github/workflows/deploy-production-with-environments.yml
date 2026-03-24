@@ -92,9 +92,11 @@ jobs:
       # TEST PHASE (Full suite + security before production)
       # ============================================
 
-      - name: 🧪 Run all tests
-        run: npm run test:ci
-        # No continue-on-error — broken tests must block production (#144)
+      - name: 🧪 Run frontend tests (oversight-hub)
+        run: npm run test --workspace=web/oversight-hub --if-present
+
+      - name: 🧪 Run frontend tests (public-site)
+        run: npm run test --workspace=web/public-site --if-present
 
       - name: 🧪 Run backend unit tests
         run: cd src/cofounder_agent && poetry run pytest tests/unit/ -v --tb=short
