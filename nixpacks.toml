@@ -7,4 +7,4 @@ enable = ["python", "nodejs", "npm"]
 aptPackages = ["libgl1-mesa-glx", "libglib2.0-0"]
 
 [python]
-version = "3.13"
+version = "3.12"

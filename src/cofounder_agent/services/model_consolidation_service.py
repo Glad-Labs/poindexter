@@ -195,14 +195,15 @@ class OllamaAdapter(ProviderAdapter):
             logger.warning("Ollama generation failed", error=str(e), model=model, exc_info=True)
             raise
 
-    def list_models(self) -> List[str]:
+    async def list_models(self) -> List[str]:
         """List available Ollama models from live instance."""
         import httpx
 
         try:
-            resp = httpx.get(f"{self.host}/api/tags", timeout=5)
-            if resp.status_code == 200:
-                return [m["name"] for m in resp.json().get("models", [])]
+            async with httpx.AsyncClient(timeout=5) as client:
+                resp = await client.get(f"{self.host}/api/tags")
+                if resp.status_code == 200:
+                    return [m["name"] for m in resp.json().get("models", [])]
         except Exception:
             pass
         # Fallback: models known to be installed
@@ -760,15 +761,22 @@ class ModelConsolidationService:
             "metrics": self.metrics,
         }
 
-    def list_models(self, provider: Optional[ProviderType] = None) -> Dict[str, List[str]]:
+    async def list_models(self, provider: Optional[ProviderType] = None) -> Dict[str, List[str]]:
         """List available models"""
         if provider:
             adapter = self.adapters.get(provider)
-            return {provider.value: adapter.list_models() if adapter else []}
+            if adapter:
+                models = await adapter.list_models() if hasattr(adapter.list_models, '__func__') and asyncio.iscoroutinefunction(adapter.list_models) else adapter.list_models()
+                return {provider.value: models}
+            return {provider.value: []}
 
-        return {
-            provider.value: adapter.list_models() for provider, adapter in self.adapters.items()
-        }
+        result = {}
+        for prov, adapter in self.adapters.items():
+            if asyncio.iscoroutinefunction(adapter.list_models):
+                result[prov.value] = await adapter.list_models()
+            else:
+                result[prov.value] = adapter.list_models()
+        return result
 
 
 # ============================================================================
