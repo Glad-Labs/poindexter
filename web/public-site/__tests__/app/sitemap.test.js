@@ -18,6 +18,9 @@ jest.mock('@/lib/logger', () => ({
 // Mock fetch globally
 global.fetch = jest.fn();
 
+// Set API URL to non-localhost so sitemap.ts doesn't skip dynamic content
+process.env.NEXT_PUBLIC_FASTAPI_URL = 'https://api.example.com';
+
 // Reset modules before each test to re-evaluate env-dependent code
 beforeEach(() => {
   jest.resetModules();
