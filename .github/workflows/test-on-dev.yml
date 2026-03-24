@@ -62,10 +62,8 @@ jobs:
       - name: 🧪 Run backend unit tests
         run: |
           cd src/cofounder_agent && poetry run pytest tests/unit/ -v --tb=short \
-            --ignore=tests/unit/services/test_task_executor.py \
-            --ignore=tests/unit/services/test_template_execution_service.py \
-            --ignore=tests/unit/services/test_task_schemas.py
-        # Ignored: pre-existing mock failures from code refactors
+            --ignore=tests/unit/services/test_template_execution_service.py
+        # Ignored: test_template_execution_service needs DATABASE_URL mock fix
 
       - name: 🧪 Run backend integration tests
         run: cd src/cofounder_agent && poetry run pytest tests/integration/ tests/e2e/ -v --tb=short
