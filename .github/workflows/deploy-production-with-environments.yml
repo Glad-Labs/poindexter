@@ -98,7 +98,7 @@ jobs:
 
       - name: 🧪 Run backend unit tests
         run: cd src/cofounder_agent && poetry run pytest tests/unit/ -v --tb=short
-        continue-on-error: true  # 18 pre-existing failures (auth mock, task_executor refactor) — fix tracked in backlog
+        # All 6,082 unit tests pass — failures must block production (#1217)
 
       - name: 🧪 Run backend integration tests
         run: cd src/cofounder_agent && poetry run pytest tests/integration/ tests/e2e/ -v --tb=short

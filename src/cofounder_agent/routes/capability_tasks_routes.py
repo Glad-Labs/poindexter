@@ -177,12 +177,8 @@ class ExecutionResponse(BaseModel):
 router = APIRouter(prefix="/api", tags=["capabilities"])
 
 
-def get_owner_id(current_user: Dict[str, Any] = Depends(get_current_user)) -> str:
-    """Extract and validate owner_id from the authenticated user."""
-    user_id = current_user.get("id") if isinstance(current_user, dict) else current_user
-    if not user_id:
-        raise HTTPException(status_code=401, detail="User identity could not be determined")
-    return str(user_id)
+# get_owner_id imported from custom_workflows_routes to avoid duplication (#1203)
+from routes.custom_workflows_routes import get_owner_id  # noqa: F401, E402
 
 
 # ============ Capability Discovery Endpoints ============

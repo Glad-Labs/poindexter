@@ -58,7 +58,7 @@ async def get_available_models(
     """
     try:
         service = get_model_consolidation_service()
-        models_dict = service.list_models()
+        models_dict = await service.list_models()
 
         # When VRAM filtering is active, prioritize local models then cloud
         if vram_gb is not None:
@@ -153,7 +153,7 @@ async def get_recommended_models():
     """
     try:
         service = get_model_consolidation_service()
-        models_dict = service.list_models()
+        models_dict = await service.list_models()
 
         # Return models in fallback chain priority order
         models_list = []

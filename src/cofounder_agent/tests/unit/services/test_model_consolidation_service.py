@@ -320,24 +320,27 @@ class TestGetStatus:
 
 
 class TestListModels:
-    def test_no_filter_returns_all_adapters(self):
+    @pytest.mark.asyncio
+    async def test_no_filter_returns_all_adapters(self):
         svc = make_service_no_adapters()
         add_adapter(svc, ProviderType.OLLAMA, is_available=True, response=None)
         add_adapter(svc, ProviderType.ANTHROPIC, is_available=True, response=None)
-        models = svc.list_models()
+        models = await svc.list_models()
         assert "ollama" in models
         assert "anthropic" in models
 
-    def test_with_filter_returns_only_that_provider(self):
+    @pytest.mark.asyncio
+    async def test_with_filter_returns_only_that_provider(self):
         svc = make_service_no_adapters()
         add_adapter(svc, ProviderType.OLLAMA, is_available=True, response=None)
-        models = svc.list_models(provider=ProviderType.OLLAMA)
+        models = await svc.list_models(provider=ProviderType.OLLAMA)
         assert "ollama" in models
         assert len(models) == 1
 
-    def test_unknown_provider_returns_empty_list(self):
+    @pytest.mark.asyncio
+    async def test_unknown_provider_returns_empty_list(self):
         svc = make_service_no_adapters()
-        models = svc.list_models(provider=ProviderType.OPENAI)
+        models = await svc.list_models(provider=ProviderType.OPENAI)
         assert models.get("openai", []) == []
 
 
