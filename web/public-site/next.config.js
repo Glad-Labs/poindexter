@@ -272,9 +272,10 @@ const nextConfig = {
     NEXT_TELEMETRY_DISABLED: '1',
   },
 
-  // ESLint configuration
+  // ESLint configuration — ignore during Vercel builds (CI runs lint separately)
   eslint: {
     dirs: ['app', 'components', 'lib', 'styles'],
+    ignoreDuringBuilds: true,
   },
 
   // TypeScript configuration
