@@ -29,6 +29,16 @@ interface Tag {
 
 // Import FastAPI client to query published posts
 async function fetchPublishedContent() {
+  // During Vercel builds the backend (Railway) is not reliably reachable.
+  // Fetching here causes 60s+ hangs → OOM crashes. Sitemap will be populated
+  // at runtime via ISR/on-demand revalidation instead.
+  if (process.env.VERCEL || process.env.CI) {
+    logger.log(
+      'Build environment detected — skipping sitemap API fetch. Sitemap uses static pages only.'
+    );
+    return { allPosts: [], allCategories: [], allTags: [] };
+  }
+
   const FASTAPI_URL =
     process.env.NEXT_PUBLIC_API_BASE_URL ||
     process.env.NEXT_PUBLIC_FASTAPI_URL ||
@@ -54,6 +64,7 @@ async function fetchPublishedContent() {
   }
 
   const API_BASE = `${FASTAPI_URL}/api`;
+  const FETCH_TIMEOUT = 10_000; // 10s timeout per request — avoid 60s build hangs
 
   try {
     // Fetch all published posts with pagination (API max limit is 100)
@@ -63,14 +74,18 @@ async function fetchPublishedContent() {
     let hasMore = true;
 
     while (hasMore) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
       const postsResponse = await fetch(
         `${API_BASE}/posts?offset=${skip}&limit=${limit}&published_only=true`,
         {
           headers: {
             'Content-Type': 'application/json',
           },
+          signal: controller.signal,
         }
       );
+      clearTimeout(timeoutId);
 
       if (!postsResponse.ok) break;
 
@@ -85,22 +100,30 @@ async function fetchPublishedContent() {
     }
 
     // Fetch all categories
+    const catController = new AbortController();
+    const catTimeoutId = setTimeout(() => catController.abort(), FETCH_TIMEOUT);
     const categoriesResponse = await fetch(`${API_BASE}/categories`, {
       headers: {
         'Content-Type': 'application/json',
       },
+      signal: catController.signal,
     });
+    clearTimeout(catTimeoutId);
     const catJson = categoriesResponse.ok
       ? await categoriesResponse.json()
       : {};
     const allCategories = catJson.categories || catJson.data || [];
 
     // Fetch all tags
+    const tagController = new AbortController();
+    const tagTimeoutId = setTimeout(() => tagController.abort(), FETCH_TIMEOUT);
     const tagsResponse = await fetch(`${API_BASE}/tags`, {
       headers: {
         'Content-Type': 'application/json',
       },
+      signal: tagController.signal,
     });
+    clearTimeout(tagTimeoutId);
     const tagJson = tagsResponse.ok ? await tagsResponse.json() : {};
     const allTags = tagJson.tags || tagJson.data || [];
 
