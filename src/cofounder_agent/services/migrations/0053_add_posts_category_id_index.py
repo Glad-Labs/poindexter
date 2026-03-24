@@ -13,3 +13,15 @@ ON posts (category_id);
 DOWN = """
 DROP INDEX IF EXISTS idx_posts_category_id;
 """
+
+
+async def up(pool):
+    """Apply migration 0053: create index on posts.category_id."""
+    async with pool.acquire() as conn:
+        await conn.execute(UP)
+
+
+async def down(pool):
+    """Revert migration 0053: drop index on posts.category_id."""
+    async with pool.acquire() as conn:
+        await conn.execute(DOWN)

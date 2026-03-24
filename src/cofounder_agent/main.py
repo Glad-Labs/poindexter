@@ -66,6 +66,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
     in the correct order with proper error handling.
     """
     startup_manager = StartupManager()
+    scheduled_publisher_task = None
 
     try:
         logger.info("=" * 80)
@@ -145,9 +146,13 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
 
         # Start the scheduled post publisher (publishes posts at their scheduled time)
         from services.scheduled_publisher import run_scheduled_publisher
-        from dependencies import get_db_pool
+        db_pool = services["database"].pool
+
+        async def _get_pool():
+            return db_pool
+
         scheduled_publisher_task = asyncio.create_task(
-            run_scheduled_publisher(get_db_pool)
+            run_scheduled_publisher(_get_pool)
         )
         logger.info("[LIFESPAN] ✅ Scheduled post publisher started")
 
@@ -174,8 +179,12 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             logger.info("[STOP] Shutting down application")
         except UnicodeEncodeError:
             logger.info("[STOP] Shutting down application")
-        if 'scheduled_publisher_task' in dir():
+        if scheduled_publisher_task is not None:
             scheduled_publisher_task.cancel()
+            try:
+                await scheduled_publisher_task
+            except asyncio.CancelledError:
+                pass
         await startup_manager.shutdown()
 
 
