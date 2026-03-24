@@ -9,7 +9,6 @@ Cost: $0/month (vs spending on expensive searches)
 ASYNC-FIRST: All operations use httpx async client (no blocking I/O)
 """
 
-import json
 from services.logger_config import get_logger
 import os
 from datetime import datetime

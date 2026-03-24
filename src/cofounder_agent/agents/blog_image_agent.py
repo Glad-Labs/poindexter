@@ -10,7 +10,7 @@ This agent:
 """
 
 from services.logger_config import get_logger
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 from services.image_service import get_image_service
 

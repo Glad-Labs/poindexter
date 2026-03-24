@@ -128,6 +128,11 @@ class UnifiedTaskRequest(BaseModel):
     context: Optional[Dict[str, Any]] = Field(
         None, description="Request context (writing_style_id, user_id, etc.)"
     )
+    content_constraints: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Content constraints (word_count, writing_style, tone, word_count_tolerance). "
+        "Values here override top-level style/tone/target_length.",
+    )
     metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata for task")
 
     class Config:
@@ -268,30 +273,6 @@ class TaskCreateRequest(BaseModel):
                 "quality_preference": "balanced",
                 "estimated_cost": 0.015,
                 "metadata": {"priority": "high"},
-            }
-        }
-
-
-class TaskStatusUpdateRequest(BaseModel):
-    """Schema for updating task status with enterprise audit trail"""
-
-    status: str = Field(
-        ...,
-        description="New task status (pending, in_progress, awaiting_approval, approved, published, failed, on_hold, rejected, cancelled)",
-    )
-    updated_by: Optional[str] = Field(None, description="User/system making the change")
-    reason: Optional[str] = Field(None, description="Reason for status change (audit trail)")
-    result: Optional[Dict[str, Any]] = Field(None, description="Task result/output")
-    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "status": "awaiting_approval",
-                "updated_by": "user@example.com",
-                "reason": "Content generation completed",
-                "result": {"content": "Generated blog post..."},
-                "metadata": {"quality_score": 8.5, "validation_context": {}},
             }
         }
 

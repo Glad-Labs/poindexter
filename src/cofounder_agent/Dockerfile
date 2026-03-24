@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
@@ -21,6 +21,16 @@ RUN poetry config virtualenvs.create false && \
 
 # Copy application code
 COPY . .
+
+# Create non-root user with home directory
+RUN addgroup --system --gid 1001 appgroup && \
+    adduser --system --uid 1001 --ingroup appgroup --home /home/appuser appuser
+
+# Ensure appuser owns the application directory
+RUN chown -R appuser:appgroup /app
+
+# Switch to non-root user
+USER appuser
 
 # Health check — use /api/health to match Railway's healthcheckPath in railway.json
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \

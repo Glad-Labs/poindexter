@@ -170,8 +170,8 @@ class TestUnsubscribeFromNewsletter:
         ).json()
         assert data["success"] is True
 
-    def test_email_not_found_returns_200_with_success_false(self):
-        """When email not found or already unsubscribed, route returns 200 with success=False."""
+    def test_email_not_found_returns_200_with_generic_message(self):
+        """When email not found, returns 200 with success=True to prevent enumeration."""
         pool = _make_pool_mock(execute_return="UPDATE 0")
         client = TestClient(_build_app(_make_db(pool)))
         resp = client.post(
@@ -180,7 +180,8 @@ class TestUnsubscribeFromNewsletter:
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert data["success"] is False
+        assert data["success"] is True
+        assert "If this email was subscribed" in data["message"]
 
     def test_with_reason_returns_200(self):
         pool = _make_pool_mock(execute_return="UPDATE 1")

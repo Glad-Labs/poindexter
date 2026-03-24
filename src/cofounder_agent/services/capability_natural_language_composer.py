@@ -14,7 +14,7 @@ Features:
 import json
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from services.capability_registry import get_registry
 from services.capability_task_executor import (

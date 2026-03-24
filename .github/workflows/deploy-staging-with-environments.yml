@@ -35,6 +35,35 @@ jobs:
           python-version: "3.12"
 
       # ============================================
+      # PRE-FLIGHT VALIDATION
+      # ============================================
+
+      - name: 🔍 Validate required secrets
+        run: |
+          MISSING=""
+          check_secret() {
+            if [ -z "$1" ]; then
+              echo "❌ Missing required secret: $2"
+              MISSING="$MISSING $2"
+            fi
+          }
+          check_secret "${{ secrets.RAILWAY_TOKEN }}"                       "RAILWAY_TOKEN"
+          check_secret "${{ secrets.RAILWAY_STAGING_PROJECT_ID }}"          "RAILWAY_STAGING_PROJECT_ID"
+          check_secret "${{ secrets.VERCEL_TOKEN }}"                        "VERCEL_TOKEN"
+          check_secret "${{ secrets.VERCEL_ORG_ID }}"                       "VERCEL_ORG_ID"
+          check_secret "${{ secrets.PUBLIC_SITE_STAGING_PROJECT_ID }}"      "PUBLIC_SITE_STAGING_PROJECT_ID"
+          check_secret "${{ secrets.PUBLIC_SITE_STAGING_FASTAPI_URL }}"     "PUBLIC_SITE_STAGING_FASTAPI_URL"
+          check_secret "${{ secrets.OVERSIGHT_STAGING_PROJECT_ID }}"        "OVERSIGHT_STAGING_PROJECT_ID"
+          check_secret "${{ secrets.COFOUNDER_STAGING_URL }}"               "COFOUNDER_STAGING_URL"
+
+          if [ -n "$MISSING" ]; then
+            echo ""
+            echo "❌ Staging deployment blocked — configure the missing secrets above in the GitHub 'staging' environment."
+            exit 1
+          fi
+          echo "✅ All required secrets are present"
+
+      # ============================================
       # INSTALL PHASE
       # ============================================
 
@@ -63,11 +92,14 @@ jobs:
 
       - name: 🧪 Run frontend tests (public-site)
         run: npm run test --workspace=web/public-site --if-present
-        continue-on-error: true  # 151 pre-existing test failures — unblock staging deploy while fixing
 
-      - name: 🧪 Run backend tests
-        run: npm run test:python
-        continue-on-error: true  # Backend tests require DATABASE_URL — not available in CI without service containers
+      - name: 🧪 Run backend unit tests
+        run: cd src/cofounder_agent && poetry run pytest tests/unit/ -v --tb=short
+        # fix #1019: unit tests must run and block deployment
+
+      - name: 🧪 Run backend integration tests
+        run: cd src/cofounder_agent && poetry run pytest tests/integration/ tests/e2e/ -v --tb=short
+        continue-on-error: true  # integration/e2e tests require DATABASE_URL — not available without service containers
 
       - name: 🏗️ Build all workspaces
         run: npm run build --if-present
@@ -146,24 +178,43 @@ jobs:
       - name: ✅ Verify Staging Deployment
         run: |
           echo "🔍 Verifying staging deployment..."
-          echo "Waiting for services to stabilize (15 seconds)..."
-          sleep 15
+          echo "Waiting for services to stabilize (30 seconds)..."
+          sleep 30
 
+          FAILURES=0
           COFOUNDER_URL="${{ secrets.COFOUNDER_STAGING_URL }}"
           OVERSIGHT_URL="${{ secrets.OVERSIGHT_STAGING_URL }}"
           PUBLIC_SITE_URL="${{ secrets.PUBLIC_SITE_STAGING_SITE_URL }}"
 
-          # fix #147: use real secrets, retry on failure, still soft-fail for first deploy
           echo "Testing Co-Founder Agent..."
-          curl -f --retry 3 --retry-delay 5 "${COFOUNDER_URL}/health" || echo "⚠️ Agent health check pending — verify COFOUNDER_STAGING_URL secret"
+          if curl -sf --retry 3 --retry-delay 5 "${COFOUNDER_URL}/health" | grep -q "healthy"; then
+            echo "✅ Co-Founder Agent is healthy"
+          else
+            echo "❌ Co-Founder Agent health check FAILED"
+            FAILURES=$((FAILURES + 1))
+          fi
 
           echo "Testing Public Site..."
-          curl -f --retry 3 --retry-delay 5 "${PUBLIC_SITE_URL}" || echo "⚠️ Public Site check pending — verify PUBLIC_SITE_STAGING_SITE_URL secret"
+          if curl -sf --retry 3 --retry-delay 5 "${PUBLIC_SITE_URL}" > /dev/null; then
+            echo "✅ Public Site is reachable"
+          else
+            echo "❌ Public Site check FAILED"
+            FAILURES=$((FAILURES + 1))
+          fi
 
           echo "Testing Oversight Hub..."
-          curl -f --retry 3 --retry-delay 5 "${OVERSIGHT_URL}" || echo "⚠️ Oversight Hub check pending — verify OVERSIGHT_STAGING_URL secret"
+          if curl -sf --retry 3 --retry-delay 5 "${OVERSIGHT_URL}" > /dev/null; then
+            echo "✅ Oversight Hub is reachable"
+          else
+            echo "❌ Oversight Hub check FAILED"
+            FAILURES=$((FAILURES + 1))
+          fi
 
-          echo "✅ All components deployed successfully to staging!"
+          if [ "$FAILURES" -gt 0 ]; then
+            echo "❌ $FAILURES service(s) failed verification"
+            exit 1
+          fi
+          echo "✅ All components deployed and verified!"
 
       - name: 📢 Notification
         if: always()

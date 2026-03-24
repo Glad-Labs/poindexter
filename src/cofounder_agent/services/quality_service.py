@@ -33,10 +33,10 @@ Critical Floor = 50/100 — if clarity, readability, or relevance falls below th
 import json
 from services.logger_config import get_logger
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 logger = get_logger(__name__)
 class EvaluationMethod(str, Enum):
@@ -116,8 +116,12 @@ class QualityDimensions:
     # Any critical dimension below CRITICAL_FLOOR causes overall score to be
     # capped at that dimension's value, preventing high scores in other
     # dimensions from masking critical weaknesses (issue #127).
+    # NOTE: readability removed from critical dims (#1238) — Flesch formula
+    # penalizes technical vocabulary, causing valid technical content to score
+    # 10-30 and cap the entire score. Readability still contributes to the
+    # weighted average but no longer triggers the hard cap.
     CRITICAL_FLOOR: float = 50.0
-    CRITICAL_DIMENSIONS: tuple = ("clarity", "readability", "relevance")
+    CRITICAL_DIMENSIONS: tuple = ("clarity", "relevance")
 
     def average(self) -> float:
         """Calculate overall score with minimum-dimension enforcement.

@@ -10,7 +10,7 @@ This agent:
 """
 
 from services.logger_config import get_logger
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from services.ai_content_generator import get_content_generator
 
@@ -72,8 +72,23 @@ class BlogContentGeneratorAgent:
             tone = inputs.get("tone", "professional")
             target_length = inputs.get("target_length", 1500)
             tags = inputs.get("tags", [topic])
+
+            # Model selection — UI sends "model" as "provider-modelname" (e.g., "ollama-gemma3:12b")
+            # Parse into preferred_provider and preferred_model for the content generator
             preferred_model = inputs.get("preferred_model")
             preferred_provider = inputs.get("preferred_provider")
+            ui_model = inputs.get("model")
+            if ui_model and not preferred_model:
+                if "-" in ui_model:
+                    parts = ui_model.split("-", 1)
+                    preferred_provider = preferred_provider or parts[0]
+                    preferred_model = parts[1]
+                else:
+                    preferred_model = ui_model
+                logger.info(
+                    f"[BlogContentGeneratorAgent] UI model '{ui_model}' "
+                    f"-> provider={preferred_provider}, model={preferred_model}"
+                )
 
             # Call content generator
             content_text, model_used, metrics = await self.content_generator.generate_blog_post(

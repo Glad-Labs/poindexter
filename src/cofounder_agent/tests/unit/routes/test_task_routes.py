@@ -395,12 +395,11 @@ class TestCreateTask:
 class TestCheckTaskOwnership:
     def test_same_user_does_not_raise(self):
         from routes.task_routes import _check_task_ownership
-        from fastapi import HTTPException
 
         task = {"user_id": "user-abc"}
         user = {"id": "user-abc"}
-        # Should not raise
-        _check_task_ownership(task, user)
+        result = _check_task_ownership(task, user)
+        assert result is None
 
     def test_different_user_raises_403(self):
         from routes.task_routes import _check_task_ownership
@@ -418,7 +417,8 @@ class TestCheckTaskOwnership:
 
         task = {}  # no user_id
         user = {"id": "user-xyz"}
-        _check_task_ownership(task, user)
+        result = _check_task_ownership(task, user)
+        assert result is None
 
     def test_missing_request_user_id_does_not_raise(self):
         """If current_user has no id, the check is skipped."""
@@ -426,7 +426,8 @@ class TestCheckTaskOwnership:
 
         task = {"user_id": "user-abc"}
         user = {}  # no id
-        _check_task_ownership(task, user)
+        result = _check_task_ownership(task, user)
+        assert result is None
 
 
 # ---------------------------------------------------------------------------

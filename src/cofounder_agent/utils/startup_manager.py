@@ -16,8 +16,7 @@ Handles all startup and shutdown operations for the Glad Labs AI Co-Founder:
 
 import logging
 import os
-from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -582,7 +581,6 @@ class StartupManager:
                 logger.info("  Closing HuggingFace client sessions...")
                 # The model consolidation service may have cached adapters
                 # We'll clean up any aiohttp sessions they created
-                import asyncio
 
                 # Get all tasks and look for lingering aiohttp sessions
                 try:

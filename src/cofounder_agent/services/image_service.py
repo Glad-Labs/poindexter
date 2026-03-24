@@ -26,7 +26,7 @@ import logging
 import os
 import time
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 try:
     import httpx
@@ -42,8 +42,6 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
 
-import numpy as np
-from PIL import Image
 
 # Try to import diffusers - optional for SDXL generation
 try:
@@ -57,14 +55,14 @@ except (ImportError, RuntimeError) as e:
 
 # Optional optimization packages
 try:
-    import xformers
+    pass
 
     XFORMERS_AVAILABLE = True
 except ImportError:
     XFORMERS_AVAILABLE = False
 
 try:
-    from optimum.intel import OVModelForFeatureExtraction
+    pass
 
     OPTIMUM_AVAILABLE = True
 except ImportError:
@@ -613,7 +611,7 @@ class ImageService:
                 progress_service.mark_complete(task_id, "Image generation complete")
 
                 # Broadcast via WebSocket
-                from routes.websocket_routes import broadcast_progress
+                from services.progress_broadcaster import broadcast_progress
 
                 progress = progress_service.get_progress(task_id)
                 await broadcast_progress(task_id, progress)
@@ -631,10 +629,11 @@ class ImageService:
                 progress_service.mark_failed(task_id, str(e))
 
                 # Broadcast via WebSocket
-                from routes.websocket_routes import broadcast_progress
+                from services.progress_broadcaster import broadcast_progress
 
                 progress = progress_service.get_progress(task_id)
-                await broadcast_progress(task_id, progress)
+                if progress is not None:
+                    await broadcast_progress(task_id, progress)
 
             return False
 

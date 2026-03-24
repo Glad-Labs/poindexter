@@ -73,14 +73,19 @@ class TemplateExecutionService:
         },
     }
 
-    def __init__(self, custom_workflows_service):
+    def __init__(self, custom_workflows_service, workflow_executor=None):
         """
-        Initialize with CustomWorkflowsService for actual execution.
+        Initialize with CustomWorkflowsService for persistence and WorkflowExecutor for execution.
 
         Args:
-            custom_workflows_service: Service for workflow execution and persistence
+            custom_workflows_service: Service for workflow persistence
+            workflow_executor: WorkflowExecutor for running workflow phases
         """
         self.custom_workflows_service = custom_workflows_service
+        if workflow_executor is None:
+            from services.workflow_executor import WorkflowExecutor
+            workflow_executor = WorkflowExecutor()
+        self.workflow_executor = workflow_executor
         logger.info("TemplateExecutionService initialized")
 
     @staticmethod
@@ -276,21 +281,36 @@ class TemplateExecutionService:
                 if selected_model:
                     logger.info(f"[template_execution] Model selected: {selected_model}")
 
-            # Execute via CustomWorkflowsService
-            result = await self.custom_workflows_service.execute_workflow(
+            # Execute via WorkflowExecutor
+            phase_results = await self.workflow_executor.execute_workflow(
                 workflow=workflow,
                 initial_inputs=task_input,
                 execution_id=execution_id,
-                selected_model=selected_model,
             )
 
-            # Enrich result with template information
-            result["template"] = template_name
-            result["workflow_id"] = workflow.id or result.get("workflow_id", "")
+            # Build response from phase results
+            # PhaseResult uses .status ("completed"/"failed"), not .success (bool)
+            all_succeeded = all(
+                getattr(pr, "status", "") == "completed" for pr in phase_results.values()
+            )
+            result = {
+                "execution_id": execution_id,
+                "template": template_name,
+                "workflow_id": workflow.id or "",
+                "status": "completed" if all_succeeded else "failed",
+                "phases": {
+                    name: {
+                        "success": getattr(pr, "status", "") == "completed",
+                        "output": getattr(pr, "output", None),
+                        "error": getattr(pr, "error", None),
+                    }
+                    for name, pr in phase_results.items()
+                },
+            }
 
             logger.info(
-                f"Template execution completed: {result.get('execution_id')} "
-                f"(status: {result.get('status')})"
+                f"Template execution completed: {execution_id} "
+                f"(status: {result['status']}, phases: {len(phase_results)})"
             )
 
             return result
@@ -314,7 +334,7 @@ class TemplateExecutionService:
         Sets up progress service and optional WebSocket broadcasting.
         """
         try:
-            from routes.websocket_routes import broadcast_workflow_progress
+            from services.progress_broadcaster import broadcast_workflow_progress
             from services.workflow_progress_service import get_workflow_progress_service
 
             progress_service = get_workflow_progress_service()

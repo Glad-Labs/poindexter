@@ -8,12 +8,9 @@ Provides endpoints for performing bulk operations on multiple tasks such as:
 """
 
 from services.logger_config import get_logger
-from datetime import datetime, timezone
-from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 
 from routes.auth_unified import get_current_user
 from schemas.bulk_task_schemas import (
@@ -180,44 +177,44 @@ async def bulk_create_tasks(
     **Returns:** List of created tasks with their IDs
     """
     try:
-        created_tasks = []
-        errors = []
+        user_id = current_user.get("user_id") if current_user else "system"
 
-        for i, task in enumerate(request.tasks):
-            try:
-                # Create task in database
-                result = await db_service.create_task(  # type: ignore[attr-defined]
-                    title=task.task_name,
-                    description=task.description or task.topic,
-                    status="pending",
-                    priority=task.priority,
-                    metadata={
-                        "topic": task.topic,
-                        "primary_keyword": task.primary_keyword,
-                        "target_audience": task.target_audience,
-                        "category": task.category,
-                    },
-                    created_by=current_user.get("user_id") if current_user else "system",
-                )
+        # Build task data dicts for batch insert
+        task_data_list = []
+        for task in request.tasks:
+            task_data_list.append({
+                "task_name": task.task_name,
+                "title": task.task_name,
+                "topic": task.topic,
+                "status": "pending",
+                "primary_keyword": task.primary_keyword,
+                "target_audience": task.target_audience,
+                "category": task.category,
+                "metadata": {
+                    "topic": task.topic,
+                    "primary_keyword": task.primary_keyword,
+                    "target_audience": task.target_audience,
+                    "category": task.category,
+                    "priority": task.priority,
+                    "created_by": user_id,
+                },
+            })
 
-                created_tasks.append(
-                    {
-                        "id": str(result.get("id")) if isinstance(result, dict) else str(result),
-                        "name": task.task_name,
-                        "status": "pending",
-                    }
-                )
-            except Exception as e:
-                logger.error(f"Error creating task {i+1}: {str(e)}", exc_info=True)
-                errors.append({"index": i, "task_name": task.task_name, "error": str(e)})
+        # Single batch insert instead of N individual INSERTs
+        task_ids = await db_service.tasks.bulk_add_tasks(task_data_list)
+
+        created_tasks = [
+            {"id": tid, "name": task.task_name, "status": "pending"}
+            for tid, task in zip(task_ids, request.tasks)
+        ]
 
         return BulkCreateTasksResponse(
             created=len(created_tasks),
-            failed=len(errors),
+            failed=0,
             total=len(request.tasks),
             tasks=created_tasks if created_tasks else None,
-            errors=errors if errors else None,
+            errors=None,
         )
     except Exception as e:
-        logger.error(f"Bulk create error: {str(e)}", exc_info=True)
+        logger.error(f"Bulk create error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Bulk create failed")

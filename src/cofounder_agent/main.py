@@ -4,6 +4,7 @@ FastAPI application serving as the central orchestrator for the Glad Labs ecosys
 Implements PostgreSQL database with REST API command queue integration
 """
 
+import asyncio
 import sys
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -65,6 +66,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
     in the correct order with proper error handling.
     """
     startup_manager = StartupManager()
+    scheduled_publisher_task = None
 
     try:
         logger.info("=" * 80)
@@ -109,6 +111,20 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         service_container.register("quality", quality_service)
         logger.info("[LIFESPAN] ✅ Quality service initialized")
 
+        # Initialize template execution service for blog_post workflow
+        logger.info("[LIFESPAN] Initializing template execution service...")
+        try:
+            from services.template_execution_service import TemplateExecutionService
+
+            custom_workflows_svc = services.get("custom_workflows_service")
+            template_execution_service = TemplateExecutionService(
+                custom_workflows_service=custom_workflows_svc,
+            )
+            logger.info("[LIFESPAN] ✅ Template execution service initialized")
+        except Exception as e:
+            template_execution_service = None
+            logger.warning(f"[LIFESPAN] ⚠️ Template execution service failed: {e}", exc_info=True)
+
         # Register services in the global DI container for dependency injection
         logger.info("[LIFESPAN] Registering services in global DI container. ..")
         initialize_services(
@@ -118,6 +134,8 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             task_executor=services["task_executor"],
             intelligent_orchestrator=services.get("intelligent_orchestrator"),
             workflow_history=services["workflow_history"],
+            custom_workflows_service=services.get("custom_workflows_service"),
+            template_execution_service=template_execution_service,
         )
         logger.info("[LIFESPAN] ✅ Services registered in global DI container")
 
@@ -125,6 +143,18 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         logger.info("[LIFESPAN] Starting background task executor...")
         await services["task_executor"].start()
         logger.info("[LIFESPAN] ✅ Task executor started")
+
+        # Start the scheduled post publisher (publishes posts at their scheduled time)
+        from services.scheduled_publisher import run_scheduled_publisher
+        db_pool = services["database"].pool
+
+        async def _get_pool():
+            return db_pool
+
+        scheduled_publisher_task = asyncio.create_task(
+            run_scheduled_publisher(_get_pool)
+        )
+        logger.info("[LIFESPAN] ✅ Scheduled post publisher started")
 
         logger.info("[OK] Lifespan: Yielding control to FastAPI application. ..")
         try:
@@ -149,6 +179,12 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             logger.info("[STOP] Shutting down application")
         except UnicodeEncodeError:
             logger.info("[STOP] Shutting down application")
+        if scheduled_publisher_task is not None:
+            scheduled_publisher_task.cancel()
+            try:
+                await scheduled_publisher_task
+            except asyncio.CancelledError:
+                pass
         await startup_manager.shutdown()
 
 

@@ -4,7 +4,6 @@ PostgreSQL-based CMS client for storing content directly to the database.
 Replaces Strapi with direct PostgreSQL storage for posts, categories, tags, and media.
 """
 
-import json
 from services.logger_config import get_logger
 from typing import Any, Dict, Optional
 from uuid import uuid4

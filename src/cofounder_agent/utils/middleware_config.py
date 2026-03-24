@@ -12,7 +12,6 @@ All middleware can be optionally enabled/disabled and configured via environment
 
 from services.logger_config import get_logger
 import os
-from typing import List, Optional
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware

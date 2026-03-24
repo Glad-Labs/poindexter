@@ -6,8 +6,7 @@ Provides type-safe conversion with automatic timestamp handling.
 """
 
 import json
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Type, TypeVar
+from typing import Any, Dict, List, Type, TypeVar
 from uuid import UUID
 
 from schemas.database_response_models import (
@@ -15,7 +14,6 @@ from schemas.database_response_models import (
     AuthorResponse,
     CategoryResponse,
     CostLogResponse,
-    ErrorResponse,
     FinancialEntryResponse,
     FinancialSummaryResponse,
     LogResponse,
@@ -27,7 +25,6 @@ from schemas.database_response_models import (
     QualityImprovementLogResponse,
     SettingResponse,
     TagResponse,
-    TaskCostBreakdownResponse,
     TaskCountsResponse,
     TaskResponse,
     UserResponse,

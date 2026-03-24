@@ -14,7 +14,6 @@ from typing import Any, Dict, Optional
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -120,7 +119,7 @@ async def check_ollama_health(
             connected=False,
             status="error",
             models=None,
-            message=f"❌ Ollama health check failed: {str(e)}",
+            message="Ollama health check failed",
             timestamp=datetime.now(timezone.utc).isoformat(),
         )
 
@@ -344,13 +343,14 @@ async def get_ollama_status(
             }
 
     except Exception as e:
+        logger.warning("[get_ollama_status] Health check failed: %s", e, exc_info=True)
         return {
             "running": False,
             "host": OLLAMA_HOST,
             "models_available": 0,
             "models": [],
             "last_check": datetime.now(timezone.utc).isoformat(),
-            "error": str(e),
+            "error": "An internal error occurred",
         }
 
 
@@ -418,7 +418,7 @@ async def select_ollama_model(
         return {
             "success": False,
             "selected_model": None,
-            "message": f"❌ Model selection error: {str(e)}",
+            "message": "Model selection error",
             "available_models": [],
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }

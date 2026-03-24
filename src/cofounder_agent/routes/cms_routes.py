@@ -6,14 +6,13 @@ Using pure asyncpg for non-blocking database access.
 """
 
 from services.logger_config import get_logger
-import os
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 
 from routes.auth_unified import UserProfile, get_current_user, get_current_user_optional
-from services.database_service import DatabaseService
 from utils.error_handler import handle_route_error
 from utils.route_utils import get_database_dependency
 
@@ -316,6 +315,105 @@ async def get_post_by_slug(
         raise await handle_route_error(e, "get_post_by_slug", logger)
 
 
+@router.patch("/api/posts/{post_id}")
+async def update_post(
+    post_id: str,
+    updates: dict,
+    current_user: UserProfile = Depends(get_current_user),
+):
+    """
+    Update a blog post by ID.
+    Allowed fields: title, slug, content, excerpt, featured_image_url, status,
+    tags, seo_title, seo_description, seo_keywords, published_at.
+
+    When status is set to 'scheduled', published_at must be a valid future
+    ISO 8601 datetime. When status is 'published' and published_at is not
+    provided, it defaults to the current UTC time.
+    """
+    try:
+        allowed = {"title", "slug", "content", "excerpt", "featured_image_url",
+                   "status", "tags", "seo_title", "seo_description", "seo_keywords",
+                   "published_at"}
+        filtered = {k: v for k, v in updates.items() if k in allowed}
+        if not filtered:
+            raise HTTPException(status_code=400, detail="No valid fields to update")
+
+        # Parse and validate published_at if provided
+        parsed_published_at = None
+        if "published_at" in filtered:
+            raw = filtered["published_at"]
+            if isinstance(raw, datetime):
+                parsed = raw
+            elif isinstance(raw, str):
+                value = raw.strip()
+                if value.endswith("Z"):
+                    value = value[:-1] + "+00:00"
+                try:
+                    parsed = datetime.fromisoformat(value)
+                except ValueError:
+                    raise HTTPException(status_code=400, detail="published_at must be a valid ISO 8601 datetime")
+            else:
+                raise HTTPException(status_code=400, detail="published_at must be a datetime or ISO 8601 string")
+
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            parsed_published_at = parsed
+            filtered["published_at"] = parsed_published_at
+
+        # Handle scheduling: if status is 'scheduled', published_at must be a future date
+        if filtered.get("status") == "scheduled":
+            if parsed_published_at is None:
+                raise HTTPException(status_code=400, detail="published_at is required when scheduling a post")
+            if parsed_published_at <= datetime.now(timezone.utc):
+                raise HTTPException(status_code=400, detail="published_at must be a future datetime when status is 'scheduled'")
+        # When publishing immediately, set published_at to now if not provided
+        elif filtered.get("status") == "published" and "published_at" not in filtered:
+            filtered["published_at"] = datetime.now(timezone.utc)
+
+        # Build parameterized SET clause
+        set_parts = []
+        params = []
+        for i, (col, val) in enumerate(filtered.items(), 1):
+            set_parts.append(f"{col} = ${i}")
+            params.append(val)
+        params.append(post_id)
+        set_clause = ", ".join(set_parts)
+
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            result = await conn.execute(
+                f"UPDATE posts SET {set_clause}, updated_at = NOW() WHERE id = ${len(params)}",
+                *params,
+            )
+            if result == "UPDATE 0":
+                raise HTTPException(status_code=404, detail="Post not found")
+        return {"success": True, "message": "Post updated"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise await handle_route_error(e, "update_post", logger)
+
+
+@router.delete("/api/posts/{post_id}", status_code=204)
+async def delete_post(
+    post_id: str,
+    current_user: UserProfile = Depends(get_current_user),
+):
+    """Delete a blog post by ID."""
+    try:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM posts WHERE id = $1", post_id
+            )
+            if result == "DELETE 0":
+                raise HTTPException(status_code=404, detail="Post not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise await handle_route_error(e, "delete_post", logger)
+
+
 # ============================================================================
 # CATEGORIES ENDPOINTS
 # ============================================================================
@@ -439,14 +537,17 @@ async def cms_status(current_user: UserProfile = Depends(get_current_user)):
                 "tables": tables,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
-    except Exception as e:
+    except Exception:
         logger.error("[cms_status] CMS status check failed", exc_info=True)
-        return {
-            "status": "error",
-            "detail": "CMS status check failed",
-            "tables": {},
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "error",
+                "detail": "CMS status check failed",
+                "tables": {},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+        )
 
 
 # ============================================================================

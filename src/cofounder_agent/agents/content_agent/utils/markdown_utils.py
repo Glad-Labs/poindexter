@@ -1,4 +1,3 @@
-import re
 
 
 def markdown_to_strapi_blocks(md_content: str) -> list:

@@ -15,17 +15,17 @@ FastAPI app. ModelConsolidationService is patched to avoid real provider calls.
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from routes.auth_unified import get_current_user
-from routes.model_routes import models_router, models_list_router
+from routes.model_routes import models_router
 
 from tests.unit.routes.conftest import TEST_USER
 
 
 def _make_service(models=None, status=None):
     svc = MagicMock()
-    svc.list_models = MagicMock(
+    svc.list_models = AsyncMock(
         return_value=models
         or {
             "ollama": ["llama3.2:3b", "mistral:7b"],
@@ -46,7 +46,6 @@ def _make_service(models=None, status=None):
 def _build_app(service=None) -> FastAPI:
     app = FastAPI()
     app.include_router(models_router)
-    app.include_router(models_list_router)
     app.dependency_overrides[get_current_user] = lambda: TEST_USER
     return app
 
@@ -240,32 +239,3 @@ class TestRtx5070Redirect:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
-class TestGetModelsList:
-    def test_returns_200(self):
-        with patch(
-            "routes.model_routes.get_model_consolidation_service",
-            return_value=_make_service(),
-        ):
-            client = TestClient(_build_app())
-            resp = client.get("/api/models")
-        assert resp.status_code == 200
-
-    def test_response_has_models_and_total(self):
-        with patch(
-            "routes.model_routes.get_model_consolidation_service",
-            return_value=_make_service(),
-        ):
-            client = TestClient(_build_app())
-            data = client.get("/api/models").json()
-        assert "models" in data
-        assert "total" in data
-
-    def test_service_error_returns_500(self):
-        with patch(
-            "routes.model_routes.get_model_consolidation_service",
-            side_effect=RuntimeError("service down"),
-        ):
-            client = TestClient(_build_app())
-            resp = client.get("/api/models")
-        assert resp.status_code == 500

@@ -10,7 +10,6 @@ generation pipeline, from prompt injection to output validation.
 """
 
 from services.logger_config import get_logger
-import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -24,7 +23,7 @@ logger = get_logger(__name__)
 class ContentConstraints:
     """Represents content generation constraints"""
 
-    word_count: int = 1500  # Target word count (300-5000)
+    word_count: int = 1800  # Target word count (300-5000)
     writing_style: str = (
         "educational"  # Style: technical, narrative, listicle, educational, thought-leadership
     )

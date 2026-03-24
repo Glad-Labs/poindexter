@@ -1,7 +1,6 @@
 from services.logger_config import get_logger
 from services.prompt_manager import get_prompt_manager
 
-from ..config import config
 from ..services.llm_client import LLMClient
 from ..utils.data_models import BlogPost
 from ..utils.tools import CrewAIToolsFactory
@@ -83,13 +82,13 @@ class QAAgent:
             if not isinstance(approved, bool):
                 approved = str(approved).lower() in ["true", "yes", "1"]
 
-            if approved and quality_score < 70.0 and quality_score > 0:
+            if approved and quality_score < 75.0 and quality_score > 0:
                 logger.warning(
-                    f"QAAgent: LLM approved but score {quality_score:.1f} < 70 threshold — overriding to rejected"
+                    f"QAAgent: LLM approved but score {quality_score:.1f} < 75 threshold — overriding to rejected"
                 )
                 approved = False
                 feedback = (
-                    f"Score {quality_score:.1f}/100 below 70-point threshold. "
+                    f"Score {quality_score:.1f}/100 below 75-point threshold. "
                     f"Original feedback: {feedback}"
                 )
 

@@ -25,7 +25,7 @@ import json
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -121,8 +121,14 @@ The primary keyword to focus on is '{primary_keyword}'.
 ⭐ INTERNAL LINKS (if relevant, suggest these topics):
 {internal_link_titles}
 
-Ensure the tone is professional and engaging. 
-Include placeholders like '[IMAGE-1]', '[IMAGE-2]', etc., where you think images would be appropriate. 
+⭐ QUALITY REQUIREMENTS:
+- Include at least 3 specific statistics, data points, or cited facts from the research context
+- Each main section should reference at least one research source
+- Use concrete examples, case studies, or real-world applications — avoid vague generalities
+- Write with authority: "According to [source]..." or "Research shows that..."
+
+Ensure the tone is professional and engaging.
+Include placeholders like '[IMAGE-1]', '[IMAGE-2]', etc., where you think images would be appropriate.
 Also, suggest a list of external URLs to credible sources that would support the content.""",
             description="Generate initial blog post draft with research context and creative section titles",
             output_format="markdown",
@@ -228,23 +234,29 @@ PRIMARY KEYWORD: '{primary_keyword}'
 {draft}
 ---END DRAFT---
 
-Evaluate against these 5 criteria:
+Evaluate against these 7 criteria:
 1. Clarity: Is writing clear and easy to understand?
 2. Tone: Is tone appropriate and engaging for target audience?
 3. Keyword Natural Incorporation: Is primary keyword used naturally (not forced)?
 4. Structure: Clear headings, logical flow, proper intro/conclusion?
 5. Value: Does content provide genuine value and useful information?
+6. Section Titles: Are headings creative and compelling? REJECT if using generic titles like "Introduction", "Conclusion", "Summary", "Background", "Overview", or "Final Thoughts"
+7. Research Depth: Does content cite specific data, statistics, or expert sources? Posts without concrete evidence score below 70.
 
 ⭐ GRADING SCALE (0-100):
 - 85+: Excellent - publication ready, no refinement needed
 - 75-84: Good - publication ready with minor polish
-- 70-74: Acceptable - can publish, some improvements suggested
+- 70-74: Needs work - improvements required before publishing
 - 60-69: Fair - needs significant improvements before publishing
 - <60: Poor - requires major revisions
 
-⭐ PRAGMATISM PRINCIPLE:
-Content doesn't need to be perfect, just good enough for publication.
-Only reject if there are serious issues: unclear writing, off-topic, missing structure.
+⭐ QUALITY STANDARDS:
+- Content must score 75+ for approval
+- Posts MUST include at least 2 specific data points, statistics, or cited sources
+- Section titles must be engaging and creative — generic titles are an automatic -10 point penalty
+- Word count should be within 10% of target
+- Readability: sentences should average 15-20 words; avoid walls of text without paragraph breaks
+- SEO: primary keyword should appear in the first paragraph, at least one subheading, and the conclusion
 
 Respond with ONLY valid JSON (no markdown, no explanation):
 {{

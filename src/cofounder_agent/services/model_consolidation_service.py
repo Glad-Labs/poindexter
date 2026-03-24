@@ -34,7 +34,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import structlog
 
@@ -99,7 +99,6 @@ class ProviderAdapter(ABC):
     @abstractmethod
     async def is_available(self) -> bool:
         """Check if provider is operational"""
-        pass
 
     @abstractmethod
     async def generate(
@@ -111,12 +110,10 @@ class ProviderAdapter(ABC):
         **kwargs,
     ) -> ModelResponse:
         """Generate text using this provider"""
-        pass
 
     @abstractmethod
     def list_models(self) -> List[str]:
         """List available models"""
-        pass
 
 
 class OllamaAdapter(ProviderAdapter):
@@ -198,14 +195,15 @@ class OllamaAdapter(ProviderAdapter):
             logger.warning("Ollama generation failed", error=str(e), model=model, exc_info=True)
             raise
 
-    def list_models(self) -> List[str]:
+    async def list_models(self) -> List[str]:
         """List available Ollama models from live instance."""
         import httpx
 
         try:
-            resp = httpx.get(f"{self.host}/api/tags", timeout=5)
-            if resp.status_code == 200:
-                return [m["name"] for m in resp.json().get("models", [])]
+            async with httpx.AsyncClient(timeout=5) as client:
+                resp = await client.get(f"{self.host}/api/tags")
+                if resp.status_code == 200:
+                    return [m["name"] for m in resp.json().get("models", [])]
         except Exception:
             pass
         # Fallback: models known to be installed
@@ -374,10 +372,10 @@ class AnthropicAdapter(ProviderAdapter):
             self.client = None
         else:
             try:
-                from anthropic import Anthropic
+                from anthropic import AsyncAnthropic
 
                 self.api_key = ProviderChecker.get_anthropic_api_key()
-                self.client = Anthropic(api_key=self.api_key)
+                self.client = AsyncAnthropic(api_key=self.api_key)
             except ImportError:
                 logger.warning("Anthropic SDK not installed. Install with: pip install anthropic", exc_info=True)
                 self.client = None
@@ -406,7 +404,7 @@ class AnthropicAdapter(ProviderAdapter):
         start_time = datetime.now(timezone.utc)
 
         try:
-            response = self.client.messages.create(
+            response = await self.client.messages.create(
                 model=model,
                 max_tokens=max_tokens,
                 messages=[{"role": "user", "content": prompt}],
@@ -456,10 +454,10 @@ class OpenAIAdapter(ProviderAdapter):
             self.client = None
         else:
             try:
-                from openai import OpenAI
+                from openai import AsyncOpenAI
 
                 self.api_key = ProviderChecker.get_openai_api_key()
-                self.client = OpenAI(api_key=self.api_key)
+                self.client = AsyncOpenAI(api_key=self.api_key)
             except ImportError:
                 logger.warning("OpenAI SDK not installed. Install with: pip install openai", exc_info=True)
                 self.client = None
@@ -488,7 +486,7 @@ class OpenAIAdapter(ProviderAdapter):
         start_time = datetime.now(timezone.utc)
 
         try:
-            response = self.client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=max_tokens,
@@ -763,15 +761,22 @@ class ModelConsolidationService:
             "metrics": self.metrics,
         }
 
-    def list_models(self, provider: Optional[ProviderType] = None) -> Dict[str, List[str]]:
+    async def list_models(self, provider: Optional[ProviderType] = None) -> Dict[str, List[str]]:
         """List available models"""
         if provider:
             adapter = self.adapters.get(provider)
-            return {provider.value: adapter.list_models() if adapter else []}
+            if adapter:
+                models = await adapter.list_models() if hasattr(adapter.list_models, '__func__') and asyncio.iscoroutinefunction(adapter.list_models) else adapter.list_models()
+                return {provider.value: models}
+            return {provider.value: []}
 
-        return {
-            provider.value: adapter.list_models() for provider, adapter in self.adapters.items()
-        }
+        result = {}
+        for prov, adapter in self.adapters.items():
+            if asyncio.iscoroutinefunction(adapter.list_models):
+                result[prov.value] = await adapter.list_models()
+            else:
+                result[prov.value] = adapter.list_models()
+        return result
 
 
 # ============================================================================

@@ -244,6 +244,86 @@ class TasksDatabase(DatabaseServiceMixin):
             logger.error(f"❌ Failed to add task: {e}", exc_info=True)
             raise
 
+    @log_query_performance(operation="bulk_add_tasks", category="task_write")
+    async def bulk_add_tasks(self, tasks: List[Dict[str, Any]]) -> List[str]:
+        """
+        Add multiple tasks in a single connection acquire using executemany.
+
+        Inserts core task columns only (not content/SEO/image fields).
+        For tasks that need all columns, use add_task() individually.
+
+        Args:
+            tasks: List of task data dicts with keys like task_name, topic, status, etc.
+
+        Returns:
+            List of created task IDs.
+        """
+        if not tasks:
+            return []
+
+        now = datetime.now(timezone.utc)
+        rows = []
+        task_ids = []
+
+        for task_data in tasks:
+            task_id = task_data.get("id", task_data.get("task_id", str(uuid4())))
+            if isinstance(task_id, UUID):
+                task_id = str(task_id)
+            task_ids.append(task_id)
+
+            metadata = task_data.get("task_metadata") or task_data.get("metadata", {})
+            metadata = safe_json_load(metadata, fallback={})
+            if "task_name" in task_data and "task_name" not in metadata:
+                metadata["task_name"] = task_data["task_name"]
+
+            rows.append((
+                task_id,
+                task_data.get("content_type") or task_data.get("task_type", "blog_post"),
+                task_data.get("task_type", "blog_post"),
+                task_data.get("request_type", "content_generation"),
+                task_data.get("status", "pending"),
+                task_data.get("topic", ""),
+                task_data.get("title") or task_data.get("task_name"),
+                task_data.get("style", "technical"),
+                task_data.get("tone", "professional"),
+                task_data.get("target_length", 1500),
+                task_data.get("agent_id", "content-agent"),
+                task_data.get("primary_keyword"),
+                task_data.get("target_audience"),
+                task_data.get("category"),
+                task_data.get("approval_status", "pending"),
+                task_data.get("publish_mode", "draft"),
+                task_data.get("quality_preference", "balanced"),
+                float(task_data.get("estimated_cost", 0.0)),
+                json.dumps(task_data.get("tags", [])),
+                json.dumps(metadata or {}),
+                now,
+                now,
+            ))
+
+        sql = """
+            INSERT INTO content_tasks (
+                task_id, content_type, task_type, request_type, status, topic,
+                title, style, tone, target_length, agent_id, primary_keyword,
+                target_audience, category, approval_status, publish_mode,
+                quality_preference, estimated_cost, tags, task_metadata,
+                created_at, updated_at
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+                $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+            )
+        """
+
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.transaction():
+                    await conn.executemany(sql, rows)
+            logger.info(f"Bulk created {len(task_ids)} tasks")
+            return task_ids
+        except Exception as e:
+            logger.error(f"Failed to bulk add tasks: {e}", exc_info=True)
+            raise
+
     @log_query_performance(operation="get_task", category="task_retrieval")
     async def get_task(self, task_id: str) -> Optional[dict]:
         """
@@ -259,19 +339,13 @@ class TasksDatabase(DatabaseServiceMixin):
         Returns:
             Task dict or None if not found
         """
-        # Always look up by task_id (the actual primary key, VARCHAR/UUID).
-        # The legacy numeric id path was removed: content_tasks.id is UUID not INTEGER,
-        # so int(task_id) always raised a DataError. (See issue #301)
-        builder = ParameterizedQueryBuilder()
-        sql, params = builder.select(
-            columns=["*"],
-            table="content_tasks",
-            where_clauses=[("task_id", SQLOperator.EQ, str(task_id))],
-        )
-
+        # Search by task_id OR id — the UI sends whichever field it rendered from.
         try:
             async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(sql, *params)
+                row = await conn.fetchrow(
+                    "SELECT * FROM content_tasks WHERE task_id = $1 OR id::text = $1 LIMIT 1",
+                    str(task_id),
+                )
                 if row:
                     task_response = ModelConverter.to_task_response(row)
                     return ModelConverter.to_dict(task_response)
@@ -335,8 +409,6 @@ class TasksDatabase(DatabaseServiceMixin):
         now = datetime.now(timezone.utc)
 
         try:
-            # Always look up by task_id (the actual primary key). Numeric id fallback
-            # removed: content_tasks.id is UUID not INTEGER. (See issue #301)
             builder = ParameterizedQueryBuilder()
 
             updates = {"status": status, "updated_at": now}
@@ -344,14 +416,23 @@ class TasksDatabase(DatabaseServiceMixin):
             if result:
                 updates["result"] = result
 
-            sql, params = builder.update(
-                table="content_tasks",
-                updates=updates,
-                where_clauses=[("task_id", SQLOperator.EQ, str(task_id))],
-                return_columns=["*"],
-            )
-
+            # Use single connection for both resolve + update (#1206)
             async with self.pool.acquire() as conn:
+                # Resolve actual task_id — caller may pass either id or task_id column value
+                resolved = await conn.fetchval(
+                    "SELECT task_id FROM content_tasks WHERE task_id = $1 OR id::text = $1 LIMIT 1",
+                    str(task_id),
+                )
+                if resolved:
+                    task_id = str(resolved)
+
+                sql, params = builder.update(
+                    table="content_tasks",
+                    updates=updates,
+                    where_clauses=[("task_id", SQLOperator.EQ, str(task_id))],
+                    return_columns=["*"],
+                )
+
                 row = await conn.fetchrow(sql, *params)
                 if row:
                     task_type = row.get("task_type", "unknown") if hasattr(row, "get") else "unknown"
@@ -378,18 +459,12 @@ class TasksDatabase(DatabaseServiceMixin):
         Returns:
             Updated task dict or None
         """
-        logger.info(f"\n{'='*80}")
-        logger.info(f"🔵 TasksDatabase.update_task() ENTRY")
-        logger.info(f"   Task ID: {task_id}")
-        logger.info(f"   Updates received: {list(updates.keys())}")
-        logger.info(f"{'='*80}")
+        logger.debug(f"update_task({task_id}) keys={list(updates.keys())}")
 
         if not updates:
-            logger.info(f"   No updates provided, returning current task")
             return await self.get_task(task_id)
 
         # Extract task_metadata for normalization
-        logger.info(f"🔍 Extracting task_metadata for normalization...")
         task_metadata = safe_json_load(updates.get("task_metadata"), fallback={})
 
         # Prepare normalized updates
@@ -451,36 +526,27 @@ class TasksDatabase(DatabaseServiceMixin):
         for key, value in normalized_updates.items():
             serialized_updates[key] = serialize_value_for_postgres(value)
 
-        # DEBUG: Log normalized updates
-        logger.debug(f"🔍 Normalized updates for task {task_id}:")
-        logger.info(f"   - Keys: {list(normalized_updates.keys())}")
-        logger.info(f"   - Has 'content' in normalized: {'content' in normalized_updates}")
-        if "content" in normalized_updates:
-            logger.info(
-                f"   - Content length: {len(normalized_updates.get('content') or '')} chars"
-            )
-
         try:
-            # Always look up by task_id (the actual primary key). Numeric id fallback
-            # removed: content_tasks.id is UUID not INTEGER. (See issue #301)
-            builder = ParameterizedQueryBuilder()
-            sql, params = builder.update(
-                table="content_tasks",
-                updates=serialized_updates,
-                where_clauses=[("task_id", SQLOperator.EQ, str(task_id))],
-                return_columns=["*"],
-            )
-
+            # Use single connection for resolve + update (#1206)
             async with self.pool.acquire() as conn:
+                # Resolve the actual task_id — caller may pass either id or task_id column value
+                resolved = await conn.fetchval(
+                    "SELECT task_id FROM content_tasks WHERE task_id = $1 OR id::text = $1 LIMIT 1",
+                    str(task_id),
+                )
+                if resolved:
+                    task_id = str(resolved)
+
+                builder = ParameterizedQueryBuilder()
+                sql, params = builder.update(
+                    table="content_tasks",
+                    updates=serialized_updates,
+                    where_clauses=[("task_id", SQLOperator.EQ, str(task_id))],
+                    return_columns=["*"],
+                )
+
                 row = await conn.fetchrow(sql, *params)
                 if row:
-                    # DEBUG: Verify content was persisted
-                    logger.debug(f"✅ Update returned row for task {task_id}")
-                    logger.info(f"   - Row has 'content': {row.get('content') is not None}")
-                    if row.get("content"):
-                        logger.info(
-                            f"   - Persisted content length: {len(row.get('content'))} chars"
-                        )
                     task_response = ModelConverter.to_task_response(row)
                     return ModelConverter.to_dict(task_response)
                 logger.warning(f"⚠️  Update returned no row for task {task_id}")
@@ -900,6 +966,10 @@ class TasksDatabase(DatabaseServiceMixin):
             List of status change records
         """
         try:
+            if not self.pool:
+                logger.error("[get_status_history] Database pool not initialized")
+                return []
+
             # NOTE: Column was named "timestamp" (reserved word) until migration 0031
             # renamed it to "created_at".  SELECT both with aliases so this code works
             # against both pre- and post-migration schemas; the one that exists will

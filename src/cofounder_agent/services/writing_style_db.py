@@ -124,12 +124,13 @@ class WritingStyleDatabase(DatabaseServiceMixin):
             raise
 
     @log_query_performance(operation="get_user_writing_samples", category="writing_style_retrieval")
-    async def get_user_writing_samples(self, user_id: str) -> List[Dict[str, Any]]:
+    async def get_user_writing_samples(self, user_id: str, limit: int = 100) -> List[Dict[str, Any]]:
         """
-        Get all writing samples for a user.
+        Get writing samples for a user.
 
         Args:
             user_id: User ID
+            limit: Maximum samples to return (default 100)
 
         Returns:
             List of sample dicts
@@ -138,13 +139,15 @@ class WritingStyleDatabase(DatabaseServiceMixin):
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(
                     """
-                    SELECT id, user_id, title, description, content, is_active, 
+                    SELECT id, user_id, title, description, content, is_active,
                            word_count, char_count, metadata, created_at, updated_at
-                    FROM writing_samples 
+                    FROM writing_samples
                     WHERE user_id = $1
                     ORDER BY created_at DESC
+                    LIMIT $2
                     """,
                     user_id,
+                    limit,
                 )
                 return [self._format_sample(row) for row in rows]
         except Exception as e:

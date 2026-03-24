@@ -12,23 +12,18 @@ Handles administrative database operations including:
 import json
 from services.logger_config import get_logger
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from asyncpg import Pool
 
 from schemas.database_response_models import (
-    AgentStatusResponse,
     CostLogResponse,
-    FinancialEntryResponse,
-    FinancialSummaryResponse,
-    LogResponse,
     SettingResponse,
     TaskCostBreakdownResponse,
 )
 from schemas.model_converter import ModelConverter
-from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 
 from .database_mixin import DatabaseServiceMixin
 from .decorators import log_query_performance
@@ -451,3 +446,144 @@ class AdminDatabase(DatabaseServiceMixin):
                 exc_info=True,
             )
             return False
+
+    # ================================================================
+    # Logging Operations (delegated from DatabaseService)
+    # ================================================================
+
+    async def add_log_entry(
+        self, agent_name: str, level: str, message: str, context: Optional[Dict] = None
+    ) -> Dict[str, Any]:
+        """Add a log entry to the logs table."""
+        sql = """
+            INSERT INTO logs (id, agent_name, level, message, context, created_at)
+            VALUES ($1, $2, $3, $4, $5, NOW())
+            RETURNING id, agent_name, level, message, context, created_at
+        """
+        try:
+            log_id = str(uuid4())
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    sql, log_id, agent_name, level, message,
+                    json.dumps(context) if context else None,
+                )
+                return dict(row) if row else {"id": log_id}
+        except Exception:
+            logger.error("[add_log_entry] Failed to add log entry", exc_info=True)
+            return {"id": str(uuid4()), "error": "Failed to save log entry"}
+
+    async def get_logs(
+        self, agent_name: Optional[str] = None, level: Optional[str] = None, limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """Retrieve log entries with optional filters."""
+        conditions = []
+        params: list = []
+        idx = 1
+
+        if agent_name:
+            conditions.append(f"agent_name = ${idx}")
+            params.append(agent_name)
+            idx += 1
+        if level:
+            conditions.append(f"level = ${idx}")
+            params.append(level)
+            idx += 1
+
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        sql = f"SELECT * FROM logs {where_clause} ORDER BY created_at DESC LIMIT ${idx}"
+        params.append(limit)
+
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(sql, *params)
+                return [dict(r) for r in rows]
+        except Exception:
+            logger.error("[get_logs] Failed to retrieve logs", exc_info=True)
+            return []
+
+    # ================================================================
+    # Financial Operations (delegated from DatabaseService)
+    # ================================================================
+
+    async def add_financial_entry(self, entry_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Add a financial entry."""
+        sql = """
+            INSERT INTO financial_entries (entry_type, amount, currency, description, category, date, metadata, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+            RETURNING *
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    sql,
+                    entry_data.get("entry_type", "expense"),
+                    entry_data.get("amount", 0),
+                    entry_data.get("currency", "USD"),
+                    entry_data.get("description"),
+                    entry_data.get("category"),
+                    entry_data.get("date", datetime.now(timezone.utc).date()),
+                    json.dumps(entry_data.get("metadata", {})),
+                )
+                return dict(row) if row else {}
+        except Exception:
+            logger.error("[add_financial_entry] Failed to add financial entry", exc_info=True)
+            return {}
+
+    async def get_financial_summary(self, days: int = 30) -> Dict[str, Any]:
+        """Get financial summary for the specified period."""
+        sql = """
+            SELECT
+                COALESCE(SUM(amount), 0) as total_amount,
+                COUNT(*) as entry_count,
+                COALESCE(SUM(CASE WHEN entry_type = 'revenue' THEN amount ELSE 0 END), 0) as total_revenue,
+                COALESCE(SUM(CASE WHEN entry_type = 'expense' THEN amount ELSE 0 END), 0) as total_expenses
+            FROM financial_entries
+            WHERE created_at >= NOW() - INTERVAL '%s days'
+        """ % days  # noqa: S608 — days is always an integer from the method signature
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(sql)
+                return dict(row) if row else {"total_amount": 0, "entry_count": 0}
+        except Exception:
+            logger.error("[get_financial_summary] Failed to get financial summary", exc_info=True)
+            return {"total_amount": 0, "entry_count": 0, "total_revenue": 0, "total_expenses": 0}
+
+    # ================================================================
+    # Agent Status Operations (delegated from DatabaseService)
+    # ================================================================
+
+    async def update_agent_status(
+        self, agent_name: str, status: str, last_run=None, metadata: Optional[Dict] = None
+    ) -> bool:
+        """Update or insert agent status."""
+        sql = """
+            INSERT INTO agent_status (agent_name, status, last_heartbeat, metadata, updated_at)
+            VALUES ($1, $2, $3, $4, NOW())
+            ON CONFLICT (agent_name) DO UPDATE SET
+                status = EXCLUDED.status,
+                last_heartbeat = EXCLUDED.last_heartbeat,
+                metadata = COALESCE(EXCLUDED.metadata, agent_status.metadata),
+                updated_at = NOW()
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    sql, agent_name, status,
+                    last_run or datetime.now(timezone.utc),
+                    json.dumps(metadata) if metadata else None,
+                )
+                return True
+        except Exception:
+            logger.error("[update_agent_status] Failed to update agent status", exc_info=True)
+            return False
+
+    async def get_agent_status(self, agent_name: str) -> Optional[Dict[str, Any]]:
+        """Get current status of an agent."""
+        sql = "SELECT * FROM agent_status WHERE agent_name = $1"
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(sql, agent_name)
+                return dict(row) if row else None
+        except Exception:
+            logger.error("[get_agent_status] Failed to get agent status", exc_info=True)
+            return None

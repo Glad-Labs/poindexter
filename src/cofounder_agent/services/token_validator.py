@@ -83,12 +83,11 @@ class JWTTokenValidator:
             jwt.ExpiredSignatureError: Token has expired
             jwt.InvalidTokenError: Token is invalid
         """
-        import sys
 
-        # Development: Allow disabling auth for testing — ONLY in non-production environments
+        # Development: Allow disabling auth for testing — ONLY when DEVELOPMENT_MODE=true (#1219)
         if (
             os.getenv("DISABLE_AUTH_FOR_DEV") == "true"
-            and os.getenv("ENVIRONMENT", "development") != "production"
+            and os.getenv("DEVELOPMENT_MODE", "false").lower() == "true"
         ):
             return {
                 "sub": "dev-user",

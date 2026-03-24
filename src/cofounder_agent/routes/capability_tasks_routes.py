@@ -24,10 +24,9 @@ from pydantic import BaseModel, Field
 from routes.auth_unified import get_current_user
 from services.capability_natural_language_composer import get_composer
 from utils.route_utils import get_database_dependency
-from services.capability_registry import CapabilityMetadata, ParameterSchema, get_registry
+from services.capability_registry import get_registry
 from services.capability_task_executor import (
     CapabilityStep,
-    CapabilityTaskDefinition,
     execute_capability_task,
 )
 from services.capability_tasks_service import CapabilityTasksService
@@ -142,7 +141,7 @@ class TaskListResponse(BaseModel):
 
     tasks: List[TaskResponse]
     total: int
-    skip: int
+    offset: int
     limit: int
 
 
@@ -178,9 +177,8 @@ class ExecutionResponse(BaseModel):
 router = APIRouter(prefix="/api", tags=["capabilities"])
 
 
-def get_owner_id(current_user: Dict[str, Any] = Depends(get_current_user)) -> str:
-    """Extract owner_id from authenticated user."""
-    return str(current_user.get("id", ""))
+# get_owner_id imported from custom_workflows_routes to avoid duplication (#1203)
+from routes.custom_workflows_routes import get_owner_id  # noqa: F401, E402
 
 
 # ============ Capability Discovery Endpoints ============
@@ -378,7 +376,7 @@ async def compose_task_from_natural_language(
         return NaturalLanguageResponse(
             success=False,
             explanation="Error composing task from natural language",
-            error=str(e),
+            error="An internal error occurred",
             confidence=0.0,
         )
 
@@ -468,14 +466,16 @@ async def create_capability_task(
 
 @router.get("/tasks/capability", response_model=TaskListResponse)
 async def list_capability_tasks(
-    skip: int = Query(0, ge=0),
+    offset: Optional[int] = Query(None, ge=0),
+    skip: Optional[int] = Query(None, ge=0, include_in_schema=False),
     limit: int = Query(20, ge=1, le=100),
     owner_id: str = Depends(get_owner_id),
     service: CapabilityTasksService = Depends(_get_capability_tasks_service),
 ):
     """List capability tasks for the current user."""
     try:
-        tasks, total = await service.list_tasks(owner_id, skip=skip, limit=limit)
+        effective_offset = offset if offset is not None else (skip if skip is not None else 0)
+        tasks, total = await service.list_tasks(owner_id, skip=effective_offset, limit=limit)
     except Exception:
         logger.error("[list_capability_tasks] Failed to list tasks", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to list tasks")
@@ -502,7 +502,7 @@ async def list_capability_tasks(
             for t in tasks
         ],
         total=total,
-        skip=skip,
+        offset=effective_offset,
         limit=limit,
     )
 
@@ -692,19 +692,21 @@ async def get_execution_result(
 @router.get("/tasks/capability/{task_id}/executions")
 async def list_executions(
     task_id: str,
-    skip: int = Query(0, ge=0),
+    offset: Optional[int] = Query(None, ge=0),
+    skip: Optional[int] = Query(None, ge=0, include_in_schema=False),
     limit: int = Query(50, ge=1, le=100),
     status: Optional[str] = Query(None),
     owner_id: str = Depends(get_owner_id),
     service: CapabilityTasksService = Depends(_get_capability_tasks_service),
 ):
     """List execution history for a task."""
+    effective_offset = offset if offset is not None else (skip if skip is not None else 0)
     task = await service.get_task(task_id, owner_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
     executions, total = await service.list_executions(
-        task_id, owner_id, skip=skip, limit=limit, status_filter=status
+        task_id, owner_id, skip=effective_offset, limit=limit, status_filter=status
     )
 
     return {
@@ -717,6 +719,6 @@ async def list_executions(
             for e in executions
         ],
         "total": total,
-        "skip": skip,
+        "offset": effective_offset,
         "limit": limit,
     }

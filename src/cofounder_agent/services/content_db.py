@@ -11,6 +11,7 @@ Handles all content-related database operations including:
 """
 
 import json
+import time
 from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -40,6 +41,9 @@ logger = get_logger(__name__)
 class ContentDatabase(DatabaseServiceMixin):
     """Content-related database operations (posts, quality, metrics)."""
 
+    # In-memory cache TTL in seconds
+    _CACHE_TTL = 60
+
     def __init__(self, pool: Pool):
         """
         Initialize content database module.
@@ -48,7 +52,9 @@ class ContentDatabase(DatabaseServiceMixin):
             pool: asyncpg connection pool
         """
         self.pool = pool
+        self._cache: Dict[str, tuple] = {}  # key -> (data, timestamp)
 
+    @log_query_performance(operation="create_post", category="content_write")
     async def create_post(self, post_data: Dict[str, Any]) -> PostResponse:
         """
         Create new post in posts table with all metadata fields.
@@ -213,6 +219,7 @@ class ContentDatabase(DatabaseServiceMixin):
             )
             return None
 
+    @log_query_performance(operation="update_post", category="content_write")
     async def update_post(self, post_id: int, updates: Dict[str, Any]) -> bool:
         """
         Update a post with new values (e.g., featured_image_url, status).
@@ -227,7 +234,8 @@ class ContentDatabase(DatabaseServiceMixin):
         try:
             # Allowlist of columns that may be updated via this method
             _ALLOWED_POST_COLUMNS = frozenset(
-                ["title", "slug", "content", "excerpt", "featured_image_url", "status", "tags"]
+                ["title", "slug", "content", "excerpt", "featured_image_url", "status",
+                 "tags", "seo_title", "seo_description", "seo_keywords", "published_at"]
             )
 
             # Filter to only allowed fields; ParameterizedQueryBuilder will also
@@ -267,40 +275,64 @@ class ContentDatabase(DatabaseServiceMixin):
             logger.error(f"[_update_post] ❌ Error updating post {post_id}: {e}", exc_info=True)
             return False
 
+    def _cache_get(self, key: str):
+        """Return cached value if still valid, else None."""
+        entry = self._cache.get(key)
+        if entry and (time.monotonic() - entry[1]) < self._CACHE_TTL:
+            return entry[0]
+        return None
+
+    def _cache_set(self, key: str, value):
+        """Store a value in the cache with the current timestamp."""
+        self._cache[key] = (value, time.monotonic())
+
+    @log_query_performance(operation="get_all_categories", category="content_retrieval")
     async def get_all_categories(self) -> List[CategoryResponse]:
         """
-        Get all categories for matching.
+        Get all categories for matching. Results are cached for 60s.
 
         Returns:
             List of category dicts
         """
+        cached = self._cache_get("categories")
+        if cached is not None:
+            return cached
         try:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(
                     "SELECT id, name, slug, description FROM categories ORDER BY name LIMIT 1000"
                 )
-                return [ModelConverter.to_category_response(row) for row in rows]
+                result = [ModelConverter.to_category_response(row) for row in rows]
+                self._cache_set("categories", result)
+                return result
         except Exception as e:
             logger.error(f"[_get_all_categories] Failed to fetch categories: {e}", exc_info=True)
             return []
 
+    @log_query_performance(operation="get_all_tags", category="content_retrieval")
     async def get_all_tags(self) -> List[TagResponse]:
         """
-        Get all tags for matching.
+        Get all tags for matching. Results are cached for 60s.
 
         Returns:
             List of tag dicts
         """
+        cached = self._cache_get("tags")
+        if cached is not None:
+            return cached
         try:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(
                     "SELECT id, name, slug, description FROM tags ORDER BY name LIMIT 500"
                 )
-                return [ModelConverter.to_tag_response(row) for row in rows]
+                result = [ModelConverter.to_tag_response(row) for row in rows]
+                self._cache_set("tags", result)
+                return result
         except Exception as e:
             logger.error(f"[_get_all_tags] Failed to fetch tags: {e}", exc_info=True)
             return []
 
+    @log_query_performance(operation="get_author_by_name", category="content_retrieval")
     async def get_author_by_name(self, name: str) -> Optional[AuthorResponse]:
         """
         Get author by name.
@@ -322,6 +354,7 @@ class ContentDatabase(DatabaseServiceMixin):
             )
             return None
 
+    @log_query_performance(operation="create_quality_evaluation", category="content_write")
     async def create_quality_evaluation(
         self, eval_data: Dict[str, Any]
     ) -> QualityEvaluationResponse:
@@ -389,6 +422,7 @@ class ContentDatabase(DatabaseServiceMixin):
             )
             raise
 
+    @log_query_performance(operation="create_quality_improvement_log", category="content_write")
     async def create_quality_improvement_log(
         self, log_data: Dict[str, Any]
     ) -> QualityImprovementLogResponse:

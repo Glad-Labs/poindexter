@@ -6,8 +6,7 @@ Each phase is a discrete, composable step in content creation.
 """
 
 from services.logger_config import get_logger
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from .base_phase import (
     BasePhase,

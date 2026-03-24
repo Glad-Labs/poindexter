@@ -391,16 +391,15 @@ class TestCmsStatus:
         assert "tables" in data
         assert "status" in data
 
-    def test_db_error_returns_200_with_error_status(self):
-        """On DB failure, cms_status returns 200 with status: error (not 500)."""
+    def test_db_error_returns_503_with_error_status(self):
+        """On DB failure, cms_status returns 503 with status: error (#918)."""
         with patch(
             "routes.cms_routes.get_db_pool",
             new=AsyncMock(side_effect=RuntimeError("Connection refused")),
         ):
             client = TestClient(_build_app())
             resp = client.get("/api/cms/status")
-        # cms_status catches the exception and returns 200 with error payload
-        assert resp.status_code == 200
+        assert resp.status_code == 503
         data = resp.json()
         assert data["status"] == "error"
         assert "CMS status check failed" in data["detail"]

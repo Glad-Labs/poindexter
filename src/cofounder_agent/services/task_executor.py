@@ -19,8 +19,8 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-# Import model selection helper
-from routes.task_routes import get_model_for_phase
+# Import model selection helper (from services layer, not routes)
+from services.model_router import get_model_for_phase
 
 # Import AI content generator for fallback
 from .ai_content_generator import AIContentGenerator
@@ -40,7 +40,7 @@ from .metrics_service import TaskMetrics
 from .error_handler import ServiceError
 
 # Import WebSocket progress emission (re-exported so tests can patch at this module)
-from .websocket_event_broadcaster import emit_notification, emit_task_progress
+from .websocket_event_broadcaster import emit_notification, emit_task_progress  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -315,35 +315,66 @@ class TaskExecutor:
             await self.database_service.tasks.log_status_change(task_id, "pending", "in_progress")
             logger.info(f"✅ [TASK_SINGLE] Task marked as in_progress")
 
-            # 2. Process through orchestrator/agent pipeline with timeout
+            # 2. Run through content router pipeline (the full 6-stage pipeline)
             logger.info(
-                f"🚀 [TASK_SINGLE] Executing task through pipeline (timeout: {TASK_TIMEOUT_SECONDS}s)..."
+                f"🚀 [TASK_SINGLE] Executing content router pipeline (timeout: {TASK_TIMEOUT_SECONDS}s)..."
             )
             try:
+                from services.content_router_service import process_content_generation_task
+
+                async def _run_content_pipeline():
+                    return await process_content_generation_task(
+                        topic=task.get("topic", ""),
+                        style=task.get("style") or "narrative",
+                        tone=task.get("tone") or "professional",
+                        target_length=task.get("target_length") or 1500,
+                        tags=task.get("tags", []),
+                        generate_featured_image=True,
+                        database_service=self.database_service,
+                        task_id=task_id,
+                        models_by_phase=task.get("model_selections", {}),
+                        quality_preference=task.get("quality_preference", "balanced"),
+                        category=task.get("category", "general"),
+                        target_audience=task.get("target_audience", "General"),
+                    )
+
                 result = await asyncio.wait_for(
-                    self._execute_task(task), timeout=TASK_TIMEOUT_SECONDS
+                    _run_content_pipeline(), timeout=TASK_TIMEOUT_SECONDS
                 )
+                # Content router sets status directly — mark as complete
+                result = result if isinstance(result, dict) else {}
+                result.setdefault("status", "awaiting_approval")
             except asyncio.TimeoutError:
                 logger.error(
-                    f"⏱️  [TASK_SINGLE] Task execution timed out after {TASK_TIMEOUT_SECONDS}s: {task_id}"
-, exc_info=True)
+                    f"⏱️  [TASK_SINGLE] Task execution timed out after {TASK_TIMEOUT_SECONDS}s: {task_id}",
+                    exc_info=True,
+                )
                 result = {
                     "status": "failed",
                     "orchestrator_error": f"Task execution timeout ({TASK_TIMEOUT_SECONDS}s exceeded)",
                 }
 
             logger.info(f"✅ [TASK_SINGLE] Task execution completed")
-            logger.debug(f"   Result type: {type(result).__name__}")
-            if isinstance(result, dict):
-                logger.debug(f"   Result keys: {list(result.keys())}")
 
-            # 3. Update task status (awaiting_approval or failed based on result)
+            # The content router pipeline updates the task directly in DB at each stage.
+            # Only do additional updates here if the pipeline failed or timed out.
             final_status = (
                 result.get("status", "awaiting_approval")
                 if isinstance(result, dict)
                 else "awaiting_approval"
             )
-            logger.info(f"💾 [TASK_SINGLE] Updating task status to '{final_status}'...")
+
+            if final_status not in ("failed",):
+                # Content router already set the task to awaiting_approval with all fields.
+                # No additional DB update needed — just log and return.
+                logger.info(
+                    f"✅ [TASK_SINGLE] Content router completed — task already updated in DB "
+                    f"(status={final_status}, task_id={task_id})"
+                )
+                return
+
+            # --- FAILURE PATH ONLY below this point ---
+            logger.info(f"💾 [TASK_SINGLE] Updating failed task status...")
 
             # Extract relevant fields from result for task_metadata (don't store entire result)
             # This prevents the entire result dict from being treated as metadata
@@ -462,6 +493,7 @@ class TaskExecutor:
         task_id = task.get("id")
         task_name = task.get("task_name", "")
         topic = task.get("topic", "")
+        critique_result = None  # Must be initialized before any code path that references it
         primary_keyword = task.get("primary_keyword", "")
         target_audience = task.get("target_audience", "")
         category = task.get("category", "general")
@@ -869,6 +901,7 @@ class TaskExecutor:
                         logger.info(f"   ✅ Using refined content ({len(generated_content)} chars)")
 
                         # Re-critique refined content if critique_loop is available
+                        critique_result = None
                         if self.critique_loop is not None:
                             critique_result = await self.critique_loop.critique(
                                 content=generated_content,
@@ -941,8 +974,8 @@ class TaskExecutor:
             # Critique phase
             "quality_score": quality_score,
             "content_approved": approved,
-            "critique_feedback": critique_result.get("feedback", ""),
-            "critique_suggestions": critique_result.get("suggestions", []),
+            "critique_feedback": critique_result.get("feedback", "") if critique_result else "",
+            "critique_suggestions": critique_result.get("suggestions", []) if critique_result else [],
             # Metadata
             "word_count": len(generated_content.split()) if generated_content else 0,
             "completed_at": datetime.now(timezone.utc).isoformat(),
@@ -991,6 +1024,21 @@ class TaskExecutor:
                 logger.debug(f"✅ Logged task cost: ${cost_log['cost_usd']:.6f} to database")
             except Exception as e:
                 logger.warning(f"⚠️ Failed to persist cost metrics: {e}", exc_info=True)
+
+        # Record LLM call metrics for structured per-task tracking (issue #974)
+        if operation_metrics:
+            _llm_status = "success" if generated_content and not orchestrator_error else "error"
+            task_metrics.record_llm_call(
+                phase="content_generation",
+                model=getattr(operation_metrics, "model_name", "unknown"),
+                provider=getattr(operation_metrics, "model_provider", "unknown"),
+                tokens_in=getattr(operation_metrics, "input_tokens", 0),
+                tokens_out=getattr(operation_metrics, "output_tokens", 0),
+                cost_usd=getattr(operation_metrics, "total_cost_usd", 0.0),
+                duration_ms=getattr(operation_metrics, "duration_ms", 0.0),
+                status=_llm_status,
+                error=orchestrator_error if _llm_status == "error" else None,
+            )
 
         # Close Phase 2 and log structured metrics summary (issue #837)
         task_metrics.record_phase_end(

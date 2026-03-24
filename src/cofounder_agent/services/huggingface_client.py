@@ -8,7 +8,7 @@ Supports open-source models for blog post generation
 import asyncio
 from services.logger_config import get_logger
 import os
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import AsyncGenerator, List, Optional
 
 import aiohttp
 

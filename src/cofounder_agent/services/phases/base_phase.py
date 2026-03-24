@@ -76,7 +76,6 @@ class BasePhase(ABC):
         Example: "generate_content", "quality_evaluation", "search_image"
         Must be unique across all registered phases.
         """
-        pass
 
     @classmethod
     @abstractmethod
@@ -90,7 +89,6 @@ class BasePhase(ABC):
         - Configurable parameters and defaults
         - Human-readable description
         """
-        pass
 
     @abstractmethod
     async def execute(self, inputs: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
@@ -109,7 +107,6 @@ class BasePhase(ABC):
 
         Should set self.status, self.result, and self.error appropriately.
         """
-        pass
 
     async def validate_inputs(self, inputs: Dict[str, Any]) -> tuple[bool, Optional[str]]:
         """

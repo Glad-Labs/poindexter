@@ -5,7 +5,7 @@ Consolidated schemas for bulk task operations.
 
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class BulkTaskRequest(BaseModel):

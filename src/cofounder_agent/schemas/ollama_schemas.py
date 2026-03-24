@@ -3,9 +3,9 @@
 Consolidated schemas for Ollama model management and health checks.
 """
 
-from typing import List, Optional
+from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class OllamaHealthResponse(BaseModel):

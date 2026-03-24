@@ -23,7 +23,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: '18'
+          node-version: '22'
       
       - name: Install dependencies
         run: npm install -g markdownlint-cli
@@ -40,24 +40,24 @@ jobs:
           # Check for broken links
           broken_links=""
           while IFS= read -r file; do
-            # Extract markdown links [text](path)
-            grep -oP '\[.*?\]\(\K[^)]+' "$file" 2>/dev/null | while read -r link; do
+            # Extract markdown links [text](path) — use process substitution to avoid subshell
+            while IFS= read -r link; do
               # Skip external links and anchors
               if [[ ! "$link" =~ ^http && ! "$link" =~ ^# && ! "$link" =~ ^mailto ]]; then
                 # Resolve relative path
                 base_dir=$(dirname "$file")
                 target_file="$base_dir/$link"
-                
+
                 # Remove anchor
                 target_file="${target_file%%#*}"
-                
+
                 # Check if file exists
                 if [ ! -f "$target_file" ]; then
                   echo "BROKEN: $file -> $link"
                   broken_links="$broken_links\n- $file references missing $link"
                 fi
               fi
-            done
+            done < <(grep -oP '\[.*?\]\(\K[^)]+' "$file" 2>/dev/null || true)
           done < /tmp/md_files.txt
           
           if [ -n "$broken_links" ]; then

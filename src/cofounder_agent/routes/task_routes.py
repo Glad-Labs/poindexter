@@ -27,12 +27,11 @@ from services.logger_config import get_logger
 import os
 import uuid as uuid_lib
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from uuid import UUID
 
-import aiohttp
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from routes.auth_unified import get_current_user
 from schemas.model_converter import ModelConverter
@@ -41,17 +40,13 @@ from schemas.task_schemas import (
     MetricsResponse,
     TaskConfirmRequest,
     TaskConfirmResponse,
-    TaskCreateRequest,
     TaskIntentResponse,
     TaskListResponse,
-    TaskStatusUpdateRequest,
     UnifiedTaskRequest,
 )
 from schemas.task_status_schemas import (
-    TaskStatusFilterRequest,
-    TaskStatusHistoryEntry,
     TaskStatusInfo,
-    TaskStatusStatistics,
+    TaskStatusUpdateRequest,
     TaskStatusUpdateResponse,
 )
 from schemas.unified_task_response import UnifiedTaskResponse
@@ -59,7 +54,6 @@ from schemas.unified_task_response import UnifiedTaskResponse
 # Import async database service
 from services.database_service import DatabaseService
 from services.enhanced_status_change_service import EnhancedStatusChangeService
-from utils.error_responses import ErrorResponseBuilder
 from utils.json_encoder import convert_decimals, safe_json_dumps
 from utils.route_utils import get_database_dependency
 from utils.text_utils import extract_title_from_content
@@ -67,10 +61,8 @@ from routes.revalidate_routes import trigger_nextjs_revalidation
 
 # Import task status utilities (ENTERPRISE)
 from utils.task_status import (
-    StatusTransitionValidator,
     TaskStatus,
     get_allowed_transitions,
-    get_status_description,
     is_terminal,
     is_valid_transition,
 )
@@ -306,6 +298,13 @@ async def _handle_blog_post_creation(
     if request.models_by_phase:
         logger.info(f"[create_task] User model selections applied: {request.models_by_phase}")
 
+    # Merge content_constraints into top-level fields (#1250)
+    # content_constraints overrides top-level style/tone/target_length when provided
+    cc = request.content_constraints or {}
+    effective_style = cc.get("writing_style") or request.style or "narrative"
+    effective_tone = cc.get("tone") or request.tone or "professional"
+    effective_length = cc.get("word_count") or request.target_length or 1500
+
     task_data = {
         "id": task_id,
         "task_name": f"Blog Post: {request.topic}",
@@ -314,9 +313,9 @@ async def _handle_blog_post_creation(
         "category": request.category or "general",
         "target_audience": request.target_audience or "General",
         "primary_keyword": request.primary_keyword,
-        "style": request.style,
-        "tone": request.tone,
-        "target_length": request.target_length or 1500,
+        "style": effective_style,
+        "tone": effective_tone,
+        "target_length": effective_length,
         "model_selections": request.models_by_phase or {},
         "quality_preference": request.quality_preference or "balanced",
         "status": "pending",
@@ -329,32 +328,9 @@ async def _handle_blog_post_creation(
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    # Store in database
+    # Store in database as pending — task executor will pick it up
     returned_task_id = await db_service.add_task(task_data)
     logger.info(f"✅ [BLOG_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')}")
-
-    # Schedule background generation
-    async def _run_blog_generation():
-        try:
-            await process_content_generation_task(
-                topic=request.topic,
-                style=request.style or "narrative",
-                tone=request.tone or "professional",
-                target_length=request.target_length or 1500,
-                tags=request.tags,
-                generate_featured_image=request.generate_featured_image or True,
-                database_service=db_service,
-                task_id=task_id,
-                models_by_phase=request.models_by_phase,
-                quality_preference=request.quality_preference or "balanced",
-                category=request.category or "general",
-                target_audience=request.target_audience or "General",
-            )
-        except Exception as e:
-            logger.error(f"Blog generation failed: {e}", exc_info=True)
-            await db_service.update_task(task_id, {"status": "failed", "error_message": str(e)})
-
-    asyncio.create_task(_run_blog_generation())
 
     return {
         "id": returned_task_id,
@@ -683,15 +659,12 @@ async def list_tasks(
                 # Normalize seo_keywords in all nested locations
                 task = _normalize_seo_keywords_in_task(task)
 
-                # CRITICAL: Ensure 'id' field is always populated
-                # Local database uses 'task_id' (UUID), Railway prod has integer 'id' column
-                # Frontend expects 'id' to be the primary identifier
-                if not task.get("id") or task["id"] is None:
-                    # Use task_id (UUID string) as fallback for id
-                    if task.get("task_id"):
-                        task["id"] = task["task_id"]
-                elif isinstance(task["id"], int):
-                    # Convert integer id to string for consistency
+                # CRITICAL: 'id' must match what POST /api/tasks returns so the
+                # frontend can correlate optimistic inserts with server data.
+                # POST returns task_id as id, so list must too.
+                if task.get("task_id"):
+                    task["id"] = str(task["task_id"])
+                elif task.get("id"):
                     task["id"] = str(task["id"])
 
                 # CRITICAL: Parse cost_breakdown from JSON string to dict
@@ -1401,6 +1374,54 @@ async def update_task(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail="Failed to update task")
+
+
+@router.patch(
+    "/{task_id}/content",
+    response_model=UnifiedTaskResponse,
+    summary="Edit task content fields (title, content, metadata)",
+)
+async def update_task_content(
+    task_id: str,
+    updates: Dict[str, Any],
+    current_user: dict = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
+):
+    """
+    Edit task content without requiring a status change.
+    Used by the content editor in the task detail modal.
+
+    Allowed fields: topic, content, title, excerpt, featured_image_url,
+    seo_title, seo_description, seo_keywords, task_metadata.
+    """
+    try:
+        task = await db_service.get_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+
+        if isinstance(task, dict):
+            _check_task_ownership(task, current_user)
+
+        # Filter to allowed content fields only
+        allowed = {
+            "topic", "content", "title", "excerpt", "featured_image_url",
+            "seo_title", "seo_description", "seo_keywords", "task_metadata",
+            "style", "tone", "target_length", "primary_keyword", "target_audience",
+        }
+        filtered = {k: v for k, v in updates.items() if k in allowed}
+        if not filtered:
+            raise HTTPException(status_code=400, detail="No valid content fields to update")
+
+        await db_service.update_task(task_id, filtered)
+        updated_task = await db_service.get_task(task_id)
+        if not updated_task:
+            raise HTTPException(status_code=404, detail="Task not found after update")
+        return UnifiedTaskResponse(**_normalize_seo_keywords_in_task(updated_task))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update task content: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to update task content")
 
 
 # ============================================================================
@@ -2140,18 +2161,25 @@ async def publish_task(
             # Use merged content (task_metadata + result) so content is found whatever key the agent used
             task_result = merged_result
 
-            # Extract content — check multiple possible keys the content agent may use
+            # Extract content — check task columns first, then metadata/result
             topic = task.get("topic", "") or task_result.get("topic", "")
             draft_content = (
-                task_result.get("draft_content", "")
+                task.get("content", "")
+                or task_result.get("draft_content", "")
                 or task_result.get("content", "")
                 or task_result.get("body", "")
                 or task_result.get("article", "")
                 or ""
             )
-            seo_description = task_result.get("seo_description", "")
+            seo_description = (
+                task_result.get("seo_description", "")
+                or task.get("seo_description", "")
+            )
             seo_keywords = task_result.get("seo_keywords", [])
-            featured_image_url = task_result.get("featured_image_url")
+            featured_image_url = (
+                task_result.get("featured_image_url")
+                or task.get("featured_image_url")
+            )
             metadata = task_result.get("metadata", {})
 
             if draft_content and topic:

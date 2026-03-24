@@ -100,19 +100,16 @@ MODEL_PROFILES = {
 class OllamaError(Exception):
     """Base exception for Ollama errors."""
 
-    pass
 
 
 class OllamaConnectionError(OllamaError):
     """Raised when cannot connect to Ollama server."""
 
-    pass
 
 
 class OllamaModelNotFoundError(OllamaError):
     """Raised when requested model is not available."""
 
-    pass
 
 
 class OllamaClient:
@@ -151,9 +148,8 @@ class OllamaClient:
             True if server is healthy, False otherwise
         """
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(f"{self.base_url}/api/tags", timeout=5.0)
-                return response.status_code == 200
+            response = await self.client.get(f"{self.base_url}/api/tags", timeout=5.0)
+            return response.status_code == 200
         except Exception as e:
             logger.error(f"[_check_health] Ollama health check failed: {e}", exc_info=True)
             return False
@@ -166,14 +162,13 @@ class OllamaClient:
             List of model dictionaries with name, size, modified date
         """
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(f"{self.base_url}/api/tags", timeout=10.0)
-                response.raise_for_status()
-                data = response.json()
+            response = await self.client.get(f"{self.base_url}/api/tags", timeout=10.0)
+            response.raise_for_status()
+            data = response.json()
 
-                models = data.get("models", [])
-                logger.info(f"Found {len(models)} Ollama models")
-                return models
+            models = data.get("models", [])
+            logger.info(f"Found {len(models)} Ollama models")
+            return models
 
         except Exception as e:
             logger.error(f"[_list_models] Failed to list models", error=str(e), exc_info=True)
@@ -220,33 +215,32 @@ class OllamaClient:
             payload["options"]["num_predict"] = max_tokens
 
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.base_url}/api/generate", json=payload, timeout=self.timeout
-                )
-                response.raise_for_status()
+            response = await self.client.post(
+                f"{self.base_url}/api/generate", json=payload, timeout=self.timeout
+            )
+            response.raise_for_status()
 
-                result = response.json()
+            result = response.json()
 
-                logger.info(
-                    "Ollama generation complete",
-                    model=model,
-                    tokens=result.get("eval_count", 0),
-                    duration=result.get("total_duration", 0) / 1e9,  # ns to seconds
-                    cost=0.0,
-                )
+            logger.info(
+                "Ollama generation complete",
+                model=model,
+                tokens=result.get("eval_count", 0),
+                duration=result.get("total_duration", 0) / 1e9,  # ns to seconds
+                cost=0.0,
+            )
 
-                return {
-                    "text": result.get("response", ""),
-                    "model": model,
-                    "tokens": result.get("eval_count", 0),
-                    "prompt_tokens": result.get("prompt_eval_count", 0),
-                    "total_tokens": result.get("eval_count", 0)
-                    + result.get("prompt_eval_count", 0),
-                    "duration_seconds": result.get("total_duration", 0) / 1e9,
-                    "cost": 0.0,  # Zero cost!
-                    "done": result.get("done", False),
-                }
+            return {
+                "text": result.get("response", ""),
+                "model": model,
+                "tokens": result.get("eval_count", 0),
+                "prompt_tokens": result.get("prompt_eval_count", 0),
+                "total_tokens": result.get("eval_count", 0)
+                + result.get("prompt_eval_count", 0),
+                "duration_seconds": result.get("total_duration", 0) / 1e9,
+                "cost": 0.0,  # Zero cost!
+                "done": result.get("done", False),
+            }
 
         except httpx.HTTPError as e:
             logger.error(f"[generate] Ollama generation failed: {e}", exc_info=True, model=model)
@@ -297,44 +291,43 @@ class OllamaClient:
             payload["options"]["num_predict"] = max_tokens
 
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.base_url}/api/generate", json=payload, timeout=self.timeout
-                )
-                response.raise_for_status()
+            response = await self.client.post(
+                f"{self.base_url}/api/generate", json=payload, timeout=self.timeout
+            )
+            response.raise_for_status()
 
-                result = response.json()
+            result = response.json()
 
-                # Extract only the assistant response (remove the prompt we sent)
-                full_response = result.get("response", "")
+            # Extract only the assistant response (remove the prompt we sent)
+            full_response = result.get("response", "")
 
-                # Extract just the assistant's response (after "Assistant: ")
-                if "Assistant: " in full_response:
-                    # Get everything after the last "Assistant: "
-                    parts = full_response.split("Assistant: ")
-                    assistant_response = parts[-1].strip()
-                else:
-                    assistant_response = full_response.strip()
+            # Extract just the assistant's response (after "Assistant: ")
+            if "Assistant: " in full_response:
+                # Get everything after the last "Assistant: "
+                parts = full_response.split("Assistant: ")
+                assistant_response = parts[-1].strip()
+            else:
+                assistant_response = full_response.strip()
 
-                logger.info(
-                    "Ollama chat complete",
-                    model=model,
-                    tokens=result.get("eval_count", 0),
-                    cost=0.0,
-                )
+            logger.info(
+                "Ollama chat complete",
+                model=model,
+                tokens=result.get("eval_count", 0),
+                cost=0.0,
+            )
 
-                return {
-                    "role": "assistant",
-                    "content": assistant_response,
-                    "model": model,
-                    "tokens": result.get("eval_count", 0),
-                    "prompt_tokens": result.get("prompt_eval_count", 0),
-                    "total_tokens": result.get("eval_count", 0)
-                    + result.get("prompt_eval_count", 0),
-                    "duration_seconds": result.get("total_duration", 0) / 1e9,
-                    "cost": 0.0,
-                    "done": result.get("done", False),
-                }
+            return {
+                "role": "assistant",
+                "content": assistant_response,
+                "model": model,
+                "tokens": result.get("eval_count", 0),
+                "prompt_tokens": result.get("prompt_eval_count", 0),
+                "total_tokens": result.get("eval_count", 0)
+                + result.get("prompt_eval_count", 0),
+                "duration_seconds": result.get("total_duration", 0) / 1e9,
+                "cost": 0.0,
+                "done": result.get("done", False),
+            }
 
         except httpx.HTTPError as e:
             logger.error(f"[chat] Ollama chat failed: {e}", exc_info=True, model=model)
@@ -353,16 +346,15 @@ class OllamaClient:
         try:
             logger.info(f"Pulling Ollama model: {model}")
 
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.base_url}/api/pull",
-                    json={"name": model},
-                    timeout=3600.0,  # Model downloads can take a while
-                )
-                response.raise_for_status()
+            response = await self.client.post(
+                f"{self.base_url}/api/pull",
+                json={"name": model},
+                timeout=3600.0,  # Model downloads can take a while
+            )
+            response.raise_for_status()
 
-                logger.info(f"Successfully pulled model: {model}")
-                return True
+            logger.info(f"Successfully pulled model: {model}")
+            return True
 
         except Exception as e:
             logger.error(f"[_pull_model] Failed to pull model {model}", error=str(e), exc_info=True)
@@ -440,7 +432,6 @@ class OllamaClient:
             Dictionary with response text, tokens, and timing
         """
         import asyncio
-        import time
 
         model = model or self.model
         last_error = None
