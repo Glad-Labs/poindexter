@@ -195,12 +195,18 @@ describe('exchangeCodeForToken', () => {
     mockCreateMockJWTToken.mockResolvedValue('mock.jwt.token');
   });
 
-  it('mock code path: returns token and user without calling fetch', async () => {
+  it('mock code path: tries backend dev-token first, falls back to local mock', async () => {
+    // fetch is called to try backend /api/auth/dev-token, but no mock response
+    // so it falls back to createMockJWTToken
+    mockFetch.mockRejectedValueOnce(new Error('Backend unreachable'));
     const result = await exchangeCodeForToken('mock_auth_code_12345');
     expect(result.token).toBe('mock.jwt.token');
     expect(result.user).toBeDefined();
     expect(result.user.login).toBe('dev-user');
-    expect(mockFetch).not.toHaveBeenCalled();
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/auth/dev-token'),
+      expect.objectContaining({ method: 'POST' })
+    );
   });
 
   it('mock code path: stores token in sessionStorage', async () => {
