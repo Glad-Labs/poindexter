@@ -143,7 +143,8 @@ describe('AIStudio', () => {
       // Wait for model to be available and selected
       await waitFor(() => {
         expect(global.fetch).toHaveBeenCalledWith(
-          expect.stringContaining('/api/tags')
+          expect.stringContaining('/api/tags'),
+          expect.any(Object)
         );
       });
 
@@ -175,7 +176,8 @@ describe('AIStudio', () => {
 
       await waitFor(() => {
         expect(global.fetch).toHaveBeenCalledWith(
-          expect.stringContaining('/api/tags')
+          expect.stringContaining('/api/tags'),
+          expect.any(Object)
         );
       });
 

@@ -70,9 +70,9 @@ describe('getDefaultModels', () => {
 
 describe('getModel', () => {
   it('returns model when found by name', () => {
-    const result = modelService.getModel('neural-chat:13b');
+    const result = modelService.getModel('qwen3:8b');
     expect(result).toBeDefined();
-    expect(result.name).toBe('neural-chat:13b');
+    expect(result.name).toBe('qwen3:8b');
   });
 
   it('returns undefined for unknown model', () => {

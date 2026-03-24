@@ -487,10 +487,16 @@ describe('BlogWorkflowPage - Step 3: Execute', () => {
   it('should display cancel button during execution', async () => {
     const user = userEvent.setup();
 
-    apiClient.executeWorkflow.mockResolvedValue({ execution_id: 'exec-123' });
-    apiClient.getWorkflowProgress.mockResolvedValue({
-      status: 'running',
-      progress_percent: 50,
+    // Both executeWorkflow and getWorkflowProgress use makeRequest,
+    // so route responses by URL pattern.
+    cofounderAgentClient.makeRequest.mockImplementation((url) => {
+      if (url.includes('/execute/')) {
+        return Promise.resolve({ execution_id: 'exec-123' });
+      }
+      if (url.includes('/progress')) {
+        return Promise.resolve({ status: 'running', progress_percent: 50 });
+      }
+      return Promise.resolve({});
     });
 
     const navigateComponent = async () => {
