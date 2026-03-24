@@ -305,7 +305,7 @@ class TestDevelopmentModeBypass:
 
         with patch.dict(
             os.environ,
-            {"DISABLE_AUTH_FOR_DEV": "true", "ENVIRONMENT": "development"},
+            {"DISABLE_AUTH_FOR_DEV": "true", "ENVIRONMENT": "development", "DEVELOPMENT_MODE": "true"},
             clear=False,
         ):
             from routes.auth_unified import get_current_user
@@ -508,10 +508,8 @@ class TestExchangeCodeForToken:
         from routes.auth_unified import exchange_code_for_token
         from unittest.mock import AsyncMock, MagicMock, patch
         mock_client = MagicMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.post = AsyncMock(side_effect=httpx.TimeoutException("timeout"))
-        with patch("routes.auth_unified.httpx.AsyncClient", return_value=mock_client):
+        with patch("routes.auth_unified._get_github_client", return_value=mock_client):
             with pytest.raises(HTTPException) as exc_info:
                 asyncio.get_event_loop().run_until_complete(
                     exchange_code_for_token("real_code_xyz")
@@ -550,10 +548,8 @@ class TestExchangeCodeForToken:
             "scope": "read:user",
         }
         mock_client = MagicMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.post = AsyncMock(return_value=mock_response)
-        with patch("routes.auth_unified.httpx.AsyncClient", return_value=mock_client):
+        with patch("routes.auth_unified._get_github_client", return_value=mock_client):
             result = asyncio.get_event_loop().run_until_complete(
                 exchange_code_for_token("real_code_xyz")
             )
@@ -610,9 +606,10 @@ class TestGetGithubUser:
     def test_mock_token_returns_dev_user(self):
         import asyncio
         from routes.auth_unified import get_github_user
-        result = asyncio.get_event_loop().run_until_complete(
-            get_github_user("mock_github_token_dev")
-        )
+        with patch.dict(os.environ, {"DEVELOPMENT_MODE": "true", "ENVIRONMENT": "development"}):
+            result = asyncio.get_event_loop().run_until_complete(
+                get_github_user("mock_github_token_dev")
+            )
         assert result["login"] == "dev-user"
         assert result["email"] == "dev@example.com"
 
@@ -630,10 +627,8 @@ class TestGetGithubUser:
             "avatar_url": "https://avatars.githubusercontent.com/u/583231",
         }
         mock_client = MagicMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.get = AsyncMock(return_value=mock_response)
-        with patch("routes.auth_unified.httpx.AsyncClient", return_value=mock_client):
+        with patch("routes.auth_unified._get_github_client", return_value=mock_client):
             result = asyncio.get_event_loop().run_until_complete(
                 get_github_user("ghu_real_token")
             )
@@ -649,10 +644,8 @@ class TestGetGithubUser:
         mock_response.status_code = 401
         mock_response.text = "Unauthorized"
         mock_client = MagicMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.get = AsyncMock(return_value=mock_response)
-        with patch("routes.auth_unified.httpx.AsyncClient", return_value=mock_client):
+        with patch("routes.auth_unified._get_github_client", return_value=mock_client):
             with pytest.raises(HTTPException) as exc_info:
                 asyncio.get_event_loop().run_until_complete(
                     get_github_user("bad_token")
