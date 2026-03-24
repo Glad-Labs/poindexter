@@ -188,8 +188,8 @@ from .task_schemas import (
     TaskIntentResponse,
     TaskListResponse,
     TaskResponse,
-    TaskStatusUpdateRequest,
 )
+from .task_status_schemas import TaskStatusUpdateRequest
 
 # Unified task response (contains CreateBlogPostResponse as alias)
 from .unified_task_response import (

@@ -409,15 +409,6 @@ class TasksDatabase(DatabaseServiceMixin):
         now = datetime.now(timezone.utc)
 
         try:
-            # Resolve actual task_id — caller may pass either id or task_id column value
-            async with self.pool.acquire() as conn:
-                resolved = await conn.fetchval(
-                    "SELECT task_id FROM content_tasks WHERE task_id = $1 OR id::text = $1 LIMIT 1",
-                    str(task_id),
-                )
-                if resolved:
-                    task_id = str(resolved)
-
             builder = ParameterizedQueryBuilder()
 
             updates = {"status": status, "updated_at": now}
@@ -425,14 +416,23 @@ class TasksDatabase(DatabaseServiceMixin):
             if result:
                 updates["result"] = result
 
-            sql, params = builder.update(
-                table="content_tasks",
-                updates=updates,
-                where_clauses=[("task_id", SQLOperator.EQ, str(task_id))],
-                return_columns=["*"],
-            )
-
+            # Use single connection for both resolve + update (#1206)
             async with self.pool.acquire() as conn:
+                # Resolve actual task_id — caller may pass either id or task_id column value
+                resolved = await conn.fetchval(
+                    "SELECT task_id FROM content_tasks WHERE task_id = $1 OR id::text = $1 LIMIT 1",
+                    str(task_id),
+                )
+                if resolved:
+                    task_id = str(resolved)
+
+                sql, params = builder.update(
+                    table="content_tasks",
+                    updates=updates,
+                    where_clauses=[("task_id", SQLOperator.EQ, str(task_id))],
+                    return_columns=["*"],
+                )
+
                 row = await conn.fetchrow(sql, *params)
                 if row:
                     task_type = row.get("task_type", "unknown") if hasattr(row, "get") else "unknown"
@@ -459,18 +459,12 @@ class TasksDatabase(DatabaseServiceMixin):
         Returns:
             Updated task dict or None
         """
-        logger.info(f"\n{'='*80}")
-        logger.info(f"🔵 TasksDatabase.update_task() ENTRY")
-        logger.info(f"   Task ID: {task_id}")
-        logger.info(f"   Updates received: {list(updates.keys())}")
-        logger.info(f"{'='*80}")
+        logger.debug(f"update_task({task_id}) keys={list(updates.keys())}")
 
         if not updates:
-            logger.info(f"   No updates provided, returning current task")
             return await self.get_task(task_id)
 
         # Extract task_metadata for normalization
-        logger.info(f"🔍 Extracting task_metadata for normalization...")
         task_metadata = safe_json_load(updates.get("task_metadata"), fallback={})
 
         # Prepare normalized updates
@@ -532,18 +526,10 @@ class TasksDatabase(DatabaseServiceMixin):
         for key, value in normalized_updates.items():
             serialized_updates[key] = serialize_value_for_postgres(value)
 
-        # DEBUG: Log normalized updates
-        logger.debug(f"🔍 Normalized updates for task {task_id}:")
-        logger.info(f"   - Keys: {list(normalized_updates.keys())}")
-        logger.info(f"   - Has 'content' in normalized: {'content' in normalized_updates}")
-        if "content" in normalized_updates:
-            logger.info(
-                f"   - Content length: {len(normalized_updates.get('content') or '')} chars"
-            )
-
         try:
-            # Resolve the actual task_id — caller may pass either id or task_id column value
+            # Use single connection for resolve + update (#1206)
             async with self.pool.acquire() as conn:
+                # Resolve the actual task_id — caller may pass either id or task_id column value
                 resolved = await conn.fetchval(
                     "SELECT task_id FROM content_tasks WHERE task_id = $1 OR id::text = $1 LIMIT 1",
                     str(task_id),
@@ -551,24 +537,16 @@ class TasksDatabase(DatabaseServiceMixin):
                 if resolved:
                     task_id = str(resolved)
 
-            builder = ParameterizedQueryBuilder()
-            sql, params = builder.update(
-                table="content_tasks",
-                updates=serialized_updates,
-                where_clauses=[("task_id", SQLOperator.EQ, str(task_id))],
-                return_columns=["*"],
-            )
+                builder = ParameterizedQueryBuilder()
+                sql, params = builder.update(
+                    table="content_tasks",
+                    updates=serialized_updates,
+                    where_clauses=[("task_id", SQLOperator.EQ, str(task_id))],
+                    return_columns=["*"],
+                )
 
-            async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(sql, *params)
                 if row:
-                    # DEBUG: Verify content was persisted
-                    logger.debug(f"✅ Update returned row for task {task_id}")
-                    logger.info(f"   - Row has 'content': {row.get('content') is not None}")
-                    if row.get("content"):
-                        logger.info(
-                            f"   - Persisted content length: {len(row.get('content'))} chars"
-                        )
                     task_response = ModelConverter.to_task_response(row)
                     return ModelConverter.to_dict(task_response)
                 logger.warning(f"⚠️  Update returned no row for task {task_id}")
