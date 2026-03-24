@@ -426,19 +426,25 @@ class TestCsrfState:
 class TestExchangeCodeForToken:
     def test_mock_auth_code_returns_mock_token(self):
         import asyncio
+        import os
+        from unittest.mock import patch
         from routes.auth_unified import exchange_code_for_token
-        result = asyncio.get_event_loop().run_until_complete(
-            exchange_code_for_token("mock_auth_code_abc123")
-        )
+        with patch.dict(os.environ, {"DEVELOPMENT_MODE": "true"}):
+            result = asyncio.get_event_loop().run_until_complete(
+                exchange_code_for_token("mock_auth_code_abc123")
+            )
         assert result["access_token"] == "mock_github_token_dev"
         assert result["expires_in"] == 3600
 
     def test_mock_auth_code_prefix_is_sufficient(self):
         import asyncio
+        import os
+        from unittest.mock import patch
         from routes.auth_unified import exchange_code_for_token
-        result = asyncio.get_event_loop().run_until_complete(
-            exchange_code_for_token("mock_auth_code_")
-        )
+        with patch.dict(os.environ, {"DEVELOPMENT_MODE": "true"}):
+            result = asyncio.get_event_loop().run_until_complete(
+                exchange_code_for_token("mock_auth_code_")
+            )
         assert result["access_token"] == "mock_github_token_dev"
 
     def test_github_error_response_raises_401(self):
@@ -686,12 +692,15 @@ class TestGithubCallbackEndpoint:
         assert resp.status_code == 400
 
     def test_mock_auth_code_returns_token_and_user(self):
+        import os
         from fastapi.testclient import TestClient
         from unittest.mock import patch, AsyncMock
         client = TestClient(self._build_app())
         # mock_auth_code_ triggers mock path in exchange_code_for_token
         # Patch validate_csrf_state so CSRF check passes without a real stored state
-        with patch("routes.auth_unified.validate_csrf_state", return_value=True):
+        # DEVELOPMENT_MODE=true required for mock auth code acceptance
+        with patch("routes.auth_unified.validate_csrf_state", return_value=True), \
+             patch.dict(os.environ, {"DEVELOPMENT_MODE": "true"}):
             resp = client.post(
                 "/api/auth/github/callback",
                 json={"code": "mock_auth_code_test", "state": "any-state"},

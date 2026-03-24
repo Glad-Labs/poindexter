@@ -179,7 +179,7 @@ class TestDisableAuthBypass:
         with (
             patch.dict(
                 os.environ,
-                {"DISABLE_AUTH_FOR_DEV": "true", "ENVIRONMENT": "development"},
+                {"DISABLE_AUTH_FOR_DEV": "true", "DEVELOPMENT_MODE": "true"},
             ),
             patch.object(AuthConfig, "SECRET_KEY", _SECRET),
         ):
