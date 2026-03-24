@@ -2,14 +2,12 @@
 Progress Broadcaster Service
 
 Provides broadcast_progress and broadcast_workflow_progress functions
-for use by service-layer code. These were previously in routes/websocket_routes.py,
-creating a wrong-direction dependency (services importing from routes).
-
-The functions delegate to the ConnectionManager in websocket_routes via lazy import
-to avoid circular imports at module load time.
+for use by service-layer code. Delegates to the service-layer
+WebSocketManager to avoid importing from the routes layer.
 """
 
 from services.logger_config import get_logger
+from services.websocket_manager import websocket_manager
 
 logger = get_logger(__name__)
 
@@ -19,21 +17,17 @@ async def broadcast_progress(task_id: str, progress) -> None:
     if progress is None:
         return
 
-    from routes.websocket_routes import connection_manager
-
     try:
-        await connection_manager.broadcast(
-            task_id, {"type": "progress", **progress.to_dict()}
-        )
+        progress_data = progress if isinstance(progress, dict) else progress.to_dict()
+        await websocket_manager.send_task_progress(task_id, progress_data)
     except Exception as e:
         logger.error(f"[broadcast_progress] Failed to broadcast for task {task_id}: {e}", exc_info=True)
 
 
 async def broadcast_workflow_progress(execution_id: str, progress) -> None:
     """Broadcast workflow progress update to all connected clients."""
-    from routes.websocket_routes import connection_manager
-
-    progress_data = progress if isinstance(progress, dict) else progress.to_dict()
-    await connection_manager.broadcast(
-        execution_id, {"type": "progress", **progress_data}
-    )
+    try:
+        progress_data = progress if isinstance(progress, dict) else progress.to_dict()
+        await websocket_manager.send_workflow_status(execution_id, progress_data)
+    except Exception as e:
+        logger.error(f"[broadcast_workflow_progress] Failed to broadcast for execution {execution_id}: {e}", exc_info=True)

@@ -42,11 +42,11 @@ from schemas.task_schemas import (
     TaskConfirmResponse,
     TaskIntentResponse,
     TaskListResponse,
-    TaskStatusUpdateRequest,
     UnifiedTaskRequest,
 )
 from schemas.task_status_schemas import (
     TaskStatusInfo,
+    TaskStatusUpdateRequest,
     TaskStatusUpdateResponse,
 )
 from schemas.unified_task_response import UnifiedTaskResponse
