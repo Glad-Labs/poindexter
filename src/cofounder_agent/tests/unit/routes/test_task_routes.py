@@ -554,7 +554,7 @@ class TestUpdateTaskStatusEnterprise:
 class TestUpdateTask:
     def test_invalid_uuid_returns_400(self):
         client = TestClient(_build_app())
-        resp = client.patch("/api/tasks/not-a-uuid", json={"status": "running"})
+        resp = client.patch("/api/tasks/not-a-uuid", json={"status": "in_progress"})
         assert resp.status_code == 400
 
     def test_task_not_found_returns_404(self):
@@ -564,13 +564,13 @@ class TestUpdateTask:
 
         resp = client.patch(
             f"/api/tasks/{VALID_UUID}",
-            json={"status": "running"},
+            json={"status": "in_progress"},
         )
         assert resp.status_code == 404
 
     def test_valid_status_update_returns_200(self):
         stub = _make_task_stub("pending")
-        updated_stub = {**stub, "status": "running"}
+        updated_stub = {**stub, "status": "in_progress"}
         mock_db = make_mock_db()
         mock_db.get_task = AsyncMock(side_effect=[stub, updated_stub])
         mock_db.update_task_status = AsyncMock(return_value=True)
@@ -578,23 +578,23 @@ class TestUpdateTask:
 
         resp = client.patch(
             f"/api/tasks/{VALID_UUID}",
-            json={"status": "running"},
+            json={"status": "in_progress"},
         )
         assert resp.status_code == 200
 
     def test_update_task_status_called_with_correct_args(self):
         stub = _make_task_stub("pending")
-        updated_stub = {**stub, "status": "running"}
+        updated_stub = {**stub, "status": "in_progress"}
         mock_db = make_mock_db()
         mock_db.get_task = AsyncMock(side_effect=[stub, updated_stub])
         mock_db.update_task_status = AsyncMock(return_value=True)
         client = TestClient(_build_app(mock_db))
 
-        client.patch(f"/api/tasks/{VALID_UUID}", json={"status": "running"})
+        client.patch(f"/api/tasks/{VALID_UUID}", json={"status": "in_progress"})
         mock_db.update_task_status.assert_called_once()
         args = mock_db.update_task_status.call_args
         assert args[0][0] == VALID_UUID
-        assert args[0][1] == "running"
+        assert args[0][1] == "in_progress"
 
     def test_ownership_mismatch_returns_403(self):
         task = {**_make_task_stub("pending"), "user_id": "other-user"}
@@ -602,7 +602,7 @@ class TestUpdateTask:
         mock_db.get_task = AsyncMock(return_value=task)
         client = TestClient(_build_app(mock_db))
 
-        resp = client.patch(f"/api/tasks/{VALID_UUID}", json={"status": "running"})
+        resp = client.patch(f"/api/tasks/{VALID_UUID}", json={"status": "in_progress"})
         assert resp.status_code == 403
 
 
