@@ -451,6 +451,7 @@ class AdminDatabase(DatabaseServiceMixin):
     # Logging Operations (delegated from DatabaseService)
     # ================================================================
 
+    @log_query_performance(operation="add_log_entry", category="log_write")
     async def add_log_entry(
         self, agent_name: str, level: str, message: str, context: Optional[Dict] = None
     ) -> Dict[str, Any]:
@@ -472,6 +473,7 @@ class AdminDatabase(DatabaseServiceMixin):
             logger.error("[add_log_entry] Failed to add log entry", exc_info=True)
             return {"id": str(uuid4()), "error": "Failed to save log entry"}
 
+    @log_query_performance(operation="get_logs", category="log_retrieval")
     async def get_logs(
         self, agent_name: Optional[str] = None, level: Optional[str] = None, limit: int = 100
     ) -> List[Dict[str, Any]]:
@@ -505,6 +507,7 @@ class AdminDatabase(DatabaseServiceMixin):
     # Financial Operations (delegated from DatabaseService)
     # ================================================================
 
+    @log_query_performance(operation="add_financial_entry", category="financial_write")
     async def add_financial_entry(self, entry_data: Dict[str, Any]) -> Dict[str, Any]:
         """Add a financial entry."""
         sql = """
@@ -529,6 +532,7 @@ class AdminDatabase(DatabaseServiceMixin):
             logger.error("[add_financial_entry] Failed to add financial entry", exc_info=True)
             return {}
 
+    @log_query_performance(operation="get_financial_summary", category="financial_retrieval")
     async def get_financial_summary(self, days: int = 30) -> Dict[str, Any]:
         """Get financial summary for the specified period."""
         sql = """
@@ -552,6 +556,7 @@ class AdminDatabase(DatabaseServiceMixin):
     # Agent Status Operations (delegated from DatabaseService)
     # ================================================================
 
+    @log_query_performance(operation="update_agent_status", category="agent_write")
     async def update_agent_status(
         self, agent_name: str, status: str, last_run=None, metadata: Optional[Dict] = None
     ) -> bool:
