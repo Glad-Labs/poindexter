@@ -4,6 +4,7 @@ FastAPI application serving as the central orchestrator for the Glad Labs ecosys
 Implements PostgreSQL database with REST API command queue integration
 """
 
+import asyncio
 import sys
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -142,6 +143,14 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         await services["task_executor"].start()
         logger.info("[LIFESPAN] ✅ Task executor started")
 
+        # Start the scheduled post publisher (publishes posts at their scheduled time)
+        from services.scheduled_publisher import run_scheduled_publisher
+        from dependencies import get_db_pool
+        scheduled_publisher_task = asyncio.create_task(
+            run_scheduled_publisher(get_db_pool)
+        )
+        logger.info("[LIFESPAN] ✅ Scheduled post publisher started")
+
         logger.info("[OK] Lifespan: Yielding control to FastAPI application. ..")
         try:
             logger.info("[OK] Application is now running")
@@ -165,6 +174,8 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             logger.info("[STOP] Shutting down application")
         except UnicodeEncodeError:
             logger.info("[STOP] Shutting down application")
+        if 'scheduled_publisher_task' in dir():
+            scheduled_publisher_task.cancel()
         await startup_manager.shutdown()
 
 
