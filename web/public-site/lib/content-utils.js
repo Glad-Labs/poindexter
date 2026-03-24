@@ -328,6 +328,11 @@ export function getInitials(name) {
 /**
  * Strip HTML tags from content
  * Used for word counting and plain text extraction
+ *
+ * IMPORTANT: Entity decoding happens AFTER tag stripping to prevent XSS.
+ * If entities were decoded first, encoded tags like &lt;script&gt; would be
+ * reconstructed into executable <script> tags before stripping.
+ * Instead we: strip tags → strip decoded tags again → then decode remaining entities.
  */
 export function stripHtmlTags(html) {
   if (!html || typeof html !== 'string') {
@@ -337,10 +342,11 @@ export function stripHtmlTags(html) {
   return html
     .replace(/<[^>]*>/g, '') // Remove HTML tags
     .replace(/&nbsp;/g, ' ') // Replace non-breaking spaces
-    .replace(/&amp;/g, '&') // Replace HTML entities
+    .replace(/&amp;/g, '&') // Decode HTML entities
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
+    .replace(/<[^>]*>/g, '') // Strip any tags reconstructed from decoded entities
     .trim();
 }

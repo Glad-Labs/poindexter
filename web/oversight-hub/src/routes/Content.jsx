@@ -8,21 +8,25 @@ import { logError } from '../services/errorLoggingService';
 function Content() {
   const navigate = useNavigate();
   const [contentItems, setContentItems] = useState([]);
+  const [totalPosts, setTotalPosts] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedTab, setSelectedTab] = useState('all');
   const [editingPost, setEditingPost] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const limit = 20;
 
   // Fetch posts from API
   useEffect(() => {
     fetchPosts();
-  }, []);
+  }, [page]);
 
   const fetchPosts = async () => {
     try {
       setLoading(true);
-      const response = await getPosts(0, 100, false);
+      const offset = (page - 1) * limit;
+      const response = await getPosts(offset, limit, false);
 
       // Handle various response formats from backend
       let posts = [];
@@ -30,10 +34,13 @@ function Content() {
         posts = response;
       } else if (response && typeof response === 'object') {
         posts = response.items || response.posts || response.data || [];
+        if (response.total != null) setTotalPosts(response.total);
       }
 
       // Ensure it's an array
-      setContentItems(Array.isArray(posts) ? posts : []);
+      const postsArray = Array.isArray(posts) ? posts : [];
+      setContentItems(postsArray);
+      if (response?.total == null) setTotalPosts(postsArray.length);
       setError(null);
     } catch (err) {
       logError(err, {
@@ -115,16 +122,11 @@ function Content() {
     return statusMatch && searchMatch;
   });
 
-  // Calculate stats
-  const totalPosts = contentItems.length;
+  // Calculate stats from current page
   const publishedPosts = contentItems.filter(
     (p) => p.status === 'published'
   ).length;
   const draftPosts = contentItems.filter((p) => p.status === 'draft').length;
-  const totalViews = contentItems.reduce(
-    (sum, p) => sum + (p.view_count || 0),
-    0
-  );
 
   return (
     <div className="content-container">
@@ -176,10 +178,16 @@ function Content() {
           </div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon">👁️</div>
+          <div className="stat-icon">📃</div>
           <div className="stat-content">
-            <h3 className="stat-value">{totalViews.toLocaleString()}</h3>
-            <p className="stat-label">Total Views</p>
+            <h3 className="stat-value">
+              {
+                contentItems.filter(
+                  (p) => p.status === 'in review' || p.status === 'in_review'
+                ).length
+              }
+            </h3>
+            <p className="stat-label">In Review</p>
           </div>
         </div>
       </div>
@@ -315,24 +323,34 @@ function Content() {
         </table>
       </div>
 
-      {/* Publishing Schedule */}
-      <div className="publishing-schedule">
-        <h2 className="section-title">📅 Publishing Schedule</h2>
-        <div className="schedule-grid">
-          <div className="schedule-item">
-            <div className="schedule-date">Oct 25</div>
-            <p className="schedule-content">Feature Release Announcement</p>
+      {/* Pagination Controls */}
+      {totalPosts > limit && (
+        <div className="pagination-container">
+          <div className="pagination-info">
+            Showing {Math.min((page - 1) * limit + 1, totalPosts)}-
+            {Math.min(page * limit, totalPosts)} of {totalPosts} posts
           </div>
-          <div className="schedule-item">
-            <div className="schedule-date">Oct 28</div>
-            <p className="schedule-content">Monthly Newsletter</p>
-          </div>
-          <div className="schedule-item">
-            <div className="schedule-date">Nov 1</div>
-            <p className="schedule-content">Q4 Metrics Report</p>
+          <div className="pagination-controls">
+            <button
+              onClick={() => setPage(page - 1)}
+              disabled={page === 1}
+              className="btn btn-secondary"
+            >
+              Previous
+            </button>
+            <span className="pagination-page">
+              Page {page} of {Math.ceil(totalPosts / limit)}
+            </span>
+            <button
+              onClick={() => setPage(page + 1)}
+              disabled={page * limit >= totalPosts}
+              className="btn btn-secondary"
+            >
+              Next
+            </button>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Categories */}
       <div className="content-categories">

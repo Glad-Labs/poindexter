@@ -92,3 +92,4 @@ docs/archive/
 # ============================================================
 Modelfile*
 *.gguf
+.env.local.backup

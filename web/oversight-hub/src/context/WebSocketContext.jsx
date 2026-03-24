@@ -30,6 +30,8 @@ const WebSocketContext = createContext(null);
  */
 export function WebSocketProvider({ children }) {
   const [isConnected, setIsConnected] = useState(false);
+  // 'idle' | 'connecting' | 'connected' | 'disconnected'
+  const [connectionStatus, setConnectionStatus] = useState('idle');
   const [connectionError, setConnectionError] = useState(null);
 
   // Consume auth state — WebSocketProvider is always rendered inside AuthProvider.
@@ -48,18 +50,22 @@ export function WebSocketProvider({ children }) {
     // Connect to WebSocket on mount
     const connectWebSocket = async () => {
       try {
+        setConnectionStatus('connecting');
         await websocketService.connect();
         setIsConnected(true);
+        setConnectionStatus('connected');
         setConnectionError(null);
       } catch (error) {
         logger.error('Failed to connect WebSocket:', error);
         setConnectionError(error.message);
+        setConnectionStatus('disconnected');
       }
     };
 
     // Subscribe to connection events
     const unsubscribeConnected = websocketService.subscribe('connected', () => {
       setIsConnected(true);
+      setConnectionStatus('connected');
       setConnectionError(null);
     });
 
@@ -67,6 +73,7 @@ export function WebSocketProvider({ children }) {
       'disconnected',
       () => {
         setIsConnected(false);
+        setConnectionStatus('disconnected');
       }
     );
 
@@ -86,6 +93,7 @@ export function WebSocketProvider({ children }) {
 
   const value = {
     isConnected,
+    connectionStatus,
     connectionError,
     service: websocketService,
   };

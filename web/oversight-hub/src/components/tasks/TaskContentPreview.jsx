@@ -37,14 +37,18 @@ const TaskContentPreview = ({ task, onTaskUpdate }) => {
   const handleSnackbarClose = () =>
     setSnackbar((prev) => ({ ...prev, open: false }));
 
-  // Extract title from content if it starts with markdown title
+  // Extract title from content if it starts with markdown heading
   const extractTitleFromContent = (content) => {
     if (!content) return { title: null, cleanedContent: content };
 
-    const match = content.match(/^#+\s+(.+?)(?:\n|$)/);
+    // Match first markdown heading (any level), handling leading whitespace/newlines
+    // Also strips any remaining '#' characters from the captured title text
+    const match = content.match(/^\s*#{1,6}\s+(.+?)(?:\n|$)/);
     if (match) {
-      const title = match[1].trim();
-      const cleanedContent = content.replace(/^#+\s+.+?(?:\n|$)/, '').trim();
+      let title = match[1].replace(/^#+\s*/, '').trim();
+      const cleanedContent = content
+        .replace(/^\s*#{1,6}\s+.+?(?:\n|$)/, '')
+        .trim();
       return { title, cleanedContent };
     }
     return { title: null, cleanedContent: content };

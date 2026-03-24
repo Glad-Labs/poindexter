@@ -227,10 +227,18 @@ describe('Content Utils (lib/content-utils.js)', () => {
       expect(stripped).not.toContain('onload');
     });
 
-    it('should decode HTML entities', () => {
+    it('should decode HTML entities without reconstructing executable tags', () => {
       const html = '<p>&lt;script&gt;alert()&lt;/script&gt;</p>';
       const stripped = stripHtmlTags(html);
-      expect(stripped).toBeDefined();
+      expect(stripped).not.toContain('<script>');
+      expect(stripped).not.toContain('</script>');
+      expect(stripped).not.toMatch(/<[^>]*>/);
+    });
+
+    it('should prevent XSS via double-encoded entities', () => {
+      const html = '&lt;script&gt;alert("xss")&lt;/script&gt;';
+      const stripped = stripHtmlTags(html);
+      expect(stripped).not.toContain('<script>');
     });
 
     it('should strip link tags and preserve text', () => {

@@ -256,12 +256,17 @@ export const TaskControlPanel = ({ task, onTaskUpdated }) => {
           </Button>
         )}
 
-        {/* No Actions Available */}
-        {!canPause && !canResume && !canCancel && !canDelete && (
-          <Typography variant="body2" color="textSecondary">
-            No actions available for this task status
-          </Typography>
-        )}
+        {/* No Actions Available - only show when task is in a terminal state
+            (not when approval actions may be available via TaskApprovalForm) */}
+        {!canPause &&
+          !canResume &&
+          !canCancel &&
+          !canDelete &&
+          ['completed', 'cancelled', 'failed'].includes(task.status) && (
+            <Typography variant="body2" color="textSecondary">
+              No actions available for this task status
+            </Typography>
+          )}
       </Stack>
 
       {/* Confirmation Dialog */}

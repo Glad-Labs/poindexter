@@ -45,7 +45,8 @@ function TaskManagement() {
   } = useFetchTasks(
     page,
     limit,
-    5000 // Auto-refresh every 5 seconds for responsive status updates
+    5000, // Auto-refresh every 5 seconds for responsive status updates
+    { status: statusFilter || undefined }
   );
 
   const normalizeDisplayText = (value) => {
@@ -128,16 +129,9 @@ function TaskManagement() {
     }
   };
 
-  // Filter and sort tasks
+  // Sort tasks (status filtering is now server-side via useFetchTasks)
   const getFilteredTasks = () => {
     let filtered = localTasks || [];
-
-    // Apply status filter
-    if (statusFilter && statusFilter !== '') {
-      filtered = filtered.filter(
-        (t) => t.status?.toLowerCase() === statusFilter.toLowerCase()
-      );
-    }
 
     // Apply sorting
     return filtered.sort((a, b) => {
@@ -503,20 +497,14 @@ function TaskManagement() {
                       })()}
                     </td>
                     <td className="actions">
-                      <button
-                        className="action-btn view"
-                        onClick={() => handleEditTask(task)}
-                        title="View Details"
-                        aria-label="View Details"
-                        disabled={deleting}
-                      >
-                        <span aria-hidden="true">👁️</span>
-                      </button>
                       {task.status?.toLowerCase() === 'running' && (
                         <>
                           <button
                             className="action-btn pause"
-                            onClick={() => handleTaskAction(task.id, 'pause')}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleTaskAction(task.id, 'pause');
+                            }}
                             title="Pause Task"
                             aria-label="Pause Task"
                             disabled={deleting}
@@ -525,7 +513,10 @@ function TaskManagement() {
                           </button>
                           <button
                             className="action-btn cancel"
-                            onClick={() => handleTaskAction(task.id, 'cancel')}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleTaskAction(task.id, 'cancel');
+                            }}
                             title="Cancel Task"
                             aria-label="Cancel Task"
                             disabled={deleting}
@@ -537,7 +528,10 @@ function TaskManagement() {
                       {task.status?.toLowerCase() === 'paused' && (
                         <button
                           className="action-btn resume"
-                          onClick={() => handleTaskAction(task.id, 'resume')}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleTaskAction(task.id, 'resume');
+                          }}
                           title="Resume Task"
                           aria-label="Resume Task"
                           disabled={deleting}
@@ -548,7 +542,10 @@ function TaskManagement() {
                       {task.status?.toLowerCase() === 'failed' && (
                         <button
                           className="action-btn retry"
-                          onClick={() => handleTaskAction(task.id, 'retry')}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleTaskAction(task.id, 'retry');
+                          }}
                           title="Retry Task"
                           aria-label="Retry Task"
                           disabled={deleting}

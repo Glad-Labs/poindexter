@@ -204,15 +204,15 @@ export async function refreshAccessToken() {
   }
 }
 
-export async function getTasks(limit = 50, offset = 0) {
-  return makeRequest(
-    `/api/tasks?limit=${limit}&offset=${offset}`,
-    'GET',
-    null,
-    false,
-    null,
-    120000
-  ); // 120 second timeout
+export async function getTasks(
+  limit = 50,
+  offset = 0,
+  { status, search } = {}
+) {
+  const params = new URLSearchParams({ limit, offset });
+  if (status) params.set('status', status);
+  if (search) params.set('search', search);
+  return makeRequest(`/api/tasks?${params}`, 'GET', null, false, null, 120000); // 120 second timeout
 }
 
 export async function getTaskStatus(taskId) {

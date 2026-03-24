@@ -40,7 +40,7 @@ export function NotificationCenter() {
   const [currentNotification, setCurrentNotification] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
-  const { isConnected } = useWebSocket();
+  const { isConnected, connectionStatus } = useWebSocket();
 
   useEffect(() => {
     // Subscribe to notification service
@@ -104,7 +104,11 @@ export function NotificationCenter() {
             gap: 1,
             mb: 2,
             fontSize: '0.875rem',
-            color: isConnected ? '#4caf50' : '#f44336',
+            color: isConnected
+              ? '#4caf50'
+              : connectionStatus === 'connecting'
+                ? '#ff9800'
+                : '#f44336',
           }}
         >
           {/* Use role=status + aria-live so status changes are announced.
@@ -113,11 +117,27 @@ export function NotificationCenter() {
             role="status"
             aria-live="polite"
             aria-label={
-              isConnected ? 'WebSocket connected' : 'WebSocket disconnected'
+              isConnected
+                ? 'WebSocket connected'
+                : connectionStatus === 'connecting'
+                  ? 'WebSocket connecting'
+                  : 'WebSocket disconnected'
             }
           >
-            <span aria-hidden="true">{isConnected ? '🟢' : '🔴'}</span>{' '}
-            {isConnected ? 'Connected' : 'Disconnected'}
+            <span aria-hidden="true">
+              {isConnected
+                ? '🟢'
+                : connectionStatus === 'connecting'
+                  ? '🟡'
+                  : '🔴'}
+            </span>{' '}
+            {isConnected
+              ? 'Connected'
+              : connectionStatus === 'connecting'
+                ? 'Connecting...'
+                : connectionStatus === 'idle'
+                  ? ''
+                  : 'Disconnected'}
           </span>
         </Box>
 

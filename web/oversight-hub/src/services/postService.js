@@ -40,3 +40,7 @@ export async function publishPost(postId) {
 export async function archivePost(postId) {
   return updatePost(postId, { status: 'archived' });
 }
+
+export async function schedulePost(postId, publishAt) {
+  return updatePost(postId, { status: 'scheduled', published_at: publishAt });
+}

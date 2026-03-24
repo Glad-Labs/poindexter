@@ -23,7 +23,7 @@ logger = get_logger(__name__)
 class ContentConstraints:
     """Represents content generation constraints"""
 
-    word_count: int = 1500  # Target word count (300-5000)
+    word_count: int = 1800  # Target word count (300-5000)
     writing_style: str = (
         "educational"  # Style: technical, narrative, listicle, educational, thought-leadership
     )

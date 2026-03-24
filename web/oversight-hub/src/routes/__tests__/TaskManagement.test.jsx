@@ -249,35 +249,24 @@ describe('TaskManagement — status filter', () => {
     setupHook();
   });
 
-  it('filters tasks by status when filter applied', () => {
+  it('passes status filter to useFetchTasks for server-side filtering', () => {
     renderComponent();
     fireEvent.click(screen.getByTestId('filter-completed'));
-    // After filtering: only completed task should show
-    expect(screen.getByText('Blog Post Alpha')).toBeInTheDocument();
-    expect(screen.queryByText('Blog Post Beta')).not.toBeInTheDocument();
+    // useFetchTasks should be called with status: 'completed' in the options
+    const lastCall =
+      mockUseFetchTasks.mock.calls[mockUseFetchTasks.mock.calls.length - 1];
+    expect(lastCall[3]).toEqual(
+      expect.objectContaining({ status: 'completed' })
+    );
   });
 
-  it('shows "no tasks found with filter" message when filter has no matches', () => {
-    setupHook([{ ...MOCK_TASKS[0], status: 'completed' }]);
+  it('reset filters clears status parameter', () => {
     renderComponent();
     fireEvent.click(screen.getByTestId('filter-completed'));
-    // All tasks pass this filter — no empty state
-    // Test with a different filter that results in empty
-    setupHook([]);
-    const { rerender } = render(<TaskManagement />);
-    // Apply filter with empty task list after status filter
-  });
-
-  it('reset filters restores all tasks', () => {
-    renderComponent();
-    fireEvent.click(screen.getByTestId('filter-completed'));
-    // Only completed visible
-    expect(screen.queryByText('Blog Post Beta')).not.toBeInTheDocument();
-
-    // Reset
     fireEvent.click(screen.getByTestId('reset-filters'));
-    // All tasks visible again
-    expect(screen.getByText('Blog Post Beta')).toBeInTheDocument();
+    const lastCall =
+      mockUseFetchTasks.mock.calls[mockUseFetchTasks.mock.calls.length - 1];
+    expect(lastCall[3]).toEqual(expect.objectContaining({ status: undefined }));
   });
 });
 
@@ -413,10 +402,12 @@ describe('TaskManagement — Clear Filters button', () => {
     renderComponent();
     // Apply a filter first
     fireEvent.click(screen.getByTestId('filter-completed'));
-    expect(screen.queryByText('Blog Post Beta')).not.toBeInTheDocument();
     // Clear using the page's own button (not the TaskFilters mock's Reset button)
     fireEvent.click(screen.getByText(/Clear Filters/));
-    expect(screen.getByText('Blog Post Beta')).toBeInTheDocument();
+    // Status filter should be cleared (undefined) in the hook call
+    const lastCall =
+      mockUseFetchTasks.mock.calls[mockUseFetchTasks.mock.calls.length - 1];
+    expect(lastCall[3]).toEqual(expect.objectContaining({ status: undefined }));
   });
 });
 
@@ -485,10 +476,10 @@ describe('TaskManagement — a11y: action button accessible names (issue #759)',
     setupHook();
   });
 
-  it('View Details button has aria-label', () => {
+  it('task rows are clickable for viewing details (View Details button removed — row click is primary)', () => {
     renderComponent();
-    const viewButtons = screen.getAllByRole('button', { name: 'View Details' });
-    expect(viewButtons.length).toBeGreaterThan(0);
+    const rows = screen.getAllByRole('button', { name: /View details for/i });
+    expect(rows.length).toBeGreaterThan(0);
   });
 
   it('Reject Task button has aria-label', () => {

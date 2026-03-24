@@ -24,11 +24,37 @@ function PostEditor({ post, onClose, onSave }) {
     seo_description: '',
     seo_keywords: '',
     status: 'published',
+    published_at: '',
   });
 
+  const [editorMode, setEditorMode] = useState('edit'); // 'edit' | 'preview' | 'split'
   const [showPreview, setShowPreview] = useState(false);
   const [saving, setSaving] = useState(false);
   const dialogRef = useRef(null);
+  const textareaRef = useRef(null);
+
+  // Insert markdown formatting at cursor position
+  const insertMarkdown = (before, after = '') => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = formData.content;
+    const selected = text.substring(start, end);
+    const newText =
+      text.substring(0, start) +
+      before +
+      selected +
+      after +
+      text.substring(end);
+    setFormData((prev) => ({ ...prev, content: newText }));
+    // Restore cursor position after state update
+    setTimeout(() => {
+      textarea.focus();
+      const cursorPos = start + before.length + selected.length + after.length;
+      textarea.setSelectionRange(cursorPos, cursorPos);
+    }, 0);
+  };
 
   // Focus trap and Escape key handler
   useEffect(() => {
@@ -84,6 +110,9 @@ function PostEditor({ post, onClose, onSave }) {
         seo_description: post.seo_description || post.excerpt || '',
         seo_keywords: post.seo_keywords || '',
         status: post.status || 'published',
+        published_at: post.published_at
+          ? new Date(post.published_at).toISOString().slice(0, 16)
+          : '',
       });
     }
   }, [post]);
@@ -119,13 +148,34 @@ function PostEditor({ post, onClose, onSave }) {
   const renderPreview = (markdown) => {
     if (!markdown) return '<p>No content</p>';
 
-    // Basic markdown conversion
+    // Enhanced markdown conversion
     const html = markdown
+      // Code blocks (fenced)
+      .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+      // Inline code
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      // Headings
+      .replace(/^#### (.*$)/gim, '<h4>$1</h4>')
       .replace(/^### (.*$)/gim, '<h3>$1</h3>')
       .replace(/^## (.*$)/gim, '<h2>$1</h2>')
       .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+      // Bold and italic
+      .replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>')
       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.*?)\*/g, '<em>$1</em>')
+      // Links and images
+      .replace(
+        /!\[([^\]]*)\]\(([^)]+)\)/g,
+        '<img src="$2" alt="$1" style="max-width:100%" />'
+      )
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+      // Blockquotes
+      .replace(/^> (.*$)/gim, '<blockquote>$1</blockquote>')
+      // Unordered lists
+      .replace(/^[\-\*] (.*$)/gim, '<li>$1</li>')
+      // Horizontal rule
+      .replace(/^---$/gim, '<hr/>')
+      // Paragraphs
       .replace(/\n\n/g, '</p><p>')
       .replace(/\n/g, '<br/>');
 
@@ -149,9 +199,12 @@ function PostEditor({ post, onClose, onSave }) {
         'h1',
         'h2',
         'h3',
+        'h4',
         'br',
+        'hr',
+        'img',
       ],
-      ALLOWED_ATTR: ['href', 'title'],
+      ALLOWED_ATTR: ['href', 'title', 'src', 'alt', 'style'],
       FORCE_BODY: true,
     });
   };
@@ -248,34 +301,123 @@ function PostEditor({ post, onClose, onSave }) {
             <div className="form-group">
               <div className="editor-header">
                 <label htmlFor="content">Content (Markdown) *</label>
-                <button
-                  type="button"
-                  className="toggle-preview-btn"
-                  onClick={() => setShowPreview(!showPreview)}
-                >
-                  {showPreview ? '📝 Edit' : '👁️ Preview'}
-                </button>
+                <div className="editor-mode-buttons">
+                  <button
+                    type="button"
+                    className={`mode-btn ${editorMode === 'edit' ? 'active' : ''}`}
+                    onClick={() => setEditorMode('edit')}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    className={`mode-btn ${editorMode === 'split' ? 'active' : ''}`}
+                    onClick={() => setEditorMode('split')}
+                  >
+                    Split
+                  </button>
+                  <button
+                    type="button"
+                    className={`mode-btn ${editorMode === 'preview' ? 'active' : ''}`}
+                    onClick={() => setEditorMode('preview')}
+                  >
+                    Preview
+                  </button>
+                </div>
               </div>
 
-              {!showPreview ? (
-                <textarea
-                  id="content"
-                  name="content"
-                  value={formData.content}
-                  onChange={handleChange}
-                  placeholder="Write your content in Markdown..."
-                  rows="15"
-                  required
-                  className="content-editor"
-                />
-              ) : (
-                <div
-                  className="content-preview"
-                  dangerouslySetInnerHTML={{
-                    __html: renderPreview(formData.content),
-                  }}
-                />
+              {/* Markdown Toolbar */}
+              {editorMode !== 'preview' && (
+                <div className="markdown-toolbar">
+                  <button
+                    type="button"
+                    title="Bold"
+                    onClick={() => insertMarkdown('**', '**')}
+                  >
+                    B
+                  </button>
+                  <button
+                    type="button"
+                    title="Italic"
+                    onClick={() => insertMarkdown('*', '*')}
+                  >
+                    <em>I</em>
+                  </button>
+                  <button
+                    type="button"
+                    title="Heading 2"
+                    onClick={() => insertMarkdown('\n## ')}
+                  >
+                    H2
+                  </button>
+                  <button
+                    type="button"
+                    title="Heading 3"
+                    onClick={() => insertMarkdown('\n### ')}
+                  >
+                    H3
+                  </button>
+                  <button
+                    type="button"
+                    title="Link"
+                    onClick={() => insertMarkdown('[', '](url)')}
+                  >
+                    Link
+                  </button>
+                  <button
+                    type="button"
+                    title="Image"
+                    onClick={() => insertMarkdown('![alt](', ')')}
+                  >
+                    Img
+                  </button>
+                  <button
+                    type="button"
+                    title="Bullet List"
+                    onClick={() => insertMarkdown('\n- ')}
+                  >
+                    List
+                  </button>
+                  <button
+                    type="button"
+                    title="Code"
+                    onClick={() => insertMarkdown('`', '`')}
+                  >
+                    Code
+                  </button>
+                  <button
+                    type="button"
+                    title="Blockquote"
+                    onClick={() => insertMarkdown('\n> ')}
+                  >
+                    Quote
+                  </button>
+                </div>
               )}
+
+              <div className={`editor-panes ${editorMode}`}>
+                {editorMode !== 'preview' && (
+                  <textarea
+                    ref={textareaRef}
+                    id="content"
+                    name="content"
+                    value={formData.content}
+                    onChange={handleChange}
+                    placeholder="Write your content in Markdown..."
+                    rows="15"
+                    required
+                    className="content-editor"
+                  />
+                )}
+                {editorMode !== 'edit' && (
+                  <div
+                    className="content-preview"
+                    dangerouslySetInnerHTML={{
+                      __html: renderPreview(formData.content),
+                    }}
+                  />
+                )}
+              </div>
             </div>
 
             {/* SEO Section */}
@@ -339,10 +481,27 @@ function PostEditor({ post, onClose, onSave }) {
                 onChange={handleChange}
               >
                 <option value="draft">Draft</option>
+                <option value="scheduled">Scheduled</option>
                 <option value="published">Published</option>
                 <option value="archived">Archived</option>
               </select>
             </div>
+
+            {/* Schedule Date (shown when status is 'scheduled') */}
+            {formData.status === 'scheduled' && (
+              <div className="form-group">
+                <label htmlFor="published_at">Publish At</label>
+                <input
+                  type="datetime-local"
+                  id="published_at"
+                  name="published_at"
+                  value={formData.published_at}
+                  onChange={handleChange}
+                  min={new Date().toISOString().slice(0, 16)}
+                  required
+                />
+              </div>
+            )}
           </div>
 
           {/* Footer Actions */}

@@ -13,14 +13,7 @@ export default function robots(): MetadataRoute.Robots {
         disallow: ['/_next/', '/api/', '/.well-known/', '/admin/', '/private/'],
       },
       {
-        userAgent: 'AhrefsBot',
-        disallow: '/',
-      },
-      {
-        userAgent: 'SemrushBot',
-        disallow: '/',
-      },
-      {
+        // Block aggressive scrapers that don't contribute to SEO
         userAgent: 'DotBot',
         disallow: '/',
       },

@@ -328,10 +328,21 @@ async def update_post(
     """
     try:
         allowed = {"title", "slug", "content", "excerpt", "featured_image_url",
-                   "status", "tags", "seo_title", "seo_description", "seo_keywords"}
+                   "status", "tags", "seo_title", "seo_description", "seo_keywords",
+                   "published_at"}
         filtered = {k: v for k, v in updates.items() if k in allowed}
         if not filtered:
             raise HTTPException(status_code=400, detail="No valid fields to update")
+
+        # Handle scheduling: if status is 'scheduled', published_at must be a future date
+        if filtered.get("status") == "scheduled":
+            pub_at = filtered.get("published_at")
+            if not pub_at:
+                raise HTTPException(status_code=400, detail="published_at is required when scheduling a post")
+        # When publishing immediately, set published_at to now if not provided
+        elif filtered.get("status") == "published" and "published_at" not in filtered:
+            from datetime import datetime, timezone
+            filtered["published_at"] = datetime.now(timezone.utc).isoformat()
 
         # Build parameterized SET clause
         set_parts = []

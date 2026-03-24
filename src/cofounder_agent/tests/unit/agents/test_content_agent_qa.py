@@ -3,7 +3,7 @@ Unit tests for agents/content_agent/agents/qa_agent.py — QAAgent
 
 Tests focus on:
 - QAAgent.run(): JSON parsing, approval logic, quality score tracking
-- Score threshold enforcement (>= 70 required)
+- Score threshold enforcement (>= 75 required)
 - LLM error fallback
 - Feedback normalization
 """
@@ -77,20 +77,20 @@ class TestQAAgentRun:
         assert "85.0" in feedback or "approved" in feedback.lower()
 
     @pytest.mark.asyncio
-    async def test_returns_rejected_when_score_below_70_even_if_llm_approved(self):
+    async def test_returns_rejected_when_score_below_75_even_if_llm_approved(self):
         agent, llm_client, pm = make_qa_agent()
         llm_client.generate_json = AsyncMock(return_value={
             "approved": True,
             "feedback": "OK content.",
-            "quality_score": 60.0,
+            "quality_score": 72.0,
         })
         post = make_blog_post(quality_scores=[])
 
         approved, feedback = await agent.run(post, "Draft content")
 
-        # Score 60 < 70 overrides the LLM's approval
+        # Score 72 < 75 overrides the LLM's approval
         assert approved is False
-        assert "60" in feedback or "threshold" in feedback.lower()
+        assert "72" in feedback or "threshold" in feedback.lower()
 
     @pytest.mark.asyncio
     async def test_returns_rejected_when_llm_explicitly_rejects(self):

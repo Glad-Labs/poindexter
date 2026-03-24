@@ -10,6 +10,7 @@ import {
 } from '../../../components/StructuredData';
 import { generateBlogPostingSchema } from '../../../lib/structured-data';
 import { GiscusWrapper } from '../../../components/GiscusWrapper';
+import AdUnit from '../../../components/AdUnit';
 import sanitizeHtml from 'sanitize-html';
 import {
   buildMetaDescription,
@@ -349,10 +350,14 @@ export default async function PostPage({
           </div>
         </div>
 
-        {/* AdSense Placeholder */}
+        {/* AdSense — Bottom of article */}
         <div className="px-4 sm:px-6 lg:px-8 pb-12">
-          <div className="max-w-4xl mx-auto bg-slate-800/50 border border-slate-700 rounded-lg p-8 text-center">
-            <p className="text-slate-400 text-sm">Advertisement</p>
+          <div className="max-w-4xl mx-auto">
+            <AdUnit
+              slot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_ID || ''}
+              format="horizontal"
+              className="my-4"
+            />
           </div>
         </div>
 

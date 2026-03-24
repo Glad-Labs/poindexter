@@ -144,18 +144,21 @@ describe('TaskControlPanel Component', () => {
     });
   });
 
-  test('shows message when no actions are available', () => {
-    const inmovableTask = { ...mockTask, status: 'unknown' };
+  test('does not show "no actions" message for actionable terminal statuses', () => {
+    // Completed tasks have canDelete=true, so the "no actions" message should NOT appear
+    const completedTask = { ...mockTask, status: 'completed' };
     render(
       <TaskControlPanel
-        task={inmovableTask}
+        task={completedTask}
         onTaskUpdated={mockOnTaskUpdated}
       />
     );
 
     expect(
-      screen.getByText(/No actions available for this task status/i)
-    ).toBeInTheDocument();
+      screen.queryByText(/No actions available for this task status/i)
+    ).not.toBeInTheDocument();
+    // Delete button should be present instead
+    expect(screen.getByText('Delete')).toBeInTheDocument();
   });
 
   test('disables buttons while action is loading', () => {
