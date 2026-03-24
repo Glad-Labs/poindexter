@@ -39,16 +39,23 @@ describe('robots()', () => {
     expect(defaultRule.disallow).toContain('/private/');
   });
 
-  it('should block AhrefsBot, SemrushBot, and DotBot entirely', async () => {
+  it('should block DotBot and allow AhrefsBot/SemrushBot for SEO analysis', async () => {
     process.env.NEXT_PUBLIC_SITE_URL = 'https://example.com';
     const { default: robots } = await import('../../app/robots');
     const result = robots();
 
-    for (const bot of ['AhrefsBot', 'SemrushBot', 'DotBot']) {
-      const rule = result.rules.find((r) => r.userAgent === bot);
-      expect(rule).toBeDefined();
-      expect(rule.disallow).toBe('/');
-    }
+    // DotBot is blocked (aggressive scraper)
+    const dotbot = result.rules.find((r) => r.userAgent === 'DotBot');
+    expect(dotbot).toBeDefined();
+    expect(dotbot.disallow).toBe('/');
+
+    // AhrefsBot and SemrushBot are intentionally NOT blocked (needed for SEO backlink analysis)
+    expect(
+      result.rules.find((r) => r.userAgent === 'AhrefsBot')
+    ).toBeUndefined();
+    expect(
+      result.rules.find((r) => r.userAgent === 'SemrushBot')
+    ).toBeUndefined();
   });
 
   it('should include sitemap URL', async () => {
