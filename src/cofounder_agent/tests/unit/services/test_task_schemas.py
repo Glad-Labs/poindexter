@@ -254,11 +254,11 @@ class TestTaskStatusUpdateRequest:
             status="published",
             updated_by="editor@example.com",
             reason="Content approved after review",
-            result={"content": "Final post text"},
+            result="Final post text",
             metadata={"score": 9.1},
         )
         assert req.updated_by == "editor@example.com"
-        assert req.result == {"content": "Final post text"}
+        assert req.result == "Final post text"
         assert req.metadata["score"] == 9.1  # type: ignore[index]
 
 
