@@ -1,26 +1,21 @@
 # Content Agent System
 
-> **Note:** This README references Strapi CMS integration which has been replaced.
-> Content is now published directly to PostgreSQL via the `content_db` module.
-> Strapi client code (`strapi_client.py`) is deprecated dead code (#833).
-
-**Status:** ✅ ACTIVE & PRODUCTION-READY
-**Last Updated:** March 18, 2026
-**Version:** 3.0.66+
+**Status:** Active
+**Version:** 3.0.82
 **Architecture:** Self-Critiquing Multi-Agent Pipeline
+
+Content is published directly to PostgreSQL via the `content_db` module.
 
 ---
 
-## ⚠️ IMPORTANT: This System is ACTIVE
+## Overview
 
-**This is NOT dead code.** The content agent system is a **fully integrated, production-ready** component of Glad Labs that orchestrates sophisticated AI-powered content creation through a self-critiquing pipeline.
-
-**DO NOT REMOVE** - This system is actively used for:
+The content agent system orchestrates AI-powered content creation through a self-critiquing pipeline:
 
 - Blog post generation with quality feedback loops
 - Multi-format content creation (markdown, HTML, JSON)
 - SEO-optimized content with metadata
-- Strapi CMS publishing pipeline
+- PostgreSQL publishing via content_db
 - Real-time monitoring and feedback
 
 ---
@@ -39,7 +34,7 @@ Research → Creative → QA Critique → Creative Refinement → Image → Publ
 - ✅ Modular: Use full pipeline OR individual agents
 - ✅ Multi-provider: Automatic LLM fallback (Ollama → Claude → GPT → Gemini)
 - ✅ Production-ready: 50+ tests passing
-- ✅ Fully integrated: Works with Strapi CMS and Co-Founder orchestrator
+- ✅ Fully integrated: Works with PostgreSQL and Co-Founder orchestrator
 
 ---
 
@@ -88,9 +83,9 @@ Research → Creative → QA Critique → Creative Refinement → Image → Publ
 
 #### **6. Publishing Agent**
 
-- **Purpose**: Formats content for Strapi CMS publication
+- **Purpose**: Formats content for PostgreSQL publication
 - **Capabilities**: CMS formatting, SEO optimization, structured data creation
-- **Output**: Strapi-compatible document ready for publication
+- **Output**: PostgreSQL-compatible document ready for publication
 
 ---
 
@@ -145,7 +140,7 @@ QA Agent → Evaluation & Feedback
 ├─→ NO → Creative Agent (Refine) → Draft (v2) → back to QA
 └─→ YES → Image Agent → Images
     ↓
-Publishing Agent → Strapi Format
+Publishing Agent → PostgreSQL Format
     ↓
 🎉 Published to CMS
 ```
@@ -169,12 +164,12 @@ async def generate_blog_post(request: BlogPostRequest):
     return {"status": "published", "post_id": result["strapi_id"]}
 ```
 
-### With Strapi CMS
+### With PostgreSQL
 
-Publishing Agent automatically formats for Strapi:
+Publishing Agent automatically formats for PostgreSQL:
 
 ```python
-# Converts to Strapi collection format
+# Converts to PostgreSQL collection format
 strapi_document = {
     "title": content["title"],
     "slug": generate_slug(content["title"]),
@@ -307,17 +302,17 @@ curl http://localhost:11434/api/tags
 
 #### **5. Publishing Agent**
 
-- **Purpose**: Formats and publishes final content to Strapi CMS
+- **Purpose**: Formats and publishes final content to PostgreSQL
 - **Capabilities**: Markdown processing, metadata formatting, API integration
 - **Validation**: Content structure verification before publication
-- **Output**: Published post with Strapi ID and URL
+- **Output**: Published post with PostgreSQL ID and URL
 
 ### **Service Layer**
 
 #### **External API Clients**
 
 - **`llm_client.py`**: OpenAI GPT integration for content generation
-- **`strapi_client.py`**: Strapi v5 API communication for publishing
+- **`strapi_client.py`**: PostgreSQL v5 API communication for publishing
 - **`pexels_client.py`**: Image sourcing from Pexels stock library
 - **`gcs_client.py`**: Google Cloud Storage for image hosting
 - **`firestore_client.py`**: Firebase logging and task tracking
@@ -355,7 +350,7 @@ graph TD
 3. **Content Generation**: Create initial draft with SEO optimization
 4. **Quality Review**: Automated assessment with refinement loops
 5. **Image Processing**: Source and optimize relevant images
-6. **Final Publishing**: Format and publish to Strapi CMS
+6. **Final Publishing**: Format and publish to PostgreSQL
 7. **Completion Logging**: Record success metrics and performance data
 
 ### **Quality Assurance Loop**
@@ -377,7 +372,7 @@ The QA Agent implements a sophisticated review process:
 - Python 3.12+
 - OpenAI API key
 - Pexels API key
-- Strapi v5 backend running
+- PostgreSQL v5 backend running
 - Google Cloud credentials (optional)
 
 ### **Environment Configuration**
@@ -432,7 +427,7 @@ python orchestrator.py
 ### **Integration Points**
 
 - **Oversight Hub**: Real-time monitoring and control interface
-- **Strapi CMS**: Automatic content publishing and management
+- **PostgreSQL**: Automatic content publishing and management
 - **Firebase**: Operational logging and metrics storage
 - **Google Cloud**: Optional cloud deployment and storage
 
