@@ -62,8 +62,11 @@ const useWorkflowExecution = ({ onHistoryRefresh } = {}) => {
 
     let active = true;
     let intervalId;
+    const controller = new AbortController();
+    let pollInterval = 2000; // Start at 2s, increase on errors
 
     const pollExecutionStatus = async () => {
+      if (controller.signal.aborted) return;
       try {
         const execution =
           await workflowBuilderService.getExecutionStatus(executionId);
@@ -106,14 +109,19 @@ const useWorkflowExecution = ({ onHistoryRefresh } = {}) => {
         setExecutionPollingError(
           pollError?.message || 'Failed to refresh execution status'
         );
+        // Back off on errors: 2s → 4s → 8s → 15s max
+        pollInterval = Math.min(pollInterval * 2, 15000);
+        clearInterval(intervalId);
+        intervalId = setInterval(pollExecutionStatus, pollInterval);
       }
     };
 
     pollExecutionStatus();
-    intervalId = setInterval(pollExecutionStatus, 2000);
+    intervalId = setInterval(pollExecutionStatus, pollInterval);
 
     return () => {
       active = false;
+      controller.abort();
       if (intervalId) {
         clearInterval(intervalId);
       }

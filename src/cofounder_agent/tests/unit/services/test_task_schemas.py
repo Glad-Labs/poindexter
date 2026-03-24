@@ -11,9 +11,9 @@ from schemas.task_schemas import (
     ApproveTaskRequest,
     ContentConstraints,
     TaskCreateRequest,
-    TaskStatusUpdateRequest,
     UnifiedTaskRequest,
 )
+from schemas.task_status_schemas import TaskStatusUpdateRequest
 
 
 # ---------------------------------------------------------------------------

@@ -25,14 +25,15 @@ vi.mock('../../hooks/useAuth', () => ({
 }));
 
 // ── stub all heavy page/component imports to avoid their API calls ────────────
-vi.mock('../index', () => ({
-  Settings: () => <div data-testid="settings-page">Settings</div>,
-  TaskManagement: () => (
-    <div data-testid="task-management-page">TaskManagement</div>
-  ),
-  CostMetricsDashboard: () => (
-    <div data-testid="cost-metrics-page">CostMetrics</div>
-  ),
+// These are now lazy-imported directly (not through ../index)
+vi.mock('../Settings', () => ({
+  default: () => <div data-testid="settings-page">Settings</div>,
+}));
+vi.mock('../TaskManagement', () => ({
+  default: () => <div data-testid="task-management-page">TaskManagement</div>,
+}));
+vi.mock('../CostMetricsDashboard', () => ({
+  default: () => <div data-testid="cost-metrics-page">CostMetrics</div>,
 }));
 
 vi.mock('../../components/pages/ExecutiveDashboard', () => ({
@@ -140,56 +141,67 @@ describe('AppRoutes', () => {
   });
 
   describe('protected routes (authenticated)', () => {
-    it('renders ExecutiveDashboard at /', () => {
+    // Routes use React.lazy — findByTestId waits for Suspense to resolve
+    it('renders ExecutiveDashboard at /', async () => {
       renderAt('/', AUTHENTICATED);
-      expect(screen.getByTestId('executive-dashboard')).toBeInTheDocument();
-    });
-
-    it('renders TaskManagement at /tasks', () => {
-      renderAt('/tasks', AUTHENTICATED);
-      expect(screen.getByTestId('task-management-page')).toBeInTheDocument();
-    });
-
-    it('renders Content at /content', () => {
-      renderAt('/content', AUTHENTICATED);
-      expect(screen.getByTestId('content-page')).toBeInTheDocument();
-    });
-
-    it('renders ApprovalQueue at /approvals', () => {
-      renderAt('/approvals', AUTHENTICATED);
-      expect(screen.getByTestId('approval-queue-page')).toBeInTheDocument();
-    });
-
-    it('renders AIStudio at /ai', () => {
-      renderAt('/ai', AUTHENTICATED);
-      expect(screen.getByTestId('ai-studio-page')).toBeInTheDocument();
-    });
-
-    it('renders Settings at /settings', () => {
-      renderAt('/settings', AUTHENTICATED);
-      expect(screen.getByTestId('settings-page')).toBeInTheDocument();
-    });
-
-    it('renders CostMetricsDashboard at /costs', () => {
-      renderAt('/costs', AUTHENTICATED);
-      expect(screen.getByTestId('cost-metrics-page')).toBeInTheDocument();
-    });
-
-    it('renders PerformanceDashboard at /performance', () => {
-      renderAt('/performance', AUTHENTICATED);
       expect(
-        screen.getByTestId('performance-dashboard-page')
+        await screen.findByTestId('executive-dashboard')
       ).toBeInTheDocument();
     });
 
-    it('renders BlogWorkflowPage at /workflows', () => {
-      renderAt('/workflows', AUTHENTICATED);
-      expect(screen.getByTestId('blog-workflow-page')).toBeInTheDocument();
+    it('renders TaskManagement at /tasks', async () => {
+      renderAt('/tasks', AUTHENTICATED);
+      expect(
+        await screen.findByTestId('task-management-page')
+      ).toBeInTheDocument();
     });
 
-    it('renders UnifiedServicesPanel at /services', () => {
+    it('renders Content at /content', async () => {
+      renderAt('/content', AUTHENTICATED);
+      expect(await screen.findByTestId('content-page')).toBeInTheDocument();
+    });
+
+    it('renders ApprovalQueue at /approvals', async () => {
+      renderAt('/approvals', AUTHENTICATED);
+      expect(
+        await screen.findByTestId('approval-queue-page')
+      ).toBeInTheDocument();
+    });
+
+    it('renders AIStudio at /ai', async () => {
+      renderAt('/ai', AUTHENTICATED);
+      expect(await screen.findByTestId('ai-studio-page')).toBeInTheDocument();
+    });
+
+    it('renders Settings at /settings', async () => {
+      renderAt('/settings', AUTHENTICATED);
+      expect(await screen.findByTestId('settings-page')).toBeInTheDocument();
+    });
+
+    it('renders CostMetricsDashboard at /costs', async () => {
+      renderAt('/costs', AUTHENTICATED);
+      expect(
+        await screen.findByTestId('cost-metrics-page')
+      ).toBeInTheDocument();
+    });
+
+    it('renders PerformanceDashboard at /performance', async () => {
+      renderAt('/performance', AUTHENTICATED);
+      expect(
+        await screen.findByTestId('performance-dashboard-page')
+      ).toBeInTheDocument();
+    });
+
+    it('renders BlogWorkflowPage at /workflows', async () => {
+      renderAt('/workflows', AUTHENTICATED);
+      expect(
+        await screen.findByTestId('blog-workflow-page')
+      ).toBeInTheDocument();
+    });
+
+    it('renders UnifiedServicesPanel at /services', async () => {
       renderAt('/services', AUTHENTICATED);
-      expect(screen.getByTestId('unified-services')).toBeInTheDocument();
+      expect(await screen.findByTestId('unified-services')).toBeInTheDocument();
     });
   });
 
