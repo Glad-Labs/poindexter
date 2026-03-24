@@ -86,7 +86,7 @@ class JWTTokenValidator:
 
         # Development: Allow disabling auth for testing — ONLY when DEVELOPMENT_MODE=true (#1219)
         if (
-            os.getenv("DISABLE_AUTH_FOR_DEV") == "true"
+            os.getenv("DISABLE_AUTH_FOR_DEV", "false").lower() == "true"
             and os.getenv("DEVELOPMENT_MODE", "false").lower() == "true"
         ):
             return {
