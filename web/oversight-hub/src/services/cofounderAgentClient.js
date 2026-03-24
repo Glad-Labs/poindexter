@@ -70,11 +70,11 @@ export async function makeRequest(
       clearTimeout(timeoutId);
 
       if (response.status === 401 && !retry) {
-        // Try to refresh token in development
+        // Try to refresh token in development — do NOT clear existing state
+        // (other requests may be in-flight with a valid token)
         if (process.env.NODE_ENV === 'development') {
           try {
             const { initializeDevToken } = await import('./authService');
-            clearPersistedAuthState();
             await initializeDevToken({
               forceRefresh: true,
               validateWithBackend: false,

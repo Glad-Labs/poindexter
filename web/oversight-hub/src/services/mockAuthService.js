@@ -73,22 +73,51 @@ export const exchangeCodeForToken = async (code) => {
       throw new Error('Invalid mock auth code');
     }
 
-    // Simulate a successful token response
-    const mockUser = {
-      id: 'mock_user_12345',
-      login: 'dev-user',
-      email: 'dev@example.com',
-      name: 'Development User',
-      avatar_url: 'https://avatars.githubusercontent.com/u/1?v=4',
-    };
+    // Fetch a real backend-signed JWT from the dev-token endpoint
+    // This ensures all API calls use a valid token that passes JWT verification
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    let mockToken;
+    let mockUser;
 
-    // Use dev-token format that backend recognizes (bypasses JWT validation)
-    // Backend auth_unified.py accepts tokens starting with "dev-" or equal to "dev-token"
-    const mockToken = 'dev-token';
+    try {
+      const resp = await fetch(`${apiUrl}/api/auth/dev-token`, {
+        method: 'POST',
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        mockToken = data.token || data.access_token;
+        mockUser = data.user || {
+          id: data.user_id || 'dev_user_local',
+          login: data.login || 'dev-user',
+          email: data.email || 'dev@example.com',
+          name: data.name || 'Development User',
+          avatar_url: 'https://avatars.githubusercontent.com/u/1?v=4',
+        };
+      }
+    } catch (e) {
+      logger.warn('Failed to fetch dev-token from backend, using fallback:', e);
+    }
+
+    // Fallback if backend is unreachable
+    if (!mockToken) {
+      mockToken = 'dev-token';
+      mockUser = {
+        id: 'mock_user_12345',
+        login: 'dev-user',
+        email: 'dev@example.com',
+        name: 'Development User',
+        avatar_url: 'https://avatars.githubusercontent.com/u/1?v=4',
+      };
+    }
 
     // Store both user profile and auth token via centralized auth client
     authClient.setUser(mockUser);
     authClient.setToken(mockToken);
+    // Persist token to localStorage so getAuthToken() finds it across page navigations.
+    // sessionStorage is cleared on navigation; Zustand persist gets wiped by AuthContext init.
+    // localStorage.auth_token is the reliable fallback that survives both.
+    localStorage.setItem('auth_token', mockToken);
+    sessionStorage.setItem('auth_token', mockToken);
 
     return {
       token: mockToken,
