@@ -111,7 +111,10 @@ function PostEditor({ post, onClose, onSave }) {
         seo_keywords: post.seo_keywords || '',
         status: post.status || 'published',
         published_at: post.published_at
-          ? new Date(post.published_at).toISOString().slice(0, 16)
+          ? (() => {
+              const d = new Date(post.published_at);
+              return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+            })()
           : '',
       });
     }
@@ -126,7 +129,12 @@ function PostEditor({ post, onClose, onSave }) {
     e.preventDefault();
     setSaving(true);
     try {
-      await onSave({ ...post, ...formData });
+      const payload = { ...post, ...formData };
+      // Convert local datetime-local value to UTC ISO string for the backend
+      if (payload.published_at && payload.status === 'scheduled') {
+        payload.published_at = new Date(payload.published_at).toISOString();
+      }
+      await onSave(payload);
     } catch (error) {
       logError(error, {
         severity: 'warning',
@@ -497,7 +505,10 @@ function PostEditor({ post, onClose, onSave }) {
                   name="published_at"
                   value={formData.published_at}
                   onChange={handleChange}
-                  min={new Date().toISOString().slice(0, 16)}
+                  min={(() => {
+                    const d = new Date();
+                    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+                  })()}
                   required
                 />
               </div>

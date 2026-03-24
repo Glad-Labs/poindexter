@@ -131,7 +131,7 @@ function TaskManagement() {
 
   // Sort tasks (status filtering is now server-side via useFetchTasks)
   const getFilteredTasks = () => {
-    let filtered = localTasks || [];
+    let filtered = [...(localTasks || [])];
 
     // Apply sorting
     return filtered.sort((a, b) => {

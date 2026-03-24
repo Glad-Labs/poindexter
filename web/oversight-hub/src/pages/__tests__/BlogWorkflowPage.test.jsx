@@ -35,16 +35,6 @@ vi.mock('../../services/workflowManagementService', () => ({
   getWorkflowHistory: mockGetWorkflowHistory,
 }));
 
-// Convenience wrapper matching old test interface
-const mockApiClient = {
-  getAvailablePhases: mockGetAvailablePhases,
-  listWorkflowExecutions: mockGetWorkflowHistory,
-  executeWorkflow: mockMakeRequest,
-  getWorkflowProgress: mockMakeRequest,
-  getWorkflowResults: mockMakeRequest,
-  cancelWorkflowExecution: mockMakeRequest,
-};
-
 // ── helpers ─────────────────────────────────────────────────────────────────
 const SAMPLE_PHASES = [
   {

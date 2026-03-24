@@ -324,7 +324,11 @@ async def update_post(
     """
     Update a blog post by ID.
     Allowed fields: title, slug, content, excerpt, featured_image_url, status,
-    tags, seo_title, seo_description, seo_keywords.
+    tags, seo_title, seo_description, seo_keywords, published_at.
+
+    When status is set to 'scheduled', published_at must be a valid future
+    ISO 8601 datetime. When status is 'published' and published_at is not
+    provided, it defaults to the current UTC time.
     """
     try:
         allowed = {"title", "slug", "content", "excerpt", "featured_image_url",
@@ -334,15 +338,37 @@ async def update_post(
         if not filtered:
             raise HTTPException(status_code=400, detail="No valid fields to update")
 
+        # Parse and validate published_at if provided
+        parsed_published_at = None
+        if "published_at" in filtered:
+            raw = filtered["published_at"]
+            if isinstance(raw, datetime):
+                parsed = raw
+            elif isinstance(raw, str):
+                value = raw.strip()
+                if value.endswith("Z"):
+                    value = value[:-1] + "+00:00"
+                try:
+                    parsed = datetime.fromisoformat(value)
+                except ValueError:
+                    raise HTTPException(status_code=400, detail="published_at must be a valid ISO 8601 datetime")
+            else:
+                raise HTTPException(status_code=400, detail="published_at must be a datetime or ISO 8601 string")
+
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            parsed_published_at = parsed
+            filtered["published_at"] = parsed_published_at
+
         # Handle scheduling: if status is 'scheduled', published_at must be a future date
         if filtered.get("status") == "scheduled":
-            pub_at = filtered.get("published_at")
-            if not pub_at:
+            if parsed_published_at is None:
                 raise HTTPException(status_code=400, detail="published_at is required when scheduling a post")
+            if parsed_published_at <= datetime.now(timezone.utc):
+                raise HTTPException(status_code=400, detail="published_at must be a future datetime when status is 'scheduled'")
         # When publishing immediately, set published_at to now if not provided
         elif filtered.get("status") == "published" and "published_at" not in filtered:
-            from datetime import datetime, timezone
-            filtered["published_at"] = datetime.now(timezone.utc).isoformat()
+            filtered["published_at"] = datetime.now(timezone.utc)
 
         # Build parameterized SET clause
         set_parts = []

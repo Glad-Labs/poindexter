@@ -167,14 +167,14 @@ function Content() {
           <div className="stat-icon">✅</div>
           <div className="stat-content">
             <h3 className="stat-value">{publishedPosts}</h3>
-            <p className="stat-label">Published</p>
+            <p className="stat-label">Published (this page)</p>
           </div>
         </div>
         <div className="stat-card">
           <div className="stat-icon">📝</div>
           <div className="stat-content">
             <h3 className="stat-value">{draftPosts}</h3>
-            <p className="stat-label">In Draft</p>
+            <p className="stat-label">In Draft (this page)</p>
           </div>
         </div>
         <div className="stat-card">
