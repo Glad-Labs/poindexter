@@ -2,7 +2,7 @@
 
 FastAPI orchestrator for the Glad Labs AI system. Coordinates specialized agents through a multi-provider model router with task management and real-time monitoring.
 
-**Version:** 3.0.81
+**Version:** 3.0.82
 **Runtime:** Python 3.10+ with FastAPI
 **Port:** 8000
 **Database:** PostgreSQL via asyncpg (raw SQL, no ORM)
@@ -42,7 +42,7 @@ src/cofounder_agent/
 ├── middleware/                 # 5 middleware modules (auth, validation, etc.)
 ├── utils/                     # 20 utility modules
 └── tests/                     # pytest suite
-    └── unit/                  # Unit tests (~5,500 passing)
+    └── unit/                  # Unit tests (~6,000 passing)
 ```
 
 ## Key Architecture

@@ -161,6 +161,18 @@ jobs:
       # DEPLOYMENT PHASE - OVERSIGHT HUB
       # ============================================
 
+      - name: 📝 Generate Oversight Hub .env.production
+        run: |
+          cat > web/oversight-hub/.env.production << 'ENVEOF'
+          REACT_APP_API_URL=${{ secrets.OVERSIGHT_PROD_API_URL }}
+          REACT_APP_API_BASE_URL=${{ secrets.OVERSIGHT_PROD_API_URL }}
+          REACT_APP_WS_BASE_URL=${{ secrets.OVERSIGHT_PROD_API_URL }}
+          REACT_APP_AGENT_URL=${{ secrets.OVERSIGHT_PROD_API_URL }}
+          REACT_APP_GH_OAUTH_CLIENT_ID=${{ secrets.OVERSIGHT_PROD_GH_OAUTH_CLIENT_ID }}
+          REACT_APP_USE_MOCK_AUTH=false
+          REACT_APP_LOG_LEVEL=warn
+          ENVEOF
+
       - name: 🚀 Deploy Oversight Hub to Vercel (Production)
         run: |
           echo "📤 Deploying Oversight Hub to production environment..."
@@ -170,12 +182,6 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_PROJECT_ID: ${{ secrets.OVERSIGHT_PROD_PROJECT_ID }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          # Oversight Hub uses Vite (VITE_* prefix).
-          # Keep REACT_APP_* aliases during transition for backward compatibility.
-          VITE_API_URL: ${{ secrets.OVERSIGHT_PROD_API_URL }}
-          VITE_GH_OAUTH_CLIENT_ID: ${{ secrets.OVERSIGHT_PROD_GH_OAUTH_CLIENT_ID }}
-          REACT_APP_API_URL: ${{ secrets.OVERSIGHT_PROD_API_URL }}
-          REACT_APP_GH_OAUTH_CLIENT_ID: ${{ secrets.OVERSIGHT_PROD_GH_OAUTH_CLIENT_ID }}
 
       # ============================================
       # POST-DEPLOYMENT VERIFICATION
