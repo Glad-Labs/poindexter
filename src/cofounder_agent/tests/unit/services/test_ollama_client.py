@@ -31,7 +31,10 @@ from services.ollama_client import (
 
 @pytest.fixture
 def client():
-    return OllamaClient()
+    c = OllamaClient()
+    # Replace the real httpx.AsyncClient with a mock so no network calls are made
+    c.client = AsyncMock(spec=httpx.AsyncClient)
+    return c
 
 
 def make_mock_response(data: dict, status_code: int = 200) -> MagicMock:
@@ -57,11 +60,13 @@ SAMPLE_GENERATE_RESPONSE = {
 
 
 class TestOllamaClientInit:
-    def test_default_base_url(self, client):
-        assert client.base_url == DEFAULT_BASE_URL
+    def test_default_base_url(self):
+        c = OllamaClient()
+        assert c.base_url == DEFAULT_BASE_URL
 
-    def test_default_model(self, client):
-        assert client.model == DEFAULT_MODEL
+    def test_default_model(self):
+        c = OllamaClient()
+        assert c.model == DEFAULT_MODEL
 
     def test_custom_base_url(self):
         c = OllamaClient(base_url="http://remote:11434")
@@ -85,39 +90,24 @@ class TestOllamaCheckHealth:
     @pytest.mark.asyncio
     async def test_healthy_returns_true(self, client):
         mock_resp = make_mock_response({"models": []}, status_code=200)
-        with patch("httpx.AsyncClient") as mock_cls:
-            mock_ctx = AsyncMock()
-            mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
-            mock_ctx.__aexit__ = AsyncMock(return_value=False)
-            mock_ctx.get = AsyncMock(return_value=mock_resp)
-            mock_cls.return_value = mock_ctx
+        client.client.get = AsyncMock(return_value=mock_resp)
 
-            result = await client.check_health()
+        result = await client.check_health()
         assert result is True
 
     @pytest.mark.asyncio
     async def test_unhealthy_status_returns_false(self, client):
         mock_resp = make_mock_response({}, status_code=500)
-        with patch("httpx.AsyncClient") as mock_cls:
-            mock_ctx = AsyncMock()
-            mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
-            mock_ctx.__aexit__ = AsyncMock(return_value=False)
-            mock_ctx.get = AsyncMock(return_value=mock_resp)
-            mock_cls.return_value = mock_ctx
+        client.client.get = AsyncMock(return_value=mock_resp)
 
-            result = await client.check_health()
+        result = await client.check_health()
         assert result is False
 
     @pytest.mark.asyncio
     async def test_connection_error_returns_false(self, client):
-        with patch("httpx.AsyncClient") as mock_cls:
-            mock_ctx = AsyncMock()
-            mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
-            mock_ctx.__aexit__ = AsyncMock(return_value=False)
-            mock_ctx.get = AsyncMock(side_effect=httpx.ConnectError("refused"))
-            mock_cls.return_value = mock_ctx
+        client.client.get = AsyncMock(side_effect=httpx.ConnectError("refused"))
 
-            result = await client.check_health()
+        result = await client.check_health()
         assert result is False
 
 
@@ -131,26 +121,16 @@ class TestOllamaListModels:
     async def test_returns_model_list(self, client):
         models = [{"name": "llama2"}, {"name": "mistral"}]
         mock_resp = make_mock_response({"models": models})
-        with patch("httpx.AsyncClient") as mock_cls:
-            mock_ctx = AsyncMock()
-            mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
-            mock_ctx.__aexit__ = AsyncMock(return_value=False)
-            mock_ctx.get = AsyncMock(return_value=mock_resp)
-            mock_cls.return_value = mock_ctx
+        client.client.get = AsyncMock(return_value=mock_resp)
 
-            result = await client.list_models()
+        result = await client.list_models()
         assert result == models
 
     @pytest.mark.asyncio
     async def test_error_returns_empty_list(self, client):
-        with patch("httpx.AsyncClient") as mock_cls:
-            mock_ctx = AsyncMock()
-            mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
-            mock_ctx.__aexit__ = AsyncMock(return_value=False)
-            mock_ctx.get = AsyncMock(side_effect=Exception("API down"))
-            mock_cls.return_value = mock_ctx
+        client.client.get = AsyncMock(side_effect=Exception("API down"))
 
-            result = await client.list_models()
+        result = await client.list_models()
         assert result == []
 
 
@@ -163,14 +143,9 @@ class TestOllamaGenerate:
     @pytest.mark.asyncio
     async def test_successful_generation(self, client):
         mock_resp = make_mock_response(SAMPLE_GENERATE_RESPONSE)
-        with patch("httpx.AsyncClient") as mock_cls:
-            mock_ctx = AsyncMock()
-            mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
-            mock_ctx.__aexit__ = AsyncMock(return_value=False)
-            mock_ctx.post = AsyncMock(return_value=mock_resp)
-            mock_cls.return_value = mock_ctx
+        client.client.post = AsyncMock(return_value=mock_resp)
 
-            result = await client.generate("Write a poem")
+        result = await client.generate("Write a poem")
 
         assert result["text"] == "This is the generated text."
         assert result["tokens"] == 50
@@ -180,73 +155,48 @@ class TestOllamaGenerate:
     @pytest.mark.asyncio
     async def test_uses_specified_model(self, client):
         mock_resp = make_mock_response(SAMPLE_GENERATE_RESPONSE)
-        with patch("httpx.AsyncClient") as mock_cls:
-            mock_ctx = AsyncMock()
-            mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
-            mock_ctx.__aexit__ = AsyncMock(return_value=False)
-            mock_ctx.post = AsyncMock(return_value=mock_resp)
-            mock_cls.return_value = mock_ctx
+        client.client.post = AsyncMock(return_value=mock_resp)
 
-            await client.generate("Test", model="mistral")
+        await client.generate("Test", model="mistral")
 
-        call_kwargs = mock_ctx.post.call_args[1]
+        call_kwargs = client.client.post.call_args[1]
         assert call_kwargs["json"]["model"] == "mistral"
 
     @pytest.mark.asyncio
     async def test_system_prompt_included(self, client):
         mock_resp = make_mock_response(SAMPLE_GENERATE_RESPONSE)
-        with patch("httpx.AsyncClient") as mock_cls:
-            mock_ctx = AsyncMock()
-            mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
-            mock_ctx.__aexit__ = AsyncMock(return_value=False)
-            mock_ctx.post = AsyncMock(return_value=mock_resp)
-            mock_cls.return_value = mock_ctx
+        client.client.post = AsyncMock(return_value=mock_resp)
 
-            await client.generate("Test", system="You are a helpful assistant.")
+        await client.generate("Test", system="You are a helpful assistant.")
 
-        call_kwargs = mock_ctx.post.call_args[1]
+        call_kwargs = client.client.post.call_args[1]
         assert call_kwargs["json"]["system"] == "You are a helpful assistant."
 
     @pytest.mark.asyncio
     async def test_max_tokens_included(self, client):
         mock_resp = make_mock_response(SAMPLE_GENERATE_RESPONSE)
-        with patch("httpx.AsyncClient") as mock_cls:
-            mock_ctx = AsyncMock()
-            mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
-            mock_ctx.__aexit__ = AsyncMock(return_value=False)
-            mock_ctx.post = AsyncMock(return_value=mock_resp)
-            mock_cls.return_value = mock_ctx
+        client.client.post = AsyncMock(return_value=mock_resp)
 
-            await client.generate("Test", max_tokens=500)
+        await client.generate("Test", max_tokens=500)
 
-        call_kwargs = mock_ctx.post.call_args[1]
+        call_kwargs = client.client.post.call_args[1]
         assert call_kwargs["json"]["options"]["num_predict"] == 500
 
     @pytest.mark.asyncio
     async def test_http_error_raised(self, client):
-        with patch("httpx.AsyncClient") as mock_cls:
-            mock_ctx = AsyncMock()
-            mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
-            mock_ctx.__aexit__ = AsyncMock(return_value=False)
-            mock_ctx.post = AsyncMock(
-                side_effect=httpx.HTTPError("404 model not found")
-            )
-            mock_cls.return_value = mock_ctx
+        client.client.post = AsyncMock(
+            side_effect=httpx.HTTPError("404 model not found")
+        )
 
-            with pytest.raises(httpx.HTTPError):
-                await client.generate("Test")
+        with pytest.raises(httpx.HTTPError):
+            await client.generate("Test")
 
     @pytest.mark.asyncio
     async def test_duration_converted_from_nanoseconds(self, client):
         mock_resp = make_mock_response(SAMPLE_GENERATE_RESPONSE)
-        with patch("httpx.AsyncClient") as mock_cls:
-            mock_ctx = AsyncMock()
-            mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
-            mock_ctx.__aexit__ = AsyncMock(return_value=False)
-            mock_ctx.post = AsyncMock(return_value=mock_resp)
-            mock_cls.return_value = mock_ctx
+        client.client.post = AsyncMock(return_value=mock_resp)
 
-            result = await client.generate("Test")
+        result = await client.generate("Test")
 
         # 2_000_000_000 ns = 2.0 seconds
         assert abs(result["duration_seconds"] - 2.0) < 0.001
@@ -264,16 +214,11 @@ class TestOllamaChat:
             **SAMPLE_GENERATE_RESPONSE,
             "response": "Assistant: I'm here to help.",
         })
-        with patch("httpx.AsyncClient") as mock_cls:
-            mock_ctx = AsyncMock()
-            mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
-            mock_ctx.__aexit__ = AsyncMock(return_value=False)
-            mock_ctx.post = AsyncMock(return_value=mock_resp)
-            mock_cls.return_value = mock_ctx
+        client.client.post = AsyncMock(return_value=mock_resp)
 
-            result = await client.chat([
-                {"role": "user", "content": "Hello!"}
-            ])
+        result = await client.chat([
+            {"role": "user", "content": "Hello!"}
+        ])
 
         assert result["role"] == "assistant"
         assert "here to help" in result["content"]
@@ -281,34 +226,24 @@ class TestOllamaChat:
     @pytest.mark.asyncio
     async def test_chat_cost_is_zero(self, client):
         mock_resp = make_mock_response(SAMPLE_GENERATE_RESPONSE)
-        with patch("httpx.AsyncClient") as mock_cls:
-            mock_ctx = AsyncMock()
-            mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
-            mock_ctx.__aexit__ = AsyncMock(return_value=False)
-            mock_ctx.post = AsyncMock(return_value=mock_resp)
-            mock_cls.return_value = mock_ctx
+        client.client.post = AsyncMock(return_value=mock_resp)
 
-            result = await client.chat([{"role": "user", "content": "Hi"}])
+        result = await client.chat([{"role": "user", "content": "Hi"}])
 
         assert result["cost"] == 0.0
 
     @pytest.mark.asyncio
     async def test_chat_formats_multi_turn_messages(self, client):
         mock_resp = make_mock_response(SAMPLE_GENERATE_RESPONSE)
-        with patch("httpx.AsyncClient") as mock_cls:
-            mock_ctx = AsyncMock()
-            mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
-            mock_ctx.__aexit__ = AsyncMock(return_value=False)
-            mock_ctx.post = AsyncMock(return_value=mock_resp)
-            mock_cls.return_value = mock_ctx
+        client.client.post = AsyncMock(return_value=mock_resp)
 
-            await client.chat([
-                {"role": "user", "content": "What is AI?"},
-                {"role": "assistant", "content": "AI is..."},
-                {"role": "user", "content": "Tell me more."},
-            ])
+        await client.chat([
+            {"role": "user", "content": "What is AI?"},
+            {"role": "assistant", "content": "AI is..."},
+            {"role": "user", "content": "Tell me more."},
+        ])
 
-        call_kwargs = mock_ctx.post.call_args[1]
+        call_kwargs = client.client.post.call_args[1]
         prompt = call_kwargs["json"]["prompt"]
         assert "User: What is AI?" in prompt
         assert "Assistant: AI is..." in prompt
@@ -324,26 +259,16 @@ class TestOllamaPullModel:
     @pytest.mark.asyncio
     async def test_successful_pull(self, client):
         mock_resp = make_mock_response({})
-        with patch("httpx.AsyncClient") as mock_cls:
-            mock_ctx = AsyncMock()
-            mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
-            mock_ctx.__aexit__ = AsyncMock(return_value=False)
-            mock_ctx.post = AsyncMock(return_value=mock_resp)
-            mock_cls.return_value = mock_ctx
+        client.client.post = AsyncMock(return_value=mock_resp)
 
-            result = await client.pull_model("llama2")
+        result = await client.pull_model("llama2")
         assert result is True
 
     @pytest.mark.asyncio
     async def test_failed_pull_returns_false(self, client):
-        with patch("httpx.AsyncClient") as mock_cls:
-            mock_ctx = AsyncMock()
-            mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
-            mock_ctx.__aexit__ = AsyncMock(return_value=False)
-            mock_ctx.post = AsyncMock(side_effect=Exception("Network error"))
-            mock_cls.return_value = mock_ctx
+        client.client.post = AsyncMock(side_effect=Exception("Network error"))
 
-            result = await client.pull_model("nonexistent")
+        result = await client.pull_model("nonexistent")
         assert result is False
 
 
@@ -353,40 +278,48 @@ class TestOllamaPullModel:
 
 
 class TestOllamaModelProfiles:
-    def test_known_model_profile(self, client):
-        profile = client.get_model_profile("llama2")
+    def test_known_model_profile(self):
+        c = OllamaClient()
+        profile = c.get_model_profile("llama2")
         assert profile is not None
         assert profile["cost"] == 0.0
         assert "use_cases" in profile
 
-    def test_tagged_model_strips_tag(self, client):
-        profile = client.get_model_profile("llama2:13b")
+    def test_tagged_model_strips_tag(self):
+        c = OllamaClient()
+        profile = c.get_model_profile("llama2:13b")
         assert profile is not None  # Base "llama2" profile found
 
-    def test_unknown_model_returns_none(self, client):
-        profile = client.get_model_profile("gpt-4")
+    def test_unknown_model_returns_none(self):
+        c = OllamaClient()
+        profile = c.get_model_profile("gpt-4")
         assert profile is None
 
-    def test_model_profiles_all_have_cost_zero(self, client):
+    def test_model_profiles_all_have_cost_zero(self):
         for model_name, profile in MODEL_PROFILES.items():
             assert profile["cost"] == 0.0
 
 
 class TestOllamaRecommendModel:
-    def test_code_task_returns_codellama(self, client):
-        assert client.recommend_model("debug Python code") == "codellama"
+    def test_code_task_returns_codellama(self):
+        c = OllamaClient()
+        assert c.recommend_model("debug Python code") == "codellama"
 
-    def test_simple_task_returns_phi(self, client):
-        assert client.recommend_model("classify email") == "phi"
+    def test_simple_task_returns_phi(self):
+        c = OllamaClient()
+        assert c.recommend_model("classify email") == "phi"
 
-    def test_complex_task_returns_mixtral(self, client):
-        assert client.recommend_model("complex reasoning task") == "mixtral"
+    def test_complex_task_returns_mixtral(self):
+        c = OllamaClient()
+        assert c.recommend_model("complex reasoning task") == "mixtral"
 
-    def test_default_returns_mistral(self, client):
-        assert client.recommend_model("write a blog post") == "mistral"
+    def test_default_returns_mistral(self):
+        c = OllamaClient()
+        assert c.recommend_model("write a blog post") == "mistral"
 
-    def test_case_insensitive_matching(self, client):
-        assert client.recommend_model("CODE GENERATION") == "codellama"
+    def test_case_insensitive_matching(self):
+        c = OllamaClient()
+        assert c.recommend_model("CODE GENERATION") == "codellama"
 
 
 # ---------------------------------------------------------------------------
