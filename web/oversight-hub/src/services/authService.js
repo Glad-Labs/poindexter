@@ -342,13 +342,33 @@ export const getAuthToken = () => {
     }
   }
 
-  // Fallback to sessionStorage if not found in Zustand persist store
+  // Fallback to dedicated auth_token in localStorage (set by mock auth)
+  if (!token) {
+    token = localStorage.getItem('auth_token');
+  }
+
+  // Fallback to sessionStorage
   if (!token) {
     token = sessionStorage.getItem('auth_token');
   }
 
+  // Fallback to in-memory authClient (used by mock auth in dev mode)
+  if (!token) {
+    try {
+      const { authClient: ac } = require('../lib/authClient');
+      token = ac.getToken();
+    } catch {
+      // authClient not available
+    }
+  }
+
   if (!token) {
     return null;
+  }
+
+  // dev-token is not a JWT — skip expiry check
+  if (token === 'dev-token') {
+    return token;
   }
 
   if (isTokenExpired(token)) {
@@ -711,18 +731,22 @@ export async function validateAndGetCurrentUser() {
 
     if (!response.ok) {
       if (response.status === 401) {
-        // Token expired
-        await logout();
+        // Token expired or invalid — return null to let AuthContext handle it.
+        // Do NOT call logout() here — it destroys persisted tokens and causes
+        // cascading auth failures on page reload.
         return null;
       }
       throw new Error(`Failed to validate user: ${response.statusText}`);
     }
 
     const data = await response.json();
-    if (data.user) {
-      sessionStorage.setItem('user', JSON.stringify(data.user));
+    // /api/auth/me returns user fields directly (id, email, username, etc.)
+    // not wrapped in a .user property
+    const user = data.user || data;
+    if (user && user.id) {
+      sessionStorage.setItem('user', JSON.stringify(user));
     }
-    return data.user;
+    return user?.id ? user : null;
   } catch (error) {
     Sentry.captureException(error, {
       contexts: { custom: { action: 'validateUser' } },
