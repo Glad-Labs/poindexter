@@ -128,6 +128,11 @@ class UnifiedTaskRequest(BaseModel):
     context: Optional[Dict[str, Any]] = Field(
         None, description="Request context (writing_style_id, user_id, etc.)"
     )
+    content_constraints: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Content constraints (word_count, writing_style, tone, word_count_tolerance). "
+        "Values here override top-level style/tone/target_length.",
+    )
     metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata for task")
 
     class Config:
