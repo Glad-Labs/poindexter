@@ -20,8 +20,9 @@ import { Box, Grid, Paper } from '@mui/material';
  */
 const getQualityBadge = (score) => {
   if (typeof score !== 'number') return { label: 'N/A', color: '#666' };
-  // Handle both 0-100 scale and 0-5 scale
-  const normalizedScore = score > 10 ? score : score * 20; // Convert 0-5 to 0-100
+  // Handle both 0-100 scale and legacy 0-10 scale
+  // Only scores ≤ 5 are treated as legacy 0-5 scale (quality_service returns 0-100)
+  const normalizedScore = score <= 5 ? score * 20 : score;
   if (normalizedScore >= 90) return { label: 'Excellent', color: '#4ade80' };
   if (normalizedScore >= 75) return { label: 'Good', color: '#22c55e' };
   if (normalizedScore >= 50) return { label: 'Fair', color: '#eab308' };
