@@ -531,17 +531,24 @@ class TestProcessSingleTask:
 
         mock_result = {"status": "awaiting_approval"}
 
-        with patch.object(executor, "_execute_task", new_callable=AsyncMock, return_value=mock_result), \
+        # The code calls db.tasks.log_status_change, so set up the nested mock
+        db.tasks = MagicMock()
+        db.tasks.log_status_change = AsyncMock(return_value=None)
+
+        with patch("services.content_router_service.process_content_generation_task",
+                   new_callable=AsyncMock, return_value=mock_result), \
              patch("services.task_executor.emit_task_progress", new_callable=AsyncMock), \
              patch("services.task_executor.emit_notification", new_callable=AsyncMock):
             await executor._process_single_task(task)
 
         # DB should be called to update task to in_progress at least once
         assert db.update_task.await_count >= 1
-        # Final update should include awaiting_approval status
-        final_call_args = db.update_task.call_args_list[-1]
-        update_data = final_call_args[0][1]
-        assert update_data["status"] == "awaiting_approval"
+        # On success the content router already updates the task in DB, so
+        # _process_single_task returns early. The only update_task call is
+        # the initial in_progress transition.
+        first_call_args = db.update_task.call_args_list[0]
+        update_data = first_call_args[0][1]
+        assert update_data["status"] == "in_progress"
 
     @pytest.mark.asyncio
     async def test_updates_to_failed_when_execute_returns_failed(self):
@@ -554,12 +561,18 @@ class TestProcessSingleTask:
             "orchestrator_error": "Content generation failed",
         }
 
-        with patch.object(executor, "_execute_task", new_callable=AsyncMock, return_value=failed_result), \
+        # The code calls db.tasks.log_status_change, so set up the nested mock
+        db.tasks = MagicMock()
+        db.tasks.log_status_change = AsyncMock(return_value=None)
+
+        with patch("services.content_router_service.process_content_generation_task",
+                   new_callable=AsyncMock, return_value=failed_result), \
              patch("services.task_executor.emit_task_progress", new_callable=AsyncMock), \
              patch("services.task_executor.emit_notification", new_callable=AsyncMock):
             await executor._process_single_task(task)
 
-        # Final update should include failed status
+        # The failure path calls update_task a second time with failed status
+        assert db.update_task.await_count >= 2
         final_call_args = db.update_task.call_args_list[-1]
         update_data = final_call_args[0][1]
         assert update_data["status"] == "failed"
@@ -579,16 +592,15 @@ class TestProcessSingleTask:
 
     @pytest.mark.asyncio
     async def test_timeout_marks_task_as_failed(self):
-        """When _execute_task times out, the task is updated to failed."""
+        """When the content pipeline times out, the task is updated to failed."""
         db = _make_db()
+        db.tasks = MagicMock()
+        db.tasks.log_status_change = AsyncMock(return_value=None)
         executor = _make_executor(db=db)
         task = _make_task()
 
-        async def slow_execute(t):
-            # Block forever — asyncio.wait_for will raise TimeoutError
-            await asyncio.sleep(9999)
-
-        with patch.object(executor, "_execute_task", side_effect=slow_execute), \
+        with patch("services.content_router_service.process_content_generation_task",
+                   new_callable=AsyncMock), \
              patch("services.task_executor.emit_task_progress", new_callable=AsyncMock), \
              patch("services.task_executor.emit_notification", new_callable=AsyncMock), \
              patch("services.task_executor.asyncio.wait_for", new_callable=AsyncMock,
@@ -601,16 +613,17 @@ class TestProcessSingleTask:
         assert update_data["status"] == "failed"
 
     @pytest.mark.asyncio
-    async def test_service_error_from_execute_re_raises(self):
-        """ServiceError from _execute_task bubbles up as ServiceError."""
+    async def test_service_error_from_pipeline_re_raises(self):
+        """ServiceError from the content pipeline bubbles up as ServiceError."""
         db = _make_db()
+        db.tasks = MagicMock()
+        db.tasks.log_status_change = AsyncMock(return_value=None)
         executor = _make_executor(db=db)
         task = _make_task()
 
-        async def raise_service_error(t):
-            raise ServiceError(message="Intentional service error", details={})
-
-        with patch.object(executor, "_execute_task", side_effect=raise_service_error), \
+        with patch("services.content_router_service.process_content_generation_task",
+                   new_callable=AsyncMock,
+                   side_effect=ServiceError(message="Intentional service error", details={})), \
              patch("services.task_executor.emit_task_progress", new_callable=AsyncMock), \
              patch("services.task_executor.emit_notification", new_callable=AsyncMock):
             with pytest.raises(ServiceError):
@@ -618,15 +631,16 @@ class TestProcessSingleTask:
 
     @pytest.mark.asyncio
     async def test_generic_exception_wraps_in_service_error(self):
-        """Unexpected exception from _execute_task is wrapped in ServiceError."""
+        """Unexpected exception from the content pipeline is wrapped in ServiceError."""
         db = _make_db()
+        db.tasks = MagicMock()
+        db.tasks.log_status_change = AsyncMock(return_value=None)
         executor = _make_executor(db=db)
         task = _make_task()
 
-        async def raise_runtime_error(t):
-            raise RuntimeError("Unexpected crash")
-
-        with patch.object(executor, "_execute_task", side_effect=raise_runtime_error), \
+        with patch("services.content_router_service.process_content_generation_task",
+                   new_callable=AsyncMock,
+                   side_effect=RuntimeError("Unexpected crash")), \
              patch("services.task_executor.emit_task_progress", new_callable=AsyncMock), \
              patch("services.task_executor.emit_notification", new_callable=AsyncMock):
             with pytest.raises(ServiceError):
@@ -634,20 +648,24 @@ class TestProcessSingleTask:
 
     @pytest.mark.asyncio
     async def test_logs_status_change_on_success(self):
-        """Audit log (log_status_change) is called for successful task completion."""
+        """Audit log (log_status_change) is called for pending->in_progress transition."""
         db = _make_db()
+        # The code calls db.tasks.log_status_change, so set up the nested mock
+        db.tasks = MagicMock()
+        db.tasks.log_status_change = AsyncMock(return_value=None)
         executor = _make_executor(db=db)
         task = _make_task()
 
         mock_result = {"status": "awaiting_approval"}
 
-        with patch.object(executor, "_execute_task", new_callable=AsyncMock, return_value=mock_result), \
+        with patch("services.content_router_service.process_content_generation_task",
+                   new_callable=AsyncMock, return_value=mock_result), \
              patch("services.task_executor.emit_task_progress", new_callable=AsyncMock), \
              patch("services.task_executor.emit_notification", new_callable=AsyncMock):
             await executor._process_single_task(task)
 
-        # log_status_change should be called at least twice: pending→in_progress, in_progress→final
-        assert db.log_status_change.await_count >= 1
+        # log_status_change should be called for pending→in_progress
+        assert db.tasks.log_status_change.await_count >= 1
 
 
 # ---------------------------------------------------------------------------
