@@ -9,6 +9,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import logger from '@/lib/logger';
 import { getApiUrl } from '../config/apiConfig';
+import { getAuthToken } from '../services/authService';
 
 const ITEMS_PER_PAGE = 10;
 
@@ -76,7 +77,12 @@ const useApprovalQueue = ({ onSuccess, onError } = {}) => {
         {
           method: 'GET',
           credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(getAuthToken()
+              ? { Authorization: `Bearer ${getAuthToken()}` }
+              : {}),
+          },
         }
       );
 
@@ -232,7 +238,12 @@ const useApprovalQueue = ({ onSuccess, onError } = {}) => {
         {
           method: 'POST',
           credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(getAuthToken()
+              ? { Authorization: `Bearer ${getAuthToken()}` }
+              : {}),
+          },
           body: JSON.stringify({
             approved: true,
             auto_publish: true,
@@ -287,7 +298,12 @@ const useApprovalQueue = ({ onSuccess, onError } = {}) => {
         {
           method: 'POST',
           credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(getAuthToken()
+              ? { Authorization: `Bearer ${getAuthToken()}` }
+              : {}),
+          },
           body: JSON.stringify({
             reason: rejectReason,
             feedback: rejectFeedback,
