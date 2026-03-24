@@ -166,16 +166,8 @@ class CostAggregationService:
                     date_filter,
                 )
 
-                # Get total cost for percentage calculation
-                total_cost_row = await conn.fetchval(
-                    """
-                    SELECT COALESCE(SUM(cost_usd), 0)
-                    FROM cost_logs
-                    WHERE created_at >= $1 AND success = true
-                    """,
-                    date_filter,
-                )
-                total_cost = float(total_cost_row or 0.0)
+                # Compute total cost from GROUP BY results (no redundant query)
+                total_cost = sum(float(row["total_cost"] or 0.0) for row in rows)
 
                 phases = []
                 for row in rows:
@@ -252,16 +244,8 @@ class CostAggregationService:
                     date_filter,
                 )
 
-                # Get total cost for percentage calculation
-                total_cost_row = await conn.fetchval(
-                    """
-                    SELECT COALESCE(SUM(cost_usd), 0)
-                    FROM cost_logs
-                    WHERE created_at >= $1 AND success = true
-                    """,
-                    date_filter,
-                )
-                total_cost = float(total_cost_row or 0.0)
+                # Compute total cost from GROUP BY results (no redundant query)
+                total_cost = sum(float(row["total_cost"] or 0.0) for row in rows)
 
                 models = []
                 for row in rows:
