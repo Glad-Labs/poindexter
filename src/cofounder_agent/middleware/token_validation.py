@@ -66,11 +66,11 @@ class TokenValidationMiddleware(BaseHTTPMiddleware):
 
         try:
             # Development mode: Allow bypassing authentication for testing.
-            # Guard against this reaching production: DISABLE_AUTH_FOR_DEV is only
-            # honoured when ENVIRONMENT is not "production" (mirrors token_validator.py).
+            # Guard: DISABLE_AUTH_FOR_DEV only honoured when DEVELOPMENT_MODE=true,
+            # ensuring it never works on staging or production (#1219).
             if (
                 os.getenv("DISABLE_AUTH_FOR_DEV", "false").lower() == "true"
-                and os.getenv("ENVIRONMENT", "development") != "production"
+                and os.getenv("DEVELOPMENT_MODE", "false").lower() == "true"
             ):
                 logger.info(
                     f"[TokenValidation] DISABLE_AUTH_FOR_DEV=true, bypassing auth for {request.url.path}"
