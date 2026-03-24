@@ -32,6 +32,10 @@ class TaskStatusUpdateRequest(BaseModel):
         None,
         description="Additional metadata for the status change",
     )
+    result: Optional[str] = Field(
+        None,
+        description="Result data to store with the status update",
+    )
 
     @validator("status")
     def validate_status(cls, v):

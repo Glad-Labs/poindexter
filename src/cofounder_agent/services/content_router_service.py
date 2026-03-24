@@ -604,6 +604,62 @@ async def process_content_generation_task(
         logger.info(f"   Passing: {quality_result.passing} (threshold ≥70.0)\n")
 
         # ================================================================================
+        # STAGE 2C: REPLACE [IMAGE-N] PLACEHOLDERS WITH PEXELS IMAGES
+        # ================================================================================
+        import re as _re
+
+        image_placeholders = _re.findall(r'\[IMAGE-(\d+)(?::\s*([^\]]*))?\]', content_text)
+        if image_placeholders:
+            logger.info(f"🖼️  STAGE 2C: Replacing {len(image_placeholders)} inline image placeholders...")
+            used_image_ids = set()  # Avoid duplicate images
+
+            for num, desc in image_placeholders:
+                # Use the LLM's description as search query, fall back to topic
+                search_query = desc.strip() if desc else topic
+                # Shorten to first 5 words for better Pexels search results
+                search_words = search_query.split()[:5]
+                short_query = " ".join(search_words)
+
+                # Build safe keywords list — guard against empty topic (#1263 Copilot review)
+                keywords = [topic.split()[0]] if topic and topic.strip() else []
+
+                try:
+                    img = await image_service.search_featured_image(
+                        topic=short_query, keywords=keywords
+                    )
+
+                    if img and img.url and img.url not in used_image_ids:
+                        used_image_ids.add(img.url)
+                        alt_text = desc.strip() if desc else f"{topic} illustration"
+                        # Clean alt text of special chars for markdown
+                        alt_text = alt_text.replace('[', '').replace(']', '').replace('\n', ' ')[:120]
+                        photographer = getattr(img, 'photographer', 'Pexels')
+                        markdown_img = f"\n\n![{alt_text}]({img.url})\n*Photo by {photographer} on Pexels*\n\n"
+
+                        # Use regex to handle spacing variations in [IMAGE-N: desc]
+                        content_text = _re.sub(
+                            rf'\[IMAGE-{num}[^\]]*\]', markdown_img, content_text, count=1
+                        )
+                        logger.info(f"  ✅ [IMAGE-{num}] → Pexels image by {photographer}")
+                    else:
+                        # Remove placeholder if no image found
+                        content_text = _re.sub(rf'\[IMAGE-{num}[^\]]*\]', '', content_text, count=1)
+                        logger.warning(f"  ⚠️ [IMAGE-{num}] — no suitable image found, removed placeholder")
+                except Exception as e:
+                    logger.error(f"  ❌ [IMAGE-{num}] search failed: {e}", exc_info=True)
+                    content_text = _re.sub(rf'\[IMAGE-{num}[^\]]*\]', '', content_text, count=1)
+
+            # Update DB with image-populated content
+            await database_service.update_task(task_id=task_id, updates={"content": content_text})
+            result["content"] = content_text
+            result["stages"]["2c_inline_images_replaced"] = True
+            result["inline_images_replaced"] = len(used_image_ids)
+            logger.info(f"✅ Replaced {len(used_image_ids)} inline images in content\n")
+        else:
+            result["stages"]["2c_inline_images_replaced"] = False
+            logger.info("⏭️  No [IMAGE-N] placeholders found in content\n")
+
+        # ================================================================================
         # STAGE 3: SOURCE FEATURED IMAGE FROM UNIFIED IMAGE SERVICE
         # ================================================================================
         logger.info("🖼️  STAGE 3: Sourcing featured image from Pexels...")

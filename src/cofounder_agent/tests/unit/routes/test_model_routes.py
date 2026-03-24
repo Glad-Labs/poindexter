@@ -15,7 +15,7 @@ FastAPI app. ModelConsolidationService is patched to avoid real provider calls.
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from routes.auth_unified import get_current_user
 from routes.model_routes import models_router
@@ -25,7 +25,7 @@ from tests.unit.routes.conftest import TEST_USER
 
 def _make_service(models=None, status=None):
     svc = MagicMock()
-    svc.list_models = MagicMock(
+    svc.list_models = AsyncMock(
         return_value=models
         or {
             "ollama": ["llama3.2:3b", "mistral:7b"],

@@ -325,8 +325,8 @@ class TaskExecutor:
                 async def _run_content_pipeline():
                     return await process_content_generation_task(
                         topic=task.get("topic", ""),
-                        style=task.get("style", "narrative"),
-                        tone=task.get("tone", "professional"),
+                        style=task.get("style") or "narrative",
+                        tone=task.get("tone") or "professional",
                         target_length=task.get("target_length") or 1500,
                         tags=task.get("tags", []),
                         generate_featured_image=True,

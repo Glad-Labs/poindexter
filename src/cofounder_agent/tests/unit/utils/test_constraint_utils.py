@@ -107,7 +107,7 @@ class TestExtractConstraintsFromRequest:
     def test_returns_defaults_for_non_dict_non_constraints_type(self):
         req = {"content_constraints": "invalid value"}
         result = extract_constraints_from_request(req)
-        assert result.word_count == 1500
+        assert result.word_count == 1800  # ContentConstraints() default
 
     def test_partial_dict_uses_defaults_for_missing_keys(self):
         req = {"content_constraints": {"word_count": 500}}

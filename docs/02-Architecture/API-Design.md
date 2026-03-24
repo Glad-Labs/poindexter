@@ -180,7 +180,6 @@ Get execution result.
 
 ---
 
-
 ---
 
 ### Error Responses

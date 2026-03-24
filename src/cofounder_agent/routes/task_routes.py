@@ -42,11 +42,11 @@ from schemas.task_schemas import (
     TaskConfirmResponse,
     TaskIntentResponse,
     TaskListResponse,
-    TaskStatusUpdateRequest,
     UnifiedTaskRequest,
 )
 from schemas.task_status_schemas import (
     TaskStatusInfo,
+    TaskStatusUpdateRequest,
     TaskStatusUpdateResponse,
 )
 from schemas.unified_task_response import UnifiedTaskResponse
@@ -298,6 +298,13 @@ async def _handle_blog_post_creation(
     if request.models_by_phase:
         logger.info(f"[create_task] User model selections applied: {request.models_by_phase}")
 
+    # Merge content_constraints into top-level fields (#1250)
+    # content_constraints overrides top-level style/tone/target_length when provided
+    cc = request.content_constraints or {}
+    effective_style = cc.get("writing_style") or request.style or "narrative"
+    effective_tone = cc.get("tone") or request.tone or "professional"
+    effective_length = cc.get("word_count") or request.target_length or 1500
+
     task_data = {
         "id": task_id,
         "task_name": f"Blog Post: {request.topic}",
@@ -306,9 +313,9 @@ async def _handle_blog_post_creation(
         "category": request.category or "general",
         "target_audience": request.target_audience or "General",
         "primary_keyword": request.primary_keyword,
-        "style": request.style,
-        "tone": request.tone,
-        "target_length": request.target_length or 1500,
+        "style": effective_style,
+        "tone": effective_tone,
+        "target_length": effective_length,
         "model_selections": request.models_by_phase or {},
         "quality_preference": request.quality_preference or "balanced",
         "status": "pending",
