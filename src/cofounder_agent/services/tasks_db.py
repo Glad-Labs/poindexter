@@ -988,6 +988,10 @@ class TasksDatabase(DatabaseServiceMixin):
             List of status change records
         """
         try:
+            if not self.pool:
+                logger.error("[get_status_history] Database pool not initialized")
+                return []
+
             # NOTE: Column was named "timestamp" (reserved word) until migration 0031
             # renamed it to "created_at".  SELECT both with aliases so this code works
             # against both pre- and post-migration schemas; the one that exists will
