@@ -620,9 +620,12 @@ async def process_content_generation_task(
                 search_words = search_query.split()[:5]
                 short_query = " ".join(search_words)
 
+                # Build safe keywords list — guard against empty topic (#1263 Copilot review)
+                keywords = [topic.split()[0]] if topic and topic.strip() else []
+
                 try:
                     img = await image_service.search_featured_image(
-                        topic=short_query, keywords=[topic.split()[0]]
+                        topic=short_query, keywords=keywords
                     )
 
                     if img and img.url and img.url not in used_image_ids:
@@ -633,9 +636,10 @@ async def process_content_generation_task(
                         photographer = getattr(img, 'photographer', 'Pexels')
                         markdown_img = f"\n\n![{alt_text}]({img.url})\n*Photo by {photographer} on Pexels*\n\n"
 
-                        # Replace both formats: [IMAGE-N] and [IMAGE-N: description]
-                        original_placeholder = f"[IMAGE-{num}: {desc}]" if desc else f"[IMAGE-{num}]"
-                        content_text = content_text.replace(original_placeholder, markdown_img, 1)
+                        # Use regex to handle spacing variations in [IMAGE-N: desc]
+                        content_text = _re.sub(
+                            rf'\[IMAGE-{num}[^\]]*\]', markdown_img, content_text, count=1
+                        )
                         logger.info(f"  ✅ [IMAGE-{num}] → Pexels image by {photographer}")
                     else:
                         # Remove placeholder if no image found
