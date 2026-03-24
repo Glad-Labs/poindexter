@@ -20,9 +20,13 @@ async def run_scheduled_publisher(get_pool):
         get_pool: Callable that returns the asyncpg connection pool
     """
     logger.info("[scheduled_publisher] Started")
+    first_run = True
     while True:
         try:
-            await asyncio.sleep(60)
+            if first_run:
+                first_run = False
+            else:
+                await asyncio.sleep(60)
             pool = await get_pool()
             if not pool:
                 continue
