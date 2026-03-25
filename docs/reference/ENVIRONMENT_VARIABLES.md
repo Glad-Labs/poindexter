@@ -21,15 +21,22 @@ Last updated: 2026-03-25.
 
 ### Railway (Backend) - Optional
 
-| Variable               | Default          | Description                       |
-| ---------------------- | ---------------- | --------------------------------- |
-| `LOG_LEVEL`            | `INFO`           | DEBUG, INFO, WARNING, ERROR       |
-| `PEXELS_API_KEY`       | (none)           | Stock image search for blog posts |
-| `SERPER_API_KEY`       | (none)           | Web search for research phase     |
-| `SENTRY_DSN`           | (none)           | Error tracking                    |
-| `REVALIDATE_SECRET`    | `dev-secret-key` | ISR cache revalidation token      |
-| `DEVELOPMENT_MODE`     | `false`          | **Must be false in production**   |
-| `DISABLE_AUTH_FOR_DEV` | `false`          | **Must be false in production**   |
+| Variable                  | Default                    | Description                                       |
+| ------------------------- | -------------------------- | ------------------------------------------------- |
+| `REDIS_URL`               | `redis://localhost:6379/0` | Redis connection string for query caching         |
+| `REDIS_ENABLED`           | `true`                     | Set `false` to disable Redis (runs without cache) |
+| `SECRET_KEY`              | placeholder                | App-level secret (64 chars, must change in prod)  |
+| `LOG_LEVEL`               | `INFO`                     | DEBUG, INFO, WARNING, ERROR                       |
+| `PEXELS_API_KEY`          | (none)                     | Stock image search for blog posts                 |
+| `SERPER_API_KEY`          | (none)                     | Web search for research phase                     |
+| `SENTRY_DSN`              | (none)                     | Error tracking                                    |
+| `SENTRY_ENABLED`          | `true`                     | Enable/disable Sentry integration                 |
+| `REVALIDATE_SECRET`       | `dev-secret-key`           | ISR cache revalidation token (match public site)  |
+| `DEVELOPMENT_MODE`        | `false`                    | **Must be false in production**                   |
+| `DISABLE_AUTH_FOR_DEV`    | `false`                    | **Must be false in production**                   |
+| `ENABLE_TRACING`          | `false`                    | OpenTelemetry tracing                             |
+| `ENABLE_QUERY_MONITORING` | `true`                     | Slow query logging                                |
+| `SLOW_QUERY_THRESHOLD_MS` | `100`                      | Log queries slower than this (ms)                 |
 
 ### Railway - AI Model Keys (need at least ONE)
 
