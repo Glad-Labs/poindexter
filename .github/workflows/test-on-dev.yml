@@ -75,5 +75,27 @@ jobs:
         run: npm run build --if-present
         # No continue-on-error — build failures should block dev CI
 
+      # ============================================
+      # E2E TESTS (frontend-only specs, no backend needed)
+      # ============================================
+
+      - name: 🎭 Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: 🎭 Run Playwright E2E tests (frontend pages)
+        run: |
+          npx playwright test --project=chromium \
+            web/public-site/e2e/about.spec.ts \
+            web/public-site/e2e/legal.spec.ts \
+            web/public-site/e2e/tag.spec.ts \
+            web/public-site/e2e/post-detail.spec.ts \
+            web/public-site/e2e/author.spec.ts
+        env:
+          SKIP_ENV_VALIDATION: "true"
+          NEXT_PUBLIC_API_BASE_URL: "http://localhost:8000"
+          NEXT_PUBLIC_FASTAPI_URL: "http://localhost:8000"
+          NEXT_PUBLIC_SITE_URL: "http://localhost:3000"
+        continue-on-error: true  # E2E may be flaky in CI — surface results without blocking
+
       - name: ✅ Testing complete for dev
         run: echo "Dev branch testing complete - ready for staging deployment"
