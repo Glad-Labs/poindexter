@@ -46,7 +46,11 @@ function TaskManagement() {
     page,
     limit,
     5000, // Auto-refresh every 5 seconds for responsive status updates
-    { status: statusFilter || undefined, search: searchQuery || undefined }
+    {
+      status: statusFilter || undefined,
+      search: searchQuery || undefined,
+      paused: showCreateModal || showDetailModal,
+    }
   );
 
   const normalizeDisplayText = (value) => {

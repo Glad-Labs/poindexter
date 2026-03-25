@@ -30,7 +30,7 @@ export const useFetchTasks = (
   page = 1,
   limit = 10,
   autoRefreshInterval = 30000,
-  { status, search } = {}
+  { status, search, paused = false } = {}
 ) => {
   const [tasks, setTasks] = useState([]);
   const [total, setTotal] = useState(0);
@@ -122,9 +122,9 @@ export const useFetchTasks = (
     authInitialized,
   ]);
 
-  // Auto-refresh effect
+  // Auto-refresh effect — paused when modals are open
   useEffect(() => {
-    if (!authInitialized || !isAuthenticated) {
+    if (!authInitialized || !isAuthenticated || paused) {
       return;
     }
 
@@ -136,7 +136,13 @@ export const useFetchTasks = (
       const interval = setInterval(fetchTasks, autoRefreshInterval);
       return () => clearInterval(interval);
     }
-  }, [fetchTasks, autoRefreshInterval, isAuthenticated, authInitialized]);
+  }, [
+    fetchTasks,
+    autoRefreshInterval,
+    isAuthenticated,
+    authInitialized,
+    paused,
+  ]);
 
   // Optimistically prepend a newly created task so it appears instantly
   const prependTask = useCallback((newTask) => {
