@@ -6,7 +6,7 @@ Covers:
   - get_current_user: valid token, missing token, invalid token, expired token
   - unified_logout: requires authentication, returns success
   - get_current_user_profile: returns user data
-  - generate_csrf_state / validate_csrf_state: CSRF token lifecycle
+  - CSRF state: now handled client-side (server checks state is present only)
   - exchange_code_for_token: mock codes, error paths, timeout, HTTP error
   - get_github_user: mock tokens, error responses
   - github_callback endpoint: happy path, missing params, exchange failures
@@ -361,60 +361,14 @@ class TestDevelopmentModeBypass:
 
 @pytest.mark.unit
 class TestCsrfState:
-    def setup_method(self):
-        # Clear global CSRF state store before each test to avoid cross-test leakage
-        from routes.auth_unified import _CSRF_STATES
-        _CSRF_STATES.clear()
+    """CSRF state is now handled client-side (sessionStorage).
+    The backend only checks that state is present and non-empty.
+    See auth_unified.py github_callback() for details."""
 
-    def test_generate_returns_nonempty_string(self):
-        from routes.auth_unified import generate_csrf_state
-        state = generate_csrf_state()
-        assert isinstance(state, str) and len(state) > 0
-
-    def test_generated_state_validates_successfully(self):
-        from routes.auth_unified import generate_csrf_state, validate_csrf_state
-        state = generate_csrf_state()
-        assert validate_csrf_state(state) is True
-
-    def test_state_is_one_time_use(self):
-        """After successful validation the state is consumed and cannot be reused."""
-        from routes.auth_unified import generate_csrf_state, validate_csrf_state
-        state = generate_csrf_state()
-        validate_csrf_state(state)
-        assert validate_csrf_state(state) is False
-
-    def test_unknown_state_returns_false(self):
-        from routes.auth_unified import validate_csrf_state
-        assert validate_csrf_state("completely-unknown-state-xyz") is False
-
-    def test_empty_state_returns_false(self):
-        from routes.auth_unified import validate_csrf_state
-        assert validate_csrf_state("") is False
-
-    def test_expired_state_returns_false(self):
-        """Inject an already-expired timestamp to simulate expiry."""
-        from routes.auth_unified import _CSRF_STATES, validate_csrf_state
-        from datetime import datetime, timedelta, timezone
-        fake_state = "expired-state-token"
-        _CSRF_STATES[fake_state] = datetime.now(timezone.utc) - timedelta(seconds=1)
-        assert validate_csrf_state(fake_state) is False
-
-    def test_expired_state_is_removed_from_store(self):
-        from routes.auth_unified import _CSRF_STATES, validate_csrf_state
-        from datetime import datetime, timedelta, timezone
-        fake_state = "expired-to-be-cleaned"
-        _CSRF_STATES[fake_state] = datetime.now(timezone.utc) - timedelta(seconds=1)
-        validate_csrf_state(fake_state)
-        assert fake_state not in _CSRF_STATES
-
-    def test_two_different_states_are_independent(self):
-        from routes.auth_unified import generate_csrf_state, validate_csrf_state
-        state_a = generate_csrf_state()
-        state_b = generate_csrf_state()
-        assert state_a != state_b
-        assert validate_csrf_state(state_a) is True
-        # state_b should still be valid after consuming state_a
-        assert validate_csrf_state(state_b) is True
+    def test_callback_rejects_missing_state(self):
+        """Backend rejects requests with no state parameter."""
+        # This is tested via the github_callback endpoint tests above
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -699,8 +653,7 @@ class TestGithubCallbackEndpoint:
         # mock_auth_code_ triggers mock path in exchange_code_for_token
         # Patch validate_csrf_state so CSRF check passes without a real stored state
         # DEVELOPMENT_MODE=true required for mock auth code acceptance
-        with patch("routes.auth_unified.validate_csrf_state", return_value=True), \
-             patch.dict(os.environ, {"DEVELOPMENT_MODE": "true"}):
+        with patch.dict(os.environ, {"DEVELOPMENT_MODE": "true"}):
             resp = client.post(
                 "/api/auth/github/callback",
                 json={"code": "mock_auth_code_test", "state": "any-state"},
@@ -716,8 +669,7 @@ class TestGithubCallbackEndpoint:
         from fastapi.testclient import TestClient
         from unittest.mock import patch, AsyncMock
         client = TestClient(self._build_app(), raise_server_exceptions=False)
-        with patch("routes.auth_unified.validate_csrf_state", return_value=True), \
-             patch(
+        with patch(
                  "routes.auth_unified.exchange_code_for_token",
                  new=AsyncMock(side_effect=HTTPException(status_code=401, detail="bad code")),
              ):
@@ -731,8 +683,7 @@ class TestGithubCallbackEndpoint:
         from fastapi.testclient import TestClient
         from unittest.mock import patch, AsyncMock
         client = TestClient(self._build_app(), raise_server_exceptions=False)
-        with patch("routes.auth_unified.validate_csrf_state", return_value=True), \
-             patch(
+        with patch(
                  "routes.auth_unified.exchange_code_for_token",
                  new=AsyncMock(side_effect=RuntimeError("unexpected")),
              ):

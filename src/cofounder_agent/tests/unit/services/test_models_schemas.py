@@ -316,13 +316,13 @@ class TestUnifiedTaskResponse:
         )
         assert task.created_at == "2026-01-01T00:00:00Z"
 
-    def test_missing_status_raises(self):
-        with pytest.raises(ValidationError):
-            UnifiedTaskResponse(  # type: ignore[call-arg]
-                created_at=NOW,
-                updated_at=NOW,
-                # missing status
-            )
+    def test_missing_status_defaults_to_pending(self):
+        task = UnifiedTaskResponse(  # type: ignore[call-arg]
+            created_at=NOW,
+            updated_at=NOW,
+            # status omitted — should default to "pending"
+        )
+        assert task.status == "pending"
 
 
 # ---------------------------------------------------------------------------

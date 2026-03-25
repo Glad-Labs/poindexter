@@ -118,18 +118,14 @@ jobs:
       # DEPLOYMENT PHASE - CO-FOUNDER AGENT
       # ============================================
 
-      - name: 📦 Cache Railway CLI
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: ~/.npm-global
-          key: railway-cli-v1
+      - name: 📦 Install Railway CLI
+        run: |
+          npm install -g @railway/cli
+          railway --version
 
       - name: 🚀 Deploy Co-Founder Agent to Railway (Production)
         run: |
           echo "📤 Deploying Co-Founder Agent to production environment..."
-          curl -fsSL https://railway.app/install.sh | sh
-          export PATH="$HOME/.railway/bin:$PATH"
-          railway --version
           railway up --service cofounder
           echo "✅ Co-Founder Agent production deployment completed"
         env:
