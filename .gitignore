@@ -59,7 +59,8 @@ screenshots/
 .env
 .env.local
 .env.*.local
-.env.production
+# .env.production — NOT ignored: oversight-hub needs it for Vercel builds
+# (contains only public URLs and client IDs, no secrets)
 .env.development
 .env.test
 .env.staging
