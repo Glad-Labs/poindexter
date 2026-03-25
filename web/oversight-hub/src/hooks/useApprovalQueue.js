@@ -190,7 +190,9 @@ const useApprovalQueue = ({ onSuccess, onError } = {}) => {
             );
           }
           wsConnectionsRef.current.delete(task.task_id);
-          subscribedIdsRef.current.delete(task.task_id);
+          // Don't remove from subscribedIdsRef — prevents reconnection storm
+          // when the WebSocket endpoint doesn't exist or fails immediately.
+          // IDs are cleared on unmount via the cleanup effect.
         };
 
         wsConnectionsRef.current.set(task.task_id, ws);

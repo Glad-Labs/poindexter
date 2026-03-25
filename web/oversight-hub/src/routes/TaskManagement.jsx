@@ -26,6 +26,7 @@ function TaskManagement() {
   const [sortBy, setSortBy] = useState('created_at');
   const [sortDirection, setSortDirection] = useState('desc');
   const [statusFilter, setStatusFilter] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -46,7 +47,7 @@ function TaskManagement() {
     page,
     limit,
     5000, // Auto-refresh every 5 seconds for responsive status updates
-    { status: statusFilter || undefined }
+    { status: statusFilter || undefined, search: searchQuery || undefined }
   );
 
   const normalizeDisplayText = (value) => {
@@ -167,6 +168,7 @@ function TaskManagement() {
 
   const handleResetFilters = () => {
     setStatusFilter('');
+    setSearchQuery('');
     setSortBy('created_at');
     setSortDirection('desc');
     setPage(1);
@@ -248,9 +250,11 @@ function TaskManagement() {
         sortBy={sortBy}
         sortDirection={sortDirection}
         statusFilter={statusFilter}
+        searchQuery={searchQuery}
         onSortChange={handleSort}
         onDirectionChange={(dir) => setSortDirection(dir)}
         onStatusChange={handleStatusFilter}
+        onSearchChange={setSearchQuery}
         onResetFilters={handleResetFilters}
       />
 
