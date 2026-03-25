@@ -5,94 +5,202 @@ Last updated: 2026-03-25.
 
 ---
 
-## Quick Reference: What to Set Where
+## Railway (Backend) - Required
 
-### Railway (Backend) - Required
+| Variable                 | Description                                                          | Example                                              |
+| ------------------------ | -------------------------------------------------------------------- | ---------------------------------------------------- |
+| `DATABASE_URL`           | PostgreSQL connection string                                         | `postgresql://user:pass@host:5432/glad_labs`         |
+| `ENVIRONMENT`            | Must be `production` in prod                                         | `production`                                         |
+| `JWT_SECRET_KEY`         | JWT signing secret (32+ chars). Also read as `JWT_SECRET` (alias).   | `openssl rand -base64 32`                            |
+| `SECRET_KEY`             | App-level secret (64 chars). Startup crashes if placeholder in prod. | `openssl rand -base64 48`                            |
+| `GH_OAUTH_CLIENT_ID`     | GitHub OAuth App Client ID                                           | `Ov23li...`                                          |
+| `GH_OAUTH_CLIENT_SECRET` | GitHub OAuth App Secret                                              | `abc123...`                                          |
+| `ALLOWED_ORIGINS`        | CORS origins (comma-separated, no trailing slashes)                  | `https://glad-labs-website-oversight-hub.vercel.app` |
+| At least ONE LLM key     | See AI Model section below                                           |                                                      |
 
-| Variable                 | Description                    | Example                                              |
-| ------------------------ | ------------------------------ | ---------------------------------------------------- |
-| `DATABASE_URL`           | PostgreSQL connection string   | `postgresql://user:pass@host:5432/glad_labs`         |
-| `ENVIRONMENT`            | Must be `production`           | `production`                                         |
-| `JWT_SECRET_KEY`         | JWT signing secret (32+ chars) | `openssl rand -base64 32`                            |
-| `GH_OAUTH_CLIENT_ID`     | GitHub OAuth App Client ID     | `Ov23li...`                                          |
-| `GH_OAUTH_CLIENT_SECRET` | GitHub OAuth App Secret        | `abc123...`                                          |
-| `ALLOWED_ORIGINS`        | CORS origins (comma-separated) | `https://glad-labs-website-oversight-hub.vercel.app` |
-| At least ONE LLM key     | See AI Model section below     |                                                      |
+## Railway - AI Model Keys (need at least ONE)
 
-### Railway (Backend) - Optional
-
-| Variable                  | Default                    | Description                                       |
-| ------------------------- | -------------------------- | ------------------------------------------------- |
-| `REDIS_URL`               | `redis://localhost:6379/0` | Redis connection string for query caching         |
-| `REDIS_ENABLED`           | `true`                     | Set `false` to disable Redis (runs without cache) |
-| `SECRET_KEY`              | placeholder                | App-level secret (64 chars, must change in prod)  |
-| `LOG_LEVEL`               | `INFO`                     | DEBUG, INFO, WARNING, ERROR                       |
-| `PEXELS_API_KEY`          | (none)                     | Stock image search for blog posts                 |
-| `SERPER_API_KEY`          | (none)                     | Web search for research phase                     |
-| `SENTRY_DSN`              | (none)                     | Error tracking                                    |
-| `SENTRY_ENABLED`          | `true`                     | Enable/disable Sentry integration                 |
-| `REVALIDATE_SECRET`       | `dev-secret-key`           | ISR cache revalidation token (match public site)  |
-| `DEVELOPMENT_MODE`        | `false`                    | **Must be false in production**                   |
-| `DISABLE_AUTH_FOR_DEV`    | `false`                    | **Must be false in production**                   |
-| `ENABLE_TRACING`          | `false`                    | OpenTelemetry tracing                             |
-| `ENABLE_QUERY_MONITORING` | `true`                     | Slow query logging                                |
-| `SLOW_QUERY_THRESHOLD_MS` | `100`                      | Log queries slower than this (ms)                 |
-
-### Railway - AI Model Keys (need at least ONE)
-
-| Variable            | Provider            | Fallback Order |
-| ------------------- | ------------------- | -------------- |
-| `ANTHROPIC_API_KEY` | Claude (sk-ant-...) | 1st            |
-| `OPENAI_API_KEY`    | GPT (sk-...)        | 2nd            |
-| `GOOGLE_API_KEY`    | Gemini (AIza...)    | 3rd            |
+| Variable                | Provider                   | Fallback Order             |
+| ----------------------- | -------------------------- | -------------------------- |
+| `ANTHROPIC_API_KEY`     | Claude (`sk-ant-...`)      | 1st                        |
+| `OPENAI_API_KEY`        | GPT (`sk-...`)             | 2nd                        |
+| `GOOGLE_API_KEY`        | Gemini (`AIza...`)         | 3rd                        |
+| `GEMINI_API_KEY`        | Alias for `GOOGLE_API_KEY` | (same as above)            |
+| `HUGGINGFACE_API_TOKEN` | HuggingFace (`hf_...`)     | Not in main fallback chain |
 
 Fallback chain: Ollama -> Anthropic -> OpenAI -> Google -> Echo/Mock
 
-### Vercel - Public Site
+## Railway - Optional (Caching & Infrastructure)
 
-| Variable                   | Required | Description                 |
-| -------------------------- | -------- | --------------------------- |
-| `NEXT_PUBLIC_API_BASE_URL` | YES      | Railway backend URL         |
-| `NEXT_PUBLIC_FASTAPI_URL`  | YES      | Alias (same value as above) |
-| `NEXT_PUBLIC_SITE_URL`     | YES      | `https://glad-labs.com`     |
-| `NEXT_PUBLIC_GA_ID`        | No       | Google Analytics ID         |
-| `NEXT_PUBLIC_SENTRY_DSN`   | No       | Sentry error tracking       |
-| `SENTRY_DSN`               | No       | Server-side Sentry          |
+| Variable                      | Default                    | Description                                      |
+| ----------------------------- | -------------------------- | ------------------------------------------------ |
+| `REDIS_URL`                   | `redis://localhost:6379/0` | Redis connection string for query caching        |
+| `REDIS_ENABLED`               | `true`                     | Set `false` to skip Redis (app works without it) |
+| `OLLAMA_BASE_URL`             | (none)                     | Local Ollama server. Alias: `OLLAMA_HOST`        |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `15`                       | JWT token lifetime in minutes                    |
 
-### Vercel - Oversight Hub
+## Railway - Optional (Logging & Observability)
 
-Set in Vercel Project Settings OR committed in `web/oversight-hub/.env.production`:
+| Variable                      | Default                           | Description                              |
+| ----------------------------- | --------------------------------- | ---------------------------------------- |
+| `LOG_LEVEL`                   | `INFO`                            | DEBUG, INFO, WARNING, ERROR              |
+| `LOG_FORMAT`                  | `json` (prod) / `text` (dev)      | Log output format                        |
+| `LOG_ALL_QUERIES`             | `false`                           | Log all DB queries regardless of speed   |
+| `ENABLE_QUERY_MONITORING`     | `true`                            | Slow query logging                       |
+| `SLOW_QUERY_THRESHOLD_MS`     | `100`                             | Log queries slower than this (ms)        |
+| `SENTRY_DSN`                  | (none)                            | Sentry error tracking endpoint           |
+| `SENTRY_ENABLED`              | `true`                            | Enable/disable Sentry (needs SENTRY_DSN) |
+| `ENABLE_TRACING`              | `false`                           | OpenTelemetry distributed tracing        |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4318/v1/traces` | OTLP collector endpoint                  |
 
-| Variable                       | Required | Description                               |
-| ------------------------------ | -------- | ----------------------------------------- |
-| `REACT_APP_API_URL`            | YES      | Railway backend URL                       |
-| `REACT_APP_API_BASE_URL`       | YES      | Same as above                             |
-| `REACT_APP_WS_BASE_URL`        | YES      | Same as above (WebSocket)                 |
-| `REACT_APP_AGENT_URL`          | YES      | Same as above (legacy alias)              |
-| `REACT_APP_GH_OAUTH_CLIENT_ID` | YES      | Must match Railway's `GH_OAUTH_CLIENT_ID` |
-| `REACT_APP_USE_MOCK_AUTH`      | YES      | Must be `false` in production             |
-| `REACT_APP_LOG_LEVEL`          | No       | `warn` recommended for production         |
+## Railway - Optional (External APIs)
 
-### GitHub Secrets (production environment)
+| Variable                | Default          | Description                                           |
+| ----------------------- | ---------------- | ----------------------------------------------------- |
+| `PEXELS_API_KEY`        | (none)           | Stock image search for blog posts                     |
+| `SERPER_API_KEY`        | (none)           | Web search for content research                       |
+| `REVALIDATE_SECRET`     | `dev-secret-key` | ISR cache revalidation token (must match public site) |
+| `CLOUDINARY_CLOUD_NAME` | (none)           | Cloudinary image hosting                              |
+| `CLOUDINARY_API_KEY`    | (none)           | Cloudinary credentials                                |
+| `CLOUDINARY_API_SECRET` | (none)           | Cloudinary credentials                                |
+| `AWS_ACCESS_KEY_ID`     | (none)           | AWS S3 upload credentials                             |
+| `AWS_SECRET_ACCESS_KEY` | (none)           | AWS S3 upload credentials                             |
+| `AWS_S3_BUCKET`         | (none)           | S3 bucket name                                        |
+| `AWS_S3_REGION`         | `us-east-1`      | AWS region                                            |
+| `AWS_CLOUDFRONT_DOMAIN` | (none)           | CloudFront CDN domain                                 |
+| `MERCURY_API_KEY`       | (none)           | Mercury Markets API (financial agent)                 |
 
-These are used by the CI/CD deploy workflow:
+## Railway - Optional (LLM Model Selection)
 
-| Secret                              | Purpose                             |
-| ----------------------------------- | ----------------------------------- |
-| `RAILWAY_TOKEN`                     | Railway deploy authentication       |
-| `RAILWAY_PROD_PROJECT_ID`           | Railway project identifier          |
-| `VERCEL_TOKEN`                      | Vercel deploy authentication        |
-| `VERCEL_ORG_ID`                     | Vercel organization                 |
-| `PUBLIC_SITE_PROD_PROJECT_ID`       | Vercel public-site project          |
-| `OVERSIGHT_PROD_PROJECT_ID`         | Vercel oversight-hub project        |
-| `PUBLIC_SITE_PROD_FASTAPI_URL`      | Backend URL for public site build   |
-| `PUBLIC_SITE_PROD_SITE_URL`         | Public site canonical URL           |
-| `PUBLIC_SITE_PROD_GA_ID`            | Google Analytics ID                 |
-| `PUBLIC_SITE_PROD_SENTRY_DSN`       | Public site Sentry DSN              |
-| `OVERSIGHT_PROD_API_URL`            | Backend URL for oversight hub build |
-| `OVERSIGHT_PROD_GH_OAUTH_CLIENT_ID` | OAuth Client ID for oversight hub   |
-| `OVERSIGHT_PROD_URL`                | Oversight hub URL (for smoke tests) |
-| `COFOUNDER_PROD_URL`                | Backend URL (for smoke tests)       |
+These override which models are used for each pipeline stage. Defaults come from `agents/content_agent/config.py`.
+
+| Variable                    | Default              | Description                    |
+| --------------------------- | -------------------- | ------------------------------ |
+| `LLM_PROVIDER`              | `ollama`             | Primary LLM provider selection |
+| `MODEL_FOR_RESEARCH`        | `ollama/gpt-oss:20b` | Research phase model           |
+| `MODEL_FOR_CREATIVE`        | `ollama/gpt-oss:20b` | Creative draft model           |
+| `MODEL_FOR_QA`              | `ollama/gpt-oss:20b` | QA critique model              |
+| `MODEL_FOR_IMAGE`           | `ollama/gpt-oss:20b` | Image selection model          |
+| `MODEL_FOR_PUBLISHING`      | `ollama/gpt-oss:20b` | Publishing prep model          |
+| `GEMINI_MODEL`              | `gemini-2.0-flash`   | Gemini model name              |
+| `GEMINI_FALLBACK_MODEL`     | `gemini-2.5-flash`   | Gemini fallback model          |
+| `GEMINI_TIMEOUT_SECONDS`    | `120`                | Gemini API timeout             |
+| `SUMMARIZER_MODEL`          | `gemini-2.0-flash`   | Model for summarization        |
+| `DEFAULT_OLLAMA_CHAT_MODEL` | `llama2`             | Default model for /api/chat    |
+| `OLLAMA_WARMUP_MODEL`       | `mistral:latest`     | Model to pull during warmup    |
+
+## Railway - Feature Flags
+
+| Variable                  | Default | Description                                                     |
+| ------------------------- | ------- | --------------------------------------------------------------- |
+| `DEVELOPMENT_MODE`        | `false` | **Must be false in production.** Enables dev-token auth bypass. |
+| `DISABLE_AUTH_FOR_DEV`    | `false` | **Must be false in production.** Legacy auth bypass.            |
+| `ENABLE_TRAINING_CAPTURE` | `false` | Capture training data for fine-tuning                           |
+| `ENABLE_MCP_SERVER`       | `true`  | Model Context Protocol support                                  |
+| `ENABLE_MEMORY_SYSTEM`    | `true`  | AI memory/learning system                                       |
+| `DISABLE_SDXL_WARMUP`     | `false` | Skip SDXL model warmup on startup                               |
+
+## Railway - Database (Alternative to DATABASE_URL)
+
+Only needed if NOT using `DATABASE_URL`:
+
+| Variable                 | Default     | Description             |
+| ------------------------ | ----------- | ----------------------- |
+| `DATABASE_HOST`          | `localhost` | PostgreSQL host         |
+| `DATABASE_PORT`          | `5432`      | PostgreSQL port         |
+| `DATABASE_NAME`          | `glad_labs` | Database name           |
+| `DATABASE_USER`          | `postgres`  | Database user           |
+| `DATABASE_PASSWORD`      | (empty)     | Database password       |
+| `DATABASE_POOL_MIN_SIZE` | `20`        | Connection pool minimum |
+| `DATABASE_POOL_MAX_SIZE` | `50`        | Connection pool maximum |
+
+---
+
+## Vercel - Public Site
+
+These are set in the **Vercel dashboard** for the public-site project, or passed via the CI deploy workflow.
+
+| Variable                         | Required    | Description                                                           | Set By CI                    |
+| -------------------------------- | ----------- | --------------------------------------------------------------------- | ---------------------------- |
+| `NEXT_PUBLIC_FASTAPI_URL`        | YES         | Railway backend URL (primary — this is what the deploy workflow sets) | Yes                          |
+| `NEXT_PUBLIC_API_BASE_URL`       | Recommended | Same value. Code checks this first, falls back to FASTAPI_URL.        | No (set in Vercel dashboard) |
+| `NEXT_PUBLIC_SITE_URL`           | YES         | `https://glad-labs.com`                                               | Yes                          |
+| `NEXT_PUBLIC_GA_ID`              | No          | Google Analytics 4 ID (`G-XXXXXXXXXX`)                                | Yes                          |
+| `NEXT_PUBLIC_GA4_ID`             | No          | Alias for GA_ID (set by CI to same value)                             | Yes                          |
+| `NEXT_PUBLIC_SENTRY_DSN`         | No          | Sentry client-side error tracking                                     | Yes                          |
+| `SENTRY_DSN`                     | No          | Sentry server-side error tracking                                     | Yes                          |
+| `NEXT_PUBLIC_ADSENSE_ID`         | No          | Google AdSense Publisher ID (`ca-pub-...`)                            | No                           |
+| `NEXT_PUBLIC_ADSENSE_SLOT_ID`    | No          | AdSense ad unit slot ID                                               | No                           |
+| `NEXT_PUBLIC_GISCUS_REPO`        | No          | GitHub repo for Giscus comments                                       | No                           |
+| `NEXT_PUBLIC_GISCUS_REPO_ID`     | No          | Giscus Repo ID                                                        | No                           |
+| `NEXT_PUBLIC_GISCUS_CATEGORY_ID` | No          | Giscus Category ID                                                    | No                           |
+
+**Note:** `NEXT_PUBLIC_API_BASE_URL` is NOT set by the CI deploy workflow. The workflow only sets `NEXT_PUBLIC_FASTAPI_URL`. The code falls back gracefully, but for clarity you should set both to the same value in the Vercel dashboard.
+
+---
+
+## Vercel - Oversight Hub
+
+Set in `web/oversight-hub/.env.production` (committed to repo) OR in the Vercel dashboard.
+
+| Variable                       | Required    | Description                                     |
+| ------------------------------ | ----------- | ----------------------------------------------- |
+| `REACT_APP_API_URL`            | YES         | Railway backend URL (primary)                   |
+| `REACT_APP_API_BASE_URL`       | Recommended | Same value (fallback alias)                     |
+| `REACT_APP_GH_OAUTH_CLIENT_ID` | YES         | Must match Railway's `GH_OAUTH_CLIENT_ID`       |
+| `REACT_APP_USE_MOCK_AUTH`      | YES         | Must be `false` in production                   |
+| `REACT_APP_SENTRY_DSN`         | No          | Sentry error tracking. Alias: `VITE_SENTRY_DSN` |
+| `VITE_OLLAMA_URL`              | No          | Ollama server URL (AI Studio page)              |
+| `REACT_APP_PUBLIC_SITE_URL`    | No          | Public site URL for link generation             |
+
+**Not needed (despite appearing in .env.production):**
+
+- `REACT_APP_WS_BASE_URL` — WebSocket URL is auto-derived from `REACT_APP_API_URL`
+- `REACT_APP_AGENT_URL` — Legacy 3rd-priority fallback, unnecessary if `REACT_APP_API_URL` is set
+- `REACT_APP_LOG_LEVEL` — Not consumed by any source file
+
+---
+
+## GitHub Secrets - Production Environment
+
+Used by `.github/workflows/deploy-production-with-environments.yml`:
+
+| Secret                              | Purpose                                         | Validated at startup |
+| ----------------------------------- | ----------------------------------------------- | -------------------- |
+| `RAILWAY_TOKEN`                     | Railway deploy authentication                   | YES                  |
+| `RAILWAY_PROD_PROJECT_ID`           | Railway project identifier                      | YES                  |
+| `VERCEL_TOKEN`                      | Vercel deploy authentication                    | YES                  |
+| `VERCEL_ORG_ID`                     | Vercel organization                             | YES                  |
+| `PUBLIC_SITE_PROD_PROJECT_ID`       | Vercel public-site project                      | YES                  |
+| `OVERSIGHT_PROD_PROJECT_ID`         | Vercel oversight-hub project                    | YES                  |
+| `PUBLIC_SITE_PROD_FASTAPI_URL`      | Backend URL -> `NEXT_PUBLIC_FASTAPI_URL`        | YES                  |
+| `PUBLIC_SITE_PROD_SITE_URL`         | Public site URL -> `NEXT_PUBLIC_SITE_URL`       | YES                  |
+| `OVERSIGHT_PROD_API_URL`            | Backend URL -> written to `.env.production`     | YES                  |
+| `OVERSIGHT_PROD_GH_OAUTH_CLIENT_ID` | OAuth Client ID -> written to `.env.production` | YES                  |
+| `COFOUNDER_PROD_URL`                | Backend URL (smoke tests + notifications)       | YES                  |
+| `PUBLIC_SITE_PROD_GA_ID`            | Google Analytics ID (optional)                  | No                   |
+| `PUBLIC_SITE_PROD_SENTRY_DSN`       | Public site Sentry DSN (optional)               | No                   |
+| `OVERSIGHT_PROD_URL`                | Oversight hub URL (smoke tests only)            | No                   |
+
+## GitHub Secrets - Staging Environment
+
+Used by `.github/workflows/deploy-staging-with-environments.yml`:
+
+| Secret                                 | Purpose                                 |
+| -------------------------------------- | --------------------------------------- |
+| `RAILWAY_STAGING_PROJECT_ID`           | Railway staging project                 |
+| `PUBLIC_SITE_STAGING_PROJECT_ID`       | Vercel staging public-site project      |
+| `PUBLIC_SITE_STAGING_FASTAPI_URL`      | Staging backend URL                     |
+| `PUBLIC_SITE_STAGING_SITE_URL`         | Staging public site URL                 |
+| `PUBLIC_SITE_STAGING_GA_ID`            | Staging Google Analytics ID             |
+| `PUBLIC_SITE_STAGING_SENTRY_DSN`       | Staging Sentry DSN                      |
+| `OVERSIGHT_STAGING_PROJECT_ID`         | Vercel staging oversight-hub project    |
+| `OVERSIGHT_STAGING_API_URL`            | Staging backend URL for oversight hub   |
+| `OVERSIGHT_STAGING_GH_OAUTH_CLIENT_ID` | Staging OAuth Client ID                 |
+| `OVERSIGHT_STAGING_URL`                | Staging oversight hub URL (smoke tests) |
+| `COFOUNDER_STAGING_URL`                | Staging backend URL (smoke tests)       |
+
+**Note:** Staging and production share `RAILWAY_TOKEN`, `VERCEL_TOKEN`, and `VERCEL_ORG_ID`.
 
 ---
 
@@ -102,8 +210,11 @@ These are used by the CI/CD deploy workflow:
 2. Create new OAuth App:
    - **Homepage URL**: `https://glad-labs-website-oversight-hub.vercel.app`
    - **Authorization callback URL**: `https://glad-labs-website-oversight-hub.vercel.app/auth/callback`
-3. Copy **Client ID** -> set as `GH_OAUTH_CLIENT_ID` on Railway AND `REACT_APP_GH_OAUTH_CLIENT_ID` on Vercel
-4. Generate **Client Secret** -> set as `GH_OAUTH_CLIENT_SECRET` on Railway only
+3. Copy **Client ID** -> set as:
+   - `GH_OAUTH_CLIENT_ID` on Railway
+   - `REACT_APP_GH_OAUTH_CLIENT_ID` in `web/oversight-hub/.env.production`
+   - `OVERSIGHT_PROD_GH_OAUTH_CLIENT_ID` in GitHub Secrets
+4. Generate **Client Secret** -> set as `GH_OAUTH_CLIENT_SECRET` on Railway only (never in frontend)
 
 ---
 
@@ -118,6 +229,7 @@ These are used by the CI/CD deploy workflow:
 
 - Check `ALLOWED_ORIGINS` on Railway includes your oversight-hub Vercel domain
 - Must be exact match including protocol: `https://glad-labs-website-oversight-hub.vercel.app`
+- No trailing slash
 
 ### 404 on /auth/callback
 
@@ -131,6 +243,11 @@ These are used by the CI/CD deploy workflow:
 ### "Cannot find module 'tailwindcss'" on Vercel build
 
 - `tailwindcss`, `postcss`, `autoprefixer`, `@types/react` must be in `dependencies` (not `devDependencies`) for the public-site
+
+### Redis connection errors on startup
+
+- Set `REDIS_ENABLED=false` on Railway if you don't have Redis provisioned
+- The app works without Redis, just no query caching
 
 ---
 
@@ -153,3 +270,12 @@ OLLAMA_BASE_URL=http://localhost:11434
 # 4. Start all services
 npm run dev
 ```
+
+---
+
+## Known Inconsistencies
+
+1. **Staging uses `VITE_*` prefix, production uses `REACT_APP_*`** for the oversight hub. Both work due to Vite's `define` config, but the naming should be unified.
+2. **`JWT_SECRET_KEY` and `JWT_SECRET`** are both read (backward compat). Only `JWT_SECRET_KEY` is needed.
+3. **`OLLAMA_BASE_URL` and `OLLAMA_HOST`** are both read. Only `OLLAMA_BASE_URL` is needed.
+4. **`NEXT_PUBLIC_API_BASE_URL` vs `NEXT_PUBLIC_FASTAPI_URL`** — code checks both. CI only sets `FASTAPI_URL`.
