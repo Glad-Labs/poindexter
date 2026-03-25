@@ -151,6 +151,10 @@ export const validateBudgetStatus = (data) => {
   if (typeof amount_spent !== 'number' || amount_spent < 0) {
     throw new Error('amount_spent must be a non-negative number');
   }
+  // NOTE: amount_remaining may be negative to represent over-budget scenarios
+  // (e.g., spending has exceeded the monthly_budget). We only enforce that it
+  // is numeric, whereas amount_spent remains non-negative because you cannot
+  // spend a negative amount.
   if (typeof amount_remaining !== 'number') {
     throw new Error('amount_remaining must be a number');
   }
