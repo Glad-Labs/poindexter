@@ -19,7 +19,6 @@ Routes:
 import hashlib
 import logging
 import os
-import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
@@ -58,51 +57,9 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 GITHUB_CLIENT_ID = os.getenv("GH_OAUTH_CLIENT_ID", "")
 GITHUB_CLIENT_SECRET = os.getenv("GH_OAUTH_CLIENT_SECRET", "")
 
-# CSRF State Store - stores valid states with expiration
-# In production, replace with Redis or session store for distributed deployments
-_CSRF_STATES: Dict[str, datetime] = {}
-CSRF_STATE_EXPIRY_SECONDS = 600  # 10 minutes
-
 # ============================================================================
 # Helper Functions
 # ============================================================================
-
-
-def generate_csrf_state() -> str:
-    """Generate a cryptographically secure CSRF state token."""
-    state = secrets.token_urlsafe(32)
-    expiry = datetime.now(timezone.utc) + timedelta(seconds=CSRF_STATE_EXPIRY_SECONDS)
-    _CSRF_STATES[state] = expiry
-    logger.debug(f"Generated CSRF state token (expires in {CSRF_STATE_EXPIRY_SECONDS}s)")
-    return state
-
-
-def validate_csrf_state(state: str) -> bool:
-    """
-    Validate CSRF state token.
-
-    Checks:
-    - State exists in store
-    - State has not expired
-    - Removes state from store after validation (one-time use)
-
-    Returns:
-        True if state is valid, False otherwise
-    """
-    if not state or state not in _CSRF_STATES:
-        logger.warning("CSRF state validation failed: state not found in store")
-        return False
-
-    expiry = _CSRF_STATES[state]
-    if datetime.now(timezone.utc) > expiry:
-        logger.warning("CSRF state validation failed: state expired")
-        del _CSRF_STATES[state]
-        return False
-
-    # Remove state after successful validation (one-time use only)
-    del _CSRF_STATES[state]
-    logger.debug("CSRF state validation successful")
-    return True
 
 
 async def exchange_code_for_token(code: str) -> Dict[str, Any]:
@@ -390,11 +347,18 @@ async def github_callback(request: Request, request_data: GitHubCallbackRequest)
         logger.warning("GitHub callback missing state parameter")
         raise HTTPException(status_code=400, detail="Missing state parameter")
 
-    # Note: CSRF state validation is handled by the frontend (sessionStorage).
-    # The frontend generates the state, stores it in sessionStorage, and verifies
-    # it matches when GitHub redirects back. The backend just needs the state to
-    # be present (checked above) — the real security is the code exchange with GitHub.
-    logger.debug(f"GitHub callback received with state (frontend-validated)")
+    # CSRF state validation: This is an SPA OAuth flow where:
+    # - The frontend generates a cryptographic state, stores it in sessionStorage,
+    #   and includes it in the GitHub authorize redirect.
+    # - GitHub echoes the state back unchanged in the callback.
+    # - The frontend verifies the returned state matches sessionStorage before
+    #   calling this endpoint.
+    # - The backend validates the state is present and non-empty (checked above).
+    # - The primary security control is the authorization-code-for-token exchange
+    #   with GitHub, which requires the client_secret (server-side only).
+    # If stronger server-side CSRF guarantees are needed (e.g., for non-browser
+    # clients), implement HMAC-signed state tokens validated here.
+    logger.debug("GitHub callback received with state present")
 
     try:
         # Exchange code for GitHub access token
