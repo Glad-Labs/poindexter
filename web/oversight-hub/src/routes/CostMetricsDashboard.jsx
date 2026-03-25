@@ -109,8 +109,42 @@ function CostMetricsDashboard() {
           },
         ]);
 
-        setCostsByPhase(validatedPhaseData?.phases || {});
-        setCostsByModel(validatedModelData?.models || {});
+        // phases/models come from backend as arrays of objects;
+        // convert to {name: cost} maps for the simple chart view
+        const rawPhases = validatedPhaseData?.phases || [];
+        const phaseMap = Array.isArray(rawPhases)
+          ? rawPhases
+              .filter(
+                (p) =>
+                  p &&
+                  typeof p.phase === 'string' &&
+                  p.phase.length > 0 &&
+                  typeof p.total_cost === 'number' &&
+                  Number.isFinite(p.total_cost)
+              )
+              .reduce((acc, p) => ({ ...acc, [p.phase]: p.total_cost }), {})
+          : rawPhases && typeof rawPhases === 'object'
+            ? rawPhases
+            : {};
+        setCostsByPhase(phaseMap);
+
+        const rawModels = validatedModelData?.models || [];
+        const modelMap = Array.isArray(rawModels)
+          ? rawModels
+              .filter(
+                (m) =>
+                  m &&
+                  typeof m.model === 'string' &&
+                  m.model.length > 0 &&
+                  typeof m.total_cost === 'number' &&
+                  Number.isFinite(m.total_cost)
+              )
+              .reduce((acc, m) => ({ ...acc, [m.model]: m.total_cost }), {})
+          : rawModels && typeof rawModels === 'object'
+            ? rawModels
+            : {};
+        setCostsByModel(modelMap);
+
         setCostHistory(validatedHistoryData?.daily_data || []);
         setBudgetStatus(validatedBudgetData);
       } catch (err) {

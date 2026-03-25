@@ -24,7 +24,12 @@ export const validateCostMetrics = (data) => {
     throw new Error('Cost metrics must be an object');
   }
 
-  const { total_cost, avg_cost_per_task, total_tasks } = data;
+  // Backend returns total_cost at top level, but avg_cost_per_task and
+  // total_tasks are nested under data.tasks (as avg_cost_per_task and completed).
+  const total_cost = data.total_cost;
+  const avg_cost_per_task =
+    data.avg_cost_per_task ?? data.tasks?.avg_cost_per_task ?? 0;
+  const total_tasks = data.total_tasks ?? data.tasks?.completed ?? 0;
 
   if (typeof total_cost !== 'number' || total_cost < 0) {
     throw new Error('total_cost must be a non-negative number');
@@ -49,14 +54,23 @@ export const validateCostsByPhase = (data) => {
     throw new Error('Cost breakdown must be an object');
   }
 
-  const phases = data.phases || {};
+  const phases = data.phases || [];
 
-  // Validate that all phase values are numbers
-  Object.entries(phases).forEach(([phase, cost]) => {
-    if (typeof cost !== 'number' || cost < 0) {
-      throw new Error(`Phase "${phase}" cost must be a non-negative number`);
-    }
-  });
+  // Backend returns phases as an array of objects with phase, total_cost, etc.
+  if (Array.isArray(phases)) {
+    phases.forEach((item, idx) => {
+      if (typeof item !== 'object' || item === null) {
+        throw new Error(`phases[${idx}] must be an object`);
+      }
+    });
+  } else if (typeof phases === 'object') {
+    // Legacy: plain object where keys are phase names and values are costs
+    Object.entries(phases).forEach(([phase, cost]) => {
+      if (typeof cost !== 'number' || cost < 0) {
+        throw new Error(`Phase "${phase}" cost must be a non-negative number`);
+      }
+    });
+  }
 
   return { phases };
 };
@@ -71,14 +85,23 @@ export const validateCostsByModel = (data) => {
     throw new Error('Cost breakdown must be an object');
   }
 
-  const models = data.models || {};
+  const models = data.models || [];
 
-  // Validate that all model values are numbers
-  Object.entries(models).forEach(([model, cost]) => {
-    if (typeof cost !== 'number' || cost < 0) {
-      throw new Error(`Model "${model}" cost must be a non-negative number`);
-    }
-  });
+  // Backend returns models as an array of objects with model, total_cost, etc.
+  if (Array.isArray(models)) {
+    models.forEach((item, idx) => {
+      if (typeof item !== 'object' || item === null) {
+        throw new Error(`models[${idx}] must be an object`);
+      }
+    });
+  } else if (typeof models === 'object') {
+    // Legacy: plain object where keys are model names and values are costs
+    Object.entries(models).forEach(([model, cost]) => {
+      if (typeof cost !== 'number' || cost < 0) {
+        throw new Error(`Model "${model}" cost must be a non-negative number`);
+      }
+    });
+  }
 
   return { models };
 };
@@ -128,15 +151,15 @@ export const validateBudgetStatus = (data) => {
   if (typeof amount_spent !== 'number' || amount_spent < 0) {
     throw new Error('amount_spent must be a non-negative number');
   }
-  if (typeof amount_remaining !== 'number' || amount_remaining < 0) {
-    throw new Error('amount_remaining must be a non-negative number');
+  // NOTE: amount_remaining may be negative to represent over-budget scenarios
+  // (e.g., spending has exceeded the monthly_budget). We only enforce that it
+  // is numeric, whereas amount_spent remains non-negative because you cannot
+  // spend a negative amount.
+  if (typeof amount_remaining !== 'number') {
+    throw new Error('amount_remaining must be a number');
   }
-  if (
-    typeof percent_used !== 'number' ||
-    percent_used < 0 ||
-    percent_used > 100
-  ) {
-    throw new Error('percent_used must be a number between 0 and 100');
+  if (typeof percent_used !== 'number' || percent_used < 0) {
+    throw new Error('percent_used must be a non-negative number');
   }
 
   return { monthly_budget, amount_spent, amount_remaining, percent_used };

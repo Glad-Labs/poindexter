@@ -13,7 +13,7 @@ import {
 
 describe('responseValidationSchemas', () => {
   describe('validateCostMetrics', () => {
-    test('validates correct cost metrics', () => {
+    test('validates correct cost metrics (flat shape)', () => {
       const validMetrics = {
         total_cost: 127.5,
         avg_cost_per_task: 0.0087,
@@ -22,6 +22,33 @@ describe('responseValidationSchemas', () => {
 
       const result = validateCostMetrics(validMetrics);
       expect(result).toEqual(validMetrics);
+    });
+
+    test('validates cost metrics with nested tasks shape (backend format)', () => {
+      const backendResponse = {
+        total_cost: 12.5,
+        tasks: {
+          completed: 42,
+          avg_cost_per_task: 0.3,
+        },
+      };
+
+      const result = validateCostMetrics(backendResponse);
+      expect(result).toEqual({
+        total_cost: 12.5,
+        avg_cost_per_task: 0.3,
+        total_tasks: 42,
+      });
+    });
+
+    test('defaults missing avg_cost_per_task and total_tasks to 0', () => {
+      const minimalResponse = { total_cost: 0 };
+      const result = validateCostMetrics(minimalResponse);
+      expect(result).toEqual({
+        total_cost: 0,
+        avg_cost_per_task: 0,
+        total_tasks: 0,
+      });
     });
 
     test('throws on negative total_cost', () => {
@@ -54,7 +81,7 @@ describe('responseValidationSchemas', () => {
   });
 
   describe('validateCostsByPhase', () => {
-    test('validates correct phase breakdown', () => {
+    test('validates correct phase breakdown (legacy object format)', () => {
       const validPhaseData = {
         phases: {
           research: 45.5,
@@ -67,7 +94,19 @@ describe('responseValidationSchemas', () => {
       expect(result.phases).toEqual(validPhaseData.phases);
     });
 
-    test('throws on negative phase cost', () => {
+    test('validates phase breakdown as array (backend format)', () => {
+      const backendPhaseData = {
+        phases: [
+          { phase: 'research', total_cost: 0.5, task_count: 5 },
+          { phase: 'draft', total_cost: 2.0, task_count: 10 },
+        ],
+      };
+
+      const result = validateCostsByPhase(backendPhaseData);
+      expect(result.phases).toHaveLength(2);
+    });
+
+    test('throws on negative phase cost (legacy format)', () => {
       const invalidPhaseData = {
         phases: {
           research: -10,
@@ -78,6 +117,12 @@ describe('responseValidationSchemas', () => {
       expect(() => validateCostsByPhase(invalidPhaseData)).toThrow();
     });
 
+    test('allows empty phases array', () => {
+      const validPhaseData = { phases: [] };
+      const result = validateCostsByPhase(validPhaseData);
+      expect(result.phases).toEqual([]);
+    });
+
     test('allows empty phases object', () => {
       const validPhaseData = { phases: {} };
       const result = validateCostsByPhase(validPhaseData);
@@ -86,7 +131,7 @@ describe('responseValidationSchemas', () => {
   });
 
   describe('validateCostsByModel', () => {
-    test('validates correct model breakdown', () => {
+    test('validates correct model breakdown (legacy object format)', () => {
       const validModelData = {
         models: {
           'claude-3.5-sonnet': 45.5,
@@ -99,7 +144,29 @@ describe('responseValidationSchemas', () => {
       expect(result.models).toEqual(validModelData.models);
     });
 
-    test('throws on negative model cost', () => {
+    test('validates model breakdown as array (backend format)', () => {
+      const backendModelData = {
+        models: [
+          {
+            model: 'gpt-4',
+            total_cost: 2.0,
+            task_count: 10,
+            provider: 'openai',
+          },
+          {
+            model: 'ollama',
+            total_cost: 0.0,
+            task_count: 5,
+            provider: 'ollama',
+          },
+        ],
+      };
+
+      const result = validateCostsByModel(backendModelData);
+      expect(result.models).toHaveLength(2);
+    });
+
+    test('throws on negative model cost (legacy format)', () => {
       const invalidModelData = {
         models: {
           'claude-3.5-sonnet': -10,
@@ -108,6 +175,12 @@ describe('responseValidationSchemas', () => {
       };
 
       expect(() => validateCostsByModel(invalidModelData)).toThrow();
+    });
+
+    test('allows empty models array', () => {
+      const validModelData = { models: [] };
+      const result = validateCostsByModel(validModelData);
+      expect(result.models).toEqual([]);
     });
 
     test('allows empty models object', () => {
@@ -166,17 +239,16 @@ describe('responseValidationSchemas', () => {
       expect(result).toEqual(validBudget);
     });
 
-    test('throws on percent_used > 100', () => {
-      const invalidBudget = {
+    test('allows percent_used > 100 (budget exceeded)', () => {
+      const overBudget = {
         monthly_budget: 150.0,
-        amount_spent: 150,
-        amount_remaining: 0,
+        amount_spent: 225,
+        amount_remaining: -75,
         percent_used: 150,
       };
 
-      expect(() => validateBudgetStatus(invalidBudget)).toThrow(
-        'percent_used must be a number between 0 and 100'
-      );
+      const result = validateBudgetStatus(overBudget);
+      expect(result.percent_used).toBe(150);
     });
 
     test('throws on negative amount_spent', () => {

@@ -70,6 +70,13 @@ const nextConfig = {
   output: 'standalone',
 
   // Image Optimization Configuration
+  //
+  // CVE-2026-27980 (GHSA-3x4c-7xq6-9pq8): Unbounded next/image disk cache
+  // growth can exhaust storage. Fixed in Next.js 16.1.7 via LRU eviction +
+  // images.maximumDiskCacheSize. On 15.x the config knob doesn't exist, so we
+  // mitigate by constraining variant cardinality: fewer deviceSizes/imageSizes
+  // and an explicit minimumCacheTTL to reduce churn. Also restrict qualities
+  // to the default set (75) to prevent attackers varying the `q` parameter.
   images: {
     // Supported image formats with automatic optimization
     formats: ['image/avif', 'image/webp'],
@@ -114,9 +121,18 @@ const nextConfig = {
       },
     ],
 
-    // Image size optimization
-    deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
-    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
+    // Reduced variant cardinality to mitigate CVE-2026-27980 disk cache
+    // exhaustion. Only the sizes we actually serve — fewer combinations means
+    // a bounded cache even without LRU eviction.
+    deviceSizes: [640, 828, 1200, 1920],
+    imageSizes: [32, 64, 128, 256],
+
+    // Lock quality to a single value so the `q` query param cannot be varied
+    // to generate unbounded cache entries. (Next.js 15.3+ supports `qualities`.)
+    qualities: [75],
+
+    // Keep optimized images cached for 24 h to reduce regeneration churn
+    minimumCacheTTL: 86400,
 
     // Optimize static image imports
     disableStaticImages: false,
@@ -272,9 +288,10 @@ const nextConfig = {
     NEXT_TELEMETRY_DISABLED: '1',
   },
 
-  // ESLint configuration
+  // ESLint configuration — ignore during Vercel builds (CI runs lint separately)
   eslint: {
     dirs: ['app', 'components', 'lib', 'styles'],
+    ignoreDuringBuilds: true,
   },
 
   // TypeScript configuration

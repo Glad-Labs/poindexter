@@ -57,9 +57,11 @@ screenshots/
 # Environment variables & secrets
 # ============================================================
 .env
+.env.production
 .env.local
 .env.*.local
-.env.production
+# All real env files are ignored. For public/example configs, commit
+# *.template files instead (e.g., web/oversight-hub/.env.production.template).
 .env.development
 .env.test
 .env.staging
