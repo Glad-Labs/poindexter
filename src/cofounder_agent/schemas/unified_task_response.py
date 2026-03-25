@@ -148,7 +148,7 @@ class UnifiedTaskResponse(BaseModel):
     # STATUS & PROGRESS
     # ========================================================================
     status: str = Field(
-        ..., description="Task status (pending, generating, completed, failed, etc.)"
+        "pending", description="Task status (pending, generating, completed, failed, etc.)"
     )
     approval_status: Optional[str] = Field(
         None, description="Approval status (pending, approved, rejected)"

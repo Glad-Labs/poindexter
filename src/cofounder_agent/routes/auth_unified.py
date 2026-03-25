@@ -632,9 +632,9 @@ async def get_current_user_profile(
 
     return UserProfile(
         id=current_user["id"],
-        email=current_user.get("email", ""),
-        username=current_user.get("username", ""),
-        auth_provider=current_user.get("auth_provider", "jwt"),
+        email=current_user.get("email") or "",
+        username=current_user.get("username") or "",
+        auth_provider=current_user.get("auth_provider") or "jwt",
         is_active=current_user.get("is_active", True),
-        created_at=current_user.get("created_at", datetime.now(timezone.utc).isoformat()),
+        created_at=current_user.get("created_at") or datetime.now(timezone.utc).isoformat(),
     )
