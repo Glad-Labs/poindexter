@@ -1,7 +1,7 @@
 # 06 - Operations & Maintenance
 
 **Last Updated:** March 10, 2026
-**Version:** 3.0.82
+**Version:** 0.1.0
 **Status:** ✅ Operational
 
 ---
@@ -61,10 +61,10 @@ The logger factory is in `services/logger_config.py`. All modules retrieve a log
 
 ### SQL Query Logging
 
-Set `SQL_DEBUG=true` in `.env.local` to log every database query with timing:
+Set `ENABLE_QUERY_MONITORING=true` in `.env.local` to log database query performance:
 
 ```env
-SQL_DEBUG=true
+ENABLE_QUERY_MONITORING=true
 ```
 
 Useful for identifying slow queries or unexpected N+1 patterns during development.
@@ -75,17 +75,9 @@ Useful for identifying slow queries or unexpected N+1 patterns during developmen
 
 ### Running Migrations
 
-Migrations use Alembic with SQLAlchemy 2.0 async:
+Migrations are custom Python modules containing raw SQL in `services/migrations/`. They are applied at startup by the `MigrationsService` in `services/migrations.py`, which tracks applied migrations and runs any pending ones automatically.
 
-```bash
-cd src/cofounder_agent
-poetry run alembic upgrade head      # Apply all pending migrations
-poetry run alembic current           # Show current revision
-poetry run alembic history           # List migration history
-poetry run alembic downgrade -1      # Roll back one migration
-```
-
-The custom `MigrationsService` in `services/migrations.py` handles schema-parity checks at startup.
+There is no Alembic or ORM — all schema changes are written as raw SQL inside numbered migration files.
 
 ### Connection Pool
 

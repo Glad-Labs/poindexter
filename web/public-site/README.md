@@ -2,7 +2,7 @@
 
 Public content website built with Next.js 15 and Tailwind CSS.
 
-**Version:** 3.0.82
+**Version:** 0.1.0
 **Stack:** Next.js 15 (App Router) + React 19 + Tailwind CSS
 **Port:** 3000
 

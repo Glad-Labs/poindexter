@@ -2,8 +2,8 @@
 
 React admin dashboard for the Glad Labs AI Co-Founder system.
 
-**Version:** 3.0.82
-**Stack:** React 18 + Material-UI + Vite 4 + Zustand
+**Version:** 0.1.0
+**Stack:** React 18 + Material-UI + Vite 5 + Zustand
 **Port:** 3001
 
 ## Quick Start

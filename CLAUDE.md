@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Glad Labs is an AI orchestration system (v3.0.82) — a monorepo with three integrated services:
+Glad Labs is an AI orchestration system (v0.1.0) — a monorepo with three integrated services:
 
-- **Backend:** Python FastAPI orchestrator with 80 service modules (port 8000)
+- **Backend:** Python FastAPI orchestrator with ~76 service modules (port 8000)
 - **Admin UI:** React 18 + Material-UI dashboard for agent monitoring (port 3001)
 - **Public Site:** Next.js 15 content distribution website (port 3000)
 
@@ -93,7 +93,7 @@ npm run build                 # Build all workspaces
 
 ### Backend (`src/cofounder_agent/`)
 
-**Entry point:** `main.py` — FastAPI app initializing service container, database pools, orchestrator, and registering all 28 route modules via `register_all_routes()`.
+**Entry point:** `main.py` — FastAPI app initializing service container, database pools, orchestrator, and registering all 30 route modules via `register_all_routes()`.
 
 **Key services:**
 
@@ -140,9 +140,10 @@ npm workspaces cover `web/public-site` and `web/oversight-hub`. `npm install` at
 
 ### Deployment
 
-- `main` branch → Vercel (frontend) + Railway (backend) auto-deploy
-- `dev` branch → Railway staging auto-deploy
-- Feature branches (`feature/*`, `bugfix/*`) → local only, no CI cost
+- `main` branch → Vercel (frontend) + Railway (backend) production auto-deploy + GitHub Release tag
+- `staging` branch → Railway staging auto-deploy; Release Please manages changelog + version bumps here
+- `dev` branch → runs tests only (no deployment)
+- Feature branches (`feature/*`, `bugfix/*`) → runs tests on PR, no deployment
 
 ## Key Principles
 
@@ -151,7 +152,7 @@ npm workspaces cover `web/public-site` and `web/oversight-hub`. `npm install` at
 - **PostgreSQL as source of truth:** All task results, agent memories, and content stored there
 - **Model router first:** Use cost tiers (`free`/`budget`/`standard`/`premium`/`flagship`) not hardcoded model names
 - **Monorepo with workspaces:** `npm install` once at root covers everything
-- **API versioning policy:** All ~158 endpoints live at `/api/{resource}` (no `/v1/` prefix). This is the current v1 surface, documented via `version="3.0.x"` in `main.py` and OpenAPI at `/api/openapi.json`. **Policy:** Breaking changes to any public endpoint (field renames, status code changes, required field additions) MUST introduce a new URL version prefix (`/api/v2/`). Non-breaking additions (new optional fields, new endpoints) do not require a new version. Document breaking changes in `CHANGELOG.md`.
+- **API versioning policy:** All ~158 endpoints live at `/api/{resource}` (no `/v1/` prefix). This is the current v1 surface, version read from `pyproject.toml` at startup, OpenAPI at `/api/openapi.json`. **Policy:** Breaking changes to any public endpoint (field renames, status code changes, required field additions) MUST introduce a new URL version prefix (`/api/v2/`). Non-breaking additions (new optional fields, new endpoints) do not require a new version. Document breaking changes in `CHANGELOG.md`.
 
 ## Reference Documentation
 
