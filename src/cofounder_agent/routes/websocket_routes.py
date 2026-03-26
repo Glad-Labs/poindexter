@@ -88,7 +88,8 @@ async def _validate_ws_token(websocket: WebSocket, token: str) -> bool:
         if not claims:
             await websocket.close(code=1008, reason="Invalid token")
             return False
-    except Exception:
+    except Exception as e:
+        logger.warning("[ws_auth] Token verification failed: %s", e)
         await websocket.close(code=1008, reason="Invalid token")
         return False
     return True

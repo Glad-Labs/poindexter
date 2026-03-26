@@ -468,8 +468,8 @@ async def get_agent_system_health(
                 details[f"{agent_name}_agent"] = status_obj.status
                 if status_obj.status == "error":
                     error_count += 1
-            except (KeyError, AttributeError, ValueError):
-                # Agent may not exist or status cannot be determined
+            except (KeyError, AttributeError, ValueError) as e:
+                logger.warning("[agent_health] Failed to get status for %s: %s", agent_name, e)
                 details[f"{agent_name}_agent"] = "error"
                 error_count += 1
 

@@ -204,8 +204,8 @@ class OllamaAdapter(ProviderAdapter):
                 resp = await client.get(f"{self.host}/api/tags")
                 if resp.status_code == 200:
                     return [m["name"] for m in resp.json().get("models", [])]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("[OllamaAdapter] Failed to list models from %s: %s", self.host, e)
         # Fallback: models known to be installed
         return [
             "qwen3.5:35b",
@@ -743,7 +743,7 @@ class ModelConsolidationService:
         # All providers failed
         self.metrics["failed_requests"] += 1
         error_msg = f"All model providers failed. Last error: {str(last_error)}"
-        logger.error("🚨 All providers exhausted", error=error_msg)
+        logger.error("🚨 All providers exhausted", error=error_msg, exc_info=last_error)
         raise ServiceError(error_msg)
 
     def get_status(self) -> Dict[str, Any]:
