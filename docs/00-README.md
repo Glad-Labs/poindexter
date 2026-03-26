@@ -6,7 +6,7 @@
 **Last Updated:** March 10, 2026
 **Status:** ✅ Production-Ready | Cleaned & Organized | Root Docs Archived
 **Structure:** 7 Core Docs | Maintenance Guide | Intelligence Layer | Infrastructure & Ops | Organized Archive
-**Project:** Glad Labs AI Co-Founder System v3.0.82 | AGPL-3.0 License
+**Project:** Glad Labs AI Co-Founder System v0.1.0 | AGPL-3.0 License
 **Policy:** 🎯 **HIGH-LEVEL ONLY** (Architecture-focused, source-of-truth documentation)
 
 > **Recent Update (Feb 23, 2026):** Second documentation cleanup pass completed. 54 additional Phase/Sprint/Session/Testing reports moved from root to `archive/root-cleanup-feb2026/`. Repository root now contains only `README.md`, `SECURITY.md`, and `CLAUDE.md`. See [archive/](archive/) for all archived files.
@@ -81,9 +81,9 @@
 ### 6. Archive ✅ ORGANIZED
 
 - **[ARCHIVE_NAVIGATION.md](ARCHIVE_NAVIGATION.md)** ⭐ **START HERE** - Guide to finding archived documentation
-- [archive-active/](archive-active/) - All archived Phase/Sprint/Session reports
-- [archive-active/root-cleanup-feb2026/](archive-active/root-cleanup-feb2026/) - Root cleanup batches (Feb 2026)
-- [archive-active/historical-reports/](archive-active/historical-reports/) - Older session logs and reports
+- [archive/](archive/) - All archived Phase/Sprint/Session reports
+- [archive/root-cleanup-feb2026/](archive/root-cleanup-feb2026/) - Root cleanup batches (Feb 2026)
+- [archive/historical-reports/](archive/historical-reports/) - Older session logs and reports
 
 ---
 

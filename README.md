@@ -1,6 +1,6 @@
 # Glad Labs - AI Co-Founder System
 
-**Version:** 3.0.82
+**Version:** 0.1.0
 **Last Updated:** March 2026
 
 AI orchestration system with autonomous agents, multi-provider LLM routing, and full-stack web applications.
@@ -42,7 +42,7 @@ See `.env.example` for the full variable reference (~57 variables).
 
 ### Backend — FastAPI (`src/cofounder_agent/`)
 
-Python orchestrator with 80 service modules, 29 route files exposing ~158 REST/WebSocket endpoints. Manages AI agents, task workflows, content pipelines, and cost tracking.
+Python orchestrator with ~76 service modules, 30 route files exposing ~158 REST/WebSocket endpoints. Manages AI agents, task workflows, content pipelines, and cost tracking.
 
 - Multi-provider LLM routing with cost tiers (free/budget/standard/premium/flagship)
 - Four agent types: Content, Financial, Market Insight, Compliance
@@ -89,8 +89,9 @@ See [CLAUDE.md](CLAUDE.md) for the full command reference.
 
 ## Deployment
 
-- **main** branch auto-deploys: Vercel (frontends) + Railway (backend)
-- **dev** branch deploys to Railway staging
+- **main** branch auto-deploys: Vercel (frontends) + Railway (backend) + creates GitHub Release tag
+- **staging** branch → Railway staging auto-deploy; Release Please manages changelog + version bumps here
+- **dev** branch → runs tests only (no deployment)
 
 ## Documentation
 
