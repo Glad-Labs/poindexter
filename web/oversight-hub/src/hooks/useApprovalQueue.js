@@ -128,9 +128,11 @@ const useApprovalQueue = ({ onSuccess, onError } = {}) => {
 
       subscribedIdsRef.current.add(task.task_id);
       try {
-        const ws = new WebSocket(
-          `${wsProtocol}://${wsHost}/api/ws/approval/${task.task_id}`
-        );
+        const token = getAuthToken();
+        const wsUrl = token
+          ? `${wsProtocol}://${wsHost}/api/ws/approval/${task.task_id}?token=${encodeURIComponent(token)}`
+          : `${wsProtocol}://${wsHost}/api/ws/approval/${task.task_id}`;
+        const ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
           if (process.env.NODE_ENV === 'development') {

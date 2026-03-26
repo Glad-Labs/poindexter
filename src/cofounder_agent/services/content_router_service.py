@@ -589,6 +589,7 @@ async def process_content_generation_task(
 
         result["quality_score"] = quality_result.overall_score
         result["quality_passing"] = quality_result.passing
+        result["truncation_detected"] = quality_result.truncation_detected
         result["quality_details_initial"] = {
             "clarity": quality_result.dimensions.clarity,
             "accuracy": quality_result.dimensions.accuracy,
@@ -597,11 +598,15 @@ async def process_content_generation_task(
             "seo_quality": quality_result.dimensions.seo_quality,
             "readability": quality_result.dimensions.readability,
             "engagement": quality_result.dimensions.engagement,
+            "truncation_detected": quality_result.truncation_detected,
         }
         result["stages"]["2b_quality_evaluated_initial"] = True
         logger.info(f"✅ Initial quality evaluation complete:")
         logger.info(f"   Overall Score: {quality_result.overall_score:.1f}/100")
-        logger.info(f"   Passing: {quality_result.passing} (threshold ≥70.0)\n")
+        logger.info(f"   Passing: {quality_result.passing} (threshold ≥70.0)")
+        if quality_result.truncation_detected:
+            logger.warning(f"   ⚠️  TRUNCATION DETECTED — content appears cut off mid-sentence")
+        logger.info("")
 
         # ================================================================================
         # STAGE 2C: REPLACE [IMAGE-N] PLACEHOLDERS WITH PEXELS IMAGES
@@ -890,7 +895,7 @@ async def process_content_generation_task(
         logger.info(
             f"   Featured Image: {result.get('featured_image_url', 'NONE')[:100] if result.get('featured_image_url') else 'NONE'}"
         )
-        logger.info(f"   Quality Score: {quality_result.overall_score:.1f}/10")
+        logger.info(f"   Quality Score: {quality_result.overall_score:.1f}/100")
         logger.info(f"   Status: {result['status']}")
         logger.info(f"   Next: Human review & approval")
         logger.info(f"{'='*80}\n")

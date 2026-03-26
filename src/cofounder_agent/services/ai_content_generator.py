@@ -562,13 +562,37 @@ class AIContentGenerator:
                 ollama = OllamaClient()
                 logger.info(f"   ✓ OllamaClient initialized")
 
-                # Use preferred_model if provided (from UI selection), otherwise fallback list
+                # Model selection priority:
+                # 1. UI-selected model (preferred_model from task request)
+                # 2. OllamaClient's configured model (from DEFAULT_OLLAMA_MODEL env var)
+                # 3. Dynamic discovery from installed models (sorted by size)
+                # No hardcoded model names — if nothing works, falls through to cloud providers.
                 if preferred_model:
                     model_list = [preferred_model]
                     logger.info(f"   ├─ Using UI-selected model: {preferred_model}")
                 else:
-                    model_list = ["gemma3:12b", "qwen2.5:14b", "llama3:8b", "neural-chat:latest"]
-                    logger.info(f"   ├─ No model selected, trying: {model_list}")
+                    # Start with the client's configured/resolved model
+                    resolved = await ollama.resolve_model()
+                    model_list = [resolved]
+                    logger.info(f"   ├─ Primary model: {resolved}")
+
+                    # Add other installed models as fallbacks (in case primary fails)
+                    try:
+                        available = await ollama.list_models()
+                        fallbacks = [
+                            m["name"] for m in sorted(
+                                available,
+                                key=lambda x: x.get("size", 0),
+                                reverse=True,
+                            )
+                            if "embed" not in m.get("name", "").lower()
+                            and m["name"] != resolved
+                        ]
+                        model_list.extend(fallbacks)
+                    except Exception as e:
+                        logger.warning(f"   ⚠️ Could not discover fallback models: {e}")
+
+                    logger.info(f"   ├─ Will try {len(model_list)} model(s): {[m.split(':')[0] for m in model_list[:5]]}")
                 for model_idx, model_name in enumerate(model_list, 1):
                     try:
                         logger.info(

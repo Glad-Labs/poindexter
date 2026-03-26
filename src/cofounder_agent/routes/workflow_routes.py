@@ -12,6 +12,7 @@ from services.logger_config import get_logger
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from utils.rate_limiter import limiter
 
 from routes.auth_unified import get_current_user
 from services.workflow_history import WorkflowHistoryService
@@ -385,7 +386,9 @@ async def list_workflow_executions(
 
 
 @router.post("/execute/{template_name}", name="Execute Workflow Template")
+@limiter.limit("5/minute")
 async def execute_workflow_template(
+    request: Request,
     template_name: str,
     task_input: Dict[str, Any],
     skip_phases: Optional[List[str]] = Query(None, description="Phases to skip"),

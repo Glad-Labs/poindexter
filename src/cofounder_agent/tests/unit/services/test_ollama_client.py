@@ -45,7 +45,7 @@ def make_mock_response(data: dict, status_code: int = 200) -> MagicMock:
 
 
 SAMPLE_GENERATE_RESPONSE = {
-    "response": "This is the generated text.",
+    "message": {"role": "assistant", "content": "This is the generated text."},
     "eval_count": 50,
     "prompt_eval_count": 10,
     "total_duration": 2_000_000_000,  # 2 seconds in ns
@@ -169,7 +169,9 @@ class TestOllamaGenerate:
         await client.generate("Test", system="You are a helpful assistant.")
 
         call_kwargs = client.client.post.call_args[1]
-        assert call_kwargs["json"]["system"] == "You are a helpful assistant."
+        messages = call_kwargs["json"]["messages"]
+        assert messages[0] == {"role": "system", "content": "You are a helpful assistant."}
+        assert messages[1] == {"role": "user", "content": "Test"}
 
     @pytest.mark.asyncio
     async def test_max_tokens_included(self, client):

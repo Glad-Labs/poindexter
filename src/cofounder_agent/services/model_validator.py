@@ -53,14 +53,15 @@ class ModelValidator:
         "palm-2": {"provider": "google", "cost": 0.000005},
     }
 
-    # Pipeline phases and their default models
+    # Pipeline phases and their default models.
+    # "auto" means dynamically discover from the running Ollama instance.
     DEFAULT_MODELS_BY_PHASE = {
-        "research": "llama2",
-        "outline": "llama2",
-        "draft": "mistral",
-        "assess": "neural-chat",
-        "refine": "mistral",
-        "finalize": "llama2",
+        "research": "auto",
+        "outline": "auto",
+        "draft": "auto",
+        "assess": "auto",
+        "refine": "auto",
+        "finalize": "auto",
     }
 
     PIPELINE_PHASES = {"research", "outline", "draft", "assess", "refine", "finalize"}
@@ -69,8 +70,8 @@ class ModelValidator:
     def _get_default_model_for_phase(phase: str) -> str:
         """
         Get default model for a phase.
-        Checks environment variables first, falls back to sensible defaults.
-        
+        Checks environment variables first, falls back to "auto" (dynamic discovery).
+
         Environment variable format: DEFAULT_MODEL_{PHASE_NAME}
         Example: DEFAULT_MODEL_RESEARCH=gemini-2.5-flash
         """
@@ -79,27 +80,17 @@ class ModelValidator:
             model = os.getenv(env_var)
             logger.debug(f"Using environment-configured model for {phase}: {model}")
             return model
-        
-        # Fallback defaults - start with Ollama for cost efficiency, but allow migration
-        defaults = {
-            "research": os.getenv("DEFAULT_RESEARCH_MODEL", "llama2"),
-            "outline": os.getenv("DEFAULT_OUTLINE_MODEL", "llama2"),
-            "draft": os.getenv("DEFAULT_DRAFT_MODEL", "mistral"),
-            "assess": os.getenv("DEFAULT_ASSESS_MODEL", "neural-chat"),  # Quality check phase
-            "refine": os.getenv("DEFAULT_REFINE_MODEL", "mistral"),
-            "finalize": os.getenv("DEFAULT_FINALIZE_MODEL", "llama2"),
-        }
-        return defaults.get(phase, "llama2")
 
-    # Pipeline phases and their default models (legacy - use _get_default_model_for_phase method)
-    DEFAULT_MODELS_BY_PHASE = {
-        "research": "llama2",
-        "outline": "llama2",
-        "draft": "mistral",
-        "assess": "neural-chat",
-        "refine": "mistral",
-        "finalize": "llama2",
-    }
+        # Check phase-specific env vars, default to "auto" (resolved dynamically at runtime)
+        defaults = {
+            "research": os.getenv("DEFAULT_RESEARCH_MODEL", "auto"),
+            "outline": os.getenv("DEFAULT_OUTLINE_MODEL", "auto"),
+            "draft": os.getenv("DEFAULT_DRAFT_MODEL", "auto"),
+            "assess": os.getenv("DEFAULT_ASSESS_MODEL", "auto"),
+            "refine": os.getenv("DEFAULT_REFINE_MODEL", "auto"),
+            "finalize": os.getenv("DEFAULT_FINALIZE_MODEL", "auto"),
+        }
+        return defaults.get(phase, "auto")
 
     def __init__(self, available_models: Optional[Dict[str, ModelInfo]] = None):
         """
@@ -269,20 +260,20 @@ class ModelValidator:
         """
         recommendations = {
             "budget": {
-                "research": "llama2",
-                "outline": "llama2",
-                "draft": "llama2",
-                "assess": "llama2",
-                "refine": "llama2",
-                "finalize": "llama2",
+                "research": "auto",
+                "outline": "auto",
+                "draft": "auto",
+                "assess": "auto",
+                "refine": "auto",
+                "finalize": "auto",
             },
             "balanced": {
-                "research": "mistral",
-                "outline": "mistral",
-                "draft": "neural-chat",
-                "assess": "mistral",
-                "refine": "neural-chat",
-                "finalize": "mistral",
+                "research": "auto",
+                "outline": "auto",
+                "draft": "auto",
+                "assess": "auto",
+                "refine": "auto",
+                "finalize": "auto",
             },
             "quality": {
                 "research": "gpt-4",
