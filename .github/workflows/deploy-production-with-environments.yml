@@ -5,6 +5,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: write
+
 concurrency:
   group: production-deployment
   cancel-in-progress: false
@@ -277,3 +280,47 @@ jobs:
           echo "  4. Review recent code changes for breaking issues"
           echo "  5. Consider rolling back to previous stable version"
           exit 1
+
+  # ============================================
+  # CREATE RELEASE TAG ON MAIN
+  # Release Please runs on staging (PR + changelog only, no GitHub Release).
+  # After staging → main merge + successful deploy, tag main with the version.
+  # ============================================
+  create-release-tag:
+    runs-on: ubuntu-latest
+    needs: test-and-deploy
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: 🏷️ Read version and create GitHub Release
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="v${VERSION}"
+
+          # Check if this tag already exists (idempotent — skip if already released)
+          if git ls-remote --tags origin "$TAG" | grep -q "$TAG"; then
+            echo "Tag $TAG already exists — skipping release creation"
+            exit 0
+          fi
+
+          echo "Creating GitHub Release $TAG on main..."
+
+          # Extract changelog section for this version
+          CHANGELOG=""
+          if [ -f CHANGELOG.md ]; then
+            CHANGELOG=$(awk "/^## \[${VERSION}\]/{found=1; next} /^## \[/{if(found) exit} found{print}" CHANGELOG.md)
+          fi
+
+          if [ -z "$CHANGELOG" ]; then
+            CHANGELOG="Release ${TAG}"
+          fi
+
+          gh release create "$TAG" \
+            --target main \
+            --title "$TAG" \
+            --notes "$CHANGELOG"
+
+          echo "✅ GitHub Release $TAG created on main"
+        env:
+          GH_TOKEN: ${{ github.token }}

@@ -1,9 +1,9 @@
-name: "\U0001F4E6 Release Please (Main)"
+name: "\U0001F4E6 Release Please (Staging)"
 
 on:
     push:
         branches:
-            - main
+            - staging
 
 permissions:
     contents: write
@@ -27,60 +27,5 @@ jobs:
                   config-file: release-please-config.json
                   manifest-file: .release-please-manifest.json
 
-            # When a release is created, sync version to all 6 project files
-            - name: "\U0001F4E5 Checkout code"
-              if: ${{ steps.release.outputs.release_created }}
-              uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-              with:
-                  ref: ${{ steps.release.outputs.tag_name }}
-
-            - name: "\U0001F527 Setup Node.js"
-              if: ${{ steps.release.outputs.release_created }}
-              uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-              with:
-                  node-version: "22"
-
-            - name: "\U0001F504 Sync version to all package files"
-              if: ${{ steps.release.outputs.release_created }}
-              run: |
-                  VERSION="${{ steps.release.outputs.major }}.${{ steps.release.outputs.minor }}.${{ steps.release.outputs.patch }}"
-                  echo "Syncing version $VERSION to all package files..."
-
-                  # Update all 6 version files using the existing bump script
-                  node -e "
-                  const fs = require('fs');
-                  const path = require('path');
-                  const VERSION = '$VERSION';
-
-                  const files = [
-                    { path: 'package.json', type: 'json' },
-                    { path: 'web/public-site/package.json', type: 'json' },
-                    { path: 'web/oversight-hub/package.json', type: 'json' },
-                    { path: 'src/cofounder_agent/package.json', type: 'json' },
-                    { path: 'pyproject.toml', type: 'toml' },
-                    { path: 'src/cofounder_agent/pyproject.toml', type: 'toml' },
-                  ];
-
-                  for (const file of files) {
-                    const filePath = path.resolve(file.path);
-                    if (file.type === 'json') {
-                      const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-                      data.version = VERSION;
-                      fs.writeFileSync(filePath, JSON.stringify(data, null, 2) + '\n');
-                    } else {
-                      let content = fs.readFileSync(filePath, 'utf8');
-                      content = content.replace(/^version\s*=\s*\"[^\"]+\"/m, 'version = \"' + VERSION + '\"');
-                      fs.writeFileSync(filePath, content);
-                    }
-                    console.log('Updated: ' + file.path + ' -> ' + VERSION);
-                  }
-                  "
-
-            - name: "\U0001F4E4 Commit synced versions"
-              if: ${{ steps.release.outputs.release_created }}
-              run: |
-                  git config user.name "github-actions[bot]"
-                  git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-                  git add .
-                  git diff --cached --quiet || git commit -m "chore: sync version ${{ steps.release.outputs.tag_name }} to all package files [skip ci]"
-                  git push origin HEAD:main
+            # Version bumps are handled by extra-files in release-please-config.json
+            # GitHub Release + tag is created on main by deploy-production-with-environments.yml
