@@ -105,7 +105,7 @@ class TestConfig:
             from agents.content_agent.config import Config
 
             cfg = Config()
-        assert "ollama" in cfg.MODEL_FOR_RESEARCH
+        assert cfg.MODEL_FOR_RESEARCH == "auto"
 
     def test_base_dir_is_string(self):
         with patch.dict(

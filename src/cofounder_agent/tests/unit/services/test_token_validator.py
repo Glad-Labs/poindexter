@@ -187,7 +187,7 @@ class TestDisableAuthBypass:
         assert claims["sub"] == "dev-user"  # type: ignore[index]
 
     def test_dev_bypass_disabled_in_production(self):
-        """DISABLE_AUTH_FOR_DEV must be ignored when ENVIRONMENT=production."""
+        """DISABLE_AUTH_FOR_DEV must be ignored when DEVELOPMENT_MODE is not true."""
         expired = _make_token(
             {
                 "iat": datetime.now(timezone.utc) - timedelta(hours=2),
@@ -197,7 +197,7 @@ class TestDisableAuthBypass:
         with (
             patch.dict(
                 os.environ,
-                {"DISABLE_AUTH_FOR_DEV": "true", "ENVIRONMENT": "production"},
+                {"DISABLE_AUTH_FOR_DEV": "true", "DEVELOPMENT_MODE": "false"},
             ),
             patch.object(AuthConfig, "SECRET_KEY", _SECRET),
         ):

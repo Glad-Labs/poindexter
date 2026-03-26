@@ -309,11 +309,11 @@ class TestProductionModeBypass:
 
         with patch.dict(
             "os.environ",
-            {"DISABLE_AUTH_FOR_DEV": "true", "ENVIRONMENT": "production"},
+            {"DISABLE_AUTH_FOR_DEV": "true", "DEVELOPMENT_MODE": "false"},
         ):
             result = await mw.dispatch(req, call_next)
 
-        # In production, DISABLE_AUTH_FOR_DEV must not bypass — request rejected
+        # When DEVELOPMENT_MODE is not true, DISABLE_AUTH_FOR_DEV must not bypass
         assert not called
         assert result.status_code == 401
 
