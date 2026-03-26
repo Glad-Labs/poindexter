@@ -158,9 +158,10 @@ class TestImageServiceInit:
 
     def test_sdxl_not_initialized_at_startup(self):
         svc = ImageService()
-        # SDXL is lazily initialized only when generate_image() is called
+        # Models are lazily initialized only when generate_image() is called
         assert svc.sdxl_initialized is False
-        assert svc.sdxl_pipe is None
+        assert svc._gen_pipe is None
+        assert svc._active_model is None
 
     def test_search_cache_starts_empty(self):
         svc = ImageService()

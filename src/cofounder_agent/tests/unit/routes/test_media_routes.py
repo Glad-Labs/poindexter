@@ -63,6 +63,7 @@ def _make_image_service(pexels_result=None, sdxl_result=False, gallery_result=No
     svc.get_images_for_gallery = AsyncMock(return_value=gallery_result or [_meta])
     svc.pexels_api_key = "fake-key"
     svc.sdxl_available = False
+    svc._active_model = None
     return svc
 
 
@@ -277,53 +278,5 @@ class TestHealthCheck:
         assert resp.status_code == 200
 
 
-# ---------------------------------------------------------------------------
-# upload_to_s3 — executor-based non-blocking I/O (#678)
-# ---------------------------------------------------------------------------
 
-
-@pytest.mark.unit
-class TestUploadToS3:
-    """upload_to_s3() must not block the event loop — I/O is run in executor."""
-
-    @pytest.mark.asyncio
-    async def test_returns_none_when_s3_not_configured(self, tmp_path):
-        """When no S3 credentials are set, returns None without error."""
-        from routes.media_routes import upload_to_s3
-
-        with patch("routes.media_routes.get_s3_client", return_value=None):
-            result = await upload_to_s3(str(tmp_path / "image.png"))
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_returns_none_when_bucket_not_set(self, tmp_path):
-        """When AWS_S3_BUCKET is absent, returns None."""
-        import io
-        from routes.media_routes import upload_to_s3
-
-        fake_s3 = MagicMock()
-        with patch("routes.media_routes.get_s3_client", return_value=fake_s3):
-            with patch.dict("os.environ", {}, clear=False):
-                import os
-                os.environ.pop("AWS_S3_BUCKET", None)
-                result = await upload_to_s3(str(tmp_path / "image.png"))
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_upload_uses_run_in_executor(self, tmp_path):
-        """File read and S3 upload are both delegated to run_in_executor, not blocking."""
-        from routes.media_routes import upload_to_s3
-
-        image_file = tmp_path / "image.png"
-        image_file.write_bytes(b"PNG-DATA")
-
-        fake_s3 = MagicMock()
-        fake_s3.upload_fileobj = MagicMock()  # sync method, must run in executor
-
-        with patch("routes.media_routes.get_s3_client", return_value=fake_s3):
-            with patch.dict("os.environ", {"AWS_S3_BUCKET": "test-bucket"}):
-                result = await upload_to_s3(str(image_file), task_id="task-001")
-
-        assert result is not None
-        assert "test-bucket" in result or "s3.amazonaws.com" in result
-        fake_s3.upload_fileobj.assert_called_once()
+# S3 tests removed — S3 storage code was removed in favor of Cloudinary-only (#1187)
