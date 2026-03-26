@@ -43,6 +43,8 @@ import logging
 import os
 import time
 
+logger = logging.getLogger(__name__)
+
 import aiofiles
 import httpx
 
@@ -55,9 +57,9 @@ try:
     import google.genai as genai_module
 
     genai = genai_module
-    logging.info("google.genai successfully imported")
+    logger.info("google.genai successfully imported")
 except (ImportError, ModuleNotFoundError) as e:
-    logging.warning(
+    logger.warning(
         f"google.genai not available: {e}. Gemini provider will fall back to Ollama."
     )
 
@@ -86,7 +88,7 @@ class LLMClient:
                 # Check if google-genai is available
                 # If Poetry broke the import, fall back to Ollama gracefully
                 if not genai:
-                    logging.warning(
+                    logger.warning(
                         f"⚠️ Gemini provider requested but google-genai module unavailable. "
                         f"This is often due to Poetry's namespace package handling. "
                         f"Falling back to Ollama for content generation."
@@ -105,18 +107,18 @@ class LLMClient:
                     model_to_use = model_name if model_name else config.GEMINI_MODEL
                     self.model = genai.GenerativeModel(model_to_use)  # type: ignore[attr-defined]
                     self.summarizer_model = genai.GenerativeModel(config.SUMMARIZER_MODEL)  # type: ignore[attr-defined]
-                    logging.info(f"✅ Initialized Gemini client with model: {model_to_use}")
+                    logger.info(f"✅ Initialized Gemini client with model: {model_to_use}")
 
             if self.provider == "local" or self.provider == "ollama":
                 # Treat Ollama as a local provider - both use the same HTTP API endpoint
-                logging.info(f"✅ Using local LLM provider (Ollama) at {config.LOCAL_LLM_API_URL}")
+                logger.info(f"✅ Using local LLM provider (Ollama) at {config.LOCAL_LLM_API_URL}")
 
             elif self.provider == "gemini":
                 pass  # Already handled above
             else:
                 raise ValueError(f"Unsupported LLM provider: {self.provider}")
         except Exception as e:
-            logging.error(f"Failed to initialize LLM client: {e}")
+            logger.error(f"Failed to initialize LLM client: {e}", exc_info=True)
             raise
 
     def _cleanup_stale_cache(
@@ -154,12 +156,12 @@ class LLMClient:
                 removed += 1
 
             if removed > 0:
-                logging.info(
+                logger.info(
                     f"Cache cleanup: removed {removed} stale files, "
                     f"{len(list(self.cache_dir.glob('*.cache')))} remaining"
                 )
         except Exception as e:
-            logging.warning(f"Cache cleanup failed (non-critical): {e}")
+            logger.warning(f"Cache cleanup failed (non-critical): {e}")
 
     def _get_cache_path(self, prompt: str, format: str) -> Path:
         """Generates a cache path for a given prompt and format."""
@@ -170,7 +172,7 @@ class LLMClient:
         """Generates JSON content using the configured LLM, with async caching."""
         cache_path = self._get_cache_path(prompt, "json")
         if cache_path.exists():
-            logging.info("Returning cached JSON response for prompt.")
+            logger.info("Returning cached JSON response for prompt.")
             async with aiofiles.open(cache_path, "r") as f:
                 content = await f.read()
                 return json.loads(content)
@@ -186,14 +188,14 @@ class LLMClient:
             elif self.provider == "local" or self.provider == "ollama":
                 result = await self._generate_json_local(prompt)
             else:
-                logging.error(f"Unsupported LLM provider: {self.provider}")
+                logger.error(f"Unsupported LLM provider: {self.provider}")
                 return {}
         except Exception:
             _status = "error"
             raise
         finally:
             _llm_latency_ms = int((time.perf_counter() - _llm_start) * 1000)
-            logging.info(
+            logger.info(
                 f"[llm_call] provider={self.provider} method=generate_json "
                 f"latency_ms={_llm_latency_ms} status={_status}"
             )
@@ -209,10 +211,10 @@ class LLMClient:
             response = self.model.generate_content(prompt)  # type: ignore[union-attr]
             return json.loads(response.text)
         except json.JSONDecodeError:
-            logging.error("Failed to decode JSON from Gemini response.", exc_info=True)
+            logger.error("Failed to decode JSON from Gemini response.", exc_info=True)
             return {}
         except Exception as e:
-            logging.error(f"Error generating JSON content from Gemini: {e}", exc_info=True)
+            logger.error(f"Error generating JSON content from Gemini: {e}", exc_info=True)
             return {}
 
     async def _generate_json_local(self, prompt: str) -> dict:
@@ -231,30 +233,30 @@ class LLMClient:
             msg = response_json.get("message", {})
             if msg.get("content"):
                 raw_response = msg["content"]
-                logging.debug(f"LLM raw response: {raw_response[:200]}...")
+                logger.debug(f"LLM raw response: {raw_response[:200]}...")
                 # Try to extract JSON from the response
                 extracted_json = extract_json_from_string(raw_response)
                 if extracted_json:
-                    logging.debug(f"Extracted JSON: {extracted_json[:200]}...")
+                    logger.debug(f"Extracted JSON: {extracted_json[:200]}...")
                     return json.loads(extracted_json)
                 # Fallback: try parsing the raw text directly
-                logging.debug("No JSON block found, attempting direct parse...")
+                logger.debug("No JSON block found, attempting direct parse...")
                 return json.loads(raw_response)
             else:
-                logging.error("'response' key not found in local LLM output.")
+                logger.error("'response' key not found in local LLM output.")
                 raise ValueError("No 'response' key in LLM output")
         except httpx.HTTPError as e:
-            logging.error(f"Error communicating with local LLM: {e}")
+            logger.error(f"Error communicating with local LLM: {e}", exc_info=True)
             raise
         except json.JSONDecodeError as e:
-            logging.error(f"Failed to decode JSON from local LLM response: {e}")
+            logger.error(f"Failed to decode JSON from local LLM response: {e}", exc_info=True)
             raise ValueError(f"LLM response was not valid JSON: {str(e)}")
 
     async def generate_text(self, prompt: str) -> str:
         """Generates plain text content using the configured LLM, with caching (async)."""
         cache_path = self._get_cache_path(prompt, "txt")
         if cache_path.exists():
-            logging.info(f"Returning cached text response for prompt.")
+            logger.info(f"Returning cached text response for prompt.")
             # Use aiofiles to avoid blocking the event loop on file reads (issue #789).
             async with aiofiles.open(cache_path, "r", encoding="utf-8") as f:
                 return await f.read()
@@ -270,14 +272,14 @@ class LLMClient:
             elif self.provider == "local" or self.provider == "ollama":
                 result = await self._generate_text_local(prompt)
             else:
-                logging.error(f"Unsupported LLM provider: {self.provider}")
+                logger.error(f"Unsupported LLM provider: {self.provider}")
                 return ""
         except Exception:
             _status = "error"
             raise
         finally:
             _llm_latency_ms = int((time.perf_counter() - _llm_start) * 1000)
-            logging.info(
+            logger.info(
                 f"[llm_call] provider={self.provider} method=generate_text "
                 f"latency_ms={_llm_latency_ms} status={_status}"
             )
@@ -288,7 +290,7 @@ class LLMClient:
                 async with aiofiles.open(cache_path, "w", encoding="utf-8") as f:
                     await f.write(result)
             except Exception as e:
-                logging.warning(f"Failed to cache result: {e}")
+                logger.warning(f"Failed to cache result: {e}")
 
         return result
 
@@ -297,7 +299,7 @@ class LLMClient:
             response = self.model.generate_content(prompt)  # type: ignore[union-attr]
             return response.text
         except Exception as e:
-            logging.error(f"Error generating text content from Gemini: {e}", exc_info=True)
+            logger.error(f"Error generating text content from Gemini: {e}", exc_info=True)
             return ""
 
     async def _generate_text_local(self, prompt: str) -> str:
@@ -317,14 +319,14 @@ class LLMClient:
                 response.raise_for_status()
             return response.json().get("message", {}).get("content", "")
         except httpx.HTTPError as e:
-            logging.error(f"Error communicating with local LLM: {e}")
+            logger.error(f"Error communicating with local LLM: {e}", exc_info=True)
             return ""
 
     async def generate_summary(self, prompt: str) -> str:
         """Generates a summary using the configured summarizer model, with caching (async)."""
         cache_path = self._get_cache_path(prompt, "summary.txt")
         if cache_path.exists():
-            logging.info(f"Returning cached summary for prompt.")
+            logger.info(f"Returning cached summary for prompt.")
             # Use aiofiles to avoid blocking the event loop on file reads (issue #789).
             async with aiofiles.open(cache_path, "r", encoding="utf-8") as f:
                 return await f.read()
@@ -340,19 +342,19 @@ class LLMClient:
             elif self.provider == "local" or self.provider == "ollama":
                 # For local/ollama provider, we can reuse the text generation with the summarizer model if needed
                 # or use a specific endpoint if available. For now, we use the main model.
-                logging.warning(
+                logger.warning(
                     "Summarization with local/ollama provider falls back to the main model."
                 )
                 result = await self._generate_text_local(prompt)
             else:
-                logging.error(f"Unsupported LLM provider: {self.provider}")
+                logger.error(f"Unsupported LLM provider: {self.provider}")
                 return ""
         except Exception:
             _status = "error"
             raise
         finally:
             _llm_latency_ms = int((time.perf_counter() - _llm_start) * 1000)
-            logging.info(
+            logger.info(
                 f"[llm_call] provider={self.provider} method=generate_summary "
                 f"latency_ms={_llm_latency_ms} status={_status}"
             )
@@ -363,7 +365,7 @@ class LLMClient:
                 async with aiofiles.open(cache_path, "w", encoding="utf-8") as f:
                     await f.write(result)
             except Exception as e:
-                logging.warning(f"Failed to cache summary: {e}")
+                logger.warning(f"Failed to cache summary: {e}")
 
         return result
 
@@ -372,5 +374,5 @@ class LLMClient:
             response = self.summarizer_model.generate_content(prompt)  # type: ignore[union-attr]
             return response.text
         except Exception as e:
-            logging.error(f"Error generating summary from Gemini: {e}", exc_info=True)
+            logger.error(f"Error generating summary from Gemini: {e}", exc_info=True)
             return ""
