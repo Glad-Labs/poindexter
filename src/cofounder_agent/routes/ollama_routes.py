@@ -241,12 +241,12 @@ async def warmup_ollama(
 
             warmup_payload = {
                 "model": resolved_model,
-                "prompt": "Hi",  # Simple prompt to load model
+                "messages": [{"role": "user", "content": "Hi"}],
                 "stream": False,
             }
 
             warmup_response = await client.post(
-                f"{OLLAMA_HOST}/api/generate",
+                f"{OLLAMA_HOST}/api/chat",
                 json=warmup_payload,
                 timeout=30.0,  # Longer timeout for model loading
             )

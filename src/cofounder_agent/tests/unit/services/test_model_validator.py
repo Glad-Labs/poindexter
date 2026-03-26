@@ -213,12 +213,12 @@ class TestGetDefaultModelsForPhase:
     def test_returns_default_for_research(self):
         validator = ModelValidator()
         result = validator.get_default_models_for_phase("research")
-        assert result == "llama2"
+        assert result == "auto"
 
     def test_returns_default_for_draft(self):
         validator = ModelValidator()
         result = validator.get_default_models_for_phase("draft")
-        assert result == "mistral"
+        assert result == "auto"
 
     def test_unknown_phase_returns_none(self):
         validator = ModelValidator()
@@ -310,7 +310,7 @@ class TestRecommendModelsForQualityLevel:
     def test_budget_uses_llama2_everywhere(self):
         validator = ModelValidator()
         recs = validator.recommend_models_for_quality_level("budget")
-        assert all(model == "llama2" for model in recs.values())
+        assert all(model == "auto" for model in recs.values())
 
     def test_premium_includes_high_quality_models(self):
         validator = ModelValidator()

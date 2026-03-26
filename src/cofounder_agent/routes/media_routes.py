@@ -20,7 +20,8 @@ from datetime import datetime
 from io import BytesIO
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
+from utils.rate_limiter import limiter
 from pydantic import BaseModel, Field
 
 from routes.auth_unified import get_current_user
@@ -364,8 +365,10 @@ def build_enhanced_search_prompt(
     summary="Generate or search for featured image",
     description="Search Pexels for free stock images, with optional SDXL fallback",
 )
+@limiter.limit("10/minute")
 async def generate_featured_image(
-    request: ImageGenerationRequest,
+    request: Request,
+    image_request: ImageGenerationRequest,
     current_user: dict = Depends(get_current_user),
 ):
     """
@@ -424,15 +427,15 @@ async def generate_featured_image(
 
         # Log the request configuration
         logger.info(
-            f"📸 Image generation request: use_pexels={request.use_pexels}, use_generation={request.use_generation}"
+            f"📸 Image generation request: use_pexels={image_request.use_pexels}, use_generation={image_request.use_generation}"
         )
 
         # Step 1: Try Pexels search first (recommended)
-        if request.use_pexels:
-            keywords = request.keywords or []
+        if image_request.use_pexels:
+            keywords = image_request.keywords or []
 
             # Build enhanced search prompt using keywords if available
-            search_prompt = build_enhanced_search_prompt(request.prompt, keywords)
+            search_prompt = build_enhanced_search_prompt(image_request.prompt, keywords)
 
             logger.info(f"🔍 STEP 1: Searching Pexels for: {search_prompt}")
             if keywords:
@@ -440,7 +443,7 @@ async def generate_featured_image(
 
             try:
                 image = await image_service.search_featured_image(
-                    topic=search_prompt, keywords=keywords, page=request.page
+                    topic=search_prompt, keywords=keywords, page=image_request.page
                 )
 
                 if image:
@@ -453,18 +456,18 @@ async def generate_featured_image(
             logger.info(f"ℹ️ STEP 1 SKIPPED: use_pexels=false")
 
         # Step 2: Fall back to SDXL generation
-        if not image and request.use_generation:
-            keywords = request.keywords or []
+        if not image and image_request.use_generation:
+            keywords = image_request.keywords or []
 
             # Build enhanced generation prompt using keywords if available
-            generation_prompt = build_enhanced_search_prompt(request.prompt, keywords)
+            generation_prompt = build_enhanced_search_prompt(image_request.prompt, keywords)
 
             logger.info(f"🎨 STEP 2: Generating image with SDXL: {generation_prompt}")
             if keywords:
                 logger.debug(f"   Keywords: {', '.join(keywords)}")
-            if request.use_refinement:
+            if image_request.use_refinement:
                 logger.info(
-                    f"   Refinement: ENABLED (base {request.num_inference_steps} steps + 30 refinement steps)"
+                    f"   Refinement: ENABLED (base {image_request.num_inference_steps} steps + 30 refinement steps)"
                 )
 
             try:
@@ -480,7 +483,7 @@ async def generate_featured_image(
 
                 # Create filename with timestamp and task_id for traceability
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                task_id_str = request.task_id if request.task_id else "no-task"
+                task_id_str = image_request.task_id if image_request.task_id else "no-task"
                 output_file = f"sdxl_{timestamp}_{task_id_str}.png"
                 output_path = os.path.join(downloads_path, output_file)
 
@@ -489,11 +492,11 @@ async def generate_featured_image(
                 success = await image_service.generate_image(
                     prompt=generation_prompt,
                     output_path=output_path,
-                    num_inference_steps=request.num_inference_steps,
-                    guidance_scale=request.guidance_scale,
-                    use_refinement=request.use_refinement,
-                    high_quality=request.high_quality,
-                    task_id=request.task_id,  # Pass task_id for progress tracking
+                    num_inference_steps=image_request.num_inference_steps,
+                    guidance_scale=image_request.guidance_scale,
+                    use_refinement=image_request.use_refinement,
+                    high_quality=image_request.high_quality,
+                    task_id=image_request.task_id,  # Pass task_id for progress tracking
                 )
 
                 if success and os.path.exists(output_path):
@@ -523,16 +526,16 @@ async def generate_featured_image(
                         photographer_url="",
                         width=1024,  # SDXL standard output
                         height=1024,
-                        alt_text=request.prompt,
+                        alt_text=image_request.prompt,
                         source="sdxl-local-preview",  # Mark as local preview
-                        search_query=request.prompt,
+                        search_query=image_request.prompt,
                     )
                     logger.info(f"✅ Created image metadata (local preview): {output_path}")
             except Exception as e:
                 logger.warning(f"⚠️ SDXL generation failed: {e}", exc_info=True)
-        elif image and not request.use_generation:
+        elif image and not image_request.use_generation:
             logger.info(f"ℹ️ STEP 2 SKIPPED: Pexels found image, use_generation=false")
-        elif not image and not request.use_generation:
+        elif not image and not image_request.use_generation:
             logger.info(
                 f"ℹ️ STEP 2 SKIPPED: use_generation=false (Pexels search failed but SDXL disabled)"
             )
@@ -575,7 +578,7 @@ async def generate_featured_image(
         # ═══════════════════════════════════════════════════════════
         # Unload SDXL models if generation was requested but failed
         # ═══════════════════════════════════════════════════════════
-        if request.use_generation and hasattr(image_service, "_unload_sdxl"):
+        if image_request.use_generation and hasattr(image_service, "_unload_sdxl"):
             image_service._unload_sdxl()
 
         elapsed = time.time() - start_time

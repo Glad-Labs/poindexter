@@ -80,8 +80,9 @@ class DatabaseService:
         """Initialize connection pool and all delegate modules."""
         try:
             # PostgreSQL requires connection pooling
-            min_size = int(os.getenv("DATABASE_POOL_MIN_SIZE", "20"))
-            max_size = int(os.getenv("DATABASE_POOL_MAX_SIZE", "50"))
+            is_dev = os.getenv("ENVIRONMENT", "production").lower() in ("development", "dev", "local")
+            min_size = int(os.getenv("DATABASE_POOL_MIN_SIZE", "5" if is_dev else "20"))
+            max_size = int(os.getenv("DATABASE_POOL_MAX_SIZE", "20" if is_dev else "50"))
 
             self.pool = await asyncpg.create_pool(
                 self.database_url,

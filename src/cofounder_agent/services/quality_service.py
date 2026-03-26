@@ -128,13 +128,16 @@ class QualityDimensions:
 
         Returns the arithmetic mean of all 7 dimensions, but caps the result
         at the lowest critical dimension score if that score is below
-        CRITICAL_FLOOR. This prevents content with critically low readability
-        (e.g. 48/100) from receiving a passing overall score solely because
+        CRITICAL_FLOOR. This prevents content with critically weak clarity
+        or relevance from receiving a passing overall score solely because
         other dimensions scored well.
 
+        Note: readability is excluded from critical caps (#1238) because the
+        Flesch formula penalizes technical vocabulary unfairly.
+
         Examples:
-            clarity=80, readability=48 → overall capped at 48 → FAIL
-            clarity=80, readability=70 → normal average → may PASS
+            clarity=80, relevance=48 → overall capped at 48 → FAIL
+            clarity=80, relevance=70 → normal average → may PASS
         """
         raw_average = (
             self.clarity
@@ -146,11 +149,10 @@ class QualityDimensions:
             + self.engagement
         ) / 7.0
 
-        # Enforce minimum-dimension constraint on critical dimensions
+        # Enforce minimum-dimension constraint on critical dimensions only.
+        # readability excluded (#1238) — Flesch penalizes technical vocabulary.
         critical_values = {
-            "clarity": self.clarity,
-            "readability": self.readability,
-            "relevance": self.relevance,
+            dim: getattr(self, dim) for dim in self.CRITICAL_DIMENSIONS
         }
         for dim_name, dim_value in critical_values.items():
             if dim_value < self.CRITICAL_FLOOR:
@@ -200,6 +202,9 @@ class QualityAssessment:
     content_length: Optional[int] = None
     word_count: Optional[int] = None
 
+    # Truncation detection
+    truncation_detected: bool = False
+
     # Refinement tracking
     refinement_attempts: int = 0
     max_refinements: int = 3
@@ -218,6 +223,7 @@ class QualityAssessment:
             "evaluated_by": self.evaluated_by,
             "content_length": self.content_length,
             "word_count": self.word_count,
+            "truncation_detected": self.truncation_detected,
             "refinement_attempts": self.refinement_attempts,
             "needs_refinement": self.needs_refinement,
         }
@@ -374,15 +380,25 @@ class UnifiedQualityService:
 
         overall_score = dimensions.average()
 
+        truncated = self.detect_truncation(content)
+
+        # Truncated content cannot pass quality — it's incomplete by definition
+        passing = overall_score >= 70 and not truncated
+
+        suggestions = self._generate_suggestions(dimensions)
+        if truncated:
+            suggestions.insert(0, "Content appears truncated (cut off mid-sentence). The LLM may have hit its output token limit. Try regenerating with a shorter target length or a model with a larger context window.")
+
         return QualityAssessment(
             dimensions=dimensions,
             overall_score=overall_score,
-            passing=overall_score >= 70,  # 70/100 = 7/10
+            passing=passing,
             feedback=self._generate_feedback(dimensions, context),
-            suggestions=self._generate_suggestions(dimensions),
+            suggestions=suggestions,
             evaluation_method=EvaluationMethod.PATTERN_BASED,
             content_length=len(content),
             word_count=word_count,
+            truncation_detected=truncated,
         )
 
     async def _evaluate_llm_based(self, content: str, context: Dict[str, Any]) -> QualityAssessment:
@@ -563,6 +579,50 @@ class UnifiedQualityService:
 
         return min(score, 10.0)
 
+    @staticmethod
+    def detect_truncation(content: str) -> bool:
+        """Detect if content was truncated by LLM token limits.
+
+        Checks whether the content ends mid-sentence, which is a strong signal
+        that the LLM hit its output token limit before completing the article.
+        """
+        if not content or len(content.strip()) < 100:
+            return False
+
+        # Strip HTML tags for analysis
+        text = re.sub(r"<[^>]+>", "", content).strip()
+        if not text:
+            return False
+
+        # Get the last non-empty line
+        lines = [l.strip() for l in text.split("\n") if l.strip()]
+        if not lines:
+            return False
+
+        last_line = lines[-1]
+
+        # Content ending with terminal punctuation is complete
+        if last_line[-1] in ".!?)\"'":
+            return False
+
+        # Content ending with a URL or link is likely a references section (OK)
+        if re.search(r"https?://\S+$", last_line):
+            return False
+
+        # Content ending with a markdown/HTML heading is truncated
+        if re.match(r"^#{1,6}\s", last_line):
+            return True
+
+        # If the last line is very short and looks like a fragment, it's truncated
+        # (e.g., "The Ingress controller uses labels and selectors to")
+        if not last_line[-1] in ".!?)\"':*" and len(last_line) > 20:
+            logger.warning(
+                f"[TRUNCATION] Content appears truncated — last line: ...{last_line[-80:]}"
+            )
+            return True
+
+        return False
+
     def _score_completeness(self, content: str, context: Dict[str, Any]) -> float:
         """Score completeness based on depth signals beyond raw word count."""
         word_count = len(content.split())
@@ -597,6 +657,10 @@ class UnifiedQualityService:
         # Contains lists (signals structured coverage)
         if re.search(r"^[-*]\s", content, re.MULTILINE):
             score += 0.5
+
+        # Truncation penalty — content cut off mid-sentence by LLM token limit
+        if self.detect_truncation(content):
+            score = max(score - 3.0, 0.0)
 
         return min(score, 10.0)
 

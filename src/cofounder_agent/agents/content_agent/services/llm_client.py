@@ -79,6 +79,7 @@ class LLMClient:
         self.summarizer_model = None
         self.cache_dir = Path(config.BASE_DIR) / ".cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self._cleanup_stale_cache()
 
         try:
             if self.provider == "gemini":
@@ -117,6 +118,48 @@ class LLMClient:
         except Exception as e:
             logging.error(f"Failed to initialize LLM client: {e}")
             raise
+
+    def _cleanup_stale_cache(
+        self, max_age_days: int = 30, max_size_mb: int = 500
+    ) -> None:
+        """Remove stale cache files older than max_age_days or if total exceeds max_size_mb."""
+        try:
+            cache_files = sorted(
+                self.cache_dir.glob("*.cache"),
+                key=lambda p: p.stat().st_mtime,
+            )
+            if not cache_files:
+                return
+
+            now = time.time()
+            max_age_seconds = max_age_days * 86400
+            removed = 0
+
+            # Pass 1: remove files older than max_age_days
+            for f in cache_files:
+                if now - f.stat().st_mtime > max_age_seconds:
+                    f.unlink(missing_ok=True)
+                    removed += 1
+
+            # Pass 2: if still over size limit, evict oldest first
+            remaining = sorted(
+                self.cache_dir.glob("*.cache"),
+                key=lambda p: p.stat().st_mtime,
+            )
+            total_mb = sum(f.stat().st_size for f in remaining) / (1024 * 1024)
+            while total_mb > max_size_mb and remaining:
+                oldest = remaining.pop(0)
+                total_mb -= oldest.stat().st_size / (1024 * 1024)
+                oldest.unlink(missing_ok=True)
+                removed += 1
+
+            if removed > 0:
+                logging.info(
+                    f"Cache cleanup: removed {removed} stale files, "
+                    f"{len(list(self.cache_dir.glob('*.cache')))} remaining"
+                )
+        except Exception as e:
+            logging.warning(f"Cache cleanup failed (non-critical): {e}")
 
     def _get_cache_path(self, prompt: str, format: str) -> Path:
         """Generates a cache path for a given prompt and format."""
@@ -176,13 +219,18 @@ class LLMClient:
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 response = await client.post(
-                    f"{config.LOCAL_LLM_API_URL}/api/generate",
-                    json={"model": config.LOCAL_LLM_MODEL_NAME, "prompt": prompt, "stream": False},
+                    f"{config.LOCAL_LLM_API_URL}/api/chat",
+                    json={
+                        "model": config.LOCAL_LLM_MODEL_NAME,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "stream": False,
+                    },
                 )
                 response.raise_for_status()
             response_json = response.json()
-            if "response" in response_json:
-                raw_response = response_json["response"]
+            msg = response_json.get("message", {})
+            if msg.get("content"):
+                raw_response = msg["content"]
                 logging.debug(f"LLM raw response: {raw_response[:200]}...")
                 # Try to extract JSON from the response
                 extracted_json = extract_json_from_string(raw_response)
@@ -258,16 +306,16 @@ class LLMClient:
                 timeout=120
             ) as client:  # Increased timeout for longer generation
                 response = await client.post(
-                    f"{config.LOCAL_LLM_API_URL}/api/generate",
+                    f"{config.LOCAL_LLM_API_URL}/api/chat",
                     json={
                         "model": config.LOCAL_LLM_MODEL_NAME,
-                        "prompt": prompt,
+                        "messages": [{"role": "user", "content": prompt}],
                         "stream": False,
-                        "num_predict": 4096,  # Allow up to 4096 tokens (blog posts can be long)
+                        "options": {"num_predict": 4096},
                     },
                 )
                 response.raise_for_status()
-            return response.json().get("response", "")
+            return response.json().get("message", {}).get("content", "")
         except httpx.HTTPError as e:
             logging.error(f"Error communicating with local LLM: {e}")
             return ""

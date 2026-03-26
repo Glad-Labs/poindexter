@@ -159,33 +159,12 @@ class StartupManager:
         """Initialize PostgreSQL database connection"""
         logger.info("  Connecting to PostgreSQL (REQUIRED)...")
 
-        db_url = os.getenv("DATABASE_URL", "Not set")
-        logger.info(f"  DATABASE_URL: {db_url[:50] if db_url != 'Not set' else 'Not set'}...")
-
         try:
             from services.database_service import DatabaseService
 
-            logger.debug("  [DEBUG] Creating DatabaseService instance...")
             self.database_service = DatabaseService()
-            logger.debug(f"  [DEBUG] DatabaseService created: {self.database_service}")
-            logger.debug(
-                f"  [DEBUG] Before initialize(): pool={self.database_service.pool}, tasks={self.database_service.tasks}"
-            )
-
-            logger.debug("  [DEBUG] Calling await self.database_service.initialize()...")
             await self.database_service.initialize()
-            logger.debug(
-                f"  [DEBUG] After initialize(): pool={self.database_service.pool is not None}, tasks={self.database_service.tasks is not None}"
-            )
-            logger.debug(
-                f"  [DEBUG] After initialize(): users={self.database_service.users is not None}, content={self.database_service.content is not None}"
-            )
-
-            logger.info("   PostgreSQL connected - ready for operations")
-            logger.info(f"     Pool initialized: {self.database_service.pool is not None}")
-            logger.info(f"     Tasks DB initialized: {self.database_service.tasks is not None}")
-            logger.info(f"     Users DB initialized: {self.database_service.users is not None}")
-            logger.info(f"     Content DB initialized: {self.database_service.content is not None}")
+            logger.info("   PostgreSQL connected (pool + 5 delegate modules ready)")
 
             # Start connection pool health monitor if pool is available
             if self.database_service.pool is not None:
@@ -457,12 +436,17 @@ class StartupManager:
             self.template_execution_service = None
 
     async def _warmup_sdxl_models(self) -> None:
-        """Warmup SDXL models to avoid timeout on first request"""
+        """Warmup SDXL models to avoid timeout on first request.
+
+        Disabled by default — SDXL loads lazily on first image generation
+        request. Enable with ENABLE_SDXL_WARMUP=true if you want faster
+        first-image response at the cost of 20-30s slower startup.
+        """
         import os
 
-        # Skip warmup if explicitly disabled
-        if os.getenv("DISABLE_SDXL_WARMUP", "").lower() == "true":
-            logger.info("  SDXL warmup: Disabled via DISABLE_SDXL_WARMUP environment variable")
+        # Skip warmup unless explicitly enabled (lazy loading is the default)
+        if os.getenv("ENABLE_SDXL_WARMUP", "").lower() not in ("true", "1", "yes"):
+            logger.info("  SDXL warmup: Skipped (lazy loading on first request). Set ENABLE_SDXL_WARMUP=true to pre-load.")
             return
 
         # Check if torch is even available (optional dependency for SDXL)
@@ -556,8 +540,8 @@ class StartupManager:
                     logger.info("   Task executor stopped")
                     stats = self.task_executor.get_stats()
                     logger.info(
-                        f"     Tasks processed: {stats['total_processed']}, "
-                        f"Success: {stats['successful']}, Failed: {stats['failed']}"
+                        f"     Tasks processed: {stats.get('task_count', 0)}, "
+                        f"Success: {stats.get('success_count', 0)}, Failed: {stats.get('error_count', 0)}"
                     )
             except Exception as e:
                 logger.error(f"   Error stopping task executor: {e}", exc_info=True)

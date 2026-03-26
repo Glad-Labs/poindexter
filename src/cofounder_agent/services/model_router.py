@@ -272,6 +272,13 @@ class ModelRouter:
             "ollama_uses": 0,  # Track zero-cost local inference usage
         }
 
+        # Spending cap — block cloud API calls when monthly budget exceeded.
+        # Tracks in-memory estimated spend (resets on restart). For persistent
+        # tracking, use cost_aggregation_service.get_budget_status().
+        self._monthly_spend_limit = float(os.getenv("MONTHLY_SPEND_LIMIT", "100.0"))
+        self._session_cloud_spend = 0.0  # Accumulated since last restart
+        self._budget_exceeded_logged = False
+
         # Runtime provider failure tracking.
         # Keyed by provider name; value is count of consecutive failures.
         # Reset to 0 on any success from that provider.
@@ -369,6 +376,31 @@ class ModelRouter:
         # Calculate estimated cost
         cost_per_1k = MODEL_COSTS.get(model, 0.045)
         estimated_cost = (estimated_tokens / 1000) * cost_per_1k
+
+        # ── Spending cap enforcement ──────────────────────────────────
+        # If using a paid cloud model and budget is exceeded, fall back
+        # to Ollama to prevent runaway costs.
+        is_cloud_model = not model.startswith("ollama/") and cost_per_1k > 0
+        if is_cloud_model:
+            self._session_cloud_spend += estimated_cost
+            if self._session_cloud_spend > self._monthly_spend_limit:
+                if not self._budget_exceeded_logged:
+                    logger.critical(
+                        f"[BUDGET] Monthly spend limit (${self._monthly_spend_limit:.2f}) "
+                        f"exceeded — session spend: ${self._session_cloud_spend:.2f}. "
+                        f"Blocking cloud API calls; falling back to Ollama."
+                    )
+                    self._budget_exceeded_logged = True
+                # Fall back to Ollama if available
+                if "ollama" in recommendation:
+                    model = recommendation["ollama"]
+                    estimated_cost = 0.0
+                    self.metrics["ollama_uses"] += 1
+                else:
+                    logger.error(
+                        "[BUDGET] Spend limit exceeded and no Ollama fallback. "
+                        "Request will proceed but may incur charges."
+                    )
 
         # Calculate savings vs. always using GPT-4
         premium_cost = (estimated_tokens / 1000) * MODEL_COSTS["gpt-4-turbo"]

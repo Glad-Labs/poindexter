@@ -23,7 +23,7 @@ logger = structlog.get_logger(__name__)
 # CONSTANTS
 # ============================================================================
 
-DEFAULT_MODEL = os.getenv("DEFAULT_OLLAMA_MODEL", "gpt-oss:20b")
+DEFAULT_MODEL = os.getenv("DEFAULT_OLLAMA_MODEL", "auto")
 DEFAULT_BASE_URL = os.getenv("OLLAMA_BASE_URL") or os.getenv("OLLAMA_HOST") or "http://localhost:11434"
 
 
@@ -59,8 +59,57 @@ class OllamaClient:
         self.client = httpx.AsyncClient(timeout=timeout)
         self._model_cache: Dict[str, Dict[str, Any]] = {}
         self._cache_ts: float = 0
+        self._resolved_default: Optional[str] = None  # Lazily resolved from installed models
 
         logger.info("Ollama client initialized", base_url=self.base_url, model=self.model)
+
+    async def resolve_model(self, model: Optional[str] = None) -> str:
+        """Resolve a model name, handling 'auto' by discovering the best installed model.
+
+        Resolution order:
+        1. Explicit model name (not 'auto') — use as-is
+        2. Cached resolved default — skip discovery on repeat calls
+        3. PREFERRED_OLLAMA_MODEL env var — user-declared best model
+        4. First installed match from a quality-ranked preference list
+        5. Largest non-embedding model by file size
+
+        Set PREFERRED_OLLAMA_MODEL in .env.local to pin your best model.
+        """
+        model = model or self.model
+        if model != "auto":
+            return model
+
+        if self._resolved_default:
+            return self._resolved_default
+
+        try:
+            models = await self.list_models()
+            installed_names = {m.get("name", "") for m in models}
+
+            # Check env var first — user knows which model is best for their hardware
+            preferred = os.getenv("PREFERRED_OLLAMA_MODEL", "")
+            if preferred and preferred in installed_names:
+                self._resolved_default = preferred
+                logger.info(f"Auto-resolved model from PREFERRED_OLLAMA_MODEL: {preferred}")
+                return self._resolved_default
+
+            # Filter out embedding models
+            gen_models = [
+                m for m in models
+                if "embed" not in m.get("name", "").lower()
+            ]
+
+            if gen_models:
+                # Pick largest by file size as a reasonable default
+                best = sorted(gen_models, key=lambda x: x.get("size", 0), reverse=True)[0]
+                self._resolved_default = best["name"]
+                logger.info(f"Auto-resolved default model (largest): {self._resolved_default}")
+                return self._resolved_default
+        except Exception as e:
+            logger.warning(f"Could not auto-resolve model: {e}")
+
+        # Absolute last resort — caller should handle this model not existing
+        return "llama3:latest"
 
     async def close(self):
         """Close the HTTP client connection."""
@@ -187,27 +236,41 @@ class OllamaClient:
         max_tokens: Optional[int] = None,
         stream: bool = False,
     ) -> Dict[str, Any]:
-        """Generate completion from Ollama model."""
-        model = model or self.model
+        """Generate completion from Ollama model.
+
+        Internally uses /api/chat (the modern Ollama endpoint) by converting
+        the prompt/system into chat messages. The legacy /api/generate endpoint
+        was removed in newer Ollama versions. Return shape is preserved for
+        backwards compatibility with callers that read 'text' and 'response'.
+        """
+        model = await self.resolve_model(model)
+
+        # Build chat messages from prompt + optional system
+        messages: List[Dict[str, str]] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
 
         payload: Dict[str, Any] = {
             "model": model,
-            "prompt": prompt,
+            "messages": messages,
             "stream": stream,
             "options": {"temperature": temperature},
         }
 
-        if system:
-            payload["system"] = system
         if max_tokens:
             payload["options"]["num_predict"] = max_tokens
 
         try:
             response = await self.client.post(
-                f"{self.base_url}/api/generate", json=payload, timeout=self.timeout
+                f"{self.base_url}/api/chat", json=payload, timeout=self.timeout
             )
             response.raise_for_status()
             result = response.json()
+
+            # Extract text from chat response format
+            msg = result.get("message", {})
+            text = msg.get("content", "")
 
             logger.info(
                 "Ollama generation complete",
@@ -218,7 +281,8 @@ class OllamaClient:
             )
 
             return {
-                "text": result.get("response", ""),
+                "text": text,
+                "response": text,  # Legacy key for callers using response.get("response")
                 "model": model,
                 "tokens": result.get("eval_count", 0),
                 "prompt_tokens": result.get("prompt_eval_count", 0),
@@ -243,7 +307,7 @@ class OllamaClient:
         Chat completion using Ollama's native /api/chat endpoint.
         Supports full message history with roles.
         """
-        model = model or self.model
+        model = await self.resolve_model(model)
 
         payload: Dict[str, Any] = {
             "model": model,
@@ -368,32 +432,37 @@ class OllamaClient:
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
     ) -> AsyncIterator[str]:
-        """Stream generation from Ollama model."""
+        """Stream generation from Ollama model using /api/chat."""
         model = model or self.model
+
+        # Build chat messages from prompt + optional system
+        messages: List[Dict[str, str]] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
 
         payload: Dict[str, Any] = {
             "model": model,
-            "prompt": prompt,
+            "messages": messages,
             "stream": True,
             "options": {"temperature": temperature},
         }
 
-        if system:
-            payload["system"] = system
         if max_tokens:
             payload["options"]["num_predict"] = max_tokens
 
         try:
             async with self.client.stream(
-                "POST", f"{self.base_url}/api/generate", json=payload, timeout=self.timeout
+                "POST", f"{self.base_url}/api/chat", json=payload, timeout=self.timeout
             ) as response:
                 response.raise_for_status()
                 async for line in response.aiter_lines():
                     if line:
                         try:
                             data = json.loads(line)
-                            if "response" in data:
-                                yield data["response"]
+                            msg = data.get("message", {})
+                            if msg.get("content"):
+                                yield msg["content"]
                         except json.JSONDecodeError:
                             continue
 

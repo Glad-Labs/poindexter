@@ -292,6 +292,16 @@ async def approve_task(
                     author_id = await _get_or_create_default_author(db_service)
                     category_id = await _select_category_for_topic(post_title, db_service)
 
+                    # Validate approver_id is a valid UUID for the posts table
+                    # (dev-mode users like "dev_user_local" are not UUIDs)
+                    import uuid as _uuid
+
+                    try:
+                        _uuid.UUID(str(approver_id))
+                        audit_user_id = approver_id
+                    except ValueError:
+                        audit_user_id = None
+
                     # Create post — include audit fields so we know who published
                     post = await db_service.create_post(
                         {
@@ -307,8 +317,8 @@ async def approve_task(
                             "seo_description": seo_description,
                             "seo_keywords": normalize_seo_keywords(seo_keywords),
                             "metadata": metadata,
-                            "created_by": approver_id,
-                            "updated_by": approver_id,
+                            "created_by": audit_user_id,
+                            "updated_by": audit_user_id,
                         }
                     )
                     logger.info(

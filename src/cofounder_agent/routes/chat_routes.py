@@ -13,7 +13,8 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Dict
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from utils.rate_limiter import limiter
 
 from routes.auth_unified import get_current_user
 from schemas.chat_schemas import (
@@ -41,8 +42,10 @@ conversations: Dict[str, list] = {}
 
 
 @router.post("", response_model=ChatResponse)
+@limiter.limit("30/minute")
 async def chat(
-    request: ChatRequest,
+    request: Request,
+    chat_request: ChatRequest,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> ChatResponse:
     """
@@ -75,12 +78,12 @@ async def chat(
     try:
         # Log incoming request details
         logger.info(
-            f"[Chat] Incoming request - model: '{request.model}', message length: {len(request.message)}"
+            f"[Chat] Incoming request - model: '{chat_request.model}', message length: {len(chat_request.message)}"
         )
 
         # Parse model specification (e.g., "ollama-mistral" -> provider="ollama", model_name="mistral")
         # Also accept generic names like "ollama", "openai", etc.
-        model_parts = request.model.split("-", 1)  # Split on first dash only
+        model_parts = chat_request.model.split("-", 1)  # Split on first dash only
         provider = model_parts[0]  # First part is the provider (ollama, openai, claude, gemini)
         model_name = model_parts[1] if len(model_parts) > 1 else None  # Rest is specific model name
 
@@ -95,7 +98,7 @@ async def chat(
 
         # Scope conversations by user_id to prevent cross-user access
         user_id = current_user.get("id", "anonymous")
-        scoped_key = f"{user_id}:{request.conversationId}"
+        scoped_key = f"{user_id}:{chat_request.conversationId}"
 
         # Initialize conversation if needed
         if scoped_key not in conversations:
@@ -103,21 +106,21 @@ async def chat(
 
         # Add user message to conversation history
         conversations[scoped_key].append(
-            {"role": "user", "content": request.message, "timestamp": datetime.now(timezone.utc).isoformat()}
+            {"role": "user", "content": chat_request.message, "timestamp": datetime.now(timezone.utc).isoformat()}
         )
 
         # Log the chat request
         logger.info(
             f"[Chat] Processing message with: provider={provider}, model={model_name or 'default'}"
         )
-        logger.debug(f"[Chat] Message: {request.message}")
+        logger.debug(f"[Chat] Message: {chat_request.message}")
 
         # Get actual AI response based on provider selection
         if provider == "ollama":
             # Use local Ollama with specified model or default
             try:
                 # Use specified Ollama model or fall back to environment config or llama2
-                actual_ollama_model = model_name or os.getenv("DEFAULT_OLLAMA_CHAT_MODEL", "llama2")
+                actual_ollama_model = model_name or os.getenv("DEFAULT_OLLAMA_CHAT_MODEL", "auto")
                 logger.info(f"[Chat] Calling Ollama with model: {actual_ollama_model}")
 
                 # Check if model is available
@@ -155,7 +158,7 @@ async def chat(
                             {
                                 "role": "assistant",
                                 "content": response_text,
-                                "model": request.model,
+                                "model": chat_request.model,
                                 "provider": provider,
                                 "timestamp": datetime.now(timezone.utc).isoformat(),
                             }
@@ -163,8 +166,8 @@ async def chat(
 
                         return ChatResponse(
                             response=response_text,
-                            model=request.model,
-                            conversationId=request.conversationId,
+                            model=chat_request.model,
+                            conversationId=chat_request.conversationId,
                             timestamp=datetime.now(timezone.utc).isoformat(),
                             tokens_used=tokens_used,
                         )
@@ -174,8 +177,8 @@ async def chat(
                 chat_result = await ollama_client.chat(
                     messages=conversations[scoped_key],
                     model=actual_ollama_model,
-                    temperature=request.temperature or 0.7,
-                    max_tokens=request.max_tokens or 500,
+                    temperature=chat_request.temperature or 0.7,
+                    max_tokens=chat_request.max_tokens or 500,
                 )
                 # ollama_client.chat returns {"content": "...", "tokens": ...}
                 response_text = chat_result.get(
@@ -227,8 +230,8 @@ async def chat(
                 response_text = await gemini_client.chat(
                     messages=conversations[scoped_key],
                     model=actual_gemini_model,
-                    temperature=request.temperature or 0.7,
-                    max_tokens=request.max_tokens or 500,
+                    temperature=chat_request.temperature or 0.7,
+                    max_tokens=chat_request.max_tokens or 500,
                 )
 
                 # Validate response
@@ -254,7 +257,7 @@ async def chat(
             logger.warning(
                 f"[Chat] Provider '{provider}' model '{model_name or 'default'}' not yet implemented, using demo response"
             )
-            response_text = generate_demo_response(request.message, request.model)
+            response_text = generate_demo_response(chat_request.message, chat_request.model)
             tokens_used = len(response_text.split())
 
         # Add AI response to conversation history
@@ -262,7 +265,7 @@ async def chat(
             {
                 "role": "assistant",
                 "content": response_text,
-                "model": request.model,  # Keep original full model specification
+                "model": chat_request.model,  # Keep original full model specification
                 "provider": provider,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
@@ -270,8 +273,8 @@ async def chat(
 
         return ChatResponse(
             response=response_text,
-            model=request.model,  # Return original full model specification
-            conversationId=request.conversationId,
+            model=chat_request.model,  # Return original full model specification
+            conversationId=chat_request.conversationId,
             timestamp=datetime.now(timezone.utc).isoformat(),
             tokens_used=len(response_text.split()),  # Rough estimate
         )

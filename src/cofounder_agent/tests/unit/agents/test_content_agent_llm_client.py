@@ -227,7 +227,9 @@ class TestGenerateJsonOllama:
     def _build_http_response(self, response_text: str):
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
-        mock_resp.json.return_value = {"response": response_text}
+        mock_resp.json.return_value = {
+            "message": {"role": "assistant", "content": response_text}
+        }
         return mock_resp
 
     @pytest.mark.asyncio
@@ -347,7 +349,7 @@ class TestGenerateJsonOllama:
             client = LLMClient()
             client.cache_dir = tmp_path
 
-        # Ollama returns JSON without 'response' key
+        # Ollama returns JSON without valid message content
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
         mock_resp.json.return_value = {"wrong_key": "data"}
@@ -426,7 +428,7 @@ class TestGenerateTextOllama:
 
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
-        mock_resp.json.return_value = {"response": "# Generated blog content\n\nHello world."}
+        mock_resp.json.return_value = {"message": {"role": "assistant", "content": "# Generated blog content\n\nHello world."}}
 
         with patch("agents.content_agent.services.llm_client.httpx.AsyncClient") as mock_cls:
             mock_http = AsyncMock()
@@ -523,7 +525,7 @@ class TestGenerateTextOllama:
         prompt = "new uncached prompt"
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
-        mock_resp.json.return_value = {"response": "Fresh content from LLM"}
+        mock_resp.json.return_value = {"message": {"role": "assistant", "content": "Fresh content from LLM"}}
 
         with patch("agents.content_agent.services.llm_client.httpx.AsyncClient") as mock_cls:
             mock_http = AsyncMock()
@@ -567,7 +569,7 @@ class TestGenerateSummary:
 
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
-        mock_resp.json.return_value = {"response": "This is the summary."}
+        mock_resp.json.return_value = {"message": {"role": "assistant", "content": "This is the summary."}}
 
         with patch("agents.content_agent.services.llm_client.httpx.AsyncClient") as mock_cls:
             mock_http = AsyncMock()

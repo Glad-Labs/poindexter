@@ -30,7 +30,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from utils.rate_limiter import limiter
 from pydantic import BaseModel
 
 from routes.auth_unified import get_current_user
@@ -161,8 +162,10 @@ router = APIRouter(prefix="/api/tasks", tags=["tasks"])
     summary="Create task - unified endpoint for all task types",
     status_code=201,
 )
+@limiter.limit("10/minute")
 async def create_task(
-    request: UnifiedTaskRequest,
+    request: Request,
+    task_request: UnifiedTaskRequest,
     current_user: dict = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
     background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
@@ -248,7 +251,7 @@ async def create_task(
     """
     try:
         # Validate required fields
-        if not request.topic or not str(request.topic).strip():
+        if not task_request.topic or not str(task_request.topic).strip():
             logger.error("❌ Task creation failed: topic is empty")
             raise HTTPException(
                 status_code=422,
@@ -256,18 +259,18 @@ async def create_task(
             )
 
         logger.info(
-            f"📥 [UNIFIED_TASK_CREATE] Received: task_type={request.task_type}, topic={request.topic}"
+            f"📥 [UNIFIED_TASK_CREATE] Received: task_type={task_request.task_type}, topic={task_request.topic}"
         )
 
         # Route based on task_type using registry dict (Open/Closed — add new
         # task types by registering a handler below, not by editing this block).
-        handler = _TASK_TYPE_REGISTRY.get(request.task_type)
+        handler = _TASK_TYPE_REGISTRY.get(task_request.task_type)
         if handler is None:
             raise HTTPException(
                 status_code=400,
-                detail=f"Unknown task_type: '{request.task_type}'. Supported: {', '.join(sorted(_TASK_TYPE_REGISTRY.keys()))}",
+                detail=f"Unknown task_type: '{task_request.task_type}'. Supported: {', '.join(sorted(_TASK_TYPE_REGISTRY.keys()))}",
             )
-        return await handler(request, current_user, db_service)
+        return await handler(task_request, current_user, db_service)
 
     except HTTPException:
         raise
