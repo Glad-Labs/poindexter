@@ -82,18 +82,18 @@ Generate a secure token: `openssl rand -base64 32`
 
 ## Available Skills (10)
 
-| Skill | Trigger Phrase | Description |
-|-------|---------------|-------------|
-| `create-post` | "write a post about..." | Creates a new content task and starts the 6-stage pipeline |
-| `list-tasks` | "show my tasks" | Lists recent tasks with status and quality scores |
-| `task-status` | "check task {id}" | Gets detailed status for a specific task |
-| `approve-task` | "approve task {id}" | Approves a completed task for publishing |
-| `publish-task` | "publish task {id}" | Publishes an approved task to the public site |
-| `reject-task` | "reject task {id}" | Rejects a task with feedback for revision |
-| `daily-summary` | "daily summary" | Shows today's pipeline activity, costs, and published posts |
-| `budget-status` | "budget status" | Shows current daily LLM spend vs. budget |
-| `queue-stats` | "queue stats" | Shows command queue depth and processing stats |
-| `site-health` | "site health" | Checks FastAPI backend and database health |
+| Skill           | Trigger Phrase          | Description                                                 |
+| --------------- | ----------------------- | ----------------------------------------------------------- |
+| `create-post`   | "write a post about..." | Creates a new content task and starts the 6-stage pipeline  |
+| `list-tasks`    | "show my tasks"         | Lists recent tasks with status and quality scores           |
+| `task-status`   | "check task {id}"       | Gets detailed status for a specific task                    |
+| `approve-task`  | "approve task {id}"     | Approves a completed task for publishing                    |
+| `publish-task`  | "publish task {id}"     | Publishes an approved task to the public site               |
+| `reject-task`   | "reject task {id}"      | Rejects a task with feedback for revision                   |
+| `daily-summary` | "daily summary"         | Shows today's pipeline activity, costs, and published posts |
+| `budget-status` | "budget status"         | Shows current daily LLM spend vs. budget                    |
+| `queue-stats`   | "queue stats"           | Shows command queue depth and processing stats              |
+| `site-health`   | "site health"           | Checks FastAPI backend and database health                  |
 
 See [skills-reference.md](skills-reference.md) for detailed skill documentation.
 
@@ -101,14 +101,14 @@ See [skills-reference.md](skills-reference.md) for detailed skill documentation.
 
 The pipeline emits these events to OpenClaw (formatted as human-readable messages):
 
-| Event Type | When | Example Message |
-|-----------|------|-----------------|
-| `task.completed` | Pipeline finishes all 6 stages | "Task abc12345 completed -- 'AI in Healthcare' (score: 87)" |
-| `task.auto_published` | Score exceeds `AUTO_PUBLISH_THRESHOLD` | "Auto-published 'AI in Healthcare' (score: 92)" |
-| `task.failed` | Pipeline encounters unrecoverable error | "Task abc12345 failed -- 'AI in Healthcare': Model timeout" |
-| `task.needs_review` | Task completes but below auto-publish threshold | "Task abc12345 needs review -- 'AI in Healthcare' (score: 71)" |
-| `post.published` | Post goes live on public site | "Published 'AI in Healthcare' to default" |
-| `cost.budget_warning` | Daily spend exceeds 80% of `DAILY_BUDGET_USD` | "Budget alert: spent $4.12 of $5.00 daily budget (82%)" |
+| Event Type            | When                                            | Example Message                                                |
+| --------------------- | ----------------------------------------------- | -------------------------------------------------------------- |
+| `task.completed`      | Pipeline finishes all 6 stages                  | "Task abc12345 completed -- 'AI in Healthcare' (score: 87)"    |
+| `task.auto_published` | Score exceeds `AUTO_PUBLISH_THRESHOLD`          | "Auto-published 'AI in Healthcare' (score: 92)"                |
+| `task.failed`         | Pipeline encounters unrecoverable error         | "Task abc12345 failed -- 'AI in Healthcare': Model timeout"    |
+| `task.needs_review`   | Task completes but below auto-publish threshold | "Task abc12345 needs review -- 'AI in Healthcare' (score: 71)" |
+| `post.published`      | Post goes live on public site                   | "Published 'AI in Healthcare' to default"                      |
+| `cost.budget_warning` | Daily spend exceeds 80% of `DAILY_BUDGET_USD`   | "Budget alert: spent $4.12 of $5.00 daily budget (82%)"        |
 
 ## Troubleshooting
 

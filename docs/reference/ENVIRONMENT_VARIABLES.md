@@ -7,16 +7,16 @@ Last updated: 2026-03-25.
 
 ## Railway (Backend) - Required
 
-| Variable                 | Description                                                          | Example                                              |
-| ------------------------ | -------------------------------------------------------------------- | ---------------------------------------------------- |
-| `DATABASE_URL`           | PostgreSQL connection string                                         | `postgresql://user:pass@host:5432/glad_labs`         |
-| `ENVIRONMENT`            | Must be `production` in prod                                         | `production`                                         |
-| `JWT_SECRET_KEY`         | JWT signing secret (32+ chars). Also read as `JWT_SECRET` (alias).   | `openssl rand -base64 32`                            |
-| `SECRET_KEY`             | App-level secret (64 chars). Startup crashes if placeholder in prod. | `openssl rand -base64 48`                            |
-| `GH_OAUTH_CLIENT_ID`     | GitHub OAuth App Client ID                                           | `Ov23li...`                                          |
-| `GH_OAUTH_CLIENT_SECRET` | GitHub OAuth App Secret                                              | `abc123...`                                          |
-| `ALLOWED_ORIGINS`        | CORS origins (comma-separated, no trailing slashes)                  | `https://glad-labs.com` |
-| At least ONE LLM key     | See AI Model section below                                           |                                                      |
+| Variable                 | Description                                                          | Example                                      |
+| ------------------------ | -------------------------------------------------------------------- | -------------------------------------------- |
+| `DATABASE_URL`           | PostgreSQL connection string                                         | `postgresql://user:pass@host:5432/glad_labs` |
+| `ENVIRONMENT`            | Must be `production` in prod                                         | `production`                                 |
+| `JWT_SECRET_KEY`         | JWT signing secret (32+ chars). Also read as `JWT_SECRET` (alias).   | `openssl rand -base64 32`                    |
+| `SECRET_KEY`             | App-level secret (64 chars). Startup crashes if placeholder in prod. | `openssl rand -base64 48`                    |
+| `GH_OAUTH_CLIENT_ID`     | GitHub OAuth App Client ID                                           | `Ov23li...`                                  |
+| `GH_OAUTH_CLIENT_SECRET` | GitHub OAuth App Secret                                              | `abc123...`                                  |
+| `ALLOWED_ORIGINS`        | CORS origins (comma-separated, no trailing slashes)                  | `https://glad-labs.com`                      |
+| At least ONE LLM key     | See AI Model section below                                           |                                              |
 
 ## Railway - AI Model Keys (need at least ONE)
 
@@ -145,32 +145,32 @@ These are set in the **Vercel dashboard** for the public-site project, or passed
 
 Used by `.github/workflows/deploy-production-with-environments.yml`:
 
-| Secret                              | Purpose                                         | Validated at startup |
-| ----------------------------------- | ----------------------------------------------- | -------------------- |
-| `RAILWAY_TOKEN`                     | Railway deploy authentication                   | YES                  |
-| `RAILWAY_PROD_PROJECT_ID`           | Railway project identifier                      | YES                  |
-| `VERCEL_TOKEN`                      | Vercel deploy authentication                    | YES                  |
-| `VERCEL_ORG_ID`                     | Vercel organization                             | YES                  |
-| `PUBLIC_SITE_PROD_PROJECT_ID`       | Vercel public-site project                      | YES                  |
-| `PUBLIC_SITE_PROD_FASTAPI_URL`      | Backend URL -> `NEXT_PUBLIC_FASTAPI_URL`        | YES                  |
-| `PUBLIC_SITE_PROD_SITE_URL`         | Public site URL -> `NEXT_PUBLIC_SITE_URL`       | YES                  |
-| `COFOUNDER_PROD_URL`                | Backend URL (smoke tests + notifications)       | YES                  |
-| `PUBLIC_SITE_PROD_GA_ID`            | Google Analytics ID (optional)                  | No                   |
-| `PUBLIC_SITE_PROD_SENTRY_DSN`       | Public site Sentry DSN (optional)               | No                   |
+| Secret                         | Purpose                                   | Validated at startup |
+| ------------------------------ | ----------------------------------------- | -------------------- |
+| `RAILWAY_TOKEN`                | Railway deploy authentication             | YES                  |
+| `RAILWAY_PROD_PROJECT_ID`      | Railway project identifier                | YES                  |
+| `VERCEL_TOKEN`                 | Vercel deploy authentication              | YES                  |
+| `VERCEL_ORG_ID`                | Vercel organization                       | YES                  |
+| `PUBLIC_SITE_PROD_PROJECT_ID`  | Vercel public-site project                | YES                  |
+| `PUBLIC_SITE_PROD_FASTAPI_URL` | Backend URL -> `NEXT_PUBLIC_FASTAPI_URL`  | YES                  |
+| `PUBLIC_SITE_PROD_SITE_URL`    | Public site URL -> `NEXT_PUBLIC_SITE_URL` | YES                  |
+| `COFOUNDER_PROD_URL`           | Backend URL (smoke tests + notifications) | YES                  |
+| `PUBLIC_SITE_PROD_GA_ID`       | Google Analytics ID (optional)            | No                   |
+| `PUBLIC_SITE_PROD_SENTRY_DSN`  | Public site Sentry DSN (optional)         | No                   |
 
 ## GitHub Secrets - Staging Environment
 
 Used by `.github/workflows/deploy-staging-with-environments.yml`:
 
-| Secret                                 | Purpose                                 |
-| -------------------------------------- | --------------------------------------- |
-| `RAILWAY_STAGING_PROJECT_ID`           | Railway staging project                 |
-| `PUBLIC_SITE_STAGING_PROJECT_ID`       | Vercel staging public-site project      |
-| `PUBLIC_SITE_STAGING_FASTAPI_URL`      | Staging backend URL                     |
-| `PUBLIC_SITE_STAGING_SITE_URL`         | Staging public site URL                 |
-| `PUBLIC_SITE_STAGING_GA_ID`            | Staging Google Analytics ID             |
-| `PUBLIC_SITE_STAGING_SENTRY_DSN`       | Staging Sentry DSN                      |
-| `COFOUNDER_STAGING_URL`                | Staging backend URL (smoke tests)       |
+| Secret                            | Purpose                            |
+| --------------------------------- | ---------------------------------- |
+| `RAILWAY_STAGING_PROJECT_ID`      | Railway staging project            |
+| `PUBLIC_SITE_STAGING_PROJECT_ID`  | Vercel staging public-site project |
+| `PUBLIC_SITE_STAGING_FASTAPI_URL` | Staging backend URL                |
+| `PUBLIC_SITE_STAGING_SITE_URL`    | Staging public site URL            |
+| `PUBLIC_SITE_STAGING_GA_ID`       | Staging Google Analytics ID        |
+| `PUBLIC_SITE_STAGING_SENTRY_DSN`  | Staging Sentry DSN                 |
+| `COFOUNDER_STAGING_URL`           | Staging backend URL (smoke tests)  |
 
 **Note:** Staging and production share `RAILWAY_TOKEN`, `VERCEL_TOKEN`, and `VERCEL_ORG_ID`.
 
@@ -239,5 +239,5 @@ npm run dev
 ## Known Inconsistencies
 
 1. **`JWT_SECRET_KEY` and `JWT_SECRET`** are both read (backward compat). Only `JWT_SECRET_KEY` is needed.
-3. **`OLLAMA_BASE_URL` and `OLLAMA_HOST`** are both read. Only `OLLAMA_BASE_URL` is needed.
-4. **`NEXT_PUBLIC_API_BASE_URL` vs `NEXT_PUBLIC_FASTAPI_URL`** — code checks both. CI only sets `FASTAPI_URL`.
+2. **`OLLAMA_BASE_URL` and `OLLAMA_HOST`** are both read. Only `OLLAMA_BASE_URL` is needed.
+3. **`NEXT_PUBLIC_API_BASE_URL` vs `NEXT_PUBLIC_FASTAPI_URL`** — code checks both. CI only sets `FASTAPI_URL`.

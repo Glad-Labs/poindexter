@@ -10,7 +10,7 @@
 
 ### [ ] 1. Add Missing Frontend Statuses
 
-**File:** [src/cofounder_agent/services/task_service.py (backend task status handling)](src/cofounder_agent/services/task_service.py (backend task status handling))
+**File:** [src/cofounder_agent/services/task_service.py (backend task status handling)](src/cofounder_agent/services/task_service.py 'backend task status handling')
 
 **Update `getStatusColor()` function:**
 
