@@ -198,11 +198,11 @@ async def chat(
                     exc_info=True,
                 )
                 response_text = (
-                    f"⚠️ Ollama Error: {str(e)[:100]}\n\n"
-                    f"Troubleshooting:\n"
-                    f"1. Is Ollama running? Start: ollama serve\n"
-                    f"2. Check model exists: ollama list\n"
-                    f"3. Check http://localhost:11434 is accessible"
+                    "Ollama is currently unavailable.\n\n"
+                    "Troubleshooting:\n"
+                    "1. Is Ollama running? Start: ollama serve\n"
+                    "2. Check model exists: ollama list\n"
+                    "3. Check http://localhost:11434 is accessible"
                 )
                 tokens_used = 0
         elif provider == "gemini":
@@ -249,11 +249,11 @@ async def chat(
                     exc_info=True,
                 )
                 response_text = (
-                    f"⚠️ Gemini Error: {str(e)[:100]}\n\n"
-                    f"Troubleshooting:\n"
-                    f"1. Is GOOGLE_API_KEY set? Check: echo $GOOGLE_API_KEY\n"
-                    f"2. Is the API key valid? Check Google Cloud Console\n"
-                    f"3. Does your account have proper quota?"
+                    "Gemini is currently unavailable.\n\n"
+                    "Troubleshooting:\n"
+                    "1. Is GOOGLE_API_KEY set? Check: echo $GOOGLE_API_KEY\n"
+                    "2. Is the API key valid? Check Google Cloud Console\n"
+                    "3. Does your account have proper quota?"
                 )
                 tokens_used = 0
         else:

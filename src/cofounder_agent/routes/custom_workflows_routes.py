@@ -205,8 +205,8 @@ async def update_custom_workflow(
         logger.warning(f"Invalid workflow or access denied: {str(e)}", exc_info=True)
         error_msg = str(e)
         if "not found" in error_msg.lower() or "access denied" in error_msg.lower():
-            raise HTTPException(status_code=404, detail=error_msg) from e
-        raise HTTPException(status_code=400, detail=f"Invalid workflow: {error_msg}") from e
+            raise HTTPException(status_code=404, detail="Workflow not found or access denied") from e
+        raise HTTPException(status_code=400, detail="Invalid workflow definition") from e
     except Exception as e:
         logger.error(f"Error updating workflow: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to update workflow") from e

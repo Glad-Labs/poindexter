@@ -46,7 +46,7 @@
 - [03-Features/](03-Features/) - Feature documentation
 - [04-Development/](04-Development/) - Development workflow & testing
 - [05-Operations/](05-Operations/) - Deployment, operations & maintenance
-- [06-Security/](06-Security/) - Security documentation
+- [06-Troubleshooting/](06-Troubleshooting/) - Troubleshooting & support
 - [07-Appendices/](07-Appendices/) - Version history & appendices
 
 ### 2. Decisions (3 Files) ✅ ACTIVE

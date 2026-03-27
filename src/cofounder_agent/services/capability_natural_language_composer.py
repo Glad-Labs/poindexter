@@ -221,55 +221,31 @@ Now generate the task JSON for the user's request:"""
         """
         Call LLM with the composition prompt.
 
+        Uses the model router to select a cost-effective model, then calls
+        LLMClient to generate the response.
+
         Args:
             prompt: Prompt for LLM
 
         Returns:
             LLM response text
         """
-        # In production, this would use:
-        # response = await self.model_router.generate(prompt, cost_tier="cheap")
-        # return response.text
+        from agents.content_agent.services.llm_client import LLMClient  # pylint: disable=import-outside-toplevel
 
-        # For now, mock implementation
-        logger.warning("[Composer] Using mock LLM response - implement real LLM integration")
+        # Select a cheap model for task composition analysis
+        model_name, _cost, _complexity = self.model_router.route_request(
+            task_type="analyze", context={"priority": "low"}, estimated_tokens=1000
+        )
+        logger.info("[Composer] Using model %s for task composition", model_name)
 
-        # Mock response for testing
-        if "blog" in prompt.lower():
-            return """{
-  "name": "Blog Content Creation Pipeline",
-  "description": "Create a blog post with AI generation and image selection",
-  "steps": [
-    {
-      "capability_name": "research",
-      "inputs": {"topic": "AI trends and developments"},
-      "output_key": "research_data",
-      "order": 0
-    },
-    {
-      "capability_name": "generate_content",
-      "inputs": {"topic": "AI trends", "research": "$research_data", "style": "professional"},
-      "output_key": "blog_content",
-      "order": 1
-    },
-    {
-      "capability_name": "select_images",
-      "inputs": {"content": "$blog_content", "count": 3},
-      "output_key": "images",
-      "order": 2
-    },
-    {
-      "capability_name": "publish",
-      "inputs": {"content": "$blog_content", "images": "$images", "platform": "blog"},
-      "output_key": "published_post",
-      "order": 3
-    }
-  ]
-}"""
+        llm_client = LLMClient(model_name=model_name)
+        response = await llm_client.generate_text(prompt)
 
-        return """{
-  "error": "Could not determine capabilities for this request"
-}"""
+        if not response:
+            logger.error("[Composer] LLM returned empty response for composition prompt")
+            return '{"error": "LLM returned empty response"}'
+
+        return response
 
     def _parse_llm_response(self, response: str) -> Dict[str, Any]:
         """

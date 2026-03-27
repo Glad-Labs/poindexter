@@ -139,7 +139,7 @@ async def get_all_agents_status(
                     type=agent_name.replace("_", " ").title(),
                     status=AgentStatusEnum.ERROR,
                     last_activity=None,
-                    error_message=str(e),
+                    error_message="Agent status unavailable",
                 )
 
         # Determine overall system status

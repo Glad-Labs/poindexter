@@ -218,14 +218,16 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
                 # Load user preferences
                 pref_rows = await conn.fetch("""
                     SELECT key, value, confidence FROM user_preferences
+                    LIMIT 1000
                 """)
                 self.user_preferences = {row["key"]: json.loads(row["value"]) for row in pref_rows}
 
                 # Load knowledge clusters
                 cluster_rows = await conn.fetch("""
-                    SELECT id, name, description, memories, confidence, 
+                    SELECT id, name, description, memories, confidence,
                            last_updated, importance_score, topics
                     FROM knowledge_clusters
+                    LIMIT 1000
                 """)
                 self.knowledge_clusters = {
                     row["id"]: self._row_to_cluster(row) for row in cluster_rows

@@ -129,21 +129,21 @@ class OllamaAdapter(ProviderAdapter):
     async def is_available(self) -> bool:
         """Check if Ollama service is running"""
         try:
-            # Simple health check - ping the Ollama API endpoint directly
-            import httpx
-
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                response = await client.get(f"{self.host}/api/tags")
-                is_available = response.status_code == 200
-                if is_available:
-                    logger.debug(
-                        "Ollama available", host=self.host, status_code=response.status_code
-                    )
-                else:
-                    logger.debug(
-                        "Ollama returning non-200 status", status_code=response.status_code
-                    )
-                return is_available
+            # Use the shared httpx.AsyncClient from OllamaClient instead of
+            # creating a new one per call (#1326).
+            response = await self.client.client.get(
+                f"{self.host}/api/tags", timeout=3.0
+            )
+            is_available = response.status_code == 200
+            if is_available:
+                logger.debug(
+                    "Ollama available", host=self.host, status_code=response.status_code
+                )
+            else:
+                logger.debug(
+                    "Ollama returning non-200 status", status_code=response.status_code
+                )
+            return is_available
         except asyncio.TimeoutError:
             logger.debug("Ollama health check timed out (3s)", host=self.host)
             return False
@@ -197,13 +197,12 @@ class OllamaAdapter(ProviderAdapter):
 
     async def list_models(self) -> List[str]:
         """List available Ollama models from live instance."""
-        import httpx
-
         try:
-            async with httpx.AsyncClient(timeout=5) as client:
-                resp = await client.get(f"{self.host}/api/tags")
-                if resp.status_code == 200:
-                    return [m["name"] for m in resp.json().get("models", [])]
+            # Delegate to OllamaClient.list_models() which uses the shared
+            # httpx.AsyncClient instead of creating one per call (#1326).
+            models = await self.client.list_models()
+            if models:
+                return [m["name"] for m in models]
         except Exception as e:
             logger.warning("[OllamaAdapter] Failed to list models from %s: %s", self.host, e)
         # Fallback: models known to be installed

@@ -983,7 +983,7 @@ async def generate_task_image(
             except ValueError as ve:
                 logger.error(f"Pexels API error: {ve}", exc_info=True)
                 raise HTTPException(
-                    status_code=500, detail=f"Error fetching image from Pexels: {str(ve)}"
+                    status_code=500, detail="Error fetching image from Pexels"
                 ) from ve
             except asyncio.TimeoutError as exc:
                 logger.warning(f"Pexels API timeout for query: {search_query}", exc_info=True)

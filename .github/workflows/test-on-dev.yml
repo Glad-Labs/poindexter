@@ -61,9 +61,7 @@ jobs:
 
       - name: 🧪 Run backend unit tests
         run: |
-          cd src/cofounder_agent && poetry run pytest tests/unit/ -v --tb=short \
-            --ignore=tests/unit/services/test_template_execution_service.py
-        # Ignored: test_template_execution_service needs DATABASE_URL mock fix
+          cd src/cofounder_agent && poetry run pytest tests/unit/ -v --tb=short
 
       - name: 🧪 Run backend integration tests
         run: cd src/cofounder_agent && poetry run pytest tests/integration/ tests/e2e/ -v --tb=short
@@ -91,7 +89,11 @@ jobs:
             web/public-site/e2e/legal.spec.ts \
             web/public-site/e2e/tag.spec.ts \
             web/public-site/e2e/post-detail.spec.ts \
-            web/public-site/e2e/author.spec.ts
+            web/public-site/e2e/author.spec.ts \
+            web/public-site/e2e/accessibility.spec.js \
+            web/public-site/e2e/archive.spec.js \
+            web/public-site/e2e/home.spec.js \
+            web/public-site/e2e/verify-layout.spec.js
         env:
           SKIP_ENV_VALIDATION: "true"
           NEXT_PUBLIC_API_BASE_URL: "http://localhost:8000"

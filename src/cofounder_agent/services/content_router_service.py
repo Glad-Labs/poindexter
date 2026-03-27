@@ -339,6 +339,494 @@ async def _generate_canonical_title(
         return None
 
 
+async def _stage_verify_task(database_service, task_id, result):
+    """Stage 1: Verify task record exists in database."""
+    logger.info("📋 STAGE 1: Verifying task record exists...")
+    logger.debug(f"[BG-TASK] Verifying task {task_id} exists in database...")
+    try:
+        existing_task = await database_service.get_task(task_id)
+        if existing_task:
+            logger.info(f"✅ Task verified in database: {task_id}\n")
+            result["content_task_id"] = task_id
+            result["stages"]["1_content_task_created"] = True
+        else:
+            logger.warning(f"⚠️  Task {task_id} not found - this should not happen")
+            result["stages"]["1_content_task_created"] = False
+    except Exception as e:
+        logger.error(f"❌ Failed to verify task: {e}", exc_info=True)
+        result["stages"]["1_content_task_created"] = False
+
+
+def _parse_model_preferences(models_by_phase):
+    """Stage 2A: Parse user model preferences from models_by_phase dict.
+
+    Returns (preferred_model, preferred_provider) tuple.
+    """
+    preferred_model = None
+    preferred_provider = None
+    logger.info("🔍 STEP 2A: Processing model selections from UI")
+    logger.info(f"   models_by_phase = {models_by_phase}")
+    if not models_by_phase:
+        return preferred_model, preferred_provider
+
+    # Try to get model for 'draft' phase (main content generation)
+    draft_model = (
+        models_by_phase.get("draft")
+        or models_by_phase.get("generate")
+        or models_by_phase.get("content")
+    )
+    logger.info(f"   draft_model = {draft_model}")
+    if not draft_model or draft_model == "auto":
+        return preferred_model, preferred_provider
+
+    # Clean up malformed model names (e.g., "gemini-gemini-pro" → "gemini-pro")
+    draft_model = draft_model.strip()
+
+    # Parse provider and model from selection
+    # Format can be: "gemini", "gemini/gemini-pro", "gpt-4", "claude-3-opus", etc.
+    if "/" in draft_model:
+        preferred_provider, preferred_model = draft_model.split("/", 1)
+    else:
+        # Infer provider from model name
+        draft_model_lower = draft_model.lower()
+
+        # Handle duplicate provider prefixes (e.g., "gemini-gemini-pro", "gpt-gpt-4")
+        if draft_model_lower.startswith("gemini-gemini-"):
+            # "gemini-gemini-1.5-pro" → provider: "gemini", model: "gemini-1.5-pro"
+            preferred_provider = "gemini"
+            preferred_model = draft_model_lower[7:]  # Strip first "gemini-"
+        elif draft_model_lower.startswith("gpt-gpt-"):
+            # "gpt-gpt-4" → provider: "openai", model: "gpt-4"
+            preferred_provider = "openai"
+            preferred_model = draft_model_lower[4:]  # Strip first "gpt-"
+        elif draft_model_lower.startswith("claude-claude-"):
+            # "claude-claude-opus" → provider: "anthropic", model: "claude-opus"
+            preferred_provider = "anthropic"
+            preferred_model = draft_model_lower[7:]  # Strip first "claude-"
+        elif "gemini" in draft_model_lower:
+            preferred_provider = "gemini"
+            preferred_model = draft_model
+        elif "gpt" in draft_model_lower or "openai" in draft_model_lower:
+            preferred_provider = "openai"
+            preferred_model = draft_model
+        elif "claude" in draft_model_lower or "anthropic" in draft_model_lower:
+            preferred_provider = "anthropic"
+            preferred_model = draft_model
+        elif (
+            "ollama" in draft_model_lower
+            or "mistral" in draft_model_lower
+            or "llama" in draft_model_lower
+        ):
+            preferred_provider = "ollama"
+            preferred_model = draft_model
+        else:
+            # Default to model name as-is
+            preferred_model = draft_model
+
+    logger.info(
+        f"   ✅ FINAL: preferred_model='{preferred_model}', preferred_provider='{preferred_provider}'"
+    )
+    logger.info(
+        f"🎯 User selected model: {preferred_model or 'auto'} (provider: {preferred_provider or 'auto'})"
+    )
+    return preferred_model, preferred_provider
+
+
+async def _stage_generate_content(
+    database_service, task_id, topic, style, tone, target_length, tags, models_by_phase, result
+):
+    """Stage 2: Generate blog content via AI and store in database.
+
+    Returns (content_text, model_used, metrics, title).
+    """
+    logger.info("✍️  STAGE 2: Generating blog content...")
+
+    content_generator = get_content_generator()
+    preferred_model, preferred_provider = _parse_model_preferences(models_by_phase)
+
+    content_text, model_used, metrics = await content_generator.generate_blog_post(
+        topic=topic,
+        style=style,
+        tone=tone,
+        target_length=target_length,
+        tags=tags or [],
+        preferred_model=preferred_model,
+        preferred_provider=preferred_provider,
+    )
+
+    # Validate content_text is not None
+    if not content_text:
+        logger.error("❌ Content generation returned None or empty")
+        raise ValueError("Content generation failed: no content produced")
+
+    # Generate canonical title based on topic and content
+    logger.info("📌 Generating title from content...")
+    primary_keyword = tags[0] if tags else topic
+    title = await _generate_canonical_title(topic, primary_keyword, content_text[:500])
+    if not title:
+        title = topic  # Fallback to topic if title generation fails
+    logger.info(f"✅ Title generated: {title}")
+
+    # Update content_task with generated content, title, and model tracking
+    await database_service.update_task(
+        task_id=task_id,
+        updates={
+            "status": "in_progress",
+            "content": content_text,
+            "title": title,
+            "model_used": model_used,
+            "models_used_by_phase": metrics.get("models_used_by_phase", {}),
+            "model_selection_log": metrics.get("model_selection_log", {}),
+        },
+    )
+
+    result["content"] = content_text
+    result["content_length"] = len(content_text)
+    result["title"] = title
+    result["model_used"] = model_used
+    result["models_used_by_phase"] = metrics.get("models_used_by_phase", {})
+    result["model_selection_log"] = metrics.get("model_selection_log", {})
+    result["stages"]["2_content_generated"] = True
+    logger.info(f"✅ Content generated ({len(content_text)} chars) using {model_used}\n")
+
+    return content_text, model_used, metrics, title
+
+
+async def _stage_quality_evaluation(topic, tags, content_text, quality_service, result):
+    """Stage 2B: Early quality evaluation of generated content.
+
+    Returns the quality_result object.
+    """
+    logger.info("⭐ STAGE 2B: Early quality evaluation...")
+
+    quality_result = await quality_service.evaluate(
+        content=content_text,
+        context={
+            "topic": topic,
+            "keywords": tags or [topic],
+            "audience": "General",
+        },
+        method=EvaluationMethod.PATTERN_BASED,
+    )
+
+    # Validate quality_result is not None
+    if not quality_result:
+        logger.error("❌ Quality evaluation returned None")
+        raise ValueError("Quality evaluation failed: no result produced")
+
+    result["quality_score"] = quality_result.overall_score
+    result["quality_passing"] = quality_result.passing
+    result["truncation_detected"] = quality_result.truncation_detected
+    result["quality_details_initial"] = {
+        "clarity": quality_result.dimensions.clarity,
+        "accuracy": quality_result.dimensions.accuracy,
+        "completeness": quality_result.dimensions.completeness,
+        "relevance": quality_result.dimensions.relevance,
+        "seo_quality": quality_result.dimensions.seo_quality,
+        "readability": quality_result.dimensions.readability,
+        "engagement": quality_result.dimensions.engagement,
+        "truncation_detected": quality_result.truncation_detected,
+    }
+    result["stages"]["2b_quality_evaluated_initial"] = True
+    logger.info("✅ Initial quality evaluation complete:")
+    logger.info(f"   Overall Score: {quality_result.overall_score:.1f}/100")
+    logger.info(f"   Passing: {quality_result.passing} (threshold ≥70.0)")
+    if quality_result.truncation_detected:
+        logger.warning("   ⚠️  TRUNCATION DETECTED — content appears cut off mid-sentence")
+    logger.info("")
+
+    return quality_result
+
+
+async def _stage_replace_inline_images(database_service, task_id, topic, content_text, image_service, result):
+    """Stage 2C: Replace [IMAGE-N] placeholders with Pexels images.
+
+    Returns the (possibly modified) content_text.
+    """
+    import re as _re
+
+    image_placeholders = _re.findall(r"\[IMAGE-(\d+)(?::\s*([^\]]*))?\]", content_text)
+    if not image_placeholders:
+        result["stages"]["2c_inline_images_replaced"] = False
+        logger.info("⏭️  No [IMAGE-N] placeholders found in content\n")
+        return content_text
+
+    logger.info(
+        f"🖼️  STAGE 2C: Replacing {len(image_placeholders)} inline image placeholders..."
+    )
+    used_image_ids = set()  # Avoid duplicate images
+
+    for num, desc in image_placeholders:
+        # Use the LLM's description as search query, fall back to topic
+        search_query = desc.strip() if desc else topic
+        # Shorten to first 5 words for better Pexels search results
+        search_words = search_query.split()[:5]
+        short_query = " ".join(search_words)
+
+        # Build safe keywords list — guard against empty topic (#1263 Copilot review)
+        keywords = [topic.split()[0]] if topic and topic.strip() else []
+
+        try:
+            img = await image_service.search_featured_image(
+                topic=short_query, keywords=keywords
+            )
+
+            if img and img.url and img.url not in used_image_ids:
+                used_image_ids.add(img.url)
+                alt_text = desc.strip() if desc else f"{topic} illustration"
+                # Clean alt text of special chars for markdown
+                alt_text = (
+                    alt_text.replace("[", "").replace("]", "").replace("\n", " ")[:120]
+                )
+                photographer = getattr(img, "photographer", "Pexels")
+                markdown_img = (
+                    f"\n\n![{alt_text}]({img.url})\n*Photo by {photographer} on Pexels*\n\n"
+                )
+
+                # Use regex to handle spacing variations in [IMAGE-N: desc]
+                content_text = _re.sub(
+                    rf"\[IMAGE-{num}[^\]]*\]", markdown_img, content_text, count=1
+                )
+                logger.info(f"  ✅ [IMAGE-{num}] → Pexels image by {photographer}")
+            else:
+                # Remove placeholder if no image found
+                content_text = _re.sub(rf"\[IMAGE-{num}[^\]]*\]", "", content_text, count=1)
+                logger.warning(
+                    f"  ⚠️ [IMAGE-{num}] — no suitable image found, removed placeholder"
+                )
+        except Exception as e:
+            logger.error(f"  ❌ [IMAGE-{num}] search failed: {e}", exc_info=True)
+            content_text = _re.sub(rf"\[IMAGE-{num}[^\]]*\]", "", content_text, count=1)
+
+    # Update DB with image-populated content
+    await database_service.update_task(task_id=task_id, updates={"content": content_text})
+    result["content"] = content_text
+    result["stages"]["2c_inline_images_replaced"] = True
+    result["inline_images_replaced"] = len(used_image_ids)
+    logger.info(f"✅ Replaced {len(used_image_ids)} inline images in content\n")
+
+    return content_text
+
+
+async def _stage_source_featured_image(topic, tags, generate_featured_image, image_service, result):
+    """Stage 3: Source a featured image from Pexels.
+
+    Returns the featured_image object (or None).
+    """
+    logger.info("🖼️  STAGE 3: Sourcing featured image from Pexels...")
+
+    featured_image = None
+
+    if generate_featured_image:
+        search_keywords = tags or [topic]
+
+        try:
+            featured_image = await image_service.search_featured_image(
+                topic=topic, keywords=search_keywords
+            )
+
+            if featured_image:
+                result["featured_image_url"] = featured_image.url
+                result["featured_image_photographer"] = featured_image.photographer
+                result["featured_image_source"] = featured_image.source
+                result["stages"]["3_featured_image_found"] = True
+                logger.info(
+                    f"✅ Featured image found: {featured_image.photographer} (Pexels)\n"
+                )
+            else:
+                result["stages"]["3_featured_image_found"] = False
+                logger.warning(f"⚠️  No featured image found for '{topic}'\n")
+        except Exception as e:
+            logger.error(f"❌ Image search failed: {e}", exc_info=True)
+            result["stages"]["3_featured_image_found"] = False
+    else:
+        result["stages"]["3_featured_image_found"] = False
+        logger.info("⏭️  Image search skipped (disabled)\n")
+
+    return featured_image
+
+
+async def _stage_generate_seo_metadata(topic, tags, content_text, content_generator, result):
+    """Stage 4: Generate SEO metadata (title, description, keywords).
+
+    Returns (seo_title, seo_description, seo_keywords).
+    """
+    logger.info("📊 STAGE 4: Generating SEO metadata...")
+
+    seo_generator = get_seo_content_generator(content_generator)
+    # SEOOptimizedContentGenerator wraps ContentMetadataGenerator which has generate_seo_assets
+    seo_assets = seo_generator.metadata_gen.generate_seo_assets(
+        title=topic, content=content_text, topic=topic
+    )
+
+    # Validate seo_assets is not None and is a dict
+    if not seo_assets or not isinstance(seo_assets, dict):
+        logger.error("❌ SEO generation returned None or invalid format")
+        raise ValueError("SEO metadata generation failed: invalid result")
+
+    seo_keywords = seo_assets.get("meta_keywords") or (tags or [])
+    # Ensure seo_keywords is a list, filter out None/empty values
+    if isinstance(seo_keywords, list):
+        seo_keywords = [kw for kw in seo_keywords if kw and isinstance(kw, str) and kw.strip()][
+            :10
+        ]
+    elif seo_keywords and isinstance(seo_keywords, str):
+        seo_keywords = [seo_keywords.strip()][:10] if seo_keywords.strip() else []
+    else:
+        seo_keywords = []
+
+    seo_title = seo_assets.get("seo_title", topic)
+    if seo_title:
+        seo_title = seo_title[:60]
+    else:
+        seo_title = topic[:60]
+
+    seo_description = seo_assets.get("meta_description", "")
+    if seo_description:
+        seo_description = seo_description[:160]
+    else:
+        seo_description = topic[:160]
+
+    result["seo_title"] = seo_title
+    result["seo_description"] = seo_description
+    result["seo_keywords"] = seo_keywords
+    result["stages"]["4_seo_metadata_generated"] = True
+    logger.info("✅ SEO metadata generated:")
+    logger.info(f"   Title: {seo_title}")
+    logger.info(f"   Description: {seo_description[:80]}...")
+    logger.info(f"   Keywords: {', '.join(seo_keywords[:5])}...\n")
+
+    return seo_title, seo_description, seo_keywords
+
+
+async def _stage_capture_training_data(
+    database_service, task_id, topic, style, tone, target_length, tags,
+    content_text, quality_result, featured_image, result
+):
+    """Stage 6: Capture quality evaluation and training data in PostgreSQL."""
+    logger.info("🎓 STAGE 6: Capturing training data...")
+
+    # Capture readability metrics for context_data
+    word_count = len(content_text.split())
+    paragraph_count = len([p for p in content_text.split("\n\n") if p.strip()])
+    sentences = [s.strip() for s in content_text.split(".") if s.strip()]
+    avg_sentence_length = len(sentences) / word_count if word_count > 0 else 0
+
+    await database_service.create_quality_evaluation(
+        {
+            "content_id": task_id,
+            "task_id": task_id,
+            "overall_score": quality_result.overall_score,
+            "clarity": quality_result.dimensions.clarity,
+            "accuracy": quality_result.dimensions.accuracy,
+            "completeness": quality_result.dimensions.completeness,
+            "relevance": quality_result.dimensions.relevance,
+            "seo_quality": quality_result.dimensions.seo_quality,
+            "readability": quality_result.dimensions.readability,
+            "engagement": quality_result.dimensions.engagement,
+            "passing": quality_result.passing,
+            "feedback": quality_result.feedback,
+            "suggestions": quality_result.suggestions,
+            "evaluated_by": "ContentQualityService",
+            "evaluation_method": quality_result.evaluation_method,
+            "content_length": len(content_text),
+            "content": content_text,
+            "context_data": {
+                "topic": topic,
+                "style": style,
+                "tone": tone,
+                "target_length": target_length,
+                "has_featured_image": featured_image is not None,
+                "readability_metrics": {
+                    "word_count": word_count,
+                    "paragraph_count": paragraph_count,
+                    "average_sentence_length": round(avg_sentence_length, 2),
+                    "sentence_count": len(sentences),
+                },
+            },
+        }
+    )
+
+    await database_service.create_orchestrator_training_data(
+        {
+            "execution_id": task_id,
+            "user_request": f"Generate blog post on: {topic}",
+            "intent": "content_generation",
+            "business_state": {
+                "topic": topic,
+                "style": style,
+                "tone": tone,
+                "featured_image": featured_image is not None,
+            },
+            "execution_result": "success",
+            "quality_score": quality_result.overall_score / 10,
+            "success": quality_result.passing,
+            "tags": tags or [],
+            "source_agent": "content_router_service",
+        }
+    )
+
+    result["stages"]["6_training_data_captured"] = True
+    logger.info("✅ Training data captured for learning pipeline\n")
+
+
+async def _stage_finalize_task(
+    database_service, task_id, topic, style, tone, content_text,
+    quality_result, seo_title, seo_description, seo_keywords,
+    category, target_audience, result
+):
+    """Final stage: Update content_task with final status and all metadata."""
+    # ⚠️ STAGE 5 NOTE: Posts record creation is SKIPPED here.
+    # Posts should ONLY be created when task is approved via POST /api/tasks/{task_id}/approve.
+    # This maintains clean separation: generation != publishing.
+    logger.info("📝 STAGE 5: Posts record creation SKIPPED")
+    logger.info("   ℹ️  Posts will be created when task is approved by user")
+    result["post_id"] = None
+    result["post_slug"] = None
+    result["stages"]["5_post_created"] = False
+    logger.info("ℹ️  Skipping automatic post creation\n")
+
+    # 🔑 CRITICAL: Store featured_image_url and all other metadata so approval endpoint can find it
+    await database_service.update_task(
+        task_id=task_id,
+        updates={
+            "status": "awaiting_approval",
+            "approval_status": "pending",
+            "quality_score": int(quality_result.overall_score),
+            "featured_image_url": result.get("featured_image_url"),
+            "seo_title": seo_title,
+            "seo_description": seo_description,
+            "seo_keywords": seo_keywords,
+            "style": style,
+            "tone": tone,
+            "category": result.get("category") or category,
+            "target_audience": target_audience or "General",
+            # 🖼️ Store featured_image_url in task_metadata for later retrieval by approval endpoint
+            "task_metadata": {
+                "featured_image_url": result.get("featured_image_url"),
+                "featured_image_photographer": result.get("featured_image_photographer"),
+                "featured_image_source": result.get("featured_image_source"),
+                "content": content_text,
+                "seo_title": seo_title,
+                "seo_description": seo_description,
+                "seo_keywords": seo_keywords,
+                "topic": topic,
+                "style": style,
+                "tone": tone,
+                "category": result.get("category") or category,
+                "target_audience": target_audience or "General",
+                "post_id": result.get("post_id"),
+                "quality_score": quality_result.overall_score,
+                "content_length": len(content_text),
+                "word_count": len(content_text.split()),
+            },
+        },
+    )
+
+    result["status"] = "awaiting_approval"
+    result["approval_status"] = "pending"
+
+
 async def process_content_generation_task(
     topic: str,
     style: str,
@@ -355,26 +843,18 @@ async def process_content_generation_task(
     target_audience: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    🚀 Complete Content Generation Pipeline with Image Sourcing & SEO Metadata
+    Complete Content Generation Pipeline with Image Sourcing & SEO Metadata.
 
     Process a content generation request through the full pipeline:
 
-    STAGE 1: 📋 Create content_task record (status='pending')
-    STAGE 2: ✍️  Generate blog content
-    STAGE 2B: ⭐ Early quality evaluation
-    STAGE 3: 🖼️  Source featured image from Pexels
-    STAGE 4: 📊 Generate SEO metadata
-    STAGE 5: 📝 Create posts record with all metadata
-    STAGE 6: 🎓 Capture training data for learning
-    STAGE 7: 🎓 Capture training data for learning loop
-
-    FEATURES:
-    - ✅ Pexels API for royalty-free featured images
-    - ✅ Auto-generated SEO title, description, keywords
-    - ✅ Quality evaluation with 7 criteria
-    - ✅ Training data capture for improvement learning
-    - ✅ Full relational integrity (author_id, category_id, etc.)
-    - ✅ Per-phase model selection and cost tracking (NEW - Week 1)
+    STAGE 1: Verify content_task record exists
+    STAGE 2: Generate blog content
+    STAGE 2B: Early quality evaluation
+    STAGE 2C: Replace inline image placeholders
+    STAGE 3: Source featured image from Pexels
+    STAGE 4: Generate SEO metadata
+    STAGE 5: (Skipped) Posts record created at approval time
+    STAGE 6: Capture training data for learning
 
     Args:
         topic: Blog post topic
@@ -428,471 +908,45 @@ async def process_content_generation_task(
             f"[BG-TASK] Services initialized: image_service={image_service}, quality_service={quality_service}"
         )
 
-        # ================================================================================
-        # STAGE 1: VERIFY TASK RECORD EXISTS
-        # ================================================================================
-        logger.info("📋 STAGE 1: Verifying task record exists...")
+        # Stage 1: Verify task record
+        await _stage_verify_task(database_service, task_id, result)
 
-        # Task already created by task_routes.py before background task launched
-        # Just verify it exists in database
-        logger.debug(f"[BG-TASK] Verifying task {task_id} exists in database...")
-        try:
-            existing_task = await database_service.get_task(task_id)
-            if existing_task:
-                logger.info(f"✅ Task verified in database: {task_id}\n")
-                result["content_task_id"] = task_id
-                result["stages"]["1_content_task_created"] = True
-            else:
-                logger.warning(f"⚠️  Task {task_id} not found - this should not happen")
-                result["stages"]["1_content_task_created"] = False
-        except Exception as e:
-            logger.error(f"❌ Failed to verify task: {e}", exc_info=True)
-            result["stages"]["1_content_task_created"] = False
+        # Stage 2: Generate blog content
+        content_text, model_used, metrics, title = await _stage_generate_content(
+            database_service, task_id, topic, style, tone, target_length, tags, models_by_phase, result
+        )
 
-        # ================================================================================
-        # STAGE 2: GENERATE BLOG CONTENT
-        # ================================================================================
-        logger.info("✍️  STAGE 2: Generating blog content...")
+        # Stage 2B: Quality evaluation
+        quality_result = await _stage_quality_evaluation(topic, tags, content_text, quality_service, result)
 
+        # Stage 2C: Replace inline image placeholders
+        content_text = await _stage_replace_inline_images(
+            database_service, task_id, topic, content_text, image_service, result
+        )
+
+        # Stage 3: Source featured image
+        featured_image = await _stage_source_featured_image(
+            topic, tags, generate_featured_image, image_service, result
+        )
+
+        # Stage 4: Generate SEO metadata
         content_generator = get_content_generator()
-
-        # Extract user model preferences from models_by_phase (if provided)
-        preferred_model = None
-        preferred_provider = None
-        logger.info("🔍 STEP 2A: Processing model selections from UI")
-        logger.info(f"   models_by_phase = {models_by_phase}")
-        if models_by_phase:
-            # Try to get model for 'draft' phase (main content generation)
-            draft_model = (
-                models_by_phase.get("draft")
-                or models_by_phase.get("generate")
-                or models_by_phase.get("content")
-            )
-            logger.info(f"   draft_model = {draft_model}")
-            if draft_model and draft_model != "auto":
-                # Clean up malformed model names (e.g., "gemini-gemini-pro" → "gemini-pro")
-                draft_model = draft_model.strip()
-
-                # Parse provider and model from selection
-                # Format can be: "gemini", "gemini/gemini-pro", "gpt-4", "claude-3-opus", etc.
-                if "/" in draft_model:
-                    preferred_provider, preferred_model = draft_model.split("/", 1)
-                else:
-                    # Infer provider from model name
-                    draft_model_lower = draft_model.lower()
-
-                    # Handle duplicate provider prefixes (e.g., "gemini-gemini-pro", "gpt-gpt-4")
-                    if draft_model_lower.startswith("gemini-gemini-"):
-                        # "gemini-gemini-1.5-pro" → provider: "gemini", model: "gemini-1.5-pro"
-                        preferred_provider = "gemini"
-                        preferred_model = draft_model_lower[7:]  # Strip first "gemini-"
-                    elif draft_model_lower.startswith("gpt-gpt-"):
-                        # "gpt-gpt-4" → provider: "openai", model: "gpt-4"
-                        preferred_provider = "openai"
-                        preferred_model = draft_model_lower[4:]  # Strip first "gpt-"
-                    elif draft_model_lower.startswith("claude-claude-"):
-                        # "claude-claude-opus" → provider: "anthropic", model: "claude-opus"
-                        preferred_provider = "anthropic"
-                        preferred_model = draft_model_lower[7:]  # Strip first "claude-"
-                    elif "gemini" in draft_model_lower:
-                        preferred_provider = "gemini"
-                        preferred_model = draft_model
-                    elif "gpt" in draft_model_lower or "openai" in draft_model_lower:
-                        preferred_provider = "openai"
-                        preferred_model = draft_model
-                    elif "claude" in draft_model_lower or "anthropic" in draft_model_lower:
-                        preferred_provider = "anthropic"
-                        preferred_model = draft_model
-                    elif (
-                        "ollama" in draft_model_lower
-                        or "mistral" in draft_model_lower
-                        or "llama" in draft_model_lower
-                    ):
-                        preferred_provider = "ollama"
-                        preferred_model = draft_model
-                    else:
-                        # Default to model name as-is
-                        preferred_model = draft_model
-
-                logger.info(
-                    f"   ✅ FINAL: preferred_model='{preferred_model}', preferred_provider='{preferred_provider}'"
-                )
-                logger.info(
-                    f"🎯 User selected model: {preferred_model or 'auto'} (provider: {preferred_provider or 'auto'})"
-                )
-
-        content_text, model_used, metrics = await content_generator.generate_blog_post(
-            topic=topic,
-            style=style,
-            tone=tone,
-            target_length=target_length,
-            tags=tags or [],
-            preferred_model=preferred_model,
-            preferred_provider=preferred_provider,
+        seo_title, seo_description, seo_keywords = await _stage_generate_seo_metadata(
+            topic, tags, content_text, content_generator, result
         )
 
-        # Validate content_text is not None
-        if not content_text:
-            logger.error("❌ Content generation returned None or empty")
-            raise ValueError("Content generation failed: no content produced")
-
-        # Generate canonical title based on topic and content
-        logger.info("📌 Generating title from content...")
-        primary_keyword = tags[0] if tags else topic
-        title = await _generate_canonical_title(topic, primary_keyword, content_text[:500])
-        if not title:
-            title = topic  # Fallback to topic if title generation fails
-        logger.info(f"✅ Title generated: {title}")
-
-        # Update content_task with generated content, title, and model tracking
-        await database_service.update_task(
-            task_id=task_id,
-            updates={
-                "status": "in_progress",
-                "content": content_text,
-                "title": title,
-                "model_used": model_used,
-                "models_used_by_phase": metrics.get("models_used_by_phase", {}),
-                "model_selection_log": metrics.get("model_selection_log", {}),
-            },
+        # Stage 6: Capture training data
+        await _stage_capture_training_data(
+            database_service, task_id, topic, style, tone, target_length, tags,
+            content_text, quality_result, featured_image, result
         )
 
-        result["content"] = content_text
-        result["content_length"] = len(content_text)
-        result["title"] = title
-        result["model_used"] = model_used
-        result["models_used_by_phase"] = metrics.get("models_used_by_phase", {})
-        result["model_selection_log"] = metrics.get("model_selection_log", {})
-        result["stages"]["2_content_generated"] = True
-        logger.info(f"✅ Content generated ({len(content_text)} chars) using {model_used}\n")
-
-        # ================================================================================
-        # STAGE 2B: QUALITY EVALUATION (Early check after content generation)
-        # ================================================================================
-        logger.info("⭐ STAGE 2B: Early quality evaluation...")
-
-        quality_result = await quality_service.evaluate(
-            content=content_text,
-            context={
-                "topic": topic,
-                "keywords": tags or [topic],
-                "audience": "General",
-            },
-            method=EvaluationMethod.PATTERN_BASED,
+        # Final: Update task with status and metadata
+        await _stage_finalize_task(
+            database_service, task_id, topic, style, tone, content_text,
+            quality_result, seo_title, seo_description, seo_keywords,
+            category, target_audience, result
         )
-
-        # Validate quality_result is not None
-        if not quality_result:
-            logger.error("❌ Quality evaluation returned None")
-            raise ValueError("Quality evaluation failed: no result produced")
-
-        result["quality_score"] = quality_result.overall_score
-        result["quality_passing"] = quality_result.passing
-        result["truncation_detected"] = quality_result.truncation_detected
-        result["quality_details_initial"] = {
-            "clarity": quality_result.dimensions.clarity,
-            "accuracy": quality_result.dimensions.accuracy,
-            "completeness": quality_result.dimensions.completeness,
-            "relevance": quality_result.dimensions.relevance,
-            "seo_quality": quality_result.dimensions.seo_quality,
-            "readability": quality_result.dimensions.readability,
-            "engagement": quality_result.dimensions.engagement,
-            "truncation_detected": quality_result.truncation_detected,
-        }
-        result["stages"]["2b_quality_evaluated_initial"] = True
-        logger.info("✅ Initial quality evaluation complete:")
-        logger.info(f"   Overall Score: {quality_result.overall_score:.1f}/100")
-        logger.info(f"   Passing: {quality_result.passing} (threshold ≥70.0)")
-        if quality_result.truncation_detected:
-            logger.warning("   ⚠️  TRUNCATION DETECTED — content appears cut off mid-sentence")
-        logger.info("")
-
-        # ================================================================================
-        # STAGE 2C: REPLACE [IMAGE-N] PLACEHOLDERS WITH PEXELS IMAGES
-        # ================================================================================
-        import re as _re
-
-        image_placeholders = _re.findall(r"\[IMAGE-(\d+)(?::\s*([^\]]*))?\]", content_text)
-        if image_placeholders:
-            logger.info(
-                f"🖼️  STAGE 2C: Replacing {len(image_placeholders)} inline image placeholders..."
-            )
-            used_image_ids = set()  # Avoid duplicate images
-
-            for num, desc in image_placeholders:
-                # Use the LLM's description as search query, fall back to topic
-                search_query = desc.strip() if desc else topic
-                # Shorten to first 5 words for better Pexels search results
-                search_words = search_query.split()[:5]
-                short_query = " ".join(search_words)
-
-                # Build safe keywords list — guard against empty topic (#1263 Copilot review)
-                keywords = [topic.split()[0]] if topic and topic.strip() else []
-
-                try:
-                    img = await image_service.search_featured_image(
-                        topic=short_query, keywords=keywords
-                    )
-
-                    if img and img.url and img.url not in used_image_ids:
-                        used_image_ids.add(img.url)
-                        alt_text = desc.strip() if desc else f"{topic} illustration"
-                        # Clean alt text of special chars for markdown
-                        alt_text = (
-                            alt_text.replace("[", "").replace("]", "").replace("\n", " ")[:120]
-                        )
-                        photographer = getattr(img, "photographer", "Pexels")
-                        markdown_img = (
-                            f"\n\n![{alt_text}]({img.url})\n*Photo by {photographer} on Pexels*\n\n"
-                        )
-
-                        # Use regex to handle spacing variations in [IMAGE-N: desc]
-                        content_text = _re.sub(
-                            rf"\[IMAGE-{num}[^\]]*\]", markdown_img, content_text, count=1
-                        )
-                        logger.info(f"  ✅ [IMAGE-{num}] → Pexels image by {photographer}")
-                    else:
-                        # Remove placeholder if no image found
-                        content_text = _re.sub(rf"\[IMAGE-{num}[^\]]*\]", "", content_text, count=1)
-                        logger.warning(
-                            f"  ⚠️ [IMAGE-{num}] — no suitable image found, removed placeholder"
-                        )
-                except Exception as e:
-                    logger.error(f"  ❌ [IMAGE-{num}] search failed: {e}", exc_info=True)
-                    content_text = _re.sub(rf"\[IMAGE-{num}[^\]]*\]", "", content_text, count=1)
-
-            # Update DB with image-populated content
-            await database_service.update_task(task_id=task_id, updates={"content": content_text})
-            result["content"] = content_text
-            result["stages"]["2c_inline_images_replaced"] = True
-            result["inline_images_replaced"] = len(used_image_ids)
-            logger.info(f"✅ Replaced {len(used_image_ids)} inline images in content\n")
-        else:
-            result["stages"]["2c_inline_images_replaced"] = False
-            logger.info("⏭️  No [IMAGE-N] placeholders found in content\n")
-
-        # ================================================================================
-        # STAGE 3: SOURCE FEATURED IMAGE FROM UNIFIED IMAGE SERVICE
-        # ================================================================================
-        logger.info("🖼️  STAGE 3: Sourcing featured image from Pexels...")
-
-        featured_image = None
-        image_metadata = None
-
-        if generate_featured_image:
-            search_keywords = tags or [topic]
-
-            try:
-                featured_image = await image_service.search_featured_image(
-                    topic=topic, keywords=search_keywords
-                )
-
-                if featured_image:
-                    image_metadata = featured_image.to_dict()
-                    result["featured_image_url"] = featured_image.url
-                    result["featured_image_photographer"] = featured_image.photographer
-                    result["featured_image_source"] = featured_image.source
-                    result["stages"]["3_featured_image_found"] = True
-                    logger.info(
-                        f"✅ Featured image found: {featured_image.photographer} (Pexels)\n"
-                    )
-                else:
-                    result["stages"]["3_featured_image_found"] = False
-                    logger.warning(f"⚠️  No featured image found for '{topic}'\n")
-            except Exception as e:
-                logger.error(f"❌ Image search failed: {e}", exc_info=True)
-                result["stages"]["3_featured_image_found"] = False
-        else:
-            result["stages"]["3_featured_image_found"] = False
-            logger.info("⏭️  Image search skipped (disabled)\n")
-
-        # ================================================================================
-        # STAGE 4: GENERATE SEO METADATA
-        # ================================================================================
-        logger.info("📊 STAGE 4: Generating SEO metadata...")
-
-        seo_generator = get_seo_content_generator(content_generator)
-        # SEOOptimizedContentGenerator wraps ContentMetadataGenerator which has generate_seo_assets
-        seo_assets = seo_generator.metadata_gen.generate_seo_assets(
-            title=topic, content=content_text, topic=topic
-        )
-
-        # Validate seo_assets is not None and is a dict
-        if not seo_assets or not isinstance(seo_assets, dict):
-            logger.error("❌ SEO generation returned None or invalid format")
-            raise ValueError("SEO metadata generation failed: invalid result")
-
-        seo_keywords = seo_assets.get("meta_keywords") or (tags or [])
-        # Ensure seo_keywords is a list, filter out None/empty values
-        if isinstance(seo_keywords, list):
-            seo_keywords = [kw for kw in seo_keywords if kw and isinstance(kw, str) and kw.strip()][
-                :10
-            ]
-        elif seo_keywords and isinstance(seo_keywords, str):
-            seo_keywords = [seo_keywords.strip()][:10] if seo_keywords.strip() else []
-        else:
-            seo_keywords = []
-
-        seo_title = seo_assets.get("seo_title", topic)
-        if seo_title:
-            seo_title = seo_title[:60]
-        else:
-            seo_title = topic[:60]
-
-        seo_description = seo_assets.get("meta_description", "")
-        if seo_description:
-            seo_description = seo_description[:160]
-        else:
-            seo_description = topic[:160]
-
-        result["seo_title"] = seo_title
-        result["seo_description"] = seo_description
-        result["seo_keywords"] = seo_keywords
-        result["stages"]["4_seo_metadata_generated"] = True
-        logger.info("✅ SEO metadata generated:")
-        logger.info(f"   Title: {seo_title}")
-        logger.info(f"   Description: {seo_description[:80]}...")
-        logger.info(f"   Keywords: {', '.join(seo_keywords[:5])}...\n")
-
-        # ================================================================================
-        # STAGE 5: CREATE POSTS RECORD
-        # ================================================================================
-        # ⚠️ IMPORTANT: Do NOT create posts here in content_router_service!
-        # Posts should ONLY be created when:
-        # 1. Task is approved via POST /api/tasks/{task_id}/approve
-        # 2. Status is set to 'published' at approval time
-        #
-        # Creating draft posts here causes:
-        # - Slug conflicts when approval endpoint tries to create published post
-        # - Duplicate posts in posts table
-        # - Two-step post creation that violates single responsibility principle
-        #
-        # The approval workflow should handle all post creation:
-        # 1. content_router_service generates and stores content
-        # 2. Stores content in content_tasks table with status='completed'
-        # 3. User approves via POST /api/tasks/{task_id}/approve → status='approved'
-        # 4. Approval endpoint creates posts table entry with status='published'
-        # 5. No more posts table entries during generation
-        #
-        # This maintains clean separation: generation ≠ publishing
-        logger.info("📝 STAGE 5: Posts record creation SKIPPED")
-        logger.info("   ℹ️  Posts will be created when task is approved by user")
-        result["post_id"] = None
-        result["post_slug"] = None
-        result["stages"]["5_post_created"] = False
-        logger.info("ℹ️  Skipping automatic post creation\n")
-
-        # ================================================================================
-        # STAGE 6: CAPTURE TRAINING DATA
-        # ================================================================================
-        logger.info("🎓 STAGE 6: Capturing training data...")
-
-        # Store quality evaluation in PostgreSQL
-        # Capture readability metrics for context_data
-        word_count = len(content_text.split())
-        paragraph_count = len([p for p in content_text.split("\n\n") if p.strip()])
-        sentences = [s.strip() for s in content_text.split(".") if s.strip()]
-        avg_sentence_length = len(sentences) / word_count if word_count > 0 else 0
-
-        await database_service.create_quality_evaluation(
-            {
-                "content_id": task_id,
-                "task_id": task_id,
-                "overall_score": quality_result.overall_score,
-                "clarity": quality_result.dimensions.clarity,
-                "accuracy": quality_result.dimensions.accuracy,
-                "completeness": quality_result.dimensions.completeness,
-                "relevance": quality_result.dimensions.relevance,
-                "seo_quality": quality_result.dimensions.seo_quality,
-                "readability": quality_result.dimensions.readability,
-                "engagement": quality_result.dimensions.engagement,
-                "passing": quality_result.passing,
-                "feedback": quality_result.feedback,
-                "suggestions": quality_result.suggestions,
-                "evaluated_by": "ContentQualityService",
-                "evaluation_method": quality_result.evaluation_method,
-                "content_length": len(content_text),
-                "content": content_text,
-                "context_data": {
-                    "topic": topic,
-                    "style": style,
-                    "tone": tone,
-                    "target_length": target_length,
-                    "has_featured_image": featured_image is not None,
-                    "readability_metrics": {
-                        "word_count": word_count,
-                        "paragraph_count": paragraph_count,
-                        "average_sentence_length": round(avg_sentence_length, 2),
-                        "sentence_count": len(sentences),
-                    },
-                },
-            }
-        )
-
-        await database_service.create_orchestrator_training_data(
-            {
-                "execution_id": task_id,
-                "user_request": f"Generate blog post on: {topic}",
-                "intent": "content_generation",
-                "business_state": {
-                    "topic": topic,
-                    "style": style,
-                    "tone": tone,
-                    "featured_image": featured_image is not None,
-                },
-                "execution_result": "success",
-                "quality_score": quality_result.overall_score / 10,
-                "success": quality_result.passing,
-                "tags": tags or [],
-                "source_agent": "content_router_service",
-            }
-        )
-
-        result["stages"]["6_training_data_captured"] = True
-        logger.info("✅ Training data captured for learning pipeline\n")
-
-        # ================================================================================
-        # UPDATE CONTENT_TASK WITH FINAL STATUS AND ALL METADATA
-        # ================================================================================
-        # 🔑 CRITICAL: Store featured_image_url and all other metadata so approval endpoint can find it
-        await database_service.update_task(
-            task_id=task_id,
-            updates={
-                "status": "awaiting_approval",
-                "approval_status": "pending",
-                "quality_score": int(quality_result.overall_score),
-                "featured_image_url": result.get("featured_image_url"),
-                "seo_title": seo_title,
-                "seo_description": seo_description,
-                "seo_keywords": seo_keywords,
-                "style": style,
-                "tone": tone,
-                "category": result.get("category") or category,
-                "target_audience": target_audience or "General",
-                # 🖼️ Store featured_image_url in task_metadata for later retrieval by approval endpoint
-                "task_metadata": {
-                    "featured_image_url": result.get("featured_image_url"),
-                    "featured_image_photographer": result.get("featured_image_photographer"),
-                    "featured_image_source": result.get("featured_image_source"),
-                    "content": content_text,
-                    "seo_title": seo_title,
-                    "seo_description": seo_description,
-                    "seo_keywords": seo_keywords,
-                    "topic": topic,
-                    "style": style,
-                    "tone": tone,
-                    "category": result.get("category") or category,
-                    "target_audience": target_audience or "General",
-                    "post_id": result.get("post_id"),
-                    "quality_score": quality_result.overall_score,
-                    "content_length": len(content_text),
-                    "word_count": len(content_text.split()),
-                },
-            },
-        )
-
-        result["status"] = "awaiting_approval"
-        result["approval_status"] = "pending"
 
         logger.info(f"{'='*80}")
         logger.info("✅ COMPLETE CONTENT GENERATION PIPELINE FINISHED")

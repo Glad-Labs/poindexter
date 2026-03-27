@@ -24,7 +24,7 @@ Requires `.env.local` at project root with `DATABASE_URL` and at least one LLM A
 src/cofounder_agent/
 ├── main.py                    # FastAPI app entry point
 ├── config/                    # Configuration loading
-├── routes/                    # 32 REST endpoint modules
+├── routes/                    # 31 REST endpoint modules
 ├── services/                  # ~76 service modules
 │   ├── database_service.py    # Coordinates 5 DB domain modules
 │   ├── model_router.py        # LLM provider selection + fallback

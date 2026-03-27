@@ -42,7 +42,7 @@ See `.env.example` for the full variable reference (~57 variables).
 
 ### Backend — FastAPI (`src/cofounder_agent/`)
 
-Python orchestrator with ~76 service modules, 32 route files exposing ~193 REST/WebSocket endpoints. Manages AI agents, task workflows, content pipelines, and cost tracking.
+Python orchestrator with ~76 service modules, 31 route files exposing ~193 REST/WebSocket endpoints. Manages AI agents, task workflows, content pipelines, and cost tracking.
 
 - Multi-provider LLM routing with cost tiers (free/budget/standard/premium/flagship)
 - Four agent types: Content, Financial, Market Insight, Compliance

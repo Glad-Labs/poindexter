@@ -86,21 +86,17 @@ class ContentDatabase(DatabaseServiceMixin):
             logger.warning(f"⚠️  tag_ids is string, converting to list: {tag_ids}")
             tag_ids = [tag_ids]
 
-        # ✅ Log all values being inserted for debugging
-        logger.info("🔍 INSERTING POST WITH THESE VALUES:")
-        logger.info(f"   - id: {post_id}")
-        logger.info(f"   - title: {str(post_data.get('title') or 'EMPTY')[:50]}")
-        logger.info(f"   - slug: {post_data.get('slug')}")
-        logger.info(f"   - featured_image_url: {post_data.get('featured_image_url')}")
-        logger.info(f"   - seo_title: {post_data.get('seo_title')}")
-        logger.info(
-            f"   - seo_description: {str(post_data.get('seo_description') or 'EMPTY')[:50]}"
+        # Log insert details at DEBUG to avoid flooding INFO logs (#1327)
+        logger.debug(
+            "Inserting post",
+            id=post_id,
+            title=str(post_data.get("title") or "EMPTY")[:50],
+            slug=post_data.get("slug"),
+            status=post_data.get("status", "draft"),
+            author_id=post_data.get("author_id"),
+            category_id=post_data.get("category_id"),
+            tag_ids=tag_ids,
         )
-        logger.info(f"   - seo_keywords: {seo_keywords}")
-        logger.info(f"   - status: {post_data.get('status', 'draft')}")
-        logger.info(f"   - author_id: {post_data.get('author_id')}")
-        logger.info(f"   - category_id: {post_data.get('category_id')}")
-        logger.info(f"   - tag_ids (post_tags): {tag_ids}")
 
         async with self.pool.acquire() as conn:
             try:
@@ -169,13 +165,17 @@ class ContentDatabase(DatabaseServiceMixin):
                             post_id,
                             clean_ids,
                         )
-                        logger.info(
-                            f"   - Inserted {len(clean_ids)} tag(s) into post_tags for post {post_id}"
+                        logger.debug(
+                            "Inserted tags into post_tags",
+                            count=len(clean_ids),
+                            post_id=post_id,
                         )
 
-                logger.info(f"✅ POST CREATED SUCCESSFULLY in database with ID: {post_id}")
-                logger.info(f"   - Status: {post_data.get('status', 'draft')}")
-                logger.info(f"   - Published at: {row.get('published_at')}")
+                logger.info(
+                    "Post created successfully",
+                    post_id=post_id,
+                    status=post_data.get("status", "draft"),
+                )
                 return ModelConverter.to_post_response(row)
             except Exception as db_error:
                 logger.error(f"❌ DATABASE ERROR while creating post: {db_error}", exc_info=True)

@@ -50,7 +50,7 @@ sentry-sdk = {extras = ["fastapi"], version = "^1.40"}
 
 # Storage & Files
 python-multipart = "^0.0.22"
-pillow = "^12.1"
+# pillow removed — never imported in production code (issue #1341)
 aiofiles = "^23.0"
 
 # ML/AI - Image Generation (SDXL)
@@ -196,7 +196,7 @@ ignore = [
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-testpaths = ["../../tests"]
+testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]

@@ -422,7 +422,7 @@ async def execute_workflow_template(
         except (ValueError, KeyError) as e:
             raise HTTPException(
                 status_code=404,
-                detail=f"Template '{template_name}' not found: {e}",
+                detail=f"Template '{template_name}' not found",
             ) from e
 
         result = await template_service.execute_template(

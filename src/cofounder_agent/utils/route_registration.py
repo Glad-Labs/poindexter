@@ -1,7 +1,7 @@
 """
 Route Registration - Centralized route registration for FastAPI application
 
-Handles registration of all 15+ route routers with the FastAPI application.
+Handles registration of all 28 route routers with the FastAPI application.
 Provides dependency injection of database service to route modules.
 
 Unified Task Endpoint (/api/tasks):

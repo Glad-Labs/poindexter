@@ -25,6 +25,7 @@ from services.capability_natural_language_composer import get_composer
 from services.capability_registry import get_registry
 from services.capability_task_executor import CapabilityStep, execute_capability_task
 from services.capability_tasks_service import CapabilityTasksService
+from routes.auth_unified import get_current_user
 from utils.route_utils import get_database_dependency
 
 logger = logging.getLogger(__name__)
@@ -184,6 +185,7 @@ from routes.custom_workflows_routes import get_owner_id  # noqa: F401, E402
 async def list_capabilities(
     tag: Optional[str] = Query(None, description="Filter by tag"),
     cost_tier: Optional[str] = Query(None, description="Filter by cost tier"),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     List all available capabilities.
@@ -238,7 +240,7 @@ async def list_capabilities(
 
 
 @router.get("/capabilities/{name}", response_model=CapabilityDetailResponse)
-async def get_capability(name: str):
+async def get_capability(name: str, current_user: dict = Depends(get_current_user)):
     """Get detailed information about a specific capability."""
     registry = get_registry()
 

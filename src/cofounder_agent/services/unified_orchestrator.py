@@ -698,7 +698,7 @@ class UnifiedOrchestrator:
         try:
             await emit_task_progress(task_id, stage="research", progress=10, status="running")
         except Exception:
-            pass
+            logger.debug("Failed to emit progress for research stage", exc_info=True)
 
         # Instantiate research agent (with registry fallback support)
         research_agent = self._get_agent_instance("research_agent")
@@ -754,7 +754,7 @@ class UnifiedOrchestrator:
         try:
             await emit_task_progress(task_id, stage="draft", progress=25, status="running")
         except Exception:
-            pass
+            logger.debug("Failed to emit progress for draft stage", exc_info=True)
         from agents.content_agent.services.llm_client import (  # pylint: disable=import-outside-toplevel
             LLMClient,
         )
@@ -886,7 +886,7 @@ class UnifiedOrchestrator:
         try:
             await emit_task_progress(task_id, stage="qa", progress=45, status="running")
         except Exception:
-            pass
+            logger.debug("Failed to emit progress for qa stage", exc_info=True)
         from agents.content_agent.services.llm_client import (  # pylint: disable=import-outside-toplevel
             LLMClient,
         )
@@ -997,7 +997,7 @@ class UnifiedOrchestrator:
         try:
             await emit_task_progress(task_id, stage="images", progress=60, status="running")
         except Exception:
-            pass
+            logger.debug("Failed to emit progress for images stage", exc_info=True)
         featured_image_url = None
         try:
             from services.image_service import (  # pylint: disable=import-outside-toplevel
@@ -1022,7 +1022,7 @@ class UnifiedOrchestrator:
         try:
             await emit_task_progress(task_id, stage="formatting", progress=75, status="running")
         except Exception:
-            pass
+            logger.debug("Failed to emit progress for formatting stage", exc_info=True)
 
         # Instantiate publishing agent (with registry fallback support)
         publishing_agent = self._get_agent_instance("publishing_agent")
