@@ -11,10 +11,11 @@ ollama_client and gemini_client are patched to avoid real network I/O.
 No auth required on these endpoints.
 """
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import routes.chat_routes as chat_module
 from routes.auth_unified import get_current_user
@@ -54,9 +55,7 @@ def _make_gemini_client(is_configured=True, list_models_result=None, chat_result
     client = MagicMock()
     client.is_configured = MagicMock(return_value=is_configured)
     client.list_models = AsyncMock(
-        return_value=list_models_result
-        if list_models_result is not None
-        else ["gemini-2.5-flash"]
+        return_value=list_models_result if list_models_result is not None else ["gemini-2.5-flash"]
     )
     client.chat = AsyncMock(return_value=chat_result or "Hello from Gemini!")
     return client
@@ -142,9 +141,7 @@ class TestChat:
 
     def test_missing_message_returns_422(self):
         client = TestClient(_build_app())
-        resp = client.post(
-            "/api/chat", json={"model": "ollama", "conversationId": "c"}
-        )
+        resp = client.post("/api/chat", json={"model": "ollama", "conversationId": "c"})
         assert resp.status_code == 422
 
     def test_model_defaults_to_ollama_when_omitted(self):
@@ -343,7 +340,9 @@ class TestConversationIsolation:
         assert "user-A:shared" in chat_module.conversations
         assert "user-B:shared" in chat_module.conversations
         # They must hold different histories
-        assert chat_module.conversations["user-A:shared"] != chat_module.conversations["user-B:shared"]
+        assert (
+            chat_module.conversations["user-A:shared"] != chat_module.conversations["user-B:shared"]
+        )
 
     def test_user_cannot_read_another_users_conversation_history(self):
         """GET /history/{id} is scoped to the requesting user."""

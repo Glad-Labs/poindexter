@@ -15,11 +15,11 @@ Tests cover:
 No real LLM calls, no DB, no file I/O.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from services.template_execution_service import TemplateExecutionService
+import pytest
 
+from services.template_execution_service import TemplateExecutionService
 
 # ---------------------------------------------------------------------------
 # Helpers

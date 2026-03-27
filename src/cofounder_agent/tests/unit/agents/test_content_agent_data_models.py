@@ -4,9 +4,7 @@ Unit tests for agents/content_agent/utils/data_models.py
 Tests for BlogPost, ImageDetails, and StrapiPost Pydantic models.
 """
 
-import pytest
 from agents.content_agent.utils.data_models import BlogPost, ImageDetails, StrapiPost
-
 
 # ---------------------------------------------------------------------------
 # ImageDetails

@@ -11,13 +11,16 @@ Features:
 - Aggregation for analytics
 """
 
-from services.logger_config import get_logger
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+from services.logger_config import get_logger
+
 logger = get_logger(__name__)
+
+
 @dataclass
 class UsageMetrics:
     """Track metrics for a single operation"""

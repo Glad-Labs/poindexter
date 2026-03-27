@@ -15,18 +15,17 @@ Tests cover:
 - GET    /api/settings/export/all   — export_settings
 """
 
-import pytest
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock
 
-from utils.route_utils import get_database_dependency
 import routes.settings_routes as settings_module
+from middleware.api_token_auth import verify_api_token
 from routes.settings_routes import router
-
-from tests.unit.routes.conftest import make_mock_db
-
+from utils.route_utils import get_database_dependency
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -57,11 +56,7 @@ def _build_app(mock_db=None) -> FastAPI:
     app.dependency_overrides[get_database_dependency] = lambda: mock_db
     # Note: settings_routes uses its OWN local get_current_user, not the shared one.
     # We override via the module-level function reference.
-    app.dependency_overrides[settings_module.get_current_user] = lambda: {
-        "user_id": "test-user",
-        "email": "test@example.com",
-        "role": "admin",
-    }
+    app.dependency_overrides[verify_api_token] = lambda: "test-token"
 
     return app
 
@@ -134,25 +129,25 @@ class TestListSettings:
         assert resp.status_code == 500
 
     def test_auth_required_when_no_override(self):
-        """Without dependency override, local auth validates Bearer token format."""
+        """Without dependency override, verify_api_token checks Bearer token."""
         app = FastAPI()
         app.include_router(router)
         app.dependency_overrides[get_database_dependency] = lambda: _make_settings_db()
-        # Do NOT override get_current_user — let it run with no token
-
-        client = TestClient(app, raise_server_exceptions=False)
-        resp = client.get("/api/settings")
+        # No auth override — let the real verify_api_token run
+        with patch.dict("os.environ", {"DEVELOPMENT_MODE": "false", "API_TOKEN": "secret"}):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.get("/api/settings")
         # No Authorization header → 401
         assert resp.status_code == 401
 
     def test_invalid_token_returns_401(self):
-        """The local auth function rejects 'invalid' and other keyword tokens."""
+        """verify_api_token rejects invalid tokens."""
         app = FastAPI()
         app.include_router(router)
         app.dependency_overrides[get_database_dependency] = lambda: _make_settings_db()
-
-        client = TestClient(app, raise_server_exceptions=False)
-        resp = client.get("/api/settings", headers={"Authorization": INVALID_AUTH_KEYWORD})
+        with patch.dict("os.environ", {"DEVELOPMENT_MODE": "false", "API_TOKEN": "secret"}):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.get("/api/settings", headers={"Authorization": INVALID_AUTH_KEYWORD})
         assert resp.status_code == 401
 
 
@@ -317,7 +312,9 @@ class TestUpdateSetting:
         client.patch("/api/settings/log_level", json={"value": "info"})
         mock_db.set_setting.assert_awaited_once()
         call_kwargs = mock_db.set_setting.call_args
-        assert call_kwargs.kwargs.get("key") == "log_level" or call_kwargs[1].get("key") == "log_level"
+        assert (
+            call_kwargs.kwargs.get("key") == "log_level" or call_kwargs[1].get("key") == "log_level"
+        )
 
     def test_db_failure_returns_500(self):
         mock_db = _make_settings_db()
@@ -442,10 +439,12 @@ class TestBulkUpdateSettings:
         client = TestClient(_build_app(mock_db))
         client.post(
             "/api/settings/bulk/update",
-            json={"updates": [
-                {"setting_id": 1, "value": "a"},
-                {"setting_id": 2, "value": "b"},
-            ]},
+            json={
+                "updates": [
+                    {"setting_id": 1, "value": "a"},
+                    {"setting_id": 2, "value": "b"},
+                ]
+            },
         )
         assert mock_db.set_setting.await_count == 2
 

@@ -3,9 +3,8 @@ Unit tests for agents/registry.py — AgentRegistry
 """
 
 import pytest
-from unittest.mock import MagicMock
-from agents.registry import AgentRegistry
 
+from agents.registry import AgentRegistry
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -20,6 +19,7 @@ def registry():
 
 class _FakeAgent:
     """Minimal stand-in for an agent class."""
+
     pass
 
 

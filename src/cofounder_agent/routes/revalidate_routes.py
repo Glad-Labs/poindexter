@@ -17,7 +17,7 @@ import httpx
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import verify_api_token
 
 logger = logging.getLogger(__name__)
 
@@ -56,10 +56,18 @@ async def trigger_nextjs_revalidation(paths: Optional[list] = None) -> bool:
         nextjs_url = nextjs_url[:-4]
 
     revalidate_url = f"{nextjs_url}/api/revalidate"
-    revalidate_secret = os.getenv("REVALIDATE_SECRET", "dev-secret-key")
+    revalidate_secret = os.getenv("REVALIDATE_SECRET", "")
+    environment = os.getenv("ENVIRONMENT", "development").lower()
+
+    if not revalidate_secret:
+        if environment != "development":
+            logger.error("REVALIDATE_SECRET is not set — refusing to revalidate in %s", environment)
+            return False
+        logger.warning("REVALIDATE_SECRET not set — using empty secret (development mode)")
+        revalidate_secret = "dev-secret-key"
 
     try:
-        logger.info(f"🔄 Triggering Next.js ISR revalidation...")
+        logger.info("🔄 Triggering Next.js ISR revalidation...")
         logger.info(f"   URL: {revalidate_url}")
         logger.info(f"   Paths: {paths}")
 
@@ -74,7 +82,7 @@ async def trigger_nextjs_revalidation(paths: Optional[list] = None) -> bool:
             )
 
             if response.status_code == 200:
-                logger.info(f"✅ ISR revalidation successful")
+                logger.info("✅ ISR revalidation successful")
                 return True
             else:
                 logger.warning(f"⚠️ ISR revalidation returned {response.status_code}")
@@ -82,17 +90,19 @@ async def trigger_nextjs_revalidation(paths: Optional[list] = None) -> bool:
                 return False
 
     except httpx.TimeoutException:
-        logger.warning(f"⚠️ ISR revalidation timed out (10s)", exc_info=True)
+        logger.warning("⚠️ ISR revalidation timed out (10s)", exc_info=True)
         return False
     except Exception as e:
-        logger.warning(f"⚠️ Failed to trigger ISR revalidation: {type(e).__name__}: {e}", exc_info=True)
+        logger.warning(
+            f"⚠️ Failed to trigger ISR revalidation: {type(e).__name__}: {e}", exc_info=True
+        )
         return False
 
 
 @router.post("/revalidate-cache")
 async def revalidate_cache(
     request_data: RevalidateCacheRequest,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ) -> Dict[str, Any]:
     """
     Securely revalidate public site cache after publishing content.

@@ -1,0 +1,41 @@
+- key: research.analyze_search_results
+  category: research
+  description: "Analyze search results for content research"
+  output_format: json
+  notes: "v1.0: Emphasizes source-based analysis, explicit DATA NOT FOUND guidance"
+  example_output: '{"key_points":["AI adoption increased 45% YoY","ML diagnostic accuracy improved"],"trends":["Explainable AI","EHR integration"],"statistics":["$15.2B market by 2025"],"sources":["https://example.com"]}'
+  template: |
+    Analyze the following search results for: "{topic}"
+
+    Depth Level: {depth}
+
+    ---SEARCH RESULTS---
+    {search_context}
+    ---END RESULTS---
+
+    ⭐ CRITICAL INSTRUCTION:
+    Base your analysis ONLY on the search results provided.
+    Use general knowledge ONLY to fill minor gaps.
+    If data is unavailable, state "DATA NOT FOUND" explicitly.
+
+    Provide a structured analysis with:
+    1. Key Findings (5-10 main points from search results)
+    2. Current Trends (from sources)
+    3. Important Statistics (with sources if available)
+    4. Recommended Sources (use provided URLs)
+
+    ⭐ OUTPUT FORMAT (Valid JSON only, no markdown):
+    {{
+      "key_points": ["point 1", "point 2", ...],
+      "trends": ["trend 1", "trend 2", ...],
+      "statistics": ["stat 1", "stat 2", ...],
+      "sources": ["url1", "url2", ...]
+    }}
+
+    Example:
+    {{
+      "key_points": ["AI adoption in healthcare increased 45% YoY", "Diagnostic accuracy improved with ML models"],
+      "trends": ["Move toward explainable AI", "Integration with EHR systems"],
+      "statistics": ["$15.2B market size by 2025", "78% hospitals planning AI implementation"],
+      "sources": ["https://example1.com", "https://example2.com"]
+    }}

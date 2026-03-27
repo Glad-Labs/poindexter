@@ -16,11 +16,7 @@ from asyncpg import Pool
 
 from services.logger_config import get_logger
 
-from .capability_task_executor import (
-    CapabilityStep,
-    CapabilityTaskDefinition,
-    TaskExecutionResult,
-)
+from .capability_task_executor import CapabilityStep, CapabilityTaskDefinition, TaskExecutionResult
 
 logger = get_logger(__name__)
 
@@ -76,7 +72,13 @@ class CapabilityTasksService:
                 )
                 VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $7, TRUE, 1)
                 """,
-                task_id, name, description, owner_id, steps_json, tags_json, now,
+                task_id,
+                name,
+                description,
+                owner_id,
+                steps_json,
+                tags_json,
+                now,
             )
 
         logger.info("[capability_tasks] Created task %s for owner %s", task_id, owner_id)
@@ -107,7 +109,8 @@ class CapabilityTasksService:
                 FROM capability_tasks
                 WHERE id = $1 AND owner_id = $2
                 """,
-                task_id, owner_id,
+                task_id,
+                owner_id,
             )
         return self._row_to_task(row) if row else None
 
@@ -150,7 +153,9 @@ class CapabilityTasksService:
                 ORDER BY created_at DESC
                 LIMIT ${len(params) + 1} OFFSET ${len(params) + 2}
                 """,
-                *params, limit, skip,
+                *params,
+                limit,
+                skip,
             )
 
         total = rows[0]["total_count"] if rows else 0
@@ -252,7 +257,9 @@ class CapabilityTasksService:
                 SET is_active = FALSE, updated_at = $3
                 WHERE id = $1 AND owner_id = $2
                 """,
-                task_id, owner_id, datetime.now(timezone.utc),
+                task_id,
+                owner_id,
+                datetime.now(timezone.utc),
             )
         return result != "UPDATE 0"
 
@@ -319,12 +326,16 @@ class CapabilityTasksService:
                         last_executed_at = $4
                     WHERE id = $1
                     """,
-                    result.task_id, success_increment, failure_increment, now,
+                    result.task_id,
+                    success_increment,
+                    failure_increment,
+                    now,
                 )
 
         logger.info(
             "[capability_tasks] Persisted execution %s (status=%s)",
-            result.execution_id, result.status,
+            result.execution_id,
+            result.status,
         )
         return result.execution_id
 
@@ -343,7 +354,8 @@ class CapabilityTasksService:
                 FROM capability_executions
                 WHERE id = $1 AND owner_id = $2
                 """,
-                execution_id, owner_id,
+                execution_id,
+                owner_id,
             )
         return self._row_to_execution(row) if row else None
 
@@ -389,7 +401,9 @@ class CapabilityTasksService:
                 ORDER BY started_at DESC
                 LIMIT ${len(params) + 1} OFFSET ${len(params) + 2}
                 """,
-                *params, limit, skip,
+                *params,
+                limit,
+                skip,
             )
 
         total = rows[0]["total_count"] if rows else 0

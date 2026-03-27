@@ -9,8 +9,9 @@ Tests focus on:
 """
 
 import os
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-placeholder")
@@ -64,11 +65,13 @@ class TestQAAgentRun:
     @pytest.mark.asyncio
     async def test_returns_approved_true_when_score_above_threshold(self):
         agent, llm_client, pm = make_qa_agent()
-        llm_client.generate_json = AsyncMock(return_value={
-            "approved": True,
-            "feedback": "Excellent content.",
-            "quality_score": 85.0,
-        })
+        llm_client.generate_json = AsyncMock(
+            return_value={
+                "approved": True,
+                "feedback": "Excellent content.",
+                "quality_score": 85.0,
+            }
+        )
         post = make_blog_post(quality_scores=[])
 
         approved, feedback = await agent.run(post, "Some draft content")
@@ -79,11 +82,13 @@ class TestQAAgentRun:
     @pytest.mark.asyncio
     async def test_returns_rejected_when_score_below_75_even_if_llm_approved(self):
         agent, llm_client, pm = make_qa_agent()
-        llm_client.generate_json = AsyncMock(return_value={
-            "approved": True,
-            "feedback": "OK content.",
-            "quality_score": 72.0,
-        })
+        llm_client.generate_json = AsyncMock(
+            return_value={
+                "approved": True,
+                "feedback": "OK content.",
+                "quality_score": 72.0,
+            }
+        )
         post = make_blog_post(quality_scores=[])
 
         approved, feedback = await agent.run(post, "Draft content")
@@ -95,11 +100,13 @@ class TestQAAgentRun:
     @pytest.mark.asyncio
     async def test_returns_rejected_when_llm_explicitly_rejects(self):
         agent, llm_client, pm = make_qa_agent()
-        llm_client.generate_json = AsyncMock(return_value={
-            "approved": False,
-            "feedback": "Content lacks depth and citations.",
-            "quality_score": 55.0,
-        })
+        llm_client.generate_json = AsyncMock(
+            return_value={
+                "approved": False,
+                "feedback": "Content lacks depth and citations.",
+                "quality_score": 55.0,
+            }
+        )
         post = make_blog_post(quality_scores=[])
 
         approved, feedback = await agent.run(post, "Draft content")
@@ -110,11 +117,13 @@ class TestQAAgentRun:
     @pytest.mark.asyncio
     async def test_tracks_quality_score_in_post(self):
         agent, llm_client, pm = make_qa_agent()
-        llm_client.generate_json = AsyncMock(return_value={
-            "approved": True,
-            "feedback": "Great.",
-            "quality_score": 78.5,
-        })
+        llm_client.generate_json = AsyncMock(
+            return_value={
+                "approved": True,
+                "feedback": "Great.",
+                "quality_score": 78.5,
+            }
+        )
         post = make_blog_post(quality_scores=[])
 
         await agent.run(post, "Draft content")
@@ -124,11 +133,13 @@ class TestQAAgentRun:
     @pytest.mark.asyncio
     async def test_appends_to_existing_quality_scores(self):
         agent, llm_client, pm = make_qa_agent()
-        llm_client.generate_json = AsyncMock(return_value={
-            "approved": True,
-            "feedback": "Better.",
-            "quality_score": 82.0,
-        })
+        llm_client.generate_json = AsyncMock(
+            return_value={
+                "approved": True,
+                "feedback": "Better.",
+                "quality_score": 82.0,
+            }
+        )
         post = make_blog_post(quality_scores=[70.0])
 
         await agent.run(post, "Revised draft")
@@ -162,10 +173,12 @@ class TestQAAgentRun:
     async def test_handles_missing_quality_score_field(self):
         agent, llm_client, pm = make_qa_agent()
         # No quality_score key — defaults to 0.0
-        llm_client.generate_json = AsyncMock(return_value={
-            "approved": True,
-            "feedback": "Looks good.",
-        })
+        llm_client.generate_json = AsyncMock(
+            return_value={
+                "approved": True,
+                "feedback": "Looks good.",
+            }
+        )
         post = make_blog_post(quality_scores=[])
 
         approved, feedback = await agent.run(post, "Draft content")
@@ -179,11 +192,13 @@ class TestQAAgentRun:
     @pytest.mark.asyncio
     async def test_string_approved_field_coerced_to_bool(self):
         agent, llm_client, pm = make_qa_agent()
-        llm_client.generate_json = AsyncMock(return_value={
-            "approved": "true",
-            "feedback": "Good.",
-            "quality_score": 75.0,
-        })
+        llm_client.generate_json = AsyncMock(
+            return_value={
+                "approved": "true",
+                "feedback": "Good.",
+                "quality_score": 75.0,
+            }
+        )
         post = make_blog_post(quality_scores=[])
 
         approved, feedback = await agent.run(post, "Draft content")
@@ -193,11 +208,13 @@ class TestQAAgentRun:
     @pytest.mark.asyncio
     async def test_handles_null_feedback(self):
         agent, llm_client, pm = make_qa_agent()
-        llm_client.generate_json = AsyncMock(return_value={
-            "approved": True,
-            "feedback": None,
-            "quality_score": 80.0,
-        })
+        llm_client.generate_json = AsyncMock(
+            return_value={
+                "approved": True,
+                "feedback": None,
+                "quality_score": 80.0,
+            }
+        )
         post = make_blog_post(quality_scores=[])
 
         approved, feedback = await agent.run(post, "Draft content")
@@ -208,11 +225,13 @@ class TestQAAgentRun:
     @pytest.mark.asyncio
     async def test_handles_empty_feedback_string(self):
         agent, llm_client, pm = make_qa_agent()
-        llm_client.generate_json = AsyncMock(return_value={
-            "approved": True,
-            "feedback": "",
-            "quality_score": 80.0,
-        })
+        llm_client.generate_json = AsyncMock(
+            return_value={
+                "approved": True,
+                "feedback": "",
+                "quality_score": 80.0,
+            }
+        )
         post = make_blog_post(quality_scores=[])
 
         approved, feedback = await agent.run(post, "Draft content")

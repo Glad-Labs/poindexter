@@ -1,5 +1,3 @@
-
-
 def markdown_to_strapi_blocks(md_content: str) -> list:
     """
     Converts a markdown string into a list of Strapi v4 editor blocks.

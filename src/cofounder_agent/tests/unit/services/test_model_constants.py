@@ -8,13 +8,7 @@ All tests are pure data-inspection — no I/O, no mocks.
 
 import pytest
 
-from services.model_constants import (
-    DEFAULT_MODEL_COST,
-    MODEL_COSTS,
-    MODEL_FAMILIES,
-    PROVIDER_ICONS,
-)
-
+from services.model_constants import DEFAULT_MODEL_COST, MODEL_COSTS, MODEL_FAMILIES, PROVIDER_ICONS
 
 # ---------------------------------------------------------------------------
 # MODEL_COSTS

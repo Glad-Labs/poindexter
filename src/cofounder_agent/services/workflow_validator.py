@@ -8,17 +8,18 @@ This module checks that:
 4. No circular dependencies
 """
 
-from services.logger_config import get_logger
 from typing import Any, Dict, List, Optional, Tuple
 
 from schemas.custom_workflow_schemas import CustomWorkflow, WorkflowPhase
+from services.logger_config import get_logger
 from services.phase_mapper import PhaseMapper, PhaseMappingError
 from services.phase_registry import PhaseRegistry
 
 logger = get_logger(__name__)
+
+
 class WorkflowValidationError(Exception):
     """Raised when workflow validation fails"""
-
 
 
 class WorkflowValidator:
@@ -111,9 +112,7 @@ class WorkflowValidator:
         indices = sorted([p.index for p in workflow_phases])
         expected = list(range(len(workflow_phases)))
         if indices != expected:
-            errors.append(
-                f"Phase indices are not sequential. Expected {expected}, got {indices}"
-            )
+            errors.append(f"Phase indices are not sequential. Expected {expected}, got {indices}")
         return errors, []
 
     def _validate_no_duplicate_names(
@@ -192,9 +191,13 @@ class WorkflowValidator:
             # Check mapped field names are valid in both schemas
             for target_key, source_key in mapping.items():
                 if target_key not in phase_def.input_schema:
-                    errors.append(f"{prefix}: Target input '{target_key}' not found in {phase_def.name}")
+                    errors.append(
+                        f"{prefix}: Target input '{target_key}' not found in {phase_def.name}"
+                    )
                 if source_key not in prev_phase_def.output_schema:
-                    errors.append(f"{prefix}: Source output '{source_key}' not found in {prev_phase_def.name}")
+                    errors.append(
+                        f"{prefix}: Source output '{source_key}' not found in {prev_phase_def.name}"
+                    )
 
             # Check all required inputs can be satisfied
             for target_key, target_input in phase_def.input_schema.items():
@@ -239,7 +242,9 @@ class WorkflowValidator:
                     f"Phase '{phase.name}' timeout may be too short: {phase_def.timeout_seconds}s"
                 )
             if phase_def.max_retries > 5:
-                warnings.append(f"Phase '{phase.name}' max_retries is high: {phase_def.max_retries}")
+                warnings.append(
+                    f"Phase '{phase.name}' max_retries is high: {phase_def.max_retries}"
+                )
         return [], warnings
 
     def validate_for_execution(

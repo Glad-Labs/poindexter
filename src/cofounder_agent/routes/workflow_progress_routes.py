@@ -10,13 +10,13 @@ Provides REST endpoints and WebSocket integration for:
 
 import json
 import os
-from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 
 from routes.auth_unified import get_current_user
+from services.logger_config import get_logger
 from services.workflow_progress_service import (
     WorkflowProgressService,
     get_workflow_progress_service,
@@ -65,7 +65,7 @@ async def initialize_progress(
         return {"success": True, "execution_id": execution_id, "progress": progress.to_dict()}
     except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to initialize progress: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="An internal error occurred")
+        raise HTTPException(status_code=500, detail="An internal error occurred") from e
 
 
 @router.post("/start/{execution_id}")
@@ -92,7 +92,7 @@ async def start_execution(
         return {"success": True, "progress": progress.to_dict()}  # type: ignore[union-attr]
     except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to start execution: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="An internal error occurred")
+        raise HTTPException(status_code=500, detail="An internal error occurred") from e
 
 
 @router.post("/phase/start/{execution_id}")
@@ -128,7 +128,7 @@ async def start_phase(
         return {"success": True, "progress": progress.to_dict()}  # type: ignore[union-attr]
     except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to start phase: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="An internal error occurred")
+        raise HTTPException(status_code=500, detail="An internal error occurred") from e
 
 
 @router.post("/phase/complete/{execution_id}")
@@ -164,7 +164,7 @@ async def complete_phase(
         return {"success": True, "progress": progress.to_dict()}  # type: ignore[union-attr]
     except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to complete phase: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="An internal error occurred")
+        raise HTTPException(status_code=500, detail="An internal error occurred") from e
 
 
 @router.post("/phase/fail/{execution_id}")
@@ -197,7 +197,7 @@ async def fail_phase(
         return {"success": True, "progress": progress.to_dict()}  # type: ignore[union-attr]
     except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to mark phase as failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="An internal error occurred")
+        raise HTTPException(status_code=500, detail="An internal error occurred") from e
 
 
 @router.post("/complete/{execution_id}")
@@ -233,7 +233,7 @@ async def mark_complete(
         return {"success": True, "progress": progress.to_dict()}  # type: ignore[union-attr]
     except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to mark execution as complete: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="An internal error occurred")
+        raise HTTPException(status_code=500, detail="An internal error occurred") from e
 
 
 @router.post("/fail/{execution_id}")
@@ -266,7 +266,7 @@ async def mark_failed(
         return {"success": True, "progress": progress.to_dict()}  # type: ignore[union-attr]
     except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to mark execution as failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="An internal error occurred")
+        raise HTTPException(status_code=500, detail="An internal error occurred") from e
 
 
 @router.get("/status/{execution_id}")
@@ -293,7 +293,7 @@ async def get_progress_status(
         raise
     except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to get progress status: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="An internal error occurred")
+        raise HTTPException(status_code=500, detail="An internal error occurred") from e
 
 
 @router.websocket("/ws/{execution_id}")
@@ -317,10 +317,13 @@ async def websocket_workflow_progress(
     # Validate token before accepting the connection (FastAPI router-level
     # dependencies are NOT applied to WebSocket handlers — must be explicit here)
     try:
-        if os.getenv("DEVELOPMENT_MODE", "false").lower() == "true" and token.lower().startswith("dev-"):
+        if os.getenv("DEVELOPMENT_MODE", "false").lower() == "true" and token.lower().startswith(
+            "dev-"
+        ):
             pass  # Dev bypass
         else:
             from services.token_validator import JWTTokenValidator
+
             claims = JWTTokenValidator.verify_token(token)
             if not claims:
                 await websocket.close(code=1008, reason="Invalid or expired token")
@@ -346,7 +349,9 @@ async def websocket_workflow_progress(
     except WebSocketDisconnect:
         logger.info(f"WebSocket client disconnected for execution {execution_id}")
     except (RuntimeError, OSError, ConnectionError) as e:
-        logger.error(f"[websocket_workflow_progress] Unexpected error for {execution_id}: {e}", exc_info=True)
+        logger.error(
+            f"[websocket_workflow_progress] Unexpected error for {execution_id}: {e}", exc_info=True
+        )
     finally:
         # Unregister connection
         if execution_id in active_connections:
@@ -411,4 +416,4 @@ async def cleanup_progress(
         return {"success": True, "message": f"Progress cleaned up for {execution_id}"}
     except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to clean up progress: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="An internal error occurred")
+        raise HTTPException(status_code=500, detail="An internal error occurred") from e

@@ -17,8 +17,7 @@ from services.capability_natural_language_composer import (
     get_composer,
 )
 from services.capability_registry import CapabilityRegistry, set_registry
-from services.capability_task_executor import CapabilityStep, CapabilityTaskDefinition
-
+from services.capability_task_executor import CapabilityTaskDefinition
 
 # ---------------------------------------------------------------------------
 # Helpers / Fixtures
@@ -27,11 +26,8 @@ from services.capability_task_executor import CapabilityStep, CapabilityTaskDefi
 
 def _make_registry_with_caps(*names: str) -> CapabilityRegistry:
     """Build a CapabilityRegistry populated with minimal stub capabilities."""
-    from services.capability_registry import (
-        Capability,
-        CapabilityMetadata,
-        InputSchema,
-    )
+    from services.capability_registry import Capability, CapabilityMetadata, InputSchema
+
     reg = CapabilityRegistry()
     for name in names:
         meta = CapabilityMetadata(
@@ -70,6 +66,7 @@ SAMPLE_TASK_DICT = {
 def isolated_registry():
     """Reset global registry and composer before each test."""
     import services.capability_natural_language_composer as mod
+
     mod._composer_instance = None
     reg = _make_registry_with_caps("research", "generate_content", "publish", "critique")
     set_registry(reg)
@@ -400,12 +397,14 @@ class TestComposeFromRequestAutoExecute:
 class TestGetComposer:
     def test_returns_instance(self):
         import services.capability_natural_language_composer as mod
+
         mod._composer_instance = None
         composer = get_composer()
         assert isinstance(composer, CapabilityNaturalLanguageComposer)
 
     def test_returns_same_instance_on_repeat(self):
         import services.capability_natural_language_composer as mod
+
         mod._composer_instance = None
         c1 = get_composer()
         c2 = get_composer()

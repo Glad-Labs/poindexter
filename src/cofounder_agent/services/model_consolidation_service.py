@@ -129,21 +129,21 @@ class OllamaAdapter(ProviderAdapter):
     async def is_available(self) -> bool:
         """Check if Ollama service is running"""
         try:
-            # Simple health check - ping the Ollama API endpoint directly
-            import httpx
-
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                response = await client.get(f"{self.host}/api/tags")
-                is_available = response.status_code == 200
-                if is_available:
-                    logger.debug(
-                        "Ollama available", host=self.host, status_code=response.status_code
-                    )
-                else:
-                    logger.debug(
-                        "Ollama returning non-200 status", status_code=response.status_code
-                    )
-                return is_available
+            # Use the shared httpx.AsyncClient from OllamaClient instead of
+            # creating a new one per call (#1326).
+            response = await self.client.client.get(
+                f"{self.host}/api/tags", timeout=3.0
+            )
+            is_available = response.status_code == 200
+            if is_available:
+                logger.debug(
+                    "Ollama available", host=self.host, status_code=response.status_code
+                )
+            else:
+                logger.debug(
+                    "Ollama returning non-200 status", status_code=response.status_code
+                )
+            return is_available
         except asyncio.TimeoutError:
             logger.debug("Ollama health check timed out (3s)", host=self.host)
             return False
@@ -197,15 +197,14 @@ class OllamaAdapter(ProviderAdapter):
 
     async def list_models(self) -> List[str]:
         """List available Ollama models from live instance."""
-        import httpx
-
         try:
-            async with httpx.AsyncClient(timeout=5) as client:
-                resp = await client.get(f"{self.host}/api/tags")
-                if resp.status_code == 200:
-                    return [m["name"] for m in resp.json().get("models", [])]
-        except Exception:
-            pass
+            # Delegate to OllamaClient.list_models() which uses the shared
+            # httpx.AsyncClient instead of creating one per call (#1326).
+            models = await self.client.list_models()
+            if models:
+                return [m["name"] for m in models]
+        except Exception as e:
+            logger.warning("[OllamaAdapter] Failed to list models from %s: %s", self.host, e)
         # Fallback: models known to be installed
         return [
             "qwen3.5:35b",
@@ -269,7 +268,9 @@ class HuggingFaceAdapter(ProviderAdapter):
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
-            logger.warning("HuggingFace generation failed", error=str(e), model=model, exc_info=True)
+            logger.warning(
+                "HuggingFace generation failed", error=str(e), model=model, exc_info=True
+            )
             raise
 
     def list_models(self) -> List[str]:
@@ -346,7 +347,9 @@ class GoogleAdapter(ProviderAdapter):
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
-            logger.warning("Google Gemini generation failed", error=str(e), model=model, exc_info=True)
+            logger.warning(
+                "Google Gemini generation failed", error=str(e), model=model, exc_info=True
+            )
             raise
 
     def list_models(self) -> List[str]:
@@ -377,7 +380,10 @@ class AnthropicAdapter(ProviderAdapter):
                 self.api_key = ProviderChecker.get_anthropic_api_key()
                 self.client = AsyncAnthropic(api_key=self.api_key)
             except ImportError:
-                logger.warning("Anthropic SDK not installed. Install with: pip install anthropic", exc_info=True)
+                logger.warning(
+                    "Anthropic SDK not installed. Install with: pip install anthropic",
+                    exc_info=True,
+                )
                 self.client = None
 
         self.provider_type = ProviderType.ANTHROPIC
@@ -459,7 +465,9 @@ class OpenAIAdapter(ProviderAdapter):
                 self.api_key = ProviderChecker.get_openai_api_key()
                 self.client = AsyncOpenAI(api_key=self.api_key)
             except ImportError:
-                logger.warning("OpenAI SDK not installed. Install with: pip install openai", exc_info=True)
+                logger.warning(
+                    "OpenAI SDK not installed. Install with: pip install openai", exc_info=True
+                )
                 self.client = None
 
         self.provider_type = ProviderType.OPENAI
@@ -591,8 +599,11 @@ class ModelConsolidationService:
                 logger.debug("Adapter initialized", provider=provider_type.value)
             except Exception as e:
                 logger.warning(
-                    "Failed to initialize adapter", provider=provider_type.value, error=str(e)
-, exc_info=True)
+                    "Failed to initialize adapter",
+                    provider=provider_type.value,
+                    error=str(e),
+                    exc_info=True,
+                )
 
     async def _check_provider_availability(self, provider_type: ProviderType) -> bool:
         """Check and cache provider availability"""
@@ -620,7 +631,9 @@ class ModelConsolidationService:
 
             return is_available
         except Exception as e:
-            logger.warning("Provider check failed", provider=provider_type.value, error=str(e), exc_info=True)
+            logger.warning(
+                "Provider check failed", provider=provider_type.value, error=str(e), exc_info=True
+            )
 
             self.provider_status[provider_type] = ProviderStatus(
                 provider=provider_type,
@@ -737,13 +750,14 @@ class ModelConsolidationService:
                     f"❌ {provider_type.value} generation failed",
                     provider=provider_type.value,
                     error=str(e),
-                    exc_info=True)
+                    exc_info=True,
+                )
                 continue
 
         # All providers failed
         self.metrics["failed_requests"] += 1
         error_msg = f"All model providers failed. Last error: {str(last_error)}"
-        logger.error("🚨 All providers exhausted", error=error_msg)
+        logger.error("🚨 All providers exhausted", error=error_msg, exc_info=last_error)
         raise ServiceError(error_msg)
 
     def get_status(self) -> Dict[str, Any]:
@@ -766,7 +780,12 @@ class ModelConsolidationService:
         if provider:
             adapter = self.adapters.get(provider)
             if adapter:
-                models = await adapter.list_models() if hasattr(adapter.list_models, '__func__') and asyncio.iscoroutinefunction(adapter.list_models) else adapter.list_models()
+                models = (
+                    await adapter.list_models()
+                    if hasattr(adapter.list_models, "__func__")
+                    and asyncio.iscoroutinefunction(adapter.list_models)
+                    else adapter.list_models()
+                )
                 return {provider.value: models}
             return {provider.value: []}
 

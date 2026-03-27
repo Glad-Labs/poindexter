@@ -8,12 +8,15 @@ Provides helpers for:
 - Query logging and auditing
 """
 
-from services.logger_config import get_logger
 import re
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
+from services.logger_config import get_logger
+
 logger = get_logger(__name__)
+
+
 class SQLOperator(str, Enum):
     """Safe SQL operators for parameterized queries"""
 

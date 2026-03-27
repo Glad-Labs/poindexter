@@ -123,7 +123,6 @@ curl -X POST http://localhost:8000/api/auth/logout \
 - [src/cofounder_agent/routes/auth_unified.py](../../src/cofounder_agent/routes/auth_unified.py) - OAuth routes
 - [src/cofounder_agent/services/token_manager.py](../../src/cofounder_agent/services/token_manager.py) - Token lifecycle
 - [src/cofounder_agent/services/token_validator.py](../../src/cofounder_agent/services/token_validator.py) - Token validation
-- [web/oversight-hub/src/lib/authClient.js](../../web/oversight-hub/src/lib/authClient.js) - Frontend OAuth client
 
 ## Notes
 

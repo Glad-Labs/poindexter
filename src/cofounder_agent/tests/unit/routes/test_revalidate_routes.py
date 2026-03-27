@@ -11,18 +11,16 @@ Auth is overridden via dependency injection.
 
 import asyncio
 import os
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock, patch
 
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import verify_api_token
 from routes.revalidate_routes import router, trigger_nextjs_revalidation
-
 from tests.unit.routes.conftest import TEST_USER
-
 
 AUTH_HEADERS = {"Authorization": "Bearer test-token-for-revalidate"}
 
@@ -30,7 +28,7 @@ AUTH_HEADERS = {"Authorization": "Bearer test-token-for-revalidate"}
 def _build_app() -> FastAPI:
     app = FastAPI()
     app.include_router(router)
-    app.dependency_overrides[get_current_user] = lambda: TEST_USER
+    app.dependency_overrides[verify_api_token] = lambda: "test-token"
     return app
 
 
@@ -109,13 +107,13 @@ class TestRevalidateCache:
         assert "/archive" in called_paths
 
     def test_requires_auth(self):
-        """Without auth, the endpoint returns 401 (now uses Depends(get_current_user))."""
+        """Without auth, the endpoint returns 401 (uses Depends(verify_api_token))."""
         # Build app without auth override to test the actual auth guard
-        from routes.revalidate_routes import router as reval_router
         app = FastAPI()
-        app.include_router(reval_router)
-        client = TestClient(app, raise_server_exceptions=False)
-        resp = client.post("/api/revalidate-cache", json={"paths": ["/"]})
+        app.include_router(router)
+        with patch.dict("os.environ", {"DEVELOPMENT_MODE": "false", "API_TOKEN": "secret"}):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.post("/api/revalidate-cache", json={"paths": ["/"]})
         assert resp.status_code == 401
 
     def test_custom_paths_are_forwarded(self):
@@ -201,9 +199,7 @@ class TestTriggerNextjsRevalidation:
         mock_client = MagicMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
-        mock_client.post = AsyncMock(
-            side_effect=httpx.HTTPError("Connection refused")
-        )
+        mock_client.post = AsyncMock(side_effect=httpx.HTTPError("Connection refused"))
         with patch("routes.revalidate_routes.httpx.AsyncClient", return_value=mock_client):
             result = self._run(trigger_nextjs_revalidation(["/blog"]))
         assert result is False

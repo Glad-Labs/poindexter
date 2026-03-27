@@ -7,12 +7,11 @@ Provides endpoints for performing bulk operations on multiple tasks such as:
 - Rejecting multiple tasks (for audit tracking)
 """
 
-from services.logger_config import get_logger
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import verify_api_token
 from schemas.bulk_task_schemas import (
     BulkCreateTasksRequest,
     BulkCreateTasksResponse,
@@ -20,6 +19,7 @@ from schemas.bulk_task_schemas import (
     BulkTaskResponse,
 )
 from services.database_service import DatabaseService
+from services.logger_config import get_logger
 from utils.error_responses import ErrorResponseBuilder
 from utils.route_utils import get_database_dependency
 
@@ -32,7 +32,7 @@ router = APIRouter(prefix="/api/tasks", tags=["tasks-bulk"])
 )
 async def bulk_task_operations(
     request: BulkTaskRequest,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -134,15 +134,13 @@ async def bulk_task_operations(
             for missing_id in result["missing_ids"]:
                 errors.append({"task_id": missing_id, "error": "Task not found"})
                 failed_count += 1
-            logger.info(
-                f"Bulk {request.action}: updated {updated_count} tasks to '{new_status}'"
-            )
+            logger.info(f"Bulk {request.action}: updated {updated_count} tasks to '{new_status}'")
         except Exception as e:
             logger.error(
                 f"[bulk_task_action] Bulk update failed for action={request.action}: {e}",
                 exc_info=True,
             )
-            raise HTTPException(status_code=500, detail="Bulk update failed")
+            raise HTTPException(status_code=500, detail="Bulk update failed") from e
 
     return BulkTaskResponse(
         message=f"Bulk {request.action} completed: {updated_count} updated, {failed_count} failed",
@@ -158,7 +156,7 @@ async def bulk_task_operations(
 )
 async def bulk_create_tasks(
     request: BulkCreateTasksRequest,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -177,12 +175,12 @@ async def bulk_create_tasks(
     **Returns:** List of created tasks with their IDs
     """
     try:
-        user_id = current_user.get("user_id") if current_user else "system"
+        user_id = "operator"
 
         # Build task data dicts for batch insert
         task_data_list = []
         for task in request.tasks:
-            task_data_list.append({
+            task_data = {
                 "task_name": task.task_name,
                 "title": task.task_name,
                 "topic": task.topic,
@@ -198,7 +196,10 @@ async def bulk_create_tasks(
                     "priority": task.priority,
                     "created_by": user_id,
                 },
-            })
+            }
+            if task.site_id:
+                task_data["site_id"] = task.site_id
+            task_data_list.append(task_data)
 
         # Single batch insert instead of N individual INSERTs
         task_ids = await db_service.tasks.bulk_add_tasks(task_data_list)
@@ -217,4 +218,4 @@ async def bulk_create_tasks(
         )
     except Exception as e:
         logger.error(f"Bulk create error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Bulk create failed")
+        raise HTTPException(status_code=500, detail="Bulk create failed") from e

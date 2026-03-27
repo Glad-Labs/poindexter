@@ -193,29 +193,6 @@ test:unified:debug            # Unified with debug
 
 ---
 
-### web/oversight-hub/package.json
-
-**Status:** Good - simple and focused
-
-```json
-"scripts": {
-  "dev": "vite",
-  "build": "vite build",
-  "preview": "vite preview",
-  "lint": "eslint .",
-  "lint:fix": "eslint . --fix",
-  "test": "vitest --run",
-  "test:watch": "vitest",
-  "test:coverage": "vitest --run --coverage"
-}
-```
-
-**Notes:**
-
-- Minimal, focused on Vite/Vitest-specific commands
-- Called via `npm run test --workspace=web/oversight-hub` from root
-- Both watch and coverage modes available
-
 ---
 
 ## Test Command Relationships
@@ -224,11 +201,8 @@ test:unified:debug            # Unified with debug
 
 ```
 npm test
-  ├─→ npm run test --workspace=web/public-site
-  │   └─→ jest (378 tests)
-  │
-  └─→ npm run test --workspace=web/oversight-hub
-      └─→ vitest (90 tests)
+  └─→ npm run test --workspace=web/public-site
+      └─→ jest (482 tests)
 
 npm run test:all
   ├─→ npm test
@@ -336,7 +310,6 @@ npm run test:reports            # View all reports
 **Files Unchanged:**
 
 - ✅ `web/public-site/package.json` - Already good
-- ✅ `web/oversight-hub/package.json` - Already good
 - ✅ All Playwright configs - Already good
 - ✅ All documentation files - Already good
 

@@ -5,21 +5,22 @@ All tests use unittest.mock to avoid touching PhaseRegistry, PhaseMapper,
 or any DB/network resources. Each sub-validator is tested independently.
 """
 
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 from unittest.mock import MagicMock
 
 import pytest
 
-from schemas.custom_workflow_schemas import CustomWorkflow, WorkflowPhase
+from schemas.custom_workflow_schemas import WorkflowPhase
 from services.workflow_validator import WorkflowValidator
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _make_phase(index: int, name: str, skip: bool = False, user_inputs: Optional[Dict] = None) -> WorkflowPhase:
+def _make_phase(
+    index: int, name: str, skip: bool = False, user_inputs: Optional[Dict] = None
+) -> WorkflowPhase:
     return WorkflowPhase(  # type: ignore[call-arg]
         index=index,
         name=name,
@@ -45,7 +46,9 @@ def _make_phase_def(
     return phase_def
 
 
-def _make_validator(registry: Optional[MagicMock] = None, mapper: Optional[MagicMock] = None) -> WorkflowValidator:
+def _make_validator(
+    registry: Optional[MagicMock] = None, mapper: Optional[MagicMock] = None
+) -> WorkflowValidator:
     """Build a WorkflowValidator with mocked registry and mapper."""
     mock_registry = registry or MagicMock()
     mock_mapper = mapper or MagicMock()

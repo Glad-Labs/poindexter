@@ -29,11 +29,12 @@ def _fix_sys_path():
 _fix_sys_path()
 del _fix_sys_path, _PathType
 
-from services.logger_config import get_logger
 import os
-from pathlib import Path
+from pathlib import Path  # pylint: disable=reimported  # intentional: _PathType was deleted above
 
 from dotenv import load_dotenv
+
+from services.logger_config import get_logger
 
 # --- Define Base Directory ---
 # Ensures that all file paths are relative to the project root, making the application more portable.
@@ -43,6 +44,8 @@ BASE_DIR = os.path.join(
 
 # Logging is configured centrally in services/logger_config.py
 logger = get_logger(__name__)
+
+
 class Config:
     """
     Central configuration class for the content agent.
@@ -112,11 +115,11 @@ class Config:
 
         # --- Model Selection per Task Type --
         # Allows configuration of which model to use for different task stages
-        self.MODEL_FOR_RESEARCH = os.getenv("MODEL_FOR_RESEARCH", "ollama/gpt-oss:20b")
-        self.MODEL_FOR_CREATIVE = os.getenv("MODEL_FOR_CREATIVE", "ollama/gpt-oss:20b")
-        self.MODEL_FOR_QA = os.getenv("MODEL_FOR_QA", "ollama/gpt-oss:20b")
-        self.MODEL_FOR_IMAGE = os.getenv("MODEL_FOR_IMAGE", "ollama/gpt-oss:20b")
-        self.MODEL_FOR_PUBLISHING = os.getenv("MODEL_FOR_PUBLISHING", "ollama/gpt-oss:20b")
+        self.MODEL_FOR_RESEARCH = os.getenv("MODEL_FOR_RESEARCH", "auto")
+        self.MODEL_FOR_CREATIVE = os.getenv("MODEL_FOR_CREATIVE", "auto")
+        self.MODEL_FOR_QA = os.getenv("MODEL_FOR_QA", "auto")
+        self.MODEL_FOR_IMAGE = os.getenv("MODEL_FOR_IMAGE", "auto")
+        self.MODEL_FOR_PUBLISHING = os.getenv("MODEL_FOR_PUBLISHING", "auto")
 
         # --- API Keys for LLM Providers ---
         # These are read from environment variables and used by the LLM client
@@ -133,7 +136,7 @@ class Config:
         # --- Local LLM (Ollama) Configuration --
         # For running a local quality assurance model if available.
         self.LOCAL_LLM_API_URL = os.getenv("LOCAL_LLM_API_URL", "http://localhost:11434")
-        self.LOCAL_LLM_MODEL_NAME = os.getenv("LOCAL_LLM_MODEL_NAME", "gpt-oss:20b")
+        self.LOCAL_LLM_MODEL_NAME = os.getenv("LOCAL_LLM_MODEL_NAME", "auto")
 
         # --- Logging Configuration ---
         self.LOG_DIR = os.path.join(self.BASE_DIR, "content-agent", "logs")

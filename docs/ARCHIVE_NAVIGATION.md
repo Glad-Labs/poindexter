@@ -6,13 +6,13 @@ This document helps you find and understand archived documentation that is no lo
 
 ### Primary Archives
 
-- **`docs/archive-active/`** - Main archive for historical documentation and reports
+- **`docs/archive/`** - Main archive for historical documentation and reports
 - **`docs/archive/`** - Legacy/historical archive (older content)
-- **`.archive/cleanup-feb2026/`** - Oversight Hub service-specific archived docs
+- **`.archive/cleanup-feb2026/`** - Service-specific archived docs
 
 ---
 
-## Archive Directories in `docs/archive-active/`
+## Archive Directories in `docs/archive/`
 
 ### 1. **root-cleanup-feb2026/**
 
@@ -121,7 +121,7 @@ These are **current** and should be used for active development:
 
 These should **not** be used for current work:
 
-- All `QUICK_REFERENCE*.txt` files in archive-active/
+- All `QUICK_REFERENCE*.txt` files in archive/
 - All `*_QUICK_REFERENCE.md` files in root-cleanup-feb2026/
 - SESSION_QUICK_REFERENCE.md
 - Phase-specific quick references
@@ -130,11 +130,11 @@ These should **not** be used for current work:
 
 ## Service-Specific Archives
 
-### Oversight Hub Archive
+### Oversight Hub Archive (Archived to Separate Branch)
 
-**Location:** `web/oversight-hub/archive/cleanup-feb2026/`
-**Contains:** Oversight Hub-specific cleanup and implementation docs
-**When to use:** Understanding Oversight Hub development history
+**Location:** The oversight-hub has been archived to a separate branch.
+**Contains:** Historical cleanup and implementation docs
+**When to use:** Understanding archived oversight-hub development history
 
 **Notable files:**
 
@@ -176,10 +176,10 @@ These should **not** be used for current work:
 - Current testing guide: `docs/reference/TESTING.md` (`docs/reference/`)
 - Current architecture: `docs/02-Architecture/System-Design.md` (`docs/02-Architecture/`)
 - Current troubleshooting: `docs/troubleshooting/` (`docs/troubleshooting/`)
-- Historical context: `docs/archive-active/` (`docs/archive-active/`)
-- Past phase documentation: `docs/archive-active/root-cleanup-feb2026/` (`docs/archive-active/`)
-- Test implementation history: `docs/archive-active/audits-and-testing/` (`docs/archive-active/`)
-- Cleanup procedures: `docs/archive-active/cleanup-and-implementation/` (`docs/archive-active/`)
+- Historical context: `docs/archive/` (`docs/archive/`)
+- Past phase documentation: `docs/archive/root-cleanup-feb2026/` (`docs/archive/`)
+- Test implementation history: `docs/archive/audits-and-testing/` (`docs/archive/`)
+- Cleanup procedures: `docs/archive/cleanup-and-implementation/` (`docs/archive/`)
 
 ---
 

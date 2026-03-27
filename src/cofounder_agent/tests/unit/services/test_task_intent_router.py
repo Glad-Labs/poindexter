@@ -14,18 +14,11 @@ Tests cover:
 - TaskIntentRouter.route_user_input — with mocked NLPIntentRecognizer (no network)
 """
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from dataclasses import dataclass
-from datetime import datetime
-from typing import Any, Dict, Optional
-from unittest.mock import AsyncMock, MagicMock, patch
 
-from services.task_intent_router import (
-    SubtaskPlan,
-    TaskIntentRequest,
-    TaskIntentRouter,
-)
-
+from services.task_intent_router import TaskIntentRequest, TaskIntentRouter
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -83,7 +76,9 @@ class TestNormalizeParameters:
         assert "deadline" not in result
 
     def test_platforms_extracted(self, router):
-        result = router._normalize_parameters({"platforms": ["twitter", "linkedin"]}, "social_media")
+        result = router._normalize_parameters(
+            {"platforms": ["twitter", "linkedin"]}, "social_media"
+        )
         assert result["platforms"] == ["twitter", "linkedin"]
 
     def test_include_images_extracted(self, router):

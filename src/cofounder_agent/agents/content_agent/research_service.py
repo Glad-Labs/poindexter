@@ -7,11 +7,12 @@ This service integrates SearXNG for the research stage of content generation.
 
 import asyncio
 import json
-from services.logger_config import get_logger
 from datetime import datetime
 from typing import Optional
 
 import httpx
+
+from services.logger_config import get_logger
 
 # Optional dependencies for enhanced functionality
 try:
@@ -29,6 +30,8 @@ except ImportError:
     BS4_AVAILABLE = False
 
 logger = get_logger(__name__)
+
+
 class SearXNGResearchService:
     """Privacy-respecting research service using SearXNG metasearch."""
 
@@ -202,7 +205,9 @@ class SearXNGResearchService:
             return text[:5000]  # Return first 5000 chars
 
         except Exception as e:
-            logger.warning(f"[fetch_article] Failed to fetch article from {url}: {e}", exc_info=True)
+            logger.warning(
+                f"[fetch_article] Failed to fetch article from {url}: {e}", exc_info=True
+            )
             return None
 
     async def get_news_feeds(self, keywords: list[str], limit: int = 5) -> dict:
@@ -343,8 +348,6 @@ async def research_content_topic(
 
 if __name__ == "__main__":
     # Example usage
-    import asyncio
-
     async def main():
         data = await research_content_topic(
             topic="AI in marketing 2025",

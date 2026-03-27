@@ -12,17 +12,16 @@ All httpx calls are patched to avoid real network I/O.
 Auth is router-level — overridden via dependency override.
 """
 
-import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
+import routes.ollama_routes as ollama_module
 from routes.auth_unified import get_current_user
 from routes.ollama_routes import router
-import routes.ollama_routes as ollama_module
-
 from tests.unit.routes.conftest import TEST_USER
 
 

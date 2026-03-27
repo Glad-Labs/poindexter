@@ -8,14 +8,12 @@ Tests focus on pure functions with no external dependencies:
 """
 
 import os
-import pytest
 
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-placeholder")
 
-from agents.content_agent.utils.helpers import slugify, extract_json_from_string
+from agents.content_agent.utils.helpers import extract_json_from_string, slugify
 from agents.content_agent.utils.markdown_utils import markdown_to_strapi_blocks
-
 
 # ---------------------------------------------------------------------------
 # slugify
@@ -83,6 +81,7 @@ class TestExtractJsonFromString:
         result = extract_json_from_string(text)
         assert result is not None
         import json
+
         parsed = json.loads(result)
         assert parsed["title"] == "Article"
 
@@ -96,6 +95,7 @@ class TestExtractJsonFromString:
         result = extract_json_from_string(text)
         assert result is not None
         import json
+
         parsed = json.loads(result)
         assert parsed["outer"]["inner"] == "value"
 
@@ -133,6 +133,7 @@ class TestExtractJsonFromString:
         result = extract_json_from_string(text)
         assert result is not None
         import json
+
         parsed = json.loads(result)
         assert parsed["title"] == "My Article"
 

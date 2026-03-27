@@ -2,15 +2,16 @@
 Unit tests for middleware/cache_control.py — _cache_directive and CacheControlMiddleware
 """
 
+from unittest.mock import MagicMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+
 from middleware.cache_control import (
+    _PRIVATE_MAX_AGE,
+    _PUBLIC_MAX_AGE,
     CacheControlMiddleware,
     _cache_directive,
-    _PUBLIC_MAX_AGE,
-    _PRIVATE_MAX_AGE,
 )
-
 
 # ---------------------------------------------------------------------------
 # _cache_directive() — pure function, no ASGI needed

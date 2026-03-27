@@ -13,19 +13,18 @@ Covers:
 """
 
 import asyncio
-import pytest
-from datetime import datetime, timezone
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from services.unified_orchestrator import (
-    ExecutionContext,
     ExecutionResult,
     ExecutionStatus,
     Request,
     RequestType,
     UnifiedOrchestrator,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -549,7 +548,10 @@ class TestHandleContentCreation:
 
         with (
             patch(f"{_CONSTRAINT_UTILS}.ContentConstraints") as MockConstraints,
-            patch(f"{_CONSTRAINT_UTILS}.calculate_phase_targets", return_value={"research": 300, "creative": 1200, "qa": 1200}),
+            patch(
+                f"{_CONSTRAINT_UTILS}.calculate_phase_targets",
+                return_value={"research": 300, "creative": 1200, "qa": 1200},
+            ),
             patch(f"{_CONSTRAINT_UTILS}.count_words_in_content", return_value=1500),
             patch(f"{_CONSTRAINT_UTILS}.validate_constraints", return_value=mocks["compliance"]),
             patch(f"{_CONSTRAINT_UTILS}.merge_compliance_reports", return_value=mocks["merged"]),
@@ -558,7 +560,10 @@ class TestHandleContentCreation:
             patch(f"{_LLM_CLIENT_MOD}.LLMClient"),
             patch(f"{_BLOG_POST_MOD}.BlogPost", return_value=MagicMock(body="content")),
             patch(f"{_DB_SERVICE_MOD}.DatabaseService"),
-            patch(f"{_QUALITY_SVC_MOD}.get_content_quality_service", return_value=mocks["quality_service"]),
+            patch(
+                f"{_QUALITY_SVC_MOD}.get_content_quality_service",
+                return_value=mocks["quality_service"],
+            ),
             patch(f"{_IMAGE_SVC_MOD}.get_image_service", return_value=mocks["image_service"]),
             patch(_EMIT_PROGRESS, new_callable=AsyncMock),
             patch.object(orch, "_get_agent_instance", side_effect=mocks["_get_agent_side_effect"]),
@@ -594,7 +599,10 @@ class TestHandleContentCreation:
             patch(f"{_LLM_CLIENT_MOD}.LLMClient"),
             patch(f"{_BLOG_POST_MOD}.BlogPost", return_value=MagicMock(body="body")),
             patch(f"{_DB_SERVICE_MOD}.DatabaseService"),
-            patch(f"{_QUALITY_SVC_MOD}.get_content_quality_service", return_value=mocks["quality_service"]),
+            patch(
+                f"{_QUALITY_SVC_MOD}.get_content_quality_service",
+                return_value=mocks["quality_service"],
+            ),
             patch(f"{_IMAGE_SVC_MOD}.get_image_service", return_value=mocks["image_service"]),
             patch(_EMIT_PROGRESS, new_callable=AsyncMock),
             patch.object(orch, "_get_agent_instance", side_effect=mocks["_get_agent_side_effect"]),
@@ -605,9 +613,17 @@ class TestHandleContentCreation:
 
         output = result.output
         required_keys = [
-            "task_id", "status", "approval_status", "content",
-            "excerpt", "featured_image_url", "qa_feedback",
-            "quality_score", "constraint_compliance", "message", "next_action",
+            "task_id",
+            "status",
+            "approval_status",
+            "content",
+            "excerpt",
+            "featured_image_url",
+            "qa_feedback",
+            "quality_score",
+            "constraint_compliance",
+            "message",
+            "next_action",
         ]
         for key in required_keys:
             assert key in output, f"Missing key in output: {key}"
@@ -633,7 +649,10 @@ class TestHandleContentCreation:
             patch(f"{_LLM_CLIENT_MOD}.LLMClient"),
             patch(f"{_BLOG_POST_MOD}.BlogPost", return_value=MagicMock(body="body")),
             patch(f"{_DB_SERVICE_MOD}.DatabaseService"),
-            patch(f"{_QUALITY_SVC_MOD}.get_content_quality_service", return_value=mocks["quality_service"]),
+            patch(
+                f"{_QUALITY_SVC_MOD}.get_content_quality_service",
+                return_value=mocks["quality_service"],
+            ),
             patch(f"{_IMAGE_SVC_MOD}.get_image_service", return_value=mocks["image_service"]),
             patch(_EMIT_PROGRESS, new_callable=AsyncMock),
             patch.object(orch, "_get_agent_instance", side_effect=mocks["_get_agent_side_effect"]),
@@ -695,7 +714,10 @@ class TestHandleContentCreation:
             patch(f"{_LLM_CLIENT_MOD}.LLMClient"),
             patch(f"{_BLOG_POST_MOD}.BlogPost", return_value=MagicMock(body="body")),
             patch(f"{_DB_SERVICE_MOD}.DatabaseService"),
-            patch(f"{_QUALITY_SVC_MOD}.get_content_quality_service", return_value=mocks["quality_service"]),
+            patch(
+                f"{_QUALITY_SVC_MOD}.get_content_quality_service",
+                return_value=mocks["quality_service"],
+            ),
             patch(f"{_IMAGE_SVC_MOD}.get_image_service", return_value=mocks["image_service"]),
             patch(_EMIT_PROGRESS, new_callable=AsyncMock),
             patch.object(orch, "_get_agent_instance", side_effect=mocks["_get_agent_side_effect"]),
@@ -715,9 +737,7 @@ class TestHandleContentCreation:
         mock_qa_pass = _make_mock_quality_result(passing=True, score=85)
 
         mocks = self._patch_all(quality_passing=False)
-        mocks["quality_service"].evaluate = AsyncMock(
-            side_effect=[mock_qa_fail, mock_qa_pass]
-        )
+        mocks["quality_service"].evaluate = AsyncMock(side_effect=[mock_qa_fail, mock_qa_pass])
 
         orch = _make_orchestrator()
         request = _make_content_request()
@@ -733,7 +753,10 @@ class TestHandleContentCreation:
             patch(f"{_LLM_CLIENT_MOD}.LLMClient"),
             patch(f"{_BLOG_POST_MOD}.BlogPost", return_value=MagicMock(body="body")),
             patch(f"{_DB_SERVICE_MOD}.DatabaseService"),
-            patch(f"{_QUALITY_SVC_MOD}.get_content_quality_service", return_value=mocks["quality_service"]),
+            patch(
+                f"{_QUALITY_SVC_MOD}.get_content_quality_service",
+                return_value=mocks["quality_service"],
+            ),
             patch(f"{_IMAGE_SVC_MOD}.get_image_service", return_value=mocks["image_service"]),
             patch(_EMIT_PROGRESS, new_callable=AsyncMock),
             patch.object(orch, "_get_agent_instance", side_effect=mocks["_get_agent_side_effect"]),
@@ -765,7 +788,10 @@ class TestHandleContentCreation:
             patch(f"{_LLM_CLIENT_MOD}.LLMClient"),
             patch(f"{_BLOG_POST_MOD}.BlogPost", return_value=MagicMock(body="body")),
             patch(f"{_DB_SERVICE_MOD}.DatabaseService"),
-            patch(f"{_QUALITY_SVC_MOD}.get_content_quality_service", return_value=mocks["quality_service"]),
+            patch(
+                f"{_QUALITY_SVC_MOD}.get_content_quality_service",
+                return_value=mocks["quality_service"],
+            ),
             patch(f"{_IMAGE_SVC_MOD}.get_image_service", return_value=mocks["image_service"]),
             patch(_EMIT_PROGRESS, new_callable=AsyncMock),
             patch.object(orch, "_get_agent_instance", side_effect=mocks["_get_agent_side_effect"]),
@@ -795,12 +821,18 @@ class TestHandleContentCreation:
             patch(f"{_CONSTRAINT_UTILS}.count_words_in_content", return_value=800),
             patch(f"{_CONSTRAINT_UTILS}.validate_constraints", return_value=mocks["compliance"]),
             patch(f"{_CONSTRAINT_UTILS}.merge_compliance_reports", return_value=mocks["merged"]),
-            patch(f"{_CONSTRAINT_UTILS}.apply_strict_mode", return_value=(False, "Word count exceeded")),
+            patch(
+                f"{_CONSTRAINT_UTILS}.apply_strict_mode",
+                return_value=(False, "Word count exceeded"),
+            ),
             patch(f"{_WRITING_STYLE_INTEGRATION}.WritingStyleIntegrationService") as MockWSI,
             patch(f"{_LLM_CLIENT_MOD}.LLMClient"),
             patch(f"{_BLOG_POST_MOD}.BlogPost", return_value=MagicMock(body="body")),
             patch(f"{_DB_SERVICE_MOD}.DatabaseService"),
-            patch(f"{_QUALITY_SVC_MOD}.get_content_quality_service", return_value=mocks["quality_service"]),
+            patch(
+                f"{_QUALITY_SVC_MOD}.get_content_quality_service",
+                return_value=mocks["quality_service"],
+            ),
             patch(f"{_IMAGE_SVC_MOD}.get_image_service", return_value=mocks["image_service"]),
             patch(_EMIT_PROGRESS, new_callable=AsyncMock),
             patch.object(orch, "_get_agent_instance", side_effect=mocks["_get_agent_side_effect"]),
@@ -832,7 +864,10 @@ class TestHandleContentCreation:
             patch(f"{_LLM_CLIENT_MOD}.LLMClient"),
             patch(f"{_BLOG_POST_MOD}.BlogPost", return_value=MagicMock(body="body")),
             patch(f"{_DB_SERVICE_MOD}.DatabaseService"),
-            patch(f"{_QUALITY_SVC_MOD}.get_content_quality_service", return_value=mocks["quality_service"]),
+            patch(
+                f"{_QUALITY_SVC_MOD}.get_content_quality_service",
+                return_value=mocks["quality_service"],
+            ),
             patch(f"{_IMAGE_SVC_MOD}.get_image_service", return_value=mocks["image_service"]),
             patch(_EMIT_PROGRESS, new_callable=AsyncMock),
             patch.object(orch, "_get_agent_instance", side_effect=mocks["_get_agent_side_effect"]),
@@ -862,7 +897,10 @@ class TestHandleContentCreation:
             patch(f"{_LLM_CLIENT_MOD}.LLMClient"),
             patch(f"{_BLOG_POST_MOD}.BlogPost", return_value=MagicMock(body="body")),
             patch(f"{_DB_SERVICE_MOD}.DatabaseService"),
-            patch(f"{_QUALITY_SVC_MOD}.get_content_quality_service", return_value=mocks["quality_service"]),
+            patch(
+                f"{_QUALITY_SVC_MOD}.get_content_quality_service",
+                return_value=mocks["quality_service"],
+            ),
             patch(f"{_IMAGE_SVC_MOD}.get_image_service", return_value=mocks["image_service"]),
             patch(_EMIT_PROGRESS, new_callable=AsyncMock) as mock_emit,
             patch.object(orch, "_get_agent_instance", side_effect=mocks["_get_agent_side_effect"]),
@@ -892,7 +930,10 @@ class TestHandleContentCreation:
             patch(f"{_LLM_CLIENT_MOD}.LLMClient"),
             patch(f"{_BLOG_POST_MOD}.BlogPost", return_value=MagicMock(body="body")),
             patch(f"{_DB_SERVICE_MOD}.DatabaseService"),
-            patch(f"{_QUALITY_SVC_MOD}.get_content_quality_service", return_value=mocks["quality_service"]),
+            patch(
+                f"{_QUALITY_SVC_MOD}.get_content_quality_service",
+                return_value=mocks["quality_service"],
+            ),
             patch(f"{_IMAGE_SVC_MOD}.get_image_service", return_value=mocks["image_service"]),
             patch(_EMIT_PROGRESS, new_callable=AsyncMock, side_effect=Exception("WebSocket down")),
             patch.object(orch, "_get_agent_instance", side_effect=mocks["_get_agent_side_effect"]),
@@ -910,7 +951,9 @@ class TestHandleContentCreation:
         request = _make_content_request()
 
         with (
-            patch(f"{_CONSTRAINT_UTILS}.ContentConstraints", side_effect=RuntimeError("unexpected")),
+            patch(
+                f"{_CONSTRAINT_UTILS}.ContentConstraints", side_effect=RuntimeError("unexpected")
+            ),
             patch.object(orch, "_get_agent_instance"),
         ):
             result = await orch._handle_content_creation(request)
@@ -943,7 +986,10 @@ class TestHandleContentCreation:
             patch(f"{_LLM_CLIENT_MOD}.LLMClient"),
             patch(f"{_BLOG_POST_MOD}.BlogPost", return_value=MagicMock(body="body")),
             patch(f"{_DB_SERVICE_MOD}.DatabaseService"),
-            patch(f"{_QUALITY_SVC_MOD}.get_content_quality_service", return_value=mocks["quality_service"]),
+            patch(
+                f"{_QUALITY_SVC_MOD}.get_content_quality_service",
+                return_value=mocks["quality_service"],
+            ),
             patch(f"{_IMAGE_SVC_MOD}.get_image_service", return_value=mocks["image_service"]),
             patch(_EMIT_PROGRESS, new_callable=AsyncMock),
             patch.object(orch, "_get_agent_instance", side_effect=mocks["_get_agent_side_effect"]),
@@ -957,7 +1003,10 @@ class TestHandleContentCreation:
         assert get_model_mock.call_count >= 1
         # Verify quality_preference was passed correctly
         call_args_list = get_model_mock.call_args_list
-        quality_prefs = [call.args[2] if len(call.args) >= 3 else call.kwargs.get("quality_preference") for call in call_args_list]
+        quality_prefs = [
+            call.args[2] if len(call.args) >= 3 else call.kwargs.get("quality_preference")
+            for call in call_args_list
+        ]
         assert any(qp == "quality" for qp in quality_prefs)
 
     @pytest.mark.asyncio
@@ -981,10 +1030,11 @@ class TestHandleContentCreation:
             patch(f"{_WRITING_STYLE_INTEGRATION}.WritingStyleIntegrationService") as MockWSI,
             patch(f"{_LLM_CLIENT_MOD}.LLMClient"),
             patch(f"{_BLOG_POST_MOD}.BlogPost", return_value=MagicMock(body="content")),
+            patch(f"{_DB_SERVICE_MOD}.DatabaseService") as MockDatabaseService,
             patch(
-                f"{_DB_SERVICE_MOD}.DatabaseService"
-            ) as MockDatabaseService,
-            patch(f"{_QUALITY_SVC_MOD}.get_content_quality_service", return_value=mocks["quality_service"]),
+                f"{_QUALITY_SVC_MOD}.get_content_quality_service",
+                return_value=mocks["quality_service"],
+            ),
             patch(f"{_IMAGE_SVC_MOD}.get_image_service", return_value=mocks["image_service"]),
             patch(_EMIT_PROGRESS, new_callable=AsyncMock),
             patch.object(orch, "_get_agent_instance", side_effect=mocks["_get_agent_side_effect"]),

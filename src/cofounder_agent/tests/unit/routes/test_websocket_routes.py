@@ -9,10 +9,11 @@ Tests cover:
 - _validate_ws_token — dev bypass and invalid-token paths
 """
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from routes.auth_unified import get_current_user
 from routes.websocket_routes import (
@@ -50,20 +51,14 @@ def _build_app_no_auth() -> FastAPI:
 @pytest.mark.unit
 class TestWebSocketStats:
     def test_returns_200(self):
-        with patch(
-            "routes.websocket_routes.websocket_manager"
-        ) as mock_mgr:
-            mock_mgr.get_stats = AsyncMock(
-                return_value={"total_connections": 0, "namespaces": {}}
-            )
+        with patch("routes.websocket_routes.websocket_manager") as mock_mgr:
+            mock_mgr.get_stats = AsyncMock(return_value={"total_connections": 0, "namespaces": {}})
             client = TestClient(_build_app())
             resp = client.get("/api/ws/stats")
         assert resp.status_code == 200
 
     def test_response_has_total_connections(self):
-        with patch(
-            "routes.websocket_routes.websocket_manager"
-        ) as mock_mgr:
+        with patch("routes.websocket_routes.websocket_manager") as mock_mgr:
             mock_mgr.get_stats = AsyncMock(
                 return_value={"total_connections": 3, "namespaces": {"global": 3}}
             )
@@ -72,9 +67,7 @@ class TestWebSocketStats:
         assert "total_connections" in data
 
     def test_response_has_namespaces(self):
-        with patch(
-            "routes.websocket_routes.websocket_manager"
-        ) as mock_mgr:
+        with patch("routes.websocket_routes.websocket_manager") as mock_mgr:
             mock_mgr.get_stats = AsyncMock(
                 return_value={"total_connections": 5, "namespaces": {"global": 5}}
             )
@@ -84,12 +77,8 @@ class TestWebSocketStats:
 
     def test_auth_required_for_stats(self):
         """Stats endpoint requires authentication — unauthenticated request returns 401/422."""
-        with patch(
-            "routes.websocket_routes.websocket_manager"
-        ) as mock_mgr:
-            mock_mgr.get_stats = AsyncMock(
-                return_value={"total_connections": 0, "namespaces": {}}
-            )
+        with patch("routes.websocket_routes.websocket_manager") as mock_mgr:
+            mock_mgr.get_stats = AsyncMock(return_value={"total_connections": 0, "namespaces": {}})
             client = TestClient(_build_app_no_auth(), raise_server_exceptions=False)
             resp = client.get("/api/ws/stats")
         # Unauthenticated access should be rejected (401 or 422 for missing dependency)
@@ -400,8 +389,10 @@ class TestValidateWsToken:
         ws = AsyncMock()
         mock_validator = MagicMock()
         mock_validator.verify_token.return_value = None  # invalid
-        with patch.dict("os.environ", {"DEVELOPMENT_MODE": "false"}), \
-             patch("routes.websocket_routes.JWTTokenValidator", mock_validator, create=True):
+        with (
+            patch.dict("os.environ", {"DEVELOPMENT_MODE": "false"}),
+            patch("routes.websocket_routes.JWTTokenValidator", mock_validator, create=True),
+        ):
             # Import patches the local import inside the function
             with patch("services.token_validator.JWTTokenValidator") as patched_validator:
                 patched_validator.verify_token.return_value = None
@@ -529,9 +520,7 @@ class TestWebSocketProgressStreamAuth:
             try:
                 # Attempt to connect without a token (using an empty string to satisfy
                 # the required query param; validation then rejects it)
-                with client.websocket_connect(
-                    "/api/ws/image-generation/task-x?token="
-                ) as ws:
+                with client.websocket_connect("/api/ws/image-generation/task-x?token=") as ws:
                     ws.receive_text()
                     assert False, "Expected WebSocket to be closed"
             except Exception:

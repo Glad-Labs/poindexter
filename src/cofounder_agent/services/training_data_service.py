@@ -6,7 +6,6 @@ Supports organizing data by quality, date, intent, and custom tags.
 """
 
 import json
-from services.logger_config import get_logger
 import os
 from dataclasses import dataclass
 from datetime import datetime
@@ -16,7 +15,11 @@ from typing import Any, Dict, List, Optional
 import aiofiles
 import asyncpg
 
+from services.logger_config import get_logger
+
 logger = get_logger(__name__)
+
+
 class DataTag(str, Enum):
     """Tags for training data"""
 
@@ -83,8 +86,7 @@ class TrainingDataService:
     async def initialize(self):
         """Create training data tables if not exist"""
         async with self.db_pool.acquire() as conn:
-            await conn.execute(
-                """
+            await conn.execute("""
                 CREATE TABLE IF NOT EXISTS orchestrator_training_data (
                     id SERIAL PRIMARY KEY,
                     execution_id VARCHAR(255) UNIQUE NOT NULL,
@@ -140,8 +142,7 @@ class TrainingDataService:
                     ON training_datasets(created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_datasets_name 
                     ON training_datasets(name, version DESC);
-            """
-            )
+            """)
 
             logger.info("Training data tables initialized")
 
@@ -220,7 +221,7 @@ class TrainingDataService:
 
         # Success only
         if success_only:
-            query += f" AND success = true"
+            query += " AND success = true"
 
         # Exclude tags
         if exclude_tags:

@@ -3,7 +3,6 @@ Social Media Management Routes
 Handles integration with social media platforms, content generation, posting, and analytics
 """
 
-from services.logger_config import get_logger
 from datetime import datetime
 from typing import Any, Dict
 
@@ -16,6 +15,7 @@ from schemas.social_schemas import (
     SocialPlatformConnection,
     SocialPost,
 )
+from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 # ============================================================================

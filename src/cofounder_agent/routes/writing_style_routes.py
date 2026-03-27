@@ -13,7 +13,6 @@ Endpoints:
 - DELETE /api/writing-style/{sample_id} - Delete sample
 """
 
-from services.logger_config import get_logger
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
@@ -21,6 +20,7 @@ from pydantic import BaseModel
 
 from routes.auth_unified import get_current_user
 from services.database_service import DatabaseService
+from services.logger_config import get_logger
 from utils.route_utils import get_database_dependency
 
 logger = get_logger(__name__)
@@ -145,9 +145,9 @@ async def upload_writing_sample(
             # Validate file can be decoded as text
             try:
                 sample_content = file_content.decode("utf-8")
-            except UnicodeDecodeError:
+            except UnicodeDecodeError as exc:
                 logger.warning("File upload rejected: file is not valid UTF-8 text", exc_info=True)
-                raise HTTPException(status_code=422, detail="File must be valid UTF-8 text")
+                raise HTTPException(status_code=422, detail="File must be valid UTF-8 text") from exc
 
         if not sample_content or not sample_content.strip():
             raise HTTPException(
@@ -171,7 +171,7 @@ async def upload_writing_sample(
         raise
     except Exception as e:
         logger.error(f"❌ Error uploading writing sample: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to upload sample")
+        raise HTTPException(status_code=500, detail="Failed to upload sample") from e
 
 
 @router.get("/samples", response_model=WritingSamplesListResponse)
@@ -189,7 +189,9 @@ async def list_writing_samples(
     """
     try:
         user_id = _get_user_id(current_user)
-        all_samples = await _require_writing_style_service(db_service).get_user_writing_samples(user_id)
+        all_samples = await _require_writing_style_service(db_service).get_user_writing_samples(
+            user_id
+        )
 
         total = len(all_samples)
         # Apply pagination
@@ -212,7 +214,7 @@ async def list_writing_samples(
 
     except Exception as e:
         logger.error(f"❌ Error listing writing samples: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to list samples")
+        raise HTTPException(status_code=500, detail="Failed to list samples") from e
 
 
 @router.get("/active", response_model=Optional[WritingSampleResponse])
@@ -237,7 +239,7 @@ async def get_active_writing_sample(
 
     except Exception as e:
         logger.error(f"❌ Error getting active writing sample: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to get active sample")
+        raise HTTPException(status_code=500, detail="Failed to get active sample") from e
 
 
 @router.post("/{sample_id}/activate", response_model=WritingSampleResponse)
@@ -269,7 +271,9 @@ async def activate_writing_sample(
             raise HTTPException(status_code=403, detail="Unauthorized")
 
         # Set as active
-        updated = await _require_writing_style_service(db_service).set_active_writing_sample(user_id, sample_id)
+        updated = await _require_writing_style_service(db_service).set_active_writing_sample(
+            user_id, sample_id
+        )
 
         logger.info(f"✅ User {user_id} set writing sample {sample_id} as active")
         return WritingSampleResponse(**updated)
@@ -278,7 +282,7 @@ async def activate_writing_sample(
         raise
     except Exception as e:
         logger.error(f"❌ Error setting active writing sample: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to set active sample")
+        raise HTTPException(status_code=500, detail="Failed to set active sample") from e
 
 
 @router.put("/{sample_id}", response_model=WritingSampleResponse)
@@ -324,7 +328,7 @@ async def update_writing_sample(
         raise
     except Exception as e:
         logger.error(f"❌ Error updating writing sample: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to update sample")
+        raise HTTPException(status_code=500, detail="Failed to update sample") from e
 
 
 @router.delete("/{sample_id}", status_code=204)
@@ -353,7 +357,9 @@ async def delete_writing_sample(
             raise HTTPException(status_code=403, detail="Unauthorized")
 
         # Delete the sample
-        success = await _require_writing_style_service(db_service).delete_writing_sample(sample_id, user_id)
+        success = await _require_writing_style_service(db_service).delete_writing_sample(
+            sample_id, user_id
+        )
 
         if not success:
             raise HTTPException(status_code=404, detail="Writing sample not found")
@@ -365,7 +371,7 @@ async def delete_writing_sample(
         raise
     except Exception as e:
         logger.error(f"❌ Error deleting writing sample: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to delete sample")
+        raise HTTPException(status_code=500, detail="Failed to delete sample") from e
 
 
 # ============================================================================
@@ -490,7 +496,7 @@ async def get_relevant_samples(
 
     except Exception as e:
         logger.error(f"❌ Error retrieving samples: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to retrieve samples")
+        raise HTTPException(status_code=500, detail="Failed to retrieve samples") from e
 
 
 @router.get("/by-style/{style}")
@@ -561,7 +567,7 @@ async def retrieve_by_style(
 
     except Exception as e:
         logger.error(f"❌ Error retrieving samples by style: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to retrieve samples")
+        raise HTTPException(status_code=500, detail="Failed to retrieve samples") from e
 
 
 @router.get("/by-tone/{tone}")
@@ -629,4 +635,4 @@ async def retrieve_by_tone(
 
     except Exception as e:
         logger.error(f"❌ Error retrieving samples by tone: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to retrieve samples")
+        raise HTTPException(status_code=500, detail="Failed to retrieve samples") from e

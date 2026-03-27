@@ -25,9 +25,6 @@ Three dedicated Playwright configurations provide complete test coverage:
 # Run public site tests
 npx playwright test
 
-# Run oversight hub tests
-npx playwright test -c playwright.oversight.config.ts
-
 # Run API tests
 npx playwright test -c playwright.api.config.ts
 ```
@@ -160,22 +157,16 @@ npx playwright test --project=chromium-visual
 **Test Types:**
 
 ```
-web/oversight-hub/e2e/
-├── auth.spec.ts             # Login, OAuth, token management
-├── workflows.spec.ts        # Workflow creation, execution
-├── model-selection.spec.ts  # Model picking, switching
-├── progress.spec.ts         # Real-time progress updates
-├── monitoring.spec.ts       # Dashboard metrics, health
-├── admin.spec.ts            # Admin-only features
-└── accessibility.a11y.spec.ts    # Admin accessibility
+web/public-site/e2e/
+├── navigation.spec.ts       # Site navigation
+├── content.spec.ts          # Content display
+├── search.spec.ts           # Search functionality
+└── accessibility.spec.ts    # Accessibility checks
 ```
 
 **Run Specific Suite:**
 
 ```bash
-# Admin tests with auth
-npx playwright test -c playwright.oversight.config.ts
-
 # Workflow tests
 npx playwright test workflows.spec.ts -c playwright.oversight.config.ts
 
@@ -581,7 +572,7 @@ npx playwright install
 
 1. **Use Config-Specific Tests**
    - Keep public site tests in `web/public-site/e2e/`
-   - Keep admin tests in `web/oversight-hub/e2e/`
+   - Keep E2E tests in `web/public-site/e2e/`
    - Keep API tests in `playwright/api/`
 
 2. **Tag Critical Tests**

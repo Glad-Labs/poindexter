@@ -53,42 +53,22 @@ NEXT_PUBLIC_COFOUNDER_AGENT_URL=http://localhost:8000
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ```
 
-### Oversight Hub (Vite)
-
-```env
-VITE_API_URL=http://localhost:8000
-VITE_API_BASE_URL=http://localhost:8000
-VITE_WS_BASE_URL=ws://localhost:8000
-VITE_AGENT_URL=http://localhost:8000
-VITE_GH_OAUTH_CLIENT_ID=
-```
-
 ---
 
 ## Frontend Variable Prefix Conventions
 
-Each frontend service uses a different build-tool-mandated prefix. This is a framework constraint,
-not a project choice. All three prefixes serve the same role: they tell the build tool which
-variables are safe to embed into client-side bundles.
+The public site uses Next.js, which requires the `NEXT_PUBLIC_` prefix for client-side variables.
 
-| Service             | Build Tool | Required Prefix | Access Pattern              |
-| ------------------- | ---------- | --------------- | --------------------------- |
-| `web/public-site`   | Next.js 15 | `NEXT_PUBLIC_`  | `process.env.NEXT_PUBLIC_*` |
-| `web/oversight-hub` | Vite       | `VITE_`         | `import.meta.env.VITE_*`    |
+| Service           | Build Tool | Required Prefix | Access Pattern              |
+| ----------------- | ---------- | --------------- | --------------------------- |
+| `web/public-site` | Next.js 15 | `NEXT_PUBLIC_`  | `process.env.NEXT_PUBLIC_*` |
 
-**Why the difference?** Next.js statically replaces `process.env.NEXT_PUBLIC_*` at build time.
-Vite statically replaces `import.meta.env.VITE_*` at build time. Variables without the required
-prefix are stripped from the client bundle entirely — they are server-only (Next.js) or not
-exposed at all (Vite).
-
-**REACT*APP*?** This prefix was used by Create React App (CRA). The oversight-hub previously
-used CRA but was migrated to Vite. `REACT_APP_` keys are NOT supported by Vite unless manually
-mapped. Do not introduce new `REACT_APP_` variables; use `VITE_` instead.
+Next.js statically replaces `process.env.NEXT_PUBLIC_*` at build time. Variables without the
+prefix are server-only and stripped from the client bundle.
 
 **Each app reads its own `.env.local`:**
 
 - `web/public-site/.env.local` — read by Next.js (not the root `.env.local`)
-- `web/oversight-hub/.env.local` — read by Vite (not the root `.env.local`)
 - Root `.env.local` — read only by the FastAPI backend via Python's `dotenv` loader
 
 ---
@@ -100,7 +80,6 @@ These exist for backward compatibility and should not be introduced in new code/
 - `OLLAMA_HOST` → `OLLAMA_BASE_URL`
 - `JWT_SECRET` → `JWT_SECRET_KEY`
 - `NEXT_PUBLIC_FASTAPI_URL` remains supported, but prefer `NEXT_PUBLIC_API_BASE_URL`
-- `VITE_API_BASE_URL` remains supported alongside `VITE_API_URL`
 
 ---
 
@@ -121,8 +100,7 @@ For full CI/CD secret mapping, use `docs/reference/GITHUB_SECRETS_SETUP.md`.
 - `DATABASE_URL` points to reachable PostgreSQL
 - At least one model provider is configured
 - `NEXT_PUBLIC_API_BASE_URL` points to backend (`http://localhost:8000` in dev)
-- `VITE_API_URL` points to backend (`http://localhost:8000` in dev)
-- `npm run dev` starts backend, public site, and oversight hub
+- `npm run dev` starts backend and public site
 
 ---
 

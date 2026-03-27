@@ -2,24 +2,13 @@
 Ollama Client Service
 
 Provides zero-cost local AI model inference using Ollama.
-Perfect for desktop/development environments with no API costs.
-
-Supported Models:
-- llama2 (7B, 13B, 70B)
-- llama2:13b
-- codellama (7B, 13B, 34B, 70B)
-- mistral (7B)
-- mixtral (8x7B)
-- phi (2.7B)
-- neural-chat (7B)
-- starling-lm (7B)
-- openchat (7B)
-- vicuna (7B, 13B, 33B)
+Model profiles are fetched dynamically from the running Ollama instance.
 
 Install Ollama: https://ollama.ai/download
-Pull models: ollama pull llama2
+Pull models: ollama pull qwen3:8b
 """
 
+import asyncio
 import json
 import os
 from typing import Any, AsyncIterator, Dict, List, Optional
@@ -34,62 +23,10 @@ logger = structlog.get_logger(__name__)
 # CONSTANTS
 # ============================================================================
 
-# Default Ollama model - can be overridden with DEFAULT_OLLAMA_MODEL env variable
-DEFAULT_MODEL = os.getenv("DEFAULT_OLLAMA_MODEL", "llama2")  # Good balance of speed/quality
-DEFAULT_BASE_URL = "http://localhost:11434"
-
-# Model capabilities and recommended use cases
-MODEL_PROFILES = {
-    "llama2": {
-        "size": "7B",
-        "speed": "fast",
-        "quality": "good",
-        "use_cases": ["chat", "summarization", "Q&A"],
-        "cost": 0.0,
-    },
-    "llama2:13b": {
-        "size": "13B",
-        "speed": "medium",
-        "quality": "excellent",
-        "use_cases": ["complex chat", "analysis", "reasoning"],
-        "cost": 0.0,
-    },
-    "llama2:70b": {
-        "size": "70B",
-        "speed": "slow",
-        "quality": "outstanding",
-        "use_cases": ["complex reasoning", "critical analysis"],
-        "cost": 0.0,
-    },
-    "mistral": {
-        "size": "7B",
-        "speed": "very fast",
-        "quality": "excellent",
-        "use_cases": ["chat", "creative writing", "general tasks"],
-        "cost": 0.0,
-    },
-    "mixtral": {
-        "size": "8x7B",
-        "speed": "medium",
-        "quality": "outstanding",
-        "use_cases": ["complex reasoning", "code", "analysis"],
-        "cost": 0.0,
-    },
-    "codellama": {
-        "size": "7B-34B",
-        "speed": "fast",
-        "quality": "excellent",
-        "use_cases": ["code generation", "code review", "debugging"],
-        "cost": 0.0,
-    },
-    "phi": {
-        "size": "2.7B",
-        "speed": "blazing fast",
-        "quality": "good",
-        "use_cases": ["simple tasks", "quick responses"],
-        "cost": 0.0,
-    },
-}
+DEFAULT_MODEL = os.getenv("DEFAULT_OLLAMA_MODEL", "auto")
+DEFAULT_BASE_URL = (
+    os.getenv("OLLAMA_BASE_URL") or os.getenv("OLLAMA_HOST") or "http://localhost:11434"
+)
 
 
 # ============================================================================
@@ -101,78 +38,192 @@ class OllamaError(Exception):
     """Base exception for Ollama errors."""
 
 
-
 class OllamaConnectionError(OllamaError):
     """Raised when cannot connect to Ollama server."""
-
 
 
 class OllamaModelNotFoundError(OllamaError):
     """Raised when requested model is not available."""
 
 
-
 class OllamaClient:
     """
     Client for Ollama local LLM inference.
 
-    Zero-cost alternative to OpenAI/Claude for desktop environments.
+    Zero-cost alternative to OpenAI/Claude for local environments.
+    Model profiles are discovered dynamically from the Ollama server.
     """
 
     def __init__(self, base_url: str | None = None, model: str | None = None, timeout: int = 120):
-        """
-        Initialize Ollama client.
-
-        Args:
-            base_url: Ollama server URL (default: http://localhost:11434)
-            model: Default model to use (default: llama2)
-            timeout: Request timeout in seconds
-        """
-        self.base_url = base_url or DEFAULT_BASE_URL
+        self.base_url = (base_url or DEFAULT_BASE_URL).rstrip("/")
         self.model = model or DEFAULT_MODEL
         self.timeout = timeout
         self.client = httpx.AsyncClient(timeout=timeout)
+        self._model_cache: Dict[str, Dict[str, Any]] = {}
+        self._cache_ts: float = 0
+        self._resolved_default: Optional[str] = None  # Lazily resolved from installed models
 
         logger.info("Ollama client initialized", base_url=self.base_url, model=self.model)
+
+    async def resolve_model(self, model: Optional[str] = None) -> str:
+        """Resolve a model name, handling 'auto' by discovering the best installed model.
+
+        Resolution order:
+        1. Explicit model name (not 'auto') — use as-is
+        2. Cached resolved default — skip discovery on repeat calls
+        3. PREFERRED_OLLAMA_MODEL env var — user-declared best model
+        4. First installed match from a quality-ranked preference list
+        5. Largest non-embedding model by file size
+
+        Set PREFERRED_OLLAMA_MODEL in .env.local to pin your best model.
+        """
+        model = model or self.model
+        if model != "auto":
+            return model
+
+        if self._resolved_default:
+            return self._resolved_default
+
+        try:
+            models = await self.list_models()
+            installed_names = {m.get("name", "") for m in models}
+
+            # Check env var first — user knows which model is best for their hardware
+            preferred = os.getenv("PREFERRED_OLLAMA_MODEL", "")
+            if preferred and preferred in installed_names:
+                self._resolved_default = preferred
+                logger.info(f"Auto-resolved model from PREFERRED_OLLAMA_MODEL: {preferred}")
+                return self._resolved_default
+
+            # Filter out embedding models
+            gen_models = [m for m in models if "embed" not in m.get("name", "").lower()]
+
+            if gen_models:
+                # Pick largest by file size as a reasonable default
+                best = sorted(gen_models, key=lambda x: x.get("size", 0), reverse=True)[0]
+                self._resolved_default = best["name"]
+                logger.info(f"Auto-resolved default model (largest): {self._resolved_default}")
+                return self._resolved_default
+        except Exception as e:
+            logger.warning(f"Could not auto-resolve model: {e}")
+
+        # Absolute last resort — caller should handle this model not existing
+        return "llama3:latest"
 
     async def close(self):
         """Close the HTTP client connection."""
         if self.client:
             await self.client.aclose()
 
-    async def check_health(self) -> bool:
-        """
-        Check if Ollama server is running and accessible.
+    # ========================================================================
+    # Health & Discovery
+    # ========================================================================
 
-        Returns:
-            True if server is healthy, False otherwise
-        """
+    async def check_health(self) -> bool:
+        """Check if Ollama server is running."""
         try:
             response = await self.client.get(f"{self.base_url}/api/tags", timeout=5.0)
             return response.status_code == 200
         except Exception as e:
-            logger.error(f"[_check_health] Ollama health check failed: {e}", exc_info=True)
+            logger.error(f"[check_health] Ollama health check failed: {e}", exc_info=True)
             return False
 
     async def list_models(self) -> List[Dict[str, Any]]:
-        """
-        List available Ollama models.
-
-        Returns:
-            List of model dictionaries with name, size, modified date
-        """
+        """List available Ollama models with metadata."""
         try:
             response = await self.client.get(f"{self.base_url}/api/tags", timeout=10.0)
             response.raise_for_status()
             data = response.json()
-
             models = data.get("models", [])
             logger.info(f"Found {len(models)} Ollama models")
             return models
-
         except Exception as e:
-            logger.error(f"[_list_models] Failed to list models", error=str(e), exc_info=True)
+            logger.error("[list_models] Failed to list models", error=str(e), exc_info=True)
             return []
+
+    async def get_model_profiles(self, force_refresh: bool = False) -> Dict[str, Dict[str, Any]]:
+        """
+        Build model profiles dynamically from the running Ollama instance.
+        Cached for 5 minutes to avoid hammering the API.
+
+        Returns:
+            Dict mapping model name to profile info (size, family, quantization, etc.)
+        """
+        import time
+
+        if not force_refresh and self._model_cache and (time.time() - self._cache_ts < 300):
+            return self._model_cache
+
+        models = await self.list_models()
+        profiles: Dict[str, Dict[str, Any]] = {}
+
+        for m in models:
+            name = m.get("name", "")
+            details = m.get("details", {})
+            size_bytes = m.get("size", 0)
+            size_gb = round(size_bytes / (1024**3), 1) if size_bytes else 0
+
+            profiles[name] = {
+                "name": name,
+                "family": details.get("family", "unknown"),
+                "parameter_size": details.get("parameter_size", "unknown"),
+                "quantization": details.get("quantization_level", "unknown"),
+                "size_gb": size_gb,
+                "format": details.get("format", "unknown"),
+                "modified_at": m.get("modified_at", ""),
+                "cost": 0.0,
+            }
+
+        self._model_cache = profiles
+        self._cache_ts = time.time()
+
+        logger.info(f"Built {len(profiles)} model profiles from Ollama")
+        return profiles
+
+    def get_model_profile(self, model: str) -> Optional[Dict[str, Any]]:
+        """Get cached model profile. Call get_model_profiles() first to populate."""
+        return self._model_cache.get(model)
+
+    async def recommend_model(self, task_type: str) -> str:
+        """
+        Recommend best available Ollama model for a task type.
+        Uses the actually-installed models, not a hardcoded list.
+        """
+        profiles = await self.get_model_profiles()
+        if not profiles:
+            return self.model
+
+        available = list(profiles.keys())
+        task_lower = task_type.lower()
+
+        # Prefer larger models for complex tasks
+        def param_size_key(name: str) -> float:
+            p = profiles[name].get("parameter_size", "0B")
+            try:
+                return float(p.replace("B", "").replace("b", ""))
+            except (ValueError, AttributeError):
+                return 0
+
+        sorted_by_size = sorted(available, key=param_size_key, reverse=True)
+
+        # Code tasks: prefer models with "code" or "coder" in the name
+        if any(kw in task_lower for kw in ["code", "program", "debug", "implement"]):
+            code_models = [m for m in sorted_by_size if "code" in m.lower()]
+            if code_models:
+                return code_models[0]
+
+        # Complex reasoning: use the largest model
+        if any(kw in task_lower for kw in ["complex", "reason", "analyze", "critical"]):
+            return sorted_by_size[0] if sorted_by_size else self.model
+
+        # Default: use the configured default model if available, else largest
+        if self.model in profiles:
+            return self.model
+        return sorted_by_size[0] if sorted_by_size else self.model
+
+    # ========================================================================
+    # Generation
+    # ========================================================================
 
     async def generate(
         self,
@@ -183,62 +234,59 @@ class OllamaClient:
         max_tokens: Optional[int] = None,
         stream: bool = False,
     ) -> Dict[str, Any]:
+        """Generate completion from Ollama model.
+
+        Internally uses /api/chat (the modern Ollama endpoint) by converting
+        the prompt/system into chat messages. The legacy /api/generate endpoint
+        was removed in newer Ollama versions. Return shape is preserved for
+        backwards compatibility with callers that read 'text' and 'response'.
         """
-        Generate completion from Ollama model.
+        model = await self.resolve_model(model)
 
-        Args:
-            prompt: User prompt
-            model: Model name (default: self.model)
-            system: System prompt
-            temperature: Sampling temperature (0.0-1.0)
-            max_tokens: Maximum tokens to generate
-            stream: Whether to stream response
-
-        Returns:
-            Dictionary with response text, tokens, and timing
-        """
-        model = model or self.model
-
-        payload = {
-            "model": model,
-            "prompt": prompt,
-            "stream": stream,
-            "options": {
-                "temperature": temperature,
-            },
-        }
-
+        # Build chat messages from prompt + optional system
+        messages: List[Dict[str, str]] = []
         if system:
-            payload["system"] = system
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+
+        payload: Dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "stream": stream,
+            "options": {"temperature": temperature},
+        }
 
         if max_tokens:
             payload["options"]["num_predict"] = max_tokens
 
         try:
             response = await self.client.post(
-                f"{self.base_url}/api/generate", json=payload, timeout=self.timeout
+                f"{self.base_url}/api/chat", json=payload, timeout=self.timeout
             )
             response.raise_for_status()
-
             result = response.json()
+
+            # Extract text from chat response format
+            msg = result.get("message", {})
+            text = msg.get("content", "")
 
             logger.info(
                 "Ollama generation complete",
                 model=model,
                 tokens=result.get("eval_count", 0),
-                duration=result.get("total_duration", 0) / 1e9,  # ns to seconds
+                duration=result.get("total_duration", 0) / 1e9,
                 cost=0.0,
             )
 
             return {
-                "text": result.get("response", ""),
+                "text": text,
+                "response": text,  # Legacy key for callers using response.get("response")
                 "model": model,
                 "tokens": result.get("eval_count", 0),
                 "prompt_tokens": result.get("prompt_eval_count", 0),
-                "total_tokens": result.get("eval_count", 0)
-                + result.get("prompt_eval_count", 0),
+                "total_tokens": result.get("eval_count", 0) + result.get("prompt_eval_count", 0),
                 "duration_seconds": result.get("total_duration", 0) / 1e9,
-                "cost": 0.0,  # Zero cost!
+                "cost": 0.0,
                 "done": result.get("done", False),
             }
 
@@ -254,37 +302,16 @@ class OllamaClient:
         max_tokens: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
-        Chat completion with message history.
-
-        Args:
-            messages: List of message dicts with 'role' and 'content'
-            model: Model name
-            temperature: Sampling temperature
-            max_tokens: Maximum tokens to generate
-
-        Returns:
-            Dictionary with response and metadata
+        Chat completion using Ollama's native /api/chat endpoint.
+        Supports full message history with roles.
         """
-        model = model or self.model
+        model = await self.resolve_model(model)
 
-        # Convert messages to prompt string format for Ollama
-        prompt = ""
-        for msg in messages:
-            role = msg.get("role", "user")
-            content = msg.get("content", "")
-            if role == "user":
-                prompt += f"User: {content}\n"
-            elif role == "assistant":
-                prompt += f"Assistant: {content}\n"
-        prompt += "Assistant: "
-
-        payload = {
+        payload: Dict[str, Any] = {
             "model": model,
-            "prompt": prompt,
+            "messages": messages,
             "stream": False,
-            "options": {
-                "temperature": temperature,
-            },
+            "options": {"temperature": temperature},
         }
 
         if max_tokens:
@@ -292,22 +319,12 @@ class OllamaClient:
 
         try:
             response = await self.client.post(
-                f"{self.base_url}/api/generate", json=payload, timeout=self.timeout
+                f"{self.base_url}/api/chat", json=payload, timeout=self.timeout
             )
             response.raise_for_status()
-
             result = response.json()
 
-            # Extract only the assistant response (remove the prompt we sent)
-            full_response = result.get("response", "")
-
-            # Extract just the assistant's response (after "Assistant: ")
-            if "Assistant: " in full_response:
-                # Get everything after the last "Assistant: "
-                parts = full_response.split("Assistant: ")
-                assistant_response = parts[-1].strip()
-            else:
-                assistant_response = full_response.strip()
+            msg = result.get("message", {})
 
             logger.info(
                 "Ollama chat complete",
@@ -317,13 +334,12 @@ class OllamaClient:
             )
 
             return {
-                "role": "assistant",
-                "content": assistant_response,
+                "role": msg.get("role", "assistant"),
+                "content": msg.get("content", ""),
                 "model": model,
                 "tokens": result.get("eval_count", 0),
                 "prompt_tokens": result.get("prompt_eval_count", 0),
-                "total_tokens": result.get("eval_count", 0)
-                + result.get("prompt_eval_count", 0),
+                "total_tokens": result.get("eval_count", 0) + result.get("prompt_eval_count", 0),
                 "duration_seconds": result.get("total_duration", 0) / 1e9,
                 "cost": 0.0,
                 "done": result.get("done", False),
@@ -333,73 +349,29 @@ class OllamaClient:
             logger.error(f"[chat] Ollama chat failed: {e}", exc_info=True, model=model)
             raise
 
+    # ========================================================================
+    # Model Management
+    # ========================================================================
+
     async def pull_model(self, model: str) -> bool:
-        """
-        Pull a model from Ollama library.
-
-        Args:
-            model: Model name to pull (e.g., "llama2", "mistral")
-
-        Returns:
-            True if successful, False otherwise
-        """
+        """Pull a model from the Ollama library."""
         try:
             logger.info(f"Pulling Ollama model: {model}")
-
             response = await self.client.post(
                 f"{self.base_url}/api/pull",
                 json={"name": model},
-                timeout=3600.0,  # Model downloads can take a while
+                timeout=3600.0,
             )
             response.raise_for_status()
-
             logger.info(f"Successfully pulled model: {model}")
             return True
-
         except Exception as e:
-            logger.error(f"[_pull_model] Failed to pull model {model}", error=str(e), exc_info=True)
+            logger.error(f"[pull_model] Failed to pull model {model}", error=str(e), exc_info=True)
             return False
 
-    def get_model_profile(self, model: str) -> Optional[Dict[str, Any]]:
-        """
-        Get model profile information.
-
-        Args:
-            model: Model name
-
-        Returns:
-            Model profile dict or None if not found
-        """
-        # Extract base model name (handle :tag notation)
-        base_model = model.split(":")[0]
-        return MODEL_PROFILES.get(base_model)
-
-    def recommend_model(self, task_type: str) -> str:
-        """
-        Recommend best Ollama model for task type.
-
-        Args:
-            task_type: Task type (e.g., "chat", "code", "analysis")
-
-        Returns:
-            Recommended model name
-        """
-        task_lower = task_type.lower()
-
-        # Code-related tasks
-        if any(kw in task_lower for kw in ["code", "program", "debug", "implement"]):
-            return "codellama"
-
-        # Fast/simple tasks
-        if any(kw in task_lower for kw in ["classify", "extract", "simple"]):
-            return "phi"
-
-        # Complex reasoning
-        if any(kw in task_lower for kw in ["complex", "reason", "analyze", "critical"]):
-            return "mixtral"
-
-        # Default to mistral (best general purpose)
-        return "mistral"
+    # ========================================================================
+    # Retry & Streaming
+    # ========================================================================
 
     async def generate_with_retry(
         self,
@@ -411,39 +383,12 @@ class OllamaClient:
         max_retries: int = 3,
         base_delay: float = 1.0,
     ) -> Dict[str, Any]:
-        """
-        Generate completion with exponential backoff retry logic.
-
-        Retries failed requests with exponential backoff to handle:
-        - Temporary network issues
-        - Model loading delays
-        - Ollama process restarts
-
-        Args:
-            prompt: User prompt
-            model: Model name (default: self.model)
-            system: System prompt
-            temperature: Sampling temperature (0.0-1.0)
-            max_tokens: Maximum tokens to generate
-            max_retries: Maximum number of retry attempts
-            base_delay: Initial delay in seconds (doubles each retry)
-
-        Returns:
-            Dictionary with response text, tokens, and timing
-        """
-        import asyncio
-
+        """Generate completion with exponential backoff retry."""
         model = model or self.model
         last_error = None
 
         for attempt in range(max_retries):
             try:
-                logger.info(
-                    f"Ollama generation attempt {attempt + 1}/{max_retries}",
-                    model=model,
-                    attempt=attempt + 1,
-                )
-
                 result = await self.generate(
                     prompt=prompt,
                     model=model,
@@ -452,69 +397,37 @@ class OllamaClient:
                     max_tokens=max_tokens,
                     stream=False,
                 )
-
                 if result and result.get("text"):
-                    logger.info(
-                        "✓ Ollama generation succeeded",
-                        model=model,
-                        attempt=attempt + 1,
-                        tokens=result.get("tokens", 0),
-                    )
                     return result
 
-            except httpx.ConnectError as e:
+            except (httpx.ConnectError, httpx.ReadTimeout) as e:
                 last_error = e
                 if attempt < max_retries - 1:
                     delay = base_delay * (2**attempt)
-                    logger.error(
-                        f"[generate_with_retry] Ollama connection failed (attempt {attempt + 1}), retrying in {delay}s: {e}",
-                        exc_info=True,
+                    logger.warning(
+                        f"[generate_with_retry] Attempt {attempt + 1} failed, retrying in {delay}s",
+                        error=str(e),
+                        model=model,
                     )
                     await asyncio.sleep(delay)
-                else:
-                    logger.error(
-                        f"[generate_with_retry] Ollama connection failed after all retries: {e}",
-                        exc_info=True,
-                        attempts=max_retries,
-                    )
-
-            except httpx.ReadTimeout as e:
-                last_error = e
-                if attempt < max_retries - 1:
-                    delay = base_delay * (2**attempt)
-                    logger.error(
-                        f"[generate_with_retry] Ollama request timeout (attempt {attempt + 1}), retrying in {delay}s: {e}",
-                        exc_info=True,
-                    )
-                    await asyncio.sleep(delay)
-                else:
-                    logger.error(
-                        f"[generate_with_retry] Ollama timeout after all retries: {e}",
-                        exc_info=True,
-                        attempts=max_retries,
-                    )
 
             except Exception as e:
                 last_error = e
                 if attempt < max_retries - 1:
                     delay = base_delay * (2**attempt)
-                    logger.error(
-                        f"[generate_with_retry] Ollama generation failed (attempt {attempt + 1}), retrying in {delay}s: {e}",
-                        exc_info=True,
+                    logger.warning(
+                        f"[generate_with_retry] Attempt {attempt + 1} failed, retrying in {delay}s",
+                        error=str(e),
+                        model=model,
                     )
                     await asyncio.sleep(delay)
-                else:
-                    logger.error(
-                        f"[generate_with_retry] Ollama generation failed after all retries: {e}",
-                        exc_info=True,
-                        attempts=max_retries,
-                    )
 
-        # All retries exhausted
         logger.error(
-            f"[generate_with_retry] All Ollama generation attempts exhausted: {last_error}",
-            exc_info=True,
+            "[generate_with_retry] All attempts exhausted",
+            error=str(last_error),
             max_retries=max_retries,
+            model=model,
+            exc_info=True,
         )
         raise last_error if last_error else OllamaError("Generation failed after all retries")
 
@@ -526,54 +439,39 @@ class OllamaClient:
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
     ) -> AsyncIterator[str]:
-        """
-        Stream generation from Ollama model.
-
-        Args:
-            prompt: User prompt
-            model: Model name
-            system: System prompt
-            temperature: Sampling temperature
-            max_tokens: Maximum tokens to generate
-
-        Yields:
-            Text chunks as they are generated
-        """
+        """Stream generation from Ollama model using /api/chat."""
         model = model or self.model
 
-        payload = {
-            "model": model,
-            "prompt": prompt,
-            "stream": True,
-            "options": {
-                "temperature": temperature,
-            },
-        }
-
+        # Build chat messages from prompt + optional system
+        messages: List[Dict[str, str]] = []
         if system:
-            payload["system"] = system
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+
+        payload: Dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "stream": True,
+            "options": {"temperature": temperature},
+        }
 
         if max_tokens:
             payload["options"]["num_predict"] = max_tokens
 
         try:
-            async with httpx.AsyncClient() as client:
-                async with client.stream(
-                    "POST", f"{self.base_url}/api/generate", json=payload, timeout=self.timeout
-                ) as response:
-                    response.raise_for_status()
-
-                    async for line in response.aiter_lines():
-                        if line:
-                            try:
-                                data = json.loads(line)
-                                if "response" in data:
-                                    yield data["response"]
-                            except json.JSONDecodeError:
-                                logger.debug(
-                                    f"[stream_generate] Skipping malformed JSON line: {line[:80]!r}"
-                                )
-                                continue
+            async with self.client.stream(
+                "POST", f"{self.base_url}/api/chat", json=payload, timeout=self.timeout
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if line:
+                        try:
+                            data = json.loads(line)
+                            msg = data.get("message", {})
+                            if msg.get("content"):
+                                yield msg["content"]
+                        except json.JSONDecodeError:
+                            continue
 
         except httpx.HTTPError as e:
             logger.error(
@@ -586,14 +484,4 @@ class OllamaClient:
 async def initialize_ollama_client(
     base_url: str | None = None, model: str | None = None
 ) -> OllamaClient:
-    """
-    Initialize Ollama client.
-
-    Args:
-        base_url: Ollama server URL
-        model: Default model to use
-
-    Returns:
-        Initialized OllamaClient
-    """
     return OllamaClient(base_url=base_url, model=model)

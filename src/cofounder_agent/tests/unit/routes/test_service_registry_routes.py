@@ -13,17 +13,16 @@ get_service_registry is patched to avoid real registry I/O.
 All endpoints require authentication via get_current_user (overridden with TEST_USER).
 """
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from routes.auth_unified import get_current_user
-from utils.route_utils import get_database_dependency
 from routes.service_registry_routes import router
-
-from tests.unit.routes.conftest import make_mock_db, TEST_USER
-
+from tests.unit.routes.conftest import TEST_USER, make_mock_db
+from utils.route_utils import get_database_dependency
 
 SAMPLE_SCHEMA = {
     "content_service": {
@@ -243,9 +242,7 @@ class TestGetActionDetails:
             return_value=_make_registry(),
         ):
             client = TestClient(_build_app())
-            data = client.get(
-                "/api/services/content_service/actions/generate_blog_post"
-            ).json()
+            data = client.get("/api/services/content_service/actions/generate_blog_post").json()
         assert "name" in data
 
     def test_unknown_action_returns_404(self):

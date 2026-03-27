@@ -13,12 +13,13 @@ get_orchestrator reads from request.app.state — overridden via dependency inje
 Auth is required on these endpoints — get_current_user overridden with TEST_USER.
 """
 
+from unittest.mock import MagicMock
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import MagicMock
 
-from routes.agents_routes import router, get_orchestrator
+from routes.agents_routes import get_orchestrator, router
 from routes.auth_unified import get_current_user
 from tests.unit.routes.conftest import TEST_USER
 

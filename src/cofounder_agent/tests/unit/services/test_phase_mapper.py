@@ -11,13 +11,10 @@ import pytest
 from services.phase_mapper import PhaseMapper, PhaseMappingError, build_full_phase_pipeline
 from services.phase_registry import (
     InputField,
-    InputType,
     OutputField,
-    ContentType,
     PhaseDefinition,
     PhaseRegistry,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -73,36 +70,44 @@ def _output(key: str, label: str) -> OutputField:
 class TestMapPhasesExactMatch:
     def test_exact_key_match(self, registry: PhaseRegistry, mapper: PhaseMapper):
         """A shared key between source output and target input is mapped directly."""
-        registry.register_phase(_make_phase(
-            "phase_a",
-            inputs={},
-            outputs={"content": _output("content", "Content")},
-        ))
-        registry.register_phase(_make_phase(
-            "phase_b",
-            inputs={"content": _input("content", "Content")},
-            outputs={},
-        ))
+        registry.register_phase(
+            _make_phase(
+                "phase_a",
+                inputs={},
+                outputs={"content": _output("content", "Content")},
+            )
+        )
+        registry.register_phase(
+            _make_phase(
+                "phase_b",
+                inputs={"content": _input("content", "Content")},
+                outputs={},
+            )
+        )
         mapping = mapper.map_phases("phase_a", "phase_b")
         assert mapping.get("content") == "content"
 
     def test_multiple_exact_matches(self, registry: PhaseRegistry, mapper: PhaseMapper):
-        registry.register_phase(_make_phase(
-            "src",
-            inputs={},
-            outputs={
-                "topic": _output("topic", "Topic"),
-                "draft": _output("draft", "Draft"),
-            },
-        ))
-        registry.register_phase(_make_phase(
-            "tgt",
-            inputs={
-                "topic": _input("topic", "Topic"),
-                "draft": _input("draft", "Draft"),
-            },
-            outputs={},
-        ))
+        registry.register_phase(
+            _make_phase(
+                "src",
+                inputs={},
+                outputs={
+                    "topic": _output("topic", "Topic"),
+                    "draft": _output("draft", "Draft"),
+                },
+            )
+        )
+        registry.register_phase(
+            _make_phase(
+                "tgt",
+                inputs={
+                    "topic": _input("topic", "Topic"),
+                    "draft": _input("draft", "Draft"),
+                },
+                outputs={},
+            )
+        )
         mapping = mapper.map_phases("src", "tgt")
         assert mapping.get("topic") == "topic"
         assert mapping.get("draft") == "draft"
@@ -116,32 +121,40 @@ class TestMapPhasesExactMatch:
 @pytest.mark.unit
 class TestMapPhasesUserOverrides:
     def test_user_override_takes_precedence(self, registry: PhaseRegistry, mapper: PhaseMapper):
-        registry.register_phase(_make_phase(
-            "src2",
-            inputs={},
-            outputs={"findings": _output("findings", "Findings")},
-        ))
-        registry.register_phase(_make_phase(
-            "tgt2",
-            inputs={"content": _input("content", "Content")},
-            outputs={},
-        ))
+        registry.register_phase(
+            _make_phase(
+                "src2",
+                inputs={},
+                outputs={"findings": _output("findings", "Findings")},
+            )
+        )
+        registry.register_phase(
+            _make_phase(
+                "tgt2",
+                inputs={"content": _input("content", "Content")},
+                outputs={},
+            )
+        )
         # User manually maps tgt2.content <- src2.findings
         mapping = mapper.map_phases("src2", "tgt2", user_overrides={"content": "findings"})
         assert mapping.get("content") == "findings"
 
     def test_user_override_skips_auto_match(self, registry: PhaseRegistry, mapper: PhaseMapper):
         """Keys already in user_overrides must not be re-mapped by auto logic."""
-        registry.register_phase(_make_phase(
-            "src3",
-            inputs={},
-            outputs={"content": _output("content", "Content")},
-        ))
-        registry.register_phase(_make_phase(
-            "tgt3",
-            inputs={"content": _input("content", "Content")},
-            outputs={},
-        ))
+        registry.register_phase(
+            _make_phase(
+                "src3",
+                inputs={},
+                outputs={"content": _output("content", "Content")},
+            )
+        )
+        registry.register_phase(
+            _make_phase(
+                "tgt3",
+                inputs={"content": _input("content", "Content")},
+                outputs={},
+            )
+        )
         # User provides a different mapping — auto-match should NOT overwrite it
         mapping = mapper.map_phases("src3", "tgt3", user_overrides={"content": "custom_source"})
         assert mapping["content"] == "custom_source"
@@ -154,12 +167,16 @@ class TestMapPhasesUserOverrides:
 
 @pytest.mark.unit
 class TestMapPhasesErrors:
-    def test_unknown_source_raises_mapping_error(self, registry: PhaseRegistry, mapper: PhaseMapper):
+    def test_unknown_source_raises_mapping_error(
+        self, registry: PhaseRegistry, mapper: PhaseMapper
+    ):
         with pytest.raises(PhaseMappingError) as exc_info:
             mapper.map_phases("nonexistent_source", "research")
         assert "nonexistent_source" in str(exc_info.value)
 
-    def test_unknown_target_raises_mapping_error(self, registry: PhaseRegistry, mapper: PhaseMapper):
+    def test_unknown_target_raises_mapping_error(
+        self, registry: PhaseRegistry, mapper: PhaseMapper
+    ):
         with pytest.raises(PhaseMappingError) as exc_info:
             mapper.map_phases("research", "nonexistent_target")
         assert "nonexistent_target" in str(exc_info.value)

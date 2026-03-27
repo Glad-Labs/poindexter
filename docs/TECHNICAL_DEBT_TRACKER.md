@@ -22,16 +22,14 @@ This tracker is aligned to:
 
 ### Codebase Metric Snapshot
 
-| Metric                              | Value       | Status     | Notes                                                                  |
-| ----------------------------------- | ----------- | ---------- | ---------------------------------------------------------------------- |
-| Backend Service Modules             | 116         | ✅ Healthy | Well-organized services layer                                          |
-| Backend Test Files                  | 56          | ✅ Good    | 57/57 tests passing (Phase 2B complete)                                |
-| Frontend Test Files (Oversight Hub) | 0           | ⚠️ Missing | React admin dashboard needs test coverage                              |
-| Frontend Test Files (Public Site)   | 0           | ⚠️ Missing | Next.js website needs test coverage                                    |
-| TODO Markers in Code                | 1           | ✅ Low     | Async queue implementation (workflow_execution_adapter.py:730)         |
-| Generic "except Exception" Handlers | 30+         | ⚠️ Medium  | Need specific exception types per Python standards                     |
-| SELECT \* FROM Statements           | 10+         | ⚠️ Medium  | Should select specific columns for performance                         |
-| localStorage Usage in Oversight Hub | 2 instances | ℹ️ Info    | LayoutWrapper.jsx (legacy use for chat height; archive files archived) |
+| Metric                              | Value | Status     | Notes                                                          |
+| ----------------------------------- | ----- | ---------- | -------------------------------------------------------------- |
+| Backend Service Modules             | 116   | ✅ Healthy | Well-organized services layer                                  |
+| Backend Test Files                  | 56    | ✅ Good    | 57/57 tests passing (Phase 2B complete)                        |
+| Frontend Test Files (Public Site)   | ~482  | ✅ Good    | Next.js website tests passing                                  |
+| TODO Markers in Code                | 1     | ✅ Low     | Async queue implementation (workflow_execution_adapter.py:730) |
+| Generic "except Exception" Handlers | 30+   | ⚠️ Medium  | Need specific exception types per Python standards             |
+| SELECT \* FROM Statements           | 10+   | ⚠️ Medium  | Should select specific columns for performance                 |
 
 ## Canonical Open Debt Issues
 
@@ -96,13 +94,9 @@ _No open high-priority issues_ ✅
   - **Effort:** 12-16 hours
   - **Migration Path:** Install Celery → Create Redis broker → Wire task wrappers
 - [#20](https://github.com/Glad-Labs/glad-labs-codebase/issues/20) Add test coverage for frontend applications
-  - **Scope:** 2 applications
-    - Oversight Hub (React 18, Material-UI admin dashboard) — 0 tests
-    - Public Site (Next.js 15, TailwindCSS website) — 0 tests
-  - **Current Status:** No test files found
-  - **Effort:** 25-35 hours (full coverage)
-  - **Recommendation:** Start with Vitest for oversight-hub, Jest for public-site
-  - **Priority:** Critical for release cycle (testing, CI/CD integration)
+  - **Scope:** Public Site (Next.js 15, TailwindCSS website) — ~482 tests passing
+  - **Current Status:** ✅ Good coverage achieved
+  - **Priority:** Ongoing maintenance
 - [#48](https://github.com/Glad-Labs/glad-labs-codebase/issues/48) Standardize OAuth state validation across all callback handlers
   - **Status:** Partially complete (authClient.validateAndConsumeOAuthState is centralized)
   - **Effort:** 2-3 hours to complete remaining callback paths
@@ -183,7 +177,6 @@ Only **1 verified TODO** in production code:
      - `custom_workflows_service.py:946` — `SELECT * FROM workflow_executions`
 
 3. **Frontend Test Coverage** (CRITICAL GAP)
-   - **Oversight Hub:** 0 test files (React admin dashboard — 116+ components)
    - **Public Site:** 0 test files (Next.js website)
    - **Recommendation:** Critical for CI/CD and quality gates
    - **Mapped to:** [#20](https://github.com/Glad-Labs/glad-labs-codebase/issues/20)
@@ -205,8 +198,7 @@ Use this tracker as the source-of-truth backlog and execute by priority:
 ### Immediate (Before Next Release)
 
 1. **P3 Frontend Tests** [#20](https://github.com/Glad-Labs/glad-labs-codebase/issues/20) — Critical for CI/CD
-   - Oversight Hub: 5-10 component tests minimum
-   - Public Site: 3-5 page tests minimum
+   - Public Site: ~482 tests passing (done)
 
 2. **P3 Exception Standardization** [#37](https://github.com/Glad-Labs/glad-labs-codebase/issues/37) — Code quality
    - Replace generic `except Exception` with specific types

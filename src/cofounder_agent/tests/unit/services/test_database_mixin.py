@@ -16,10 +16,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID
 
-import pytest
-
 from services.database_mixin import DatabaseServiceMixin
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -148,8 +145,16 @@ class TestTimestampConversion:
 
     def test_all_timestamp_fields_converted(self):
         dt = datetime(2024, 1, 1, tzinfo=timezone.utc)
-        fields = ["created_at", "updated_at", "started_at", "completed_at",
-                  "last_used", "evaluation_timestamp", "refinement_timestamp", "modified_at"]
+        fields = [
+            "created_at",
+            "updated_at",
+            "started_at",
+            "completed_at",
+            "last_used",
+            "evaluation_timestamp",
+            "refinement_timestamp",
+            "modified_at",
+        ]
         data = {f: dt for f in fields}
         result = convert(data)
         for f in fields:

@@ -102,9 +102,7 @@ class PhaseResult(BaseModel):
 class CustomWorkflow(BaseModel):
     """Complete custom workflow definition"""
 
-    id: Optional[str | UUID] = Field(
-        None, description="Workflow UUID (auto-generated)"
-    )
+    id: Optional[str | UUID] = Field(None, description="Workflow UUID (auto-generated)")
     name: str = Field(..., description="Workflow name (e.g., 'My Blog Pipeline')")
     description: str = Field(..., description="Workflow description and purpose")
 

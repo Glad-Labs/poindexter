@@ -3,7 +3,7 @@
 This document defines the database schemas for the operational system, built on PostgreSQL 15+ with asyncpg for async access patterns.
 
 **Last Updated:** March 10, 2026
-**Version:** 3.0.82 (PostgreSQL)
+**Version:** 0.1.0 (PostgreSQL)
 **Architecture:** PostgreSQL 15+ + FastAPI + async task workers
 
 ---
@@ -184,7 +184,7 @@ class ImageDetails(BaseModel):
 
 ---
 
-## **Firebase Collections (Oversight Hub)**
+## **Firebase Collections (Legacy - Archived)**
 
 ### 1. `tasks` Collection
 

@@ -4,12 +4,12 @@ Unit tests for agents/content_agent/agents/postgres_publishing_agent.py
 Tests for PostgreSQLPublishingAgent class.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from agents.content_agent.agents.postgres_publishing_agent import PostgreSQLPublishingAgent
 from agents.content_agent.utils.data_models import BlogPost
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -59,10 +59,9 @@ class TestPostgreSQLPublishingAgentInit:
         assert agent.cms_client is mock_instance
 
     def test_logs_info_on_init(self):
-        with patch(
-            "agents.content_agent.agents.postgres_publishing_agent.logger"
-        ) as mock_logger, patch(
-            "agents.content_agent.agents.postgres_publishing_agent.PostgresCMSClient"
+        with (
+            patch("agents.content_agent.agents.postgres_publishing_agent.logger") as mock_logger,
+            patch("agents.content_agent.agents.postgres_publishing_agent.PostgresCMSClient"),
         ):
             PostgreSQLPublishingAgent()
             mock_logger.info.assert_called()
@@ -142,9 +141,7 @@ class TestRun:
     @pytest.mark.asyncio
     async def test_preserves_existing_meta_description(self):
         agent = _make_agent()
-        post = _make_post(
-            title="Post", raw_content="Content", meta_description="Custom meta"
-        )
+        post = _make_post(title="Post", raw_content="Content", meta_description="Custom meta")
 
         result = await agent.run(post)
         assert result.meta_description == "Custom meta"

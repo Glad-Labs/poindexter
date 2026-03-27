@@ -10,7 +10,6 @@ Handles all task-related database operations including:
 
 import asyncio
 import json
-from services.logger_config import get_logger
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
@@ -19,13 +18,16 @@ from asyncpg import Pool
 
 from schemas.database_response_models import TaskCountsResponse, TaskResponse
 from schemas.model_converter import ModelConverter
-from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
+from services.logger_config import get_logger
 from utils.json_encoder import safe_json_load
+from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 
 from .database_mixin import DatabaseServiceMixin
 from .decorators import log_query_performance
 
 logger = get_logger(__name__)
+
+
 def serialize_value_for_postgres(value: Any) -> Any:
     """Serialize Python value for PostgreSQL."""
     if value is None:
@@ -218,6 +220,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 "publish_mode": task_data.get("publish_mode", "draft"),
                 "model_selections": json.dumps(task_data.get("model_selections", {})),
                 "quality_preference": task_data.get("quality_preference", "balanced"),
+                "site_id": task_data.get("site_id"),
                 "estimated_cost": float(task_data.get("estimated_cost", 0.0)),
                 "cost_breakdown": (
                     json.dumps(task_data.get("cost_breakdown", {}))
@@ -276,30 +279,33 @@ class TasksDatabase(DatabaseServiceMixin):
             if "task_name" in task_data and "task_name" not in metadata:
                 metadata["task_name"] = task_data["task_name"]
 
-            rows.append((
-                task_id,
-                task_data.get("content_type") or task_data.get("task_type", "blog_post"),
-                task_data.get("task_type", "blog_post"),
-                task_data.get("request_type", "content_generation"),
-                task_data.get("status", "pending"),
-                task_data.get("topic", ""),
-                task_data.get("title") or task_data.get("task_name"),
-                task_data.get("style", "technical"),
-                task_data.get("tone", "professional"),
-                task_data.get("target_length", 1500),
-                task_data.get("agent_id", "content-agent"),
-                task_data.get("primary_keyword"),
-                task_data.get("target_audience"),
-                task_data.get("category"),
-                task_data.get("approval_status", "pending"),
-                task_data.get("publish_mode", "draft"),
-                task_data.get("quality_preference", "balanced"),
-                float(task_data.get("estimated_cost", 0.0)),
-                json.dumps(task_data.get("tags", [])),
-                json.dumps(metadata or {}),
-                now,
-                now,
-            ))
+            rows.append(
+                (
+                    task_id,
+                    task_data.get("content_type") or task_data.get("task_type", "blog_post"),
+                    task_data.get("task_type", "blog_post"),
+                    task_data.get("request_type", "content_generation"),
+                    task_data.get("status", "pending"),
+                    task_data.get("topic", ""),
+                    task_data.get("title") or task_data.get("task_name"),
+                    task_data.get("style", "technical"),
+                    task_data.get("tone", "professional"),
+                    task_data.get("target_length", 1500),
+                    task_data.get("agent_id", "content-agent"),
+                    task_data.get("primary_keyword"),
+                    task_data.get("target_audience"),
+                    task_data.get("category"),
+                    task_data.get("approval_status", "pending"),
+                    task_data.get("publish_mode", "draft"),
+                    task_data.get("quality_preference", "balanced"),
+                    float(task_data.get("estimated_cost", 0.0)),
+                    json.dumps(task_data.get("tags", [])),
+                    json.dumps(metadata or {}),
+                    task_data.get("site_id"),
+                    now,
+                    now,
+                )
+            )
 
         sql = """
             INSERT INTO content_tasks (
@@ -307,10 +313,10 @@ class TasksDatabase(DatabaseServiceMixin):
                 title, style, tone, target_length, agent_id, primary_keyword,
                 target_audience, category, approval_status, publish_mode,
                 quality_preference, estimated_cost, tags, task_metadata,
-                created_at, updated_at
+                site_id, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-                $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+                $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
             )
         """
 
@@ -435,7 +441,9 @@ class TasksDatabase(DatabaseServiceMixin):
 
                 row = await conn.fetchrow(sql, *params)
                 if row:
-                    task_type = row.get("task_type", "unknown") if hasattr(row, "get") else "unknown"
+                    task_type = (
+                        row.get("task_type", "unknown") if hasattr(row, "get") else "unknown"
+                    )
                     logger.info(
                         f"✅ Task status updated: {task_id} → {status} | task_type={task_type}"
                     )
@@ -562,6 +570,7 @@ class TasksDatabase(DatabaseServiceMixin):
         status: Optional[str] = None,
         category: Optional[str] = None,
         search: Optional[str] = None,
+        site_id: Optional[str] = None,
     ) -> tuple[List[Dict[str, Any]], int]:
         """
         Get paginated tasks from content_tasks with optional filtering.
@@ -574,6 +583,7 @@ class TasksDatabase(DatabaseServiceMixin):
             search: Optional keyword search across task_name/title, topic, and category.
                     Uses ILIKE with trigram index (pg_trgm) for efficient leading-wildcard
                     matching.  See migration 0027_add_trgm_indexes.py for the index.
+            site_id: Optional site ID to scope tasks to a specific site.
 
         Returns:
             Tuple of (tasks list, total count)
@@ -591,13 +601,13 @@ class TasksDatabase(DatabaseServiceMixin):
             conditions.append(f"category = ${param_idx}")
             params.append(category)
             param_idx += 1
+        if site_id:
+            conditions.append(f"site_id = ${param_idx}")
+            params.append(site_id)
+            param_idx += 1
         if search:
             # Sanitize: keep alphanumeric, spaces, hyphens, underscores only
-            safe_search = (
-                "%"
-                + "".join(c for c in search if c.isalnum() or c in " -_")
-                + "%"
-            )
+            safe_search = "%" + "".join(c for c in search if c.isalnum() or c in " -_") + "%"
             # ILIKE across task display name (title), topic, and category columns.
             # The trigram GIN indexes on these columns (migration 0027) allow
             # PostgreSQL to avoid a full sequential scan for '%term%' patterns.
@@ -1008,7 +1018,9 @@ class TasksDatabase(DatabaseServiceMixin):
                             "new_status": row["new_status"],
                             "reason": row["reason"],
                             "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
-                            "timestamp": row["created_at"].isoformat() if row["created_at"] else None,
+                            "timestamp": (
+                                row["created_at"].isoformat() if row["created_at"] else None
+                            ),
                         }
                     )
 
@@ -1062,7 +1074,9 @@ class TasksDatabase(DatabaseServiceMixin):
                     failures.append(
                         {
                             "id": row["id"],
-                            "timestamp": row["created_at"].isoformat() if row["created_at"] else None,
+                            "timestamp": (
+                                row["created_at"].isoformat() if row["created_at"] else None
+                            ),
                             "reason": row["reason"],
                             "errors": metadata.get("validation_errors", []),
                             "context": metadata.get("context", {}),

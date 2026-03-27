@@ -442,4 +442,7 @@ def register_example_capabilities():
     registry.register(FinancialAnalysisCapability())
     registry.register(ComplianceCheckCapability())
 
-    logger.info("[capability_examples] Registered %d example capabilities", len(registry.list_capabilities()))
+    logger.info(
+        "[capability_examples] Registered %d example capabilities",
+        len(registry.list_capabilities()),
+    )

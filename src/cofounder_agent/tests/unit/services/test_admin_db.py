@@ -17,15 +17,14 @@ Tests cover:
 asyncpg pool fully mocked; no real DB access.
 """
 
-import json
 import time
-import pytest
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from services.admin_db import AdminDatabase
+import pytest
 
+from services.admin_db import AdminDatabase
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -143,13 +142,15 @@ class TestLogCost:
 
         sentinel = _make_cost_log_sentinel()
         with patch(f"{_CONVERTER}.to_cost_log_response", return_value=sentinel):
-            result = await db.log_cost({
-                "task_id": "task-1",
-                "phase": "research",
-                "model": "ultra_cheap",
-                "provider": "ollama",
-                "cost_usd": 0.001,
-            })
+            result = await db.log_cost(
+                {
+                    "task_id": "task-1",
+                    "phase": "research",
+                    "model": "ultra_cheap",
+                    "provider": "ollama",
+                    "cost_usd": 0.001,
+                }
+            )
 
         assert result is sentinel
 
@@ -162,12 +163,14 @@ class TestLogCost:
 
         sentinel = _make_cost_log_sentinel()
         with patch(f"{_CONVERTER}.to_cost_log_response", return_value=sentinel):
-            result = await db.log_cost({
-                "task_id": "task-1",
-                "phase": "draft",
-                "model": "premium",
-                "provider": "anthropic",
-            })
+            result = await db.log_cost(
+                {
+                    "task_id": "task-1",
+                    "phase": "draft",
+                    "model": "premium",
+                    "provider": "anthropic",
+                }
+            )
 
         assert result is sentinel
 
@@ -177,12 +180,14 @@ class TestLogCost:
         db = _make_db(pool)
 
         with pytest.raises(RuntimeError, match="DB down"):
-            await db.log_cost({
-                "task_id": "task-1",
-                "phase": "research",
-                "model": "cheap",
-                "provider": "openai",
-            })
+            await db.log_cost(
+                {
+                    "task_id": "task-1",
+                    "phase": "research",
+                    "model": "cheap",
+                    "provider": "openai",
+                }
+            )
 
 
 # ---------------------------------------------------------------------------

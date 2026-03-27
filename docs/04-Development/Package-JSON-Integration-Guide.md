@@ -183,7 +183,6 @@ ls playwright.api.config.ts
 ```bash
 # Create directories if they don't exist
 mkdir -p web/public-site/e2e
-mkdir -p web/oversight-hub/e2e
 mkdir -p playwright/api
 ```
 

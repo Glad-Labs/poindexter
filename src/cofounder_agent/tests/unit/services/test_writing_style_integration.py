@@ -17,7 +17,6 @@ import pytest
 
 from services.writing_style_integration import WritingStyleIntegrationService
 
-
 # ---------------------------------------------------------------------------
 # Fixtures / Helpers
 # ---------------------------------------------------------------------------
@@ -233,36 +232,57 @@ class TestBuildAnalysisGuidance:
         assert result == ""
 
     def test_detected_tone_in_output(self, service):
-        analysis = {"detected_tone": "formal", "detected_style": "technical",
-                    "avg_sentence_length": 15.0, "vocabulary_diversity": 0.5}
+        analysis = {
+            "detected_tone": "formal",
+            "detected_style": "technical",
+            "avg_sentence_length": 15.0,
+            "vocabulary_diversity": 0.5,
+        }
         result = WritingStyleIntegrationService._build_analysis_guidance(analysis)
         assert "formal" in result
 
     def test_detected_style_in_output(self, service):
-        analysis = {"detected_tone": "casual", "detected_style": "narrative",
-                    "avg_sentence_length": 12.0, "vocabulary_diversity": 0.4}
+        analysis = {
+            "detected_tone": "casual",
+            "detected_style": "narrative",
+            "avg_sentence_length": 12.0,
+            "vocabulary_diversity": 0.4,
+        }
         result = WritingStyleIntegrationService._build_analysis_guidance(analysis)
         assert "narrative" in result
 
     def test_sentence_length_in_output(self, service):
-        analysis = {"detected_tone": "formal", "detected_style": "technical",
-                    "avg_sentence_length": 18.5, "vocabulary_diversity": 0.6}
+        analysis = {
+            "detected_tone": "formal",
+            "detected_style": "technical",
+            "avg_sentence_length": 18.5,
+            "vocabulary_diversity": 0.6,
+        }
         result = WritingStyleIntegrationService._build_analysis_guidance(analysis)
         assert "18.5" in result
 
     def test_vocabulary_diversity_formatted_as_percent(self, service):
-        analysis = {"detected_tone": "formal", "detected_style": "technical",
-                    "avg_sentence_length": 15.0, "vocabulary_diversity": 0.75}
+        analysis = {
+            "detected_tone": "formal",
+            "detected_style": "technical",
+            "avg_sentence_length": 15.0,
+            "vocabulary_diversity": 0.75,
+        }
         result = WritingStyleIntegrationService._build_analysis_guidance(analysis)
         assert "75.0%" in result or "75%" in result
 
     def test_headings_flag_in_output_when_true(self, service):
         analysis = {
-            "detected_tone": "formal", "detected_style": "technical",
-            "avg_sentence_length": 15.0, "vocabulary_diversity": 0.5,
+            "detected_tone": "formal",
+            "detected_style": "technical",
+            "avg_sentence_length": 15.0,
+            "vocabulary_diversity": 0.5,
             "style_characteristics": {
-                "has_headings": True, "has_lists": False,
-                "has_examples": False, "has_quotes": False, "has_code_blocks": False,
+                "has_headings": True,
+                "has_lists": False,
+                "has_examples": False,
+                "has_quotes": False,
+                "has_code_blocks": False,
             },
         }
         result = WritingStyleIntegrationService._build_analysis_guidance(analysis)
@@ -270,11 +290,16 @@ class TestBuildAnalysisGuidance:
 
     def test_lists_flag_in_output_when_true(self, service):
         analysis = {
-            "detected_tone": "casual", "detected_style": "listicle",
-            "avg_sentence_length": 10.0, "vocabulary_diversity": 0.4,
+            "detected_tone": "casual",
+            "detected_style": "listicle",
+            "avg_sentence_length": 10.0,
+            "vocabulary_diversity": 0.4,
             "style_characteristics": {
-                "has_headings": False, "has_lists": True,
-                "has_examples": False, "has_quotes": False, "has_code_blocks": False,
+                "has_headings": False,
+                "has_lists": True,
+                "has_examples": False,
+                "has_quotes": False,
+                "has_code_blocks": False,
             },
         }
         result = WritingStyleIntegrationService._build_analysis_guidance(analysis)
@@ -282,11 +307,16 @@ class TestBuildAnalysisGuidance:
 
     def test_false_flags_not_in_output(self, service):
         analysis = {
-            "detected_tone": "formal", "detected_style": "technical",
-            "avg_sentence_length": 15.0, "vocabulary_diversity": 0.5,
+            "detected_tone": "formal",
+            "detected_style": "technical",
+            "avg_sentence_length": 15.0,
+            "vocabulary_diversity": 0.5,
             "style_characteristics": {
-                "has_headings": False, "has_lists": False,
-                "has_examples": False, "has_quotes": False, "has_code_blocks": False,
+                "has_headings": False,
+                "has_lists": False,
+                "has_examples": False,
+                "has_quotes": False,
+                "has_code_blocks": False,
             },
         }
         result = WritingStyleIntegrationService._build_analysis_guidance(analysis)
@@ -348,9 +378,15 @@ class TestCompareAnalyses:
         b = self._matching_analysis()
         result = WritingStyleIntegrationService._compare_analyses(a, b)
         expected_keys = {
-            "tone_match", "tone_sample", "tone_generated",
-            "style_match", "style_sample", "style_generated",
-            "sentence_length_similarity", "sample_sentence_length", "generated_sentence_length",
+            "tone_match",
+            "tone_sample",
+            "tone_generated",
+            "style_match",
+            "style_sample",
+            "style_generated",
+            "sentence_length_similarity",
+            "sample_sentence_length",
+            "generated_sentence_length",
         }
         assert expected_keys.issubset(result.keys())
 
@@ -434,9 +470,7 @@ class TestGenerateCreativeAgentPromptInjection:
         svc.writing_style_service.get_style_prompt_for_specific_sample = AsyncMock(
             return_value=None
         )
-        result = await svc.generate_creative_agent_prompt_injection(
-            None, None, "Base prompt here."
-        )
+        result = await svc.generate_creative_agent_prompt_injection(None, None, "Base prompt here.")
         assert result == "Base prompt here."
 
     async def test_enhances_prompt_with_guidance(self):

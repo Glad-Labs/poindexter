@@ -10,8 +10,9 @@ Tests focus on:
 
 import json
 import os
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-placeholder")
@@ -71,7 +72,9 @@ class TestExtractAsset:
 
     def test_extracts_meta_description(self):
         text = "Title: Article\nMeta Description: A short summary of the article."
-        assert self.agent._extract_asset(text, "Meta Description") == "A short summary of the article."
+        assert (
+            self.agent._extract_asset(text, "Meta Description") == "A short summary of the article."
+        )
 
     def test_returns_empty_string_when_not_found(self):
         text = "Some random text without the label"
@@ -230,7 +233,9 @@ class TestRunRefinementGuards:
         result = await agent.run(post, is_refinement=False)
         # Should have called llm for draft + SEO assets
         assert llm_client.generate_text.call_count == 2
-        assert result.raw_content is not None and result.raw_content.startswith("# Initial content here")
+        assert result.raw_content is not None and result.raw_content.startswith(
+            "# Initial content here"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -243,10 +248,12 @@ class TestGenerateSeoAssets:
     async def test_assigns_seo_fields_from_valid_json(self):
         agent, llm_client, pm = make_agent()
         pm.get_prompt.return_value = "SEO prompt"
-        seo_json = json.dumps({
-            "title": "Great Article Title",
-            "meta_description": "A concise description of the article.",
-        })
+        seo_json = json.dumps(
+            {
+                "title": "Great Article Title",
+                "meta_description": "A concise description of the article.",
+            }
+        )
         llm_client.generate_text = AsyncMock(return_value=f"```json\n{seo_json}\n```")
 
         post = make_blog_post(raw_content="# Some content")

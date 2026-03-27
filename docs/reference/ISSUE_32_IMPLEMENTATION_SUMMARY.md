@@ -204,7 +204,7 @@ LOG_LEVEL=DEBUG
 
 ## Next Steps (Phase 2 - Future Enhancements)
 
-1. **Admin Dashboard Integration** - Display query performance metrics in Oversight Hub
+1. **Dashboard Integration** - Display query performance metrics in Grafana
    - Real-time slow query feed
    - Query performance graphs/charts
    - Top 10 slowest queries widget

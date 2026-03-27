@@ -12,7 +12,6 @@ import pytest
 
 from services.content_service import ContentService
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -113,11 +112,14 @@ class TestExecuteResearch:
                 create=True,
             ):
                 # Patch at the import location inside execute_research
-                with patch.dict("sys.modules", {
-                    "agents.content_agent.agents.research_agent": MagicMock(
-                        ResearchAgent=lambda: mock_agent
-                    )
-                }):
+                with patch.dict(
+                    "sys.modules",
+                    {
+                        "agents.content_agent.agents.research_agent": MagicMock(
+                            ResearchAgent=lambda: mock_agent
+                        )
+                    },
+                ):
                     result = await svc.execute_research("AI in Healthcare")
 
         assert result["phase"] == "research"
@@ -126,11 +128,14 @@ class TestExecuteResearch:
     @pytest.mark.asyncio
     async def test_propagates_exception(self):
         svc = make_service()
-        with patch.dict("sys.modules", {
-            "agents.content_agent.agents.research_agent": MagicMock(
-                ResearchAgent=MagicMock(side_effect=RuntimeError("Agent down"))
-            )
-        }):
+        with patch.dict(
+            "sys.modules",
+            {
+                "agents.content_agent.agents.research_agent": MagicMock(
+                    ResearchAgent=MagicMock(side_effect=RuntimeError("Agent down"))
+                )
+            },
+        ):
             with pytest.raises(RuntimeError):
                 await svc.execute_research("AI")
 
@@ -139,12 +144,17 @@ class TestExecuteResearch:
         svc = make_service()
         mock_agent = MagicMock()
         mock_agent.run = AsyncMock(return_value="Research results.")
-        with patch.dict("sys.modules", {
-            "agents.content_agent.agents.research_agent": MagicMock(
-                ResearchAgent=lambda: mock_agent
+        with patch.dict(
+            "sys.modules",
+            {
+                "agents.content_agent.agents.research_agent": MagicMock(
+                    ResearchAgent=lambda: mock_agent
+                )
+            },
+        ):
+            result = await svc.execute_research(
+                "AI", keywords=["machine learning", "deep learning"]
             )
-        }):
-            result = await svc.execute_research("AI", keywords=["machine learning", "deep learning"])
 
         assert result["keywords"] == ["machine learning", "deep learning"]
 
@@ -160,11 +170,10 @@ class TestExecuteAssess:
         svc = make_service()
         mock_qa = MagicMock()
         mock_qa.run = AsyncMock(return_value="Assessment: content is good.")
-        with patch.dict("sys.modules", {
-            "agents.content_agent.agents.qa_agent": MagicMock(
-                QAAgent=lambda: mock_qa
-            )
-        }):
+        with patch.dict(
+            "sys.modules",
+            {"agents.content_agent.agents.qa_agent": MagicMock(QAAgent=lambda: mock_qa)},
+        ):
             result = await svc.execute_assess("Some content here.", "AI")
 
         assert result["phase"] == "assess"
@@ -174,11 +183,10 @@ class TestExecuteAssess:
         svc = make_service()
         mock_qa = MagicMock()
         mock_qa.run = AsyncMock(return_value="Assessment OK.")
-        with patch.dict("sys.modules", {
-            "agents.content_agent.agents.qa_agent": MagicMock(
-                QAAgent=lambda: mock_qa
-            )
-        }):
+        with patch.dict(
+            "sys.modules",
+            {"agents.content_agent.agents.qa_agent": MagicMock(QAAgent=lambda: mock_qa)},
+        ):
             result = await svc.execute_assess("Content", "AI", quality_threshold=0.8)
 
         assert result["quality_threshold"] == 0.8
@@ -188,11 +196,10 @@ class TestExecuteAssess:
         svc = make_service()
         mock_qa = MagicMock()
         mock_qa.run = AsyncMock(return_value="OK")
-        with patch.dict("sys.modules", {
-            "agents.content_agent.agents.qa_agent": MagicMock(
-                QAAgent=lambda: mock_qa
-            )
-        }):
+        with patch.dict(
+            "sys.modules",
+            {"agents.content_agent.agents.qa_agent": MagicMock(QAAgent=lambda: mock_qa)},
+        ):
             result = await svc.execute_assess("Content", "AI")
         assert result["source"] == "qa_agent"
 
@@ -201,11 +208,10 @@ class TestExecuteAssess:
         svc = make_service()
         mock_qa = MagicMock()
         mock_qa.run = AsyncMock(return_value="OK")
-        with patch.dict("sys.modules", {
-            "agents.content_agent.agents.qa_agent": MagicMock(
-                QAAgent=lambda: mock_qa
-            )
-        }):
+        with patch.dict(
+            "sys.modules",
+            {"agents.content_agent.agents.qa_agent": MagicMock(QAAgent=lambda: mock_qa)},
+        ):
             result = await svc.execute_assess("Content", "AI", quality_threshold=0.5)
         # Default quality score is 0.75
         assert result["passed_threshold"] is True
@@ -215,11 +221,10 @@ class TestExecuteAssess:
         svc = make_service()
         mock_qa = MagicMock()
         mock_qa.run = AsyncMock(return_value="OK")
-        with patch.dict("sys.modules", {
-            "agents.content_agent.agents.qa_agent": MagicMock(
-                QAAgent=lambda: mock_qa
-            )
-        }):
+        with patch.dict(
+            "sys.modules",
+            {"agents.content_agent.agents.qa_agent": MagicMock(QAAgent=lambda: mock_qa)},
+        ):
             result = await svc.execute_assess("Content", "AI", quality_threshold=0.9)
         # Default quality score is 0.75, below 0.9
         assert result["passed_threshold"] is False
@@ -618,7 +623,11 @@ class TestExecuteFullWorkflow:
             return_value={"phase": "research", "research_text": "Research.", "topic": "AI"}
         )
         svc.execute_draft = AsyncMock(
-            return_value={"phase": "draft", "draft_content": "Draft content.", "source": "creative_agent"}
+            return_value={
+                "phase": "draft",
+                "draft_content": "Draft content.",
+                "source": "creative_agent",
+            }
         )
         svc.execute_assess = AsyncMock(
             return_value={
@@ -697,20 +706,38 @@ class TestExecuteFullWorkflow:
         # First assess fails, second passes
         svc.execute_assess = AsyncMock(
             side_effect=[
-                {"phase": "assess", "quality_score": 0.60, "passed_threshold": False,
-                 "assessment": "Needs work.", "quality_threshold": 0.75},
-                {"phase": "assess", "quality_score": 0.85, "passed_threshold": True,
-                 "assessment": "Good now.", "quality_threshold": 0.75},
+                {
+                    "phase": "assess",
+                    "quality_score": 0.60,
+                    "passed_threshold": False,
+                    "assessment": "Needs work.",
+                    "quality_threshold": 0.75,
+                },
+                {
+                    "phase": "assess",
+                    "quality_score": 0.85,
+                    "passed_threshold": True,
+                    "assessment": "Good now.",
+                    "quality_threshold": 0.75,
+                },
             ]
         )
         svc.execute_refine = AsyncMock(
-            return_value={"phase": "refine", "refined_content": "Refined.", "source": "creative_agent"}
+            return_value={
+                "phase": "refine",
+                "refined_content": "Refined.",
+                "source": "creative_agent",
+            }
         )
         svc.execute_image_selection = AsyncMock(
             return_value={"phase": "image_selection", "images": [], "image_data": {}}
         )
         svc.execute_finalize = AsyncMock(
-            return_value={"phase": "finalize", "formatted_content": "Final.", "source": "publishing_agent"}
+            return_value={
+                "phase": "finalize",
+                "formatted_content": "Final.",
+                "source": "publishing_agent",
+            }
         )
         result = await svc.execute_full_workflow("AI", quality_threshold=0.75)
         assert result["refinement_count"] == 1
@@ -729,17 +756,30 @@ class TestExecuteFullWorkflow:
         )
         # Always fails threshold
         svc.execute_assess = AsyncMock(
-            return_value={"phase": "assess", "quality_score": 0.50, "passed_threshold": False,
-                          "assessment": "Needs work.", "quality_threshold": 0.75}
+            return_value={
+                "phase": "assess",
+                "quality_score": 0.50,
+                "passed_threshold": False,
+                "assessment": "Needs work.",
+                "quality_threshold": 0.75,
+            }
         )
         svc.execute_refine = AsyncMock(
-            return_value={"phase": "refine", "refined_content": "Refined.", "source": "creative_agent"}
+            return_value={
+                "phase": "refine",
+                "refined_content": "Refined.",
+                "source": "creative_agent",
+            }
         )
         svc.execute_image_selection = AsyncMock(
             return_value={"phase": "image_selection", "images": [], "image_data": {}}
         )
         svc.execute_finalize = AsyncMock(
-            return_value={"phase": "finalize", "formatted_content": "Final.", "source": "publishing_agent"}
+            return_value={
+                "phase": "finalize",
+                "formatted_content": "Final.",
+                "source": "publishing_agent",
+            }
         )
         result = await svc.execute_full_workflow("AI", max_refinements=2)
         # execute_refine called exactly 2 times (max_refinements)
@@ -798,24 +838,46 @@ class TestExecuteFullWorkflow:
             return_value={"phase": "research", "research_text": "Research.", "topic": "AI"}
         )
         svc.execute_draft = AsyncMock(
-            return_value={"phase": "draft", "draft_content": "Original draft.", "source": "creative_agent"}
+            return_value={
+                "phase": "draft",
+                "draft_content": "Original draft.",
+                "source": "creative_agent",
+            }
         )
         svc.execute_assess = AsyncMock(
             side_effect=[
-                {"phase": "assess", "quality_score": 0.60, "passed_threshold": False,
-                 "assessment": "Needs work.", "quality_threshold": 0.75},
-                {"phase": "assess", "quality_score": 0.90, "passed_threshold": True,
-                 "assessment": "Excellent.", "quality_threshold": 0.75},
+                {
+                    "phase": "assess",
+                    "quality_score": 0.60,
+                    "passed_threshold": False,
+                    "assessment": "Needs work.",
+                    "quality_threshold": 0.75,
+                },
+                {
+                    "phase": "assess",
+                    "quality_score": 0.90,
+                    "passed_threshold": True,
+                    "assessment": "Excellent.",
+                    "quality_threshold": 0.75,
+                },
             ]
         )
         svc.execute_refine = AsyncMock(
-            return_value={"phase": "refine", "refined_content": "Refined final content.", "source": "creative_agent"}
+            return_value={
+                "phase": "refine",
+                "refined_content": "Refined final content.",
+                "source": "creative_agent",
+            }
         )
         svc.execute_image_selection = AsyncMock(
             return_value={"phase": "image_selection", "images": [], "image_data": {}}
         )
         svc.execute_finalize = AsyncMock(
-            return_value={"phase": "finalize", "formatted_content": "Final.", "source": "publishing_agent"}
+            return_value={
+                "phase": "finalize",
+                "formatted_content": "Final.",
+                "source": "publishing_agent",
+            }
         )
         result = await svc.execute_full_workflow("AI")
         assert result["final_content"] == "Refined final content."

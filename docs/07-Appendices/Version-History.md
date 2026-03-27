@@ -1,7 +1,7 @@
 # Glad Labs Version History
 
 **Project:** Glad Labs AI Co-Founder System  
-**Current Version:** 3.1.0  
+**Current Version:** 0.1.0  
 **Last Updated:** March 8, 2026
 
 ---

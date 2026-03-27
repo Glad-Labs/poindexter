@@ -1,7 +1,7 @@
 # Environment & Configuration
 
 **Last Updated:** March 10, 2026
-**Version:** 3.0.82
+**Version:** 0.1.0
 **Status:** ✅ Branch-Specific Reference
 
 ---
@@ -27,7 +27,7 @@ This is the **complete, authoritative guide** covering:
 
 - **Config file:** `.env.local` (never committed)
 - **Storage:** Local machine only
-- **Services:** All 3 local (backend + Oversight Hub + Public Site)
+- **Services:** Both local (backend + Public Site)
 - **Database:** Local PostgreSQL
 
 **Example `.env.local` for local development:**
@@ -46,7 +46,6 @@ GOOGLE_API_KEY=your_google_key
 LOG_LEVEL=debug
 
 # API Endpoints
-VITE_API_URL=http://localhost:8000
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 ```
 
@@ -67,7 +66,7 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 - **Deployment:** GitHub Actions → Vercel/Railway (auto on push)
 - **Config source:** GitHub Secrets (PROD\_\*)
 - **Database:** Production PostgreSQL instance
-- **Services:** Public Site (Vercel), Backend (Railway), Oversight Hub (Vercel)
+- **Services:** Public Site (Vercel), Backend (Railway)
 
 **Variables stored in GitHub Secrets:**
 
@@ -133,5 +132,5 @@ TASK_TIMEOUT_SECONDS=60
 
 - **Complete Env Reference:** [reference/ENVIRONMENT_SETUP.md](../reference/ENVIRONMENT_SETUP.md) ← **START HERE**
 - **GitHub Secrets Setup:** [reference/GITHUB_SECRETS_SETUP.md](../reference/GITHUB_SECRETS_SETUP.md)
-- **Deployment Process:** [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](../03-DEPLOYMENT_AND_INFRASTRUCTURE.md)
-- **Initial Setup:** [01-SETUP_AND_OVERVIEW.md](../01-SETUP_AND_OVERVIEW.md)
+- **Deployment Process:** [Operations-Maintenance.md](../05-Operations/Operations-Maintenance.md)
+- **Initial Setup:** [Local-Development-Setup.md](./Local-Development-Setup.md)

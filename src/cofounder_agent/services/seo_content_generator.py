@@ -11,17 +11,20 @@ Integrates all missing features from the original content agent:
 - Social media optimization (OG tags, Twitter cards)
 """
 
-from services.logger_config import get_logger
 import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from .prompt_manager import get_prompt_manager
+from services.logger_config import get_logger
 from utils.text_utils import extract_keywords_from_text
 
+from .prompt_manager import get_prompt_manager
+
 logger = get_logger(__name__)
+
+
 @dataclass
 class ContentMetadata:
     """Comprehensive content metadata"""

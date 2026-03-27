@@ -13,8 +13,9 @@ WebSocketEventBroadcaster is patched to avoid real network I/O.
 """
 
 import asyncio
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from services.workflow_engine import (
     PhaseResult,
@@ -24,7 +25,6 @@ from services.workflow_engine import (
     WorkflowPhase,
     WorkflowStatus,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -418,23 +418,17 @@ class TestWorkflowContext:
 
     def test_has_failures_with_failed_phase(self):
         ctx = _make_context()
-        ctx.results["research"] = PhaseResult(
-            phase_name="research", status=PhaseStatus.FAILED
-        )
+        ctx.results["research"] = PhaseResult(phase_name="research", status=PhaseStatus.FAILED)
         assert ctx.has_failures() is True
 
     def test_has_failures_no_failures(self):
         ctx = _make_context()
-        ctx.results["research"] = PhaseResult(
-            phase_name="research", status=PhaseStatus.COMPLETED
-        )
+        ctx.results["research"] = PhaseResult(phase_name="research", status=PhaseStatus.COMPLETED)
         assert ctx.has_failures() is False
 
     def test_has_failures_include_skipped(self):
         ctx = _make_context()
-        ctx.results["research"] = PhaseResult(
-            phase_name="research", status=PhaseStatus.SKIPPED
-        )
+        ctx.results["research"] = PhaseResult(phase_name="research", status=PhaseStatus.SKIPPED)
         assert ctx.has_failures(include_skipped=True) is True
         assert ctx.has_failures(include_skipped=False) is False
 

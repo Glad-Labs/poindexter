@@ -12,10 +12,11 @@ Purpose:
 Phase 3 of Unified Task Orchestration System.
 """
 
-from services.logger_config import get_logger
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+
+from services.logger_config import get_logger
 
 from .model_router import ModelRouter
 from .task_intent_router import TaskIntentRequest
@@ -125,11 +126,11 @@ class TaskPlanningService:
 
     # Map pipeline stages to model-router task types (fix #157: no hardcoded model names)
     STAGE_TASK_TYPES = {
-        "research": "analyze",   # medium complexity → balanced tier
-        "creative": "create",    # complex → premium tier
-        "qa": "analyze",         # medium complexity → balanced tier
-        "images": "generate",    # complex → premium tier
-        "format": "summarize",   # simple → cheap tier
+        "research": "analyze",  # medium complexity → balanced tier
+        "creative": "create",  # complex → premium tier
+        "qa": "analyze",  # medium complexity → balanced tier
+        "images": "generate",  # complex → premium tier
+        "format": "summarize",  # simple → cheap tier
     }
 
     def __init__(self):
@@ -285,7 +286,9 @@ class TaskPlanningService:
                 estimated_cost=cost,
                 model=self.model_router.route_request(
                     self.STAGE_TASK_TYPES.get(subtask_lower, "create")
-                )[0],  # fix #157: use model router instead of hardcoded names
+                )[
+                    0
+                ],  # fix #157: use model router instead of hardcoded names
                 parallelizable_with=parallelizable.get(subtask_lower, []),
                 depends_on=dependencies.get(subtask_lower, []),
                 quality_metrics=self._determine_quality_metrics(subtask_lower, quality_preference),

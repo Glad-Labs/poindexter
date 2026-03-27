@@ -4,16 +4,19 @@ PostgreSQL-based CMS client for storing content directly to the database.
 Replaces Strapi with direct PostgreSQL storage for posts, categories, tags, and media.
 """
 
-from services.logger_config import get_logger
 from typing import Any, Dict, Optional
 from uuid import uuid4
 
 import asyncpg
 
+from services.logger_config import get_logger
+
 from ..config import config
 from ..utils.data_models import BlogPost, ImageDetails
 
 logger = get_logger(__name__)
+
+
 class PostgresCMSClient:
     """
     Direct PostgreSQL CMS client for storing and retrieving content.
@@ -79,8 +82,7 @@ class PostgresCMSClient:
 
         async with self.pool.acquire() as conn:
             # Create categories table
-            await conn.execute(
-                """
+            await conn.execute("""
                 CREATE TABLE IF NOT EXISTS categories (
                     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                     name VARCHAR(255) NOT NULL,
@@ -89,24 +91,20 @@ class PostgresCMSClient:
                     created_at TIMESTAMP DEFAULT NOW(),
                     updated_at TIMESTAMP DEFAULT NOW()
                 )
-            """
-            )
+            """)
 
             # Create tags table
-            await conn.execute(
-                """
+            await conn.execute("""
                 CREATE TABLE IF NOT EXISTS tags (
                     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                     name VARCHAR(255) NOT NULL,
                     slug VARCHAR(255) UNIQUE NOT NULL,
                     created_at TIMESTAMP DEFAULT NOW()
                 )
-            """
-            )
+            """)
 
             # Create posts table
-            await conn.execute(
-                """
+            await conn.execute("""
                 CREATE TABLE IF NOT EXISTS posts (
                     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                     title VARCHAR(255) NOT NULL,
@@ -123,23 +121,19 @@ class PostgresCMSClient:
                     created_at TIMESTAMP DEFAULT NOW(),
                     updated_at TIMESTAMP DEFAULT NOW()
                 )
-            """
-            )
+            """)
 
             # Create post_tags junction table
-            await conn.execute(
-                """
+            await conn.execute("""
                 CREATE TABLE IF NOT EXISTS post_tags (
                     post_id UUID REFERENCES posts(id) ON DELETE CASCADE,
                     tag_id UUID REFERENCES tags(id) ON DELETE CASCADE,
                     PRIMARY KEY (post_id, tag_id)
                 )
-            """
-            )
+            """)
 
             # Create media table
-            await conn.execute(
-                """
+            await conn.execute("""
                 CREATE TABLE IF NOT EXISTS media (
                     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                     url VARCHAR(500) NOT NULL,
@@ -149,8 +143,7 @@ class PostgresCMSClient:
                     post_id UUID REFERENCES posts(id) ON DELETE SET NULL,
                     created_at TIMESTAMP DEFAULT NOW()
                 )
-            """
-            )
+            """)
 
             logger.info("✅ CMS schema verified/created")
 

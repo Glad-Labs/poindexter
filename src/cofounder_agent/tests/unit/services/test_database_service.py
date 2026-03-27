@@ -14,13 +14,14 @@ import pytest
 
 from services.database_service import DatabaseService
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def make_service(database_url: str = "postgresql://user:pass@localhost:5432/test_db") -> DatabaseService:
+def make_service(
+    database_url: str = "postgresql://user:pass@localhost:5432/test_db",
+) -> DatabaseService:
     """Return a DatabaseService without actually initializing a pool."""
     return DatabaseService(database_url=database_url)
 
@@ -84,11 +85,13 @@ class TestDatabaseServiceLifecycle:
         mock_pool = AsyncMock()
 
         with patch("asyncpg.create_pool", new=AsyncMock(return_value=mock_pool)):
-            with patch("services.database_service.UsersDatabase") as MockUsers, \
-                 patch("services.database_service.TasksDatabase") as MockTasks, \
-                 patch("services.database_service.ContentDatabase") as MockContent, \
-                 patch("services.database_service.AdminDatabase") as MockAdmin, \
-                 patch("services.database_service.WritingStyleDatabase") as MockWS:
+            with (
+                patch("services.database_service.UsersDatabase") as MockUsers,
+                patch("services.database_service.TasksDatabase") as MockTasks,
+                patch("services.database_service.ContentDatabase") as MockContent,
+                patch("services.database_service.AdminDatabase") as MockAdmin,
+                patch("services.database_service.WritingStyleDatabase") as MockWS,
+            ):
                 await svc.initialize()
 
         assert svc.pool is mock_pool
@@ -293,9 +296,7 @@ class TestAdminDelegation:
         mocks = _attach_mock_modules(svc)
         mocks["admin"].set_setting = AsyncMock(return_value={"key": "theme", "value": "light"})
         await svc.set_setting("theme", "light", category="ui", display_name="Theme")
-        mocks["admin"].set_setting.assert_awaited_once_with(
-            "theme", "light", "ui", "Theme", None
-        )
+        mocks["admin"].set_setting.assert_awaited_once_with("theme", "light", "ui", "Theme", None)
 
     @pytest.mark.asyncio
     async def test_get_financial_summary_delegates(self):

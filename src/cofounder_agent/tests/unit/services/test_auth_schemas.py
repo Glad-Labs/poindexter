@@ -7,11 +7,7 @@ Tests field validation and model behaviour for authentication schemas.
 import pytest
 from pydantic import ValidationError
 
-from schemas.auth_schemas import (
-    GitHubCallbackRequest,
-    LogoutResponse,
-    UserProfile,
-)
+from schemas.auth_schemas import GitHubCallbackRequest, LogoutResponse, UserProfile
 
 
 @pytest.mark.unit

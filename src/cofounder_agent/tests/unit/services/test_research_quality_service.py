@@ -10,7 +10,6 @@ import pytest
 
 from services.research_quality_service import ResearchQualityService, ScoredSource
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -253,7 +252,9 @@ class TestCalculateSimilarity:
 
     def test_near_duplicate_exceeds_threshold(self, service):
         base = "Python is a great programming language for data science and automation."
-        slightly_modified = "Python is a great programming language for data science and automating tasks."
+        slightly_modified = (
+            "Python is a great programming language for data science and automating tasks."
+        )
         score = service._calculate_similarity(base, slightly_modified)
         assert score > service.SIMILARITY_THRESHOLD
 
@@ -388,7 +389,9 @@ class TestFormatContext:
 # ---------------------------------------------------------------------------
 
 
-def _make_scored_source(snippet: str, score: float, url: str = "https://example.com") -> ScoredSource:
+def _make_scored_source(
+    snippet: str, score: float, url: str = "https://example.com"
+) -> ScoredSource:
     return ScoredSource(
         url=url,
         title="Title",
@@ -449,8 +452,12 @@ class TestDeduplicate:
         svc = ResearchQualityService()
         sources = [
             _make_scored_source("First source content is completely unique", 8.0, "https://a.com"),
-            _make_scored_source("Second source has totally different words here", 7.0, "https://b.com"),
-            _make_scored_source("Third source contains other unrelated information", 9.0, "https://c.com"),
+            _make_scored_source(
+                "Second source has totally different words here", 7.0, "https://b.com"
+            ),
+            _make_scored_source(
+                "Third source contains other unrelated information", 9.0, "https://c.com"
+            ),
         ]
         result = svc._deduplicate(sources)
         assert len(result) == 3

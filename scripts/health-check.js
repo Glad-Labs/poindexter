@@ -2,7 +2,7 @@
 
 /**
  * Health Check Script
- * Verifies that all services (backend, public site, oversight hub) are running and responsive
+ * Verifies that all services (backend, public site) are running and responsive
  */
 
 const http = require('http');
@@ -10,7 +10,6 @@ const http = require('http');
 const services = [
   { name: 'Backend', url: 'http://localhost:8000/health', port: 8000 },
   { name: 'Public Site', url: 'http://localhost:3000', port: 3000 },
-  { name: 'Oversight Hub', url: 'http://localhost:3001', port: 3001 },
 ];
 
 async function checkService(service) {

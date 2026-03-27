@@ -16,13 +16,12 @@
  *   npm run bump-version -- --minor    # Force minor bump
  *   npm run bump-version -- --major    # Force major bump
  *
- * Updates all 6 version files:
+ * Updates all 5 version files:
  *   1. package.json (root)
  *   2. web/public-site/package.json
- *   3. web/oversight-hub/package.json
- *   4. src/cofounder_agent/package.json
- *   5. pyproject.toml (root)
- *   6. src/cofounder_agent/pyproject.toml
+ *   3. src/cofounder_agent/package.json
+ *   4. pyproject.toml (root)
+ *   5. src/cofounder_agent/pyproject.toml
  */
 
 const fs = require('fs');
@@ -45,11 +44,6 @@ const VERSION_FILES = [
     path: 'web/public-site/package.json',
     type: 'json',
     description: 'Next.js Public Site',
-  },
-  {
-    path: 'web/oversight-hub/package.json',
-    type: 'json',
-    description: 'React Oversight Hub',
   },
   {
     path: 'src/cofounder_agent/package.json',

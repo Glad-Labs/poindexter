@@ -15,7 +15,6 @@ from schemas.task_schemas import (
 )
 from schemas.task_status_schemas import TaskStatusUpdateRequest
 
-
 # ---------------------------------------------------------------------------
 # UnifiedTaskRequest
 # ---------------------------------------------------------------------------
@@ -196,15 +195,11 @@ class TestTaskCreateRequest:
 
     def test_estimated_cost_negative_raises(self):
         with pytest.raises(ValidationError):
-            TaskCreateRequest(
-                task_name="Valid name", topic="Valid topic", estimated_cost=-0.01
-            )
+            TaskCreateRequest(task_name="Valid name", topic="Valid topic", estimated_cost=-0.01)
 
     def test_category_too_long_raises(self):
         with pytest.raises(ValidationError):
-            TaskCreateRequest(
-                task_name="Valid name", topic="Valid topic", category="x" * 51
-            )
+            TaskCreateRequest(task_name="Valid name", topic="Valid topic", category="x" * 51)
 
     def test_primary_keyword_too_long_raises(self):
         with pytest.raises(ValidationError):

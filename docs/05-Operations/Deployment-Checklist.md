@@ -1,280 +1,114 @@
-# 🚀 VERSIONING SYSTEM - DEPLOYMENT CHECKLIST
+# Deployment Checklist
 
-**Status:** ✅ Ready for Production  
-**Date:** March 7, 2026  
-**Implementation Time:** Complete
-
----
-
-## ✅ Implementation Checklist
-
-### Core System Files
-
-- [x] `scripts/bump-version.js` - 650+ lines, fully commented
-- [x] `.github/workflows/version-auto-bump.yml` - Auto-trigger on push
-- [x] `.github/workflows/version-release.yml` - GitHub releases
-- [x] `.github/workflows/version-rollback.yml` - Emergency rollback
-- [x] `package.json` - Added 4 version NPM scripts
-- [x] `VERSIONING_GUIDE.md` - Comprehensive user documentation
-- [x] `IMPLEMENTATION_SUMMARY.md` - Technical overview
-
-### Features Implemented
-
-- [x] Branch-tier detection (main/staging/dev)
-- [x] Automatic version calculation (major/minor/patch)
-- [x] Atomic multi-file updates (all 6 version files)
-- [x] Git commit creation with `[skip ci]` tag
-- [x] Git tag creation (v{version})
-- [x] GitHub Release auto-creation (main only)
-- [x] Emergency rollback workflow
-- [x] Dry-run mode for testing
-- [x] Manual override capability
-- [x] Full verification after update
-- [x] Concurrent safety mechanisms
-
-### Tested & Verified
-
-- [x] Script detects current branch correctly
-- [x] Script calculates version bump correctly
-- [x] Dry-run mode works without changes
-- [x] Manual override flags work (`--patch`, `--minor`, `--major`)
-- [x] Git integration steps validated
-- [x] Workflows syntax validated (no YAML errors)
+**Last Updated:** March 2026
+**Versioning System:** [Release Please](https://github.com/googleapis/release-please)
 
 ---
 
-## 📋 Version File Synchronization
+## Pre-Deployment (Staging)
 
-All 6 files will be kept in sync:
-
-1. **package.json** (root)
-   - Field: `"version": "3.0.2"`
-   - Type: JSON
-
-2. **web/public-site/package.json**
-   - Field: `"version": "3.0.2"`
-   - Type: JSON
-
-3. **web/oversight-hub/package.json**
-   - Field: `"version": "3.0.2"`
-   - Type: JSON
-
-4. **src/cofounder_agent/package.json**
-   - Field: `"version": "3.0.2"`
-   - Type: JSON
-
-5. **pyproject.toml** (root)
-   - Field: `version = "0.1.0"`
-   - Type: TOML
-
-6. **src/cofounder_agent/pyproject.toml**
-   - Field: `version = "0.2.0"`
-   - Type: TOML
-
-Status: All synchronized at deployment time ✅
-
----
-
-## 🔄 Automatic Workflow Triggers
-
-### When Code is Pushed
-
-**Push to: `dev`, `dev/*`, `feature/*`**
-
-```
-→ Trigger: version-auto-bump.yml
-→ Action: Auto-bump PATCH (3.0.2 → 3.0.3)
-→ Result: Commit + Tag v3.0.3
-```
-
-**Push to: `staging`, `staging/*`, `release/*`**
-
-```
-→ Trigger: version-auto-bump.yml
-→ Action: Auto-bump MINOR (3.0.3 → 3.1.0)
-→ Result: Commit + Tag v3.1.0
-```
-
-**Push to: `main`**
-
-```
-→ Trigger: version-auto-bump.yml + version-release.yml
-→ Action: Auto-bump MAJOR (3.1.0 → 4.0.0)
-→ Result: Commit + Tag v4.0.0 + GitHub Release
-```
-
----
-
-## 🎯 Quick Start for Users
-
-### For Developers
+### 1. Merge dev → staging
 
 ```bash
-# All automatic - just push!
-git push origin feature/my-feature
-# → Version auto-bumped (patch)
-
-# Or test locally first:
-npm run bump-version:auto -- --dry-run
-# → Shows what would happen
+# Create PR from dev → staging via GitHub
+gh pr create --base staging --head dev --title "Deploy to staging"
 ```
 
-### For Release Engineers
+- [ ] All tests passing on `dev`
+- [ ] PR reviewed and approved
+- [ ] Merge triggers staging deployment to Railway
+
+### 2. Release Please PR
+
+After merging to `staging`, Release Please automatically opens a PR with:
+
+- [ ] `CHANGELOG.md` updated with new entries from conventional commits
+- [ ] Version bumped across all 6 package files
+- [ ] Review the changelog for accuracy
+- [ ] Merge the release PR into `staging`
+
+### 3. Verify Staging
+
+- [ ] Staging environment is healthy (`/health` endpoint)
+- [ ] Key features work as expected
+- [ ] No errors in staging logs
+
+---
+
+## Production Deployment
+
+### 4. Merge staging → main
 
 ```bash
-# Push to staging
-git push origin staging
-# → Version auto-bumped (minor)
-
-# Push to main for production release
-git push origin main
-# → Version auto-bumped (major)
-# → GitHub Release created automatically
+gh pr create --base main --head staging --title "Release v0.x.x"
 ```
 
-### For Emergency Rollbacks
+- [ ] Changelog and version bump already included (from Release Please)
+- [ ] PR reviewed and approved
+- [ ] Merge triggers production deployment
 
-```
-1. GitHub → Actions → Emergency Version Rollback
+### 5. Post-Deployment Verification
+
+The production workflow (`deploy-production-with-environments.yml`) handles:
+
+- [ ] Backend deployed to Railway
+- [ ] Public site deployed to Vercel
+- [ ] Smoke tests pass (automated)
+- [ ] GitHub Release + tag created on `main` (automated)
+
+### 6. Manual Verification
+
+- [ ] Health endpoint: `curl https://api.glad-labs.com/health`
+- [ ] Public site loads: `https://glad-labs.com`
+- [ ] Check logs for errors
+- [ ] Verify GitHub Release was created with correct version
+
+---
+
+## Version File Synchronization
+
+Release Please keeps all 6 files in sync automatically:
+
+| File                                 | Type |
+| ------------------------------------ | ---- |
+| `package.json` (root)                | JSON |
+| `web/public-site/package.json`       | JSON |
+| `src/cofounder_agent/package.json`   | JSON |
+| `pyproject.toml` (root)              | TOML |
+| `src/cofounder_agent/pyproject.toml` | TOML |
+
+Configuration: `release-please-config.json` + `.release-please-manifest.json`
+
+---
+
+## Emergency Rollback
+
+### Via GitHub Actions
+
+1. Go to **Actions** → **Emergency Version Rollback**
 2. Enter version to rollback to
 3. Add reason (optional)
-4. Click "Run workflow"
-```
+4. Click **Run workflow**
 
----
-
-## 🧪 Pre-Deployment Testing
-
-### Test 1: Verify script works
+### Manual Rollback
 
 ```bash
-npm run bump-version:auto -- --dry-run
+# Revert the merge commit on main
+git revert -m 1 <merge-commit-sha>
+git push origin main
 ```
 
-Expected: Shows version calculation (3.0.2 → 3.0.3)
-
-### Test 2: Check workflow files
-
-```bash
-cat .github/workflows/version-auto-bump.yml | head -20
-cat .github/workflows/version-release.yml | head -20
-```
-
-Expected: Valid YAML workflow definitions
-
-### Test 3: Manual bump (optional, revert after)
-
-```bash
-npm run bump-version:patch
-git log --oneline -2
-git tag -l | tail -3
-# Then revert: git reset --hard HEAD~1 && git tag -d v{version}
-```
+This triggers a new production deployment with the previous code.
 
 ---
 
-## 📊 Expected Behavior After Deployment
+## Workflow Files
 
-### Week 1 (Validation Phase)
-
-1. **Test feature push** (dev branch)
-   - [ ] GitHub Actions workflow runs
-   - [ ] Version bumps to 3.0.3
-   - [ ] Git tag v3.0.3 created
-   - [ ] All 6 files updated
-
-2. **Test staging push**
-   - [ ] Version bumps to 3.1.0
-   - [ ] Git tag v3.1.0 created
-   - [ ] Release notes generated
-
-3. **Test main push**
-   - [ ] Version bumps to 4.0.0
-   - [ ] Git tag v4.0.0 created
-   - [ ] GitHub Release auto-created
-   - [ ] Deployment triggered (if connected)
-
-### Ongoing (Automatic)
-
-- ✅ Every push → automatic version bump per branch tier
-- ✅ Every tag → tracked in git history
-- ✅ Every main release → GitHub Release auto-created
-- ✅ Zero manual version management needed
-
----
-
-## 🛡️ Safety Measures in Place
-
-| Measure           | Prevents               | How                                |
-| ----------------- | ---------------------- | ---------------------------------- |
-| `[skip ci]` tag   | Infinite loops         | Version bump commits skip CI       |
-| Tier restriction  | Accidental major bumps | Script enforces patch-only on dev  |
-| Atomic updates    | Partial failures       | All files updated together or none |
-| Verification step | Silent failures        | All 6 files checked after update   |
-| Dry-run mode      | Mistakes               | Test before committing             |
-| Manual override   | Branch mismatch        | Force specific bump if needed      |
-
----
-
-## 📞 Support Resources
-
-| Resource                    | Purpose                       |
-| --------------------------- | ----------------------------- |
-| `VERSIONING_GUIDE.md`       | User guide with examples      |
-| `IMPLEMENTATION_SUMMARY.md` | Technical details & workflow  |
-| `scripts/bump-version.js`   | Source code (inline comments) |
-| `.github/workflows/*.yml`   | Workflow definitions          |
-
----
-
-## ⚠️ Known Limitations
-
-1. **Python version tracking:** `pyproject.toml` files use different versioning scheme (0.1.0 vs 3.0.2). This is intentional to track Python package versioning separately.
-
-2. **Version sync timing:** All 6 files are updated atomically. If one fails, the entire operation fails (safe failure mode).
-
-3. **Release notes:** GitHub releases use auto-generated notes from commit messages. For better notes, use conventional commits (`feat:`, `fix:`, `breaking:`).
-
-4. **Manual commits during workflow:** If someone pushes while bumping is in progress, they'll get merge conflicts. Solution: Wait for GitHub Actions to complete before pushing.
-
----
-
-## ✨ Next Steps After Deployment
-
-1. **Monitor first push** to each branch tier
-   - Watch GitHub Actions tab
-   - Verify version bumped correctly
-   - Check git tags created
-
-2. **Document in team wiki**
-   - Link to `VERSIONING_GUIDE.md`
-   - Show example workflow
-   - Define your release process
-
-3. **Optional enhancements** (future)
-   - Add version to Docker image tags
-   - Update API `/version` endpoint
-   - Add version to app header/footer
-   - Generate CHANGELOG from tags
-
-4. **Set deployment triggers** (if applicable)
-   - Connect to CD pipeline
-   - Trigger on git tag creation
-   - Add version to deployment notes
-
----
-
-## ✅ Sign-Off
-
-**System Status:** Production Ready ✅  
-**All Files Created:** Yes ✅  
-**All Tests Passed:** Yes ✅  
-**Documentation Complete:** Yes ✅  
-**Workflows Validated:** Yes ✅
-
-**Ready to deploy. Next push will auto-bump version!**
-
----
-
-**Last Validated:** March 7, 2026  
-**System Version:** 3.0.2 (ready for auto-incrementing)
+| File                                      | Trigger            | Purpose                                        |
+| ----------------------------------------- | ------------------ | ---------------------------------------------- |
+| `release-please.yml`                      | Push to `staging`  | Opens changelog + version bump PR              |
+| `deploy-staging-with-environments.yml`    | Push to `staging`  | Deploys to Railway staging                     |
+| `deploy-production-with-environments.yml` | Push to `main`     | Deploys to production + creates GitHub Release |
+| `test-on-dev.yml`                         | Push to `dev`      | Runs full test suite                           |
+| `test-on-feat.yml`                        | Feature branch PRs | Runs lint + tests                              |
+| `version-rollback.yml`                    | Manual             | Emergency version rollback                     |

@@ -6,7 +6,7 @@
 **Last Updated:** March 10, 2026
 **Status:** ✅ Production-Ready | Cleaned & Organized | Root Docs Archived
 **Structure:** 7 Core Docs | Maintenance Guide | Intelligence Layer | Infrastructure & Ops | Organized Archive
-**Project:** Glad Labs AI Co-Founder System v3.0.82 | AGPL-3.0 License
+**Project:** Glad Labs AI Co-Founder System v0.1.0 | AGPL-3.0 License
 **Policy:** 🎯 **HIGH-LEVEL ONLY** (Architecture-focused, source-of-truth documentation)
 
 > **Recent Update (Feb 23, 2026):** Second documentation cleanup pass completed. 54 additional Phase/Sprint/Session/Testing reports moved from root to `archive/root-cleanup-feb2026/`. Repository root now contains only `README.md`, `SECURITY.md`, and `CLAUDE.md`. See [archive/](archive/) for all archived files.
@@ -17,15 +17,15 @@
 
 ## 🎯 Core Documentation - 7 Essential Files
 
-| Component                   | File                                                                       |
-| --------------------------- | -------------------------------------------------------------------------- |
-| Fundamentals & Setup        | [01-SETUP_AND_OVERVIEW.md](01-SETUP_AND_OVERVIEW.md)                       |
-| System Architecture         | [02-ARCHITECTURE_AND_DESIGN.md](02-ARCHITECTURE_AND_DESIGN.md)             |
-| Deployment & Infrastructure | [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](03-DEPLOYMENT_AND_INFRASTRUCTURE.md) |
-| Development Workflow        | [04-DEVELOPMENT_WORKFLOW.md](04-DEVELOPMENT_WORKFLOW.md)                   |
-| AI Agents & Integration     | [05-AI_AGENTS_AND_INTEGRATION.md](05-AI_AGENTS_AND_INTEGRATION.md)         |
-| Operations & Maintenance    | [06-OPERATIONS_AND_MAINTENANCE.md](06-OPERATIONS_AND_MAINTENANCE.md)       |
-| Environment & Variables     | [07-BRANCH_SPECIFIC_VARIABLES.md](07-BRANCH_SPECIFIC_VARIABLES.md)         |
+| Component                   | File                                       |
+| --------------------------- | ------------------------------------------ |
+| Fundamentals & Setup        | [01-Getting-Started/](01-Getting-Started/) |
+| System Architecture         | [02-Architecture/](02-Architecture/)       |
+| Deployment & Infrastructure | [05-Operations/](05-Operations/)           |
+| Development Workflow        | [04-Development/](04-Development/)         |
+| AI Agents & Integration     | [03-Features/](03-Features/)               |
+| Operations & Maintenance    | [05-Operations/](05-Operations/)           |
+| Environment & Variables     | [reference/](reference/)                   |
 
 ---
 
@@ -38,16 +38,16 @@
 
 ## 📁 Documentation Structure Overview
 
-### 1. Numbered Core Documentation (7 Files) ✅ CURRENT
+### 1. Section-Based Documentation ✅ CURRENT
 
 - [00-README.md](00-README.md) - Navigation hub
-- [01-SETUP_AND_OVERVIEW.md](01-SETUP_AND_OVERVIEW.md) - Getting started
-- [02-ARCHITECTURE_AND_DESIGN.md](02-ARCHITECTURE_AND_DESIGN.md) - System Design
-- [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](03-DEPLOYMENT_AND_INFRASTRUCTURE.md) - Deployment & Infrastructure
-- [04-DEVELOPMENT_WORKFLOW.md](04-DEVELOPMENT_WORKFLOW.md) - Development Workflow
-- [05-AI_AGENTS_AND_INTEGRATION.md](05-AI_AGENTS_AND_INTEGRATION.md) - AI Agents & Integration
-- [06-OPERATIONS_AND_MAINTENANCE.md](06-OPERATIONS_AND_MAINTENANCE.md) - Operations & Maintenance
-- [07-BRANCH_SPECIFIC_VARIABLES.md](07-BRANCH_SPECIFIC_VARIABLES.md) - Branch-Specific Variables
+- [01-Getting-Started/](01-Getting-Started/) - Setup & onboarding
+- [02-Architecture/](02-Architecture/) - System design & multi-agent pipeline
+- [03-Features/](03-Features/) - Feature documentation
+- [04-Development/](04-Development/) - Development workflow & testing
+- [05-Operations/](05-Operations/) - Deployment, operations & maintenance
+- [06-Troubleshooting/](06-Troubleshooting/) - Troubleshooting & support
+- [07-Appendices/](07-Appendices/) - Version history & appendices
 
 ### 2. Decisions (3 Files) ✅ ACTIVE
 
@@ -72,18 +72,17 @@
 - [troubleshooting/04-build-fixes.md](troubleshooting/04-build-fixes.md) - Build errors
 - [troubleshooting/05-compilation.md](troubleshooting/05-compilation.md) - Compilation issues
 
-### 5. Service-Specific Documentation (3 Components) ✅ ACTIVE
+### 5. Service-Specific Documentation (2 Components) ✅ ACTIVE
 
 - [components/cofounder-agent/README.md](components/cofounder-agent/README.md) - Co-founder Agent
-- [components/oversight-hub/README.md](components/oversight-hub/README.md) - Oversight Hub
 - [components/public-site/README.md](components/public-site/README.md) - Public Site
 
 ### 6. Archive ✅ ORGANIZED
 
 - **[ARCHIVE_NAVIGATION.md](ARCHIVE_NAVIGATION.md)** ⭐ **START HERE** - Guide to finding archived documentation
-- [archive-active/](archive-active/) - All archived Phase/Sprint/Session reports
-- [archive-active/root-cleanup-feb2026/](archive-active/root-cleanup-feb2026/) - Root cleanup batches (Feb 2026)
-- [archive-active/historical-reports/](archive-active/historical-reports/) - Older session logs and reports
+- [archive/](archive/) - All archived Phase/Sprint/Session reports
+- [archive/root-cleanup-feb2026/](archive/root-cleanup-feb2026/) - Root cleanup batches (Feb 2026)
+- [archive/historical-reports/](archive/historical-reports/) - Older session logs and reports
 
 ---
 
@@ -99,6 +98,7 @@
 
 - ✅ Master index maintained
 - ✅ 3 core decisions documented
+
 - ✅ Decision template in use
 
 ### Reference Documentation
@@ -119,7 +119,7 @@
 
 ### Service Components Coverage
 
-- ✅ 3 components documented
+- ✅ 2 components documented
 - ✅ Component troubleshooting structure in place
 - ✅ Architecture overview per component
 
@@ -149,25 +149,25 @@ All components of the enterprise documentation framework are now active and main
 - ✅ Update procedures documented
 
 **Result:** 🚀 Enterprise-ready documentation system fully operational and sustainable
-| 🚀 **New Developer** | [01 - Setup & Overview](./01-SETUP_AND_OVERVIEW.md) |
-| 🏗️ **Understand System** | [02 - Architecture & Design](./02-ARCHITECTURE_AND_DESIGN.md) |
-| 🌐 **Deploy to Cloud** | [03 - Deployment & Infrastructure](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md) |
-| 🔄 **Development Process** | [04 - Development Workflow](./04-DEVELOPMENT_WORKFLOW.md) |
-| 🧠 **AI Agents** | [05 - AI Agents & Integration](./05-AI_AGENTS_AND_INTEGRATION.md) |
-| 📊 **Production Operations** | [06 - Operations & Maintenance](./06-OPERATIONS_AND_MAINTENANCE.md) |
-| ⚙️ **Environment Config** | [07 - Branch-Specific Variables](./07-BRANCH_SPECIFIC_VARIABLES.md) |
+| 🚀 **New Developer** | [01 - Setup & Overview](./01-Getting-Started/) |
+| 🏗️ **Understand System** | [02 - Architecture & Design](./02-Architecture/System-Design.md) |
+| 🌐 **Deploy to Cloud** | [03 - Deployment & Infrastructure](./05-Operations/Operations-Maintenance.md) |
+| 🔄 **Development Process** | [04 - Development Workflow](./04-Development/Development-Workflow.md) |
+| 🧠 **AI Agents** | [05 - AI Agents & Integration](./02-Architecture/Multi-Agent-Pipeline.md) |
+| 📊 **Production Operations** | [06 - Operations & Maintenance](./05-Operations/Operations-Maintenance.md) |
+| ⚙️ **Environment Config** | [07 - Branch-Specific Variables](../.env.example) |
 
 ### 📋 All 7 Core Docs (01-07) at a Glance
 
-| #      | Document                                                             | Purpose                                                       | For Whom               |
-| ------ | -------------------------------------------------------------------- | ------------------------------------------------------------- | ---------------------- |
-| **01** | [Setup & Overview](./01-SETUP_AND_OVERVIEW.md)                       | Prerequisites, local development, quick start                 | Developers, DevOps     |
-| **02** | [Architecture & Design](./02-ARCHITECTURE_AND_DESIGN.md)             | System design, component relationships, AI agents, tech stack | Architects, Tech Leads |
-| **03** | [Deployment & Infrastructure](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md) | Cloud deployment, environments, scaling, CI/CD                | DevOps, Infrastructure |
-| **04** | [Development Workflow](./04-DEVELOPMENT_WORKFLOW.md)                 | Git strategy, testing, PR process, release procedure          | All Developers         |
-| **05** | [AI Agents & Integration](./05-AI_AGENTS_AND_INTEGRATION.md)         | Agent architecture, MCP integration, orchestration            | AI/Agent Developers    |
-| **06** | [Operations & Maintenance](./06-OPERATIONS_AND_MAINTENANCE.md)       | Production monitoring, backups, troubleshooting               | DevOps, SREs           |
-| **07** | [Branch Variables & Config](./07-BRANCH_SPECIFIC_VARIABLES.md)       | Environment-specific settings, secrets management             | DevOps, Platform Eng   |
+| #      | Document                                                                 | Purpose                                                       | For Whom               |
+| ------ | ------------------------------------------------------------------------ | ------------------------------------------------------------- | ---------------------- |
+| **01** | [Setup & Overview](./01-Getting-Started/)                                | Prerequisites, local development, quick start                 | Developers, DevOps     |
+| **02** | [Architecture & Design](./02-Architecture/System-Design.md)              | System design, component relationships, AI agents, tech stack | Architects, Tech Leads |
+| **03** | [Deployment & Infrastructure](./05-Operations/Operations-Maintenance.md) | Cloud deployment, environments, scaling, CI/CD                | DevOps, Infrastructure |
+| **04** | [Development Workflow](./04-Development/Development-Workflow.md)         | Git strategy, testing, PR process, release procedure          | All Developers         |
+| **05** | [AI Agents & Integration](./02-Architecture/Multi-Agent-Pipeline.md)     | Agent architecture, MCP integration, orchestration            | AI/Agent Developers    |
+| **06** | [Operations & Maintenance](./05-Operations/Operations-Maintenance.md)    | Production monitoring, backups, troubleshooting               | DevOps, SREs           |
+| **07** | [Branch Variables & Config](../.env.example)                             | Environment-specific settings, secrets management             | DevOps, Platform Eng   |
 
 ---
 
@@ -196,7 +196,6 @@ All components of the enterprise documentation framework are now active and main
 ### Component Documentation
 
 - [Co-founder Agent](./components/cofounder-agent/README.md) - AI agent architecture
-- [Oversight Hub](./components/oversight-hub/README.md) - Admin dashboard
 - [Public Site](./components/public-site/README.md) - Customer website
 - [Co-founder Agent Quick Fixes](./components/cofounder-agent/troubleshooting/QUICK_FIX_COMMANDS.md) - Common fixes
 - [Railway Web Console](./components/cofounder-agent/troubleshooting/RAILWAY_WEB_CONSOLE_STEPS.md) - Railway deployment guidance
@@ -227,7 +226,7 @@ All components of the enterprise documentation framework are now active and main
 | **Core Docs**       | 8 files    | ✅ Complete & Current  |
 | **Decisions**       | 3+ files   | ✅ Well-maintained     |
 | **Reference**       | 6+ files   | ✅ Technical specs     |
-| **Components**      | 3 folders  | ✅ Service-specific    |
+| **Components**      | 2 folders  | ✅ Service-specific    |
 | **Troubleshooting** | 4 guides   | ✅ Focused solutions   |
 | **Archive**         | 800+ files | 📦 Historical only     |
 | **Total Active**    | 31 files   | 🎯 Lean & Maintainable |
@@ -238,9 +237,9 @@ All components of the enterprise documentation framework are now active and main
 
 ### For Developers (First Week)
 
-1. **Get Started:** [01-SETUP_AND_OVERVIEW.md](./01-SETUP_AND_OVERVIEW.md) - Local setup (15 min)
-2. **Learn System:** [02-ARCHITECTURE_AND_DESIGN.md](./02-ARCHITECTURE_AND_DESIGN.md) - System design (40 min)
-3. **Development:** [04-DEVELOPMENT_WORKFLOW.md](./04-DEVELOPMENT_WORKFLOW.md) - Git & testing (30 min)
+1. **Get Started:** [01-Getting-Started](./01-Getting-Started/) - Local setup (15 min)
+2. **Learn System:** [System-Design.md](./02-Architecture/System-Design.md) - System design (40 min)
+3. **Development:** [Development-Workflow.md](./04-Development/Development-Workflow.md) - Git & testing (30 min)
 4. **Your Component:** [components/](./components/) - Your service
 5. **Testing:** [reference/TESTING.md](./reference/TESTING.md) - Test patterns (30+ min)
 
@@ -248,19 +247,19 @@ All components of the enterprise documentation framework are now active and main
 
 ### For DevOps/Infrastructure
 
-1. **Architecture First:** [02-ARCHITECTURE_AND_DESIGN.md](./02-ARCHITECTURE_AND_DESIGN.md) - Know the system (1 hour)
-2. **Deployment:** [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md) - Cloud setup (2 hours)
-3. **Environment Config:** [07-BRANCH_SPECIFIC_VARIABLES.md](./07-BRANCH_SPECIFIC_VARIABLES.md) - Secrets (1 hour)
-4. **Operations:** [06-OPERATIONS_AND_MAINTENANCE.md](./06-OPERATIONS_AND_MAINTENANCE.md) - Monitoring (2+ hours)
+1. **Architecture First:** [System-Design.md](./02-Architecture/System-Design.md) - Know the system (1 hour)
+2. **Deployment:** [Operations-Maintenance.md](./05-Operations/Operations-Maintenance.md) - Cloud setup (2 hours)
+3. **Environment Config:** [.env.example](../.env.example) - Secrets (1 hour)
+4. **Operations:** [Operations-Maintenance.md](./05-Operations/Operations-Maintenance.md) - Monitoring (2+ hours)
 5. **CI/CD:** [reference/ci-cd/](./reference/ci-cd/) - GitHub Actions
 
 **Time Required:** 1-2 days
 
 ### For AI/Agent Developers
 
-1. **Setup:** [01-SETUP_AND_OVERVIEW.md](./01-SETUP_AND_OVERVIEW.md) - Get running locally (30 min)
-2. **Agent Architecture:** [05-AI_AGENTS_AND_INTEGRATION.md](./05-AI_AGENTS_AND_INTEGRATION.md) - Agent design (2 hours)
-3. **System Design:** [02-ARCHITECTURE_AND_DESIGN.md](./02-ARCHITECTURE_AND_DESIGN.md) - Integration points (1 hour)
+1. **Setup:** [01-Getting-Started](./01-Getting-Started/) - Get running locally (30 min)
+2. **Agent Architecture:** [Multi-Agent-Pipeline.md](./02-Architecture/Multi-Agent-Pipeline.md) - Agent design (2 hours)
+3. **System Design:** [System-Design.md](./02-Architecture/System-Design.md) - Integration points (1 hour)
 4. **Agent Code:** [components/cofounder-agent/](./components/cofounder-agent/) - Implementation
 
 **Time Required:** 2-3 days
@@ -338,8 +337,8 @@ This keeps documentation clean, maintainable, and always relevant.
 
 ## 📚 Questions?
 
-- **Architecture questions?** → [02-ARCHITECTURE_AND_DESIGN.md](./02-ARCHITECTURE_AND_DESIGN.md)
-- **Can't get started?** → [01-SETUP_AND_OVERVIEW.md](./01-SETUP_AND_OVERVIEW.md)
+- **Architecture questions?** → [System-Design.md](./02-Architecture/System-Design.md)
+- **Can't get started?** → [01-Getting-Started](./01-Getting-Started/)
 - **Having problems?** → [troubleshooting/](./troubleshooting/)
-- **Deployment stuck?** → [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md)
-- **Development questions?** → [04-DEVELOPMENT_WORKFLOW.md](./04-DEVELOPMENT_WORKFLOW.md)
+- **Deployment stuck?** → [Operations-Maintenance.md](./05-Operations/Operations-Maintenance.md)
+- **Development questions?** → [Development-Workflow.md](./04-Development/Development-Workflow.md)

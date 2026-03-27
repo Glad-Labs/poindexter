@@ -1,5 +1,7 @@
 import logging
 
+logger = logging.getLogger(__name__)
+
 import aiofiles
 import httpx
 
@@ -47,13 +49,13 @@ class PexelsClient:
 
                     async with aiofiles.open(file_path, "wb") as f:
                         await f.write(img_response.content)
-                    logging.info(
+                    logger.info(
                         f"Successfully downloaded image for query '{query}' to {file_path}."
                     )
                     return True
                 else:
-                    logging.warning(f"No photos found on Pexels for query: '{query}'")
+                    logger.warning(f"No photos found on Pexels for query: '{query}'")
                     return False
         except httpx.HTTPError as e:
-            logging.error(f"Error fetching image from Pexels: {e}")
+            logger.error(f"Error fetching image from Pexels: {e}", exc_info=True)
             return False

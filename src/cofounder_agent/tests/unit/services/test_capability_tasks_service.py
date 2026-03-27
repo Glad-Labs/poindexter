@@ -6,9 +6,10 @@ All DB calls are mocked via AsyncMock — no real database access.
 """
 
 import json
-import pytest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from services.capability_task_executor import (
     CapabilityStep,
@@ -17,7 +18,6 @@ from services.capability_task_executor import (
     TaskExecutionResult,
 )
 from services.capability_tasks_service import CapabilityTasksService
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -35,9 +35,7 @@ def _make_pool(
 ):
     """Build a mock asyncpg Pool that yields a mock connection via acquire()."""
     conn = AsyncMock()
-    conn.fetchrow = AsyncMock(
-        return_value=fetchrow_result, side_effect=fetchrow_side_effect
-    )
+    conn.fetchrow = AsyncMock(return_value=fetchrow_result, side_effect=fetchrow_side_effect)
     conn.fetch = AsyncMock(return_value=fetch_result or [])
     conn.execute = AsyncMock(return_value=execute_result or "INSERT 0 1")
     conn.fetchval = AsyncMock(return_value=fetchval_result or 0)
@@ -65,9 +63,7 @@ def _make_service(pool=None) -> CapabilityTasksService:
 
 
 def _step(name="echo", output_key="out", order=0) -> CapabilityStep:
-    return CapabilityStep(
-        capability_name=name, inputs={}, output_key=output_key, order=order
-    )
+    return CapabilityStep(capability_name=name, inputs={}, output_key=output_key, order=order)
 
 
 def _task_row(task_id="t1", name="my-task", total_count=None):
@@ -191,7 +187,9 @@ class TestListTasks:
     async def test_returns_tasks_and_count(self):
         conn = AsyncMock()
         conn.fetchval = AsyncMock(return_value=2)
-        conn.fetch = AsyncMock(return_value=[_task_row("t1", total_count=2), _task_row("t2", total_count=2)])
+        conn.fetch = AsyncMock(
+            return_value=[_task_row("t1", total_count=2), _task_row("t2", total_count=2)]
+        )
 
         pool = MagicMock()
         pool.acquire = MagicMock(

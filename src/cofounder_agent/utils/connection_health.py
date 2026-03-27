@@ -6,11 +6,14 @@ for stale connections and pool exhaustion.
 """
 
 import asyncio
-from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+from services.logger_config import get_logger
+
 logger = get_logger(__name__)
+
+
 class ConnectionPoolHealth:
     """Monitor and report on connection pool health."""
 
@@ -81,8 +84,9 @@ class ConnectionPoolHealth:
             }
             logger.warning(
                 f"⚠️  Pool health check timeout "
-                f"(consecutive failures: {self.consecutive_failures})"
-, exc_info=True)
+                f"(consecutive failures: {self.consecutive_failures})",
+                exc_info=True,
+            )
             return status
 
         except Exception as e:
@@ -96,8 +100,9 @@ class ConnectionPoolHealth:
             }
             logger.error(
                 f"❌ Pool health check failed: {e} "
-                f"(consecutive failures: {self.consecutive_failures})"
-, exc_info=True)
+                f"(consecutive failures: {self.consecutive_failures})",
+                exc_info=True,
+            )
             return status
 
     async def auto_health_check(self) -> None:

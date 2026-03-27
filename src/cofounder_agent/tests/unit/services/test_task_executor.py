@@ -13,18 +13,16 @@ Covers:
 """
 
 import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch, call
 
-from services.task_executor import (
-    TaskExecutor,
-    STALE_TASK_TIMEOUT_MINUTES,
-    MAX_TASK_RETRIES,
-    SWEEP_INTERVAL_SECONDS,
-)
 from services.error_handler import ServiceError
-
+from services.task_executor import (
+    MAX_TASK_RETRIES,
+    STALE_TASK_TIMEOUT_MINUTES,
+    TaskExecutor,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -39,9 +37,7 @@ def _make_db():
     db.update_task = AsyncMock(return_value=True)
     db.update_task_status = AsyncMock(return_value=True)
     db.log_status_change = AsyncMock(return_value=None)
-    db.sweep_stale_tasks = AsyncMock(
-        return_value={"total_stale": 0, "reset": 0, "failed": 0}
-    )
+    db.sweep_stale_tasks = AsyncMock(return_value={"total_stale": 0, "reset": 0, "failed": 0})
     return db
 
 
@@ -64,9 +60,11 @@ def _make_task(task_id=TASK_ID, status="pending"):
 def _make_executor(db=None, orchestrator=None, poll_interval=1):
     if db is None:
         db = _make_db()
-    with patch("services.task_executor.UnifiedQualityService"), \
-         patch("services.task_executor.AIContentGenerator"), \
-         patch("services.task_executor.get_usage_tracker"):
+    with (
+        patch("services.task_executor.UnifiedQualityService"),
+        patch("services.task_executor.AIContentGenerator"),
+        patch("services.task_executor.get_usage_tracker"),
+    ):
         executor = TaskExecutor(
             database_service=db,
             orchestrator=orchestrator,
@@ -127,6 +125,7 @@ class TestTaskExecutorInit:
 
     def test_get_stats_last_poll_age_computed(self):
         import time
+
         executor = _make_executor()
         executor.last_poll_at = time.monotonic() - 5.0
         stats = executor.get_stats()
@@ -154,6 +153,7 @@ class TestTaskExecutorLifecycle:
     @pytest.mark.asyncio
     async def test_start_creates_processor_task(self):
         executor = _make_executor()
+
         # Provide a non-terminating coroutine so the task stays alive during test
         async def noop_loop():
             await asyncio.sleep(10)
@@ -166,6 +166,7 @@ class TestTaskExecutorLifecycle:
     @pytest.mark.asyncio
     async def test_start_idempotent_when_already_running(self):
         executor = _make_executor()
+
         async def noop_loop():
             await asyncio.sleep(10)
 
@@ -179,6 +180,7 @@ class TestTaskExecutorLifecycle:
     @pytest.mark.asyncio
     async def test_stop_sets_running_false(self):
         executor = _make_executor()
+
         async def noop_loop():
             await asyncio.sleep(10)
 
@@ -207,9 +209,7 @@ class TestSweepStaleTasks:
     @pytest.mark.asyncio
     async def test_sweep_calls_db_sweep(self):
         db = _make_db()
-        db.sweep_stale_tasks = AsyncMock(
-            return_value={"total_stale": 0, "reset": 0, "failed": 0}
-        )
+        db.sweep_stale_tasks = AsyncMock(return_value={"total_stale": 0, "reset": 0, "failed": 0})
         executor = _make_executor(db=db)
         await executor._sweep_stale_tasks()
         db.sweep_stale_tasks.assert_awaited_once_with(
@@ -220,9 +220,7 @@ class TestSweepStaleTasks:
     @pytest.mark.asyncio
     async def test_sweep_logs_when_stale_tasks_found(self):
         db = _make_db()
-        db.sweep_stale_tasks = AsyncMock(
-            return_value={"total_stale": 3, "reset": 2, "failed": 1}
-        )
+        db.sweep_stale_tasks = AsyncMock(return_value={"total_stale": 3, "reset": 2, "failed": 1})
         executor = _make_executor(db=db)
         await executor._sweep_stale_tasks()
         db.sweep_stale_tasks.assert_awaited_once()
@@ -253,8 +251,10 @@ class TestProcessLoop:
         executor = _make_executor(db=db)
         executor.running = True
 
-        with patch.object(executor, "_sweep_stale_tasks", new_callable=AsyncMock), \
-             patch("services.task_executor.asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch.object(executor, "_sweep_stale_tasks", new_callable=AsyncMock),
+            patch("services.task_executor.asyncio.sleep", new_callable=AsyncMock),
+        ):
             # The loop should exit without raising when CancelledError propagates
             await executor._process_loop()
         # No assertion needed — success means no unhandled exception
@@ -276,8 +276,10 @@ class TestProcessLoop:
         executor = _make_executor(db=db, poll_interval=0)
         executor.running = True
 
-        with patch.object(executor, "_sweep_stale_tasks", new_callable=AsyncMock), \
-             patch("services.task_executor.asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch.object(executor, "_sweep_stale_tasks", new_callable=AsyncMock),
+            patch("services.task_executor.asyncio.sleep", new_callable=AsyncMock),
+        ):
             await executor._process_loop()
 
         assert executor._poll_cycle >= 2
@@ -306,9 +308,11 @@ class TestProcessLoop:
         async def mock_process_single(task):
             processed.append(task["id"])
 
-        with patch.object(executor, "_process_single_task", side_effect=mock_process_single), \
-             patch.object(executor, "_sweep_stale_tasks", new_callable=AsyncMock), \
-             patch("services.task_executor.asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch.object(executor, "_process_single_task", side_effect=mock_process_single),
+            patch.object(executor, "_sweep_stale_tasks", new_callable=AsyncMock),
+            patch("services.task_executor.asyncio.sleep", new_callable=AsyncMock),
+        ):
             await executor._process_loop()
 
         assert task_a["id"] in processed
@@ -331,9 +335,11 @@ class TestProcessLoop:
         executor = _make_executor(db=db, poll_interval=0)
         executor.running = True
 
-        with patch.object(executor, "_process_single_task", new_callable=AsyncMock), \
-             patch.object(executor, "_sweep_stale_tasks", new_callable=AsyncMock), \
-             patch("services.task_executor.asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch.object(executor, "_process_single_task", new_callable=AsyncMock),
+            patch.object(executor, "_sweep_stale_tasks", new_callable=AsyncMock),
+            patch("services.task_executor.asyncio.sleep", new_callable=AsyncMock),
+        ):
             await executor._process_loop()
 
         assert executor.success_count == 1
@@ -362,9 +368,11 @@ class TestProcessLoop:
                 details={"task_id": task["id"]},
             )
 
-        with patch.object(executor, "_process_single_task", side_effect=raise_service_error), \
-             patch.object(executor, "_sweep_stale_tasks", new_callable=AsyncMock), \
-             patch("services.task_executor.asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch.object(executor, "_process_single_task", side_effect=raise_service_error),
+            patch.object(executor, "_sweep_stale_tasks", new_callable=AsyncMock),
+            patch("services.task_executor.asyncio.sleep", new_callable=AsyncMock),
+        ):
             await executor._process_loop()
 
         assert executor.error_count == 1
@@ -393,13 +401,14 @@ class TestProcessLoop:
         async def raise_unexpected(task):
             raise RuntimeError("Unexpected failure")
 
-        with patch.object(executor, "_process_single_task", side_effect=raise_unexpected), \
-             patch.object(executor, "_sweep_stale_tasks", new_callable=AsyncMock), \
-             patch("services.task_executor.asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch.object(executor, "_process_single_task", side_effect=raise_unexpected),
+            patch.object(executor, "_sweep_stale_tasks", new_callable=AsyncMock),
+            patch("services.task_executor.asyncio.sleep", new_callable=AsyncMock),
+        ):
             await executor._process_loop()
 
         assert executor.error_count == 1
-
 
     @pytest.mark.asyncio
     async def test_idle_alert_fires_when_pending_tasks_not_started_for_too_long(self, caplog):
@@ -409,6 +418,7 @@ class TestProcessLoop:
         _IDLE_ALERT_THRESHOLD_S.
         """
         import time
+
         task_a = _make_task("aaaaaaaa-bbbb-cccc-dddd-111111111111")
         db = _make_db()
         call_count = 0
@@ -428,16 +438,19 @@ class TestProcessLoop:
         executor._last_task_started_at = time.monotonic() - (executor._IDLE_ALERT_THRESHOLD_S + 10)
 
         import logging
-        with patch.object(executor, "_process_single_task", new_callable=AsyncMock), \
-             patch.object(executor, "_sweep_stale_tasks", new_callable=AsyncMock), \
-             patch("services.task_executor.asyncio.sleep", new_callable=AsyncMock), \
-             caplog.at_level(logging.CRITICAL, logger="services.task_executor"):
+
+        with (
+            patch.object(executor, "_process_single_task", new_callable=AsyncMock),
+            patch.object(executor, "_sweep_stale_tasks", new_callable=AsyncMock),
+            patch("services.task_executor.asyncio.sleep", new_callable=AsyncMock),
+            caplog.at_level(logging.CRITICAL, logger="services.task_executor"),
+        ):
             await executor._process_loop()
 
         critical_msgs = [r.message for r in caplog.records if r.levelno == logging.CRITICAL]
-        assert any("possible stall" in m or "Executor has not" in m for m in critical_msgs), (
-            f"Expected a CRITICAL idle alert but got: {critical_msgs}"
-        )
+        assert any(
+            "possible stall" in m or "Executor has not" in m for m in critical_msgs
+        ), f"Expected a CRITICAL idle alert but got: {critical_msgs}"
 
     @pytest.mark.asyncio
     async def test_idle_alert_not_fired_when_no_prior_tasks(self, caplog):
@@ -460,10 +473,13 @@ class TestProcessLoop:
         # _last_task_started_at is None — fresh executor, no alert should fire.
 
         import logging
-        with patch.object(executor, "_process_single_task", new_callable=AsyncMock), \
-             patch.object(executor, "_sweep_stale_tasks", new_callable=AsyncMock), \
-             patch("services.task_executor.asyncio.sleep", new_callable=AsyncMock), \
-             caplog.at_level(logging.CRITICAL, logger="services.task_executor"):
+
+        with (
+            patch.object(executor, "_process_single_task", new_callable=AsyncMock),
+            patch.object(executor, "_sweep_stale_tasks", new_callable=AsyncMock),
+            patch("services.task_executor.asyncio.sleep", new_callable=AsyncMock),
+            caplog.at_level(logging.CRITICAL, logger="services.task_executor"),
+        ):
             await executor._process_loop()
 
         critical_msgs = [r.message for r in caplog.records if r.levelno == logging.CRITICAL]
@@ -474,6 +490,7 @@ class TestProcessLoop:
     async def test_last_task_started_at_updated_when_task_begins(self):
         """_last_task_started_at is set to monotonic time when a task starts."""
         import time
+
         task_a = _make_task("aaaaaaaa-bbbb-cccc-dddd-111111111111")
         db = _make_db()
         call_count = 0
@@ -492,9 +509,11 @@ class TestProcessLoop:
         assert executor._last_task_started_at is None
 
         before = time.monotonic()
-        with patch.object(executor, "_process_single_task", new_callable=AsyncMock), \
-             patch.object(executor, "_sweep_stale_tasks", new_callable=AsyncMock), \
-             patch("services.task_executor.asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch.object(executor, "_process_single_task", new_callable=AsyncMock),
+            patch.object(executor, "_sweep_stale_tasks", new_callable=AsyncMock),
+            patch("services.task_executor.asyncio.sleep", new_callable=AsyncMock),
+        ):
             await executor._process_loop()
 
         assert executor._last_task_started_at is not None
@@ -535,10 +554,15 @@ class TestProcessSingleTask:
         db.tasks = MagicMock()
         db.tasks.log_status_change = AsyncMock(return_value=None)
 
-        with patch("services.content_router_service.process_content_generation_task",
-                   new_callable=AsyncMock, return_value=mock_result), \
-             patch("services.task_executor.emit_task_progress", new_callable=AsyncMock), \
-             patch("services.task_executor.emit_notification", new_callable=AsyncMock):
+        with (
+            patch(
+                "services.content_router_service.process_content_generation_task",
+                new_callable=AsyncMock,
+                return_value=mock_result,
+            ),
+            patch("services.task_executor.emit_task_progress", new_callable=AsyncMock),
+            patch("services.task_executor.emit_notification", new_callable=AsyncMock),
+        ):
             await executor._process_single_task(task)
 
         # DB should be called to update task to in_progress at least once
@@ -565,10 +589,15 @@ class TestProcessSingleTask:
         db.tasks = MagicMock()
         db.tasks.log_status_change = AsyncMock(return_value=None)
 
-        with patch("services.content_router_service.process_content_generation_task",
-                   new_callable=AsyncMock, return_value=failed_result), \
-             patch("services.task_executor.emit_task_progress", new_callable=AsyncMock), \
-             patch("services.task_executor.emit_notification", new_callable=AsyncMock):
+        with (
+            patch(
+                "services.content_router_service.process_content_generation_task",
+                new_callable=AsyncMock,
+                return_value=failed_result,
+            ),
+            patch("services.task_executor.emit_task_progress", new_callable=AsyncMock),
+            patch("services.task_executor.emit_notification", new_callable=AsyncMock),
+        ):
             await executor._process_single_task(task)
 
         # The failure path calls update_task a second time with failed status
@@ -599,12 +628,19 @@ class TestProcessSingleTask:
         executor = _make_executor(db=db)
         task = _make_task()
 
-        with patch("services.content_router_service.process_content_generation_task",
-                   new_callable=AsyncMock), \
-             patch("services.task_executor.emit_task_progress", new_callable=AsyncMock), \
-             patch("services.task_executor.emit_notification", new_callable=AsyncMock), \
-             patch("services.task_executor.asyncio.wait_for", new_callable=AsyncMock,
-                   side_effect=asyncio.TimeoutError()):
+        with (
+            patch(
+                "services.content_router_service.process_content_generation_task",
+                new_callable=AsyncMock,
+            ),
+            patch("services.task_executor.emit_task_progress", new_callable=AsyncMock),
+            patch("services.task_executor.emit_notification", new_callable=AsyncMock),
+            patch(
+                "services.task_executor.asyncio.wait_for",
+                new_callable=AsyncMock,
+                side_effect=asyncio.TimeoutError(),
+            ),
+        ):
             await executor._process_single_task(task)
 
         # Final DB update should record "failed" status
@@ -621,11 +657,15 @@ class TestProcessSingleTask:
         executor = _make_executor(db=db)
         task = _make_task()
 
-        with patch("services.content_router_service.process_content_generation_task",
-                   new_callable=AsyncMock,
-                   side_effect=ServiceError(message="Intentional service error", details={})), \
-             patch("services.task_executor.emit_task_progress", new_callable=AsyncMock), \
-             patch("services.task_executor.emit_notification", new_callable=AsyncMock):
+        with (
+            patch(
+                "services.content_router_service.process_content_generation_task",
+                new_callable=AsyncMock,
+                side_effect=ServiceError(message="Intentional service error", details={}),
+            ),
+            patch("services.task_executor.emit_task_progress", new_callable=AsyncMock),
+            patch("services.task_executor.emit_notification", new_callable=AsyncMock),
+        ):
             with pytest.raises(ServiceError):
                 await executor._process_single_task(task)
 
@@ -638,11 +678,15 @@ class TestProcessSingleTask:
         executor = _make_executor(db=db)
         task = _make_task()
 
-        with patch("services.content_router_service.process_content_generation_task",
-                   new_callable=AsyncMock,
-                   side_effect=RuntimeError("Unexpected crash")), \
-             patch("services.task_executor.emit_task_progress", new_callable=AsyncMock), \
-             patch("services.task_executor.emit_notification", new_callable=AsyncMock):
+        with (
+            patch(
+                "services.content_router_service.process_content_generation_task",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("Unexpected crash"),
+            ),
+            patch("services.task_executor.emit_task_progress", new_callable=AsyncMock),
+            patch("services.task_executor.emit_notification", new_callable=AsyncMock),
+        ):
             with pytest.raises(ServiceError):
                 await executor._process_single_task(task)
 
@@ -658,10 +702,15 @@ class TestProcessSingleTask:
 
         mock_result = {"status": "awaiting_approval"}
 
-        with patch("services.content_router_service.process_content_generation_task",
-                   new_callable=AsyncMock, return_value=mock_result), \
-             patch("services.task_executor.emit_task_progress", new_callable=AsyncMock), \
-             patch("services.task_executor.emit_notification", new_callable=AsyncMock):
+        with (
+            patch(
+                "services.content_router_service.process_content_generation_task",
+                new_callable=AsyncMock,
+                return_value=mock_result,
+            ),
+            patch("services.task_executor.emit_task_progress", new_callable=AsyncMock),
+            patch("services.task_executor.emit_notification", new_callable=AsyncMock),
+        ):
             await executor._process_single_task(task)
 
         # log_status_change should be called for pending→in_progress
@@ -679,13 +728,15 @@ class TestTaskMetricsWiring:
     def test_task_metrics_importable_from_task_executor_module(self):
         """TaskMetrics must be importable via the task_executor module (wired at import time)."""
         import services.task_executor as te_mod
-        assert hasattr(te_mod, "TaskMetrics"), (
-            "TaskMetrics should be imported in task_executor (issue #837)"
-        )
+
+        assert hasattr(
+            te_mod, "TaskMetrics"
+        ), "TaskMetrics should be imported in task_executor (issue #837)"
 
     def test_task_metrics_class_interface(self):
         """TaskMetrics exposes the required instrumentation methods."""
         from services.metrics_service import TaskMetrics
+
         m = TaskMetrics("test-task")
         ts = m.record_phase_start("content_generation")
         assert isinstance(ts, float)
@@ -697,7 +748,9 @@ class TestTaskMetricsWiring:
     def test_task_metrics_logs_structured_summary(self, caplog):
         """After recording two phases the summary log includes phase names."""
         import logging
+
         from services.metrics_service import TaskMetrics
+
         m = TaskMetrics("task-xyz")
         ts1 = m.record_phase_start("content_generation")
         m.record_phase_end("content_generation", ts1)

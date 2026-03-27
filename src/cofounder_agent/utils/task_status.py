@@ -202,11 +202,11 @@ def validate_status(status_str: str) -> TaskStatus:
     """
     try:
         return TaskStatus(status_str.lower())
-    except ValueError:
+    except ValueError as exc:
         valid_statuses = [s.value for s in TaskStatus]
         raise ValueError(
             f"Invalid status '{status_str}'. Must be one of: {', '.join(valid_statuses)}"
-        )
+        ) from exc
 
 
 def get_status_color(status: TaskStatus) -> str:
@@ -293,11 +293,14 @@ def transition_with_validation(
 # STATUS TRANSITION VALIDATOR WITH HISTORY TRACKING
 # ============================================================================
 
-from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Any, List, Tuple
 
+from services.logger_config import get_logger
+
 logger = get_logger(__name__)
+
+
 class StatusTransitionValidator:
     """Validates status transitions with comprehensive error tracking."""
 

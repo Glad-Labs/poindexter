@@ -9,9 +9,10 @@ This module provides utilities for enforcing content constraints throughout the
 generation pipeline, from prompt injection to output validation.
 """
 
-from services.logger_config import get_logger
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
+
+from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 # ============================================================================
@@ -553,8 +554,9 @@ def auto_expand_content(
     except ImportError as e:
         logger.warning(f"[AUTO_EXPAND] Failed to load dependencies: {e}", exc_info=True)
         logger.warning(
-            "Using original content. Ensure model_router and prompt_manager are available."
-, exc_info=True)
+            "Using original content. Ensure model_router and prompt_manager are available.",
+            exc_info=True,
+        )
         return content
     except Exception as e:
         logger.error(f"[AUTO_EXPAND] LLM expansion failed: {e}", exc_info=True)

@@ -16,17 +16,13 @@ Tests cover:
 UnifiedOrchestrator and ModelRouter are patched to avoid real LLM calls.
 """
 
-import pytest
-from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
-from services.task_planning_service import (
-    ExecutionPlan,
-    TaskPlanningService,
-)
-from services.task_intent_router import TaskIntentRequest
+import pytest
 
+from services.task_intent_router import TaskIntentRequest
+from services.task_planning_service import ExecutionPlan, TaskPlanningService
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -107,7 +103,9 @@ class TestGenerateStages:
 
     def test_all_five_known_stages_accepted(self):
         svc = _make_service()
-        stages = svc._generate_stages(["research", "creative", "qa", "images", "format"], "balanced")
+        stages = svc._generate_stages(
+            ["research", "creative", "qa", "images", "format"], "balanced"
+        )
         assert len(stages) == 5
 
 
@@ -163,7 +161,9 @@ class TestOptimizeStrategy:
         stages = self._make_stages()
         total_duration = 60000
         # Between 1.2x and 1.8x total_duration → "mixed"
-        moderate_deadline = datetime.now(timezone.utc) + timedelta(milliseconds=int(total_duration * 1.5))
+        moderate_deadline = datetime.now(timezone.utc) + timedelta(
+            milliseconds=int(total_duration * 1.5)
+        )
         result = svc._optimize_strategy(
             stages, total_duration=total_duration, deadline=moderate_deadline, budget=10.0
         )
@@ -201,9 +201,7 @@ class TestEstimateQualityScore:
     def test_score_capped_at_100(self):
         svc = _make_service()
         intent = _make_task_intent()
-        stages = svc._generate_stages(
-            ["research", "creative", "qa", "images", "format"], "high"
-        )
+        stages = svc._generate_stages(["research", "creative", "qa", "images", "format"], "high")
         score = svc._estimate_quality_score(intent, stages, "high")
         assert score <= 100.0
 
@@ -328,6 +326,7 @@ class TestPlanToSummary:
     def test_returns_summary_object(self):
         svc = _make_service()
         from services.task_planning_service import ExecutionPlanSummary
+
         plan = self._make_plan(svc)
         summary = svc.plan_to_summary(plan)
         assert isinstance(summary, ExecutionPlanSummary)

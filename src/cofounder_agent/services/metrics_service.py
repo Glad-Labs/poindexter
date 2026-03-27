@@ -4,8 +4,8 @@ Metrics Service for Glad Labs AI Co-Founder
 This module provides centralized metrics collection and reporting.
 """
 
-import time
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -54,7 +54,9 @@ class TaskMetrics:
         entry["status"] = status
         if error:
             entry["error"] = error
-            self.errors.append({"phase": phase, "error_type": "phase_error", "message": error, "retry_count": 0})
+            self.errors.append(
+                {"phase": phase, "error_type": "phase_error", "message": error, "retry_count": 0}
+            )
 
     # --- LLM call tracking ---
 
@@ -99,12 +101,14 @@ class TaskMetrics:
         retry_count: int = 0,
     ) -> None:
         """Record a non-LLM error."""
-        self.errors.append({
-            "phase": phase,
-            "error_type": error_type,
-            "message": message,
-            "retry_count": retry_count,
-        })
+        self.errors.append(
+            {
+                "phase": phase,
+                "error_type": error_type,
+                "message": message,
+                "retry_count": retry_count,
+            }
+        )
 
     def get_error_count(self) -> int:
         return len(self.errors)
@@ -137,7 +141,8 @@ class TaskMetrics:
             "start_time": datetime.fromtimestamp(self.start_time, tz=timezone.utc).isoformat(),
             "end_time": (
                 datetime.fromtimestamp(self.end_time, tz=timezone.utc).isoformat()
-                if self.end_time else None
+                if self.end_time
+                else None
             ),
             "total_duration_ms": self.get_total_duration_ms(),
             "queue_wait_ms": self.queue_wait_ms,
@@ -211,11 +216,15 @@ class MetricsService:
                 "failed_tasks": raw.get("failedTasks", raw.get("failed_tasks", 0)),
                 "pending_tasks": raw.get("pendingTasks", raw.get("pending_tasks", 0)),
                 "success_rate": raw.get("successRate", raw.get("success_rate", 0.0)),
-                "avg_execution_time": raw.get("avgExecutionTime", raw.get("avg_execution_time", 0.0)),
+                "avg_execution_time": raw.get(
+                    "avgExecutionTime", raw.get("avg_execution_time", 0.0)
+                ),
                 "total_cost": raw.get("totalCost", raw.get("total_cost", 0.0)),
             }
         except Exception as e:
-            logger.error("[get_metrics] Failed to retrieve metrics from database: %s", e, exc_info=True)
+            logger.error(
+                "[get_metrics] Failed to retrieve metrics from database: %s", e, exc_info=True
+            )
             return _zero
 
     def update_metrics(self, **kwargs) -> None:

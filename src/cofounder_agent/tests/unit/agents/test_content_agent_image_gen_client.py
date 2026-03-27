@@ -9,8 +9,7 @@ Tests focus on (torch/diffusers fully mocked — not installed in CI):
 
 import os
 import sys
-import pytest
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-placeholder")
@@ -56,15 +55,13 @@ def _import_image_gen_client(torch_mock, cuda_available: bool):
     mock_config.SD_NEGATIVE_PROMPT = "ugly, blurry"
 
     # Patch all three dependencies before importing
-    with (
-        patch.dict(
-            sys.modules,
-            {
-                "torch": torch_mock,
-                "diffusers": mock_diffusers,
-                "config": mock_config,
-            },
-        )
+    with patch.dict(
+        sys.modules,
+        {
+            "torch": torch_mock,
+            "diffusers": mock_diffusers,
+            "config": mock_config,
+        },
     ):
         # Force reimport by removing cached module
         if "agents.content_agent.services.image_gen_client" in sys.modules:
@@ -106,6 +103,7 @@ class TestInitializeModel:
             {"torch": torch_mock, "diffusers": mock_diffusers, "config": mock_config},
         ):
             from agents.content_agent.services.image_gen_client import ImageGenClient
+
             client = ImageGenClient()
 
         # Pipeline should have been loaded and moved to cuda
@@ -127,6 +125,7 @@ class TestInitializeModel:
             {"torch": torch_mock, "diffusers": mock_diffusers, "config": mock_config},
         ):
             from agents.content_agent.services.image_gen_client import ImageGenClient
+
             client = ImageGenClient()
 
         assert client.pipe is None
@@ -153,6 +152,7 @@ class TestInitializeModel:
             {"torch": torch_mock, "diffusers": mock_diffusers, "config": mock_config},
         ):
             from agents.content_agent.services.image_gen_client import ImageGenClient
+
             client = ImageGenClient()
 
         assert client.pipe is None
@@ -191,6 +191,7 @@ class TestGenerateImages:
             {"torch": torch_mock, "diffusers": mock_diffusers, "config": mock_config},
         ):
             from agents.content_agent.services.image_gen_client import ImageGenClient
+
             client = ImageGenClient()
 
         return client, mock_image, mock_config
@@ -220,6 +221,7 @@ class TestGenerateImages:
             {"torch": torch_mock, "diffusers": mock_diffusers, "config": mock_config},
         ):
             from agents.content_agent.services.image_gen_client import ImageGenClient
+
             client = ImageGenClient()
 
         output_path = str(tmp_path / "output.jpg")

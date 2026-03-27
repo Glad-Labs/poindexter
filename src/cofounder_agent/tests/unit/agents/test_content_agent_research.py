@@ -8,8 +8,9 @@ Tests focus on:
 """
 
 import os
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-placeholder")
@@ -82,7 +83,9 @@ class TestResearchAgentRun:
             agent = ResearchAgent()
 
             # Patch httpx.AsyncClient to raise HTTP error
-            with patch("agents.content_agent.agents.research_agent.httpx.AsyncClient") as mock_client:
+            with patch(
+                "agents.content_agent.agents.research_agent.httpx.AsyncClient"
+            ) as mock_client:
                 mock_response = AsyncMock()
                 mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
                     "404", request=MagicMock(), response=MagicMock()
@@ -108,7 +111,9 @@ class TestResearchAgentRun:
 
             agent = ResearchAgent()
 
-            with patch("agents.content_agent.agents.research_agent.httpx.AsyncClient") as mock_client:
+            with patch(
+                "agents.content_agent.agents.research_agent.httpx.AsyncClient"
+            ) as mock_client:
                 mock_client.return_value.__aenter__ = AsyncMock(
                     side_effect=RuntimeError("Network failure")
                 )
@@ -123,7 +128,9 @@ class TestResearchAgentRun:
         with (
             patch("agents.content_agent.agents.research_agent.config") as mock_config,
             patch("agents.content_agent.agents.research_agent.CrewAIToolsFactory") as mock_tools,
-            patch("agents.content_agent.agents.research_agent.ResearchQualityService") as mock_rqs_class,
+            patch(
+                "agents.content_agent.agents.research_agent.ResearchQualityService"
+            ) as mock_rqs_class,
         ):
             mock_config.SERPER_API_KEY = "test-key"
             mock_tools.get_research_agent_tools.return_value = []
@@ -145,7 +152,9 @@ class TestResearchAgentRun:
                 "organic": [{"title": "Art 1", "snippet": "Snip 1"}]
             }
 
-            with patch("agents.content_agent.agents.research_agent.httpx.AsyncClient") as mock_client:
+            with patch(
+                "agents.content_agent.agents.research_agent.httpx.AsyncClient"
+            ) as mock_client:
                 mock_async_client = AsyncMock()
                 mock_async_client.post = AsyncMock(return_value=mock_post_response)
                 mock_client.return_value.__aenter__ = AsyncMock(return_value=mock_async_client)
@@ -202,9 +211,7 @@ class TestWorkflowResearchAgentAdapter:
 
             result = await adapter.run({"prompt": "Fallback topic", "keywords": []})
 
-            adapter._agent.run.assert_awaited_once_with(
-                topic="Fallback topic", keywords=[]
-            )
+            adapter._agent.run.assert_awaited_once_with(topic="Fallback topic", keywords=[])
 
     @pytest.mark.asyncio
     async def test_returns_success_when_agent_is_none(self):

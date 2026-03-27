@@ -10,10 +10,9 @@
 Run this command to verify the entire monitoring stack is operational:
 
 ```bash
-# Check all three services
+# Check both services
 curl http://localhost:8000/health                    # Backend health
 curl http://localhost:8000/api/profiling/health      # Profiling system
-curl http://localhost:3001                           # Oversight Hub frontend
 curl http://localhost:3000                           # Public site frontend
 ```
 
@@ -173,7 +172,7 @@ curl -i http://localhost:8000/api/analytics/kpis | grep -i "access-control"
 
 ```bash
 # Verify Recharts is installed
-npm ls recharts --workspace=oversight-hub
+npm ls recharts
 
 # Check if performance endpoint returns data
 curl http://localhost:8000/api/metrics/performance | jq .
@@ -189,7 +188,7 @@ curl http://localhost:8000/api/metrics/performance | jq .
 
 ```bash
 # Install dependencies
-cd web/oversight-hub
+cd web/public-site
 npm install
 
 # Verify recharts version
@@ -523,5 +522,5 @@ curl -X POST http://localhost:8000/api/tasks \
 
 - [Analytics Quick Start](../ANALYTICS_QUICK_START.md)
 - [Capability-Based Task System](../CAPABILITY_BASED_TASK_SYSTEM.md)
-- [Architecture & Design](../02-ARCHITECTURE_AND_DESIGN.md)
-- [Operations & Maintenance](../06-OPERATIONS_AND_MAINTENANCE.md)
+- [Architecture & Design](../02-Architecture/System-Design.md)
+- [Operations & Maintenance](./Operations-Maintenance.md)

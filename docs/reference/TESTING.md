@@ -4,7 +4,7 @@
 **Status:** ✅ Production Ready
 **Test Framework:** Jest (Frontend) + pytest (Backend) + Playwright (E2E)
 **Coverage Goal:** >80% for critical paths
-**Current Status:** ✅ 89+ Playwright E2E passing, 503/505 Vitest passing
+**Current Status:** ✅ 153 Playwright E2E passing, ~482 Jest (public-site) passing, ~5,476 pytest (backend) passing
 
 ---
 
@@ -39,7 +39,7 @@
 - Query APIs for finding elements by role, label, text
 - Great async handling for promises and callbacks
 
-**Installation:** Already included in both `web/public-site/` and `web/oversight-hub/`
+**Installation:** Already included in `web/public-site/`
 
 ### Backend: pytest + pytest-asyncio
 
@@ -70,18 +70,6 @@ pip install pytest pytest-asyncio pytest-cov
 ### Frontend Test Locations
 
 ```text
-web/oversight-hub/
-├── src/
-│   └── components/
-│       ├── Header.test.js          # Component unit test
-│       ├── CommandPane.jsx
-│       └── SettingsManager.jsx
-└── __tests__/                      # Organized test directory
-    ├── components/
-    │   └── SettingsManager.test.jsx      # Component test
-    └── integration/
-        └── SettingsManager.integration.test.jsx  # Integration test
-
 web/public-site/
 ├── components/
 │   ├── Header.test.js              # Component unit test
@@ -158,16 +146,6 @@ npm run test:python
 
 #### Run Specific Test Suite
 
-**Frontend - Oversight Hub:**
-
-```bash
-cd web/oversight-hub
-npm test                                    # Interactive watch mode
-npm test -- --passWithNoTests              # No tests, pass anyway
-npm test SettingsManager                    # Specific component
-npm test -- --testNamePattern="renders"     # By test name pattern
-```
-
 **Frontend - Public Site:**
 
 ```bash
@@ -222,10 +200,8 @@ npm run test:python:smoke
 **Frontend - Auto-rerun on file changes:**
 
 ```bash
-cd web/oversight-hub
-npm test                          # Press 'a' for all, 'p' for pattern, 'q' to quit
+cd web/public-site
 npm test -- --watch              # Watch mode
-npm test -- --coverage --watch   # With coverage in watch mode
 ```
 
 **Backend - Watch mode with pytest-watch:**
@@ -699,18 +675,15 @@ def db():
 
 **Frontend Tests:**
 
-- `web/oversight-hub/`: 8 test files, ~35 tests
-- `web/public-site/`: 10 test files, ~28 tests
-- **Total Frontend:** 63 tests passing ✅
+- `web/public-site/`: ~482 tests passing
+- **Total Frontend:** ~482 tests passing ✅
 
 **Backend Tests:**
 
-- Unit tests: 15+ test suites
-- Integration tests: 12+ test suites
-- E2E tests: 8+ test suites
-- **Total Backend:** 30+ tests passing ✅
+- ~5,476 tests passing across unit, integration, and E2E suites
+- **Total Backend:** ~5,476 tests passing ✅
 
-**Grand Total: 93+ tests passing** ✅
+**Grand Total: ~5,958+ tests passing** ✅
 
 ### Running All Tests
 
@@ -730,9 +703,9 @@ npm run test:python:smoke  # 5-10 minutes
 
 ## 🔗 Related Documentation
 
-- **[Development Workflow](../04-DEVELOPMENT_WORKFLOW.md#🧪-testing)** - Testing section in workflow
+- **[Development Workflow](../04-Development/Development-Workflow.md#🧪-testing)** - Testing section in workflow
 - **[Core Docs Hub](../00-README.md)** - All documentation
-- **[Setup Guide](../01-SETUP_AND_OVERVIEW.md)** - Getting started
+- **[Setup Guide](../01-Getting-Started/)** - Getting started
 - **[API References](./API_CONTRACT_CONTENT_CREATION.md)** - API testing examples
 
 ---

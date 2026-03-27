@@ -8,11 +8,11 @@ LLM calls are mocked but the actual pipeline orchestration, phase sequencing,
 refinement loop logic, and error handling are exercised end-to-end.
 """
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from services.content_service import ContentService
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -208,9 +208,7 @@ class TestContentPipelineFullWorkflow:
                 return_value={"formatted_content": "done"},
             ) as mock_finalize,
         ):
-            await service.execute_full_workflow(
-                topic="AI", model_selections=model_selections
-            )
+            await service.execute_full_workflow(topic="AI", model_selections=model_selections)
 
         assert mock_research.call_args.kwargs["model"] == "gemini-pro"
         assert mock_draft.call_args.kwargs["model"] == "claude-3-sonnet"
@@ -276,9 +274,7 @@ class TestContentPipelineRefinementLoop:
                 return_value={"formatted_content": "done"},
             ),
         ):
-            result = await service.execute_full_workflow(
-                topic="AI", quality_threshold=0.75
-            )
+            result = await service.execute_full_workflow(topic="AI", quality_threshold=0.75)
 
         assert result["status"] == "completed"
         assert result["refinement_count"] == 1
@@ -372,9 +368,7 @@ class TestContentPipelineRefinementLoop:
                 return_value={"formatted_content": "done"},
             ),
         ):
-            result = await service.execute_full_workflow(
-                topic="AI", quality_threshold=0.75
-            )
+            result = await service.execute_full_workflow(topic="AI", quality_threshold=0.75)
 
         assert result["refinement_count"] == 0
         mock_refine.assert_not_awaited()
@@ -520,9 +514,7 @@ class TestContentPipelineDataFlow:
                 return_value={"formatted_content": "final"},
             ) as mock_finalize,
         ):
-            result = await service.execute_full_workflow(
-                topic="AI", quality_threshold=0.75
-            )
+            result = await service.execute_full_workflow(topic="AI", quality_threshold=0.75)
 
         assert mock_finalize.call_args.kwargs["content"] == "REFINED_DRAFT"
         assert result["final_content"] == "REFINED_DRAFT"

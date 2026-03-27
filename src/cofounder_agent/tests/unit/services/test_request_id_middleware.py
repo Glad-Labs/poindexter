@@ -12,9 +12,6 @@ Tests:
 
 import logging
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -27,7 +24,6 @@ from middleware.request_id import (
     _request_id_var,
     get_request_id,
 )
-
 
 # ============================================================================
 # Helpers
@@ -116,8 +112,13 @@ class TestRequestIDFilter:
         token = _request_id_var.set("filter-test-id")
         try:
             record = logging.LogRecord(
-                name="test", level=logging.INFO, pathname="", lineno=0,
-                msg="test", args=(), exc_info=None,
+                name="test",
+                level=logging.INFO,
+                pathname="",
+                lineno=0,
+                msg="test",
+                args=(),
+                exc_info=None,
             )
             f = RequestIDFilter()
             result = f.filter(record)
@@ -131,8 +132,13 @@ class TestRequestIDFilter:
         # Ensure ContextVar is not set
         assert _request_id_var.get() is None
         record = logging.LogRecord(
-            name="test", level=logging.INFO, pathname="", lineno=0,
-            msg="test", args=(), exc_info=None,
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg="test",
+            args=(),
+            exc_info=None,
         )
         f = RequestIDFilter()
         f.filter(record)
@@ -141,8 +147,13 @@ class TestRequestIDFilter:
     def test_filter_always_returns_true(self):
         """Filter never suppresses log records."""
         record = logging.LogRecord(
-            name="test", level=logging.DEBUG, pathname="", lineno=0,
-            msg="msg", args=(), exc_info=None,
+            name="test",
+            level=logging.DEBUG,
+            pathname="",
+            lineno=0,
+            msg="msg",
+            args=(),
+            exc_info=None,
         )
         f = RequestIDFilter()
         assert f.filter(record) is True

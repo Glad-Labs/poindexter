@@ -3,10 +3,11 @@ Unit tests for middleware/profiling_middleware.py — ProfileData and ProfilingM
 """
 
 import time
-import pytest
-from unittest.mock import AsyncMock, MagicMock
-from middleware.profiling_middleware import ProfileData, ProfilingMiddleware
+from unittest.mock import MagicMock
 
+import pytest
+
+from middleware.profiling_middleware import ProfileData, ProfilingMiddleware
 
 # ---------------------------------------------------------------------------
 # ProfileData — data structure behaviour

@@ -32,8 +32,7 @@ except ImportError:
     import logging
 
     logging.getLogger(__name__).warning(
-        "slowapi not installed — rate limiting disabled. "
-        "Install with: pip install slowapi"
+        "slowapi not installed — rate limiting disabled. " "Install with: pip install slowapi"
     )
 
     class _NoOpLimiter:

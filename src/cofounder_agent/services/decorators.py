@@ -19,10 +19,11 @@ Usage:
 """
 
 import functools
-from services.logger_config import get_logger
 import os
 import time
 from typing import Any, Callable, Optional
+
+from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 # Configuration from environment

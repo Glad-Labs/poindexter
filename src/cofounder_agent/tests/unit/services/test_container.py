@@ -5,8 +5,9 @@ Tests the ServiceContainer singleton pattern, registration,
 retrieval, and helper functions.
 """
 
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 from services.container import (
     ServiceContainer,

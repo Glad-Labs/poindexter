@@ -10,11 +10,10 @@ Tests cover:
 """
 
 import logging
-import os
+
 import pytest
 
 import services.logger_config as lc
-
 
 # ---------------------------------------------------------------------------
 # _safe_int_env
@@ -69,9 +68,9 @@ class TestGetLogger:
         a = lc.get_logger("module.a")
         b = lc.get_logger("module.b")
         # They may be the same type but names differ for stdlib loggers
-        assert a is not b or (
-            hasattr(a, "name") and a.name != b.name
-        ) or True  # structlog returns bound loggers that may differ
+        assert (
+            a is not b or (hasattr(a, "name") and a.name != b.name) or True
+        )  # structlog returns bound loggers that may differ
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +94,7 @@ class TestSetLogLevel:
         # Force standard-logging path by pretending structlog not configured
         monkeypatch.setattr(lc, "_structlog_configured", False)
         import structlog as sl
+
         monkeypatch.setattr(lc, "structlog", None)
         lc.set_log_level("WARNING")
         assert logging.getLogger().level == logging.WARNING

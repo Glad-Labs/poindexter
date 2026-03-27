@@ -1,7 +1,7 @@
 # 04 - Development Workflow
 
 **Last Updated:** March 10, 2026
-**Version:** 3.0.82
+**Version:** 0.1.0
 **Status:** ✅ Production Ready
 
 ---
@@ -28,23 +28,32 @@ Glad Labs uses a four-tier branch hierarchy for sustainable code management:
 - **CI/CD:** Lint, type check, unit tests
 - **Database:** Tested against local copy
 
-### Tier 3: Integration/Staging
+### Tier 3: Integration Testing
 
 - **Branch:** `dev`
-- **Environment:** Railway Staging
-- **Trigger:** Merge to `dev`
-- **Cost:** Minimal (Staging environment)
-- **CI/CD:** Full pipeline (build, test, deploy)
-- **Database:** Staging PostgreSQL (read-only replicas)
-- **Purpose:** QA, integration testing, team review
+- **Environment:** GitHub Actions (tests only)
+- **Trigger:** Push to `dev`
+- **Cost:** $0 (No deployment)
+- **CI/CD:** Lint, type check, unit + integration tests
+- **Purpose:** Integration testing, CI validation
 
-### Tier 4: Production
+### Tier 4: Staging
+
+- **Branch:** `staging`
+- **Environment:** Railway Staging
+- **Trigger:** Merge to `staging` (PR from `dev`)
+- **Cost:** Minimal (Staging environment)
+- **CI/CD:** Full pipeline (build, test, deploy) + Release Please changelog/version PR
+- **Database:** Staging PostgreSQL
+- **Purpose:** QA, staging validation, release preparation
+
+### Tier 5: Production
 
 - **Branch:** `main`
 - **Environment:** Railway Production + Vercel Production
-- **Trigger:** Merge to `main` (requires PR approval)
+- **Trigger:** Merge to `main` (PR from `staging`)
 - **Cost:** Full pricing (Production)
-- **CI/CD:** Full pipeline with production checks
+- **CI/CD:** Full pipeline with production checks + GitHub Release tag creation
 - **Database:** Production PostgreSQL (backups enabled)
 - **Purpose:** Live system availability
 
@@ -93,17 +102,21 @@ Longer explanation if needed. Reference issue numbers.
 
 ### Merging to `dev`
 
-- Deploys automatically to Railway Staging
-- Triggers full CI/CD pipeline
-- Available for QA testing within 5-10 minutes
+- Runs tests via GitHub Actions
+- No deployment — `dev` is for CI validation only
+
+### Promoting to Staging
+
+1. Create PR from `dev` → `staging`
+2. Merge triggers staging deployment to Railway
+3. Release Please opens a version/changelog PR against `staging`
+4. Review and merge the release PR to finalize the version
 
 ### Releasing to Production
 
-1. Create PR from `dev` → `main`
-2. Title: `Release: vX.Y.Z`
-3. Include changelog in PR description
-4. Require approval from team lead
-5. Merge triggers production deployment
+1. Create PR from `staging` → `main`
+2. Changelog and version bumps are already included from Release Please
+3. Merge triggers production deployment + GitHub Release tag creation
 
 **Post-Merge Checklist:**
 
@@ -147,10 +160,11 @@ npm run test:python:smoke    # Fast smoke tests
 
 Located in `.github/workflows/`:
 
-- **lint.yml** - Runs on PR: Checks code formatting, types
-- **test.yml** - Runs on PR: Unit and integration tests
-- **deploy-staging.yml** - Runs on merge to `dev`: Deploys to Railway Staging
-- **deploy-production.yml** - Runs on merge to `main`: Deploys to Production
+- **test-on-feat.yml** — Runs on feature branch PRs: lint, type check, unit tests
+- **test-on-dev.yml** — Runs on push to `dev`: full test suite
+- **release-please.yml** — Runs on push to `staging`: manages changelog + version bump PRs
+- **deploy-staging-with-environments.yml** — Runs on push to `staging`: deploys to Railway Staging
+- **deploy-production-with-environments.yml** — Runs on push to `main`: deploys to Production + creates GitHub Release tag
 
 ### Deployment Environments
 
@@ -160,7 +174,7 @@ Located in `.github/workflows/`:
 - `VERCEL_TOKEN` - Vercel API access
 - `DATABASE_URL` - Production DB connection
 
-See [07-BRANCH_SPECIFIC_VARIABLES.md](../07-BRANCH_SPECIFIC_VARIABLES.md) for per-environment configuration.
+See `.env.example` at the project root for per-environment configuration.
 
 ---
 
@@ -181,9 +195,9 @@ See [07-BRANCH_SPECIFIC_VARIABLES.md](../07-BRANCH_SPECIFIC_VARIABLES.md) for pe
 npm run setup                  # Full setup (Node + Python + env)
 
 # Development
-npm run dev                    # All three services
+npm run dev                    # Both services
 npm run dev:cofounder         # Backend only
-npm run dev:frontend          # Public site + Oversight Hub
+npm run dev:public            # Public site only
 
 # Testing
 npm run test:python           # Full backend test
@@ -198,6 +212,6 @@ npm run clean:install         # Reset everything
 
 ## 🔗 Related Documentation
 
-- **[02-ARCHITECTURE_AND_DESIGN.md](../02-ARCHITECTURE_AND_DESIGN.md)** - System design
-- **[07-BRANCH_SPECIFIC_VARIABLES.md](../07-BRANCH_SPECIFIC_VARIABLES.md)** - Environment config
+- **[System-Design.md](../02-Architecture/System-Design.md)** - System design
+- **[.env.example](../../.env.example)** - Environment config
 - **[reference/ci-cd/](../reference/ci-cd/)** - GitHub Actions details

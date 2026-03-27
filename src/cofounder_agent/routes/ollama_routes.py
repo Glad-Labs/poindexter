@@ -18,10 +18,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from routes.auth_unified import get_current_user
-from schemas.ollama_schemas import (
-    OllamaHealthResponse,
-    OllamaWarmupResponse,
-)
+from schemas.ollama_schemas import OllamaHealthResponse, OllamaWarmupResponse
 
 logger = logging.getLogger(__name__)
 
@@ -208,7 +205,9 @@ async def warmup_ollama(
     ```
     """
     # Resolve model name before try/except so it's available in all except handlers
-    resolved_model: str = model or os.getenv("OLLAMA_WARMUP_MODEL", "mistral:latest") or "mistral:latest"
+    resolved_model: str = (
+        model or os.getenv("OLLAMA_WARMUP_MODEL", "mistral:latest") or "mistral:latest"
+    )
     try:
         # First check if Ollama is running
         async with httpx.AsyncClient(timeout=OLLAMA_TIMEOUT) as client:
@@ -227,7 +226,9 @@ async def warmup_ollama(
             available_models = [m["name"] for m in models_data.get("models", [])]
 
             if resolved_model not in available_models:
-                logger.warning(f"[Ollama] Model '{resolved_model}' not found. Available: {available_models}")
+                logger.warning(
+                    f"[Ollama] Model '{resolved_model}' not found. Available: {available_models}"
+                )
                 return OllamaWarmupResponse(
                     status="warning",
                     model=resolved_model,
@@ -241,12 +242,12 @@ async def warmup_ollama(
 
             warmup_payload = {
                 "model": resolved_model,
-                "prompt": "Hi",  # Simple prompt to load model
+                "messages": [{"role": "user", "content": "Hi"}],
                 "stream": False,
             }
 
             warmup_response = await client.post(
-                f"{OLLAMA_HOST}/api/generate",
+                f"{OLLAMA_HOST}/api/chat",
                 json=warmup_payload,
                 timeout=30.0,  # Longer timeout for model loading
             )

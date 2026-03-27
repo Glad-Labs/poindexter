@@ -5,7 +5,6 @@ Tests field validation and model behaviour for settings schemas.
 """
 
 import pytest
-from datetime import datetime, timezone
 from pydantic import ValidationError
 
 from schemas.settings_schemas import (
@@ -14,12 +13,9 @@ from schemas.settings_schemas import (
     SettingCreate,
     SettingDataTypeEnum,
     SettingEnvironmentEnum,
-    SettingListResponse,
-    SettingResponse,
-    SettingUpdate,
     SettingsErrorResponse,
+    SettingUpdate,
 )
-
 
 # ---------------------------------------------------------------------------
 # Enums

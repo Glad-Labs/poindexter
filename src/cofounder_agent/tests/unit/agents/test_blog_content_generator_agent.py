@@ -2,13 +2,14 @@
 Unit tests for agents/blog_content_generator_agent.py — BlogContentGeneratorAgent
 """
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+
 from agents.blog_content_generator_agent import (
     BlogContentGeneratorAgent,
     get_blog_content_generator_agent,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -47,9 +48,7 @@ class TestRunSuccess:
     @pytest.mark.asyncio
     async def test_passes_correct_parameters_to_generator(self):
         agent, mock_gen = make_agent()
-        mock_gen.generate_blog_post = AsyncMock(
-            return_value=("content text here", "claude-3", {})
-        )
+        mock_gen.generate_blog_post = AsyncMock(return_value=("content text here", "claude-3", {}))
         await agent.run(
             {
                 "topic": "Machine learning trends",
@@ -74,9 +73,7 @@ class TestRunSuccess:
     @pytest.mark.asyncio
     async def test_uses_defaults_when_optional_params_missing(self):
         agent, mock_gen = make_agent()
-        mock_gen.generate_blog_post = AsyncMock(
-            return_value=("content here now", "model", {})
-        )
+        mock_gen.generate_blog_post = AsyncMock(return_value=("content here now", "model", {}))
         await agent.run({"topic": "Python programming"})
         call_kwargs = mock_gen.generate_blog_post.call_args.kwargs
         assert call_kwargs["style"] == "balanced"
@@ -147,9 +144,7 @@ class TestRunErrorHandling:
     @pytest.mark.asyncio
     async def test_network_error_returns_failed(self):
         agent, mock_gen = make_agent()
-        mock_gen.generate_blog_post = AsyncMock(
-            side_effect=ConnectionError("Connection refused")
-        )
+        mock_gen.generate_blog_post = AsyncMock(side_effect=ConnectionError("Connection refused"))
         result = await agent.run({"topic": "test topic here"})
         assert result["status"] == "failed"
 

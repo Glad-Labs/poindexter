@@ -40,7 +40,6 @@ from memory_system import (
     MemoryType,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -282,8 +281,10 @@ class TestInitEmbeddingModel:
 
     def test_handles_exception_gracefully(self, pool_and_conn):
         pool, _ = pool_and_conn
-        with patch("memory_system.SENTENCE_TRANSFORMERS_AVAILABLE", True), \
-             patch("memory_system.SentenceTransformer", side_effect=RuntimeError("No model")):
+        with (
+            patch("memory_system.SENTENCE_TRANSFORMERS_AVAILABLE", True),
+            patch("memory_system.SentenceTransformer", side_effect=RuntimeError("No model")),
+        ):
             ms = AIMemorySystem(db_pool=pool)
         assert ms.embedding_model is None
 
@@ -827,9 +828,7 @@ class TestIdentifyLearningPatterns:
     async def test_returns_empty_with_few_messages(self, system):
         ms, conn = system
         conn.execute = AsyncMock(return_value="INSERT 0 1")
-        ms.conversation_context = [
-            {"role": "user", "content": "Hello"} for _ in range(3)
-        ]
+        ms.conversation_context = [{"role": "user", "content": "Hello"} for _ in range(3)]
 
         result = await ms.identify_learning_patterns()
         assert result == []
@@ -1046,9 +1045,7 @@ class TestGetMemorySummary:
     async def test_returns_summary_dict(self, system):
         ms, conn = system
         conn.fetchval = AsyncMock(side_effect=[42, 10, 5, 3])  # total, prefs, clusters, patterns
-        conn.fetch = AsyncMock(
-            return_value=[{"memory_type": "conversation", "count": 25}]
-        )
+        conn.fetch = AsyncMock(return_value=[{"memory_type": "conversation", "count": 25}])
 
         result = await ms.get_memory_summary()
 

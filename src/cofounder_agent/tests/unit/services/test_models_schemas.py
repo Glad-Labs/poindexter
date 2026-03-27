@@ -5,15 +5,16 @@ and workflow_history_schemas.py
 Tests field validation and model behaviour.
 """
 
-import pytest
 from datetime import datetime, timezone
+
+import pytest
 from pydantic import ValidationError
 
 from schemas.models_schemas import (
     ModelInfo,
     ModelsListResponse,
-    ProviderStatus,
     ProvidersStatusResponse,
+    ProviderStatus,
 )
 from schemas.unified_task_response import (
     CostBreakdown,
@@ -28,7 +29,6 @@ from schemas.workflow_history_schemas import (
     WorkflowHistoryResponse,
     WorkflowStatistics,
 )
-
 
 NOW = datetime.now(timezone.utc)
 

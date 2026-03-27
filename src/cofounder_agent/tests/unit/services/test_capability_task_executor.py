@@ -15,9 +15,10 @@ Tests cover:
 All registry calls are mocked; no real capabilities, no DB, no I/O.
 """
 
-import pytest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from services.capability_task_executor import (
     CapabilityStep,
@@ -27,7 +28,6 @@ from services.capability_task_executor import (
     TaskExecutionResult,
     execute_capability_task,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -234,10 +234,12 @@ class TestExecuteSuccess:
         registry = _mock_registry(["research_result", "final_answer"])
         executor = CapabilityTaskExecutor(registry=registry)
 
-        task = _task(steps=[
-            _step("research", "research_data", order=0),
-            _step("summarise", "summary", order=1, inputs={"text": "$research_data"}),
-        ])
+        task = _task(
+            steps=[
+                _step("research", "research_data", order=0),
+                _step("summarise", "summary", order=1, inputs={"text": "$research_data"}),
+            ]
+        )
 
         result = await executor.execute(task)
 
@@ -263,10 +265,12 @@ class TestExecuteSuccess:
         executor = CapabilityTaskExecutor(registry=registry)
 
         # Provide steps out of order to verify ordering
-        task = _task(steps=[
-            _step("second-cap", "s", order=2),
-            _step("first-cap", "f", order=1),
-        ])
+        task = _task(
+            steps=[
+                _step("second-cap", "s", order=2),
+                _step("first-cap", "f", order=1),
+            ]
+        )
 
         result = await executor.execute(task)
 
@@ -297,10 +301,12 @@ class TestExecuteFailure:
         registry.execute = AsyncMock(side_effect=RuntimeError("capability exploded"))
         executor = CapabilityTaskExecutor(registry=registry)
 
-        task = _task(steps=[
-            _step("failing-cap", "out1", order=0),
-            _step("never-run-cap", "out2", order=1),
-        ])
+        task = _task(
+            steps=[
+                _step("failing-cap", "out1", order=0),
+                _step("never-run-cap", "out2", order=1),
+            ]
+        )
 
         result = await executor.execute(task)
 
@@ -308,7 +314,10 @@ class TestExecuteFailure:
         assert result.error is not None and "failing-cap" in result.error
         assert len(result.step_results) == 1
         assert result.step_results[0].status == "failed"
-        assert result.step_results[0].error is not None and "capability exploded" in result.step_results[0].error
+        assert (
+            result.step_results[0].error is not None
+            and "capability exploded" in result.step_results[0].error
+        )
         # Second capability must NOT have been called
         assert registry.execute.call_count == 1
 
