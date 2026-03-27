@@ -11,7 +11,7 @@ OpenClaw skills and Grafana alerts use this token.
 import os
 from typing import Optional
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 security = HTTPBearer(auto_error=False)
@@ -31,13 +31,11 @@ async def verify_api_token(
     dev_mode = os.getenv("DEVELOPMENT_MODE", "").lower() == "true"
 
     if not credentials:
-        if dev_mode:
-            return "dev-token"
         raise HTTPException(status_code=401, detail="Missing authorization header")
 
     token = credentials.credentials
 
-    # Dev mode bypass (existing pattern)
+    # Dev mode bypass: only accept the explicit dev-token
     if dev_mode and token == "dev-token":
         return token
 
@@ -62,8 +60,6 @@ async def verify_api_token_optional(
     dev_mode = os.getenv("DEVELOPMENT_MODE", "").lower() == "true"
 
     if not credentials:
-        if dev_mode:
-            return "dev-token"
         return None
 
     token = credentials.credentials
