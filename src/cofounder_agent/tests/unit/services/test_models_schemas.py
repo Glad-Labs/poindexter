@@ -316,13 +316,17 @@ class TestUnifiedTaskResponse:
         )
         assert task.created_at == "2026-01-01T00:00:00Z"
 
-    def test_missing_status_defaults_to_pending(self):
-        task = UnifiedTaskResponse(  # type: ignore[call-arg]
-            created_at=NOW,
-            updated_at=NOW,
-            # status omitted — should default to "pending"
-        )
-        assert task.status == "pending"
+    def test_missing_status_raises_validation_error(self):
+        """Status is required — omitting it should raise ValidationError."""
+        import pytest
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            UnifiedTaskResponse(  # type: ignore[call-arg]
+                created_at=NOW,
+                updated_at=NOW,
+                # status omitted — should raise
+            )
 
 
 # ---------------------------------------------------------------------------

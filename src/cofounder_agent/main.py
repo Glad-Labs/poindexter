@@ -208,8 +208,8 @@ for complete business operations including:
 - **API Base URL**: http://localhost:8000
 
 ### Authentication
-Most endpoints require JWT authentication via the `Authorization: Bearer <token>` header.
-Use the `/api/auth/logout` or GitHub OAuth endpoints to obtain tokens.
+API endpoints require `Authorization: Bearer <API_TOKEN>` header.
+Admin panel at `/admin`.
 """,
     version=config.app_version,
     lifespan=lifespan,
@@ -224,6 +224,15 @@ Use the `/api/auth/logout` or GitHub OAuth endpoints to obtain tokens.
     redoc_url="/api/redoc",
     swagger_ui_parameters={"defaultModelsExpandDepth": 1},
 )
+
+# Initialize SQLAdmin panel at /admin
+try:
+    from admin import setup_admin
+
+    setup_admin(app)
+    logger.info("[ADMIN] SQLAdmin panel mounted at /admin")
+except Exception as e:
+    logger.warning(f"[ADMIN] SQLAdmin not available: {e}")
 
 # Initialize OpenTelemetry tracing
 setup_telemetry(app)
