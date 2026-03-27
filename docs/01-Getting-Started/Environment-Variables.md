@@ -133,5 +133,5 @@ TASK_TIMEOUT_SECONDS=60
 
 - **Complete Env Reference:** [reference/ENVIRONMENT_SETUP.md](../reference/ENVIRONMENT_SETUP.md) ← **START HERE**
 - **GitHub Secrets Setup:** [reference/GITHUB_SECRETS_SETUP.md](../reference/GITHUB_SECRETS_SETUP.md)
-- **Deployment Process:** [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](../03-DEPLOYMENT_AND_INFRASTRUCTURE.md)
-- **Initial Setup:** [01-SETUP_AND_OVERVIEW.md](../01-SETUP_AND_OVERVIEW.md)
+- **Deployment Process:** [Operations-Maintenance.md](../05-Operations/Operations-Maintenance.md)
+- **Initial Setup:** [Local-Development-Setup.md](./Local-Development-Setup.md)

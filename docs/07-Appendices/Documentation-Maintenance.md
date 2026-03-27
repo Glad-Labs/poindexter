@@ -555,7 +555,7 @@ Use this checklist before committing documentation changes:
 ### If You Need Help
 
 - **Architecture questions:** Check docs/02-Architecture/System-Design.md
-- **Deployment questions:** Check docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md
+- **Deployment questions:** Check docs/05-Operations/Operations-Maintenance.md
 - **Specific issue status:** Check docs/07-Appendices/Technical-Debt-Tracker.md
 - **Quick reference:** Check CLAUDE.md for condensed version
 

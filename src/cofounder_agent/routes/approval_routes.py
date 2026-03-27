@@ -3,10 +3,17 @@ Approval Routes - Content Approval Workflow
 
 Handles human approval of generated content before publishing.
 
+NOTE: The approve endpoint (POST /api/tasks/{task_id}/approve) lives in
+task_publishing_routes.py — it handles images, auto-publish, and numeric
+ID fallback.  This module owns rejection, bulk operations, and the
+pending-approval listing.
+
 Endpoints:
-- POST /api/tasks/{task_id}/approve - Approve a task for publishing
 - POST /api/tasks/{task_id}/reject - Reject a task with feedback
+- POST /api/tasks/bulk-approve - Bulk approve tasks
+- POST /api/tasks/bulk-reject - Bulk reject tasks
 - GET /api/tasks/pending-approval - List all tasks awaiting approval
+- GET /api/tasks/{task_id}/approval-status - Get approval status for a task
 
 Workflow:
 1. Task reaches end of orchestrator pipeline
@@ -17,23 +24,19 @@ Workflow:
 6. Task can proceed to publishing (if approved)
 """
 
-import json
-import re as re_module
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel
 
 from routes.auth_unified import get_current_user
 from routes.websocket_routes import broadcast_approval_status
 from services.database_service import DatabaseService
 from services.error_handler import AppError
 from services.logger_config import get_logger
-from utils.json_encoder import convert_decimals, safe_json_dumps
 from utils.route_utils import get_database_dependency
-from utils.text_utils import extract_title_from_content, normalize_seo_keywords
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/tasks", tags=["approval"])
@@ -42,29 +45,6 @@ router = APIRouter(prefix="/api/tasks", tags=["approval"])
 # ============================================================================
 # SCHEMAS
 # ============================================================================
-
-
-class ApprovalRequest(BaseModel):
-    """Request body for approving a task"""
-
-    approved: bool = Field(True, description="True to approve")
-    feedback: Optional[str] = Field(None, description="Approval feedback")
-    reviewer_notes: Optional[str] = Field(None, description="Reviewer notes")
-    auto_publish: bool = Field(False, description="Automatically publish after approval")
-    featured_image_url: Optional[str] = Field(None, description="Featured image URL")
-    image_source: Optional[str] = Field(None, description="Image source")
-    human_feedback: Optional[str] = Field(None, description="Human feedback (maps to feedback)")
-
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "approved": True,
-                "auto_publish": True,
-                "feedback": "Looks good!",
-                "human_feedback": "Ready to publish",
-            }
-        }
-    )
 
 
 class RejectionRequest(BaseModel):
@@ -111,331 +91,9 @@ class PendingApprovalResponse(BaseModel):
 # ENDPOINTS
 # ============================================================================
 
-
-@router.post(
-    "/{task_id}/approve",
-    summary="Approve a task for publishing",
-    response_model=Dict[str, Any],
-    status_code=200,
-)
-async def approve_task(
-    task_id: str,
-    request: ApprovalRequest,
-    current_user: dict = Depends(get_current_user),
-    db_service: DatabaseService = Depends(get_database_dependency),
-):
-    """
-    Approve a task that's awaiting review.
-
-    **Parameters:**
-    - task_id: UUID of the task to approve
-    - approved: true (automatically set by form)
-    - feedback: Optional approval notes/feedback
-    - reviewer_notes: Optional internal notes
-
-    **Returns:**
-    ```json
-    {
-      "task_id": "uuid",
-      "status": "approved",
-      "approval_date": "2026-01-21T...",
-      "approved_by": "user_id",
-      "message": "Task approved for publishing"
-    }
-    ```
-
-    **Status Transitions:**
-    - awaiting_approval → approved ✅
-    - Other statuses → 400 Bad Request
-
-    **Side Effects:**
-    - Task marked as approved
-    - Approval feedback stored in metadata
-    - Approval timestamp recorded
-    - Task eligible for publishing
-    """
-    try:
-        logger.info(f"[APPROVAL] approve_task called for task {task_id}")
-
-        # Map human_feedback to feedback if feedback is empty
-        if not request.feedback and request.human_feedback:
-            request.feedback = request.human_feedback
-            logger.debug("[APPROVAL] Mapped human_feedback to feedback")
-
-        logger.info(f"[APPROVAL] User {current_user.get('id')} approving task {task_id}")
-        logger.debug(
-            f"[APPROVAL] ApprovalRequest: approved={request.approved}, auto_publish={bool(request.auto_publish)}"
-        )
-
-        # Fetch task from database
-        task = await db_service.get_task(task_id)
-        if not task:
-            logger.warning(f"❌ [APPROVAL] Task not found: {task_id}")
-            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-
-        # Verify task is awaiting approval
-        current_status = task.get("status")
-        if current_status != "awaiting_approval":
-            logger.warning(
-                f"❌ [APPROVAL] Task {task_id} has status '{current_status}', not awaiting_approval"
-            )
-            raise HTTPException(
-                status_code=400,
-                detail=f"Cannot approve task with status '{current_status}' — expected 'awaiting_approval'",
-            )
-
-        # Update task status and approval fields
-        approval_date = datetime.now(timezone.utc)
-        approver_id = current_user.get("id")
-
-        # Store approval data in dedicated database columns
-        await db_service.update_task(
-            task_id,
-            {
-                "status": "approved",
-                "approval_status": "approved",
-                "approved_by": approver_id,
-                "approval_timestamp": approval_date,
-                "approval_notes": request.reviewer_notes or request.feedback,
-                "human_feedback": request.feedback,
-                "updated_at": approval_date.isoformat(),
-            },
-        )
-
-        logger.info(f"[OK] [APPROVAL] Task {task_id} approved by {approver_id}")
-
-        # Handle auto-publish if requested
-        logger.debug(f"[APPROVAL] Auto-publish check: {bool(request.auto_publish)}")
-
-        if request.auto_publish:
-            logger.info("[APPROVAL] AUTO-PUBLISH TRIGGERED!")
-            # Enforce minimum quality score for auto-publish
-            quality_score = task.get("quality_score")
-            MIN_AUTO_PUBLISH_QUALITY = 60  # below-this, require manual publish step
-            if quality_score is not None and float(quality_score) < MIN_AUTO_PUBLISH_QUALITY:
-                logger.warning(
-                    f"[APPROVAL] Auto-publish blocked: quality_score={quality_score} < {MIN_AUTO_PUBLISH_QUALITY}"
-                )
-                return {
-                    **{
-                        "task_id": task_id,
-                        "status": "approved",
-                        "approval_status": "approved",
-                        "approval_date": approval_date.isoformat(),
-                        "approved_by": current_user.get("id"),
-                        "feedback": request.feedback,
-                        "message": "Task approved but not auto-published: quality score too low for automatic publishing",
-                        "quality_score": quality_score,
-                        "min_auto_publish_quality": MIN_AUTO_PUBLISH_QUALITY,
-                        "next_action": "Review content and publish manually after quality improvements",
-                    }
-                }
-            try:
-                # Get task metadata for post creation
-                task_metadata = task.get("task_metadata", {})
-                if isinstance(task_metadata, str):
-                    try:
-                        task_metadata = json.loads(task_metadata) if task_metadata else {}
-                    except (json.JSONDecodeError, TypeError):
-                        logger.warning(
-                            "[get_pending_approvals] task_metadata is not valid JSON for task %s — defaulting to {}",
-                            task.get("id"),
-                        )
-                        task_metadata = {}
-                elif task_metadata is None:
-                    task_metadata = {}
-
-                # Get task result
-                task_result = task.get("result", {})
-                if isinstance(task_result, str):
-                    try:
-                        task_result = json.loads(task_result) if task_result else {}
-                    except (json.JSONDecodeError, TypeError):
-                        logger.warning(
-                            "[get_pending_approvals] result is not valid JSON for task %s — defaulting to {}",
-                            task.get("id"),
-                        )
-                        task_result = {}
-                elif task_result is None:
-                    task_result = {}
-
-                # Merge for all content data
-                merged_result = {**task_metadata, **task_result}
-                if request.featured_image_url:
-                    merged_result["featured_image_url"] = request.featured_image_url
-
-                # Extract needed fields for post creation
-                topic = task.get("topic", "") or merged_result.get("topic", "")
-                draft_content = (
-                    merged_result.get("draft_content", "") or merged_result.get("content", "") or ""
-                )
-                seo_description = merged_result.get("seo_description", "")
-                seo_keywords = merged_result.get("seo_keywords", [])
-                featured_image = request.featured_image_url or merged_result.get(
-                    "featured_image_url"
-                )
-                metadata = merged_result.get("metadata", {})
-
-                # Extract title (shared utility — see utils/text_utils.py)
-                extracted_title, cleaned_content = extract_title_from_content(draft_content)
-                post_title = extracted_title or merged_result.get("title") or topic
-
-                if cleaned_content and post_title:
-                    # Create slug
-                    slug = re_module.sub(r"[^\w\s-]", "", post_title).lower().replace(" ", "-")[:50]
-                    slug = f"{slug}-{task_id[:8]}"
-
-                    # Get or create author and category
-                    from services.content_router_service import (
-                        _get_or_create_default_author,
-                        _select_category_for_topic,
-                    )
-
-                    author_id = await _get_or_create_default_author(db_service)
-                    category_id = await _select_category_for_topic(post_title, db_service)
-
-                    # Validate approver_id is a valid UUID for the posts table
-                    # (dev-mode users like "dev_user_local" are not UUIDs)
-                    import uuid as _uuid
-
-                    try:
-                        _uuid.UUID(str(approver_id))
-                        audit_user_id = approver_id
-                    except ValueError:
-                        audit_user_id = None
-
-                    # Create post — include audit fields so we know who published
-                    post = await db_service.create_post(
-                        {
-                            "title": post_title,
-                            "slug": slug,
-                            "content": cleaned_content,
-                            "excerpt": seo_description,
-                            "featured_image_url": featured_image,
-                            "author_id": author_id,
-                            "category_id": category_id,
-                            "status": "published",
-                            "seo_title": post_title,
-                            "seo_description": seo_description,
-                            "seo_keywords": normalize_seo_keywords(seo_keywords),
-                            "metadata": metadata,
-                            "created_by": audit_user_id,
-                            "updated_by": audit_user_id,
-                        }
-                    )
-                    logger.info(
-                        f"[OK] Post created: {post.id if hasattr(post, 'id') else post.get('id')}"  # type: ignore[attr-defined]
-                    )
-
-                    # Update task status to published and save post_id
-                    post_id = str(post.id) if hasattr(post, "id") else str(post.get("id"))  # type: ignore[attr-defined]
-                    publish_metadata = {
-                        "published_at": datetime.now(timezone.utc).isoformat(),
-                        "published_by": approver_id,
-                        "post_id": post_id,
-                        "post_slug": slug,
-                        "published_url": f"/posts/{slug}",
-                    }
-
-                    final_result = convert_decimals(
-                        {
-                            **merged_result,
-                            **publish_metadata,
-                        }
-                    )
-
-                    await db_service.update_task_status(
-                        task_id, "published", result=safe_json_dumps(final_result)
-                    )
-
-                    logger.info(f"[OK] Task {task_id} published with post_id: {post_id}")
-                auto_publish_succeeded = True
-            except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
-                logger.warning(f"[WARNING] Auto-publish failed: {str(e)}", exc_info=True)
-                # Don't fail the approval if auto-publish fails
-                auto_publish_succeeded = False
-        else:
-            auto_publish_succeeded = False
-
-        # Broadcast approval status to connected WebSocket clients
-        try:
-            await broadcast_approval_status(
-                task_id,
-                "approved",
-                {
-                    "approved_by": current_user.get("id"),
-                    "feedback": request.feedback,
-                    "approval_date": approval_date.isoformat(),
-                },
-            )
-        except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
-            logger.warning(f"Failed to broadcast approval status: {e}", exc_info=True)
-
-        # Build response based on whether auto_publish happened
-        response_data = {
-            "task_id": task_id,
-            "status": "published" if auto_publish_succeeded else "approved",
-            "approval_status": "approved",
-            "approval_date": approval_date.isoformat(),
-            "approval_timestamp": approval_date.isoformat(),
-            "approved_by": current_user.get("id"),
-            "feedback": request.feedback,
-            "message": (
-                "Task approved and published"
-                if auto_publish_succeeded
-                else (
-                    "Task approved but auto-publish failed — please publish manually"
-                    if request.auto_publish
-                    else "Task approved for publishing"
-                )
-            ),
-            "next_action": (
-                "Task is published"
-                if auto_publish_succeeded
-                else "Task will be published by the publishing agent"
-            ),
-            "_debug_auto_publish_value": request.auto_publish,
-            "_debug_auto_publish_type": str(type(request.auto_publish)),
-            "_debug_auto_publish_bool": bool(request.auto_publish),
-        }
-
-        # If auto_publish was attempted, fetch the task to get post_id and post_slug
-        if request.auto_publish:
-            try:
-                updated_task = await db_service.get_task(task_id)
-                if updated_task is None:
-                    updated_task = {}
-                task_result = updated_task.get("result", {})
-                if isinstance(task_result, str):
-                    task_result = json.loads(task_result) if task_result else {}
-
-                if task_result:
-                    post_id = task_result.get("post_id")
-                    post_slug = task_result.get("post_slug")
-                    published_url = task_result.get("published_url")
-                    if post_id:
-                        response_data["post_id"] = post_id
-                    if post_slug:
-                        response_data["post_slug"] = post_slug
-                    if published_url:
-                        response_data["published_url"] = published_url
-            except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
-                logger.warning(
-                    f"[WARNING] Could not fetch post_id from updated task: {e}", exc_info=True
-                )
-
-        return response_data
-
-    except HTTPException:
-        raise
-    except AppError:
-        raise
-    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
-        logger.error(f"❌ [APPROVAL] Failed to approve task {task_id}: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to approve task",
-        )
+# NOTE: POST /{task_id}/approve is defined in task_publishing_routes.py
+# (registered via task_routes.py → publishing_router). It was removed from
+# this file to eliminate a duplicate endpoint (#1335).
 
 
 @router.post(

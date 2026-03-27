@@ -523,5 +523,5 @@ curl -X POST http://localhost:8000/api/tasks \
 
 - [Analytics Quick Start](../ANALYTICS_QUICK_START.md)
 - [Capability-Based Task System](../CAPABILITY_BASED_TASK_SYSTEM.md)
-- [Architecture & Design](../02-ARCHITECTURE_AND_DESIGN.md)
-- [Operations & Maintenance](../06-OPERATIONS_AND_MAINTENANCE.md)
+- [Architecture & Design](../02-Architecture/System-Design.md)
+- [Operations & Maintenance](./Operations-Maintenance.md)

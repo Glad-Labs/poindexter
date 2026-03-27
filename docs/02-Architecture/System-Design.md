@@ -759,7 +759,7 @@ CREATE TABLE memories (
    - Explore component READMEs in docs/components/
 
 2. **Set up your development environment:**
-   - Follow [01-SETUP_AND_OVERVIEW.md](./01-SETUP_AND_OVERVIEW.md)
+   - Follow the [Setup Guide](../01-Getting-Started/)
    - Run all services locally
 
 3. **Learn the codebase:**
@@ -768,21 +768,21 @@ CREATE TABLE memories (
    - Study cofounder_agent/ (FastAPI patterns)
 
 4. **Contribute to development:**
-   - Check [04-DEVELOPMENT_WORKFLOW.md](./04-DEVELOPMENT_WORKFLOW.md)
-   - Review [05-AI_AGENTS_AND_INTEGRATION.md](./05-AI_AGENTS_AND_INTEGRATION.md)
+   - Check [Development-Workflow.md](../04-Development/Development-Workflow.md)
+   - Review [Multi-Agent-Pipeline.md](./Multi-Agent-Pipeline.md)
 
 ---
 
 ## 📚 Related Documentation
 
-- **[Setup Guide](../01-SETUP_AND_OVERVIEW.md)** - Getting started
-- **[Deployment Guide](../03-DEPLOYMENT_AND_INFRASTRUCTURE.md)** - Production setup
-- **[Development Workflow](../04-DEVELOPMENT_WORKFLOW.md)** - Git and testing
-- **[AI Agents & Integration](../05-AI_AGENTS_AND_INTEGRATION.md)** - Agent details
-- **[Operations Guide](../06-OPERATIONS_AND_MAINTENANCE.md)** - Production support
+- **[Setup Guide](../01-Getting-Started/)** - Getting started
+- **[Deployment Guide](../05-Operations/Operations-Maintenance.md)** - Production setup
+- **[Development Workflow](../04-Development/Development-Workflow.md)** - Git and testing
+- **[AI Agents & Integration](./Multi-Agent-Pipeline.md)** - Agent details
+- **[Operations Guide](../05-Operations/Operations-Maintenance.md)** - Production support
 
 ---
 
 **[← Back to Documentation Hub](../00-README.md)**
 
-[Setup](../01-SETUP_AND_OVERVIEW.md) • [Deployment](../03-DEPLOYMENT_AND_INFRASTRUCTURE.md) • [Development](../04-DEVELOPMENT_WORKFLOW.md)
+[Setup](../01-Getting-Started/) • [Deployment](../05-Operations/Operations-Maintenance.md) • [Development](../04-Development/Development-Workflow.md)

@@ -730,9 +730,9 @@ npm run test:python:smoke  # 5-10 minutes
 
 ## 🔗 Related Documentation
 
-- **[Development Workflow](../04-DEVELOPMENT_WORKFLOW.md#🧪-testing)** - Testing section in workflow
+- **[Development Workflow](../04-Development/Development-Workflow.md#🧪-testing)** - Testing section in workflow
 - **[Core Docs Hub](../00-README.md)** - All documentation
-- **[Setup Guide](../01-SETUP_AND_OVERVIEW.md)** - Getting started
+- **[Setup Guide](../01-Getting-Started/)** - Getting started
 - **[API References](./API_CONTRACT_CONTENT_CREATION.md)** - API testing examples
 
 ---

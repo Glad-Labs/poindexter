@@ -120,7 +120,7 @@ curl https://api.glad-labs.com/api/metrics
 
 #### POST `/api/tasks`
 
-Create a new task for agent execution.
+Create a new task for agent execution. Routes to the appropriate handler based on `task_type`.
 
 **Request:**
 
@@ -129,54 +129,89 @@ curl -X POST https://api.glad-labs.com/api/tasks \
   -H "Authorization: Bearer YOUR_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "title": "Generate Blog Post",
-    "description": "Write SEO-optimized blog post about AI",
-    "type": "content_generation",
-    "parameters": {
-      "topic": "AI Trends 2025",
-      "length": 2000,
-      "style": "professional",
-      "include_images": true
-    }
+    "task_type": "blog_post",
+    "topic": "AI Trends in Healthcare 2025",
+    "style": "technical",
+    "tone": "professional",
+    "target_length": 2000,
+    "generate_featured_image": true,
+    "category": "technology",
+    "target_audience": "Healthcare professionals",
+    "primary_keyword": "AI healthcare",
+    "tags": ["AI", "Healthcare"],
+    "models_by_phase": {
+      "research": "ultra_cheap",
+      "draft": "premium",
+      "assess": "cheap"
+    },
+    "quality_preference": "balanced",
+    "metadata": {}
   }'
 ```
+
+**Required Fields:**
+
+- `topic` (string, 3-200 chars) - Task topic/subject/query
+
+**Common Optional Fields:**
+
+- `task_type` - One of: `blog_post` (default), `social_media`, `email`, `newsletter`, `business_analytics`, `data_retrieval`, `market_research`, `financial_analysis`
+- `category` (string, default: "general") - Content category
+- `target_audience` (string, default: "General") - Target audience
+- `primary_keyword` (string) - Primary SEO keyword
+- `models_by_phase` (object) - Per-phase model selection (research, outline, draft, assess, refine, finalize)
+- `model_selections` (object) - DEPRECATED alias for `models_by_phase`
+- `quality_preference` - One of: `fast`, `balanced` (default), `quality`
+- `description` (string, max 1000 chars) - Human-written task description
+- `metadata` (object) - Additional metadata
+
+**Content Task Fields (blog_post, social_media, email, newsletter):**
+
+- `style` - One of: `technical`, `narrative` (default), `listicle`, `educational`, `thought-leadership`
+- `tone` - One of: `professional` (default), `casual`, `academic`, `inspirational`
+- `target_length` (int, 200-5000, default: 1500) - Target word count (blog_post)
+- `generate_featured_image` (bool, default: true) - Search for featured image (blog_post)
+- `tags` (array, max 10) - Tags for categorization
+- `platforms` (array) - Target platforms (social_media only)
+
+**Analytics Task Fields (business_analytics):**
+
+- `metrics` (array) - Metrics to analyze (revenue, churn, conversion_rate, etc.)
+- `time_period` (string) - Analysis period (last_month, last_quarter, ytd, custom)
+- `business_context` (object) - Industry, size, goals context
 
 **Response (201 Created):**
 
 ```json
 {
-  "id": "task_abc123xyz",
-  "title": "Generate Blog Post",
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "task_id": "550e8400-e29b-41d4-a716-446655440000",
+  "task_type": "blog_post",
+  "topic": "AI Trends in Healthcare 2025",
   "status": "pending",
-  "type": "content_generation",
-  "created_at": "2025-11-14T10:30:00Z",
-  "created_by": "user_123",
-  "parameters": {
-    "topic": "AI Trends 2025",
-    "length": 2000,
-    "style": "professional",
-    "include_images": true
-  }
+  "created_at": "2026-03-26T10:30:00+00:00",
+  "message": "Blog post task created and queued"
 }
 ```
 
 **Status Codes:**
 
 - `201 Created` - Task created successfully
-- `400 Bad Request` - Invalid parameters
+- `400 Bad Request` - Unknown task_type
 - `401 Unauthorized` - Missing/invalid authentication
-- `422 Unprocessable Entity` - Validation error
+- `422 Unprocessable Entity` - Validation error (e.g., topic too short)
+- `429 Too Many Requests` - Rate limited (10/minute)
 
 ---
 
 #### GET `/api/tasks/{task_id}`
 
-Get details about a specific task.
+Get details about a specific task. Returns a `UnifiedTaskResponse`.
 
 **Request:**
 
 ```bash
-curl https://api.glad-labs.com/api/tasks/task_abc123xyz \
+curl https://api.glad-labs.com/api/tasks/550e8400-e29b-41d4-a716-446655440000 \
   -H "Authorization: Bearer YOUR_KEY"
 ```
 
@@ -184,31 +219,48 @@ curl https://api.glad-labs.com/api/tasks/task_abc123xyz \
 
 ```json
 {
-  "id": "task_abc123xyz",
-  "title": "Generate Blog Post",
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "task_id": "550e8400-e29b-41d4-a716-446655440000",
+  "task_name": "Blog Post: AI Trends in Healthcare 2025",
+  "task_type": "blog_post",
   "status": "completed",
-  "type": "content_generation",
-  "created_at": "2025-11-14T10:30:00Z",
-  "started_at": "2025-11-14T10:31:00Z",
-  "completed_at": "2025-11-14T10:35:00Z",
-  "assigned_agents": ["content_agent", "publishing_agent"],
-  "parameters": {
-    "topic": "AI Trends 2025",
-    "length": 2000,
-    "style": "professional",
-    "include_images": true
+  "approval_status": "approved",
+  "publish_status": "draft",
+  "topic": "AI Trends in Healthcare 2025",
+  "primary_keyword": "AI healthcare",
+  "target_audience": "Healthcare professionals",
+  "category": "technology",
+  "style": "technical",
+  "tone": "professional",
+  "target_length": 2000,
+  "quality_preference": "balanced",
+  "models_by_phase": {
+    "research": "ultra_cheap",
+    "draft": "premium",
+    "assess": "cheap"
   },
-  "result": {
-    "content": "# AI Trends 2025\n\nArtificial Intelligence...",
-    "images": ["img1.jpg", "img2.jpg"],
-    "seo": {
-      "title": "AI Trends 2025 - Expert Guide",
-      "description": "Comprehensive guide to AI trends...",
-      "keywords": ["AI", "trends", "2025", "machine learning"]
-    },
-    "quality_score": 4.8
+  "estimated_cost": 0.0125,
+  "cost_breakdown": {
+    "research": 0.001,
+    "draft": 0.005,
+    "assess": 0.003,
+    "total": 0.0125
   },
-  "errors": null
+  "content": "# AI Trends in Healthcare 2025\n\nContent here...",
+  "excerpt": "Exploring how AI is transforming healthcare...",
+  "featured_image_url": "https://images.pexels.com/...",
+  "quality_score": 94.2,
+  "seo_title": "AI Trends in Healthcare 2025 | Your Blog",
+  "seo_description": "Discover how AI is revolutionizing healthcare",
+  "seo_keywords": ["AI", "healthcare", "future"],
+  "created_at": "2026-03-26T10:30:00Z",
+  "updated_at": "2026-03-26T10:35:45Z",
+  "started_at": "2026-03-26T10:31:00Z",
+  "completed_at": "2026-03-26T10:35:00Z",
+  "agent_id": "content-agent",
+  "error_message": null,
+  "error_details": null,
+  "metadata": {}
 }
 ```
 
@@ -216,6 +268,7 @@ curl https://api.glad-labs.com/api/tasks/task_abc123xyz \
 
 - `200 OK` - Task found
 - `401 Unauthorized` - Missing/invalid authentication
+- `403 Forbidden` - User does not own this task
 - `404 Not Found` - Task doesn't exist
 
 ---
@@ -233,81 +286,117 @@ curl "https://api.glad-labs.com/api/tasks?status=completed&limit=10&offset=0" \
 
 **Query Parameters:**
 
-- `status` - Filter by status (pending, in_progress, completed, failed)
-- `type` - Filter by type (content_generation, financial_analysis, etc.)
+- `status` - Filter by status (queued, pending, running, completed, failed)
+- `category` - Filter by category
+- `search` - Keyword search across task name, topic, and category (trigram-indexed, max 200 chars)
 - `limit` - Results per page (default: 20, max: 100)
 - `offset` - Pagination offset (default: 0)
-- `sort` - Sort field (created_at, status, type)
-- `order` - Sort order (asc, desc)
 
 **Response (200 OK):**
 
 ```json
 {
-  "data": [
+  "tasks": [
     {
-      "id": "task_abc123xyz",
-      "title": "Generate Blog Post",
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "task_name": "Blog Post: AI Trends in Healthcare 2025",
+      "task_type": "blog_post",
       "status": "completed",
-      "type": "content_generation",
-      "created_at": "2025-11-14T10:30:00Z"
+      "topic": "AI Trends in Healthcare 2025",
+      "category": "technology",
+      "created_at": "2026-03-26T10:30:00Z",
+      "updated_at": "2026-03-26T10:35:45Z"
     },
     {
-      "id": "task_def456uvw",
-      "title": "Analyze Market",
-      "status": "in_progress",
-      "type": "market_analysis",
-      "created_at": "2025-11-14T09:15:00Z"
+      "id": "660f9500-f39c-52e5-b827-557766551111",
+      "task_name": "Market Research: Competitor Pricing",
+      "task_type": "market_research",
+      "status": "pending",
+      "topic": "Competitor Pricing Strategy",
+      "category": "general",
+      "created_at": "2026-03-26T09:15:00Z",
+      "updated_at": "2026-03-26T09:15:00Z"
     }
   ],
-  "pagination": {
-    "limit": 10,
-    "offset": 0,
-    "total": 245,
-    "pages": 25
-  }
+  "total": 245,
+  "offset": 0,
+  "limit": 10
 }
 ```
 
 ---
 
-#### PUT `/api/tasks/{task_id}`
+#### PUT `/api/tasks/{task_id}/status`
 
-Update a task (only pending tasks).
+Update task status with enterprise-level transition validation and audit trail.
 
 **Request:**
 
 ```bash
-curl -X PUT https://api.glad-labs.com/api/tasks/task_abc123xyz \
+curl -X PUT https://api.glad-labs.com/api/tasks/550e8400-e29b-41d4-a716-446655440000/status \
   -H "Authorization: Bearer YOUR_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "status": "paused",
-    "priority": "high"
+    "status": "awaiting_approval",
+    "reason": "Content generation completed",
+    "metadata": {"quality_score": 8.5}
   }'
+```
+
+**Request Body:**
+
+- `status` (string, required) - Target status
+- `updated_by` (string, optional) - User/system identifier
+- `reason` (string, optional) - Change reason for audit trail
+- `metadata` (object, optional) - Additional metadata
+
+**Valid Status Transitions:**
+
+```
+pending -> in_progress, failed, cancelled
+in_progress -> awaiting_approval, failed, on_hold, cancelled
+awaiting_approval -> approved, rejected, in_progress, cancelled
+approved -> published, on_hold, cancelled
+published -> on_hold
+failed -> pending, cancelled
+on_hold -> in_progress, cancelled
+rejected -> in_progress, cancelled
+cancelled -> (terminal — no transitions)
 ```
 
 **Response (200 OK):**
 
 ```json
 {
-  "id": "task_abc123xyz",
-  "status": "paused",
-  "priority": "high",
-  "updated_at": "2025-11-14T10:40:00Z"
+  "task_id": "550e8400-e29b-41d4-a716-446655440000",
+  "old_status": "in_progress",
+  "new_status": "awaiting_approval",
+  "timestamp": "2026-03-26T10:40:00Z",
+  "updated_by": "user@example.com",
+  "message": "Status updated successfully: in_progress -> awaiting_approval"
 }
 ```
+
+**Status Codes:**
+
+- `200 OK` - Status updated
+- `400 Bad Request` - Invalid task ID format
+- `401 Unauthorized` - Missing/invalid authentication
+- `403 Forbidden` - User does not own this task
+- `404 Not Found` - Task doesn't exist
+- `409 Conflict` - Invalid status transition
+- `422 Unprocessable Entity` - Invalid status value
 
 ---
 
 #### DELETE `/api/tasks/{task_id}`
 
-Cancel a pending task.
+Soft-delete a task (marks as cancelled, preserves audit trail).
 
 **Request:**
 
 ```bash
-curl -X DELETE https://api.glad-labs.com/api/tasks/task_abc123xyz \
+curl -X DELETE https://api.glad-labs.com/api/tasks/550e8400-e29b-41d4-a716-446655440000 \
   -H "Authorization: Bearer YOUR_KEY"
 ```
 
@@ -319,9 +408,9 @@ curl -X DELETE https://api.glad-labs.com/api/tasks/task_abc123xyz \
 
 **Status Codes:**
 
-- `204 No Content` - Task deleted
-- `400 Bad Request` - Cannot delete completed task
+- `204 No Content` - Task deleted (soft)
 - `401 Unauthorized` - Missing/invalid authentication
+- `403 Forbidden` - User does not own this task
 - `404 Not Found` - Task doesn't exist
 
 ---
@@ -636,22 +725,18 @@ List endpoints support pagination:
 - `limit` - Results per page (default: 20, max: 100)
 - `offset` - Number of results to skip (default: 0)
 
-**Response:**
+**Response (Task list example):**
 
 ```json
 {
-  "data": [...],
-  "pagination": {
-    "limit": 20,
-    "offset": 0,
-    "total": 542,
-    "pages": 28,
-    "current_page": 1,
-    "has_next": true,
-    "has_prev": false
-  }
+  "tasks": [...],
+  "total": 542,
+  "offset": 0,
+  "limit": 20
 }
 ```
+
+> **Note:** The task list endpoint uses flat pagination fields (`total`, `offset`, `limit`) rather than a nested `pagination` object. Other list endpoints may follow a similar pattern.
 
 ---
 
@@ -661,13 +746,14 @@ List endpoints support pagination:
 
 ```bash
 # Create task
-TASK_ID=$(curl -X POST https://api.glad-labs.com/api/tasks \
+TASK_ID=$(curl -s -X POST https://api.glad-labs.com/api/tasks \
   -H "Authorization: Bearer KEY" \
-  -d '...' | jq -r '.id')
+  -H "Content-Type: application/json" \
+  -d '{"topic": "AI Trends 2025", "task_type": "blog_post"}' | jq -r '.id')
 
 # Poll for completion
 while true; do
-  STATUS=$(curl https://api.glad-labs.com/api/tasks/$TASK_ID \
+  STATUS=$(curl -s https://api.glad-labs.com/api/tasks/$TASK_ID \
     -H "Authorization: Bearer KEY" | jq -r '.status')
 
   if [ "$STATUS" = "completed" ]; then
@@ -679,14 +765,20 @@ while true; do
 done
 ```
 
+### WebSocket Real-Time Progress (Current)
+
+Connect to `/api/workflow-progress/ws/{execution_id}` for real-time progress updates instead of polling.
+
 ### Webhooks (Phase 6+)
 
 ```bash
-# Create task with webhook
+# Create task with webhook (not yet implemented)
 curl -X POST https://api.glad-labs.com/api/tasks \
   -H "Authorization: Bearer KEY" \
+  -H "Content-Type: application/json" \
   -d '{
-    "title": "...",
+    "topic": "AI Trends 2025",
+    "task_type": "blog_post",
     "webhook_url": "https://yourapp.com/webhooks/task-complete"
   }'
 ```
@@ -695,14 +787,14 @@ curl -X POST https://api.glad-labs.com/api/tasks \
 
 ## 📚 Related Documentation
 
-- **Development:** [Development Workflow](../04-DEVELOPMENT_WORKFLOW.md)
-- **Architecture:** [System Architecture](../02-ARCHITECTURE_AND_DESIGN.md)
+- **Development:** [Development Workflow](../04-Development/Development-Workflow.md)
+- **Architecture:** [System Architecture](../02-Architecture/System-Design.md)
 - **Authentication:** [Auth Systems](../reference/AUTH_SYSTEMS.md)
 - **Rate Limiting:** [Rate Limiting Policy](../reference/RATE_LIMITING.md)
 
 ---
 
-**Last Updated:** November 14, 2025  
-**Version:** 1.0 Production  
-**Next Version:** 2.0 (Phase 6)  
+**Last Updated:** March 26, 2026
+**Version:** 1.0 Production
+**Next Version:** 2.0 (Phase 6)
 **Status:** ✅ Complete Reference

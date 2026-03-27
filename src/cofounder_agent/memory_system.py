@@ -7,6 +7,7 @@ learn from interactions, build domain expertise, and maintain context across ses
 Uses PostgreSQL for persistent storage (no SQLite).
 """
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -125,9 +126,8 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
         self.db_pool = db_pool
         self.logger = logging.getLogger("ai_memory_system")
 
-        # Embedding model for semantic similarity
+        # Embedding model for semantic similarity (loaded async in initialize())
         self.embedding_model = None
-        self._init_embedding_model()
 
         # Memory caches
         self.recent_memories: List[Memory] = []
@@ -150,6 +150,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
         Async initialization - loads memories from PostgreSQL.
         Must be called after instantiation before using the system.
         """
+        await asyncio.to_thread(self._init_embedding_model)
         await self._verify_tables_exist()
         await self._load_persistent_memory()
 
@@ -332,7 +333,8 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
         embedding = None
         if self.embedding_model:
             try:
-                embedding = self.embedding_model.encode([content])[0].tolist()
+                raw = await asyncio.to_thread(self.embedding_model.encode, [content])
+                embedding = raw[0].tolist()
             except Exception as e:  # pylint: disable=broad-except
                 self.logger.error("Error generating embedding: %s", e, exc_info=True)
 
@@ -428,7 +430,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
             # Generate query embedding
             query_embedding = None
             if self.embedding_model:
-                query_embedding = self.embedding_model.encode([query])[0]
+                query_embedding = (await asyncio.to_thread(self.embedding_model.encode, [query]))[0]
 
             # Search through memories
             search_memories = self.recent_memories + self.important_memories
@@ -484,9 +486,9 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
             relevant_memories.sort(key=lambda x: x[1], reverse=True)
             result = [memory for memory, _ in relevant_memories[:limit]]
 
-            # Update access counts in database
-            for memory in result:
-                await self._update_memory_access(memory)
+            # Update access counts in database (batched)
+            if result:
+                await self._batch_update_memory_access(result)
 
             return result
 
@@ -510,6 +512,21 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
                 )
         except Exception as e:  # pylint: disable=broad-except
             self.logger.error("Error updating memory access: %s", e, exc_info=True)
+
+    async def _batch_update_memory_access(self, memories: List[Memory]) -> None:
+        """Batch-update memory access information in PostgreSQL"""
+        try:
+            async with self.db_pool.acquire() as conn:
+                await conn.executemany(
+                    """
+                    UPDATE memories
+                    SET last_accessed = $1, access_count = $2
+                    WHERE id = $3::uuid
+                """,
+                    [(m.last_accessed, m.access_count, m.id) for m in memories],
+                )
+        except Exception as e:  # pylint: disable=broad-except
+            self.logger.error("Error batch-updating memory access: %s", e, exc_info=True)
 
     async def learn_user_preference(
         self,

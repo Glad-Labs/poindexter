@@ -395,7 +395,7 @@ web/oversight-hub/
 
 - **Metrics Collection Details:** See [CAPABILITY_BASED_TASK_SYSTEM.md](CAPABILITY_BASED_TASK_SYSTEM.md)
 - **Production Monitoring:** See [MONITORING_AND_DIAGNOSTICS.md](MONITORING_AND_DIAGNOSTICS.md)
-- **Architecture:** See [02-ARCHITECTURE_AND_DESIGN.md](02-ARCHITECTURE_AND_DESIGN.md)
+- **Architecture:** See [System-Design.md](02-Architecture/System-Design.md)
 
 ---
 

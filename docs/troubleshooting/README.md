@@ -20,5 +20,5 @@ Additional troubleshooting guides for specific services:
 
 ---
 
-**Note:** For architectural questions, see [02-ARCHITECTURE_AND_DESIGN.md](../02-ARCHITECTURE_AND_DESIGN.md)  
-For operations issues, see [06-OPERATIONS_AND_MAINTENANCE.md](../06-OPERATIONS_AND_MAINTENANCE.md)
+**Note:** For architectural questions, see [System-Design.md](../02-Architecture/System-Design.md)
+For operations issues, see [Operations-Maintenance.md](../05-Operations/Operations-Maintenance.md)

@@ -212,6 +212,6 @@ npm run clean:install         # Reset everything
 
 ## 🔗 Related Documentation
 
-- **[02-ARCHITECTURE_AND_DESIGN.md](../02-ARCHITECTURE_AND_DESIGN.md)** - System design
-- **[07-BRANCH_SPECIFIC_VARIABLES.md](../07-BRANCH_SPECIFIC_VARIABLES.md)** - Environment config
+- **[System-Design.md](../02-Architecture/System-Design.md)** - System design
+- **[.env.example](../../.env.example)** - Environment config
 - **[reference/ci-cd/](../reference/ci-cd/)** - GitHub Actions details
