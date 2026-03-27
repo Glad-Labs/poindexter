@@ -59,9 +59,9 @@ NEXT_PUBLIC_SITE_URL=http://localhost:3000
 
 The public site uses Next.js, which requires the `NEXT_PUBLIC_` prefix for client-side variables.
 
-| Service             | Build Tool | Required Prefix | Access Pattern              |
-| ------------------- | ---------- | --------------- | --------------------------- |
-| `web/public-site`   | Next.js 15 | `NEXT_PUBLIC_`  | `process.env.NEXT_PUBLIC_*` |
+| Service           | Build Tool | Required Prefix | Access Pattern              |
+| ----------------- | ---------- | --------------- | --------------------------- |
+| `web/public-site` | Next.js 15 | `NEXT_PUBLIC_`  | `process.env.NEXT_PUBLIC_*` |
 
 Next.js statically replaces `process.env.NEXT_PUBLIC_*` at build time. Variables without the
 prefix are server-only and stripped from the client bundle.

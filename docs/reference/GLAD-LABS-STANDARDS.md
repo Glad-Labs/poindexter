@@ -37,7 +37,7 @@ The entire system is built on a monorepo structure, with a central AI Co-Founder
 | **Content Storage**      | **Markdown-based (local files)** | **Static & Versioned.** Content stored in markdown for git versioning. Strapi CMS deprecated for better version control and offline capability.     |
 | **Operational Database** | **PostgreSQL 15+ with asyncpg**  | **Relational & Persistent.** Primary database storing users, tasks, content, logs, and metrics across 5 specialized database modules.               |
 | **Frontend (Public)**    | **Next.js 15 + TailwindCSS**     | **High Performance & SEO.** Enables **Static Site Generation (SSG)** with Incremental Static Regeneration (ISR) for dynamic content.                |
-| **Operations**           | **OpenClaw + Grafana**           | **External ops platform.** Task management, agent monitoring, and performance dashboards via external tooling.                                       |
+| **Operations**           | **OpenClaw + Grafana**           | **External ops platform.** Task management, agent monitoring, and performance dashboards via external tooling.                                      |
 | **Agent Communication**  | **Async Task Queues + FastAPI**  | **Asynchronous Event Bus.** FastAPI background tasks and PostgreSQL task tables coordinate agent execution with retry and circuit breaker patterns. |
 
 ### **4. Project Structure & Codebases**

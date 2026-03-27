@@ -22,14 +22,14 @@ This tracker is aligned to:
 
 ### Codebase Metric Snapshot
 
-| Metric                              | Value       | Status     | Notes                                                                  |
-| ----------------------------------- | ----------- | ---------- | ---------------------------------------------------------------------- |
-| Backend Service Modules             | 116         | ✅ Healthy | Well-organized services layer                                          |
-| Backend Test Files                  | 56          | ✅ Good    | 57/57 tests passing (Phase 2B complete)                                |
-| Frontend Test Files (Public Site)   | ~482        | ✅ Good    | Next.js website tests passing                                          |
-| TODO Markers in Code                | 1           | ✅ Low     | Async queue implementation (workflow_execution_adapter.py:730)         |
-| Generic "except Exception" Handlers | 30+         | ⚠️ Medium  | Need specific exception types per Python standards                     |
-| SELECT \* FROM Statements           | 10+         | ⚠️ Medium  | Should select specific columns for performance                         |
+| Metric                              | Value | Status     | Notes                                                          |
+| ----------------------------------- | ----- | ---------- | -------------------------------------------------------------- |
+| Backend Service Modules             | 116   | ✅ Healthy | Well-organized services layer                                  |
+| Backend Test Files                  | 56    | ✅ Good    | 57/57 tests passing (Phase 2B complete)                        |
+| Frontend Test Files (Public Site)   | ~482  | ✅ Good    | Next.js website tests passing                                  |
+| TODO Markers in Code                | 1     | ✅ Low     | Async queue implementation (workflow_execution_adapter.py:730) |
+| Generic "except Exception" Handlers | 30+   | ⚠️ Medium  | Need specific exception types per Python standards             |
+| SELECT \* FROM Statements           | 10+   | ⚠️ Medium  | Should select specific columns for performance                 |
 
 ## Canonical Open Debt Issues
 
@@ -177,7 +177,6 @@ Only **1 verified TODO** in production code:
      - `custom_workflows_service.py:946` — `SELECT * FROM workflow_executions`
 
 3. **Frontend Test Coverage** (CRITICAL GAP)
-
    - **Public Site:** 0 test files (Next.js website)
    - **Recommendation:** Critical for CI/CD and quality gates
    - **Mapped to:** [#20](https://github.com/Glad-Labs/glad-labs-codebase/issues/20)

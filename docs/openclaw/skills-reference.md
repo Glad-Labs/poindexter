@@ -15,12 +15,14 @@ All skills authenticate with `Authorization: Bearer $GLADLABS_API_TOKEN` and tar
 **API call:** `POST /api/tasks`
 
 **Parameters:**
+
 - `topic` (required) -- extracted from the natural language command
 - `task_name` -- auto-generated from topic
 - `category` -- defaults to "blog" unless specified
 - `target_audience` -- defaults to "general" unless specified
 
 **Example:**
+
 ```
 You: write a post about quantum computing breakthroughs in 2026
 Bot: Created task abc12345 -- 'Quantum Computing Breakthroughs in 2026'. Pipeline started.
@@ -37,6 +39,7 @@ Bot: Created task abc12345 -- 'Quantum Computing Breakthroughs in 2026'. Pipelin
 **API call:** `GET /api/tasks?limit=10&offset=0`
 
 **Example:**
+
 ```
 You: show my tasks
 Bot: Recent tasks:
@@ -56,9 +59,11 @@ Bot: Recent tasks:
 **API call:** `GET /api/tasks/{task_id}`
 
 **Parameters:**
+
 - `task_id` (required) -- the task ID (full UUID or short prefix)
 
 **Example:**
+
 ```
 You: check task abc12345
 Bot: Task abc12345 -- 'AI in Healthcare'
@@ -81,6 +86,7 @@ Bot: Task abc12345 -- 'AI in Healthcare'
 **API call:** `POST /api/tasks/{task_id}/approve`
 
 **Example:**
+
 ```
 You: approve task abc12345
 Bot: Task abc12345 approved -- ready for publishing.
@@ -97,6 +103,7 @@ Bot: Task abc12345 approved -- ready for publishing.
 **API call:** `POST /api/tasks/{task_id}/publish`
 
 **Example:**
+
 ```
 You: publish task abc12345
 Bot: Published 'AI in Healthcare' -- live at https://gladlabs.com/posts/ai-in-healthcare
@@ -113,10 +120,12 @@ Bot: Published 'AI in Healthcare' -- live at https://gladlabs.com/posts/ai-in-he
 **API call:** `POST /api/tasks/{task_id}/reject`
 
 **Parameters:**
+
 - `task_id` (required)
 - `reason` (optional) -- extracted from the message after "because"
 
 **Example:**
+
 ```
 You: reject task abc12345 because the intro is too generic
 Bot: Task abc12345 rejected -- feedback: 'the intro is too generic'
@@ -133,6 +142,7 @@ Bot: Task abc12345 rejected -- feedback: 'the intro is too generic'
 **API call:** `GET /api/analytics/kpis?period=today`
 
 **Example:**
+
 ```
 You: daily summary
 Bot: Today's Pipeline Summary:
@@ -154,6 +164,7 @@ Bot: Today's Pipeline Summary:
 **API call:** `GET /api/costs/summary?period=today`
 
 **Example:**
+
 ```
 You: budget status
 Bot: Daily Budget: $2.47 / $5.00 (49%)
@@ -173,6 +184,7 @@ Bot: Daily Budget: $2.47 / $5.00 (49%)
 **API call:** `GET /api/commands/stats/queue-stats`
 
 **Example:**
+
 ```
 You: queue stats
 Bot: Command Queue:
@@ -193,6 +205,7 @@ Bot: Command Queue:
 **API call:** `GET /api/health`
 
 **Example:**
+
 ```
 You: site health
 Bot: System Health: OK
