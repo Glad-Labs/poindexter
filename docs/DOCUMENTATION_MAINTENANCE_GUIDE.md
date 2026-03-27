@@ -208,10 +208,7 @@ Rationale: count_services.py showed actual count is 87
 2. **web/public-site/.env.example**
    - Add if frontend-relevant
 
-3. **web/oversight-hub/.env.example**
-   - Add if admin UI-relevant
-
-4. **.env.production.example**
+3. **.env.production.example**
    - Add if differs from development
 
 5. **.github/copilot-instructions.md**

@@ -14,12 +14,12 @@ Your testing stack now provides **complete end-to-end coverage** across all thre
 │                      USER BROWSER (TEST)                        │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                   │
-│  Public Site                  Oversight Hub            API       │
-│  (port 3000)                  (port 3001)          (port 8000)   │
-│  ✅ 8 browsers                ✅ 5 browsers          ✅ HTTP      │
-│  ✅ All devices               ✅ Pre-auth state      ✅ REST      │
-│  ✅ Content flow              ✅ Admin workflows     ✅ Auth      │
-│  ✅ Search & filter           ✅ Real-time updates   ✅ Errors    │
+│  Public Site                                       API           │
+│  (port 3000)                                   (port 8000)       │
+│  ✅ 8 browsers                                   ✅ HTTP          │
+│  ✅ All devices                                  ✅ REST          │
+│  ✅ Content flow                                 ✅ Auth          │
+│  ✅ Search & filter                              ✅ Errors        │
 │  ✅ Responsive design         ✅ Model selection     ✅ Perf      │
 │  ✅ Accessibility             ✅ Monitoring                      │
 │  ✅ SEO metadata              ✅ Task execution                   │
@@ -143,7 +143,6 @@ Your testing stack now provides **complete end-to-end coverage** across all thre
 npm test
 
 # Specific application
-npm test web/oversight-hub
 npm test web/public-site
 
 # By test file
@@ -249,7 +248,7 @@ npm run test:all:ci
 
 ```javascript
 {
-  testDir: './web/oversight-hub/e2e',
+  testDir: './web/public-site/e2e',
 
   // Browsers
   projects: [
@@ -316,17 +315,15 @@ glad-labs-website/
 │   ├── playwright.oversight.config.ts    # Admin
 │   └── playwright.api.config.ts          # API (new)
 │
-├── Jest Tests (378 tests)
-│   ├── web/oversight-hub/src/__tests__/  # 6 files, 90 tests
+├── Jest Tests (~482 tests)
 │   └── web/public-site/
-│       ├── components/__tests__/         # 9 files, 145 tests
-│       ├── lib/__tests__/                # 5 files, 157 tests
-│       └── app/__tests__/                # 5 files, 75 tests
+│       ├── components/__tests__/         # Component tests
+│       ├── lib/__tests__/                # Library tests
+│       └── app/__tests__/                # App tests
 │
-├── Playwright Tests (E2E - to be created)
+├── Playwright Tests (E2E - 153 tests)
 │   ├── web/public-site/e2e/              # Public site E2E
-│   ├── web/oversight-hub/e2e/            # Admin E2E
-│   └── playwright/api/                   # API E2E (new)
+│   └── playwright/api/                   # API E2E
 │
 └── Documentation
     ├── PLAYWRIGHT_GUIDE.md               # Complete guide
@@ -449,9 +446,8 @@ npm run test:public:perf                           # Check site perf
 **Admin Feature:**
 
 ```bash
-# Create test file in web/oversight-hub/e2e/
-# Use pre-authenticated storage state
-# Run: npx playwright test -c playwright.oversight.config.ts
+# Create test file in web/public-site/e2e/
+# Run: npx playwright test
 ```
 
 **API Endpoint:**

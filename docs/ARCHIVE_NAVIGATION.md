@@ -8,7 +8,7 @@ This document helps you find and understand archived documentation that is no lo
 
 - **`docs/archive/`** - Main archive for historical documentation and reports
 - **`docs/archive/`** - Legacy/historical archive (older content)
-- **`.archive/cleanup-feb2026/`** - Oversight Hub service-specific archived docs
+- **`.archive/cleanup-feb2026/`** - Service-specific archived docs
 
 ---
 
@@ -130,11 +130,11 @@ These should **not** be used for current work:
 
 ## Service-Specific Archives
 
-### Oversight Hub Archive
+### Oversight Hub Archive (Archived to Separate Branch)
 
-**Location:** `web/oversight-hub/archive/cleanup-feb2026/`
-**Contains:** Oversight Hub-specific cleanup and implementation docs
-**When to use:** Understanding Oversight Hub development history
+**Location:** The oversight-hub has been archived to a separate branch.
+**Contains:** Historical cleanup and implementation docs
+**When to use:** Understanding archived oversight-hub development history
 
 **Notable files:**
 

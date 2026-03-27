@@ -103,7 +103,7 @@ export default function AboutPage() {
                   <li>6-stage self-critiquing agent pipeline</li>
                   <li>Multi-provider LLM routing</li>
                   <li>PostgreSQL · Railway · Vercel</li>
-                  <li>React admin dashboard (Oversight Hub)</li>
+                  <li>Next.js 15 content distribution</li>
                 </ul>
               </div>
 

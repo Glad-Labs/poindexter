@@ -62,11 +62,10 @@
 
 ```text
 ┌──────────────────────────────────────────────────────────────────┐
-│                  OVERSIGHT HUB (Control Center)                  │
-│                       Dashboard & UI                             │
+│          OPERATIONS (OpenClaw + Grafana Monitoring)              │
 │  ┌────────────────────────────────────────────────────────────┐ │
-│  │ • Content Calendar  • Agent Monitor  • Cost Tracking       │ │
-│  │ • Performance Dashboard  • Approval Workflows  • Settings  │ │
+│  │ • Task Management  • Agent Monitor  • Cost Tracking        │ │
+│  │ • Performance Dashboards  • Alerting  • Log Aggregation    │ │
 │  └────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────┘
                               ↕️ REST API
@@ -110,7 +109,7 @@ The backend is built with FastAPI and handles all asynchronous task execution an
 ### Request Flow
 
 ```text
-1. User Action (Oversight Hub)
+1. User Action (API call or scheduled task)
    ↓
 2. REST API Call to Co-Founder Agent
    ↓
@@ -137,10 +136,9 @@ The backend is built with FastAPI and handles all asynchronous task execution an
 
 ### Frontend Architecture
 
-| Component         | Technology                       | Port | Status        |
-| ----------------- | -------------------------------- | ---- | ------------- |
-| **Public Site**   | Next.js 15 + React 18 + Tailwind | 3000 | ✅ Production |
-| **Oversight Hub** | React 18 + Material-UI + Zustand | 3001 | ✅ Production |
+| Component       | Technology                       | Port | Status        |
+| --------------- | -------------------------------- | ---- | ------------- |
+| **Public Site** | Next.js 15 + React 18 + Tailwind | 3000 | ✅ Production |
 
 **Frontend Features:**
 
@@ -148,9 +146,7 @@ The backend is built with FastAPI and handles all asynchronous task execution an
 - Responsive design with Tailwind CSS
 - Component-based architecture
 - RESTful API integration
-- Real-time updates (WebSocket ready)
-- Authentication & authorization
-- Dark mode support
+- SEO optimization with sitemap and structured data
 
 ### Backend Architecture
 
@@ -255,64 +251,7 @@ Runtime:
   React hydrates on client
 ```
 
-### 2. Oversight Hub (React)
-
-**Location:** `web/oversight-hub/`
-
-**Purpose:** Admin control center for managing AI agents and content
-
-**Key Features:**
-
-- Real-time system health monitoring
-- Task management with full CRUD operations
-- Model provider configuration
-- Cost tracking and financial metrics
-- Social media management
-- Agent status and performance monitoring
-
-**Main Dashboard Sections:**
-
-```text
-Dashboard/
-├── System Health
-│   ├── Service Status (Backend, Services)
-│   ├── Active Agents
-│   ├── Recent Errors
-│   └── Performance Metrics
-│
-├── Task Management
-│   ├── Active Tasks
-│   ├── Scheduled Tasks
-│   ├── Completed Tasks
-│   └── Failed Tasks (with retry)
-│
-├── Models & Configuration
-│   ├── Available Models
-│   ├── Provider Settings
-│   ├── Model Performance
-│   └── API Key Management
-│
-├── Financial Dashboard
-│   ├── Cost Tracking (by model/provider)
-│   ├── Budget Alerts
-│   ├── ROI Calculations
-│   └── Cost Trends
-│
-└── Content Calendar
-    ├── Scheduled Posts
-    ├── Draft Queue
-    ├── Published Content
-    └── Performance Timeline
-```
-
-**State Management:**
-
-- Zustand for global app state
-- React hooks for component-level state
-- Axios for API communication
-- WebSocket integration (ready for real-time updates)
-
-### 3. CMS Data Layer (PostgreSQL)
+### 2. CMS Data Layer (PostgreSQL)
 
 **Location:** `src/cofounder_agent/routes/cms_routes.py`
 
@@ -365,7 +304,7 @@ GET  /api/categories               # List categories
 GET  /api/tags                     # List tags
 ```
 
-### 4. Agent System Architecture (Self-Critiquing Pipeline)
+### 3. Agent System Architecture (Self-Critiquing Pipeline)
 
 **Location:** `src/agents/content_agent/`
 
@@ -417,7 +356,7 @@ GET  /api/tags                     # List tags
 - **Individual agents:** POST `/api/agents/{agent-name}` → Specific capability
 - **Custom workflows:** Combine agents in any order for flexible pipelines
 
-### 5. AI Co-Founder (FastAPI Backend)
+### 4. AI Co-Founder (FastAPI Backend)
 
 **Location:** `src/cofounder_agent/`
 
@@ -604,18 +543,7 @@ CREATE TABLE memories (
 
 **Goal:** Strengthen existing infrastructure and prepare for expansion
 
-#### 1.1 Oversight Hub Enhancements
-
-- [x] Basic dashboard structure
-- [ ] Content calendar view (day/week/month)
-- [ ] Agent status dashboard
-- [ ] Real-time notifications
-- [ ] Cost tracking dashboard
-- [ ] Approval workflow interface
-
-**Status:** 🔄 In Progress
-
-#### 1.2 Backend API Completion
+#### 1.1 Backend API Completion
 
 - [x] Core endpoints (tasks, models)
 - [ ] Advanced filtering and pagination
@@ -625,7 +553,7 @@ CREATE TABLE memories (
 
 **Status:** 🔄 In Progress
 
-#### 1.3 Database & CMS Optimization
+#### 1.2 Database & CMS Optimization
 
 - [x] Content types setup (PostgreSQL tables)
 - [ ] Direct database access optimization
@@ -764,7 +692,6 @@ CREATE TABLE memories (
 
 3. **Learn the codebase:**
    - Start with public-site/ (Next.js basics)
-   - Move to oversight-hub/ (React state management)
    - Study cofounder_agent/ (FastAPI patterns)
 
 4. **Contribute to development:**

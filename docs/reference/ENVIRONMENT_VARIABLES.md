@@ -15,7 +15,7 @@ Last updated: 2026-03-25.
 | `SECRET_KEY`             | App-level secret (64 chars). Startup crashes if placeholder in prod. | `openssl rand -base64 48`                            |
 | `GH_OAUTH_CLIENT_ID`     | GitHub OAuth App Client ID                                           | `Ov23li...`                                          |
 | `GH_OAUTH_CLIENT_SECRET` | GitHub OAuth App Secret                                              | `abc123...`                                          |
-| `ALLOWED_ORIGINS`        | CORS origins (comma-separated, no trailing slashes)                  | `https://glad-labs-website-oversight-hub.vercel.app` |
+| `ALLOWED_ORIGINS`        | CORS origins (comma-separated, no trailing slashes)                  | `https://glad-labs.com` |
 | At least ONE LLM key     | See AI Model section below                                           |                                                      |
 
 ## Railway - AI Model Keys (need at least ONE)
@@ -139,26 +139,6 @@ These are set in the **Vercel dashboard** for the public-site project, or passed
 
 ---
 
-## Vercel - Oversight Hub
-
-Set in `web/oversight-hub/.env.production` (committed to repo) OR in the Vercel dashboard.
-
-| Variable                       | Required    | Description                                     |
-| ------------------------------ | ----------- | ----------------------------------------------- |
-| `REACT_APP_API_URL`            | YES         | Railway backend URL (primary)                   |
-| `REACT_APP_API_BASE_URL`       | Recommended | Same value (fallback alias)                     |
-| `REACT_APP_GH_OAUTH_CLIENT_ID` | YES         | Must match Railway's `GH_OAUTH_CLIENT_ID`       |
-| `REACT_APP_USE_MOCK_AUTH`      | YES         | Must be `false` in production                   |
-| `REACT_APP_SENTRY_DSN`         | No          | Sentry error tracking. Alias: `VITE_SENTRY_DSN` |
-| `VITE_OLLAMA_URL`              | No          | Ollama server URL (AI Studio page)              |
-| `REACT_APP_PUBLIC_SITE_URL`    | No          | Public site URL for link generation             |
-
-**Not needed (despite appearing in .env.production):**
-
-- `REACT_APP_WS_BASE_URL` — WebSocket URL is auto-derived from `REACT_APP_API_URL`
-- `REACT_APP_AGENT_URL` — Legacy 3rd-priority fallback, unnecessary if `REACT_APP_API_URL` is set
-- `REACT_APP_LOG_LEVEL` — Not consumed by any source file
-
 ---
 
 ## GitHub Secrets - Production Environment
@@ -172,15 +152,11 @@ Used by `.github/workflows/deploy-production-with-environments.yml`:
 | `VERCEL_TOKEN`                      | Vercel deploy authentication                    | YES                  |
 | `VERCEL_ORG_ID`                     | Vercel organization                             | YES                  |
 | `PUBLIC_SITE_PROD_PROJECT_ID`       | Vercel public-site project                      | YES                  |
-| `OVERSIGHT_PROD_PROJECT_ID`         | Vercel oversight-hub project                    | YES                  |
 | `PUBLIC_SITE_PROD_FASTAPI_URL`      | Backend URL -> `NEXT_PUBLIC_FASTAPI_URL`        | YES                  |
 | `PUBLIC_SITE_PROD_SITE_URL`         | Public site URL -> `NEXT_PUBLIC_SITE_URL`       | YES                  |
-| `OVERSIGHT_PROD_API_URL`            | Backend URL -> written to `.env.production`     | YES                  |
-| `OVERSIGHT_PROD_GH_OAUTH_CLIENT_ID` | OAuth Client ID -> written to `.env.production` | YES                  |
 | `COFOUNDER_PROD_URL`                | Backend URL (smoke tests + notifications)       | YES                  |
 | `PUBLIC_SITE_PROD_GA_ID`            | Google Analytics ID (optional)                  | No                   |
 | `PUBLIC_SITE_PROD_SENTRY_DSN`       | Public site Sentry DSN (optional)               | No                   |
-| `OVERSIGHT_PROD_URL`                | Oversight hub URL (smoke tests only)            | No                   |
 
 ## GitHub Secrets - Staging Environment
 
@@ -194,10 +170,6 @@ Used by `.github/workflows/deploy-staging-with-environments.yml`:
 | `PUBLIC_SITE_STAGING_SITE_URL`         | Staging public site URL                 |
 | `PUBLIC_SITE_STAGING_GA_ID`            | Staging Google Analytics ID             |
 | `PUBLIC_SITE_STAGING_SENTRY_DSN`       | Staging Sentry DSN                      |
-| `OVERSIGHT_STAGING_PROJECT_ID`         | Vercel staging oversight-hub project    |
-| `OVERSIGHT_STAGING_API_URL`            | Staging backend URL for oversight hub   |
-| `OVERSIGHT_STAGING_GH_OAUTH_CLIENT_ID` | Staging OAuth Client ID                 |
-| `OVERSIGHT_STAGING_URL`                | Staging oversight hub URL (smoke tests) |
 | `COFOUNDER_STAGING_URL`                | Staging backend URL (smoke tests)       |
 
 **Note:** Staging and production share `RAILWAY_TOKEN`, `VERCEL_TOKEN`, and `VERCEL_ORG_ID`.
@@ -208,12 +180,9 @@ Used by `.github/workflows/deploy-staging-with-environments.yml`:
 
 1. Go to https://github.com/settings/developers -> OAuth Apps
 2. Create new OAuth App:
-   - **Homepage URL**: `https://glad-labs-website-oversight-hub.vercel.app`
-   - **Authorization callback URL**: `https://glad-labs-website-oversight-hub.vercel.app/auth/callback`
-3. Copy **Client ID** -> set as:
-   - `GH_OAUTH_CLIENT_ID` on Railway
-   - `REACT_APP_GH_OAUTH_CLIENT_ID` in `web/oversight-hub/.env.production`
-   - `OVERSIGHT_PROD_GH_OAUTH_CLIENT_ID` in GitHub Secrets
+   - **Homepage URL**: `https://glad-labs.com`
+   - **Authorization callback URL**: `https://glad-labs.com/auth/callback`
+3. Copy **Client ID** -> set as `GH_OAUTH_CLIENT_ID` on Railway
 4. Generate **Client Secret** -> set as `GH_OAUTH_CLIENT_SECRET` on Railway only (never in frontend)
 
 ---
@@ -227,13 +196,9 @@ Used by `.github/workflows/deploy-staging-with-environments.yml`:
 
 ### CORS errors in browser console
 
-- Check `ALLOWED_ORIGINS` on Railway includes your oversight-hub Vercel domain
-- Must be exact match including protocol: `https://glad-labs-website-oversight-hub.vercel.app`
+- Check `ALLOWED_ORIGINS` on Railway includes your public site domain
+- Must be exact match including protocol: `https://glad-labs.com`
 - No trailing slash
-
-### 404 on /auth/callback
-
-- Oversight Hub needs SPA rewrite rule in `web/oversight-hub/vercel.json`
 
 ### All LLM providers fail
 
@@ -257,8 +222,6 @@ Used by `.github/workflows/deploy-staging-with-environments.yml`:
 # 1. Copy env templates
 cp .env.example .env.local
 cp web/public-site/.env.example web/public-site/.env.local
-cp web/oversight-hub/.env.example web/oversight-hub/.env.local
-
 # 2. Set minimum required vars in .env.local:
 DATABASE_URL=postgresql://postgres:password@localhost:5432/glad_labs_dev
 DEVELOPMENT_MODE=true
@@ -275,7 +238,6 @@ npm run dev
 
 ## Known Inconsistencies
 
-1. **Staging uses `VITE_*` prefix, production uses `REACT_APP_*`** for the oversight hub. Both work due to Vite's `define` config, but the naming should be unified.
-2. **`JWT_SECRET_KEY` and `JWT_SECRET`** are both read (backward compat). Only `JWT_SECRET_KEY` is needed.
+1. **`JWT_SECRET_KEY` and `JWT_SECRET`** are both read (backward compat). Only `JWT_SECRET_KEY` is needed.
 3. **`OLLAMA_BASE_URL` and `OLLAMA_HOST`** are both read. Only `OLLAMA_BASE_URL` is needed.
 4. **`NEXT_PUBLIC_API_BASE_URL` vs `NEXT_PUBLIC_FASTAPI_URL`** — code checks both. CI only sets `FASTAPI_URL`.

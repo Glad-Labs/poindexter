@@ -42,11 +42,8 @@ try {
     process.exit(0);
   }
 
-  // Read root .env.local
-  const envContent = fs.readFileSync(rootEnvPath, 'utf8');
-
   // Workspace directories that need the env file
-  const workspaces = ['web/public-site', 'web/oversight-hub'];
+  const workspaces = ['web/public-site'];
 
   log('\n📦 Linking Root .env.local to Workspaces\n', 'info');
 

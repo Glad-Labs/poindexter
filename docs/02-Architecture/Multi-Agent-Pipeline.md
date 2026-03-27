@@ -16,7 +16,7 @@ Glad Labs implements a sophisticated self-critiquing content generation pipeline
 
 ```text
 ┌─────────────────────────────────────────────┐
-│         Oversight Hub (UI)                  │
+│     API Client / OpenClaw                   │
 └──────────────────┬──────────────────────────┘
                    │ POST /api/tasks
 ┌──────────────────▼──────────────────────────┐
@@ -110,7 +110,7 @@ To add a custom tool:
 Usage is tracked per-task and per-user using the `UsageTracker` service.
 
 - **Metrics Service:** `src/cofounder_agent/services/usage_tracker.py`
-- **Dashboard:** Real-time costs in **Oversight Hub** (Port 3001)
+- **Dashboard:** Real-time costs via **Grafana** monitoring
 - **Reports:** Cost breakdown by model, agent, task type
 
 ---

@@ -27,7 +27,7 @@ This is the **complete, authoritative guide** covering:
 
 - **Config file:** `.env.local` (never committed)
 - **Storage:** Local machine only
-- **Services:** All 3 local (backend + Oversight Hub + Public Site)
+- **Services:** Both local (backend + Public Site)
 - **Database:** Local PostgreSQL
 
 **Example `.env.local` for local development:**
@@ -46,7 +46,6 @@ GOOGLE_API_KEY=your_google_key
 LOG_LEVEL=debug
 
 # API Endpoints
-VITE_API_URL=http://localhost:8000
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 ```
 
@@ -67,7 +66,7 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 - **Deployment:** GitHub Actions → Vercel/Railway (auto on push)
 - **Config source:** GitHub Secrets (PROD\_\*)
 - **Database:** Production PostgreSQL instance
-- **Services:** Public Site (Vercel), Backend (Railway), Oversight Hub (Vercel)
+- **Services:** Public Site (Vercel), Backend (Railway)
 
 **Variables stored in GitHub Secrets:**
 

@@ -8,12 +8,11 @@
 
 ## Overview
 
-This is a comprehensive test suite covering two major applications:
+This is the test suite for the public blog site:
 
-- **Oversight Hub** - React 18 + Material-UI admin dashboard (90 tests)
-- **Public Blog Site** - Next.js 15 content platform (288 tests)
+- **Public Blog Site** - Next.js 15 content platform (~482 tests)
 
-**Total Coverage: 378 tests in 26 files**
+**Note:** The Oversight Hub admin dashboard has been archived to a separate branch. Historical test counts below reflect the state at time of writing.
 
 ### Quick Facts
 

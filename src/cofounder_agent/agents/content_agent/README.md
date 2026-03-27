@@ -426,7 +426,7 @@ python orchestrator.py
 
 ### **Integration Points**
 
-- **Oversight Hub**: Real-time monitoring and control interface
+- **OpenClaw/Grafana**: Operations monitoring and control
 - **PostgreSQL**: Automatic content publishing and management
 - **Firebase**: Operational logging and metrics storage
 - **Google Cloud**: Optional cloud deployment and storage

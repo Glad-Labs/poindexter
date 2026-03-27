@@ -5,7 +5,7 @@
 
 ## What Happened
 
-The React build failed because `web/oversight-hub/src/services/cofounderAgentClient.js` had an invisible BOM (Byte Order Mark) character at the very beginning.
+The React build failed because `web/oversight-hub/src/services/cofounderAgentClient.js` (now archived) had an invisible BOM (Byte Order Mark) character at the very beginning.
 
 ```shell
 Failed to compile.
@@ -29,7 +29,7 @@ Removed the 3-byte UTF-8 BOM character (bytes: 0xEF 0xBB 0xBF) from the file.
 
 **Files Modified:**
 
-- ✅ `web/oversight-hub/src/services/cofounderAgentClient.js` - BOM removed
+- ✅ `web/oversight-hub/src/services/cofounderAgentClient.js` - BOM removed (file now archived)
 - ✅ `docs/BUILD_ERRORS_FIXED.md` - Documentation created
 
 **Git Commit:**

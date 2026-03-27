@@ -39,7 +39,6 @@ const outputDir =
 
 const baseURL = process.env.PLAYWRIGHT_TEST_BASE_URL || 'http://localhost:3000';
 const apiURL = process.env.PLAYWRIGHT_API_URL || 'http://localhost:8000';
-const adminURL = process.env.PLAYWRIGHT_ADMIN_URL || 'http://localhost:3001';
 
 export default defineConfig({
   // ========================
@@ -287,7 +286,6 @@ export default defineConfig({
 export const testConfig = {
   baseURL,
   apiURL,
-  adminURL,
   isCI,
   outputDir,
 };

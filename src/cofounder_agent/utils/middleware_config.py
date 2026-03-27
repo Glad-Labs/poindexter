@@ -154,7 +154,6 @@ class MiddlewareConfig:
 
         Default development origins (localhost, 127.0.0.1 on ports 3000-3004):
         - http://localhost:3000 (Next.js public site)
-        - http://localhost:3001 (React oversight hub)
         - http://127.0.0.1:3000-3004 (alternative localhost addresses)
 
         For production, set ALLOWED_ORIGINS env var to comma-separated list:

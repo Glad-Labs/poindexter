@@ -15,7 +15,6 @@ Quick reference for common issues and their solutions.
 Additional troubleshooting guides for specific services:
 
 - **Co-founder Agent** - See `docs/components/cofounder-agent/troubleshooting/`
-- **Oversight Hub** - See `docs/components/oversight-hub/troubleshooting/`
 - **Public Site** - See `docs/components/public-site/troubleshooting/`
 
 ---

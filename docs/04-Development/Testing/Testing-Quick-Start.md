@@ -16,8 +16,6 @@ npm test
 # Run Playwright E2E tests (89/89 passing)
 npm run test:playwright
 
-# Run Vitest (oversight-hub - 503/505 passing)
-cd web/oversight-hub && npx vitest run
 ```
 
 ---
@@ -26,9 +24,7 @@ cd web/oversight-hub && npx vitest run
 
 ### Unit & Component Testing ✅ ACTIVE
 
-- **Oversight Hub (Vitest):** 503/505 tests passing
-- **Public Site (Jest):** Component tests passing
-- **Both workspaces:** Real-time testing via dev server
+- **Public Site (Jest):** ~482 tests passing
 - Command: `npm test`
 
 ### Playwright E2E Testing ✅ PRODUCTION-READY
@@ -90,17 +86,12 @@ Jest Tests:
     ├── __tests__/lib/                 # 157 utility tests
     └── __tests__/app/                 # 75 page tests
 
-  web/oversight-hub/
-    └── src/__tests__/                 # 90 UI tests
-
 Playwright Configs:
   ├── playwright.config.ts              # Public site E2E
-  ├── playwright.oversight.config.ts    # Admin dashboard E2E
-  └── playwright.api.config.ts          # API testing (new)
+  └── playwright.api.config.ts          # API testing
 
-Playwright Tests (to create):
-  ├── web/public-site/e2e/             # Public site spec files
-  ├── web/oversight-hub/e2e/           # Admin spec files
+Playwright Tests:
+  ├── web/public-site/e2e/             # Public site spec files (153 tests)
   └── playwright/api/                  # API spec files
 ```
 
