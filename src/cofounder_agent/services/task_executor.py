@@ -373,6 +373,20 @@ class TaskExecutor:
                     f"✅ [TASK_SINGLE] Content router completed — task already updated in DB "
                     f"(status={final_status}, task_id={task_id})"
                 )
+
+                # Check auto-publish threshold
+                try:
+                    auto_threshold = await self._get_auto_publish_threshold()
+                    quality_score = float(result.get("quality_score", 0)) if isinstance(result, dict) else 0.0
+                    if auto_threshold > 0 and quality_score >= auto_threshold:
+                        logger.info(
+                            f"🚀 [AUTO_PUBLISH] Quality score {quality_score} >= threshold {auto_threshold}, "
+                            f"auto-publishing task {task_id}"
+                        )
+                        await self._auto_publish_task(task_id, quality_score)
+                except Exception:
+                    logger.debug("Auto-publish check failed, task stays in awaiting_approval", exc_info=True)
+
                 return
 
             # --- FAILURE PATH ONLY below this point ---
@@ -1452,3 +1466,28 @@ The key to success with {topic} is staying informed, adapting to changes, and co
             "idle_alert_threshold_s": self._IDLE_ALERT_THRESHOLD_S,
             "critique_stats": self.critique_loop.get_stats() if self.critique_loop else {},
         }
+
+    async def _get_auto_publish_threshold(self) -> float:
+        """Read auto_publish_threshold from settings table."""
+        try:
+            value = await self.database_service.get_setting_value("auto_publish_threshold", default=0.0)
+            return float(value) if value else 0.0
+        except Exception:
+            return 0.0
+
+    async def _auto_publish_task(self, task_id: str, quality_score: float):
+        """Auto-approve and publish a task that meets the quality threshold."""
+        # Update status to approved
+        await self.database_service.update_task_status(task_id, "approved")
+        # Update task with auto-publish metadata; the scheduled_publisher will handle
+        # the actual post creation, or an external consumer can pick it up.
+        await self.database_service.update_task(task_id, {
+            "approval_status": "approved",
+            "publish_mode": "auto",
+            "task_metadata": json.dumps({
+                "auto_published": True,
+                "auto_publish_quality_score": quality_score,
+                "auto_published_at": datetime.now(timezone.utc).isoformat(),
+            }),
+        })
+        logger.info(f"✅ [AUTO_PUBLISH] Task {task_id} auto-approved (score: {quality_score})")

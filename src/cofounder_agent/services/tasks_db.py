@@ -220,6 +220,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 "publish_mode": task_data.get("publish_mode", "draft"),
                 "model_selections": json.dumps(task_data.get("model_selections", {})),
                 "quality_preference": task_data.get("quality_preference", "balanced"),
+                "site_id": task_data.get("site_id"),
                 "estimated_cost": float(task_data.get("estimated_cost", 0.0)),
                 "cost_breakdown": (
                     json.dumps(task_data.get("cost_breakdown", {}))
@@ -300,6 +301,7 @@ class TasksDatabase(DatabaseServiceMixin):
                     float(task_data.get("estimated_cost", 0.0)),
                     json.dumps(task_data.get("tags", [])),
                     json.dumps(metadata or {}),
+                    task_data.get("site_id"),
                     now,
                     now,
                 )
@@ -311,10 +313,10 @@ class TasksDatabase(DatabaseServiceMixin):
                 title, style, tone, target_length, agent_id, primary_keyword,
                 target_audience, category, approval_status, publish_mode,
                 quality_preference, estimated_cost, tags, task_metadata,
-                created_at, updated_at
+                site_id, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-                $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+                $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
             )
         """
 
@@ -568,6 +570,7 @@ class TasksDatabase(DatabaseServiceMixin):
         status: Optional[str] = None,
         category: Optional[str] = None,
         search: Optional[str] = None,
+        site_id: Optional[str] = None,
     ) -> tuple[List[Dict[str, Any]], int]:
         """
         Get paginated tasks from content_tasks with optional filtering.
@@ -580,6 +583,7 @@ class TasksDatabase(DatabaseServiceMixin):
             search: Optional keyword search across task_name/title, topic, and category.
                     Uses ILIKE with trigram index (pg_trgm) for efficient leading-wildcard
                     matching.  See migration 0027_add_trgm_indexes.py for the index.
+            site_id: Optional site ID to scope tasks to a specific site.
 
         Returns:
             Tuple of (tasks list, total count)
@@ -596,6 +600,10 @@ class TasksDatabase(DatabaseServiceMixin):
         if category:
             conditions.append(f"category = ${param_idx}")
             params.append(category)
+            param_idx += 1
+        if site_id:
+            conditions.append(f"site_id = ${param_idx}")
+            params.append(site_id)
             param_idx += 1
         if search:
             # Sanitize: keep alphanumeric, spaces, hyphens, underscores only

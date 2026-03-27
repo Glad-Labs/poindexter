@@ -180,25 +180,26 @@ async def bulk_create_tasks(
         # Build task data dicts for batch insert
         task_data_list = []
         for task in request.tasks:
-            task_data_list.append(
-                {
-                    "task_name": task.task_name,
-                    "title": task.task_name,
+            task_data = {
+                "task_name": task.task_name,
+                "title": task.task_name,
+                "topic": task.topic,
+                "status": "pending",
+                "primary_keyword": task.primary_keyword,
+                "target_audience": task.target_audience,
+                "category": task.category,
+                "metadata": {
                     "topic": task.topic,
-                    "status": "pending",
                     "primary_keyword": task.primary_keyword,
                     "target_audience": task.target_audience,
                     "category": task.category,
-                    "metadata": {
-                        "topic": task.topic,
-                        "primary_keyword": task.primary_keyword,
-                        "target_audience": task.target_audience,
-                        "category": task.category,
-                        "priority": task.priority,
-                        "created_by": user_id,
-                    },
-                }
-            )
+                    "priority": task.priority,
+                    "created_by": user_id,
+                },
+            }
+            if task.site_id:
+                task_data["site_id"] = task.site_id
+            task_data_list.append(task_data)
 
         # Single batch insert instead of N individual INSERTs
         task_ids = await db_service.tasks.bulk_add_tasks(task_data_list)

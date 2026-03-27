@@ -46,6 +46,7 @@ class BulkCreateTaskItem(BaseModel):
     category: str
     priority: str = "medium"
     description: Optional[str] = None
+    site_id: Optional[str] = None
 
     class Config:
         json_schema_extra = {
