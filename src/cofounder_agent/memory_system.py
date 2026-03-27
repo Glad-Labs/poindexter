@@ -522,10 +522,10 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
                 await conn.executemany(
                     """
                     UPDATE memories
-                    SET last_accessed = $1, access_count = $2
-                    WHERE id = $3::uuid
+                    SET last_accessed = NOW(), access_count = access_count + 1
+                    WHERE id = $1::uuid
                 """,
-                    [(m.last_accessed, m.access_count, m.id) for m in memories],
+                    [(m.id,) for m in memories],
                 )
         except Exception as e:  # pylint: disable=broad-except
             self.logger.error("Error batch-updating memory access: %s", e, exc_info=True)

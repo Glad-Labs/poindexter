@@ -56,7 +56,15 @@ async def trigger_nextjs_revalidation(paths: Optional[list] = None) -> bool:
         nextjs_url = nextjs_url[:-4]
 
     revalidate_url = f"{nextjs_url}/api/revalidate"
-    revalidate_secret = os.getenv("REVALIDATE_SECRET", "dev-secret-key")
+    revalidate_secret = os.getenv("REVALIDATE_SECRET", "")
+    environment = os.getenv("ENVIRONMENT", "development").lower()
+
+    if not revalidate_secret:
+        if environment != "development":
+            logger.error("REVALIDATE_SECRET is not set — refusing to revalidate in %s", environment)
+            return False
+        logger.warning("REVALIDATE_SECRET not set — using empty secret (development mode)")
+        revalidate_secret = "dev-secret-key"
 
     try:
         logger.info("🔄 Triggering Next.js ISR revalidation...")
