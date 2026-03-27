@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import verify_api_token
 from schemas.task_schemas import (
     IntentTaskRequest,
     TaskConfirmRequest,
@@ -36,7 +36,7 @@ intent_router = APIRouter(tags=["Task Intent"])
 async def create_task_from_intent(
     request: IntentTaskRequest,
     background_tasks: BackgroundTasks,
-    current_user: str = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -123,7 +123,7 @@ async def create_task_from_intent(
 async def confirm_and_execute_task(
     request: TaskConfirmRequest,
     background_tasks: BackgroundTasks,
-    current_user: str = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """

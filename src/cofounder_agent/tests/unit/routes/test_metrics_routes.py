@@ -25,7 +25,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import verify_api_token
 from routes.metrics_routes import metrics_router
 from tests.unit.routes.conftest import TEST_USER, make_mock_db
 from utils.route_utils import get_database_dependency
@@ -43,7 +43,7 @@ def _build_app(mock_db=None, with_auth=True) -> FastAPI:
     app.include_router(metrics_router)
 
     if with_auth:
-        app.dependency_overrides[get_current_user] = lambda: TEST_USER
+        app.dependency_overrides[verify_api_token] = lambda: "test-token"
     app.dependency_overrides[get_database_dependency] = lambda: mock_db
 
     return app
@@ -89,9 +89,10 @@ class TestGetMetrics:
         app = FastAPI()
         app.include_router(metrics_router)
         app.dependency_overrides[get_database_dependency] = lambda: make_mock_db()
-        # No auth override — let the real get_current_user run
-        client = TestClient(app, raise_server_exceptions=False)
-        resp = client.get("/api/metrics")
+        # No auth override — let the real verify_api_token run
+        with patch.dict("os.environ", {"DEVELOPMENT_MODE": "false", "API_TOKEN": "secret"}):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.get("/api/metrics")
         assert resp.status_code == 401
 
     def test_tracker_error_returns_500(self):
@@ -170,8 +171,9 @@ class TestGetOperationalMetrics:
         app = FastAPI()
         app.include_router(metrics_router)
         app.dependency_overrides[get_database_dependency] = lambda: mock_db
-        client = TestClient(app)
-        resp = client.get("/api/metrics/operational")
+        with patch.dict("os.environ", {"DEVELOPMENT_MODE": "false", "API_TOKEN": "secret"}):
+            client = TestClient(app)
+            resp = client.get("/api/metrics/operational")
         assert resp.status_code == 401
 
     def test_response_has_required_operational_fields(self):
@@ -268,8 +270,9 @@ class TestGetUsageMetrics:
     def test_requires_auth(self):
         app = FastAPI()
         app.include_router(metrics_router)
-        client = TestClient(app, raise_server_exceptions=False)
-        resp = client.get("/api/metrics/usage")
+        with patch.dict("os.environ", {"DEVELOPMENT_MODE": "false", "API_TOKEN": "secret"}):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.get("/api/metrics/usage")
         assert resp.status_code == 401
 
 
@@ -359,8 +362,9 @@ class TestGetCostMetrics:
     def test_requires_auth(self):
         app = FastAPI()
         app.include_router(metrics_router)
-        client = TestClient(app, raise_server_exceptions=False)
-        resp = client.get("/api/metrics/costs")
+        with patch.dict("os.environ", {"DEVELOPMENT_MODE": "false", "API_TOKEN": "secret"}):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.get("/api/metrics/costs")
         assert resp.status_code == 401
 
 
@@ -422,11 +426,12 @@ class TestTrackUsage:
     def test_requires_auth(self):
         app = FastAPI()
         app.include_router(metrics_router)
-        client = TestClient(app, raise_server_exceptions=False)
-        resp = client.post(
-            "/api/metrics/track-usage",
-            json={"model": "mistral", "tokens": 100, "cost": 0.0},
-        )
+        with patch.dict("os.environ", {"DEVELOPMENT_MODE": "false", "API_TOKEN": "secret"}):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.post(
+                "/api/metrics/track-usage",
+                json={"model": "mistral", "tokens": 100, "cost": 0.0},
+            )
         assert resp.status_code == 401
 
 
@@ -587,6 +592,7 @@ class TestGetPerformanceMetrics:
     def test_requires_auth(self):
         app = FastAPI()
         app.include_router(metrics_router)
-        client = TestClient(app, raise_server_exceptions=False)
-        resp = client.get("/api/metrics/performance")
+        with patch.dict("os.environ", {"DEVELOPMENT_MODE": "false", "API_TOKEN": "secret"}):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.get("/api/metrics/performance")
         assert resp.status_code == 401

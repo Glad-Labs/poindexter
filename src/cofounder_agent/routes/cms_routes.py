@@ -11,7 +11,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 
-from routes.auth_unified import UserProfile, get_current_user, get_current_user_optional
+from middleware.api_token_auth import verify_api_token, verify_api_token_optional
 from services.logger_config import get_logger
 from utils.error_handler import handle_route_error
 from utils.route_utils import get_database_dependency
@@ -150,7 +150,7 @@ async def list_posts(
     skip: int = Query(0, ge=0, le=10000, description="Alias for offset (deprecated — use offset)"),
     limit: int = Query(20, ge=1, le=100),
     published_only: bool = Query(True),
-    current_user: Optional[UserProfile] = Depends(get_current_user_optional),
+    token: Optional[str] = Depends(verify_api_token_optional),
 ):
     """
     List all blog posts with pagination (ASYNC).
@@ -162,7 +162,7 @@ async def list_posts(
     # Resolve offset: explicit 'offset' param wins; fall back to legacy 'skip'
     offset = offset if offset != 0 else skip
     # Unauthenticated callers cannot request draft/unpublished posts
-    if current_user is None:
+    if token is None:
         published_only = True
     try:
         pool = await get_db_pool()
@@ -320,7 +320,7 @@ async def get_post_by_slug(
 async def update_post(
     post_id: str,
     updates: dict,
-    current_user: UserProfile = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ):
     """
     Update a blog post by ID.
@@ -417,7 +417,7 @@ async def update_post(
 @router.delete("/api/posts/{post_id}", status_code=204)
 async def delete_post(
     post_id: str,
-    current_user: UserProfile = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ):
     """Delete a blog post by ID."""
     try:
@@ -512,7 +512,7 @@ async def list_tags(
 
 
 @router.get("/api/cms/status")
-async def cms_status(current_user: UserProfile = Depends(get_current_user)):
+async def cms_status(token: str = Depends(verify_api_token)):
     """
     Check CMS database status and table existence (ASYNC).
     Requires: Valid JWT authentication (admin health endpoint — not public)
@@ -570,16 +570,14 @@ async def cms_status(current_user: UserProfile = Depends(get_current_user)):
 
 
 @router.post("/api/cms/populate-missing-excerpts")
-async def populate_missing_excerpts(current_user: UserProfile = Depends(get_current_user)):
+async def populate_missing_excerpts(token: str = Depends(verify_api_token)):
     """
     Populate missing excerpts in the database for existing posts.
     Requires: Valid JWT authentication (admin)
     Returns: {updated_count: int, success: bool}
     """
     try:
-        # Check user has admin role
-        if not getattr(current_user, "is_admin", False):
-            raise HTTPException(status_code=403, detail="Admin access required")
+        # Solo operator — admin access granted by valid token
 
         pool = await get_db_pool()
         async with pool.acquire() as conn:

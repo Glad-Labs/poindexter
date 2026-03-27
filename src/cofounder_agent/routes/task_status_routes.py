@@ -18,7 +18,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import verify_api_token
 from routes.task_routes import _check_task_ownership, _normalize_seo_keywords_in_task
 from schemas.model_converter import ModelConverter
 from schemas.task_status_schemas import (
@@ -47,7 +47,7 @@ status_router = APIRouter(tags=["Task Status Management"])
 async def update_task_status_enterprise(
     task_id: str,
     update_data: TaskStatusUpdateRequest,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -119,7 +119,7 @@ async def update_task_status_enterprise(
 
         # Ownership check
         if isinstance(task, dict):
-            _check_task_ownership(task, current_user)
+            _check_task_ownership(task, token)
 
         # Get current and target status
         current_status_str = task.get("status", "pending")
@@ -149,7 +149,7 @@ async def update_task_status_enterprise(
         # Prepare update dictionary
         now = datetime.now(timezone.utc)
         updated_by = update_data.updated_by or (
-            current_user.get("email") if current_user else "system"
+            "operator"
         )
 
         update_dict = {
@@ -204,7 +204,7 @@ async def update_task_status_enterprise(
 async def update_task_status_validated(
     task_id: str,
     update_data: TaskStatusUpdateRequest,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
     status_service: EnhancedStatusChangeService = Depends(
         lambda: (
@@ -254,10 +254,10 @@ async def update_task_status_validated(
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
         if isinstance(task, dict):
-            _check_task_ownership(task, current_user)
+            _check_task_ownership(task, token)
 
         # Get user ID
-        user_id = current_user.get("email") if current_user else "system"
+        user_id = "operator"
 
         # Validate and execute status change
         success, message, errors = await status_service.validate_and_change_status(
@@ -293,7 +293,7 @@ async def update_task_status_validated(
 )
 async def get_task_status_info(
     task_id: str,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -331,7 +331,7 @@ async def get_task_status_info(
 
         # Ownership check
         if isinstance(task, dict):
-            _check_task_ownership(task, current_user)
+            _check_task_ownership(task, token)
 
         # Parse status
         status_str = task.get("status", "pending")
@@ -380,7 +380,7 @@ async def get_task_status_info(
 async def get_task_status_history(
     task_id: str,
     limit: int = Query(50, ge=1, le=200, description="Maximum number of history entries"),
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -427,7 +427,7 @@ async def get_task_status_history(
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
         if isinstance(task, dict):
-            _check_task_ownership(task, current_user)
+            _check_task_ownership(task, token)
 
         # Get status history directly from database service which is more reliable
         # than the enhanced service dependency injection
@@ -456,7 +456,7 @@ async def get_task_status_history(
 async def get_task_validation_failures(
     task_id: str,
     limit: int = Query(50, ge=1, le=200, description="Maximum number of failure records"),
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
     status_service: EnhancedStatusChangeService = Depends(
         lambda: (
@@ -504,7 +504,7 @@ async def get_task_validation_failures(
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
         if isinstance(task, dict):
-            _check_task_ownership(task, current_user)
+            _check_task_ownership(task, token)
 
         # Get validation failures
         failures = await status_service.get_validation_failures(task_id, limit=limit)
@@ -527,7 +527,7 @@ async def get_task_validation_failures(
 async def update_task(
     task_id: str,
     update_data: TaskStatusUpdateRequest,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -567,7 +567,7 @@ async def update_task(
 
         # Ownership check
         if isinstance(task, dict):
-            _check_task_ownership(task, current_user)
+            _check_task_ownership(task, token)
 
         # Prepare update data
         update_dict = {
@@ -619,7 +619,7 @@ async def update_task(
 async def update_task_content(
     task_id: str,
     updates: Dict[str, Any],
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -635,7 +635,7 @@ async def update_task_content(
             raise HTTPException(status_code=404, detail="Task not found")
 
         if isinstance(task, dict):
-            _check_task_ownership(task, current_user)
+            _check_task_ownership(task, token)
 
         # Filter to allowed content fields only
         allowed = {

@@ -57,12 +57,14 @@ class TestRouteManifestStructure:
         keys = [entry[2] for entry in _ROUTE_MANIFEST]
         assert len(keys) == len(set(keys)), "Duplicate status keys found in manifest"
 
-    def test_approval_router_before_task_router(self):
-        """Order matters: approval_router must precede task_router."""
+    def test_task_router_is_first(self):
+        """Task router should be first in the active manifest."""
         status_keys = [entry[2] for entry in _ROUTE_MANIFEST]
-        approval_idx = status_keys.index("approval_router")
-        task_idx = status_keys.index("task_router")
-        assert approval_idx < task_idx
+        assert status_keys[0] == "task_router"
+
+    def test_manifest_has_7_active_routes(self):
+        """Active manifest should have exactly 7 route entries."""
+        assert len(_ROUTE_MANIFEST) == 7
 
 
 class TestRegisterAllRoutes:

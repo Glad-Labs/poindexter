@@ -17,7 +17,7 @@ import httpx
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import verify_api_token
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ async def trigger_nextjs_revalidation(paths: Optional[list] = None) -> bool:
 @router.post("/revalidate-cache")
 async def revalidate_cache(
     request_data: RevalidateCacheRequest,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ) -> Dict[str, Any]:
     """
     Securely revalidate public site cache after publishing content.

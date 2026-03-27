@@ -17,7 +17,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import verify_api_token
 from routes.task_intent_routes import intent_router
 from tests.unit.routes.conftest import TEST_USER, make_mock_db
 from utils.route_utils import get_database_dependency
@@ -99,7 +99,7 @@ def _build_app(mock_db=None, authenticated=True) -> FastAPI:
     app.include_router(intent_router, prefix=_PREFIX)
 
     if authenticated:
-        app.dependency_overrides[get_current_user] = lambda: TEST_USER
+        app.dependency_overrides[verify_api_token] = lambda: "test-token"
 
     app.dependency_overrides[get_database_dependency] = lambda: mock_db
 
@@ -490,27 +490,24 @@ class TestIntentRoutesAuth:
 
     def test_intent_unauthenticated_returns_error(self):
         """POST /intent without auth override should fail."""
-        client = _make_client(authenticated=False)
-
-        resp = client.post(
-            f"{_PREFIX}/intent",
-            json={"user_input": "Write a blog post"},
-        )
-
-        # FastAPI returns 401 or 403 depending on the auth dependency
+        with patch.dict("os.environ", {"DEVELOPMENT_MODE": "false", "API_TOKEN": "secret"}):
+            client = _make_client(authenticated=False)
+            resp = client.post(
+                f"{_PREFIX}/intent",
+                json={"user_input": "Write a blog post"},
+            )
         assert resp.status_code in (401, 403, 500)
 
     def test_confirm_intent_unauthenticated_returns_error(self):
         """POST /confirm-intent without auth override should fail."""
-        client = _make_client(authenticated=False)
-
-        resp = client.post(
-            f"{_PREFIX}/confirm-intent",
-            json={
-                "intent_request": {"intent_type": "content_generation"},
-                "execution_plan": {"stages": []},
-                "user_confirmed": True,
-            },
-        )
-
+        with patch.dict("os.environ", {"DEVELOPMENT_MODE": "false", "API_TOKEN": "secret"}):
+            client = _make_client(authenticated=False)
+            resp = client.post(
+                f"{_PREFIX}/confirm-intent",
+                json={
+                    "intent_request": {"intent_type": "content_generation"},
+                    "execution_plan": {"stages": []},
+                    "user_confirmed": True,
+                },
+            )
         assert resp.status_code in (401, 403, 500)

@@ -38,6 +38,9 @@ from .quality_service import QualityAssessment, UnifiedQualityService
 # Import usage tracking
 from .usage_tracker import get_usage_tracker
 
+# Import webhook event emission for OpenClaw notifications
+from .webhook_delivery_service import emit_webhook_event
+
 # Import WebSocket progress emission (re-exported so tests can patch at this module)
 from .websocket_event_broadcaster import emit_notification, emit_task_progress  # noqa: F401
 
@@ -375,17 +378,32 @@ class TaskExecutor:
                 )
 
                 # Check auto-publish threshold
+                auto_published = False
+                quality_score = float(result.get("quality_score", 0)) if isinstance(result, dict) else 0.0
                 try:
                     auto_threshold = await self._get_auto_publish_threshold()
-                    quality_score = float(result.get("quality_score", 0)) if isinstance(result, dict) else 0.0
                     if auto_threshold > 0 and quality_score >= auto_threshold:
                         logger.info(
                             f"🚀 [AUTO_PUBLISH] Quality score {quality_score} >= threshold {auto_threshold}, "
                             f"auto-publishing task {task_id}"
                         )
                         await self._auto_publish_task(task_id, quality_score)
+                        auto_published = True
                 except Exception:
                     logger.debug("Auto-publish check failed, task stays in awaiting_approval", exc_info=True)
+
+                # Emit webhook event for OpenClaw notifications
+                try:
+                    if auto_published:
+                        await emit_webhook_event(self.database_service.pool, "task.auto_published", {
+                            "task_id": task_id, "topic": topic, "quality_score": quality_score,
+                        })
+                    else:
+                        await emit_webhook_event(self.database_service.pool, "task.needs_review", {
+                            "task_id": task_id, "topic": topic, "quality_score": quality_score,
+                        })
+                except Exception:
+                    logger.debug("[WEBHOOK] Failed to emit completion event", exc_info=True)
 
                 return
 
@@ -480,6 +498,13 @@ class TaskExecutor:
                     category,
                     error_msg,
                 )
+                # Emit webhook event for failed task
+                try:
+                    await emit_webhook_event(self.database_service.pool, "task.failed", {
+                        "task_id": task_id, "topic": topic, "error": str(error_msg)[:200],
+                    })
+                except Exception:
+                    logger.debug("[WEBHOOK] Failed to emit task.failed event", exc_info=True)
             else:
                 logger.info(
                     "✅ [TASK_SINGLE] Task %s: task_id=%s user_id=%s category=%s quality_score=%s",

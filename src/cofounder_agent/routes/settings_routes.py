@@ -24,7 +24,7 @@ from typing import Any, List, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
 
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import verify_api_token
 from services.logger_config import get_logger
 
 logger = get_logger(__name__)
@@ -79,7 +79,7 @@ async def list_settings(
     search: Optional[str] = Query(None, description="Search in key and description"),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     per_page: int = Query(20, ge=1, le=100, description="Items per page"),
-    current_user=Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -163,7 +163,7 @@ async def list_settings(
 )
 async def get_setting(
     setting_id: str = Path(..., description="Setting ID or key name"),
-    current_user=Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -229,7 +229,7 @@ async def get_setting(
 )
 async def create_setting(
     setting_data: SettingCreate,
-    current_user=Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -340,7 +340,7 @@ async def create_setting(
 )
 async def batch_update_settings(
     update_data: SettingUpdate = Body(...),
-    current_user=Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """Batch update user settings (update multiple key-value pairs at once)."""
@@ -395,7 +395,7 @@ async def batch_update_settings(
     },
 )
 async def batch_delete_settings(
-    current_user=Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ):
     """Batch delete user settings (delete all user-owned settings)."""
     # Mock implementation - just return success
@@ -431,7 +431,7 @@ async def batch_delete_settings(
 async def update_setting(
     setting_id: str = Path(..., description="Setting key name"),
     update_data: SettingUpdate = Body(...),
-    current_user=Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -512,7 +512,7 @@ async def update_setting(
 )
 async def delete_setting(
     setting_id: str = Path(..., description="Setting ID or key name"),
-    current_user=Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -580,7 +580,7 @@ async def delete_setting(
 async def get_setting_history(
     setting_id: str = Path(..., description="Setting key name"),
     limit: int = Query(50, ge=1, le=500, description="Number of history entries to return"),
-    current_user=Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -613,7 +613,7 @@ async def get_setting_history(
 async def rollback_setting(
     setting_id: str = Path(..., description="Setting key name"),
     history_id: int = Query(..., gt=0, description="Audit log entry ID to rollback to"),
-    current_user=Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ):
     """
     Rollback a setting to a previous value (admin only).
@@ -640,7 +640,7 @@ async def rollback_setting(
 )
 async def bulk_update_settings(
     bulk_data: SettingBulkUpdateRequest,
-    current_user=Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -714,7 +714,7 @@ async def bulk_update_settings(
 )
 async def export_settings(
     include_secrets: bool = Query(False, description="Include encrypted secrets in export"),
-    current_user=Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
     format: str = Query("json", regex="^(json|yaml|csv)$", description="Export format"),
 ):

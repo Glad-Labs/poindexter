@@ -1,0 +1,77 @@
+"""
+Simple Bearer token authentication for solo operator.
+
+Replaces the JWT + GitHub OAuth system. All API requests must include
+Authorization: Bearer <API_TOKEN> header where API_TOKEN matches the
+API_TOKEN environment variable.
+
+OpenClaw skills and Grafana alerts use this token.
+"""
+
+import os
+from typing import Optional
+
+from fastapi import Depends, HTTPException, Request
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+security = HTTPBearer(auto_error=False)
+
+
+async def verify_api_token(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> str:
+    """Verify the Bearer token matches API_TOKEN env var.
+
+    Also allows the existing dev-token bypass when DEVELOPMENT_MODE=true.
+
+    Returns:
+        The verified token string.
+    """
+    api_token = os.getenv("API_TOKEN", "")
+    dev_mode = os.getenv("DEVELOPMENT_MODE", "").lower() == "true"
+
+    if not credentials:
+        if dev_mode:
+            return "dev-token"
+        raise HTTPException(status_code=401, detail="Missing authorization header")
+
+    token = credentials.credentials
+
+    # Dev mode bypass (existing pattern)
+    if dev_mode and token == "dev-token":
+        return token
+
+    if not api_token:
+        raise HTTPException(status_code=500, detail="API_TOKEN not configured")
+
+    if token != api_token:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    return token
+
+
+async def verify_api_token_optional(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> Optional[str]:
+    """Like verify_api_token but returns None instead of raising 401.
+
+    Used for public endpoints that optionally accept auth (e.g. list_posts
+    shows drafts only when authenticated).
+    """
+    api_token = os.getenv("API_TOKEN", "")
+    dev_mode = os.getenv("DEVELOPMENT_MODE", "").lower() == "true"
+
+    if not credentials:
+        if dev_mode:
+            return "dev-token"
+        return None
+
+    token = credentials.credentials
+
+    if dev_mode and token == "dev-token":
+        return token
+
+    if not api_token or token != api_token:
+        return None
+
+    return token

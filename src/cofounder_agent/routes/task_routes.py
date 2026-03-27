@@ -28,7 +28,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import verify_api_token
 from schemas.task_schemas import MetricsResponse, TaskListResponse, UnifiedTaskRequest
 from schemas.unified_task_response import UnifiedTaskResponse
 
@@ -101,18 +101,20 @@ def _normalize_seo_keywords_in_task(task: Dict[str, Any]) -> Dict[str, Any]:
     return task
 
 
-def _check_task_ownership(task: dict, current_user: dict) -> None:
+def _check_task_ownership(task: dict, current_user: Any) -> None:
     """
     Verify the current user owns the task.
 
-    Compares the task's user_id against the authenticated user's id.
-    Raises 403 if the user does not own the task.
-
-    Note: When a role/permission system is added, this should also allow
-    admin users to bypass the ownership check.
+    In solo-operator mode (Bearer token auth), ownership checks are
+    bypassed since there is only one operator. When current_user is a
+    str (token), all tasks are accessible. When it is a dict (legacy),
+    compares user_id against the authenticated user's id.
     """
+    # Solo-operator mode: token string — skip ownership check
+    if isinstance(current_user, str):
+        return
     task_owner = task.get("user_id")
-    request_user = current_user.get("id")
+    request_user = current_user.get("id") if isinstance(current_user, dict) else None
     # Allow access if ownership can't be determined (legacy tasks without user_id)
     if task_owner and request_user and str(task_owner) != str(request_user):
         raise HTTPException(status_code=403, detail="Access denied")
@@ -136,7 +138,7 @@ router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 async def create_task(
     request: Request,
     task_request: UnifiedTaskRequest,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
     background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
 ):
@@ -240,7 +242,9 @@ async def create_task(
                 status_code=400,
                 detail=f"Unknown task_type: '{task_request.task_type}'. Supported: {', '.join(sorted(_TASK_TYPE_REGISTRY.keys()))}",
             )
-        return await handler(task_request, current_user, db_service)
+        # Solo-operator: pass a dict with "id" for backward compat with handlers
+        operator_user = {"id": "operator"}
+        return await handler(task_request, operator_user, db_service)
 
     except HTTPException:
         raise
@@ -613,7 +617,7 @@ async def list_tasks(
         max_length=200,
         description="Keyword search across task name, topic, and category (trigram-indexed)",
     ),
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -694,7 +698,7 @@ async def list_tasks(
 )
 async def get_metrics_alias(
     time_range: Optional[str] = Query(None, description="Time range filter (optional)"),
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ):
     """Deprecated alias. Use GET /api/tasks/metrics/summary."""
     from fastapi.responses import RedirectResponse
@@ -706,7 +710,7 @@ async def get_metrics_alias(
 @router.get("/metrics/summary", response_model=MetricsResponse, summary="Get task metrics")
 async def get_metrics(
     time_range: Optional[str] = Query(None, description="Time range filter (optional)"),
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ):
     """
     Get aggregated metrics for all tasks.
@@ -751,7 +755,7 @@ async def get_metrics(
 @router.get("/{task_id}", response_model=UnifiedTaskResponse, summary="Get task details")
 async def get_task(
     task_id: str,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -774,9 +778,9 @@ async def get_task(
         if not task:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
-        # Ownership check: only the task owner can access their task
+        # Ownership check: solo-operator mode bypasses via token string
         if isinstance(task, dict):
-            _check_task_ownership(task, current_user)
+            _check_task_ownership(task, token)
 
         # Convert task dict if needed, normalizing seo_keywords
         if isinstance(task, dict):
@@ -798,7 +802,7 @@ async def get_task(
 )
 async def delete_task(
     task_id: str,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -833,15 +837,15 @@ async def delete_task(
 
         # Ownership check
         if isinstance(task, dict):
-            _check_task_ownership(task, current_user)
+            _check_task_ownership(task, token)
 
         # Soft delete: mark task as deleted with timestamp
-        logger.info(f"Deleting task {task_id} (user: {current_user.get('id')})")
+        logger.info(f"Deleting task {task_id} (operator)")
 
         # Update task status to 'cancelled' and add deleted_at metadata
         deleted_metadata = {
             "deleted_at": datetime.now(timezone.utc).isoformat(),
-            "deleted_by": current_user.get("id"),
+            "deleted_by": "operator",
             "soft_delete": True,
         }
 

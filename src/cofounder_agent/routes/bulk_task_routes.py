@@ -11,7 +11,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import verify_api_token
 from schemas.bulk_task_schemas import (
     BulkCreateTasksRequest,
     BulkCreateTasksResponse,
@@ -32,7 +32,7 @@ router = APIRouter(prefix="/api/tasks", tags=["tasks-bulk"])
 )
 async def bulk_task_operations(
     request: BulkTaskRequest,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -156,7 +156,7 @@ async def bulk_task_operations(
 )
 async def bulk_create_tasks(
     request: BulkCreateTasksRequest,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -175,7 +175,7 @@ async def bulk_create_tasks(
     **Returns:** List of created tasks with their IDs
     """
     try:
-        user_id = current_user.get("user_id") if current_user else "system"
+        user_id = "operator"
 
         # Build task data dicts for batch insert
         task_data_list = []

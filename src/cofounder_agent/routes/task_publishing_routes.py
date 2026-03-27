@@ -20,13 +20,14 @@ from uuid import UUID
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import verify_api_token
 from routes.revalidate_routes import trigger_nextjs_revalidation
 from routes.task_routes import _check_task_ownership
 from schemas.model_converter import ModelConverter
 from schemas.unified_task_response import UnifiedTaskResponse
 from services.database_service import DatabaseService
 from services.logger_config import get_logger
+from services.webhook_delivery_service import emit_webhook_event
 from utils.json_encoder import convert_decimals, safe_json_dumps
 from utils.route_utils import get_database_dependency
 from utils.text_utils import extract_title_from_content
@@ -105,7 +106,7 @@ async def approve_task(
     featured_image_url: Optional[str] = None,
     image_source: Optional[str] = None,
     auto_publish: bool = False,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -159,7 +160,7 @@ async def approve_task(
 
         # Ownership check
         if isinstance(task, dict):
-            _check_task_ownership(task, current_user)
+            _check_task_ownership(task, token)
 
         # Check if task is in a state that can be approved/rejected
         current_status = task.get("status", "unknown")
@@ -184,7 +185,7 @@ async def approve_task(
         # Prepare metadata
         approval_metadata = {
             "approved_at" if approved else "rejected_at": datetime.now(timezone.utc).isoformat(),
-            "approved_by" if approved else "rejected_by": reviewer_id or current_user.get("id"),
+            "approved_by" if approved else "rejected_by": reviewer_id or "operator",
         }
 
         if human_feedback:
@@ -260,7 +261,7 @@ async def approve_task(
                 # This ensures task state is consistent even if post creation fails
                 publish_metadata = {
                     "published_at": datetime.now(timezone.utc).isoformat(),
-                    "published_by": current_user.get("id"),
+                    "published_by": "operator",
                 }
 
                 # Convert Decimals before serialization
@@ -350,7 +351,7 @@ async def approve_task(
                             "[content_published] task_id=%s post_id=%s user_id=%s slug=%s",
                             task_id,
                             str(post.id) if hasattr(post, "id") else post.get("id"),  # type: ignore[attr-defined]
-                            current_user.get("id"),
+                            "operator",
                             slug,
                         )
 
@@ -362,6 +363,14 @@ async def approve_task(
                         merged_result["published_url"] = (
                             f"/posts/{slug}"  # Relative URL for public site
                         )
+
+                        # Emit webhook event for published post
+                        try:
+                            await emit_webhook_event(db_service.pool, "post.published", {
+                                "task_id": str(task_id), "title": post_title, "site": "default",
+                            })
+                        except Exception:
+                            logger.debug("[WEBHOOK] Failed to emit post.published event", exc_info=True)
                     else:
                         logger.warning("⚠️  Skipping post creation: missing content or topic")
                 except (ValueError, KeyError, TypeError) as e:
@@ -455,7 +464,7 @@ async def approve_task(
 )
 async def publish_task(
     task_id: str,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
     background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
 ):
@@ -494,7 +503,7 @@ async def publish_task(
 
         # Ownership check
         if isinstance(task, dict):
-            _check_task_ownership(task, current_user)
+            _check_task_ownership(task, token)
 
         # Check if task is approved
         current_status = task.get("status", "unknown")
@@ -508,7 +517,7 @@ async def publish_task(
         logger.info(f"Publishing task {task_id}")
         publish_metadata = {
             "published_at": datetime.now(timezone.utc).isoformat(),
-            "published_by": current_user.get("id"),
+            "published_by": "operator",
         }
         # Preserve existing task content: merge publish_metadata into result (do not overwrite)
         existing_result = task.get("result", {})
@@ -620,7 +629,7 @@ async def publish_task(
                     "[content_published] task_id=%s post_id=%s user_id=%s slug=%s",
                     task_id,
                     post_id_val,
-                    current_user.get("id"),
+                    "operator",
                     slug,
                 )
                 # Persist post info back to task result so frontend gets published_url
@@ -630,6 +639,14 @@ async def publish_task(
                 await db_service.update_task_status(
                     task_id, "published", result=safe_json_dumps(convert_decimals(merged_result))
                 )
+
+                # Emit webhook event for published post
+                try:
+                    await emit_webhook_event(db_service.pool, "post.published", {
+                        "task_id": str(task_id), "title": post_title, "site": "default",
+                    })
+                except Exception:
+                    logger.debug("[WEBHOOK] Failed to emit post.published event", exc_info=True)
             else:
                 logger.warning("⚠️  Skipping post creation: missing content or topic")
         except Exception as e:
@@ -702,7 +719,7 @@ async def publish_task(
 )
 async def reject_task(
     task_id: str,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -740,7 +757,7 @@ async def reject_task(
 
         # Ownership check
         if isinstance(task, dict):
-            _check_task_ownership(task, current_user)
+            _check_task_ownership(task, token)
 
         # Check if task is in a state that can be rejected
         current_status = task.get("status", "unknown")
@@ -754,7 +771,7 @@ async def reject_task(
         logger.info(f"Rejecting task {task_id} (current status: {current_status})")
         reject_metadata = {
             "rejected_at": datetime.now(timezone.utc).isoformat(),
-            "rejected_by": current_user.get("id"),
+            "rejected_by": "operator",
         }
         await db_service.update_task_status(
             task_id, "rejected", result=json.dumps({"metadata": reject_metadata})
@@ -793,7 +810,7 @@ class GenerateImageRequest(BaseModel):
 async def generate_task_image(
     task_id: str,
     request: GenerateImageRequest,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ) -> Dict[str, str]:
     """
@@ -827,7 +844,7 @@ async def generate_task_image(
 
         # Ownership check
         if isinstance(task, dict):
-            _check_task_ownership(task, current_user)
+            _check_task_ownership(task, token)
 
         # Extract source from request for consistency
         source = request.source

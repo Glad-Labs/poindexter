@@ -12,7 +12,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import verify_api_token
 from schemas.models_schemas import ModelInfo, ModelsListResponse
 from services.logger_config import get_logger
 from services.model_consolidation_service import get_model_consolidation_service
@@ -23,7 +23,7 @@ logger = get_logger(__name__)
 models_router = APIRouter(
     prefix="/api/models",
     tags=["models"],
-    dependencies=[Depends(get_current_user)],
+    dependencies=[Depends(verify_api_token)],
 )
 
 

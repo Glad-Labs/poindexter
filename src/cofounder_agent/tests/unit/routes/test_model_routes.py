@@ -18,7 +18,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import verify_api_token
 from routes.model_routes import models_router
 from tests.unit.routes.conftest import TEST_USER
 
@@ -46,7 +46,7 @@ def _make_service(models=None, status=None):
 def _build_app(service=None) -> FastAPI:
     app = FastAPI()
     app.include_router(models_router)
-    app.dependency_overrides[get_current_user] = lambda: TEST_USER
+    app.dependency_overrides[verify_api_token] = lambda: "test-token"
     return app
 
 
@@ -133,8 +133,9 @@ class TestGetAvailableModels:
     def test_requires_auth(self):
         app = FastAPI()
         app.include_router(models_router)
-        client = TestClient(app, raise_server_exceptions=False)
-        resp = client.get("/api/models/available")
+        with patch.dict("os.environ", {"DEVELOPMENT_MODE": "false", "API_TOKEN": "secret"}):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.get("/api/models/available")
         assert resp.status_code == 401
 
 
