@@ -28,7 +28,7 @@ load_dotenv(".env.local")
 async def test_api_endpoint(task_id: str):
     """Test API endpoint and compare with expected data"""
     
-    api_url = os.getenv("VITE_API_URL", "http://localhost:8000")
+    api_url = os.getenv("API_URL", "http://localhost:8000")
     
     print(f"🌐 Testing API: {api_url}/api/tasks/{task_id}")
     print()

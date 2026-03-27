@@ -27,11 +27,10 @@ npm run dev # Daily development
 
 ### 3. Verification
 
-| Service           | URL                   | Role                      |
-| :---------------- | :-------------------- | :------------------------ |
-| **Backend**       | http://localhost:8000 | API & Agent Orchestration |
-| **Public Site**   | http://localhost:3000 | Next.js Content Delivery  |
-| **Oversight Hub** | http://localhost:3001 | React Admin Dashboard     |
+| Service         | URL                   | Role                      |
+| :-------------- | :-------------------- | :------------------------ |
+| **Backend**     | http://localhost:8000 | API & Agent Orchestration |
+| **Public Site** | http://localhost:3000 | Next.js Content Delivery  |
 
 ---
 

@@ -172,7 +172,7 @@ Your testing infrastructure is **fully configured and production-ready**. You no
 - [x] test-results/ directory ready
 - [x] playwright/ directory ready
 - [x] web/public-site/e2e/ ready for tests
-- [x] web/oversight-hub/e2e/ ready for tests
+- [x] web/oversight-hub/e2e/ ready for tests (now archived)
 
 **Status:** ✅ READY FOR TESTS
 
@@ -235,11 +235,11 @@ Your testing infrastructure is **fully configured and production-ready**. You no
 
 ### Test Files Already Created
 
-| File                         | Tests   | Status           |
-| ---------------------------- | ------- | ---------------- |
-| web/public-site/**tests**/   | 288     | ✅ Passing       |
-| web/oversight-hub/**tests**/ | 90      | ✅ Passing       |
-| **Total Jest**               | **378** | **✅ 100% Pass** |
+| File                         | Tests   | Status                |
+| ---------------------------- | ------- | --------------------- |
+| web/public-site/**tests**/   | 288     | ✅ Passing            |
+| web/oversight-hub/**tests**/ | 90      | ✅ Passing (archived) |
+| **Total Jest**               | **378** | **✅ 100% Pass**      |
 
 ---
 
@@ -409,14 +409,13 @@ c:\Users\mattm\glad-labs-website\
 
 ```
 web/public-site/__tests__/                      ✅ 288 tests
-web/oversight-hub/src/__tests__/                ✅ 90 tests
+web/oversight-hub/src/__tests__/                ✅ 90 tests (archived)
 ```
 
 ### Ready for E2E Tests
 
 ```
-web/public-site/e2e/                           ⏳ Ready for spec files
-web/oversight-hub/e2e/                         ⏳ Ready for spec files
+web/public-site/e2e/                           ✅ 153 tests passing
 playwright/api/                                 ⏳ Ready for spec files
 ```
 

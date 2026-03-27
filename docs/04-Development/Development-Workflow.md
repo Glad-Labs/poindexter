@@ -195,9 +195,9 @@ See `.env.example` at the project root for per-environment configuration.
 npm run setup                  # Full setup (Node + Python + env)
 
 # Development
-npm run dev                    # All three services
+npm run dev                    # Both services
 npm run dev:cofounder         # Backend only
-npm run dev:frontend          # Public site + Oversight Hub
+npm run dev:public            # Public site only
 
 # Testing
 npm run test:python           # Full backend test

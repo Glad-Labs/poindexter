@@ -22,7 +22,6 @@ Release Please bumps all 6 version files via `release-please-config.json`:
 | ------------------------------------ | ------------------------------ |
 | `package.json` (root)                | Built-in (node release-type)   |
 | `web/public-site/package.json`       | JSON (`$.version`)             |
-| `web/oversight-hub/package.json`     | JSON (`$.version`)             |
 | `src/cofounder_agent/package.json`   | JSON (`$.version`)             |
 | `pyproject.toml` (root)              | TOML (`$.tool.poetry.version`) |
 | `src/cofounder_agent/pyproject.toml` | TOML (`$.tool.poetry.version`) |

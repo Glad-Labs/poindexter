@@ -29,11 +29,6 @@
         },
         {
           "type": "json",
-          "path": "web/oversight-hub/package.json",
-          "jsonpath": "$.version"
-        },
-        {
-          "type": "json",
           "path": "src/cofounder_agent/package.json",
           "jsonpath": "$.version"
         }

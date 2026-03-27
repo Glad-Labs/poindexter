@@ -89,11 +89,9 @@ python scripts/debug-task-data.py 550e8400-e29b-41d4-a716-446655440000
 
 To get a task ID for testing:
 
-1. Open Oversight Hub (http://localhost:3001)
-2. Go to Tasks page
-3. Click on a task with the issue
-4. Look at the URL or modal title - task ID will be shown
-5. OR in browser console, the debug logs show `task.id`
+1. Query the tasks API: `curl http://localhost:8000/api/tasks`
+2. Find the task with the issue
+3. Note the task ID from the response JSON
 
 ---
 
@@ -114,7 +112,7 @@ To get a task ID for testing:
 ### Scenario C: model_used in API but not in frontend
 
 **Root Cause:** Frontend parsing logic issue  
-**Fix Location:** `web/oversight-hub/src/components/tasks/TaskMetadataDisplay.jsx`  
+**Fix Location:** Frontend task display component (archived with oversight-hub)
 **Action:** Check parsing order (already fixed - should show data if present)
 
 ### Scenario D: Content shorter than target

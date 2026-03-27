@@ -11,7 +11,6 @@ AI orchestration system with autonomous agents, multi-provider LLM routing, and 
 .
 ├── src/cofounder_agent/        # Backend orchestrator (FastAPI, port 8000)
 ├── web/public-site/            # Content distribution (Next.js 15, port 3000)
-├── web/oversight-hub/          # Admin dashboard (React 18 + Vite, port 3001)
 ├── docs/                       # Documentation
 ├── .github/                    # CI/CD workflows
 └── scripts/                    # Utility scripts
@@ -24,7 +23,7 @@ AI orchestration system with autonomous agents, multi-provider LLM routing, and 
 npm install
 cd src/cofounder_agent && poetry install && cd ../..
 
-# Start all three services
+# Start both services
 npm run dev
 ```
 
@@ -57,28 +56,19 @@ Headless content consumer using the App Router. All content is fetched from the 
 - Tailwind CSS, Sentry error tracking
 - SEO: sitemap, structured data, Open Graph
 
-### Oversight Hub — React 18 + Vite (`web/oversight-hub/`)
-
-Admin dashboard for task management, workflow orchestration, cost analytics, and agent monitoring.
-
-- Material-UI components, Zustand state management
-- Real-time updates via WebSocket
-- GitHub OAuth authentication
-
 ## Key Features
 
 - **Multi-provider LLM routing** — Ollama, Anthropic, OpenAI, Google with automatic fallback
 - **Capability-based tasks** — Composable, reusable task workflows
-- **Real-time monitoring** — WebSocket-powered dashboard with live updates
+- **Real-time monitoring** — WebSocket-powered progress events
 - **Custom workflows** — Build and execute automation pipelines
 - **OAuth integration** — GitHub authentication
-- **Analytics** — Cost metrics, task performance, model usage
 
 ## Development
 
 ```bash
 npm run dev                   # All services
-npm run test                  # JS tests (Jest + Vitest)
+npm run test                  # JS tests (Jest)
 npm run test:python:unit      # Python unit tests
 npm run lint                  # ESLint all workspaces
 npm run format                # Prettier formatting
@@ -89,7 +79,7 @@ See [CLAUDE.md](CLAUDE.md) for the full command reference.
 
 ## Deployment
 
-- **main** branch auto-deploys: Vercel (frontends) + Railway (backend) + creates GitHub Release tag
+- **main** branch auto-deploys: Vercel (public site) + Railway (backend) + creates GitHub Release tag
 - **staging** branch → Railway staging auto-deploy; Release Please manages changelog + version bumps here
 - **dev** branch → runs tests only (no deployment)
 

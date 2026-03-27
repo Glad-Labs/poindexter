@@ -208,18 +208,15 @@ Rationale: count_services.py showed actual count is 87
 2. **web/public-site/.env.example**
    - Add if frontend-relevant
 
-3. **web/oversight-hub/.env.example**
-   - Add if admin UI-relevant
-
-4. **.env.production.example**
+3. **.env.production.example**
    - Add if differs from development
 
-5. **.github/copilot-instructions.md**
+4. **.github/copilot-instructions.md**
    - Update "Environment Variables" section
    - Update variable count (e.g., "52+ environment variables")
    - Document new variable in relevant subsection
 
-6. **docs/reference/ENVIRONMENT_SETUP.md**
+5. **docs/reference/ENVIRONMENT_SETUP.md**
    - Add setup instructions for new variable
 
 **Checklist:**

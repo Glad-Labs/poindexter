@@ -15,7 +15,6 @@ Run scripts with `npm run {script-name}` from project root.
 
 - FastAPI backend (port 8000): `npm run dev:cofounder`
 - Next.js public site (port 3000): `npm run dev:public`
-- React oversight hub (port 3001): `npm run dev:oversight`
 
 ```bash
 npm run dev
@@ -47,23 +46,12 @@ npm run dev:public
 **Port:** 3001  
 **Details:** Vite dev server with hot reload
 
-```bash
-npm run dev:oversight
-```
-
-#### `npm run dev:frontend`
-
-**Description:** Start both React apps (next.js + oversight hub)
-
-```bash
-npm run dev:frontend
-```
-
+````bash
 ### Installation & Setup
 
 #### `npm run install:all`
 
-**Description:** Install all Python and Node dependencies  
+**Description:** Install all Python and Node dependencies
 **Details:**
 
 - npm install for workspaces
@@ -71,7 +59,7 @@ npm run dev:frontend
 
 ```bash
 npm run install:all
-```
+````
 
 #### `npm run clean:install`
 
@@ -227,7 +215,6 @@ npm run type:check
 **Description:** Build all workspaces  
 **Outputs:**
 
-- Oversight Hub: `web/oversight-hub/build/`
 - Public Site: `web/public-site/.next/`
 
 ```bash
@@ -240,14 +227,6 @@ npm run build
 
 ```bash
 npm run build:public
-```
-
-#### `npm run build:oversight`
-
-**Description:** Build React admin dashboard
-
-```bash
-npm run build:oversight
 ```
 
 ### Health & Monitoring
@@ -517,7 +496,7 @@ npm run health:check
 ## Notes
 
 - All services run on localhost in development
-- Ports: Backend 8000, Public Site 3000, Oversight Hub 3001
+- Ports: Backend 8000, Public Site 3000
 - PostgreSQL defaults to port 5432 locally
 - Ollama defaults to port 11434
 - `.env.local` is git-ignored for security; copy from `.env.example`

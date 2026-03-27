@@ -3,7 +3,7 @@
 # Task Retry and Status Visibility System
 
 **Feature Area:** Task Management  
-**Components:** Oversight Hub (Frontend), Enhanced Status Change Service (Backend), Task Executor  
+**Components:** Admin UI (archived) (Frontend), Enhanced Status Change Service (Backend), Task Executor  
 **Status:** ✅ Production Ready  
 **Version:** 3.1.0  
 **Implementation Date:** March 8, 2026
@@ -12,7 +12,7 @@
 
 ## Overview
 
-Comprehensive task retry and status visibility system providing visual feedback for task execution, retry tracking, and real-time progress monitoring in the Oversight Hub dashboard.
+Comprehensive task retry and status visibility system providing visual feedback for task execution, retry tracking, and real-time progress monitoring in the Admin UI (archived) dashboard.
 
 ### Key Capabilities
 
@@ -158,7 +158,7 @@ Comprehensive task retry and status visibility system providing visual feedback 
 {
   "retry_count": 2,
   "last_retry_at": "2026-03-08T15:30:45.123Z",
-  "last_retry_by": "oversight_hub_user",
+  "last_retry_by": "api_user",
   "stage": "content_generation",
   "message": "Generating content",
   "percentage": 45,
@@ -209,7 +209,7 @@ Content-Type: application/json
 {
   "new_status": "pending",
   "action": "retry",
-  "changed_by": "oversight_hub_user",
+  "changed_by": "api_user",
   "reason": "User-initiated retry",
   "metadata": {
     "custom_field": "value"
@@ -229,7 +229,7 @@ Content-Type: application/json
   "task_metadata": {
     "retry_count": 1,
     "last_retry_at": "2026-03-08T15:30:45.123Z",
-    "last_retry_by": "oversight_hub_user"
+    "last_retry_by": "api_user"
   }
 }
 ```
@@ -509,10 +509,10 @@ SELECT status FROM content_tasks WHERE id = 'task-id';
 
 **Frontend:**
 
-- `web/oversight-hub/src/routes/TaskManagement.jsx`
-- `web/oversight-hub/src/routes/TaskManagement.css`
-- `web/oversight-hub/src/components/tasks/TaskDetailModal.jsx`
-- `web/oversight-hub/src/components/tasks/StatusComponents.jsx`
+- `archived: web/oversight-hub/src/routes/TaskManagement.jsx`
+- `archived: web/oversight-hub/src/routes/TaskManagement.css`
+- `archived: web/oversight-hub/src/components/tasks/TaskDetailModal.jsx`
+- `archived: web/oversight-hub/src/components/tasks/StatusComponents.jsx`
 
 **Backend:**
 

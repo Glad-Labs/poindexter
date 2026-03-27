@@ -72,10 +72,9 @@
 - [troubleshooting/04-build-fixes.md](troubleshooting/04-build-fixes.md) - Build errors
 - [troubleshooting/05-compilation.md](troubleshooting/05-compilation.md) - Compilation issues
 
-### 5. Service-Specific Documentation (3 Components) ✅ ACTIVE
+### 5. Service-Specific Documentation (2 Components) ✅ ACTIVE
 
 - [components/cofounder-agent/README.md](components/cofounder-agent/README.md) - Co-founder Agent
-- [components/oversight-hub/README.md](components/oversight-hub/README.md) - Oversight Hub
 - [components/public-site/README.md](components/public-site/README.md) - Public Site
 
 ### 6. Archive ✅ ORGANIZED
@@ -99,6 +98,7 @@
 
 - ✅ Master index maintained
 - ✅ 3 core decisions documented
+
 - ✅ Decision template in use
 
 ### Reference Documentation
@@ -119,7 +119,7 @@
 
 ### Service Components Coverage
 
-- ✅ 3 components documented
+- ✅ 2 components documented
 - ✅ Component troubleshooting structure in place
 - ✅ Architecture overview per component
 
@@ -196,7 +196,6 @@ All components of the enterprise documentation framework are now active and main
 ### Component Documentation
 
 - [Co-founder Agent](./components/cofounder-agent/README.md) - AI agent architecture
-- [Oversight Hub](./components/oversight-hub/README.md) - Admin dashboard
 - [Public Site](./components/public-site/README.md) - Customer website
 - [Co-founder Agent Quick Fixes](./components/cofounder-agent/troubleshooting/QUICK_FIX_COMMANDS.md) - Common fixes
 - [Railway Web Console](./components/cofounder-agent/troubleshooting/RAILWAY_WEB_CONSOLE_STEPS.md) - Railway deployment guidance
@@ -227,7 +226,7 @@ All components of the enterprise documentation framework are now active and main
 | **Core Docs**       | 8 files    | ✅ Complete & Current  |
 | **Decisions**       | 3+ files   | ✅ Well-maintained     |
 | **Reference**       | 6+ files   | ✅ Technical specs     |
-| **Components**      | 3 folders  | ✅ Service-specific    |
+| **Components**      | 2 folders  | ✅ Service-specific    |
 | **Troubleshooting** | 4 guides   | ✅ Focused solutions   |
 | **Archive**         | 800+ files | 📦 Historical only     |
 | **Total Active**    | 31 files   | 🎯 Lean & Maintainable |

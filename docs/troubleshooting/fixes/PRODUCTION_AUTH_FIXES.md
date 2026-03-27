@@ -1,8 +1,8 @@
 # Production Authentication Troubleshooting & Fix Guide
 
-**Date:** February 11, 2026  
-**Issue:** GitHub OAuth failing in production with 403/404 errors  
-**Status:** FIXED ✅
+**Date:** February 11, 2026
+**Issue:** GitHub OAuth failing in production with 403/404 errors
+**Status:** FIXED ✅ (Historical -- oversight-hub has been archived to a separate branch)
 
 ---
 

@@ -55,10 +55,6 @@ jobs:
         run: npm run test:ci
         # fix #144: removed continue-on-error — failures should be visible on dev
 
-      - name: 🧪 Enforce coverage thresholds (oversight-hub)
-        run: cd web/oversight-hub && npx vitest run --pool=forks --poolOptions.forks.maxForks=2
-        # Coverage flag removed: @vitest/coverage-v8 not in devDependencies
-
       - name: 🧪 Run backend unit tests
         run: |
           cd src/cofounder_agent && poetry run pytest tests/unit/ -v --tb=short

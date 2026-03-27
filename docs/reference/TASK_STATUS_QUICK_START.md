@@ -10,7 +10,7 @@
 
 ### [ ] 1. Add Missing Frontend Statuses
 
-**File:** [web/oversight-hub/src/components/tasks/TaskList.jsx](web/oversight-hub/src/components/tasks/TaskList.jsx)
+**File:** [src/cofounder_agent/services/task_service.py (backend task status handling)](src/cofounder_agent/services/task_service.py (backend task status handling))
 
 **Update `getStatusColor()` function:**
 
@@ -88,7 +88,7 @@ const getStatusIcon = (status) => {
 
 ### [ ] 2. Add Missing CSS Color Definitions
 
-**File:** [web/oversight-hub/src/routes/TaskManagement.css](web/oversight-hub/src/routes/TaskManagement.css)
+**File:** [backend task status CSS (archived with oversight-hub)](backend task status CSS (archived with oversight-hub))
 
 **Add after line 514 (after .status-badge.status-failed):**
 
@@ -310,7 +310,7 @@ After implementing above, verify:
 
 ```bash
 # Frontend
-npm run lint --workspace web/oversight-hub
+npm run lint --workspace web/public-site
 
 # Backend
 cd src/cofounder_agent && python -m pytest tests/unit/backend/test_task_status.py -v

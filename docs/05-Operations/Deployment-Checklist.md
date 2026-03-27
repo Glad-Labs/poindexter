@@ -53,7 +53,6 @@ The production workflow (`deploy-production-with-environments.yml`) handles:
 
 - [ ] Backend deployed to Railway
 - [ ] Public site deployed to Vercel
-- [ ] Oversight Hub deployed to Vercel
 - [ ] Smoke tests pass (automated)
 - [ ] GitHub Release + tag created on `main` (automated)
 
@@ -61,7 +60,6 @@ The production workflow (`deploy-production-with-environments.yml`) handles:
 
 - [ ] Health endpoint: `curl https://api.glad-labs.com/health`
 - [ ] Public site loads: `https://glad-labs.com`
-- [ ] Oversight Hub loads
 - [ ] Check logs for errors
 - [ ] Verify GitHub Release was created with correct version
 
@@ -75,7 +73,6 @@ Release Please keeps all 6 files in sync automatically:
 | ------------------------------------ | ---- |
 | `package.json` (root)                | JSON |
 | `web/public-site/package.json`       | JSON |
-| `web/oversight-hub/package.json`     | JSON |
 | `src/cofounder_agent/package.json`   | JSON |
 | `pyproject.toml` (root)              | TOML |
 | `src/cofounder_agent/pyproject.toml` | TOML |

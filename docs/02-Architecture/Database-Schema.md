@@ -184,7 +184,7 @@ class ImageDetails(BaseModel):
 
 ---
 
-## **Firebase Collections (Oversight Hub)**
+## **Firebase Collections (Legacy - Archived)**
 
 ### 1. `tasks` Collection
 
