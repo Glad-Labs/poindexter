@@ -11,7 +11,6 @@ multi-line strings. Single-line inputs are tested here; multi-line behaviour
 is tested using the correct "\\n" delimiter.
 """
 
-import pytest
 from agents.content_agent.utils.markdown_utils import markdown_to_strapi_blocks
 
 # The separator the parser actually splits on (literal backslash-n in source)

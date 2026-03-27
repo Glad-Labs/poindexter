@@ -11,7 +11,6 @@ import pytest
 
 from services.gemini_client import GeminiClient, get_gemini_client
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -204,9 +203,7 @@ class TestGeminiCheckHealth:
 
     @pytest.mark.asyncio
     async def test_healthy_status(self, client_with_key):
-        with patch.object(
-            client_with_key, "generate", new=AsyncMock(return_value="OK")
-        ):
+        with patch.object(client_with_key, "generate", new=AsyncMock(return_value="OK")):
             health = await client_with_key.check_health()
         assert health["status"] == "healthy"
         assert health["configured"] is True

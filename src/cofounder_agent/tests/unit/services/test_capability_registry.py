@@ -18,7 +18,6 @@ from services.capability_registry import (
     set_registry,
 )
 
-
 # ---------------------------------------------------------------------------
 # Minimal concrete Capability for tests
 # ---------------------------------------------------------------------------
@@ -40,7 +39,9 @@ class _EchoCapability(Capability):
     def input_schema(self) -> InputSchema:
         return InputSchema(
             parameters=[
-                ParameterSchema(name="value", type=ParameterType.STRING, description="Value to echo")
+                ParameterSchema(
+                    name="value", type=ParameterType.STRING, description="Value to echo"
+                )
             ]
         )
 

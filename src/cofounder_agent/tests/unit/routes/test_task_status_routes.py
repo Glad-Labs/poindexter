@@ -18,21 +18,18 @@ NOTE: The validated, status-history, and failures endpoints have a known bug whe
 Tests reflect actual behavior and document this with comments.
 """
 
-import pytest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from routes.auth_unified import get_current_user
 from routes.task_routes import router
-from routes.task_status_routes import status_router
 from services.enhanced_status_change_service import EnhancedStatusChangeService
-from utils.route_utils import get_database_dependency
-
 from tests.unit.routes.conftest import TEST_USER, make_mock_db
-
+from utils.route_utils import get_database_dependency
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -168,9 +165,7 @@ class TestUpdateTaskStatusValidated:
     def test_ownership_mismatch_returns_500(self):
         """NOTE: Same broad-except bug — 403 becomes 500."""
         mock_db = make_mock_db()
-        mock_db.get_task = AsyncMock(
-            return_value=_make_task(user_id="other-user-id-999")
-        )
+        mock_db.get_task = AsyncMock(return_value=_make_task(user_id="other-user-id-999"))
 
         mock_svc = AsyncMock(spec=EnhancedStatusChangeService)
         client, _, patcher = _make_client_with_status_svc(mock_db, mock_svc)
@@ -234,9 +229,7 @@ class TestUpdateTaskStatusValidated:
         mock_db.get_task = AsyncMock(return_value=_make_task(status="in_progress"))
 
         mock_svc = AsyncMock(spec=EnhancedStatusChangeService)
-        mock_svc.validate_and_change_status = AsyncMock(
-            return_value=(True, "Status updated", [])
-        )
+        mock_svc.validate_and_change_status = AsyncMock(return_value=(True, "Status updated", []))
 
         client, svc, patcher = _make_client_with_status_svc(mock_db, mock_svc)
         try:
@@ -336,9 +329,7 @@ class TestGetTaskStatusInfo:
 
     def test_ownership_mismatch_returns_403(self):
         mock_db = make_mock_db()
-        mock_db.get_task = AsyncMock(
-            return_value=_make_task(user_id="other-user-id-999")
-        )
+        mock_db.get_task = AsyncMock(return_value=_make_task(user_id="other-user-id-999"))
 
         resp = _make_client(mock_db).get(f"/api/tasks/{VALID_TASK_ID}/status")
         assert resp.status_code == 403
@@ -423,9 +414,7 @@ class TestGetTaskStatusHistory:
         )
 
         with patch("services.tasks_db.TasksDatabase", return_value=mock_task_db):
-            resp = _make_client(mock_db).get(
-                f"/api/tasks/{VALID_TASK_ID}/status-history"
-            )
+            resp = _make_client(mock_db).get(f"/api/tasks/{VALID_TASK_ID}/status-history")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -442,9 +431,7 @@ class TestGetTaskStatusHistory:
         mock_task_db.get_status_history = AsyncMock(return_value=[])
 
         with patch("services.tasks_db.TasksDatabase", return_value=mock_task_db):
-            resp = _make_client(mock_db).get(
-                f"/api/tasks/{VALID_TASK_ID}/status-history"
-            )
+            resp = _make_client(mock_db).get(f"/api/tasks/{VALID_TASK_ID}/status-history")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -460,9 +447,7 @@ class TestGetTaskStatusHistory:
         mock_task_db.get_status_history = AsyncMock(return_value=None)
 
         with patch("services.tasks_db.TasksDatabase", return_value=mock_task_db):
-            resp = _make_client(mock_db).get(
-                f"/api/tasks/{VALID_TASK_ID}/status-history"
-            )
+            resp = _make_client(mock_db).get(f"/api/tasks/{VALID_TASK_ID}/status-history")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -474,22 +459,16 @@ class TestGetTaskStatusHistory:
         mock_db = make_mock_db()
         mock_db.get_task = AsyncMock(return_value=None)
 
-        resp = _make_client(mock_db).get(
-            f"/api/tasks/{VALID_TASK_ID}/status-history"
-        )
+        resp = _make_client(mock_db).get(f"/api/tasks/{VALID_TASK_ID}/status-history")
         # Bug: should be 404 but broad except catches HTTPException
         assert resp.status_code == 500
 
     def test_ownership_mismatch_returns_500(self):
         """Bug: HTTPException(403) caught by broad except -> 500."""
         mock_db = make_mock_db()
-        mock_db.get_task = AsyncMock(
-            return_value=_make_task(user_id="other-user-id-999")
-        )
+        mock_db.get_task = AsyncMock(return_value=_make_task(user_id="other-user-id-999"))
 
-        resp = _make_client(mock_db).get(
-            f"/api/tasks/{VALID_TASK_ID}/status-history"
-        )
+        resp = _make_client(mock_db).get(f"/api/tasks/{VALID_TASK_ID}/status-history")
         # Bug: should be 403 but broad except catches HTTPException
         assert resp.status_code == 500
 
@@ -502,9 +481,7 @@ class TestGetTaskStatusHistory:
         mock_task_db.get_status_history = AsyncMock(return_value=[])
 
         with patch("services.tasks_db.TasksDatabase", return_value=mock_task_db):
-            resp = _make_client(mock_db).get(
-                f"/api/tasks/{VALID_TASK_ID}/status-history?limit=10"
-            )
+            resp = _make_client(mock_db).get(f"/api/tasks/{VALID_TASK_ID}/status-history?limit=10")
 
         assert resp.status_code == 200
         mock_task_db.get_status_history.assert_called_once_with(VALID_TASK_ID, 10)
@@ -515,14 +492,10 @@ class TestGetTaskStatusHistory:
         mock_db._pool = MagicMock()
 
         mock_task_db = AsyncMock()
-        mock_task_db.get_status_history = AsyncMock(
-            side_effect=RuntimeError("DB error")
-        )
+        mock_task_db.get_status_history = AsyncMock(side_effect=RuntimeError("DB error"))
 
         with patch("services.tasks_db.TasksDatabase", return_value=mock_task_db):
-            resp = _make_client(mock_db).get(
-                f"/api/tasks/{VALID_TASK_ID}/status-history"
-            )
+            resp = _make_client(mock_db).get(f"/api/tasks/{VALID_TASK_ID}/status-history")
 
         assert resp.status_code == 500
 
@@ -535,9 +508,7 @@ class TestGetTaskStatusHistory:
         mock_task_db.get_status_history = AsyncMock(return_value=[])
 
         with patch("services.tasks_db.TasksDatabase", return_value=mock_task_db):
-            resp = _make_client(mock_db).get(
-                f"/api/tasks/{VALID_TASK_ID}/status-history"
-            )
+            resp = _make_client(mock_db).get(f"/api/tasks/{VALID_TASK_ID}/status-history")
 
         assert resp.status_code == 200
         mock_task_db.get_status_history.assert_called_once_with(VALID_TASK_ID, 50)
@@ -581,9 +552,7 @@ class TestGetTaskValidationFailures:
 
         client, _, patcher = _make_client_with_status_svc(mock_db, mock_svc)
         try:
-            resp = client.get(
-                f"/api/tasks/{VALID_TASK_ID}/status-history/failures"
-            )
+            resp = client.get(f"/api/tasks/{VALID_TASK_ID}/status-history/failures")
         finally:
             patcher.stop()
 
@@ -607,9 +576,7 @@ class TestGetTaskValidationFailures:
 
         client, _, patcher = _make_client_with_status_svc(mock_db, mock_svc)
         try:
-            resp = client.get(
-                f"/api/tasks/{VALID_TASK_ID}/status-history/failures"
-            )
+            resp = client.get(f"/api/tasks/{VALID_TASK_ID}/status-history/failures")
         finally:
             patcher.stop()
 
@@ -626,9 +593,7 @@ class TestGetTaskValidationFailures:
         mock_svc = AsyncMock(spec=EnhancedStatusChangeService)
         client, _, patcher = _make_client_with_status_svc(mock_db, mock_svc)
         try:
-            resp = client.get(
-                f"/api/tasks/{VALID_TASK_ID}/status-history/failures"
-            )
+            resp = client.get(f"/api/tasks/{VALID_TASK_ID}/status-history/failures")
         finally:
             patcher.stop()
 
@@ -638,16 +603,12 @@ class TestGetTaskValidationFailures:
     def test_ownership_mismatch_returns_500(self):
         """Bug: HTTPException(403) caught by broad except -> 500."""
         mock_db = make_mock_db()
-        mock_db.get_task = AsyncMock(
-            return_value=_make_task(user_id="other-user-id-999")
-        )
+        mock_db.get_task = AsyncMock(return_value=_make_task(user_id="other-user-id-999"))
 
         mock_svc = AsyncMock(spec=EnhancedStatusChangeService)
         client, _, patcher = _make_client_with_status_svc(mock_db, mock_svc)
         try:
-            resp = client.get(
-                f"/api/tasks/{VALID_TASK_ID}/status-history/failures"
-            )
+            resp = client.get(f"/api/tasks/{VALID_TASK_ID}/status-history/failures")
         finally:
             patcher.stop()
 
@@ -665,9 +626,7 @@ class TestGetTaskValidationFailures:
 
         client, svc, patcher = _make_client_with_status_svc(mock_db, mock_svc)
         try:
-            resp = client.get(
-                f"/api/tasks/{VALID_TASK_ID}/status-history/failures?limit=5"
-            )
+            resp = client.get(f"/api/tasks/{VALID_TASK_ID}/status-history/failures?limit=5")
         finally:
             patcher.stop()
 
@@ -679,15 +638,11 @@ class TestGetTaskValidationFailures:
         mock_db.get_task = AsyncMock(return_value=_make_task())
 
         mock_svc = AsyncMock(spec=EnhancedStatusChangeService)
-        mock_svc.get_validation_failures = AsyncMock(
-            side_effect=RuntimeError("Service error")
-        )
+        mock_svc.get_validation_failures = AsyncMock(side_effect=RuntimeError("Service error"))
 
         client, _, patcher = _make_client_with_status_svc(mock_db, mock_svc)
         try:
-            resp = client.get(
-                f"/api/tasks/{VALID_TASK_ID}/status-history/failures"
-            )
+            resp = client.get(f"/api/tasks/{VALID_TASK_ID}/status-history/failures")
         finally:
             patcher.stop()
 
@@ -704,9 +659,7 @@ class TestGetTaskValidationFailures:
 
         client, svc, patcher = _make_client_with_status_svc(mock_db, mock_svc)
         try:
-            resp = client.get(
-                f"/api/tasks/{VALID_TASK_ID}/status-history/failures"
-            )
+            resp = client.get(f"/api/tasks/{VALID_TASK_ID}/status-history/failures")
         finally:
             patcher.stop()
 
@@ -735,9 +688,7 @@ class TestUpdateTaskContent:
         )
 
         assert resp.status_code == 200
-        mock_db.update_task.assert_called_once_with(
-            VALID_TASK_ID, {"topic": "Updated AI Topic"}
-        )
+        mock_db.update_task.assert_called_once_with(VALID_TASK_ID, {"topic": "Updated AI Topic"})
 
     def test_success_update_multiple_fields(self):
         mock_db = make_mock_db()
@@ -773,9 +724,7 @@ class TestUpdateTaskContent:
 
         assert resp.status_code == 200
         # Only 'topic' should be passed to update_task
-        mock_db.update_task.assert_called_once_with(
-            VALID_TASK_ID, {"topic": "Valid"}
-        )
+        mock_db.update_task.assert_called_once_with(VALID_TASK_ID, {"topic": "Valid"})
 
     def test_no_valid_fields_returns_400(self):
         mock_db = make_mock_db()
@@ -801,9 +750,7 @@ class TestUpdateTaskContent:
 
     def test_ownership_mismatch_returns_403(self):
         mock_db = make_mock_db()
-        mock_db.get_task = AsyncMock(
-            return_value=_make_task(user_id="other-user-id-999")
-        )
+        mock_db.get_task = AsyncMock(return_value=_make_task(user_id="other-user-id-999"))
 
         resp = _make_client(mock_db).patch(
             f"/api/tasks/{VALID_TASK_ID}/content",
@@ -930,9 +877,7 @@ class TestUpdateTaskStatusEnterprise:
 
     def test_ownership_mismatch_returns_403(self):
         mock_db = make_mock_db()
-        mock_db.get_task = AsyncMock(
-            return_value=_make_task(user_id="other-user-id-999")
-        )
+        mock_db.get_task = AsyncMock(return_value=_make_task(user_id="other-user-id-999"))
 
         resp = _make_client(mock_db).put(
             f"/api/tasks/{VALID_TASK_ID}/status",
@@ -942,9 +887,7 @@ class TestUpdateTaskStatusEnterprise:
 
     def test_sets_started_at_on_in_progress(self):
         mock_db = make_mock_db()
-        mock_db.get_task = AsyncMock(
-            return_value=_make_task(status="pending", started_at=None)
-        )
+        mock_db.get_task = AsyncMock(return_value=_make_task(status="pending", started_at=None))
 
         resp = _make_client(mock_db).put(
             f"/api/tasks/{VALID_TASK_ID}/status",
@@ -957,9 +900,7 @@ class TestUpdateTaskStatusEnterprise:
 
     def test_sets_completed_at_on_terminal(self):
         mock_db = make_mock_db()
-        mock_db.get_task = AsyncMock(
-            return_value=_make_task(status="pending", completed_at=None)
-        )
+        mock_db.get_task = AsyncMock(return_value=_make_task(status="pending", completed_at=None))
 
         resp = _make_client(mock_db).put(
             f"/api/tasks/{VALID_TASK_ID}/status",

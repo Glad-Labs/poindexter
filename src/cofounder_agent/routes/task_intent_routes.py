@@ -8,6 +8,7 @@ Sub-router for task_routes.py. Handles:
 
 import uuid as uuid_lib
 from datetime import datetime, timezone
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from routes.auth_unified import get_current_user
@@ -110,12 +111,12 @@ async def create_task_from_intent(
             warnings=plan_summary.warnings,
         )
 
-        logger.info(f"[INTENT] Response ready to send to UI")
+        logger.info("[INTENT] Response ready to send to UI")
         return response
 
     except Exception as e:
         logger.error(f"[INTENT] Intent parsing failed: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Intent parsing failed")
+        raise HTTPException(status_code=500, detail="Intent parsing failed") from e
 
 
 @intent_router.post("/confirm-intent", response_model=TaskConfirmResponse)
@@ -171,7 +172,9 @@ async def confirm_and_execute_task(
             }
         )
 
-        logger.info(f"[CONFIRM] Created task {task_id} from intent plan — TaskExecutor will pick up automatically")
+        logger.info(
+            f"[CONFIRM] Created task {task_id} from intent plan — TaskExecutor will pick up automatically"
+        )
 
         return TaskConfirmResponse(
             task_id=task_id,
@@ -182,4 +185,4 @@ async def confirm_and_execute_task(
 
     except Exception as e:
         logger.error(f"[CONFIRM] Task confirmation failed: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Task confirmation failed")
+        raise HTTPException(status_code=500, detail="Task confirmation failed") from e

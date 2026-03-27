@@ -12,14 +12,14 @@ WorkflowHistoryService is provided via dependency override.
 Auth is overridden via dependency injection.
 """
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock
 
 from routes.auth_unified import get_current_user
-from routes.workflow_history import router, get_history_service
-
+from routes.workflow_history import get_history_service, router
 from tests.unit.routes.conftest import TEST_USER
 
 USER_ID = TEST_USER["id"]
@@ -180,9 +180,7 @@ class TestGetExecutionDetails:
 
     def test_unauthorized_user_returns_403(self):
         """Execution owned by a different user should return 403."""
-        svc = _make_history_svc(
-            execution={**SAMPLE_EXECUTION, "user_id": "other-user-999"}
-        )
+        svc = _make_history_svc(execution={**SAMPLE_EXECUTION, "user_id": "other-user-999"})
         client = TestClient(_build_app(svc))
         resp = client.get(f"/api/workflows/{EXECUTION_ID}/details")
         assert resp.status_code == 403

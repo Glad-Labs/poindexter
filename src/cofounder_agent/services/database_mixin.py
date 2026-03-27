@@ -5,11 +5,14 @@ Shared utilities and conversion methods for all database modules.
 Provides common functionality like row-to-dict conversion and error handling.
 """
 
-from services.logger_config import get_logger
 from typing import Any, Dict
 from uuid import UUID
 
+from services.logger_config import get_logger
+
 logger = get_logger(__name__)
+
+
 class DatabaseServiceMixin:
     """Shared methods and utilities for database service modules."""
 

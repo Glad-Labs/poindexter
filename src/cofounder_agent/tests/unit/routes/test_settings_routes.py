@@ -15,18 +15,16 @@ Tests cover:
 - GET    /api/settings/export/all   — export_settings
 """
 
-import pytest
 from datetime import datetime, timezone
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock
 
-from utils.route_utils import get_database_dependency
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
 import routes.settings_routes as settings_module
 from routes.settings_routes import router
-
-from tests.unit.routes.conftest import make_mock_db
-
+from utils.route_utils import get_database_dependency
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -317,7 +315,9 @@ class TestUpdateSetting:
         client.patch("/api/settings/log_level", json={"value": "info"})
         mock_db.set_setting.assert_awaited_once()
         call_kwargs = mock_db.set_setting.call_args
-        assert call_kwargs.kwargs.get("key") == "log_level" or call_kwargs[1].get("key") == "log_level"
+        assert (
+            call_kwargs.kwargs.get("key") == "log_level" or call_kwargs[1].get("key") == "log_level"
+        )
 
     def test_db_failure_returns_500(self):
         mock_db = _make_settings_db()
@@ -442,10 +442,12 @@ class TestBulkUpdateSettings:
         client = TestClient(_build_app(mock_db))
         client.post(
             "/api/settings/bulk/update",
-            json={"updates": [
-                {"setting_id": 1, "value": "a"},
-                {"setting_id": 2, "value": "b"},
-            ]},
+            json={
+                "updates": [
+                    {"setting_id": 1, "value": "a"},
+                    {"setting_id": 2, "value": "b"},
+                ]
+            },
         )
         assert mock_db.set_setting.await_count == 2
 

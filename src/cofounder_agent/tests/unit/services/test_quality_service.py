@@ -9,7 +9,6 @@ import pytest
 
 from services.quality_service import QualityDimensions, UnifiedQualityService
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -172,16 +171,14 @@ class TestTruncationDetection:
 
     def test_completeness_penalty_on_truncation(self, svc=None):
         """Truncated content should receive a completeness score penalty."""
-        from services.quality_service import UnifiedQualityService
-
         svc = UnifiedQualityService()
         complete = " ".join(["word"] * 549) + " final sentence."
         truncated = " ".join(["word"] * 549) + " this sentence never finishes and keeps going"
         score_complete = svc._score_completeness(complete, {})
         score_truncated = svc._score_completeness(truncated, {})
-        assert score_truncated < score_complete, (
-            f"Truncated ({score_truncated}) should score lower than complete ({score_complete})"
-        )
+        assert (
+            score_truncated < score_complete
+        ), f"Truncated ({score_truncated}) should score lower than complete ({score_complete})"
 
 
 # ---------------------------------------------------------------------------

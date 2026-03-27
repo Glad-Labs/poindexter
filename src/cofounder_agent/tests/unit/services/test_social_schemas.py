@@ -17,7 +17,6 @@ from schemas.social_schemas import (
     ToneEnum,
 )
 
-
 # ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------
@@ -103,7 +102,15 @@ class TestSocialPost:
     def test_too_many_platforms_raises(self):
         with pytest.raises(ValidationError):
             self._valid(
-                platforms=["twitter", "facebook", "instagram", "linkedin", "tiktok", "youtube", "twitter"]
+                platforms=[
+                    "twitter",
+                    "facebook",
+                    "instagram",
+                    "linkedin",
+                    "tiktok",
+                    "youtube",
+                    "twitter",
+                ]
             )
 
     def test_valid_scheduled_time(self):
@@ -252,7 +259,15 @@ class TestCrossPostRequest:
     def test_too_many_platforms_raises(self):
         with pytest.raises(ValidationError):
             self._valid(
-                platforms=["twitter", "facebook", "instagram", "linkedin", "tiktok", "youtube", "twitter"]
+                platforms=[
+                    "twitter",
+                    "facebook",
+                    "instagram",
+                    "linkedin",
+                    "tiktok",
+                    "youtube",
+                    "twitter",
+                ]
             )
 
     def test_all_platforms_cross_post(self):

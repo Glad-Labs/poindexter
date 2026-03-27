@@ -661,21 +661,21 @@ def get_model_for_phase(
         },
         "balanced": {
             # Draft/refine get best prose model; assess uses different family for diversity
-            "research": "ollama/qwen3:8b",       # SIMPLE: filtering/ranking snippets
-            "outline": "ollama/qwen3:8b",        # SIMPLE: structural planning
-            "draft": "ollama/qwen3.5:35b",       # COMPLEX: primary creative generation (best prose)
-            "assess": "ollama/gemma3:27b",       # QA: different model family catches different issues
-            "refine": "ollama/qwen3.5:35b",      # COMPLEX: editing needs same quality as draft
-            "finalize": "ollama/qwen3:8b",       # SIMPLE: cleanup and formatting
+            "research": "ollama/qwen3:8b",  # SIMPLE: filtering/ranking snippets
+            "outline": "ollama/qwen3:8b",  # SIMPLE: structural planning
+            "draft": "ollama/qwen3.5:35b",  # COMPLEX: primary creative generation (best prose)
+            "assess": "ollama/gemma3:27b",  # QA: different model family catches different issues
+            "refine": "ollama/qwen3.5:35b",  # COMPLEX: editing needs same quality as draft
+            "finalize": "ollama/qwen3:8b",  # SIMPLE: cleanup and formatting
         },
         "quality": {
             # All creative phases get best model; assess uses large alternative
-            "research": "ollama/qwen3:8b",       # SIMPLE: filtering/ranking snippets
-            "outline": "ollama/qwen3.5:35b",     # Better outlines → better drafts
-            "draft": "ollama/qwen3.5:35b",       # COMPLEX: primary creative generation
-            "assess": "ollama/gemma3:27b",       # QA: different model family for genuine critique
-            "refine": "ollama/qwen3.5:35b",      # COMPLEX: polish and improve draft
-            "finalize": "ollama/qwen3:8b",       # SIMPLE: cleanup and formatting
+            "research": "ollama/qwen3:8b",  # SIMPLE: filtering/ranking snippets
+            "outline": "ollama/qwen3.5:35b",  # Better outlines → better drafts
+            "draft": "ollama/qwen3.5:35b",  # COMPLEX: primary creative generation
+            "assess": "ollama/gemma3:27b",  # QA: different model family for genuine critique
+            "refine": "ollama/qwen3.5:35b",  # COMPLEX: polish and improve draft
+            "finalize": "ollama/qwen3:8b",  # SIMPLE: cleanup and formatting
         },
     }
 

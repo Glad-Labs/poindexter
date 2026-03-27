@@ -31,14 +31,17 @@ Critical Floor = 50/100 — if clarity, readability, or relevance falls below th
 """
 
 import json
-from services.logger_config import get_logger
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+from services.logger_config import get_logger
+
 logger = get_logger(__name__)
+
+
 class EvaluationMethod(str, Enum):
     """Supported evaluation methods"""
 
@@ -151,9 +154,7 @@ class QualityDimensions:
 
         # Enforce minimum-dimension constraint on critical dimensions only.
         # readability excluded (#1238) — Flesch penalizes technical vocabulary.
-        critical_values = {
-            dim: getattr(self, dim) for dim in self.CRITICAL_DIMENSIONS
-        }
+        critical_values = {dim: getattr(self, dim) for dim in self.CRITICAL_DIMENSIONS}
         for dim_name, dim_value in critical_values.items():
             if dim_value < self.CRITICAL_FLOOR:
                 logger.debug(
@@ -387,7 +388,10 @@ class UnifiedQualityService:
 
         suggestions = self._generate_suggestions(dimensions)
         if truncated:
-            suggestions.insert(0, "Content appears truncated (cut off mid-sentence). The LLM may have hit its output token limit. Try regenerating with a shorter target length or a model with a larger context window.")
+            suggestions.insert(
+                0,
+                "Content appears truncated (cut off mid-sentence). The LLM may have hit its output token limit. Try regenerating with a shorter target length or a model with a larger context window.",
+            )
 
         return QualityAssessment(
             dimensions=dimensions,
@@ -438,7 +442,9 @@ class UnifiedQualityService:
             # Extract JSON from response (may contain markdown fences)
             json_match = re.search(r"\{[^{}]*\}", raw_response, re.DOTALL)
             if not json_match:
-                logger.warning("LLM evaluation returned no valid JSON, falling back to pattern-based")
+                logger.warning(
+                    "LLM evaluation returned no valid JSON, falling back to pattern-based"
+                )
                 return await self._evaluate_pattern_based(content, context)
 
             scores = json.loads(json_match.group())
@@ -478,7 +484,9 @@ class UnifiedQualityService:
             )
 
         except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
-            logger.warning(f"LLM evaluation parsing failed ({e}), falling back to pattern-based", exc_info=True)
+            logger.warning(
+                f"LLM evaluation parsing failed ({e}), falling back to pattern-based", exc_info=True
+            )
             return await self._evaluate_pattern_based(content, context)
         except Exception as e:
             logger.error(f"[_evaluate_llm_based] LLM call failed: {e}", exc_info=True)
@@ -560,7 +568,7 @@ class UnifiedQualityService:
 
         # Citation/reference patterns: [1], (Smith 2023), Source:, References:
         citation_patterns = [
-            r"\[\d+\]",            # [1], [12]
+            r"\[\d+\]",  # [1], [12]
             r"\(\w[^)]{1,40}\d{4}\)",  # (Author 2023)
             r"(?:source|reference|cited|per|via):",
             r"according to\b",
@@ -862,9 +870,11 @@ class UnifiedQualityService:
                     "feedback": assessment.feedback,
                     "suggestions": assessment.suggestions,
                     "evaluated_by": assessment.evaluated_by,
-                    "evaluation_method": assessment.evaluation_method.value
-                    if hasattr(assessment.evaluation_method, "value")
-                    else str(assessment.evaluation_method),
+                    "evaluation_method": (
+                        assessment.evaluation_method.value
+                        if hasattr(assessment.evaluation_method, "value")
+                        else str(assessment.evaluation_method)
+                    ),
                     "content_length": assessment.content_length,
                     "context_data": {
                         k: v

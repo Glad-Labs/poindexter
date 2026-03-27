@@ -12,15 +12,17 @@ This service bridges the gap between the sample upload system (Phase 3.1/3.2)
 and content generation (Phase 3.3).
 """
 
-from services.logger_config import get_logger
 import re
 from collections import Counter
 from typing import Any, Dict, Optional
 
 from services.database_service import DatabaseService
+from services.logger_config import get_logger
 from services.writing_style_service import WritingStyleService
 
 logger = get_logger(__name__)
+
+
 class WritingStyleIntegrationService:
     """Service for integrating writing samples into content generation"""
 
@@ -267,7 +269,7 @@ class WritingStyleIntegrationService:
                 if analysis_guidance:
                     enhanced_prompt += f"\n\n## Style Analysis Results\n{analysis_guidance}"
 
-            logger.info(f"✅ Creative agent prompt enhanced with writing sample guidance")
+            logger.info("✅ Creative agent prompt enhanced with writing sample guidance")
             return enhanced_prompt
 
         except Exception as e:

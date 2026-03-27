@@ -13,18 +13,17 @@ Auth and DB are overridden so no real I/O occurs.
 broadcast_approval_status is patched so WebSocket calls don't fail.
 """
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, patch
 
-from routes.auth_unified import get_current_user
-from utils.route_utils import get_database_dependency
 import routes.approval_routes as approval_module
 from routes.approval_routes import router
-
+from routes.auth_unified import get_current_user
 from tests.unit.routes.conftest import TEST_USER, make_mock_db
-
+from utils.route_utils import get_database_dependency
 
 # ---------------------------------------------------------------------------
 # App / client factory
@@ -494,7 +493,11 @@ class TestApprovalLifecycle:
     def test_approve_then_status_reflects_approved(self):
         """After approve, querying approval-status shows 'approved'."""
         awaiting = {**AWAITING_TASK}
-        approved = {**AWAITING_TASK, "status": "approved", "metadata": {"approved_by": TEST_USER["id"]}}
+        approved = {
+            **AWAITING_TASK,
+            "status": "approved",
+            "metadata": {"approved_by": TEST_USER["id"]},
+        }
 
         call_counts = {"n": 0}
 
@@ -521,7 +524,11 @@ class TestApprovalLifecycle:
     def test_reject_then_status_reflects_rejected(self):
         """After reject, approval-status shows non-approvable state."""
         awaiting = {**AWAITING_TASK}
-        rejected = {**AWAITING_TASK, "status": "failed", "metadata": {"rejection_reason": "Off-topic"}}
+        rejected = {
+            **AWAITING_TASK,
+            "status": "failed",
+            "metadata": {"rejection_reason": "Off-topic"},
+        }
 
         call_counts = {"n": 0}
 
@@ -573,14 +580,10 @@ class TestApprovalLifecycle:
 
     def test_unauthenticated_approve_returns_401_or_403(self):
         """Without auth override, approve endpoint should reject unauthenticated request."""
-        from fastapi import FastAPI as _FastAPI
-        from routes.approval_routes import router as _router
-        from utils.route_utils import get_database_dependency as _get_db
-
         mock_db = make_mock_db()
-        app = _FastAPI()
-        app.include_router(_router)
-        app.dependency_overrides[_get_db] = lambda: mock_db
+        app = FastAPI()
+        app.include_router(router)
+        app.dependency_overrides[get_database_dependency] = lambda: mock_db
         client = TestClient(app, raise_server_exceptions=False)
 
         resp = client.post("/api/tasks/task-001/approve", json={"approved": True})
@@ -588,14 +591,10 @@ class TestApprovalLifecycle:
 
     def test_unauthenticated_pending_approvals_returns_401_or_403(self):
         """Without auth override, pending-approval listing should be rejected."""
-        from fastapi import FastAPI as _FastAPI
-        from routes.approval_routes import router as _router
-        from utils.route_utils import get_database_dependency as _get_db
-
         mock_db = make_mock_db()
-        app = _FastAPI()
-        app.include_router(_router)
-        app.dependency_overrides[_get_db] = lambda: mock_db
+        app = FastAPI()
+        app.include_router(router)
+        app.dependency_overrides[get_database_dependency] = lambda: mock_db
         client = TestClient(app, raise_server_exceptions=False)
 
         resp = client.get("/api/tasks/pending-approval")

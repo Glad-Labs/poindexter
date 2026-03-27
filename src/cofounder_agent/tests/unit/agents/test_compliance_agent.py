@@ -4,12 +4,11 @@ Unit tests for agents/compliance_agent/agent.py
 Tests for ComplianceAgent class.
 """
 
-import asyncio
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from agents.compliance_agent.agent import ComplianceAgent
+import pytest
 
+from agents.compliance_agent.agent import ComplianceAgent
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -39,8 +38,10 @@ class TestComplianceAgentInit:
         assert len(agent.tools) == 2
 
     def test_logs_info_on_init(self):
-        with patch("agents.compliance_agent.agent.logging") as mock_logging, \
-             patch("agents.compliance_agent.agent.CrewAIToolsFactory"):
+        with (
+            patch("agents.compliance_agent.agent.logging") as mock_logging,
+            patch("agents.compliance_agent.agent.CrewAIToolsFactory"),
+        ):
             ComplianceAgent(workspace_root="/tmp")
             mock_logging.info.assert_called()
 
@@ -89,8 +90,10 @@ class TestRunCommand:
     async def test_logs_error_on_exception(self):
         agent = _make_agent()
 
-        with patch("asyncio.create_subprocess_exec", side_effect=RuntimeError("boom")), \
-             patch("agents.compliance_agent.agent.logging") as mock_logging:
+        with (
+            patch("asyncio.create_subprocess_exec", side_effect=RuntimeError("boom")),
+            patch("agents.compliance_agent.agent.logging") as mock_logging,
+        ):
             await agent._run_command(["cmd"])
             mock_logging.error.assert_called()
 

@@ -8,21 +8,19 @@ Heavy GPU/SDXL paths are not exercised; they are tested via flag checks only.
 """
 
 from contextlib import asynccontextmanager
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from services.image_service import (
+    IMAGE_MODEL_REGISTRY,
     FeaturedImageMetadata,
     ImageModel,
     ImageModelConfig,
-    IMAGE_MODEL_REGISTRY,
     ImageService,
     get_default_image_model,
     get_image_service,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -66,6 +64,7 @@ def make_image_service_no_key() -> ImageService:
     """Return an ImageService without Pexels API key."""
     with patch.dict("os.environ", {}, clear=True):
         import os
+
         os.environ.pop("PEXELS_API_KEY", None)
         return ImageService()
 
@@ -488,9 +487,9 @@ class TestImageModelRegistry:
             assert cfg.display_name, f"{model} missing display_name"
             assert cfg.default_steps > 0, f"{model} has non-positive default_steps"
             assert cfg.default_guidance_scale >= 0, f"{model} has negative guidance_scale"
-            assert cfg.pipeline_class.startswith("diffusers."), (
-                f"{model} pipeline_class should start with 'diffusers.'"
-            )
+            assert cfg.pipeline_class.startswith(
+                "diffusers."
+            ), f"{model} pipeline_class should start with 'diffusers.'"
             assert cfg.vram_gb > 0, f"{model} has non-positive vram_gb"
 
     def test_sdxl_base_config(self):
@@ -581,8 +580,10 @@ class TestInitializeModel:
 
     def test_sets_sdxl_available_false_when_torch_unavailable(self):
         svc = ImageService()
-        with patch("services.image_service.DIFFUSERS_AVAILABLE", True), \
-             patch("services.image_service.TORCH_AVAILABLE", False):
+        with (
+            patch("services.image_service.DIFFUSERS_AVAILABLE", True),
+            patch("services.image_service.TORCH_AVAILABLE", False),
+        ):
             svc._initialize_model(ImageModel.SDXL_BASE)
         assert svc.sdxl_available is False
         assert svc._gen_pipe is None
@@ -595,17 +596,24 @@ class TestInitializeModel:
 
         # DIFFUSERS and TORCH must be True so we get past the prerequisite checks
         # and reach the unload branch. We then let the actual load fail (no real GPU).
-        with patch("services.image_service.DIFFUSERS_AVAILABLE", True), \
-             patch("services.image_service.TORCH_AVAILABLE", True), \
-             patch.object(svc, "_unload_model") as mock_unload, \
-             patch.object(svc, "_import_pipeline_class", side_effect=ImportError("no GPU")):
+        with (
+            patch("services.image_service.DIFFUSERS_AVAILABLE", True),
+            patch("services.image_service.TORCH_AVAILABLE", True),
+            patch.object(svc, "_unload_model") as mock_unload,
+            patch.object(svc, "_import_pipeline_class", side_effect=ImportError("no GPU")),
+        ):
             svc._initialize_model(ImageModel.FLUX_SCHNELL)
             mock_unload.assert_called_once()
 
     def test_uses_get_default_when_model_is_none(self):
         svc = ImageService()
-        with patch("services.image_service.DIFFUSERS_AVAILABLE", False), \
-             patch("services.image_service.get_default_image_model", return_value=ImageModel.FLUX_SCHNELL) as mock_default:
+        with (
+            patch("services.image_service.DIFFUSERS_AVAILABLE", False),
+            patch(
+                "services.image_service.get_default_image_model",
+                return_value=ImageModel.FLUX_SCHNELL,
+            ) as mock_default,
+        ):
             svc._initialize_model(None)
             mock_default.assert_called_once()
 
@@ -648,6 +656,7 @@ class TestUnloadModel:
         mock_torch.cuda.is_available.return_value = True
 
         import services.image_service as img_mod
+
         original_torch = getattr(img_mod, "torch", None)
         try:
             img_mod.torch = mock_torch
@@ -667,6 +676,7 @@ class TestUnloadModel:
         mock_torch.cuda.is_available.return_value = False
 
         import services.image_service as img_mod
+
         original_torch = getattr(img_mod, "torch", None)
         try:
             img_mod.torch = mock_torch
@@ -689,11 +699,13 @@ class TestImportPipelineClass:
         # Use a known stdlib class as a stand-in
         cls = ImageService._import_pipeline_class("collections.OrderedDict")
         from collections import OrderedDict
+
         assert cls is OrderedDict
 
     def test_another_valid_path(self):
         cls = ImageService._import_pipeline_class("os.path")
         import os.path
+
         assert cls is os.path
 
     def test_invalid_path_no_dot(self):

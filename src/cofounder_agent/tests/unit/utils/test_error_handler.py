@@ -13,23 +13,23 @@ All tests are pure — zero DB, LLM, or network calls.
 """
 
 import logging
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 from fastapi import HTTPException
 
 from utils.error_handler import (
     ErrorResponse,
+    bad_request,
+    create_error_response,
+    forbidden,
     handle_route_error,
     handle_service_error,
-    create_error_response,
+    internal_error,
     log_and_raise_http_error,
     not_found,
-    bad_request,
-    forbidden,
-    internal_error,
     service_unavailable,
 )
-
 
 # ---------------------------------------------------------------------------
 # ErrorResponse
@@ -85,6 +85,7 @@ class TestErrorResponse:
 class TestHandleRouteError:
     def _run(self, coro):
         import asyncio
+
         return asyncio.get_event_loop().run_until_complete(coro)
 
     def test_http_exception_is_returned_unchanged(self):

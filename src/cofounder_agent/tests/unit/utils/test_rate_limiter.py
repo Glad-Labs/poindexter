@@ -8,7 +8,6 @@ Covers:
 - When slowapi is absent: _NoOpLimiter is used — .limit() is a pass-through decorator
 """
 
-import importlib
 import sys
 from unittest.mock import patch
 
@@ -33,8 +32,9 @@ class TestRateLimiterModuleExport:
     def test_limit_decorator_is_pass_through(self):
         """When applied to a route-like function with a 'request' param, the decorator
         must return a callable (the real slowapi Limiter wraps the function)."""
-        from utils.rate_limiter import limiter
         from starlette.requests import Request
+
+        from utils.rate_limiter import limiter
 
         def _dummy(request: Request):
             return "ok"

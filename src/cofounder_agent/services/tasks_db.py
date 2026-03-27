@@ -10,7 +10,6 @@ Handles all task-related database operations including:
 
 import asyncio
 import json
-from services.logger_config import get_logger
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
@@ -19,13 +18,16 @@ from asyncpg import Pool
 
 from schemas.database_response_models import TaskCountsResponse, TaskResponse
 from schemas.model_converter import ModelConverter
-from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
+from services.logger_config import get_logger
 from utils.json_encoder import safe_json_load
+from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 
 from .database_mixin import DatabaseServiceMixin
 from .decorators import log_query_performance
 
 logger = get_logger(__name__)
+
+
 def serialize_value_for_postgres(value: Any) -> Any:
     """Serialize Python value for PostgreSQL."""
     if value is None:
@@ -276,30 +278,32 @@ class TasksDatabase(DatabaseServiceMixin):
             if "task_name" in task_data and "task_name" not in metadata:
                 metadata["task_name"] = task_data["task_name"]
 
-            rows.append((
-                task_id,
-                task_data.get("content_type") or task_data.get("task_type", "blog_post"),
-                task_data.get("task_type", "blog_post"),
-                task_data.get("request_type", "content_generation"),
-                task_data.get("status", "pending"),
-                task_data.get("topic", ""),
-                task_data.get("title") or task_data.get("task_name"),
-                task_data.get("style", "technical"),
-                task_data.get("tone", "professional"),
-                task_data.get("target_length", 1500),
-                task_data.get("agent_id", "content-agent"),
-                task_data.get("primary_keyword"),
-                task_data.get("target_audience"),
-                task_data.get("category"),
-                task_data.get("approval_status", "pending"),
-                task_data.get("publish_mode", "draft"),
-                task_data.get("quality_preference", "balanced"),
-                float(task_data.get("estimated_cost", 0.0)),
-                json.dumps(task_data.get("tags", [])),
-                json.dumps(metadata or {}),
-                now,
-                now,
-            ))
+            rows.append(
+                (
+                    task_id,
+                    task_data.get("content_type") or task_data.get("task_type", "blog_post"),
+                    task_data.get("task_type", "blog_post"),
+                    task_data.get("request_type", "content_generation"),
+                    task_data.get("status", "pending"),
+                    task_data.get("topic", ""),
+                    task_data.get("title") or task_data.get("task_name"),
+                    task_data.get("style", "technical"),
+                    task_data.get("tone", "professional"),
+                    task_data.get("target_length", 1500),
+                    task_data.get("agent_id", "content-agent"),
+                    task_data.get("primary_keyword"),
+                    task_data.get("target_audience"),
+                    task_data.get("category"),
+                    task_data.get("approval_status", "pending"),
+                    task_data.get("publish_mode", "draft"),
+                    task_data.get("quality_preference", "balanced"),
+                    float(task_data.get("estimated_cost", 0.0)),
+                    json.dumps(task_data.get("tags", [])),
+                    json.dumps(metadata or {}),
+                    now,
+                    now,
+                )
+            )
 
         sql = """
             INSERT INTO content_tasks (
@@ -435,7 +439,9 @@ class TasksDatabase(DatabaseServiceMixin):
 
                 row = await conn.fetchrow(sql, *params)
                 if row:
-                    task_type = row.get("task_type", "unknown") if hasattr(row, "get") else "unknown"
+                    task_type = (
+                        row.get("task_type", "unknown") if hasattr(row, "get") else "unknown"
+                    )
                     logger.info(
                         f"✅ Task status updated: {task_id} → {status} | task_type={task_type}"
                     )
@@ -593,11 +599,7 @@ class TasksDatabase(DatabaseServiceMixin):
             param_idx += 1
         if search:
             # Sanitize: keep alphanumeric, spaces, hyphens, underscores only
-            safe_search = (
-                "%"
-                + "".join(c for c in search if c.isalnum() or c in " -_")
-                + "%"
-            )
+            safe_search = "%" + "".join(c for c in search if c.isalnum() or c in " -_") + "%"
             # ILIKE across task display name (title), topic, and category columns.
             # The trigram GIN indexes on these columns (migration 0027) allow
             # PostgreSQL to avoid a full sequential scan for '%term%' patterns.
@@ -1008,7 +1010,9 @@ class TasksDatabase(DatabaseServiceMixin):
                             "new_status": row["new_status"],
                             "reason": row["reason"],
                             "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
-                            "timestamp": row["created_at"].isoformat() if row["created_at"] else None,
+                            "timestamp": (
+                                row["created_at"].isoformat() if row["created_at"] else None
+                            ),
                         }
                     )
 
@@ -1062,7 +1066,9 @@ class TasksDatabase(DatabaseServiceMixin):
                     failures.append(
                         {
                             "id": row["id"],
-                            "timestamp": row["created_at"].isoformat() if row["created_at"] else None,
+                            "timestamp": (
+                                row["created_at"].isoformat() if row["created_at"] else None
+                            ),
                             "reason": row["reason"],
                             "errors": metadata.get("validation_errors", []),
                             "context": metadata.get("context", {}),

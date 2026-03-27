@@ -4,24 +4,24 @@ Unit tests for agent_schemas.py
 Tests field validation, defaults, and model behaviour without any DB or LLM calls.
 """
 
-import pytest
 from datetime import datetime, timezone
+
+import pytest
 from pydantic import ValidationError
 
 from schemas.agent_schemas import (
-    AgentStatusEnum,
-    SystemHealthEnum,
-    AgentCommandEnum,
-    AgentStatus,
-    AllAgentsStatus,
     AgentCommand,
+    AgentCommandEnum,
     AgentCommandResult,
+    AgentHealth,
     AgentLog,
     AgentLogs,
+    AgentStatus,
+    AgentStatusEnum,
+    AllAgentsStatus,
     MemoryStats,
-    AgentHealth,
+    SystemHealthEnum,
 )
-
 
 # ---------------------------------------------------------------------------
 # Enums

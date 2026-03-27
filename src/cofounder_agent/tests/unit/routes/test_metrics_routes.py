@@ -19,17 +19,16 @@ Auth and DB overridden where needed.
 UsageTracker is patched to avoid global state dependency.
 """
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from routes.auth_unified import get_current_user
-from utils.route_utils import get_database_dependency
 from routes.metrics_routes import metrics_router
-
 from tests.unit.routes.conftest import TEST_USER, make_mock_db
-
+from utils.route_utils import get_database_dependency
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -141,7 +140,7 @@ class TestDeprecatedKpiEndpoint:
         client = TestClient(_build_app(), follow_redirects=False)
         resp = client.get(
             "/api/metrics/analytics/kpis",
-            headers={"Authorization": f"Bearer token"},
+            headers={"Authorization": "Bearer token"},
         )
         # The tombstone returns a 308 redirect
         assert resp.status_code == 308
@@ -163,9 +162,9 @@ class TestGetOperationalMetrics:
         """Operational metrics now requires auth (#1011)."""
         mock_db = make_mock_db()
         mock_db.tasks = MagicMock()
-        mock_db.tasks.get_task_counts = AsyncMock(return_value={
-            "pending": 2, "in_progress": 1, "failed": 0, "completed": 10
-        })
+        mock_db.tasks.get_task_counts = AsyncMock(
+            return_value={"pending": 2, "in_progress": 1, "failed": 0, "completed": 10}
+        )
 
         # Build app with NO auth override — should now require auth
         app = FastAPI()
@@ -178,9 +177,9 @@ class TestGetOperationalMetrics:
     def test_response_has_required_operational_fields(self):
         mock_db = make_mock_db()
         mock_db.tasks = MagicMock()
-        mock_db.tasks.get_task_counts = AsyncMock(return_value={
-            "pending": 0, "in_progress": 0, "failed": 0, "completed": 0
-        })
+        mock_db.tasks.get_task_counts = AsyncMock(
+            return_value={"pending": 0, "in_progress": 0, "failed": 0, "completed": 0}
+        )
 
         client = TestClient(_build_app(mock_db))
         data = client.get("/api/metrics/operational").json()
@@ -193,9 +192,9 @@ class TestGetOperationalMetrics:
     def test_task_queue_has_status_breakdown(self):
         mock_db = make_mock_db()
         mock_db.tasks = MagicMock()
-        mock_db.tasks.get_task_counts = AsyncMock(return_value={
-            "pending": 3, "in_progress": 2, "failed": 1, "completed": 50
-        })
+        mock_db.tasks.get_task_counts = AsyncMock(
+            return_value={"pending": 3, "in_progress": 2, "failed": 1, "completed": 50}
+        )
 
         client = TestClient(_build_app(mock_db))
         data = client.get("/api/metrics/operational").json()
@@ -281,25 +280,29 @@ class TestGetUsageMetrics:
 
 def _make_mock_cost_service():
     svc = AsyncMock()
-    svc.get_summary = AsyncMock(return_value={
-        "month_cost": 12.50,
-        "today_cost": 0.50,
-        "week_cost": 3.00,
-        "projected_monthly": 15.00,
-        "tasks_completed": 10,
-        "avg_cost_per_task": 1.25,
-        "last_updated": "2026-03-01T00:00:00Z",
-    })
+    svc.get_summary = AsyncMock(
+        return_value={
+            "month_cost": 12.50,
+            "today_cost": 0.50,
+            "week_cost": 3.00,
+            "projected_monthly": 15.00,
+            "tasks_completed": 10,
+            "avg_cost_per_task": 1.25,
+            "last_updated": "2026-03-01T00:00:00Z",
+        }
+    )
     svc.get_breakdown_by_phase = AsyncMock(return_value={"phases": []})
     svc.get_breakdown_by_model = AsyncMock(return_value={"models": []})
-    svc.get_budget_status = AsyncMock(return_value={
-        "monthly_budget": 150.0,
-        "amount_spent": 12.50,
-        "amount_remaining": 137.50,
-        "percent_used": 8.33,
-        "status": "healthy",
-        "alerts": [],
-    })
+    svc.get_budget_status = AsyncMock(
+        return_value={
+            "monthly_budget": 150.0,
+            "amount_spent": 12.50,
+            "amount_remaining": 137.50,
+            "percent_used": 8.33,
+            "status": "healthy",
+            "alerts": [],
+        }
+    )
     return svc
 
 
@@ -307,21 +310,27 @@ def _make_mock_cost_service():
 class TestGetCostMetrics:
     def test_returns_200_with_db_backend(self):
         mock_db = make_mock_db()
-        with patch("routes.metrics_routes.CostAggregationService", return_value=_make_mock_cost_service()):
+        with patch(
+            "routes.metrics_routes.CostAggregationService", return_value=_make_mock_cost_service()
+        ):
             client = TestClient(_build_app(mock_db))
             resp = client.get("/api/metrics/costs")
         assert resp.status_code == 200
 
     def test_response_has_source_postgresql_when_db_succeeds(self):
         mock_db = make_mock_db()
-        with patch("routes.metrics_routes.CostAggregationService", return_value=_make_mock_cost_service()):
+        with patch(
+            "routes.metrics_routes.CostAggregationService", return_value=_make_mock_cost_service()
+        ):
             client = TestClient(_build_app(mock_db))
             data = client.get("/api/metrics/costs").json()
         assert data["source"] == "postgresql"
 
     def test_response_has_total_cost_key(self):
         mock_db = make_mock_db()
-        with patch("routes.metrics_routes.CostAggregationService", return_value=_make_mock_cost_service()):
+        with patch(
+            "routes.metrics_routes.CostAggregationService", return_value=_make_mock_cost_service()
+        ):
             client = TestClient(_build_app(mock_db))
             data = client.get("/api/metrics/costs").json()
         assert "total_cost" in data
@@ -332,7 +341,9 @@ class TestGetCostMetrics:
         failing_svc = AsyncMock()
         failing_svc.get_summary = AsyncMock(side_effect=RuntimeError("DB error"))
         with patch("routes.metrics_routes.CostAggregationService", return_value=failing_svc):
-            with patch("routes.metrics_routes.get_usage_tracker", return_value=_make_mock_tracker()):
+            with patch(
+                "routes.metrics_routes.get_usage_tracker", return_value=_make_mock_tracker()
+            ):
                 client = TestClient(_build_app(mock_db))
                 data = client.get("/api/metrics/costs").json()
         # Fell back to tracker path
@@ -428,7 +439,9 @@ class TestTrackUsage:
 class TestGetCostsByPhase:
     def test_returns_200(self):
         mock_svc = _make_mock_cost_service()
-        mock_svc.get_breakdown_by_phase = AsyncMock(return_value={"phases": [{"phase": "draft", "cost": 1.0}]})
+        mock_svc.get_breakdown_by_phase = AsyncMock(
+            return_value={"phases": [{"phase": "draft", "cost": 1.0}]}
+        )
         with patch("routes.metrics_routes.CostAggregationService", return_value=mock_svc):
             client = TestClient(_build_app())
             resp = client.get("/api/metrics/costs/breakdown/phase?period=week")

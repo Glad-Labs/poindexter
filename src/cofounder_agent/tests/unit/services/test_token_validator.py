@@ -6,19 +6,13 @@ No network I/O — purely in-process.
 """
 
 import os
-import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import jwt
 import pytest
 
-from services.token_validator import (
-    AuthConfig,
-    JWTTokenValidator,
-    TokenType,
-    validate_access_token,
-)
+from services.token_validator import AuthConfig, JWTTokenValidator, TokenType, validate_access_token
 
 # ---------------------------------------------------------------------------
 # Helpers

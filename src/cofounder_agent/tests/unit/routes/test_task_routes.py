@@ -16,22 +16,18 @@ Tests cover:
 Auth and DB are overridden via FastAPI dependency_overrides so no real I/O occurs.
 """
 
+from unittest.mock import AsyncMock
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock
 
 from routes.auth_unified import get_current_user, get_current_user_optional
-from utils.route_utils import get_database_dependency
 
 # Import helpers under test directly (pure functions, no I/O)
-from routes.task_routes import (
-    _normalize_seo_keywords_in_task,
-    router,
-)
-
+from routes.task_routes import _normalize_seo_keywords_in_task, router
 from tests.unit.routes.conftest import TEST_USER, make_mock_db
-
+from utils.route_utils import get_database_dependency
 
 # ---------------------------------------------------------------------------
 # App / client factory helpers
@@ -402,8 +398,9 @@ class TestCheckTaskOwnership:
         assert result is None
 
     def test_different_user_raises_403(self):
-        from routes.task_routes import _check_task_ownership
         from fastapi import HTTPException
+
+        from routes.task_routes import _check_task_ownership
 
         task = {"user_id": "user-abc"}
         user = {"id": "user-xyz"}

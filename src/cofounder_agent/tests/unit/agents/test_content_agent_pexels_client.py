@@ -4,11 +4,11 @@ Unit tests for agents/content_agent/services/pexels_client.py
 Tests for PexelsClient (no real HTTP calls — all mocked).
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from agents.content_agent.services.pexels_client import PexelsClient
+import pytest
 
+from agents.content_agent.services.pexels_client import PexelsClient
 
 # ---------------------------------------------------------------------------
 # Helpers

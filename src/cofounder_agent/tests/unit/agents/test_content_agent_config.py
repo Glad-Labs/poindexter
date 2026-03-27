@@ -7,9 +7,9 @@ via environment and DISABLE_DOTENV=1 to avoid loading .env.local.
 """
 
 import os
-import pytest
 from unittest.mock import patch
 
+import pytest
 
 # ---------------------------------------------------------------------------
 # Config class tests
@@ -170,10 +170,9 @@ class TestValidateRequired:
             {"DATABASE_URL": "postgresql://user:pass@localhost/test", "DISABLE_DOTENV": "1"},
             clear=False,
         ):
-            from agents.content_agent.config import Config, validate_required
-
             # Temporarily replace global config with our fresh one
             import agents.content_agent.config as config_module
+            from agents.content_agent.config import Config, validate_required
 
             original = config_module.config
             config_module.config = Config()
@@ -190,8 +189,8 @@ class TestValidateRequired:
             {"DATABASE_URL": "postgresql://user:pass@localhost/test", "DISABLE_DOTENV": "1"},
             clear=False,
         ):
-            from agents.content_agent.config import Config, validate_required
             import agents.content_agent.config as config_module
+            from agents.content_agent.config import Config, validate_required
 
             original = config_module.config
             config_module.config = Config()

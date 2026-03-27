@@ -7,10 +7,8 @@ export_as_jsonl, list_datasets, get_dataset.
 All database calls are mocked via an asyncpg Pool mock.
 """
 
-import json
 from datetime import datetime, timezone
-from typing import Any, Dict
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -20,7 +18,6 @@ from services.training_data_service import (
     TrainingDataService,
     TrainingDataStats,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -297,14 +294,13 @@ class TestAddRemoveTags:
 class TestGetStatistics:
     @pytest.mark.asyncio
     async def test_returns_training_data_stats(self):
-        from datetime import datetime, timezone
         svc, conn = make_service()
         # total COUNT(*) fetchval
         conn.fetchval = AsyncMock(return_value=10)
 
         # get_statistics calls get_all_training_data internally — mock it to return
         # a small list of TrainingDatapoint objects to avoid double-mocking conn.fetch
-        from services.training_data_service import TrainingDatapoint
+
         sample_dp = TrainingDatapoint(
             id="1",
             execution_id="exec-1",

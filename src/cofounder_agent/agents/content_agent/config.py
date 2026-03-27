@@ -29,11 +29,12 @@ def _fix_sys_path():
 _fix_sys_path()
 del _fix_sys_path, _PathType
 
-from services.logger_config import get_logger
 import os
-from pathlib import Path
+from pathlib import Path  # pylint: disable=reimported  # intentional: _PathType was deleted above
 
 from dotenv import load_dotenv
+
+from services.logger_config import get_logger
 
 # --- Define Base Directory ---
 # Ensures that all file paths are relative to the project root, making the application more portable.
@@ -43,6 +44,8 @@ BASE_DIR = os.path.join(
 
 # Logging is configured centrally in services/logger_config.py
 logger = get_logger(__name__)
+
+
 class Config:
     """
     Central configuration class for the content agent.

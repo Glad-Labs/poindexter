@@ -123,7 +123,9 @@ class AIContentGenerator:
         soft_max = int(target_length * 1.1)
 
         if word_count < critical_min:
-            issues.append(f"CRITICAL: Content too short: {word_count} words (target: {target_length})")
+            issues.append(
+                f"CRITICAL: Content too short: {word_count} words (target: {target_length})"
+            )
             score -= 3.0
         elif word_count < soft_min:
             issues.append(f"Content too short: {word_count} words (target: {target_length})")
@@ -250,7 +252,9 @@ class AIContentGenerator:
             )
             logger.info(f"✓ Generation prompt loaded ({len(generation_prompt)} chars)")
         except Exception as e:
-            logger.error(f"Failed to load generation prompt: {type(e).__name__}: {e}", exc_info=True)
+            logger.error(
+                f"Failed to load generation prompt: {type(e).__name__}: {e}", exc_info=True
+            )
             raise
 
         # Create a callable refinement prompt getter
@@ -284,7 +288,7 @@ class AIContentGenerator:
         Returns a context dict containing all shared state needed by provider methods.
         """
         logger.info(f"\n{'='*80}")
-        logger.info(f"🎬 BLOG GENERATION STARTED")
+        logger.info("🎬 BLOG GENERATION STARTED")
         logger.info(f"{'='*80}")
         logger.info(f"📌 Topic: {topic}")
         logger.info(f"📌 Style: {style} | Tone: {tone}")
@@ -292,9 +296,7 @@ class AIContentGenerator:
         logger.info(f"📌 Quality threshold: {self.quality_threshold}")
         logger.info(f"📌 Preferred model: {preferred_model or 'auto'}")
         logger.info(f"📌 Preferred provider: {preferred_provider or 'auto'}")
-        logger.info(
-            f"📌 Anthropic key: {'✓' if ProviderChecker.is_anthropic_available() else '✗'}"
-        )
+        logger.info(f"📌 Anthropic key: {'✓' if ProviderChecker.is_anthropic_available() else '✗'}")
         logger.info(f"📌 Gemini key: {'✓' if ProviderChecker.is_gemini_available() else '✗'}")
         logger.info(f"📌 OpenAI key: {'✓' if ProviderChecker.is_openai_available() else '✗'}")
         logger.info(
@@ -331,7 +333,11 @@ class AIContentGenerator:
 
         # Load all prompts
         system_prompt, generation_prompt, get_refinement_prompt = self._load_generation_prompts(
-            topic, style, tone, target_length, tags,
+            topic,
+            style,
+            tone,
+            target_length,
+            tags,
         )
 
         # Track metrics
@@ -366,12 +372,12 @@ class AIContentGenerator:
 
         # Log provider decision tree
         logger.info(f"\n{'='*80}")
-        logger.info(f"🔍 PROVIDER DECISION TREE:")
+        logger.info("🔍 PROVIDER DECISION TREE:")
         logger.info(f"{'='*80}")
         logger.info(f"   User selection: provider={preferred_provider}, model={preferred_model}")
         logger.info(f"   Effective provider: {effective_provider}")
-        logger.info(f"")
-        logger.info(f"   Provider Status:")
+        logger.info("")
+        logger.info("   Provider Status:")
         logger.info(
             f"   ├─ Anthropic (cloud):  {'✓ key set' if ProviderChecker.is_anthropic_available() else '✗ no key'}"
         )
@@ -387,7 +393,7 @@ class AIContentGenerator:
         logger.info(
             f"   ├─ HuggingFace (cloud): {'✓ token set' if ProviderChecker.is_huggingface_available() else '✗ no token'}"
         )
-        logger.info(f"   └─ Fallback:           Available (generic template)")
+        logger.info("   └─ Fallback:           Available (generic template)")
         logger.info(f"{'='*80}\n")
 
         return {
@@ -429,7 +435,7 @@ class AIContentGenerator:
         ):
             return None
 
-        logger.info(f"🎯 PLAN: Will attempt Gemini (user selection)\n")
+        logger.info("🎯 PLAN: Will attempt Gemini (user selection)\n")
         logger.info(
             f"🎯 Attempting Gemini (provider: {effective_provider}, model: {preferred_model or 'auto'})..."
         )
@@ -480,9 +486,7 @@ class AIContentGenerator:
                 # Calculate max tokens: For Gemini, use MUCH higher multiplier for large outputs
                 # Gemini sometimes throttles long outputs, so we need to give it extra room
                 # Using 6x multiplier to ensure Gemini has enough token budget to complete full response
-                max_tokens = int(
-                    target_length * 6.0
-                )  # Using 6x for large outputs (3000+ words)
+                max_tokens = int(target_length * 6.0)  # Using 6x for large outputs (3000+ words)
                 # Cap at Gemini's reasonable maximum to avoid API issues
                 max_tokens = min(max_tokens, 32000)  # Gemini-pro-15 supports up to 32k output
                 logger.debug(
@@ -570,7 +574,9 @@ class AIContentGenerator:
         except Exception as e:
             import traceback
 
-            logger.warning(f"User-selected Gemini failed: {type(e).__name__}: {str(e)}", exc_info=True)
+            logger.warning(
+                f"User-selected Gemini failed: {type(e).__name__}: {str(e)}", exc_info=True
+            )
             logger.debug(f"Gemini error traceback: {traceback.format_exc()}")
             metrics["model_selection_log"]["decision_tree"]["gemini_error"] = str(e)[
                 :200
@@ -584,9 +590,7 @@ class AIContentGenerator:
         # OllamaClient.generate() returns dict with 'text' key (not 'response')
         logger.info(f"      📦 Raw response type: {type(response)}")
         if isinstance(response, dict):
-            logger.info(
-                f"      📦 Response is dict with keys: {list(response.keys())}"
-            )
+            logger.info(f"      📦 Response is dict with keys: {list(response.keys())}")
 
         generated_content = ""
         if isinstance(response, dict):
@@ -596,9 +600,7 @@ class AIContentGenerator:
                 or response.get("response", "")
                 or response.get("content", "")
             )
-            logger.info(
-                f"      📦 Extracted from dict: {len(generated_content)} chars"
-            )
+            logger.info(f"      📦 Extracted from dict: {len(generated_content)} chars")
             if generated_content:
                 logger.debug(
                     f"      📦 Response type: dict | Extracted text: {len(generated_content)} chars"
@@ -609,12 +611,8 @@ class AIContentGenerator:
                 )
         elif isinstance(response, str):
             generated_content = response
-            logger.info(
-                f"      📦 Got direct string: {len(generated_content)} chars"
-            )
-            logger.debug(
-                f"      📦 Response type: str | Content: {len(generated_content)} chars"
-            )
+            logger.info(f"      📦 Got direct string: {len(generated_content)} chars")
+            logger.debug(f"      📦 Response type: str | Content: {len(generated_content)} chars")
         else:
             logger.warning(f"      ⚠️  Unexpected response type: {type(response)}")
             generated_content = ""
@@ -622,8 +620,7 @@ class AIContentGenerator:
         return generated_content
 
     async def _refine_ollama_content(
-        self, ollama, model_name: str, generated_content: str,
-        validation, ctx: Dict[str, Any]
+        self, ollama, model_name: str, generated_content: str, validation, ctx: Dict[str, Any]
     ) -> Optional[Tuple[str, str, Dict[str, Any]]]:
         """Attempt to refine Ollama-generated content that failed QA.
 
@@ -676,15 +673,11 @@ class AIContentGenerator:
             )
 
         if refined_content and len(refined_content) > 100:
-            logger.info(
-                f"      ✓ Refined content generated: {len(refined_content)} characters"
-            )
+            logger.info(f"      ✓ Refined content generated: {len(refined_content)} characters")
 
             # Validate refined content
-            logger.info(f"      🔍 Validating refined content...")
-            refined_validation = self._validate_content(
-                refined_content, topic, target_length
-            )
+            logger.info("      🔍 Validating refined content...")
+            refined_validation = self._validate_content(refined_content, topic, target_length)
             metrics["validation_results"].append(
                 {
                     "attempt": metrics["generation_attempts"],
@@ -701,26 +694,18 @@ class AIContentGenerator:
             )
 
             if refined_validation.is_valid:
-                logger.info(f"      ✅ Refined content APPROVED")
+                logger.info("      ✅ Refined content APPROVED")
                 metrics["model_used"] = f"Ollama - {model_name} (refined)"
-                metrics["models_used_by_phase"]["draft"] = metrics[
-                    "model_used"
-                ]  # Track phase
-                metrics["final_quality_score"] = (
-                    refined_validation.quality_score
-                )
-                metrics["generation_time_seconds"] = (
-                    time.time() - start_time
-                )
+                metrics["models_used_by_phase"]["draft"] = metrics["model_used"]  # Track phase
+                metrics["final_quality_score"] = refined_validation.quality_score
+                metrics["generation_time_seconds"] = time.time() - start_time
                 logger.info(f"\n{'='*80}")
-                logger.info(f"✅ GENERATION COMPLETE (with refinement)")
+                logger.info("✅ GENERATION COMPLETE (with refinement)")
                 logger.info(f"   Model: {metrics['model_used']}")
                 logger.info(
                     f"   Quality: {refined_validation.quality_score:.1f}/{self.quality_threshold}"
                 )
-                logger.info(
-                    f"   Time: {metrics['generation_time_seconds']:.1f}s"
-                )
+                logger.info(f"   Time: {metrics['generation_time_seconds']:.1f}s")
                 logger.info(f"{'='*80}\n")
                 return refined_content, metrics["model_used"], metrics
 
@@ -730,9 +715,7 @@ class AIContentGenerator:
             ctx["_refined_content"] = refined_content
         return None
 
-    async def _try_ollama(
-        self, ctx: Dict[str, Any]
-    ) -> Optional[Tuple[str, str, Dict[str, Any]]]:
+    async def _try_ollama(self, ctx: Dict[str, Any]) -> Optional[Tuple[str, str, Dict[str, Any]]]:
         """Try Ollama local provider with refinement loop. Returns result tuple or None."""
         use_ollama = ctx["use_ollama"]
         skip_ollama = ctx["skip_ollama"]
@@ -753,14 +736,14 @@ class AIContentGenerator:
             )
             return None
 
-        logger.info(f"🔄 [ATTEMPT 1/3] Trying Ollama (Local, GPU-accelerated)...")
-        logger.info(f"   ├─ Endpoint: http://localhost:11434")
-        logger.info(f"   └─ Status: Connecting...\n")
+        logger.info("🔄 [ATTEMPT 1/3] Trying Ollama (Local, GPU-accelerated)...")
+        logger.info("   ├─ Endpoint: http://localhost:11434")
+        logger.info("   └─ Status: Connecting...\n")
         try:
             from .ollama_client import OllamaClient
 
             ollama = OllamaClient()
-            logger.info(f"   ✓ OllamaClient initialized")
+            logger.info("   ✓ OllamaClient initialized")
 
             # Model selection priority:
             # 1. UI-selected model (preferred_model from task request)
@@ -780,34 +763,32 @@ class AIContentGenerator:
                 try:
                     available = await ollama.list_models()
                     fallbacks = [
-                        m["name"] for m in sorted(
+                        m["name"]
+                        for m in sorted(
                             available,
                             key=lambda x: x.get("size", 0),
                             reverse=True,
                         )
-                        if "embed" not in m.get("name", "").lower()
-                        and m["name"] != resolved
+                        if "embed" not in m.get("name", "").lower() and m["name"] != resolved
                     ]
                     model_list.extend(fallbacks)
                 except Exception as e:
                     logger.warning(f"   ⚠️ Could not discover fallback models: {e}")
 
-                logger.info(f"   ├─ Will try {len(model_list)} model(s): {[m.split(':')[0] for m in model_list[:5]]}")
+                logger.info(
+                    f"   ├─ Will try {len(model_list)} model(s): {[m.split(':')[0] for m in model_list[:5]]}"
+                )
             for model_idx, model_name in enumerate(model_list, 1):
                 try:
-                    logger.info(
-                        f"   └─ Testing model {model_idx}/{len(model_list)}: {model_name}"
-                    )
+                    logger.info(f"   └─ Testing model {model_idx}/{len(model_list)}: {model_name}")
                     metrics["generation_attempts"] += 1
 
-                    logger.info(f"      ⏱️  Generating content (timeout: 120s)...")
+                    logger.info("      ⏱️  Generating content (timeout: 120s)...")
 
                     # Calculate max tokens: markdown content + headers + lists need ~2-2.5 tokens per word
                     # Using 2.5x multiplier to prevent token cutoff during generation
                     max_tokens = int(target_length * 3.0)
-                    logger.debug(
-                        f"      Max tokens: {max_tokens} (target_length: {target_length})"
-                    )
+                    logger.debug(f"      Max tokens: {max_tokens} (target_length: {target_length})")
 
                     response = await ollama.generate(
                         prompt=generation_prompt,
@@ -828,10 +809,8 @@ class AIContentGenerator:
                         )
 
                         # Self-check: Validate content quality
-                        logger.info(f"      🔍 Validating content quality...")
-                        validation = self._validate_content(
-                            generated_content, topic, target_length
-                        )
+                        logger.info("      🔍 Validating content quality...")
+                        validation = self._validate_content(generated_content, topic, target_length)
                         metrics["validation_results"].append(
                             {
                                 "attempt": metrics["generation_attempts"],
@@ -852,13 +831,13 @@ class AIContentGenerator:
 
                         # If content passes QA, return it
                         if validation.is_valid:
-                            logger.info(f"      ✅ Content APPROVED by QA")
+                            logger.info("      ✅ Content APPROVED by QA")
                             metrics["model_used"] = f"Ollama - {model_name}"
                             metrics["models_used_by_phase"]["draft"] = metrics["model_used"]
                             metrics["final_quality_score"] = validation.quality_score
                             metrics["generation_time_seconds"] = time.time() - start_time
                             logger.info(f"\n{'='*80}")
-                            logger.info(f"✅ GENERATION COMPLETE")
+                            logger.info("✅ GENERATION COMPLETE")
                             logger.info(f"   Model: {metrics['model_used']}")
                             logger.info(
                                 f"   Quality: {validation.quality_score:.1f}/{self.quality_threshold}"
@@ -881,7 +860,7 @@ class AIContentGenerator:
                         # If still not passing after refinement, return best attempt
                         if metrics["generation_attempts"] == len(model_list):
                             logger.warning(
-                                f"      ⚠️  Content below quality threshold but no more refinements available"
+                                "      ⚠️  Content below quality threshold but no more refinements available"
                             )
                             metrics["model_used"] = f"Ollama - {model_name} (below threshold)"
                             metrics["models_used_by_phase"]["draft"] = metrics[
@@ -890,7 +869,7 @@ class AIContentGenerator:
                             metrics["final_quality_score"] = validation.quality_score
                             metrics["generation_time_seconds"] = time.time() - start_time
                             logger.info(f"\n{'='*80}")
-                            logger.warning(f"⚠️  GENERATION COMPLETE (below quality threshold)")
+                            logger.warning("⚠️  GENERATION COMPLETE (below quality threshold)")
                             logger.info(f"   Model: {metrics['model_used']}")
                             logger.info(
                                 f"   Quality: {validation.quality_score:.1f}/{self.quality_threshold}"
@@ -899,12 +878,14 @@ class AIContentGenerator:
                             logger.info(f"{'='*80}\n")
                             return generated_content, metrics["model_used"], metrics
                     else:
-                        logger.warning(f"      ❌ Generated content too short or empty")
+                        logger.warning("      ❌ Generated content too short or empty")
 
                 except asyncio.TimeoutError as e:
                     # Explicitly catch timeout - model too slow or server unresponsive
                     error_msg = f"Timeout (120s exceeded) with {model_name}"
-                    logger.warning(f"Ollama model {model_name} timed out: {error_msg}", exc_info=True)
+                    logger.warning(
+                        f"Ollama model {model_name} timed out: {error_msg}", exc_info=True
+                    )
                     attempts.append(("Ollama", error_msg))
                     continue
                 except Exception as e:
@@ -966,9 +947,7 @@ class AIContentGenerator:
 
                     if generated_content and len(generated_content) > 100:
                         # Self-check: Validate content quality
-                        validation = self._validate_content(
-                            generated_content, topic, target_length
-                        )
+                        validation = self._validate_content(generated_content, topic, target_length)
                         metrics["validation_results"].append(
                             {
                                 "attempt": metrics["generation_attempts"],
@@ -985,7 +964,7 @@ class AIContentGenerator:
                             ]  # Track phase
                             metrics["final_quality_score"] = validation.quality_score
                             metrics["generation_time_seconds"] = time.time() - start_time
-                            logger.info(f"✓ Content generated and approved with HuggingFace")
+                            logger.info("✓ Content generated and approved with HuggingFace")
                             return generated_content, metrics["model_used"], metrics
 
                 except asyncio.TimeoutError:
@@ -1023,7 +1002,8 @@ class AIContentGenerator:
                 effective_provider
                 and effective_provider.lower() in ("anthropic", "claude")
                 and ProviderChecker.is_anthropic_available()
-            ) or (
+            )
+            or (
                 ProviderChecker.is_anthropic_available()
                 and not any(p.startswith("Anthropic") for p, _ in attempts)
             )
@@ -1075,7 +1055,9 @@ class AIContentGenerator:
                     logger.warning(
                         f"⚠️ Anthropic returned short content: {word_count} words (target: {target_length})"
                     )
-                    attempts.append(("Anthropic (undershoot)", f"{word_count} words vs {target_length} target"))
+                    attempts.append(
+                        ("Anthropic (undershoot)", f"{word_count} words vs {target_length} target")
+                    )
                 else:
                     metrics["validation_results"].append(
                         {
@@ -1089,7 +1071,9 @@ class AIContentGenerator:
                     metrics["models_used_by_phase"]["draft"] = metrics["model_used"]
                     metrics["final_quality_score"] = validation.quality_score
                     metrics["generation_time_seconds"] = time.time() - start_time
-                    logger.info(f"✓ Content generated with Anthropic: {validation.feedback} ({word_count} words)")
+                    logger.info(
+                        f"✓ Content generated with Anthropic: {validation.feedback} ({word_count} words)"
+                    )
                     return generated_content, metrics["model_used"], metrics
             else:
                 logger.warning("Anthropic returned empty/short content")
@@ -1120,12 +1104,12 @@ class AIContentGenerator:
         if not ProviderChecker.is_gemini_available():
             return None
 
-        logger.info(f"🔄 [ATTEMPT 3/3] Trying Google Gemini (Fallback)...")
+        logger.info("🔄 [ATTEMPT 3/3] Trying Google Gemini (Fallback)...")
         logger.info(
             f"   ├─ API Key: {'✓ set' if ProviderChecker.is_gemini_available() else '✗ not set'}"
         )
-        logger.info(f"   ├─ Model: gemini-2.5-flash")
-        logger.info(f"   └─ Status: Initializing...\n")
+        logger.info("   ├─ Model: gemini-2.5-flash")
+        logger.info("   └─ Status: Initializing...\n")
         try:
             # Import google-genai SDK
             import google.genai as genai
@@ -1135,7 +1119,7 @@ class AIContentGenerator:
             logger.debug("✓ Gemini client initialized")
 
             metrics["generation_attempts"] += 1
-            logger.info(f"   Generating content...")
+            logger.info("   Generating content...")
             # Calculate max tokens for fallback generation - 3x multiplier for full content
             max_tokens_fallback = int(target_length * 3.0)
 
@@ -1171,12 +1155,8 @@ class AIContentGenerator:
                 logger.info(f"✓ Content generated with Gemini: {validation.feedback}")
                 return generated_content, metrics["model_used"], metrics
             else:
-                logger.warning(
-                    f"Gemini content too short or empty: {len(generated_content)} chars"
-                )
-                attempts.append(
-                    ("Gemini", f"Content too short: {len(generated_content)} chars")
-                )
+                logger.warning(f"Gemini content too short or empty: {len(generated_content)} chars")
+                attempts.append(("Gemini", f"Content too short: {len(generated_content)} chars"))
 
         except ImportError as e:
             logger.warning(f"google-genai not installed: {e}", exc_info=True)
@@ -1187,9 +1167,7 @@ class AIContentGenerator:
 
         return None
 
-    async def _try_openai(
-        self, ctx: Dict[str, Any]
-    ) -> Optional[Tuple[str, str, Dict[str, Any]]]:
+    async def _try_openai(self, ctx: Dict[str, Any]) -> Optional[Tuple[str, str, Dict[str, Any]]]:
         """Try OpenAI provider. Returns result tuple or None."""
         effective_provider = ctx["effective_provider"]
         preferred_model = ctx["preferred_model"]
@@ -1209,7 +1187,8 @@ class AIContentGenerator:
                 effective_provider
                 and effective_provider.lower() == "openai"
                 and ProviderChecker.is_openai_available()
-            ) or (
+            )
+            or (
                 ProviderChecker.is_openai_available()
                 and not any(p.startswith("OpenAI") for p, _ in attempts)
             )
@@ -1260,7 +1239,9 @@ class AIContentGenerator:
                     logger.warning(
                         f"⚠️ OpenAI returned short content: {word_count} words (target: {target_length})"
                     )
-                    attempts.append(("OpenAI (undershoot)", f"{word_count} words vs {target_length} target"))
+                    attempts.append(
+                        ("OpenAI (undershoot)", f"{word_count} words vs {target_length} target")
+                    )
                 else:
                     metrics["validation_results"].append(
                         {
@@ -1274,7 +1255,9 @@ class AIContentGenerator:
                     metrics["models_used_by_phase"]["draft"] = metrics["model_used"]
                     metrics["final_quality_score"] = validation.quality_score
                     metrics["generation_time_seconds"] = time.time() - start_time
-                    logger.info(f"✓ Content generated with OpenAI: {validation.feedback} ({word_count} words)")
+                    logger.info(
+                        f"✓ Content generated with OpenAI: {validation.feedback} ({word_count} words)"
+                    )
                     return generated_content, metrics["model_used"], metrics
             else:
                 logger.warning("OpenAI returned empty/short content")
@@ -1289,9 +1272,7 @@ class AIContentGenerator:
 
         return None
 
-    def _handle_all_providers_failed(
-        self, ctx: Dict[str, Any]
-    ) -> Tuple[str, str, Dict[str, Any]]:
+    def _handle_all_providers_failed(self, ctx: Dict[str, Any]) -> Tuple[str, str, Dict[str, Any]]:
         """Handle the case where all AI providers failed. Returns fallback content."""
         metrics = ctx["metrics"]
         attempts = ctx["attempts"]
@@ -1304,13 +1285,15 @@ class AIContentGenerator:
 
         # If all models fail, use fallback
         logger.error(f"\n{'='*80}")
-        logger.error(f"❌ ALL AI MODELS FAILED - Using fallback template")
+        logger.error("❌ ALL AI MODELS FAILED - Using fallback template")
         logger.error(f"{'='*80}")
         logger.error(f"Attempts made: {len(attempts)}")
         for provider, error in attempts:
             logger.error(f"   ✗ {provider}: {error}")
-        logger.error(f"Provider summary:")
-        logger.error(f"   - Anthropic:   {ProviderChecker.is_anthropic_available()} (key available)")
+        logger.error("Provider summary:")
+        logger.error(
+            f"   - Anthropic:   {ProviderChecker.is_anthropic_available()} (key available)"
+        )
         logger.error(f"   - Gemini:      {ProviderChecker.is_gemini_available()} (key available)")
         logger.error(f"   - OpenAI:      {ProviderChecker.is_openai_available()} (key available)")
         logger.error(f"   - Ollama:      {use_ollama} (tried/available)")
@@ -1323,6 +1306,7 @@ class AIContentGenerator:
         # Generated content will be a stub template, not AI output (issue #556).
         try:
             import sentry_sdk  # pylint: disable=import-outside-toplevel
+
             if sentry_sdk.is_initialized():  # type: ignore[attr-defined]
                 sentry_sdk.capture_message(  # type: ignore[attr-defined]
                     "ALL AI MODELS FAILED — serving fallback template content",
@@ -1525,6 +1509,4 @@ async def test_generation():
 
 
 if __name__ == "__main__":
-    import asyncio
-
     asyncio.run(test_generation())

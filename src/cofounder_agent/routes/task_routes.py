@@ -22,25 +22,20 @@ Endpoints:
 """
 
 import json
-from services.logger_config import get_logger
 import uuid as uuid_lib
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
-from utils.rate_limiter import limiter
 
 from routes.auth_unified import get_current_user
-from schemas.task_schemas import (
-    MetricsResponse,
-    TaskListResponse,
-    UnifiedTaskRequest,
-)
+from schemas.task_schemas import MetricsResponse, TaskListResponse, UnifiedTaskRequest
 from schemas.unified_task_response import UnifiedTaskResponse
 
 # Import async database service
 from services.database_service import DatabaseService
-from utils.json_encoder import convert_decimals, safe_json_dumps
+from services.logger_config import get_logger
+from utils.rate_limiter import limiter
 from utils.route_utils import get_database_dependency
 
 # Configure logging
@@ -254,7 +249,7 @@ async def create_task(
         raise HTTPException(
             status_code=500,
             detail="Failed to create task",
-        )
+        ) from e
 
 
 # ============================================================================
@@ -308,7 +303,9 @@ async def _handle_blog_post_creation(
 
     # Store in database as pending — task executor will pick it up
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"✅ [BLOG_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')}")
+    logger.info(
+        f"✅ [BLOG_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')}"
+    )
 
     return {
         "id": returned_task_id,
@@ -348,7 +345,9 @@ async def _handle_social_media_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"✅ [SOCIAL_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')} - Platforms: {request.platforms}")
+    logger.info(
+        f"✅ [SOCIAL_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')} - Platforms: {request.platforms}"
+    )
 
     return {
         "id": returned_task_id,
@@ -383,7 +382,9 @@ async def _handle_email_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"✅ [EMAIL_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')}")
+    logger.info(
+        f"✅ [EMAIL_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')}"
+    )
 
     return {
         "id": returned_task_id,
@@ -416,7 +417,9 @@ async def _handle_newsletter_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"✅ [NEWSLETTER_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')}")
+    logger.info(
+        f"✅ [NEWSLETTER_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')}"
+    )
 
     return {
         "id": returned_task_id,
@@ -454,7 +457,9 @@ async def _handle_business_analytics_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"✅ [ANALYTICS_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')} - Metrics: {request.metrics}")
+    logger.info(
+        f"✅ [ANALYTICS_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')} - Metrics: {request.metrics}"
+    )
 
     return {
         "id": returned_task_id,
@@ -490,7 +495,9 @@ async def _handle_data_retrieval_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"✅ [DATA_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')} - Sources: {request.data_sources}")
+    logger.info(
+        f"✅ [DATA_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')} - Sources: {request.data_sources}"
+    )
 
     return {
         "id": returned_task_id,
@@ -523,7 +530,9 @@ async def _handle_market_research_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"✅ [MARKET_RESEARCH_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')}")
+    logger.info(
+        f"✅ [MARKET_RESEARCH_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')}"
+    )
 
     return {
         "id": returned_task_id,
@@ -556,7 +565,9 @@ async def _handle_financial_analysis_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"✅ [FINANCIAL_ANALYSIS_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')}")
+    logger.info(
+        f"✅ [FINANCIAL_ANALYSIS_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')}"
+    )
 
     return {
         "id": returned_task_id,
@@ -668,7 +679,7 @@ async def list_tasks(
         )
     except Exception as e:
         logger.error(f"Failed to list tasks: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to list tasks")
+        raise HTTPException(status_code=500, detail="Failed to list tasks") from e
 
 
 # ============================================================================
@@ -729,7 +740,7 @@ async def get_metrics(
         )
     except Exception as e:
         logger.error(f"Failed to fetch metrics: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to fetch metrics")
+        raise HTTPException(status_code=500, detail="Failed to fetch metrics") from e
 
 
 # ============================================================================
@@ -776,7 +787,7 @@ async def get_task(
         raise
     except Exception as e:
         logger.error(f"Failed to fetch task {task_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to fetch task")
+        raise HTTPException(status_code=500, detail="Failed to fetch task") from e
 
 
 @router.delete(
@@ -844,15 +855,16 @@ async def delete_task(
         raise
     except Exception as e:
         logger.error(f"Failed to delete task {task_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to delete task")
+        raise HTTPException(status_code=500, detail="Failed to delete task") from e
 
+
+from routes.task_intent_routes import intent_router
+from routes.task_publishing_routes import publishing_router
 
 # ============================================================================
 # SUB-ROUTERS
 # ============================================================================
 from routes.task_status_routes import status_router
-from routes.task_publishing_routes import publishing_router
-from routes.task_intent_routes import intent_router
 
 router.include_router(status_router)
 router.include_router(publishing_router)

@@ -17,11 +17,9 @@ from schemas.content_schemas import (
     DraftsListResponse,
     GenerateAndPublishRequest,
     PublishDraftRequest,
-    PublishDraftResponse,
     PublishMode,
     TaskStatusResponse,
 )
-
 
 # ---------------------------------------------------------------------------
 # Enums

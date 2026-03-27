@@ -14,17 +14,14 @@ from datetime import datetime, timezone
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from utils.rate_limiter import limiter
 
 from routes.auth_unified import get_current_user
-from schemas.chat_schemas import (
-    ChatRequest,
-    ChatResponse,
-)
+from schemas.chat_schemas import ChatRequest, ChatResponse
+from services.gemini_client import GeminiClient
 from services.model_router import ModelRouter
 from services.ollama_client import OllamaClient
-from services.gemini_client import GeminiClient
 from services.usage_tracker import get_usage_tracker
+from utils.rate_limiter import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +103,11 @@ async def chat(
 
         # Add user message to conversation history
         conversations[scoped_key].append(
-            {"role": "user", "content": chat_request.message, "timestamp": datetime.now(timezone.utc).isoformat()}
+            {
+                "role": "user",
+                "content": chat_request.message,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
         )
 
         # Log the chat request
@@ -128,20 +129,19 @@ async def chat(
                     models_raw = await ollama_client.list_models()
                     # list_models() returns List[Dict[str, Any]]; extract name strings
                     available_model_names: list[str] = [
-                        m.get("name", "") if isinstance(m, dict) else str(m)
-                        for m in models_raw
+                        m.get("name", "") if isinstance(m, dict) else str(m) for m in models_raw
                     ]
                     logger.debug(f"[Chat] Available Ollama models: {available_model_names}")
 
                     if actual_ollama_model not in available_model_names:
                         # Model not found, suggest alternatives
                         alternatives = [
-                            name
-                            for name in available_model_names
-                            if "llama" in name.lower()
+                            name for name in available_model_names if "llama" in name.lower()
                         ]
                         if not alternatives:
-                            alternatives = available_model_names[:3] if available_model_names else ["llama2"]
+                            alternatives = (
+                                available_model_names[:3] if available_model_names else ["llama2"]
+                            )
 
                         logger.warning(
                             f"[Chat] Model '{actual_ollama_model}' not found. Available: {alternatives}"
@@ -223,7 +223,9 @@ async def chat(
                     logger.warning(
                         f"[Chat] Model '{actual_gemini_model}' not found in available models: {available_models}"
                     )
-                    actual_gemini_model = available_models[0] if available_models else "gemini-2.5-flash"
+                    actual_gemini_model = (
+                        available_models[0] if available_models else "gemini-2.5-flash"
+                    )
                     logger.info(f"[Chat] Falling back to: {actual_gemini_model}")
 
                 # Call Gemini API
@@ -236,7 +238,9 @@ async def chat(
 
                 # Validate response
                 if not response_text or len(response_text.strip()) < 5:
-                    response_text = f"✓ Processed by {actual_gemini_model} (generated short response)"
+                    response_text = (
+                        f"✓ Processed by {actual_gemini_model} (generated short response)"
+                    )
 
                 tokens_used = len(response_text.split())
             except Exception as e:
@@ -281,11 +285,11 @@ async def chat(
 
     except ValueError as e:
         logger.error(f"[Chat] Validation error: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=400, detail="Invalid request parameters")
+        raise HTTPException(status_code=400, detail="Invalid request parameters") from e
 
     except Exception as e:
         logger.error(f"[Chat] Error processing message: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Chat processing failed")
+        raise HTTPException(status_code=500, detail="Chat processing failed") from e
 
 
 @router.get("/history/{conversation_id}")
@@ -329,7 +333,7 @@ async def get_conversation(
 
     except Exception as e:
         logger.error(f"[Chat] Error retrieving conversation: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @router.delete("/history/{conversation_id}")
@@ -361,7 +365,7 @@ async def clear_conversation(
 
     except Exception as e:
         logger.error(f"[Chat] Error clearing conversation: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @router.get("/models")

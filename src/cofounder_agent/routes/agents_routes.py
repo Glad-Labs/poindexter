@@ -159,9 +159,7 @@ async def get_all_agents_status(
         )
     except Exception as e:
         logger.error(f"Error fetching all agents status: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail="Failed to fetch agents status"
-        ) from e
+        raise HTTPException(status_code=500, detail="Failed to fetch agents status") from e
 
 
 @router.get("/{agent_name}/status", response_model=AgentStatus)
@@ -204,9 +202,7 @@ async def get_agent_status(
         return agent_status
     except Exception as e:
         logger.error(f"Error fetching status for agent {agent_name}: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail="Failed to fetch agent status"
-        ) from e
+        raise HTTPException(status_code=500, detail="Failed to fetch agent status") from e
 
 
 @router.post("/{agent_name}/command", response_model=AgentCommandResult)

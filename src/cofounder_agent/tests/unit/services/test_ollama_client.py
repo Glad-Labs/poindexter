@@ -6,7 +6,6 @@ pull_model, model profiles, model recommendation, and retry logic.
 HTTP calls are mocked to avoid requiring a real Ollama server.
 """
 
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -16,12 +15,8 @@ from services.ollama_client import (
     DEFAULT_BASE_URL,
     DEFAULT_MODEL,
     OllamaClient,
-    OllamaConnectionError,
-    OllamaError,
-    OllamaModelNotFoundError,
     initialize_ollama_client,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -185,9 +180,7 @@ class TestOllamaGenerate:
 
     @pytest.mark.asyncio
     async def test_http_error_raised(self, client):
-        client.client.post = AsyncMock(
-            side_effect=httpx.HTTPError("404 model not found")
-        )
+        client.client.post = AsyncMock(side_effect=httpx.HTTPError("404 model not found"))
 
         with pytest.raises(httpx.HTTPError):
             await client.generate("Test")
@@ -212,31 +205,33 @@ class TestOllamaChat:
     @pytest.mark.asyncio
     async def test_chat_returns_assistant_content(self, client):
         # /api/chat returns { message: { role, content }, eval_count, ... }
-        mock_resp = make_mock_response({
-            "message": {"role": "assistant", "content": "I'm here to help."},
-            "eval_count": 50,
-            "prompt_eval_count": 10,
-            "total_duration": 2_000_000_000,
-            "done": True,
-        })
+        mock_resp = make_mock_response(
+            {
+                "message": {"role": "assistant", "content": "I'm here to help."},
+                "eval_count": 50,
+                "prompt_eval_count": 10,
+                "total_duration": 2_000_000_000,
+                "done": True,
+            }
+        )
         client.client.post = AsyncMock(return_value=mock_resp)
 
-        result = await client.chat([
-            {"role": "user", "content": "Hello!"}
-        ])
+        result = await client.chat([{"role": "user", "content": "Hello!"}])
 
         assert result["role"] == "assistant"
         assert "here to help" in result["content"]
 
     @pytest.mark.asyncio
     async def test_chat_cost_is_zero(self, client):
-        mock_resp = make_mock_response({
-            "message": {"role": "assistant", "content": "Hi there"},
-            "eval_count": 10,
-            "prompt_eval_count": 5,
-            "total_duration": 1_000_000_000,
-            "done": True,
-        })
+        mock_resp = make_mock_response(
+            {
+                "message": {"role": "assistant", "content": "Hi there"},
+                "eval_count": 10,
+                "prompt_eval_count": 5,
+                "total_duration": 1_000_000_000,
+                "done": True,
+            }
+        )
         client.client.post = AsyncMock(return_value=mock_resp)
 
         result = await client.chat([{"role": "user", "content": "Hi"}])
@@ -246,13 +241,15 @@ class TestOllamaChat:
     @pytest.mark.asyncio
     async def test_chat_passes_messages_directly(self, client):
         """chat() now uses /api/chat which accepts messages natively."""
-        mock_resp = make_mock_response({
-            "message": {"role": "assistant", "content": "Response"},
-            "eval_count": 10,
-            "prompt_eval_count": 5,
-            "total_duration": 1_000_000_000,
-            "done": True,
-        })
+        mock_resp = make_mock_response(
+            {
+                "message": {"role": "assistant", "content": "Response"},
+                "eval_count": 10,
+                "prompt_eval_count": 5,
+                "total_duration": 1_000_000_000,
+                "done": True,
+            }
+        )
         client.client.post = AsyncMock(return_value=mock_resp)
 
         messages = [
@@ -350,6 +347,7 @@ class TestOllamaRecommendModel:
             "large:35b": {"parameter_size": "35B"},
         }
         import time
+
         c._cache_ts = time.time()  # Mark cache as fresh
         result = await c.recommend_model("complex reasoning task")
         assert result == "large:35b"
@@ -362,6 +360,7 @@ class TestOllamaRecommendModel:
             "other:7b": {"parameter_size": "7B"},
         }
         import time
+
         c._cache_ts = time.time()
         result = await c.recommend_model("write a blog post")
         assert result == "gpt-oss:20b"
@@ -453,9 +452,7 @@ class TestInitializeOllamaClient:
 
     @pytest.mark.asyncio
     async def test_custom_parameters(self):
-        client = await initialize_ollama_client(
-            base_url="http://remote:11434", model="codellama"
-        )
+        client = await initialize_ollama_client(base_url="http://remote:11434", model="codellama")
         assert client.base_url == "http://remote:11434"
         assert client.model == "codellama"
         await client.close()

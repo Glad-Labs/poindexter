@@ -19,7 +19,6 @@ from services.workflow_progress_service import (
     get_workflow_progress_service,
 )
 
-
 # ---------------------------------------------------------------------------
 # WorkflowProgress dataclass
 # ---------------------------------------------------------------------------

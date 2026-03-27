@@ -11,8 +11,7 @@ Provides endpoints for the ExecutiveDashboard to display metrics:
 All endpoints aggregate real data from PostgreSQL database.
 """
 
-from services.logger_config import get_logger
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -20,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from routes.auth_unified import get_current_user
 from services.database_service import DatabaseService
+from services.logger_config import get_logger
 from utils.error_handler import handle_route_error
 from utils.route_utils import get_database_dependency
 
@@ -169,7 +169,7 @@ async def get_kpi_metrics(
         logger.debug(f"  📅 Time window: {start_time} to {now}")
 
         # ===== SINGLE SQL AGGREGATION QUERY (replaces Python loops, issue #696) =====
-        logger.debug(f"  🔍 Querying KPI aggregates from content_tasks...")
+        logger.debug("  🔍 Querying KPI aggregates from content_tasks...")
 
         agg = await db.get_kpi_aggregates(start_date=start_time, end_date=now)
         agg_rows = agg["rows"]
@@ -381,7 +381,6 @@ async def get_task_distributions(
     range: str = Query("7d", description="Time range: 1d, 7d, 30d, 90d, all"),
     db: DatabaseService = Depends(get_database_dependency),
     current_user: dict = Depends(get_current_user),
-
 ):
     """
     Get task distribution breakdown by type and status for visualization.

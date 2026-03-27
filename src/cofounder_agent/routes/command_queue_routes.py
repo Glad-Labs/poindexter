@@ -5,7 +5,6 @@ Provides REST endpoints for command dispatch and monitoring
 Replaces Pub/Sub topic subscriptions with HTTP API calls
 """
 
-from services.logger_config import get_logger
 import os
 import sys
 from typing import Any, Dict, Optional
@@ -13,6 +12,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from routes.auth_unified import get_current_user
+from services.logger_config import get_logger
 
 # Add parent directory to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -24,11 +24,7 @@ from schemas.command_schemas import (
     CommandResponse,
     CommandResultRequest,
 )
-from services.command_queue import (
-    CommandStatus,
-    create_command,
-    get_command_queue,
-)
+from services.command_queue import CommandStatus, create_command, get_command_queue
 
 logger = get_logger(__name__)
 router = APIRouter(
@@ -62,7 +58,7 @@ async def dispatch_command(request: CommandRequest) -> Dict[str, Any]:
         return cmd.to_dict()
     except Exception as e:
         logger.error(f"Failed to dispatch command: {e}", exc_info=True)
-        raise HTTPException(status_code=400, detail="An internal error occurred")
+        raise HTTPException(status_code=400, detail="An internal error occurred") from e
 
 
 @router.get("/{command_id}", response_model=CommandResponse)
@@ -112,11 +108,11 @@ async def list_commands(
     if status:
         try:
             status_filter = CommandStatus(status.lower())
-        except ValueError:
+        except ValueError as exc:
             raise HTTPException(
                 status_code=400,
                 detail=f"Invalid status. Must be one of: {', '.join([s.value for s in CommandStatus])}",
-            )
+            ) from exc
 
     # Get commands
     commands = await queue.list_commands(status=status_filter)

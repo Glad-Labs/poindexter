@@ -16,13 +16,12 @@ Tests cover:
 asyncpg pool fully mocked; no real DB access.
 """
 
-import json
-import pytest
 from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from services.users_db import UsersDatabase
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -213,9 +212,7 @@ class TestGetOrCreateOAuthUser:
     async def test_path1_existing_oauth_returns_user(self):
         """Path 1: oauth_accounts row exists → fetch and return the linked user."""
         oauth_row = _make_row(user_id="existing-user-uuid")
-        user_row = _make_row(
-            id="existing-user-uuid", email="alice@example.com", username="alice"
-        )
+        user_row = _make_row(id="existing-user-uuid", email="alice@example.com", username="alice")
         pool = _make_pool(fetchrow_results=[oauth_row, user_row])
         db = _make_db(pool)
 
@@ -268,8 +265,10 @@ class TestGetOrCreateOAuthUser:
         db = _make_db(pool)
 
         sentinel = object()
-        with patch(f"{_CONVERTER}.to_user_response", return_value=sentinel), \
-             patch("services.users_db.uuid4", return_value=_fixed_uuid):
+        with (
+            patch(f"{_CONVERTER}.to_user_response", return_value=sentinel),
+            patch("services.users_db.uuid4", return_value=_fixed_uuid),
+        ):
             result = await db.get_or_create_oauth_user(
                 provider="google",
                 provider_user_id="google-xyz",
@@ -292,8 +291,10 @@ class TestGetOrCreateOAuthUser:
         )
         db = _make_db(pool)
 
-        with patch(f"{_CONVERTER}.to_user_response", return_value=MagicMock()), \
-             patch("services.users_db.uuid4", return_value=_fixed_uuid):
+        with (
+            patch(f"{_CONVERTER}.to_user_response", return_value=MagicMock()),
+            patch("services.users_db.uuid4", return_value=_fixed_uuid),
+        ):
             # Should not raise even with no email
             await db.get_or_create_oauth_user(
                 provider="github",
@@ -343,8 +344,10 @@ class TestGetOrCreateOAuthUserRace:
         pool.acquire = _spy_acquire
         db = _make_db(pool)
 
-        with patch(f"{_CONVERTER}.to_user_response", return_value=MagicMock()), \
-             patch("services.users_db.uuid4", return_value=_fixed_uuid):
+        with (
+            patch(f"{_CONVERTER}.to_user_response", return_value=MagicMock()),
+            patch("services.users_db.uuid4", return_value=_fixed_uuid),
+        ):
             await db.get_or_create_oauth_user(
                 provider="github",
                 provider_user_id="gh-race-test",
@@ -366,15 +369,20 @@ class TestGetOrCreateOAuthUserRace:
         winner_user_row = _make_row(id=_winner_uuid, email="winner@example.com")
         pool = _make_pool(
             fetchrow_results=[
-                no_oauth, no_existing_user, my_new_user_row,
-                winner_recheck, winner_user_row,
+                no_oauth,
+                no_existing_user,
+                my_new_user_row,
+                winner_recheck,
+                winner_user_row,
             ]
         )
         db = _make_db(pool)
 
         winner_sentinel = object()
-        with patch(f"{_CONVERTER}.to_user_response", return_value=winner_sentinel), \
-             patch("services.users_db.uuid4", return_value=_my_uuid):
+        with (
+            patch(f"{_CONVERTER}.to_user_response", return_value=winner_sentinel),
+            patch("services.users_db.uuid4", return_value=_my_uuid),
+        ):
             result = await db.get_or_create_oauth_user(
                 provider="github",
                 provider_user_id="gh-concurrent",

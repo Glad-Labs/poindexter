@@ -9,13 +9,16 @@ Cost: $0/month (vs $0.02/image with DALL-E)
 ASYNC-FIRST: All operations use httpx async client (no blocking I/O)
 """
 
-from services.logger_config import get_logger
 import os
 from typing import Any, Dict, List, Optional
 
 import httpx
 
+from services.logger_config import get_logger
+
 logger = get_logger(__name__)
+
+
 class PexelsClient:
     """
     Pexels API client for searching and retrieving royalty-free images.

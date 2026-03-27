@@ -16,7 +16,6 @@ Import guide:
 """
 
 import asyncio
-from services.logger_config import get_logger
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -26,6 +25,8 @@ from typing import Any, Callable, Coroutine, Dict, Optional, TypeVar
 
 from fastapi import HTTPException, status
 from pydantic import BaseModel
+
+from services.logger_config import get_logger
 
 try:
     import sentry_sdk
@@ -135,7 +136,9 @@ class ErrorContext:
             "request_id": self.request_id,
             "user_id": self.user_id,
             "timestamp": (
-                self.timestamp.isoformat() if self.timestamp else datetime.now(timezone.utc).isoformat()
+                self.timestamp.isoformat()
+                if self.timestamp
+                else datetime.now(timezone.utc).isoformat()
             ),
             "error_type": type(self.error).__name__ if self.error else None,
             "error_message": str(self.error) if self.error else None,
@@ -556,7 +559,9 @@ class CircuitBreaker:
         """Check if enough time has passed to attempt recovery"""
         if not self.last_failure_time:
             return False
-        return (datetime.now(timezone.utc) - self.last_failure_time).total_seconds() >= self.recovery_timeout
+        return (
+            datetime.now(timezone.utc) - self.last_failure_time
+        ).total_seconds() >= self.recovery_timeout
 
     def get_status(self) -> Dict[str, Any]:
         """Get circuit breaker status for monitoring"""
@@ -619,8 +624,9 @@ def retry_with_backoff(
 
                     # Wait before retry with exponential backoff
                     logger.warning(
-                        f"⚠️  {func.__name__} attempt {attempt + 1} failed, retrying in {delay}s: {e}"
-, exc_info=True)
+                        f"⚠️  {func.__name__} attempt {attempt + 1} failed, retrying in {delay}s: {e}",
+                        exc_info=True,
+                    )
 
                     if on_error_callback:
                         on_error_callback(e, attempt + 1, max_retries + 1)
@@ -646,8 +652,9 @@ def retry_with_backoff(
                         raise
 
                     logger.warning(
-                        f"⚠️  {func.__name__} attempt {attempt + 1} failed, retrying in {delay}s: {e}"
-, exc_info=True)
+                        f"⚠️  {func.__name__} attempt {attempt + 1} failed, retrying in {delay}s: {e}",
+                        exc_info=True,
+                    )
 
                     if on_error_callback:
                         on_error_callback(e, attempt + 1, max_retries + 1)

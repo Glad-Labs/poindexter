@@ -8,20 +8,17 @@ the get_circuit_breaker / with_circuit_breaker helpers.
 
 import asyncio
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, patch
-
 import pytest
 
 from utils.circuit_breaker import (
     CachedResponse,
     CircuitBreaker,
     CircuitState,
-    get_circuit_breaker,
-    get_all_circuit_breaker_status,
-    with_circuit_breaker,
     circuit_breakers,
+    get_all_circuit_breaker_status,
+    get_circuit_breaker,
+    with_circuit_breaker,
 )
-
 
 # ---------------------------------------------------------------------------
 # CircuitBreaker — initial state
@@ -323,7 +320,6 @@ class TestCachedResponse:
         # Back-date the cache entry's timestamp so age > 0 without real sleep.
         # cache stores (value, timestamp) tuples; move the timestamp 1 second into
         # the past so the expiry condition (age > max_age=0) is deterministically met.
-        from datetime import timezone
         value, _ts = cache.cache["k"]
         cache.cache["k"] = (value, datetime.now(timezone.utc) - timedelta(seconds=1))
         assert cache.get("k") is None

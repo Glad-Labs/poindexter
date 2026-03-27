@@ -7,13 +7,11 @@ methods (gemini, claude, gpt4) are tested at the job_status/cancel level only
 since they require external API clients.
 """
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from services.fine_tuning_service import FineTuneTarget, FineTuningService
-
 
 # ---------------------------------------------------------------------------
 # Initialization

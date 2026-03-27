@@ -8,8 +8,6 @@ extract_title fallback strategies, generate_excerpt, UnifiedMetadata defaults,
 and the singleton factory.
 """
 
-from dataclasses import asdict
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -18,7 +16,6 @@ from services.unified_metadata_service import (
     UnifiedMetadataService,
     get_unified_metadata_service,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -366,12 +363,14 @@ class TestGenerateExcerpt:
 class TestGetUnifiedMetadataServiceFactory:
     def test_returns_service_instance(self):
         import services.unified_metadata_service as mod
+
         mod._unified_service = None
         svc = get_unified_metadata_service()
         assert isinstance(svc, UnifiedMetadataService)
 
     def test_returns_same_instance_on_repeat_calls(self):
         import services.unified_metadata_service as mod
+
         mod._unified_service = None
         s1 = get_unified_metadata_service()
         s2 = get_unified_metadata_service()

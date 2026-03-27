@@ -18,11 +18,11 @@ Includes:
 """
 
 import importlib
-
-from services.logger_config import get_logger
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI
+
+from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -79,13 +79,33 @@ _ROUTE_MANIFEST = [
     # ----- Workflow orchestration -----
     ("routes.workflow_routes", "router", "workflow_router", "workflow orchestration"),
     # ----- Custom workflow builder -----
-    ("routes.custom_workflows_routes", "router", "custom_workflows_router", "custom workflow builder"),
+    (
+        "routes.custom_workflows_routes",
+        "router",
+        "custom_workflows_router",
+        "custom workflow builder",
+    ),
     # ----- Real-time workflow progress -----
-    ("routes.workflow_progress_routes", "router", "workflow_progress_router", "progress tracking & WebSocket broadcasting"),
+    (
+        "routes.workflow_progress_routes",
+        "router",
+        "workflow_progress_router",
+        "progress tracking & WebSocket broadcasting",
+    ),
     # ----- Capability-based tasks -----
-    ("routes.capability_tasks_routes", "router", "capability_tasks_router", "capability composition"),
+    (
+        "routes.capability_tasks_routes",
+        "router",
+        "capability_tasks_router",
+        "capability composition",
+    ),
     # ----- WebSocket real-time tracking -----
-    ("routes.websocket_routes", "websocket_router", "websocket_router", "real-time progress tracking"),
+    (
+        "routes.websocket_routes",
+        "websocket_router",
+        "websocket_router",
+        "real-time progress tracking",
+    ),
     # ----- Cache revalidation -----
     ("routes.revalidate_routes", "router", "revalidate_router", "secure cache invalidation"),
 ]

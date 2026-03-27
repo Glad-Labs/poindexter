@@ -30,6 +30,7 @@ def _fix_sys_path_for_venv():
         # If sys.path fixing fails, log but continue - fallback imports may still work
         # logging is not yet available at this point, so use warnings module
         import warnings
+
         warnings.warn(f"Failed to fix sys.path for venv: {e}", stacklevel=2)
 
 
@@ -59,9 +60,7 @@ try:
     genai = genai_module
     logger.info("google.genai successfully imported")
 except (ImportError, ModuleNotFoundError) as e:
-    logger.warning(
-        f"google.genai not available: {e}. Gemini provider will fall back to Ollama."
-    )
+    logger.warning(f"google.genai not available: {e}. Gemini provider will fall back to Ollama.")
 
 
 class LLMClient:
@@ -89,9 +88,9 @@ class LLMClient:
                 # If Poetry broke the import, fall back to Ollama gracefully
                 if not genai:
                     logger.warning(
-                        f"⚠️ Gemini provider requested but google-genai module unavailable. "
-                        f"This is often due to Poetry's namespace package handling. "
-                        f"Falling back to Ollama for content generation."
+                        "⚠️ Gemini provider requested but google-genai module unavailable. "
+                        "This is often due to Poetry's namespace package handling. "
+                        "Falling back to Ollama for content generation."
                     )
                     self.provider = "ollama"
                 else:
@@ -121,9 +120,7 @@ class LLMClient:
             logger.error(f"Failed to initialize LLM client: {e}", exc_info=True)
             raise
 
-    def _cleanup_stale_cache(
-        self, max_age_days: int = 30, max_size_mb: int = 500
-    ) -> None:
+    def _cleanup_stale_cache(self, max_age_days: int = 30, max_size_mb: int = 500) -> None:
         """Remove stale cache files older than max_age_days or if total exceeds max_size_mb."""
         try:
             cache_files = sorted(
@@ -250,13 +247,13 @@ class LLMClient:
             raise
         except json.JSONDecodeError as e:
             logger.error(f"Failed to decode JSON from local LLM response: {e}", exc_info=True)
-            raise ValueError(f"LLM response was not valid JSON: {str(e)}")
+            raise ValueError(f"LLM response was not valid JSON: {str(e)}") from e
 
     async def generate_text(self, prompt: str) -> str:
         """Generates plain text content using the configured LLM, with caching (async)."""
         cache_path = self._get_cache_path(prompt, "txt")
         if cache_path.exists():
-            logger.info(f"Returning cached text response for prompt.")
+            logger.info("Returning cached text response for prompt.")
             # Use aiofiles to avoid blocking the event loop on file reads (issue #789).
             async with aiofiles.open(cache_path, "r", encoding="utf-8") as f:
                 return await f.read()
@@ -326,7 +323,7 @@ class LLMClient:
         """Generates a summary using the configured summarizer model, with caching (async)."""
         cache_path = self._get_cache_path(prompt, "summary.txt")
         if cache_path.exists():
-            logger.info(f"Returning cached summary for prompt.")
+            logger.info("Returning cached summary for prompt.")
             # Use aiofiles to avoid blocking the event loop on file reads (issue #789).
             async with aiofiles.open(cache_path, "r", encoding="utf-8") as f:
                 return await f.read()

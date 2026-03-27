@@ -21,7 +21,9 @@ async def broadcast_progress(task_id: str, progress) -> None:
         progress_data = progress if isinstance(progress, dict) else progress.to_dict()
         await websocket_manager.send_task_progress(task_id, progress_data)
     except Exception as e:
-        logger.error(f"[broadcast_progress] Failed to broadcast for task {task_id}: {e}", exc_info=True)
+        logger.error(
+            f"[broadcast_progress] Failed to broadcast for task {task_id}: {e}", exc_info=True
+        )
 
 
 async def broadcast_workflow_progress(execution_id: str, progress) -> None:
@@ -30,4 +32,7 @@ async def broadcast_workflow_progress(execution_id: str, progress) -> None:
         progress_data = progress if isinstance(progress, dict) else progress.to_dict()
         await websocket_manager.send_workflow_status(execution_id, progress_data)
     except Exception as e:
-        logger.error(f"[broadcast_workflow_progress] Failed to broadcast for execution {execution_id}: {e}", exc_info=True)
+        logger.error(
+            f"[broadcast_workflow_progress] Failed to broadcast for execution {execution_id}: {e}",
+            exc_info=True,
+        )

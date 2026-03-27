@@ -7,9 +7,7 @@ try:
     from opentelemetry.exporter.otlp.proto.http.trace_exporter import (  # type: ignore
         OTLPSpanExporter,
     )
-    from opentelemetry.instrumentation.fastapi import (  # type: ignore
-        FastAPIInstrumentor,
-    )
+    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor  # type: ignore
     from opentelemetry.sdk.resources import Resource  # type: ignore[import-untyped]
     from opentelemetry.sdk.trace import TracerProvider  # type: ignore[import-untyped]
     from opentelemetry.sdk.trace.export import BatchSpanProcessor  # type: ignore[import-untyped]
@@ -35,14 +33,10 @@ logging.getLogger("urllib3.connectionpool").setLevel(logging.WARNING)
 
 # Try to import OpenAI instrumentation if available
 try:
-    from opentelemetry.instrumentation.openai import (  # type: ignore
-        OpenAIInstrumentor,
-    )
+    from opentelemetry.instrumentation.openai import OpenAIInstrumentor  # type: ignore
 except ImportError:
     try:
-        from opentelemetry.instrumentation.openai_v2 import (  # type: ignore
-            OpenAIInstrumentor,
-        )
+        from opentelemetry.instrumentation.openai_v2 import OpenAIInstrumentor  # type: ignore
     except ImportError:
         OpenAIInstrumentor = None  # type: ignore[assignment,misc]
 
@@ -117,7 +111,8 @@ def setup_telemetry(app, service_name="cofounder-agent"):
 
                 logging.info(
                     "[setup_telemetry] OpenTelemetry tracing enabled for %s (Endpoint: %s)",
-                    service_name, otlp_endpoint,
+                    service_name,
+                    otlp_endpoint,
                 )
 
             except Exception as e:
@@ -158,4 +153,4 @@ def setup_telemetry(app, service_name="cofounder-agent"):
     except Exception as e:
         # If telemetry setup fails entirely, just log and continue
         logging.error(f"[setup_telemetry] Error setting up telemetry: {e}", exc_info=True)
-        logging.error(f"[TELEMETRY] Application will continue without OpenTelemetry tracing")
+        logging.error("[TELEMETRY] Application will continue without OpenTelemetry tracing")

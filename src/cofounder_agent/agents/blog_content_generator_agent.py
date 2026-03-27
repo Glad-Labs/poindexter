@@ -9,12 +9,14 @@ This agent:
 3. Returns results compatible with workflow executor
 """
 
-from services.logger_config import get_logger
 from typing import Any, Dict
 
 from services.ai_content_generator import get_content_generator
+from services.logger_config import get_logger
 
 logger = get_logger(__name__)
+
+
 class BlogContentGeneratorAgent:
     """
     Agent that generates blog post content using AI.

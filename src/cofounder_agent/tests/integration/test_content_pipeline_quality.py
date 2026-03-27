@@ -16,11 +16,11 @@ LLM calls are mocked but the actual ContentService orchestration, phase
 sequencing, refinement loop logic, and error handling are exercised.
 """
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from services.content_service import ContentService
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -226,8 +226,14 @@ class TestPipelineOutputCompleteness:
         """Result should include status, topic, quality_score, final_content, phase_results."""
         service = _make_service()
         patches = _standard_patches()
-        with patches["research"], patches["draft"], patches["assess"], \
-             patches["refine"], patches["image"], patches["finalize"]:
+        with (
+            patches["research"],
+            patches["draft"],
+            patches["assess"],
+            patches["refine"],
+            patches["image"],
+            patches["finalize"],
+        ):
             result = await service.execute_full_workflow(
                 topic="AI in Healthcare Diagnostics",
                 user_id="user-123",
@@ -244,8 +250,14 @@ class TestPipelineOutputCompleteness:
         """Phase results should contain entries for all 6 pipeline phases."""
         service = _make_service()
         patches = _standard_patches()
-        with patches["research"], patches["draft"], patches["assess"], \
-             patches["refine"], patches["image"], patches["finalize"]:
+        with (
+            patches["research"],
+            patches["draft"],
+            patches["assess"],
+            patches["refine"],
+            patches["image"],
+            patches["finalize"],
+        ):
             result = await service.execute_full_workflow(topic="AI in Healthcare")
         pr = result["phase_results"]
         assert "research" in pr
@@ -259,8 +271,14 @@ class TestPipelineOutputCompleteness:
         """Research output should include research text for draft context."""
         service = _make_service()
         patches = _standard_patches()
-        with patches["research"], patches["draft"], patches["assess"], \
-             patches["refine"], patches["image"], patches["finalize"]:
+        with (
+            patches["research"],
+            patches["draft"],
+            patches["assess"],
+            patches["refine"],
+            patches["image"],
+            patches["finalize"],
+        ):
             result = await service.execute_full_workflow(topic="AI")
         research = result["phase_results"]["research"]
         assert "research_text" in research
@@ -272,8 +290,14 @@ class TestPipelineOutputCompleteness:
         """Draft output should include meaningful content."""
         service = _make_service()
         patches = _standard_patches()
-        with patches["research"], patches["draft"], patches["assess"], \
-             patches["refine"], patches["image"], patches["finalize"]:
+        with (
+            patches["research"],
+            patches["draft"],
+            patches["assess"],
+            patches["refine"],
+            patches["image"],
+            patches["finalize"],
+        ):
             result = await service.execute_full_workflow(topic="AI")
         draft = result["phase_results"]["draft"]
         assert "draft_content" in draft
@@ -285,8 +309,14 @@ class TestPipelineOutputCompleteness:
         """Finalize output should include formatted content and meta description."""
         service = _make_service()
         patches = _standard_patches()
-        with patches["research"], patches["draft"], patches["assess"], \
-             patches["refine"], patches["image"], patches["finalize"]:
+        with (
+            patches["research"],
+            patches["draft"],
+            patches["assess"],
+            patches["refine"],
+            patches["image"],
+            patches["finalize"],
+        ):
             result = await service.execute_full_workflow(topic="AI")
         finalize = result["phase_results"]["finalize"]
         assert "formatted_content" in finalize
@@ -297,8 +327,14 @@ class TestPipelineOutputCompleteness:
         """Image selection output should include image data."""
         service = _make_service()
         patches = _standard_patches()
-        with patches["research"], patches["draft"], patches["assess"], \
-             patches["refine"], patches["image"], patches["finalize"]:
+        with (
+            patches["research"],
+            patches["draft"],
+            patches["assess"],
+            patches["refine"],
+            patches["image"],
+            patches["finalize"],
+        ):
             result = await service.execute_full_workflow(topic="AI")
         images = result["phase_results"]["image_selection"]
         assert images["source"] == "image_agent"
@@ -327,11 +363,15 @@ class TestQualityConvergence:
             return IMPROVED_ASSESS  # 0.82
 
         patches = _standard_patches(assess_side_effect=improving_assess)
-        with patches["research"], patches["draft"], patches["assess"], \
-             patches["refine"] as mock_refine, patches["image"], patches["finalize"]:
-            result = await service.execute_full_workflow(
-                topic="AI", quality_threshold=0.75
-            )
+        with (
+            patches["research"],
+            patches["draft"],
+            patches["assess"],
+            patches["refine"] as mock_refine,
+            patches["image"],
+            patches["finalize"],
+        ):
+            result = await service.execute_full_workflow(topic="AI", quality_threshold=0.75)
         assert result["status"] == "completed"
         assert result["quality_score"] == 0.82
         assert result["refinement_count"] == 1
@@ -355,11 +395,15 @@ class TestQualityConvergence:
             }
 
         patches = _standard_patches(assess_side_effect=gradual_improvement)
-        with patches["research"], patches["draft"], patches["assess"], \
-             patches["refine"], patches["image"], patches["finalize"]:
-            result = await service.execute_full_workflow(
-                topic="AI", quality_threshold=0.75
-            )
+        with (
+            patches["research"],
+            patches["draft"],
+            patches["assess"],
+            patches["refine"],
+            patches["image"],
+            patches["finalize"],
+        ):
+            result = await service.execute_full_workflow(topic="AI", quality_threshold=0.75)
         assert result["refinement_count"] == 2
         # Phase results should track each refinement
         assert "refine_1" in result["phase_results"]
@@ -380,8 +424,14 @@ class TestQualityConvergence:
             }
 
         patches = _standard_patches(assess_side_effect=always_low)
-        with patches["research"], patches["draft"], patches["assess"], \
-             patches["refine"] as mock_refine, patches["image"], patches["finalize"]:
+        with (
+            patches["research"],
+            patches["draft"],
+            patches["assess"],
+            patches["refine"] as mock_refine,
+            patches["image"],
+            patches["finalize"],
+        ):
             result = await service.execute_full_workflow(
                 topic="AI", quality_threshold=0.75, max_refinements=2
             )
@@ -393,16 +443,22 @@ class TestQualityConvergence:
     async def test_high_quality_draft_skips_refinement(self):
         """If the initial draft passes quality threshold, skip refinement entirely."""
         service = _make_service()
-        patches = _standard_patches(assess_return={
-            "quality_score": 0.92,
-            "passed_threshold": True,
-            "assessment": "Excellent first draft",
-        })
-        with patches["research"], patches["draft"], patches["assess"], \
-             patches["refine"] as mock_refine, patches["image"], patches["finalize"]:
-            result = await service.execute_full_workflow(
-                topic="AI", quality_threshold=0.75
-            )
+        patches = _standard_patches(
+            assess_return={
+                "quality_score": 0.92,
+                "passed_threshold": True,
+                "assessment": "Excellent first draft",
+            }
+        )
+        with (
+            patches["research"],
+            patches["draft"],
+            patches["assess"],
+            patches["refine"] as mock_refine,
+            patches["image"],
+            patches["finalize"],
+        ):
+            result = await service.execute_full_workflow(topic="AI", quality_threshold=0.75)
         assert result["refinement_count"] == 0
         mock_refine.assert_not_awaited()
         assert result["quality_score"] == 0.92
@@ -421,16 +477,24 @@ class TestWritingStyleApplication:
     async def test_writing_style_service_consulted(self):
         """If writing_style_service is available, it should be consulted during draft."""
         ws_service = AsyncMock()
-        ws_service.get_sample_for_content_generation = AsyncMock(return_value={
-            "writing_style_guidance": "Use active voice. Avoid jargon. Short paragraphs."
-        })
+        ws_service.get_sample_for_content_generation = AsyncMock(
+            return_value={
+                "writing_style_guidance": "Use active voice. Avoid jargon. Short paragraphs."
+            }
+        )
         service = _make_service(writing_style_service=ws_service)
 
         # Don't mock execute_draft — let it try to import the real agent (which will fail)
         # Instead, mock at the draft phase level
         patches = _standard_patches()
-        with patches["research"], patches["draft"] as mock_draft, patches["assess"], \
-             patches["refine"], patches["image"], patches["finalize"]:
+        with (
+            patches["research"],
+            patches["draft"] as mock_draft,
+            patches["assess"],
+            patches["refine"],
+            patches["image"],
+            patches["finalize"],
+        ):
             await service.execute_full_workflow(topic="AI")
         # Draft should have been called
         mock_draft.assert_awaited_once()
@@ -440,8 +504,14 @@ class TestWritingStyleApplication:
         """Custom word count target should be forwarded to the draft phase."""
         service = _make_service()
         patches = _standard_patches()
-        with patches["research"], patches["draft"] as mock_draft, patches["assess"], \
-             patches["refine"], patches["image"], patches["finalize"]:
+        with (
+            patches["research"],
+            patches["draft"] as mock_draft,
+            patches["assess"],
+            patches["refine"],
+            patches["image"],
+            patches["finalize"],
+        ):
             await service.execute_full_workflow(topic="AI", word_count_target=3000)
         assert mock_draft.call_args.kwargs["word_count_target"] == 3000
 
@@ -459,13 +529,21 @@ class TestGracefulDegradation:
     async def test_image_failure_still_completes(self):
         """Image selection failure should not block pipeline completion."""
         service = _make_service()
-        patches = _standard_patches(image_return={
-            "phase": "image_selection",
-            "error": "Pexels API rate limited",
-            "images": [],
-        })
-        with patches["research"], patches["draft"], patches["assess"], \
-             patches["refine"], patches["image"], patches["finalize"]:
+        patches = _standard_patches(
+            image_return={
+                "phase": "image_selection",
+                "error": "Pexels API rate limited",
+                "images": [],
+            }
+        )
+        with (
+            patches["research"],
+            patches["draft"],
+            patches["assess"],
+            patches["refine"],
+            patches["image"],
+            patches["finalize"],
+        ):
             result = await service.execute_full_workflow(topic="AI")
         assert result["status"] == "completed"
         assert result["phase_results"]["image_selection"]["images"] == []
@@ -514,8 +592,14 @@ class TestGracefulDegradation:
             new_callable=AsyncMock,
             side_effect=RuntimeError("Publishing agent DB error"),
         )
-        with patches["research"], patches["draft"], patches["assess"], \
-             patches["refine"], patches["image"], finalize_patch:
+        with (
+            patches["research"],
+            patches["draft"],
+            patches["assess"],
+            patches["refine"],
+            patches["image"],
+            finalize_patch,
+        ):
             result = await service.execute_full_workflow(topic="AI")
         assert result["status"] == "failed"
         assert "Publishing agent DB error" in result["error"]
@@ -545,12 +629,15 @@ class TestModelSelectionPerPhase:
             "finalize": "claude-3-haiku",
         }
         patches = _standard_patches()
-        with patches["research"] as mock_r, patches["draft"] as mock_d, \
-             patches["assess"] as mock_a, patches["refine"], \
-             patches["image"] as mock_i, patches["finalize"] as mock_f:
-            await service.execute_full_workflow(
-                topic="AI", model_selections=model_selections
-            )
+        with (
+            patches["research"] as mock_r,
+            patches["draft"] as mock_d,
+            patches["assess"] as mock_a,
+            patches["refine"],
+            patches["image"] as mock_i,
+            patches["finalize"] as mock_f,
+        ):
+            await service.execute_full_workflow(topic="AI", model_selections=model_selections)
         assert mock_r.call_args.kwargs["model"] == "gemini-2.0-flash"
         assert mock_d.call_args.kwargs["model"] == "claude-3-sonnet"
         assert mock_a.call_args.kwargs["model"] == "gpt-4o"
@@ -562,9 +649,14 @@ class TestModelSelectionPerPhase:
         """Phases without explicit model selection should receive None."""
         service = _make_service()
         patches = _standard_patches()
-        with patches["research"] as mock_r, patches["draft"] as mock_d, \
-             patches["assess"], patches["refine"], \
-             patches["image"], patches["finalize"]:
+        with (
+            patches["research"] as mock_r,
+            patches["draft"] as mock_d,
+            patches["assess"],
+            patches["refine"],
+            patches["image"],
+            patches["finalize"],
+        ):
             await service.execute_full_workflow(topic="AI", model_selections={})
         assert mock_r.call_args.kwargs["model"] is None
         assert mock_d.call_args.kwargs["model"] is None
@@ -584,8 +676,14 @@ class TestPhaseDataFlow:
         """Draft phase should receive the full research output."""
         service = _make_service()
         patches = _standard_patches()
-        with patches["research"], patches["draft"] as mock_draft, patches["assess"], \
-             patches["refine"], patches["image"], patches["finalize"]:
+        with (
+            patches["research"],
+            patches["draft"] as mock_draft,
+            patches["assess"],
+            patches["refine"],
+            patches["image"],
+            patches["finalize"],
+        ):
             await service.execute_full_workflow(topic="AI")
         assert mock_draft.call_args.kwargs["research_context"] == RESEARCH_OUTPUT
 
@@ -603,11 +701,15 @@ class TestPhaseDataFlow:
             return IMPROVED_ASSESS
 
         patches = _standard_patches(assess_side_effect=two_pass)
-        with patches["research"], patches["draft"], patches["assess"], \
-             patches["refine"], patches["image"], patches["finalize"] as mock_fin:
-            result = await service.execute_full_workflow(
-                topic="AI", quality_threshold=0.75
-            )
+        with (
+            patches["research"],
+            patches["draft"],
+            patches["assess"],
+            patches["refine"],
+            patches["image"],
+            patches["finalize"] as mock_fin,
+        ):
+            result = await service.execute_full_workflow(topic="AI", quality_threshold=0.75)
         # Finalize should receive the refined content, not the original draft
         assert mock_fin.call_args.kwargs["content"] == REFINE_OUTPUT["refined_content"]
         assert result["final_content"] == REFINE_OUTPUT["refined_content"]
@@ -617,8 +719,14 @@ class TestPhaseDataFlow:
         """When quality passes on first try, original draft goes to finalize."""
         service = _make_service()
         patches = _standard_patches()
-        with patches["research"], patches["draft"], patches["assess"], \
-             patches["refine"], patches["image"], patches["finalize"] as mock_fin:
+        with (
+            patches["research"],
+            patches["draft"],
+            patches["assess"],
+            patches["refine"],
+            patches["image"],
+            patches["finalize"] as mock_fin,
+        ):
             result = await service.execute_full_workflow(topic="AI")
         assert mock_fin.call_args.kwargs["content"] == DRAFT_OUTPUT["draft_content"]
         assert result["final_content"] == DRAFT_OUTPUT["draft_content"]
@@ -637,10 +745,14 @@ class TestPhaseDataFlow:
             return IMPROVED_ASSESS
 
         patches = _standard_patches(assess_side_effect=assess_then_pass)
-        with patches["research"], patches["draft"], patches["assess"], \
-             patches["refine"] as mock_refine, patches["image"], patches["finalize"]:
-            await service.execute_full_workflow(
-                topic="AI", quality_threshold=0.75
-            )
+        with (
+            patches["research"],
+            patches["draft"],
+            patches["assess"],
+            patches["refine"] as mock_refine,
+            patches["image"],
+            patches["finalize"],
+        ):
+            await service.execute_full_workflow(topic="AI", quality_threshold=0.75)
         # Refine should receive the low-quality assessment as feedback
         assert mock_refine.call_args.kwargs["feedback"] == LOW_QUALITY_ASSESS["assessment"]

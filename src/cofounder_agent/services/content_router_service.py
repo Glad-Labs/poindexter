@@ -17,7 +17,6 @@ Provides centralized blog post generation with:
 import logging
 from typing import Any, Dict, List, Optional
 
-
 from .ai_content_generator import get_content_generator
 from .database_service import DatabaseService
 from .image_service import get_image_service
@@ -92,7 +91,7 @@ class ContentTaskStore:
         Returns:
             Task ID for tracking
         """
-        logger.info(f"📋 [CONTENT_TASK_STORE] Creating task (async)")
+        logger.info("📋 [CONTENT_TASK_STORE] Creating task (async)")
         logger.info(f"   Topic: {topic[:60]}{'...' if len(topic) > 60 else ''}")
         logger.info(f"   Style: {style} | Tone: {tone} | Length: {target_length}w")
         logger.info(f"   Tags: {', '.join(tags) if tags else 'none'}")
@@ -107,7 +106,7 @@ class ContentTaskStore:
             if not self.database_service:
                 raise ValueError("DatabaseService not initialized - cannot persist tasks")
 
-            logger.debug(f"   📝 Calling database_service.add_task() (async)...")
+            logger.debug("   📝 Calling database_service.add_task() (async)...")
 
             # Generate task_name from topic
             task_name = f"{topic[:50]}" if len(topic) <= 50 else f"{topic[:47]}..."
@@ -126,10 +125,10 @@ class ContentTaskStore:
                 }
             )
 
-            logger.info(f"✅ [CONTENT_TASK_STORE] Task CREATED and PERSISTED (async)")
+            logger.info("✅ [CONTENT_TASK_STORE] Task CREATED and PERSISTED (async)")
             logger.info(f"   Task ID: {task_id}")
-            logger.info(f"   Status: pending")
-            logger.debug(f"   🎯 Ready for processing")
+            logger.info("   Status: pending")
+            logger.debug("   🎯 Ready for processing")
             return task_id
 
         except Exception as e:
@@ -403,7 +402,7 @@ async def process_content_generation_task(
         raise ValueError("DatabaseService is required for content_tasks persistence")
 
     logger.info(f"\n{'='*80}")
-    logger.info(f"🚀 COMPLETE CONTENT GENERATION PIPELINE")
+    logger.info("🚀 COMPLETE CONTENT GENERATION PIPELINE")
     logger.info(f"{'='*80}")
     logger.info(f"   Task ID: {task_id}")
     logger.info(f"   Topic: {topic}")
@@ -460,7 +459,7 @@ async def process_content_generation_task(
         # Extract user model preferences from models_by_phase (if provided)
         preferred_model = None
         preferred_provider = None
-        logger.info(f"🔍 STEP 2A: Processing model selections from UI")
+        logger.info("🔍 STEP 2A: Processing model selections from UI")
         logger.info(f"   models_by_phase = {models_by_phase}")
         if models_by_phase:
             # Try to get model for 'draft' phase (main content generation)
@@ -534,7 +533,7 @@ async def process_content_generation_task(
 
         # Validate content_text is not None
         if not content_text:
-            logger.error(f"❌ Content generation returned None or empty")
+            logger.error("❌ Content generation returned None or empty")
             raise ValueError("Content generation failed: no content produced")
 
         # Generate canonical title based on topic and content
@@ -584,7 +583,7 @@ async def process_content_generation_task(
 
         # Validate quality_result is not None
         if not quality_result:
-            logger.error(f"❌ Quality evaluation returned None")
+            logger.error("❌ Quality evaluation returned None")
             raise ValueError("Quality evaluation failed: no result produced")
 
         result["quality_score"] = quality_result.overall_score
@@ -601,11 +600,11 @@ async def process_content_generation_task(
             "truncation_detected": quality_result.truncation_detected,
         }
         result["stages"]["2b_quality_evaluated_initial"] = True
-        logger.info(f"✅ Initial quality evaluation complete:")
+        logger.info("✅ Initial quality evaluation complete:")
         logger.info(f"   Overall Score: {quality_result.overall_score:.1f}/100")
         logger.info(f"   Passing: {quality_result.passing} (threshold ≥70.0)")
         if quality_result.truncation_detected:
-            logger.warning(f"   ⚠️  TRUNCATION DETECTED — content appears cut off mid-sentence")
+            logger.warning("   ⚠️  TRUNCATION DETECTED — content appears cut off mid-sentence")
         logger.info("")
 
         # ================================================================================
@@ -613,9 +612,11 @@ async def process_content_generation_task(
         # ================================================================================
         import re as _re
 
-        image_placeholders = _re.findall(r'\[IMAGE-(\d+)(?::\s*([^\]]*))?\]', content_text)
+        image_placeholders = _re.findall(r"\[IMAGE-(\d+)(?::\s*([^\]]*))?\]", content_text)
         if image_placeholders:
-            logger.info(f"🖼️  STAGE 2C: Replacing {len(image_placeholders)} inline image placeholders...")
+            logger.info(
+                f"🖼️  STAGE 2C: Replacing {len(image_placeholders)} inline image placeholders..."
+            )
             used_image_ids = set()  # Avoid duplicate images
 
             for num, desc in image_placeholders:
@@ -637,22 +638,28 @@ async def process_content_generation_task(
                         used_image_ids.add(img.url)
                         alt_text = desc.strip() if desc else f"{topic} illustration"
                         # Clean alt text of special chars for markdown
-                        alt_text = alt_text.replace('[', '').replace(']', '').replace('\n', ' ')[:120]
-                        photographer = getattr(img, 'photographer', 'Pexels')
-                        markdown_img = f"\n\n![{alt_text}]({img.url})\n*Photo by {photographer} on Pexels*\n\n"
+                        alt_text = (
+                            alt_text.replace("[", "").replace("]", "").replace("\n", " ")[:120]
+                        )
+                        photographer = getattr(img, "photographer", "Pexels")
+                        markdown_img = (
+                            f"\n\n![{alt_text}]({img.url})\n*Photo by {photographer} on Pexels*\n\n"
+                        )
 
                         # Use regex to handle spacing variations in [IMAGE-N: desc]
                         content_text = _re.sub(
-                            rf'\[IMAGE-{num}[^\]]*\]', markdown_img, content_text, count=1
+                            rf"\[IMAGE-{num}[^\]]*\]", markdown_img, content_text, count=1
                         )
                         logger.info(f"  ✅ [IMAGE-{num}] → Pexels image by {photographer}")
                     else:
                         # Remove placeholder if no image found
-                        content_text = _re.sub(rf'\[IMAGE-{num}[^\]]*\]', '', content_text, count=1)
-                        logger.warning(f"  ⚠️ [IMAGE-{num}] — no suitable image found, removed placeholder")
+                        content_text = _re.sub(rf"\[IMAGE-{num}[^\]]*\]", "", content_text, count=1)
+                        logger.warning(
+                            f"  ⚠️ [IMAGE-{num}] — no suitable image found, removed placeholder"
+                        )
                 except Exception as e:
                     logger.error(f"  ❌ [IMAGE-{num}] search failed: {e}", exc_info=True)
-                    content_text = _re.sub(rf'\[IMAGE-{num}[^\]]*\]', '', content_text, count=1)
+                    content_text = _re.sub(rf"\[IMAGE-{num}[^\]]*\]", "", content_text, count=1)
 
             # Update DB with image-populated content
             await database_service.update_task(task_id=task_id, updates={"content": content_text})
@@ -712,7 +719,7 @@ async def process_content_generation_task(
 
         # Validate seo_assets is not None and is a dict
         if not seo_assets or not isinstance(seo_assets, dict):
-            logger.error(f"❌ SEO generation returned None or invalid format")
+            logger.error("❌ SEO generation returned None or invalid format")
             raise ValueError("SEO metadata generation failed: invalid result")
 
         seo_keywords = seo_assets.get("meta_keywords") or (tags or [])
@@ -742,7 +749,7 @@ async def process_content_generation_task(
         result["seo_description"] = seo_description
         result["seo_keywords"] = seo_keywords
         result["stages"]["4_seo_metadata_generated"] = True
-        logger.info(f"✅ SEO metadata generated:")
+        logger.info("✅ SEO metadata generated:")
         logger.info(f"   Title: {seo_title}")
         logger.info(f"   Description: {seo_description[:80]}...")
         logger.info(f"   Keywords: {', '.join(seo_keywords[:5])}...\n")
@@ -773,7 +780,7 @@ async def process_content_generation_task(
         result["post_id"] = None
         result["post_slug"] = None
         result["stages"]["5_post_created"] = False
-        logger.info(f"ℹ️  Skipping automatic post creation\n")
+        logger.info("ℹ️  Skipping automatic post creation\n")
 
         # ================================================================================
         # STAGE 6: CAPTURE TRAINING DATA
@@ -842,7 +849,7 @@ async def process_content_generation_task(
         )
 
         result["stages"]["6_training_data_captured"] = True
-        logger.info(f"✅ Training data captured for learning pipeline\n")
+        logger.info("✅ Training data captured for learning pipeline\n")
 
         # ================================================================================
         # UPDATE CONTENT_TASK WITH FINAL STATUS AND ALL METADATA
@@ -888,7 +895,7 @@ async def process_content_generation_task(
         result["approval_status"] = "pending"
 
         logger.info(f"{'='*80}")
-        logger.info(f"✅ COMPLETE CONTENT GENERATION PIPELINE FINISHED")
+        logger.info("✅ COMPLETE CONTENT GENERATION PIPELINE FINISHED")
         logger.info(f"{'='*80}")
         logger.info(f"   Task ID: {task_id}")
         logger.info(f"   Post ID: {result.get('post_id', 'NOT_YET_CREATED')}")
@@ -897,20 +904,20 @@ async def process_content_generation_task(
         )
         logger.info(f"   Quality Score: {quality_result.overall_score:.1f}/100")
         logger.info(f"   Status: {result['status']}")
-        logger.info(f"   Next: Human review & approval")
+        logger.info("   Next: Human review & approval")
         logger.info(f"{'='*80}\n")
 
         return result
 
     except Exception as e:
         logger.error(f"❌ [BG-TASK] Pipeline error for task {task_id[:8]}...: {e}", exc_info=True)
-        logger.error(f"[BG-TASK] Detailed traceback:", exc_info=True)
+        logger.error("[BG-TASK] Detailed traceback:", exc_info=True)
 
         # Update content_task with failure status
         # 🔑 CRITICAL: Preserve all partially-generated data (content, image, metadata)
         # so it's available for review/approval workflow
         try:
-            logger.debug(f"[BG-TASK] Attempting to update task status to 'failed'...")
+            logger.debug("[BG-TASK] Attempting to update task status to 'failed'...")
             logger.debug(f"[BG-TASK] Preserving partial results: {list(result.keys())}")
 
             # Build task_metadata with whatever we successfully generated
@@ -942,7 +949,7 @@ async def process_content_generation_task(
                     "task_metadata": failure_metadata,  # ✅ Preserve all data
                 },
             )
-            logger.debug(f"[BG-TASK] ✅ Task status updated to 'failed' with preserved data")
+            logger.debug("[BG-TASK] ✅ Task status updated to 'failed' with preserved data")
         except Exception as db_error:
             logger.error(f"❌ [BG-TASK] Failed to update task status: {db_error}", exc_info=True)
 
@@ -1127,15 +1134,13 @@ async def _get_or_create_default_author(database_service: DatabaseService) -> Op
                 return author_id
 
             # Create if doesn't exist
-            author_id = await conn.fetchval(
-                """
+            author_id = await conn.fetchval("""
                 INSERT INTO authors (name, slug, email, bio, avatar_url)
                 VALUES ('Poindexter AI', 'poindexter-ai', 'poindexter@glad-labs.ai', 
                         'AI Content Generation Engine', NULL)
                 ON CONFLICT (slug) DO NOTHING
                 RETURNING id
-                """
-            )
+                """)
 
             if author_id:
                 logger.info(f"Created default author: Poindexter AI ({author_id})")

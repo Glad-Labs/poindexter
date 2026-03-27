@@ -57,7 +57,9 @@ class StartupManager:
                 f"Refusing to start in production with default secret values: {', '.join(violations)}"
             )
         if violations:
-            logger.warning(f"[startup] Default secret values detected (non-production): {', '.join(violations)}")
+            logger.warning(
+                f"[startup] Default secret values detected (non-production): {', '.join(violations)}"
+            )
 
     async def initialize_all_services(self) -> Dict[str, Any]:
         """
@@ -128,8 +130,9 @@ class StartupManager:
                 import traceback
 
                 logger.warning(
-                    f"[WARNING] SDXL warmup failed (non-critical): {type(e).__name__}: {e}"
-, exc_info=True)
+                    f"[WARNING] SDXL warmup failed (non-critical): {type(e).__name__}: {e}",
+                    exc_info=True,
+                )
                 logger.debug(f"    Traceback: {traceback.format_exc()}")
                 # Continue anyway - SDXL will load lazily when first used
 
@@ -185,11 +188,14 @@ class StartupManager:
             startup_error = f"FATAL: PostgreSQL connection failed: {str(e)}"
             logger.error(f"  {startup_error}", exc_info=True)
             logger.error("  [FATAL] PostgreSQL is REQUIRED - cannot continue", exc_info=True)
-            logger.error("   Set DATABASE_URL or DATABASE_USER environment variables", exc_info=True)
             logger.error(
-                "  Example DATABASE_URL: postgresql://user:password@localhost:5432/glad_labs_dev"
-, exc_info=True)
-            raise SystemExit(1)
+                "   Set DATABASE_URL or DATABASE_USER environment variables", exc_info=True
+            )
+            logger.error(
+                "  Example DATABASE_URL: postgresql://user:password@localhost:5432/glad_labs_dev",
+                exc_info=True,
+            )
+            raise SystemExit(1) from e
 
     async def _run_migrations(self) -> None:
         """Run database migrations"""
@@ -203,7 +209,9 @@ class StartupManager:
             else:
                 logger.warning("   [WARNING] Database migrations failed (proceeding anyway)")
         except Exception as e:
-            logger.warning(f"   [WARNING] Migration error: {str(e)} (proceeding anyway)", exc_info=True)
+            logger.warning(
+                f"   [WARNING] Migration error: {str(e)} (proceeding anyway)", exc_info=True
+            )
 
         # Inject database service into content task store
         try:
@@ -240,7 +248,10 @@ class StartupManager:
                     "   [INFO] Redis cache not available (system will continue without caching)"
                 )
         except Exception as e:
-            logger.warning(f"   [WARNING] Redis cache error: {str(e)} (continuing without cache)", exc_info=True)
+            logger.warning(
+                f"   [WARNING] Redis cache error: {str(e)} (continuing without cache)",
+                exc_info=True,
+            )
 
     async def _initialize_model_consolidation(self) -> None:
         """Initialize unified model consolidation service"""
@@ -391,8 +402,9 @@ class StartupManager:
             logger.info(f"  Agent registry initialized with {agent_count} agents")
         except Exception as e:
             logger.warning(
-                f"[WARNING] Agent registry initialization failed (non-critical): {type(e).__name__}: {e}"
-, exc_info=True)
+                f"[WARNING] Agent registry initialization failed (non-critical): {type(e).__name__}: {e}",
+                exc_info=True,
+            )
             # Continue anyway - system can function without agent registry
 
     async def _initialize_custom_workflows_service(self) -> None:
@@ -413,8 +425,9 @@ class StartupManager:
                 self.custom_workflows_service = None
         except Exception as e:
             logger.warning(
-                f"   Custom workflows service initialization failed (non-critical): {type(e).__name__}: {e}"
-, exc_info=True)
+                f"   Custom workflows service initialization failed (non-critical): {type(e).__name__}: {e}",
+                exc_info=True,
+            )
             self.custom_workflows_service = None
 
     async def _initialize_template_execution_service(self) -> None:
@@ -424,15 +437,20 @@ class StartupManager:
             from services.template_execution_service import TemplateExecutionService
 
             if self.custom_workflows_service:
-                self.template_execution_service = TemplateExecutionService(self.custom_workflows_service)
+                self.template_execution_service = TemplateExecutionService(
+                    self.custom_workflows_service
+                )
                 logger.info("   Template execution service initialized")
             else:
-                logger.warning("   Template execution service not available - custom workflows service required")
+                logger.warning(
+                    "   Template execution service not available - custom workflows service required"
+                )
                 self.template_execution_service = None
         except Exception as e:
             logger.warning(
-                f"   Template execution service initialization failed (non-critical): {type(e).__name__}: {e}"
-, exc_info=True)
+                f"   Template execution service initialization failed (non-critical): {type(e).__name__}: {e}",
+                exc_info=True,
+            )
             self.template_execution_service = None
 
     async def _warmup_sdxl_models(self) -> None:
@@ -446,7 +464,9 @@ class StartupManager:
 
         # Skip warmup unless explicitly enabled (lazy loading is the default)
         if os.getenv("ENABLE_SDXL_WARMUP", "").lower() not in ("true", "1", "yes"):
-            logger.info("  SDXL warmup: Skipped (lazy loading on first request). Set ENABLE_SDXL_WARMUP=true to pre-load.")
+            logger.info(
+                "  SDXL warmup: Skipped (lazy loading on first request). Set ENABLE_SDXL_WARMUP=true to pre-load."
+            )
             return
 
         # Check if torch is even available (optional dependency for SDXL)
@@ -508,7 +528,10 @@ class StartupManager:
         except Exception as e:
             import traceback
 
-            logger.warning(f"  [WARNING] SDXL warmup error (non-critical): {type(e).__name__}: {e}", exc_info=True)
+            logger.warning(
+                f"  [WARNING] SDXL warmup error (non-critical): {type(e).__name__}: {e}",
+                exc_info=True,
+            )
             logger.warning(f"     Full traceback:\n{traceback.format_exc()}", exc_info=True)
             logger.info("     SDXL will initialize on first request")
 

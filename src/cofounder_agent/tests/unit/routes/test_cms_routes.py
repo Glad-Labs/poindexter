@@ -13,17 +13,16 @@ mock pool so no real database connection is required.
 cms_status requires authentication — get_current_user overridden with TEST_USER.
 """
 
-import pytest
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from routes.auth_unified import get_current_user
 from routes.cms_routes import router
-
 from tests.unit.routes.conftest import TEST_USER
-
 
 # ---------------------------------------------------------------------------
 # Helper: build a minimal app.

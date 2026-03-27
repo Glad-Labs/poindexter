@@ -6,9 +6,10 @@ in database connections and external API calls.
 """
 
 import asyncio
-from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Optional, TypeVar
+
+from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 T = TypeVar("T")
@@ -160,8 +161,9 @@ async def async_retry(
                 # Last attempt failed - don't retry anymore
                 logger.error(
                     f"Operation failed permanently after {config.max_attempts} attempts: "
-                    f"{type(e).__name__}: {str(e)}"
-, exc_info=True)
+                    f"{type(e).__name__}: {str(e)}",
+                    exc_info=True,
+                )
                 raise
 
             # Calculate delay for next attempt
@@ -181,7 +183,9 @@ async def async_retry(
 
         except Exception as e:
             # Non-retryable exception
-            logger.error(f"Unexpected error (not retried): {type(e).__name__}: {str(e)}", exc_info=True)
+            logger.error(
+                f"Unexpected error (not retried): {type(e).__name__}: {str(e)}", exc_info=True
+            )
             raise
 
     # Should not reach here, but handle just in case

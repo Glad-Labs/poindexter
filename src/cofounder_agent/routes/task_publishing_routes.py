@@ -146,10 +146,10 @@ async def approve_task(
         # Accept both UUID and numeric task IDs (backwards compatibility)
         try:
             UUID(task_id)
-        except ValueError:
+        except ValueError as exc:
             # If not a valid UUID, check if it's a numeric ID (legacy tasks)
             if not task_id.isdigit():
-                raise HTTPException(status_code=400, detail="Invalid task ID format")
+                raise HTTPException(status_code=400, detail="Invalid task ID format") from exc
 
         # Fetch task
         task = await db_service.get_task(task_id)
@@ -250,7 +250,7 @@ async def approve_task(
             )
         except Exception as e:
             logger.error(f"Failed to update task status to {new_status}: {str(e)}", exc_info=True)
-            raise HTTPException(status_code=500, detail="Failed to update task status")
+            raise HTTPException(status_code=500, detail="Failed to update task status") from e
 
         # Auto-publish if approved and auto_publish=True
         if approved and auto_publish:
@@ -310,10 +310,8 @@ async def approve_task(
 
                     if post_content and post_title:
                         # Create slug from title
-                        import re as re_module
-
                         slug = (
-                            re_module.sub(r"[^\w\s-]", "", post_title)
+                            re.sub(r"[^\w\s-]", "", post_title)
                             .lower()
                             .replace(" ", "-")[:50]
                         )
@@ -365,7 +363,7 @@ async def approve_task(
                             f"/posts/{slug}"  # Relative URL for public site
                         )
                     else:
-                        logger.warning(f"⚠️  Skipping post creation: missing content or topic")
+                        logger.warning("⚠️  Skipping post creation: missing content or topic")
                 except (ValueError, KeyError, TypeError) as e:
                     # Catch specific exceptions from post creation
                     logger.error(
@@ -398,12 +396,16 @@ async def approve_task(
         if approved and auto_publish:
             try:
                 reval_paths = ["/", "/archive", "/posts"]
-                slug_val = merged_result.get("post_slug") if isinstance(merged_result, dict) else None
+                slug_val = (
+                    merged_result.get("post_slug") if isinstance(merged_result, dict) else None
+                )
                 if slug_val:
                     reval_paths.append(f"/posts/{slug_val}")
                 await trigger_nextjs_revalidation(reval_paths)
             except Exception as reval_err:
-                logger.warning(f"[approve_task] ISR revalidation error (non-fatal): {reval_err}", exc_info=True)
+                logger.warning(
+                    f"[approve_task] ISR revalidation error (non-fatal): {reval_err}", exc_info=True
+                )
 
         # Fetch updated task
         updated_task = await db_service.get_task(task_id)
@@ -440,12 +442,12 @@ async def approve_task(
         logger.error(
             f"Data validation error in approve_task: {type(e).__name__}: {str(e)}", exc_info=True
         )
-        raise HTTPException(status_code=400, detail="Invalid task data")
+        raise HTTPException(status_code=400, detail="Invalid task data") from e
     except Exception as e:
         logger.error(
             f"Failed to approve task {task_id}: {type(e).__name__}: {str(e)}", exc_info=True
         )
-        raise HTTPException(status_code=500, detail="Failed to approve task")
+        raise HTTPException(status_code=500, detail="Failed to approve task") from e
 
 
 @publishing_router.post(
@@ -479,10 +481,10 @@ async def publish_task(
         # Accept both UUID and numeric task IDs (backwards compatibility)
         try:
             UUID(task_id)
-        except ValueError:
+        except ValueError as exc:
             # If not a valid UUID, check if it's a numeric ID (legacy tasks)
             if not task_id.isdigit():
-                raise HTTPException(status_code=400, detail="Invalid task ID format")
+                raise HTTPException(status_code=400, detail="Invalid task ID format") from exc
 
         # Fetch task
         task = await db_service.get_task(task_id)
@@ -532,7 +534,9 @@ async def publish_task(
                 task_meta = {}
         task_meta = task_meta or {}
         # task_result wins over task_metadata; publish_metadata stored under its own key
-        merged_result = convert_decimals({**task_meta, **existing_result, "publish_metadata": publish_metadata})
+        merged_result = convert_decimals(
+            {**task_meta, **existing_result, "publish_metadata": publish_metadata}
+        )
         await db_service.update_task_status(
             task_id, "published", result=safe_json_dumps(merged_result)
         )
@@ -554,14 +558,12 @@ async def publish_task(
                 or task_result.get("article", "")
                 or ""
             )
-            seo_description = (
-                task_result.get("seo_description", "")
-                or task.get("seo_description", "")
+            seo_description = task_result.get("seo_description", "") or task.get(
+                "seo_description", ""
             )
             seo_keywords = task_result.get("seo_keywords", [])
-            featured_image_url = (
-                task_result.get("featured_image_url")
-                or task.get("featured_image_url")
+            featured_image_url = task_result.get("featured_image_url") or task.get(
+                "featured_image_url"
             )
             metadata = task_result.get("metadata", {})
 
@@ -581,9 +583,7 @@ async def publish_task(
                 logger.info(f"   Content length: {len(post_content or '')} chars")
 
                 # Create slug from title (not topic)
-                import re as re_module
-
-                slug = re_module.sub(r"[^\w\s-]", "", post_title).lower().replace(" ", "-")[:50]
+                slug = re.sub(r"[^\w\s-]", "", post_title).lower().replace(" ", "-")[:50]
                 slug = f"{slug}-{task_id[:8]}"
 
                 # Get author and category
@@ -631,7 +631,7 @@ async def publish_task(
                     task_id, "published", result=safe_json_dumps(convert_decimals(merged_result))
                 )
             else:
-                logger.warning(f"⚠️  Skipping post creation: missing content or topic")
+                logger.warning("⚠️  Skipping post creation: missing content or topic")
         except Exception as e:
             logger.error(f"Failed to create post for published task: {str(e)}", exc_info=True)
             # Don't fail the publish operation if post creation fails
@@ -647,9 +647,13 @@ async def publish_task(
         try:
             revalidation_success = await trigger_nextjs_revalidation(revalidation_paths)
             if not revalidation_success:
-                logger.warning("[publish_task] ISR revalidation returned failure — post is published but cache may be stale")
+                logger.warning(
+                    "[publish_task] ISR revalidation returned failure — post is published but cache may be stale"
+                )
         except Exception as reval_err:
-            logger.warning(f"[publish_task] ISR revalidation error (non-fatal): {reval_err}", exc_info=True)
+            logger.warning(
+                f"[publish_task] ISR revalidation error (non-fatal): {reval_err}", exc_info=True
+            )
 
         # Store revalidation status in result for frontend signal
         merged_result["revalidation"] = {
@@ -667,10 +671,15 @@ async def publish_task(
         # Convert to response schema
         try:
             return UnifiedTaskResponse(
-                **ModelConverter.task_response_to_unified(ModelConverter.to_task_response(updated_task))
+                **ModelConverter.task_response_to_unified(
+                    ModelConverter.to_task_response(updated_task)
+                )
             )
         except Exception as resp_err:
-            logger.warning(f"[publish_task] Response model conversion failed ({resp_err}); returning minimal response", exc_info=True)
+            logger.warning(
+                f"[publish_task] Response model conversion failed ({resp_err}); returning minimal response",
+                exc_info=True,
+            )
             return {  # type: ignore[return-value]
                 "id": task_id,
                 "status": "published",
@@ -685,7 +694,7 @@ async def publish_task(
         raise
     except Exception as e:
         logger.error(f"Failed to publish task {task_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to publish task")
+        raise HTTPException(status_code=500, detail="Failed to publish task") from e
 
 
 @publishing_router.post(
@@ -718,10 +727,10 @@ async def reject_task(
         # Accept both UUID and numeric task IDs (backwards compatibility)
         try:
             UUID(task_id)
-        except ValueError:
+        except ValueError as exc:
             # If not a valid UUID, check if it's a numeric ID (legacy tasks)
             if not task_id.isdigit():
-                raise HTTPException(status_code=400, detail="Invalid task ID format")
+                raise HTTPException(status_code=400, detail="Invalid task ID format") from exc
 
         # Fetch task
         task = await db_service.get_task(task_id)
@@ -763,7 +772,7 @@ async def reject_task(
         raise
     except Exception as e:
         logger.error(f"Failed to reject task {task_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to reject task")
+        raise HTTPException(status_code=500, detail="Failed to reject task") from e
 
 
 class GenerateImageRequest(BaseModel):
@@ -839,10 +848,10 @@ async def generate_task_image(
                 current_image_url = task.get("featured_image_url")
                 page = max(1, request.page)  # Ensure page is at least 1
 
-                logger.info(f"🔎 Pexels API request:")
+                logger.info("🔎 Pexels API request:")
                 logger.info(f"   - Query: '{search_query}'")
                 logger.info(f"   - Page: {page}")
-                logger.info(f"   - Per page: 50")
+                logger.info("   - Per page: 50")
                 logger.info(
                     f"   - Current featured image: {current_image_url[:80]}..."
                     if current_image_url
@@ -957,10 +966,12 @@ async def generate_task_image(
                                             },
                                         )
                             except json.JSONDecodeError as je:
-                                logger.error(f"Failed to parse Pexels response JSON: {je}", exc_info=True)
-                                raise ValueError(f"Invalid JSON from Pexels API: {str(je)}")
+                                logger.error(
+                                    f"Failed to parse Pexels response JSON: {je}", exc_info=True
+                                )
+                                raise ValueError(f"Invalid JSON from Pexels API: {str(je)}") from je
                         elif resp.status == 429:
-                            logger.warning(f"Pexels rate limit exceeded")
+                            logger.warning("Pexels rate limit exceeded")
                             raise HTTPException(
                                 status_code=429,
                                 detail="Image service rate limit exceeded. Please try again later.",
@@ -973,15 +984,17 @@ async def generate_task_image(
                 logger.error(f"Pexels API error: {ve}", exc_info=True)
                 raise HTTPException(
                     status_code=500, detail=f"Error fetching image from Pexels: {str(ve)}"
-                )
-            except asyncio.TimeoutError:
+                ) from ve
+            except asyncio.TimeoutError as exc:
                 logger.warning(f"Pexels API timeout for query: {search_query}", exc_info=True)
-                raise HTTPException(status_code=504, detail="Pexels API timeout. Please try again.")
+                raise HTTPException(status_code=504, detail="Pexels API timeout. Please try again.") from exc
             except Exception as e:
-                logger.error(f"Unexpected error fetching from Pexels: {type(e).__name__}: {e}", exc_info=True)
+                logger.error(
+                    f"Unexpected error fetching from Pexels: {type(e).__name__}: {e}", exc_info=True
+                )
                 raise HTTPException(
                     status_code=500, detail="Unexpected error fetching image from Pexels"
-                )
+                ) from e
 
         elif source == "sdxl":
             # Use SDXL to generate an image
@@ -1024,16 +1037,16 @@ async def generate_task_image(
                 if success and os.path.exists(output_path):
                     logger.info(f"✅ SDXL image generated: {output_path}")
                     image_url = output_path
-                    logger.info(f"   Generated image saved locally for preview")
+                    logger.info("   Generated image saved locally for preview")
                 else:
                     raise RuntimeError("SDXL image generation failed or file not created")
 
-            except asyncio.TimeoutError:
+            except asyncio.TimeoutError as exc:
                 logger.warning(f"SDXL image generation timeout for task {task_id}", exc_info=True)
                 raise HTTPException(
                     status_code=408,
                     detail="Image generation timeout. Please try again with 'pexels' source.",
-                )
+                ) from exc
             except (OSError, IOError, RuntimeError, ValueError) as e:
                 logger.error(
                     f"SDXL image generation error - {type(e).__name__}: {e}", exc_info=True
@@ -1041,14 +1054,14 @@ async def generate_task_image(
                 raise HTTPException(
                     status_code=500,
                     detail="SDXL image generation failed. Ensure GPU available or use 'pexels' source.",
-                )
+                ) from e
             except Exception as e:
                 logger.critical(
                     f"Unexpected error in SDXL generation: {type(e).__name__}: {e}", exc_info=True
                 )
                 raise HTTPException(
                     status_code=500, detail="Internal server error during image generation"
-                )
+                ) from e
         else:
             raise HTTPException(
                 status_code=400, detail=f"Invalid image source: {source}. Use 'pexels' or 'sdxl'"
@@ -1108,4 +1121,4 @@ async def generate_task_image(
         raise
     except Exception as e:
         logger.error(f"Failed to generate image for task {task_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to generate image")
+        raise HTTPException(status_code=500, detail="Failed to generate image") from e

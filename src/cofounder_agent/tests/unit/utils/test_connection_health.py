@@ -286,6 +286,7 @@ class TestDiagnoseConnectionIssues:
         with patch.dict("os.environ", {}, clear=True):
             # Ensure DATABASE_URL is absent
             import os
+
             os.environ.pop("DATABASE_URL", None)
             result = await diagnose_connection_issues()
         issues_text = " ".join(result["issues"])

@@ -20,12 +20,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from routes.auth_unified import get_current_user
 import routes.social_routes as social_module
+from routes.auth_unified import get_current_user
 from routes.social_routes import social_router
-
 from tests.unit.routes.conftest import TEST_USER
-
 
 # ---------------------------------------------------------------------------
 # Test fixtures

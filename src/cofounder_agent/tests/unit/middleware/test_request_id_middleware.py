@@ -9,17 +9,17 @@ Covers:
 
 import logging
 import uuid
+from unittest.mock import MagicMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock
 
 from middleware.request_id import (
+    HEADER_NAME,
     RequestIDFilter,
     RequestIDMiddleware,
     _request_id_var,
     get_request_id,
-    HEADER_NAME,
 )
-
 
 # ---------------------------------------------------------------------------
 # get_request_id() — module-level helper
@@ -65,8 +65,13 @@ class TestRequestIDFilter:
         try:
             f = RequestIDFilter()
             record = logging.LogRecord(
-                name="test", level=logging.INFO, pathname="",
-                lineno=0, msg="msg", args=(), exc_info=None,
+                name="test",
+                level=logging.INFO,
+                pathname="",
+                lineno=0,
+                msg="msg",
+                args=(),
+                exc_info=None,
             )
             result = f.filter(record)
             assert result is True
@@ -79,8 +84,13 @@ class TestRequestIDFilter:
         try:
             f = RequestIDFilter()
             record = logging.LogRecord(
-                name="test", level=logging.DEBUG, pathname="",
-                lineno=0, msg="msg", args=(), exc_info=None,
+                name="test",
+                level=logging.DEBUG,
+                pathname="",
+                lineno=0,
+                msg="msg",
+                args=(),
+                exc_info=None,
             )
             f.filter(record)
             assert record.request_id == "-"  # type: ignore[attr-defined]
@@ -91,16 +101,26 @@ class TestRequestIDFilter:
         """Filter must never suppress log records."""
         f = RequestIDFilter()
         record = logging.LogRecord(
-            name="test", level=logging.ERROR, pathname="",
-            lineno=0, msg="error", args=(), exc_info=None,
+            name="test",
+            level=logging.ERROR,
+            pathname="",
+            lineno=0,
+            msg="error",
+            args=(),
+            exc_info=None,
         )
         assert f.filter(record) is True
 
     def test_filter_updates_request_id_on_each_call(self):
         f = RequestIDFilter()
         record = logging.LogRecord(
-            name="test", level=logging.INFO, pathname="",
-            lineno=0, msg="", args=(), exc_info=None,
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg="",
+            args=(),
+            exc_info=None,
         )
 
         id_one = "first-id"

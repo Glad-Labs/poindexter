@@ -7,12 +7,11 @@ No real WebSocket connections are opened — mock objects simulate send_text.
 
 import json
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
 from services.websocket_manager import WebSocketManager, WebSocketMessage
-
 
 # ---------------------------------------------------------------------------
 # Helpers

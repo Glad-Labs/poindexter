@@ -19,18 +19,17 @@ get_registry, get_composer, and CapabilityTasksService are patched.
 Auth is provided via dependency override.
 """
 
-import pytest
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from routes.auth_unified import get_current_user
 from routes.capability_tasks_routes import router
-from utils.route_utils import get_database_dependency
-
 from tests.unit.routes.conftest import TEST_USER, make_mock_db
-
+from utils.route_utils import get_database_dependency
 
 TASK_ID = "task-aaaa-bbbb-cccc-dddd"
 EXEC_ID = "exec-1111-2222-3333-4444"
@@ -304,9 +303,7 @@ class TestCreateCapabilityTask:
         svc = _make_task_service()
         with (
             patch("routes.capability_tasks_routes.get_registry", return_value=reg),
-            patch(
-                "routes.capability_tasks_routes.CapabilityTasksService", return_value=svc
-            ),
+            patch("routes.capability_tasks_routes.CapabilityTasksService", return_value=svc),
         ):
             client = TestClient(_build_app())
             resp = client.post("/api/tasks/capability", json=VALID_CREATE_PAYLOAD)
@@ -317,9 +314,7 @@ class TestCreateCapabilityTask:
         svc = _make_task_service()
         with (
             patch("routes.capability_tasks_routes.get_registry", return_value=reg),
-            patch(
-                "routes.capability_tasks_routes.CapabilityTasksService", return_value=svc
-            ),
+            patch("routes.capability_tasks_routes.CapabilityTasksService", return_value=svc),
         ):
             client = TestClient(_build_app())
             data = client.post("/api/tasks/capability", json=VALID_CREATE_PAYLOAD).json()
@@ -361,18 +356,14 @@ class TestCreateCapabilityTask:
 class TestListCapabilityTasks:
     def test_returns_200(self):
         svc = _make_task_service()
-        with patch(
-            "routes.capability_tasks_routes.CapabilityTasksService", return_value=svc
-        ):
+        with patch("routes.capability_tasks_routes.CapabilityTasksService", return_value=svc):
             client = TestClient(_build_app())
             resp = client.get("/api/tasks/capability")
         assert resp.status_code == 200
 
     def test_response_has_tasks_and_total(self):
         svc = _make_task_service()
-        with patch(
-            "routes.capability_tasks_routes.CapabilityTasksService", return_value=svc
-        ):
+        with patch("routes.capability_tasks_routes.CapabilityTasksService", return_value=svc):
             client = TestClient(_build_app())
             data = client.get("/api/tasks/capability").json()
         assert "tasks" in data
@@ -380,9 +371,7 @@ class TestListCapabilityTasks:
 
     def test_pagination_params_accepted(self):
         svc = _make_task_service()
-        with patch(
-            "routes.capability_tasks_routes.CapabilityTasksService", return_value=svc
-        ):
+        with patch("routes.capability_tasks_routes.CapabilityTasksService", return_value=svc):
             client = TestClient(_build_app())
             resp = client.get("/api/tasks/capability?skip=10&limit=25")
         assert resp.status_code == 200
@@ -397,18 +386,14 @@ class TestListCapabilityTasks:
 class TestGetCapabilityTask:
     def test_existing_task_returns_200(self):
         svc = _make_task_service()
-        with patch(
-            "routes.capability_tasks_routes.CapabilityTasksService", return_value=svc
-        ):
+        with patch("routes.capability_tasks_routes.CapabilityTasksService", return_value=svc):
             client = TestClient(_build_app())
             resp = client.get(f"/api/tasks/capability/{TASK_ID}")
         assert resp.status_code == 200
 
     def test_response_has_task_fields(self):
         svc = _make_task_service()
-        with patch(
-            "routes.capability_tasks_routes.CapabilityTasksService", return_value=svc
-        ):
+        with patch("routes.capability_tasks_routes.CapabilityTasksService", return_value=svc):
             client = TestClient(_build_app())
             data = client.get(f"/api/tasks/capability/{TASK_ID}").json()
         assert data["id"] == TASK_ID
@@ -416,9 +401,7 @@ class TestGetCapabilityTask:
     def test_not_found_returns_404(self):
         svc = _make_task_service()
         svc.get_task = AsyncMock(return_value=None)
-        with patch(
-            "routes.capability_tasks_routes.CapabilityTasksService", return_value=svc
-        ):
+        with patch("routes.capability_tasks_routes.CapabilityTasksService", return_value=svc):
             client = TestClient(_build_app())
             resp = client.get("/api/tasks/capability/nonexistent")
         assert resp.status_code == 404
@@ -436,14 +419,10 @@ class TestUpdateCapabilityTask:
         svc = _make_task_service()
         with (
             patch("routes.capability_tasks_routes.get_registry", return_value=reg),
-            patch(
-                "routes.capability_tasks_routes.CapabilityTasksService", return_value=svc
-            ),
+            patch("routes.capability_tasks_routes.CapabilityTasksService", return_value=svc),
         ):
             client = TestClient(_build_app())
-            resp = client.put(
-                f"/api/tasks/capability/{TASK_ID}", json=VALID_CREATE_PAYLOAD
-            )
+            resp = client.put(f"/api/tasks/capability/{TASK_ID}", json=VALID_CREATE_PAYLOAD)
         assert resp.status_code == 200
 
     def test_not_found_returns_404(self):
@@ -452,9 +431,7 @@ class TestUpdateCapabilityTask:
         svc.get_task = AsyncMock(return_value=None)
         with (
             patch("routes.capability_tasks_routes.get_registry", return_value=reg),
-            patch(
-                "routes.capability_tasks_routes.CapabilityTasksService", return_value=svc
-            ),
+            patch("routes.capability_tasks_routes.CapabilityTasksService", return_value=svc),
         ):
             client = TestClient(_build_app())
             resp = client.put("/api/tasks/capability/nonexistent", json=VALID_CREATE_PAYLOAD)
@@ -465,14 +442,10 @@ class TestUpdateCapabilityTask:
         svc = _make_task_service()
         with (
             patch("routes.capability_tasks_routes.get_registry", return_value=reg),
-            patch(
-                "routes.capability_tasks_routes.CapabilityTasksService", return_value=svc
-            ),
+            patch("routes.capability_tasks_routes.CapabilityTasksService", return_value=svc),
         ):
             client = TestClient(_build_app())
-            resp = client.put(
-                f"/api/tasks/capability/{TASK_ID}", json=VALID_CREATE_PAYLOAD
-            )
+            resp = client.put(f"/api/tasks/capability/{TASK_ID}", json=VALID_CREATE_PAYLOAD)
         assert resp.status_code == 400
 
 
@@ -485,18 +458,14 @@ class TestUpdateCapabilityTask:
 class TestDeleteCapabilityTask:
     def test_existing_task_returns_200(self):
         svc = _make_task_service()
-        with patch(
-            "routes.capability_tasks_routes.CapabilityTasksService", return_value=svc
-        ):
+        with patch("routes.capability_tasks_routes.CapabilityTasksService", return_value=svc):
             client = TestClient(_build_app())
             resp = client.delete(f"/api/tasks/capability/{TASK_ID}")
         assert resp.status_code == 200
 
     def test_response_has_message(self):
         svc = _make_task_service()
-        with patch(
-            "routes.capability_tasks_routes.CapabilityTasksService", return_value=svc
-        ):
+        with patch("routes.capability_tasks_routes.CapabilityTasksService", return_value=svc):
             client = TestClient(_build_app())
             data = client.delete(f"/api/tasks/capability/{TASK_ID}").json()
         assert "message" in data
@@ -504,9 +473,7 @@ class TestDeleteCapabilityTask:
     def test_not_found_returns_404(self):
         svc = _make_task_service()
         svc.get_task = AsyncMock(return_value=None)
-        with patch(
-            "routes.capability_tasks_routes.CapabilityTasksService", return_value=svc
-        ):
+        with patch("routes.capability_tasks_routes.CapabilityTasksService", return_value=svc):
             client = TestClient(_build_app())
             resp = client.delete("/api/tasks/capability/nonexistent")
         assert resp.status_code == 404
@@ -523,9 +490,7 @@ class TestExecuteCapabilityTask:
         svc = _make_task_service()
         exec_result = _make_execution()
         with (
-            patch(
-                "routes.capability_tasks_routes.CapabilityTasksService", return_value=svc
-            ),
+            patch("routes.capability_tasks_routes.CapabilityTasksService", return_value=svc),
             patch(
                 "routes.capability_tasks_routes.execute_capability_task",
                 new=AsyncMock(return_value=exec_result),
@@ -539,9 +504,7 @@ class TestExecuteCapabilityTask:
         svc = _make_task_service()
         exec_result = _make_execution()
         with (
-            patch(
-                "routes.capability_tasks_routes.CapabilityTasksService", return_value=svc
-            ),
+            patch("routes.capability_tasks_routes.CapabilityTasksService", return_value=svc),
             patch(
                 "routes.capability_tasks_routes.execute_capability_task",
                 new=AsyncMock(return_value=exec_result),
@@ -555,9 +518,7 @@ class TestExecuteCapabilityTask:
     def test_task_not_found_returns_404(self):
         svc = _make_task_service()
         svc.get_task = AsyncMock(return_value=None)
-        with patch(
-            "routes.capability_tasks_routes.CapabilityTasksService", return_value=svc
-        ):
+        with patch("routes.capability_tasks_routes.CapabilityTasksService", return_value=svc):
             client = TestClient(_build_app())
             resp = client.post("/api/tasks/capability/nonexistent/execute")
         assert resp.status_code == 404
@@ -566,9 +527,7 @@ class TestExecuteCapabilityTask:
         """Execution errors are caught and returned as failed ExecutionResponse (200)."""
         svc = _make_task_service()
         with (
-            patch(
-                "routes.capability_tasks_routes.CapabilityTasksService", return_value=svc
-            ),
+            patch("routes.capability_tasks_routes.CapabilityTasksService", return_value=svc),
             patch(
                 "routes.capability_tasks_routes.execute_capability_task",
                 new=AsyncMock(side_effect=RuntimeError("Executor failed")),
@@ -588,18 +547,14 @@ class TestExecuteCapabilityTask:
 class TestGetExecutionResult:
     def test_returns_200_for_existing_execution(self):
         svc = _make_task_service()
-        with patch(
-            "routes.capability_tasks_routes.CapabilityTasksService", return_value=svc
-        ):
+        with patch("routes.capability_tasks_routes.CapabilityTasksService", return_value=svc):
             client = TestClient(_build_app())
             resp = client.get(f"/api/tasks/capability/{TASK_ID}/executions/{EXEC_ID}")
         assert resp.status_code == 200
 
     def test_response_has_execution_id(self):
         svc = _make_task_service()
-        with patch(
-            "routes.capability_tasks_routes.CapabilityTasksService", return_value=svc
-        ):
+        with patch("routes.capability_tasks_routes.CapabilityTasksService", return_value=svc):
             client = TestClient(_build_app())
             data = client.get(f"/api/tasks/capability/{TASK_ID}/executions/{EXEC_ID}").json()
         assert data["execution_id"] == EXEC_ID
@@ -607,9 +562,7 @@ class TestGetExecutionResult:
     def test_not_found_returns_404(self):
         svc = _make_task_service()
         svc.get_execution = AsyncMock(return_value=None)
-        with patch(
-            "routes.capability_tasks_routes.CapabilityTasksService", return_value=svc
-        ):
+        with patch("routes.capability_tasks_routes.CapabilityTasksService", return_value=svc):
             client = TestClient(_build_app())
             resp = client.get(f"/api/tasks/capability/{TASK_ID}/executions/nonexistent")
         assert resp.status_code == 404
@@ -624,18 +577,14 @@ class TestGetExecutionResult:
 class TestListExecutions:
     def test_returns_200(self):
         svc = _make_task_service()
-        with patch(
-            "routes.capability_tasks_routes.CapabilityTasksService", return_value=svc
-        ):
+        with patch("routes.capability_tasks_routes.CapabilityTasksService", return_value=svc):
             client = TestClient(_build_app())
             resp = client.get(f"/api/tasks/capability/{TASK_ID}/executions")
         assert resp.status_code == 200
 
     def test_response_has_executions_and_total(self):
         svc = _make_task_service()
-        with patch(
-            "routes.capability_tasks_routes.CapabilityTasksService", return_value=svc
-        ):
+        with patch("routes.capability_tasks_routes.CapabilityTasksService", return_value=svc):
             client = TestClient(_build_app())
             data = client.get(f"/api/tasks/capability/{TASK_ID}/executions").json()
         assert "executions" in data
@@ -644,18 +593,14 @@ class TestListExecutions:
     def test_task_not_found_returns_404(self):
         svc = _make_task_service()
         svc.get_task = AsyncMock(return_value=None)
-        with patch(
-            "routes.capability_tasks_routes.CapabilityTasksService", return_value=svc
-        ):
+        with patch("routes.capability_tasks_routes.CapabilityTasksService", return_value=svc):
             client = TestClient(_build_app())
             resp = client.get("/api/tasks/capability/nonexistent/executions")
         assert resp.status_code == 404
 
     def test_status_filter_accepted(self):
         svc = _make_task_service()
-        with patch(
-            "routes.capability_tasks_routes.CapabilityTasksService", return_value=svc
-        ):
+        with patch("routes.capability_tasks_routes.CapabilityTasksService", return_value=svc):
             client = TestClient(_build_app())
             resp = client.get(f"/api/tasks/capability/{TASK_ID}/executions?status=completed")
         assert resp.status_code == 200

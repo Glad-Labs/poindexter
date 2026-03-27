@@ -7,12 +7,7 @@ Tests field validation and model behaviour for metrics schemas.
 import pytest
 from pydantic import ValidationError
 
-from schemas.metrics_schemas import (
-    CostMetric,
-    CostsResponse,
-    HealthMetrics,
-    PerformanceMetrics,
-)
+from schemas.metrics_schemas import CostMetric, CostsResponse, HealthMetrics, PerformanceMetrics
 
 
 @pytest.mark.unit

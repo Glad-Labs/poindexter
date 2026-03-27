@@ -9,20 +9,18 @@ Tests cover:
 Auth and DB are overridden via FastAPI dependency_overrides so no real I/O occurs.
 """
 
-import pytest
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from routes.auth_unified import get_current_user
 from routes.task_intent_routes import intent_router
-from utils.route_utils import get_database_dependency
-
 from tests.unit.routes.conftest import TEST_USER, make_mock_db
-
+from utils.route_utils import get_database_dependency
 
 # ---------------------------------------------------------------------------
 # Stub dataclasses matching the service layer types
@@ -36,9 +34,7 @@ class _StubIntentRequest:
     task_type: str = "blog_post"
     confidence: float = 0.92
     parameters: Dict[str, Any] = field(default_factory=lambda: {"topic": "AI trends"})
-    suggested_subtasks: List[str] = field(
-        default_factory=lambda: ["research", "creative", "qa"]
-    )
+    suggested_subtasks: List[str] = field(default_factory=lambda: ["research", "creative", "qa"])
     requires_confirmation: bool = True
     execution_strategy: str = "sequential"
 
@@ -80,9 +76,7 @@ class _StubPlanSummary:
     estimated_time: str = "45 seconds"
     estimated_cost: str = "$1.25"
     confidence: str = "High"
-    key_stages: List[str] = field(
-        default_factory=lambda: ["Research", "Creative", "QA"]
-    )
+    key_stages: List[str] = field(default_factory=lambda: ["Research", "Creative", "QA"])
     warnings: Optional[List[str]] = None
     opportunities: Optional[List[str]] = None
 
@@ -156,7 +150,10 @@ def _mock_planning_service_class():
 class TestCreateTaskFromIntent:
     """Tests for POST /api/tasks/intent."""
 
-    @patch("services.task_planning_service.TaskPlanningService", new_callable=_mock_planning_service_class)
+    @patch(
+        "services.task_planning_service.TaskPlanningService",
+        new_callable=_mock_planning_service_class,
+    )
     @patch("services.task_intent_router.TaskIntentRouter", new_callable=_mock_intent_router_class)
     def test_success_returns_execution_plan(self, MockRouter, MockPlanner):
         """Happy path: NL input is parsed, plan generated, response returned."""
@@ -186,7 +183,10 @@ class TestCreateTaskFromIntent:
         # requires_confirmation = True → ready_to_execute = False
         assert body["ready_to_execute"] is False
 
-    @patch("services.task_planning_service.TaskPlanningService", new_callable=_mock_planning_service_class)
+    @patch(
+        "services.task_planning_service.TaskPlanningService",
+        new_callable=_mock_planning_service_class,
+    )
     @patch("services.task_intent_router.TaskIntentRouter", new_callable=_mock_intent_router_class)
     def test_success_with_optional_fields(self, MockRouter, MockPlanner):
         """User_context and business_metrics are forwarded to services."""
@@ -210,7 +210,10 @@ class TestCreateTaskFromIntent:
         planner_instance = MockPlanner.return_value
         planner_instance.generate_plan.assert_called_once()
 
-    @patch("services.task_planning_service.TaskPlanningService", new_callable=_mock_planning_service_class)
+    @patch(
+        "services.task_planning_service.TaskPlanningService",
+        new_callable=_mock_planning_service_class,
+    )
     @patch("services.task_intent_router.TaskIntentRouter", new_callable=_mock_intent_router_class)
     def test_ready_to_execute_when_no_confirmation_needed(self, MockRouter, MockPlanner):
         """When intent does not require confirmation, ready_to_execute is True."""
@@ -240,14 +243,15 @@ class TestCreateTaskFromIntent:
         resp = client.post(f"{_PREFIX}/intent")
         assert resp.status_code == 422
 
-    @patch("services.task_planning_service.TaskPlanningService", new_callable=_mock_planning_service_class)
+    @patch(
+        "services.task_planning_service.TaskPlanningService",
+        new_callable=_mock_planning_service_class,
+    )
     @patch("services.task_intent_router.TaskIntentRouter")
     def test_intent_router_failure_returns_500(self, MockRouter, MockPlanner):
         """If TaskIntentRouter.route_user_input raises, endpoint returns 500."""
         instance = MockRouter.return_value
-        instance.route_user_input = AsyncMock(
-            side_effect=RuntimeError("NLP model unavailable")
-        )
+        instance.route_user_input = AsyncMock(side_effect=RuntimeError("NLP model unavailable"))
 
         client = _make_client()
         resp = client.post(
@@ -263,9 +267,7 @@ class TestCreateTaskFromIntent:
     def test_planning_service_failure_returns_500(self, MockPlanner, MockRouter):
         """If TaskPlanningService.generate_plan raises, endpoint returns 500."""
         instance = MockPlanner.return_value
-        instance.generate_plan = AsyncMock(
-            side_effect=ValueError("Invalid plan parameters")
-        )
+        instance.generate_plan = AsyncMock(side_effect=ValueError("Invalid plan parameters"))
 
         client = _make_client()
         resp = client.post(
@@ -276,7 +278,10 @@ class TestCreateTaskFromIntent:
         assert resp.status_code == 500
         assert resp.json()["detail"] == "Intent parsing failed"
 
-    @patch("services.task_planning_service.TaskPlanningService", new_callable=_mock_planning_service_class)
+    @patch(
+        "services.task_planning_service.TaskPlanningService",
+        new_callable=_mock_planning_service_class,
+    )
     @patch("services.task_intent_router.TaskIntentRouter", new_callable=_mock_intent_router_class)
     def test_warnings_propagated_to_response(self, MockRouter, MockPlanner):
         """Plan warnings should be included in the response."""

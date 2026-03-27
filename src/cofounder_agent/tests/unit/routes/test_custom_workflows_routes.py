@@ -15,23 +15,20 @@ CustomWorkflowsService is provided via dependency override.
 get_workflows_service reads from app.state — we override the dependency directly.
 """
 
-import pytest
 from datetime import datetime, timezone
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
 from routes.auth_unified import get_current_user
-from routes.custom_workflows_routes import router, get_workflows_service
-from tests.unit.routes.conftest import TEST_USER
+from routes.custom_workflows_routes import get_workflows_service, router
 from schemas.custom_workflow_schemas import (
     AvailablePhase,
-    AvailablePhasesResponse,
     CustomWorkflow,
-    WorkflowListPageResponse,
-    WorkflowListResponse,
 )
-
+from tests.unit.routes.conftest import TEST_USER
 
 WORKFLOW_ID = "wf-11111111-1111-1111-1111-111111111111"
 EXECUTION_ID = "exec-22222222-2222-2222-2222-222222222222"
@@ -199,9 +196,7 @@ class TestListCustomWorkflows:
         assert "total_count" in data
 
     def test_empty_list_returns_200(self):
-        svc = _make_svc(
-            workflows_list={"workflows": [], "total_count": 0, "has_next": False}
-        )
+        svc = _make_svc(workflows_list={"workflows": [], "total_count": 0, "has_next": False})
         client = TestClient(_build_app(svc))
         data = client.get("/api/workflows/custom").json()
         assert data["total_count"] == 0
@@ -261,36 +256,28 @@ class TestGetCustomWorkflow:
 class TestUpdateCustomWorkflow:
     def test_returns_200(self):
         client = TestClient(_build_app())
-        resp = client.put(
-            f"/api/workflows/custom/{WORKFLOW_ID}", json=VALID_WORKFLOW_PAYLOAD
-        )
+        resp = client.put(f"/api/workflows/custom/{WORKFLOW_ID}", json=VALID_WORKFLOW_PAYLOAD)
         assert resp.status_code == 200
 
     def test_value_error_not_found_returns_404(self):
         svc = _make_svc()
         svc.update_workflow = AsyncMock(side_effect=ValueError("not found"))
         client = TestClient(_build_app(svc))
-        resp = client.put(
-            f"/api/workflows/custom/{WORKFLOW_ID}", json=VALID_WORKFLOW_PAYLOAD
-        )
+        resp = client.put(f"/api/workflows/custom/{WORKFLOW_ID}", json=VALID_WORKFLOW_PAYLOAD)
         assert resp.status_code == 404
 
     def test_value_error_invalid_returns_400(self):
         svc = _make_svc()
         svc.update_workflow = AsyncMock(side_effect=ValueError("Invalid phase config"))
         client = TestClient(_build_app(svc))
-        resp = client.put(
-            f"/api/workflows/custom/{WORKFLOW_ID}", json=VALID_WORKFLOW_PAYLOAD
-        )
+        resp = client.put(f"/api/workflows/custom/{WORKFLOW_ID}", json=VALID_WORKFLOW_PAYLOAD)
         assert resp.status_code == 400
 
     def test_service_error_returns_500(self):
         svc = _make_svc()
         svc.update_workflow = AsyncMock(side_effect=RuntimeError("DB error"))
         client = TestClient(_build_app(svc))
-        resp = client.put(
-            f"/api/workflows/custom/{WORKFLOW_ID}", json=VALID_WORKFLOW_PAYLOAD
-        )
+        resp = client.put(f"/api/workflows/custom/{WORKFLOW_ID}", json=VALID_WORKFLOW_PAYLOAD)
         assert resp.status_code == 500
 
 
@@ -377,9 +364,7 @@ class TestListWorkflowExecutions:
         assert "total" in data
 
     def test_empty_executions_returns_200(self):
-        svc = _make_svc(
-            executions_list={"executions": [], "total": 0, "limit": 50, "offset": 0}
-        )
+        svc = _make_svc(executions_list={"executions": [], "total": 0, "limit": 50, "offset": 0})
         client = TestClient(_build_app(svc))
         data = client.get(f"/api/workflows/custom-executions?workflow_id={WORKFLOW_ID}").json()
         assert data["total"] == 0

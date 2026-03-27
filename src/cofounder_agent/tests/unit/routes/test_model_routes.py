@@ -12,14 +12,14 @@ Auth is router-level (dependencies=[Depends(get_current_user)]) — override on 
 FastAPI app. ModelConsolidationService is patched to avoid real provider calls.
 """
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from routes.auth_unified import get_current_user
 from routes.model_routes import models_router
-
 from tests.unit.routes.conftest import TEST_USER
 
 
@@ -237,5 +237,3 @@ class TestRtx5070Redirect:
 # ---------------------------------------------------------------------------
 # GET /api/models (legacy endpoint)
 # ---------------------------------------------------------------------------
-
-

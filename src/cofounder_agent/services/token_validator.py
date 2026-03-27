@@ -117,10 +117,10 @@ class JWTTokenValidator:
                 )
 
             return payload
-        except jwt.ExpiredSignatureError:
-            raise jwt.ExpiredSignatureError("Token has expired")
-        except jwt.InvalidTokenError:
-            raise jwt.InvalidTokenError("Invalid token")
+        except jwt.ExpiredSignatureError as exc:
+            raise jwt.ExpiredSignatureError("Token has expired") from exc
+        except jwt.InvalidTokenError as exc:
+            raise jwt.InvalidTokenError("Invalid token") from exc
 
     @staticmethod
     def validate_access_token(token: str) -> Tuple[bool, Optional[Dict[str, Any]]]:

@@ -7,17 +7,14 @@ Provides endpoints for:
 - Model recommendations
 """
 
-from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from routes.auth_unified import get_current_user
-from schemas.models_schemas import (
-    ModelInfo,
-    ModelsListResponse,
-)
+from schemas.models_schemas import ModelInfo, ModelsListResponse
+from services.logger_config import get_logger
 from services.model_consolidation_service import get_model_consolidation_service
 from services.model_constants import PROVIDER_ICONS
 
@@ -110,10 +107,12 @@ async def get_available_models(
 
     except Exception as e:
         logger.error(f"Error getting available models: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error getting available models")
+        raise HTTPException(status_code=500, detail="Error getting available models") from e
 
 
-@models_router.get("/status", response_model=Dict[str, Any], description="Get status of all model providers")
+@models_router.get(
+    "/status", response_model=Dict[str, Any], description="Get status of all model providers"
+)
 async def get_provider_status():
     """
     Get availability status of all model providers in the consolidation service.
@@ -132,7 +131,7 @@ async def get_provider_status():
 
     except Exception as e:
         logger.error(f"Error getting provider status: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error getting provider status")
+        raise HTTPException(status_code=500, detail="Error getting provider status") from e
 
 
 @models_router.get(
@@ -185,7 +184,7 @@ async def get_recommended_models():
 
     except Exception as e:
         logger.error(f"Error getting recommended models: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error getting recommended models")
+        raise HTTPException(status_code=500, detail="Error getting recommended models") from e
 
 
 @models_router.get(
@@ -202,6 +201,3 @@ async def get_rtx5070_models():
     from fastapi.responses import RedirectResponse
 
     return RedirectResponse(url="/api/models/available?vram_gb=12", status_code=301)
-
-
-

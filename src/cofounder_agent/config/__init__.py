@@ -121,6 +121,7 @@ def get_config() -> Config:
     # Mirrors the same check in token_validator.py (AuthConfig).
     if environment == "production" and secret_key == _PLACEHOLDER_SECRET:
         import logging
+
         logging.getLogger(__name__).critical(
             "[Config] SECRET_KEY is the insecure placeholder value. "
             "Set a strong SECRET_KEY environment variable before running in production."
@@ -135,9 +136,7 @@ def get_config() -> Config:
         ollama_base_url=os.getenv("OLLAMA_BASE_URL"),
         environment=environment,
         log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
-        log_format=os.getenv(
-            "LOG_FORMAT", "json" if environment == "production" else "text"
-        ),
+        log_format=os.getenv("LOG_FORMAT", "json" if environment == "production" else "text"),
         sentry_dsn=os.getenv("SENTRY_DSN"),
         sentry_enabled=os.getenv("SENTRY_ENABLED", "true").lower() in ("true", "1", "yes"),
         enable_tracing=os.getenv("ENABLE_TRACING", "false").lower() == "true",

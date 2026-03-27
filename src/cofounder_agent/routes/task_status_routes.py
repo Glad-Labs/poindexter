@@ -13,7 +13,7 @@ Sub-router for task_routes.py. Handles:
 
 import json
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -31,12 +31,7 @@ from services.database_service import DatabaseService
 from services.enhanced_status_change_service import EnhancedStatusChangeService
 from services.logger_config import get_logger
 from utils.route_utils import get_database_dependency
-from utils.task_status import (
-    TaskStatus,
-    get_allowed_transitions,
-    is_terminal,
-    is_valid_transition,
-)
+from utils.task_status import TaskStatus, get_allowed_transitions, is_terminal, is_valid_transition
 
 logger = get_logger(__name__)
 
@@ -108,11 +103,11 @@ async def update_task_status_enterprise(
         # Validate UUID format
         try:
             UUID(task_id)
-        except ValueError:
+        except ValueError as exc:
             raise HTTPException(
                 status_code=400,
                 detail=f"Invalid task ID format: {task_id}",
-            )
+            ) from exc
 
         # Fetch current task
         task = await db_service.get_task(task_id)
@@ -137,7 +132,7 @@ async def update_task_status_enterprise(
             raise HTTPException(
                 status_code=422,
                 detail="Invalid status value",
-            )
+            ) from e
 
         # Validate transition — 409 Conflict, not 422 (the request body is valid;
         # the current resource state prevents the transition)
@@ -197,7 +192,7 @@ async def update_task_status_enterprise(
         raise HTTPException(
             status_code=500,
             detail="Failed to update task status",
-        )
+        ) from e
 
 
 @status_router.put(
@@ -287,7 +282,7 @@ async def update_task_status_validated(
         raise HTTPException(
             status_code=500,
             detail="Failed to update task status",
-        )
+        ) from e
 
 
 @status_router.get(
@@ -326,8 +321,8 @@ async def get_task_status_info(
         # Validate UUID format
         try:
             UUID(task_id)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid task ID format")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid task ID format") from exc
 
         # Fetch task
         task = await db_service.get_task(task_id)
@@ -342,8 +337,8 @@ async def get_task_status_info(
         status_str = task.get("status", "pending")
         try:
             status = TaskStatus(status_str)
-        except ValueError:
-            raise HTTPException(status_code=422, detail=f"Invalid status in database: {status_str}")
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=f"Invalid status in database: {status_str}") from exc
 
         # Calculate duration
         status_updated_at = task.get("status_updated_at")
@@ -373,7 +368,7 @@ async def get_task_status_info(
         raise
     except Exception as e:
         logger.error(f"Error fetching status info for {task_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to fetch status info")
+        raise HTTPException(status_code=500, detail="Failed to fetch status info") from e
 
 
 @status_router.get(
@@ -449,7 +444,7 @@ async def get_task_status_history(
 
     except Exception as e:
         logger.error(f"Error fetching status history for {task_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to fetch status history")
+        raise HTTPException(status_code=500, detail="Failed to fetch status history") from e
 
 
 @status_router.get(
@@ -521,9 +516,7 @@ async def get_task_validation_failures(
 
     except Exception as e:
         logger.error(f"Error fetching validation failures for {task_id}: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail="Failed to fetch validation failures"
-        )
+        raise HTTPException(status_code=500, detail="Failed to fetch validation failures") from e
 
 
 @status_router.patch(
@@ -563,8 +556,8 @@ async def update_task(
         # Validate UUID format
         try:
             UUID(task_id)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid task ID format")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid task ID format") from exc
 
         # Fetch task
         task = await db_service.get_task(task_id)
@@ -615,7 +608,7 @@ async def update_task(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Failed to update task")
+        raise HTTPException(status_code=500, detail="Failed to update task") from e
 
 
 @status_router.patch(
@@ -646,9 +639,20 @@ async def update_task_content(
 
         # Filter to allowed content fields only
         allowed = {
-            "topic", "content", "title", "excerpt", "featured_image_url",
-            "seo_title", "seo_description", "seo_keywords", "task_metadata",
-            "style", "tone", "target_length", "primary_keyword", "target_audience",
+            "topic",
+            "content",
+            "title",
+            "excerpt",
+            "featured_image_url",
+            "seo_title",
+            "seo_description",
+            "seo_keywords",
+            "task_metadata",
+            "style",
+            "tone",
+            "target_length",
+            "primary_keyword",
+            "target_audience",
         }
         filtered = {k: v for k, v in updates.items() if k in allowed}
         if not filtered:
@@ -663,4 +667,4 @@ async def update_task_content(
         raise
     except Exception as e:
         logger.error(f"Failed to update task content: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to update task content")
+        raise HTTPException(status_code=500, detail="Failed to update task content") from e

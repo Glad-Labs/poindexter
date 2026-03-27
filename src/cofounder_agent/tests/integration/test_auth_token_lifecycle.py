@@ -12,14 +12,14 @@ All external dependencies (database, JWT decode) are mocked.
 """
 
 import os
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from fastapi import FastAPI, Depends
+from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from routes.auth_unified import get_current_user
 from utils.route_utils import get_database_dependency
-
 
 # ---------------------------------------------------------------------------
 # Minimal protected endpoint for testing auth
@@ -83,6 +83,7 @@ class TestAuthMiddlewareBehavior:
         # No auth_override → real get_current_user dependency used
         app = FastAPI()
         from routes.task_routes import router
+
         app.include_router(router)
         app.dependency_overrides[get_database_dependency] = lambda: db
 
@@ -96,6 +97,7 @@ class TestAuthMiddlewareBehavior:
         db = _make_mock_db()
         app = FastAPI()
         from routes.task_routes import router
+
         app.include_router(router)
         app.dependency_overrides[get_database_dependency] = lambda: db
 
@@ -130,6 +132,7 @@ class TestDevelopmentModeBypass:
             db = _make_mock_db()
             app = FastAPI()
             from routes.task_routes import router
+
             app.include_router(router)
             app.dependency_overrides[get_database_dependency] = lambda: db
 
@@ -146,15 +149,18 @@ class TestDevelopmentModeBypass:
             db = _make_mock_db()
             app = FastAPI()
             from routes.task_routes import router
+
             app.include_router(router)
             app.dependency_overrides[get_database_dependency] = lambda: db
 
             client = TestClient(app, raise_server_exceptions=False)
             response = client.get(f"{TASKS_BASE}/")
             # Protected routes require real auth even in DEVELOPMENT_MODE
-            assert response.status_code in (401, 403, 422), (
-                f"Expected auth failure on protected route in DEVELOPMENT_MODE, got {response.status_code}"
-            )
+            assert response.status_code in (
+                401,
+                403,
+                422,
+            ), f"Expected auth failure on protected route in DEVELOPMENT_MODE, got {response.status_code}"
 
     def test_optional_auth_endpoint_allows_dev_token_in_development_mode(self):
         """
@@ -163,8 +169,6 @@ class TestDevelopmentModeBypass:
         """
         with patch.dict(os.environ, {"DEVELOPMENT_MODE": "true"}, clear=False):
             from routes.auth_unified import get_current_user_optional
-            from fastapi import FastAPI
-            from fastapi.testclient import TestClient
 
             # Build a minimal app with an optional-auth endpoint
             app = FastAPI()
@@ -198,6 +202,7 @@ class TestInvalidTokenFormats:
         db = _make_mock_db()
         app = FastAPI()
         from routes.task_routes import router
+
         app.include_router(router)
         app.dependency_overrides[get_database_dependency] = lambda: db
 
@@ -213,6 +218,7 @@ class TestInvalidTokenFormats:
         db = _make_mock_db()
         app = FastAPI()
         from routes.task_routes import router
+
         app.include_router(router)
         app.dependency_overrides[get_database_dependency] = lambda: db
 
@@ -228,6 +234,7 @@ class TestInvalidTokenFormats:
         db = _make_mock_db()
         app = FastAPI()
         from routes.task_routes import router
+
         app.include_router(router)
         app.dependency_overrides[get_database_dependency] = lambda: db
 

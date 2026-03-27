@@ -20,9 +20,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from routes.auth_unified import get_current_user
-from utils.route_utils import get_database_dependency
-
 from tests.unit.routes.conftest import TEST_USER, make_mock_db
+from utils.route_utils import get_database_dependency
 
 
 def _import_publishing_module():
@@ -292,8 +291,14 @@ class TestApproveTask:
     def test_allowed_statuses_all_accepted(self):
         """All listed allowed statuses should not trigger the 400 guard."""
         allowed = [
-            "awaiting_approval", "pending", "in_progress",
-            "completed", "rejected", "failed", "approved", "published",
+            "awaiting_approval",
+            "pending",
+            "in_progress",
+            "completed",
+            "rejected",
+            "failed",
+            "approved",
+            "published",
         ]
         for status in allowed:
             mock_db = make_mock_db()
@@ -307,7 +312,9 @@ class TestApproveTask:
                 client = TestClient(app)
                 resp = self._post_approve(client)
 
-            assert resp.status_code == 200, f"Status '{status}' should be allowed but got {resp.status_code}"
+            assert (
+                resp.status_code == 200
+            ), f"Status '{status}' should be allowed but got {resp.status_code}"
 
     def test_auto_publish_creates_post(self):
         """When auto_publish=true the route should also update status to published and create a post."""
@@ -531,7 +538,9 @@ class TestPublishTask:
             ),
         ):
             mc.to_task_response.return_value = MagicMock()
-            mc.task_response_to_unified.return_value = _unified_response_dict(status="published", topic="")
+            mc.task_response_to_unified.return_value = _unified_response_dict(
+                status="published", topic=""
+            )
             client = TestClient(app)
             resp = self._post_publish(client)
 

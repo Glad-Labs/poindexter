@@ -6,6 +6,8 @@ from ..utils.data_models import BlogPost
 from ..utils.tools import CrewAIToolsFactory
 
 logger = get_logger(__name__)
+
+
 class QAAgent:
     def __init__(self, llm_client: LLMClient):
         logger.info("Initializing QAAgent (v2 - Using centralized prompt manager)")

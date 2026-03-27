@@ -6,10 +6,13 @@ that relies on web search, file reading, or code execution will produce degraded
 output when running against these mocks. Install crewai-tools for real functionality.
 """
 
-from services.logger_config import get_logger
 from typing import Optional
 
+from services.logger_config import get_logger
+
 logger = get_logger(__name__)
+
+
 class BaseTool:
     """Base class for mock tools. Logs a warning on every call."""
 
@@ -19,8 +22,7 @@ class BaseTool:
 
     def __call__(self, *args, **kwargs):
         logger.warning(
-            "[MOCK] %s called — returning placeholder. "
-            "Install crewai-tools for real results.",
+            "[MOCK] %s called — returning placeholder. " "Install crewai-tools for real results.",
             self.name,
         )
         return f"[MOCK] Tool '{self.name}' is not available (crewai_tools not installed)"
@@ -37,7 +39,9 @@ class SerperDevTool(BaseTool):
 
     def __call__(self, query: str) -> str:
         logger.warning("[MOCK] SerperDevTool search called for: %s — returning placeholder", query)
-        return f"[MOCK] No real search results available (crewai_tools not installed). Query: {query}"
+        return (
+            f"[MOCK] No real search results available (crewai_tools not installed). Query: {query}"
+        )
 
 
 class WebsiteSearchTool(BaseTool):
@@ -49,7 +53,9 @@ class WebsiteSearchTool(BaseTool):
         )
 
     def __call__(self, website: str, query: str) -> str:
-        logger.warning("[MOCK] WebsiteSearchTool called for %s: %s — returning placeholder", website, query)
+        logger.warning(
+            "[MOCK] WebsiteSearchTool called for %s: %s — returning placeholder", website, query
+        )
         return f"[MOCK] No real website search results available (crewai_tools not installed). Site: {website}, Query: {query}"
 
 
@@ -87,4 +93,4 @@ class CodeInterpreterTool(BaseTool):
 
     def __call__(self, code: str) -> str:
         logger.warning("[MOCK] CodeInterpreterTool called — returning placeholder")
-        return f"[MOCK] Code execution not available (crewai_tools not installed)"
+        return "[MOCK] Code execution not available (crewai_tools not installed)"

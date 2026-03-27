@@ -18,7 +18,6 @@ Workflow:
 """
 
 import json
-from services.logger_config import get_logger
 import re as re_module
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -31,6 +30,7 @@ from routes.auth_unified import get_current_user
 from routes.websocket_routes import broadcast_approval_status
 from services.database_service import DatabaseService
 from services.error_handler import AppError
+from services.logger_config import get_logger
 from utils.json_encoder import convert_decimals, safe_json_dumps
 from utils.route_utils import get_database_dependency
 from utils.text_utils import extract_title_from_content, normalize_seo_keywords
@@ -160,10 +160,12 @@ async def approve_task(
         # Map human_feedback to feedback if feedback is empty
         if not request.feedback and request.human_feedback:
             request.feedback = request.human_feedback
-            logger.debug(f"[APPROVAL] Mapped human_feedback to feedback")
+            logger.debug("[APPROVAL] Mapped human_feedback to feedback")
 
         logger.info(f"[APPROVAL] User {current_user.get('id')} approving task {task_id}")
-        logger.debug(f"[APPROVAL] ApprovalRequest: approved={request.approved}, auto_publish={bool(request.auto_publish)}")
+        logger.debug(
+            f"[APPROVAL] ApprovalRequest: approved={request.approved}, auto_publish={bool(request.auto_publish)}"
+        )
 
         # Fetch task from database
         task = await db_service.get_task(task_id)
@@ -206,7 +208,7 @@ async def approve_task(
         logger.debug(f"[APPROVAL] Auto-publish check: {bool(request.auto_publish)}")
 
         if request.auto_publish:
-            logger.info(f"[APPROVAL] AUTO-PUBLISH TRIGGERED!")
+            logger.info("[APPROVAL] AUTO-PUBLISH TRIGGERED!")
             # Enforce minimum quality score for auto-publish
             quality_score = task.get("quality_score")
             MIN_AUTO_PUBLISH_QUALITY = 60  # below-this, require manual publish step
@@ -418,7 +420,9 @@ async def approve_task(
                     if published_url:
                         response_data["published_url"] = published_url
             except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
-                logger.warning(f"[WARNING] Could not fetch post_id from updated task: {e}", exc_info=True)
+                logger.warning(
+                    f"[WARNING] Could not fetch post_id from updated task: {e}", exc_info=True
+                )
 
         return response_data
 
@@ -672,7 +676,9 @@ async def bulk_approve_tasks(
                         },
                     )
                 except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
-                    logger.warning(f"Failed to broadcast approval for {task_id}: {e}", exc_info=True)
+                    logger.warning(
+                        f"Failed to broadcast approval for {task_id}: {e}", exc_info=True
+                    )
 
                 successful_ids.append(task_id)
                 approved_count += 1
@@ -798,7 +804,9 @@ async def bulk_reject_tasks(
                         },
                     )
                 except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
-                    logger.warning(f"Failed to broadcast rejection for {task_id}: {e}", exc_info=True)
+                    logger.warning(
+                        f"Failed to broadcast rejection for {task_id}: {e}", exc_info=True
+                    )
 
                 successful_ids.append(task_id)
                 rejected_count += 1

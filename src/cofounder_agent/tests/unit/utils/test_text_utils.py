@@ -6,15 +6,12 @@ Covers extract_keywords_from_text, extract_keywords_from_title,
 extract_title_from_content, normalize_seo_keywords.
 """
 
-import pytest
-
 from utils.text_utils import (
     extract_keywords_from_text,
     extract_keywords_from_title,
     extract_title_from_content,
     normalize_seo_keywords,
 )
-
 
 # ---------------------------------------------------------------------------
 # extract_keywords_from_text
@@ -73,8 +70,16 @@ class TestExtractKeywordsFromText:
     def test_default_count_is_five(self):
         # Build text with 10 different high-frequency unique words
         words = [
-            "alpha", "bravo", "charlie", "delta", "echo",
-            "foxtrot", "golf", "hotel", "india", "juliet",
+            "alpha",
+            "bravo",
+            "charlie",
+            "delta",
+            "echo",
+            "foxtrot",
+            "golf",
+            "hotel",
+            "india",
+            "juliet",
         ]
         text = " ".join(w * 3 for w in words)  # each appears 3x
         result = extract_keywords_from_text(text)

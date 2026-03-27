@@ -121,9 +121,7 @@ class TestBulkCreateTasksRequest:
         assert len(req.tasks) == 1
 
     def test_multiple_tasks(self):
-        req = BulkCreateTasksRequest(
-            tasks=[self._make_item("Task 1"), self._make_item("Task 2")]
-        )
+        req = BulkCreateTasksRequest(tasks=[self._make_item("Task 1"), self._make_item("Task 2")])
         assert len(req.tasks) == 2
 
     def test_empty_tasks_allowed(self):

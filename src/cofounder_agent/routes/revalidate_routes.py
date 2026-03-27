@@ -59,7 +59,7 @@ async def trigger_nextjs_revalidation(paths: Optional[list] = None) -> bool:
     revalidate_secret = os.getenv("REVALIDATE_SECRET", "dev-secret-key")
 
     try:
-        logger.info(f"🔄 Triggering Next.js ISR revalidation...")
+        logger.info("🔄 Triggering Next.js ISR revalidation...")
         logger.info(f"   URL: {revalidate_url}")
         logger.info(f"   Paths: {paths}")
 
@@ -74,7 +74,7 @@ async def trigger_nextjs_revalidation(paths: Optional[list] = None) -> bool:
             )
 
             if response.status_code == 200:
-                logger.info(f"✅ ISR revalidation successful")
+                logger.info("✅ ISR revalidation successful")
                 return True
             else:
                 logger.warning(f"⚠️ ISR revalidation returned {response.status_code}")
@@ -82,10 +82,12 @@ async def trigger_nextjs_revalidation(paths: Optional[list] = None) -> bool:
                 return False
 
     except httpx.TimeoutException:
-        logger.warning(f"⚠️ ISR revalidation timed out (10s)", exc_info=True)
+        logger.warning("⚠️ ISR revalidation timed out (10s)", exc_info=True)
         return False
     except Exception as e:
-        logger.warning(f"⚠️ Failed to trigger ISR revalidation: {type(e).__name__}: {e}", exc_info=True)
+        logger.warning(
+            f"⚠️ Failed to trigger ISR revalidation: {type(e).__name__}: {e}", exc_info=True
+        )
         return False
 
 

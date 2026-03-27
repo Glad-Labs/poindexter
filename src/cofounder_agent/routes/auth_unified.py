@@ -38,12 +38,9 @@ def _get_github_client() -> httpx.AsyncClient:
         _github_http_client = httpx.AsyncClient(timeout=10.0)
     return _github_http_client
 
+
 from config import get_config
-from schemas.auth_schemas import (
-    GitHubCallbackRequest,
-    LogoutResponse,
-    UserProfile,
-)
+from schemas.auth_schemas import GitHubCallbackRequest, LogoutResponse, UserProfile
 from services.jwt_blocklist_service import jwt_blocklist
 from services.token_validator import AuthConfig, JWTTokenValidator
 
@@ -75,9 +72,16 @@ async def exchange_code_for_token(code: str) -> Dict[str, Any]:
     # Handle mock auth codes — only permitted in DEVELOPMENT_MODE
     if code.startswith("mock_auth_code_"):
         _cfg = get_config()
-        if _cfg.environment.lower() != "development" or os.getenv("DEVELOPMENT_MODE", "").lower() != "true":
-            logger.warning("[exchange_code_for_token] Mock auth code rejected outside DEVELOPMENT_MODE")
-            raise HTTPException(status_code=401, detail="Mock authentication is not permitted in this environment")
+        if (
+            _cfg.environment.lower() != "development"
+            or os.getenv("DEVELOPMENT_MODE", "").lower() != "true"
+        ):
+            logger.warning(
+                "[exchange_code_for_token] Mock auth code rejected outside DEVELOPMENT_MODE"
+            )
+            raise HTTPException(
+                status_code=401, detail="Mock authentication is not permitted in this environment"
+            )
         logger.info("Mock auth code detected (DEVELOPMENT_MODE), returning mock token")
         return {"access_token": "mock_github_token_dev", "expires_in": 3600}
 
@@ -127,12 +131,12 @@ async def exchange_code_for_token(code: str) -> Dict[str, Any]:
             "token_type": data.get("token_type", "bearer"),
             "scope": data.get("scope", ""),
         }
-    except httpx.TimeoutException:
+    except httpx.TimeoutException as exc:
         logger.error("GitHub token exchange timed out", exc_info=True)
-        raise HTTPException(status_code=503, detail="GitHub authentication service unavailable")
+        raise HTTPException(status_code=503, detail="GitHub authentication service unavailable") from exc
     except httpx.HTTPError as e:
         logger.error(f"GitHub token exchange HTTP error: {e}", exc_info=True)
-        raise HTTPException(status_code=401, detail="Failed to exchange code for token")
+        raise HTTPException(status_code=401, detail="Failed to exchange code for token") from e
 
 
 async def get_github_user(access_token: str) -> Dict[str, Any]:
@@ -140,9 +144,14 @@ async def get_github_user(access_token: str) -> Dict[str, Any]:
     # Handle mock auth tokens — only permitted in DEVELOPMENT_MODE
     if access_token == "mock_github_token_dev":
         _cfg = get_config()
-        if _cfg.environment.lower() != "development" or os.getenv("DEVELOPMENT_MODE", "").lower() != "true":
+        if (
+            _cfg.environment.lower() != "development"
+            or os.getenv("DEVELOPMENT_MODE", "").lower() != "true"
+        ):
             logger.warning("[get_github_user] Mock token rejected outside DEVELOPMENT_MODE")
-            raise HTTPException(status_code=401, detail="Mock authentication is not permitted in this environment")
+            raise HTTPException(
+                status_code=401, detail="Mock authentication is not permitted in this environment"
+            )
         logger.info("Mock token detected (DEVELOPMENT_MODE), returning mock user data")
         return {
             "id": 999999,
@@ -232,7 +241,7 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
         auth_header = request.headers.get("Authorization", "")
 
         if not auth_header.startswith("Bearer "):
-            logger.warning(f"[get_current_user] Invalid auth header format")
+            logger.warning("[get_current_user] Invalid auth header format")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Missing or invalid authorization header",
@@ -245,12 +254,12 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
         try:
             claims = JWTTokenValidator.verify_token(token)
         except Exception as e:
-            logger.warning(f"[get_current_user] Token verification failed", exc_info=True)
+            logger.warning("[get_current_user] Token verification failed", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired token",
                 headers={"WWW-Authenticate": "Bearer"},
-            )
+            ) from e
 
         if not claims:
             raise HTTPException(
@@ -296,7 +305,7 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication failed",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from e
 
 
 async def get_current_user_optional(request: Request) -> Optional[Dict[str, Any]]:
@@ -405,12 +414,14 @@ async def github_callback(request: Request, request_data: GitHubCallbackRequest)
         raise
     except Exception as e:
         logger.error(f"GitHub callback error: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Authentication error")
+        raise HTTPException(status_code=500, detail="Authentication error") from e
 
 
 @router.post("/github-callback")
 @limiter.limit("10/minute")
-async def github_callback_fallback(request: Request, request_data: GitHubCallbackRequest) -> Dict[str, Any]:
+async def github_callback_fallback(
+    request: Request, request_data: GitHubCallbackRequest
+) -> Dict[str, Any]:
     """
     Fallback endpoint for GitHub OAuth callback (old endpoint path).
 
@@ -548,7 +559,7 @@ async def unified_logout(
         logger.error(f"[unified_logout] Logout error for user {user_id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Logout failed"
-        )
+        ) from e
 
 
 @router.get("/me", response_model=UserProfile)

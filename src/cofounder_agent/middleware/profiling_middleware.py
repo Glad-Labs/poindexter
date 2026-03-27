@@ -5,7 +5,6 @@ Tracks request latency, identifies slow endpoints, and collects profile data.
 Stores metrics to database for historical analysis and bottleneck detection.
 """
 
-from services.logger_config import get_logger
 import time
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional
@@ -14,7 +13,11 @@ from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
+from services.logger_config import get_logger
+
 logger = get_logger(__name__)
+
+
 class ProfileData:
     """Request profile data structure"""
 

@@ -13,8 +13,7 @@ Covers:
 - _ROUTE_MANIFEST: structure is valid (4-tuples with non-empty strings)
 """
 
-import pytest
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 from utils.route_registration import (
     _ROUTE_MANIFEST,
@@ -165,7 +164,11 @@ class TestRegisterAllRoutes:
         first_key = _ROUTE_MANIFEST[0][2]
         assert result[first_key] is False
         # At least some others should have succeeded
-        assert any(v for k, v in result.items() if k != first_key and k not in ("sample_upload_router", "workflow_history_router"))
+        assert any(
+            v
+            for k, v in result.items()
+            if k != first_key and k not in ("sample_upload_router", "workflow_history_router")
+        )
 
 
 class TestRegisterWorkflowHistoryRoutes:

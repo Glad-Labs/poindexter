@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 try:
     import google.genai  # noqa: F401
+
     _GENAI_AVAILABLE = True
 except ImportError:
     _GENAI_AVAILABLE = False
@@ -95,13 +96,13 @@ class GeminiClient:
 
         if not _GENAI_AVAILABLE:
             raise ImportError(
-                "google-genai library not installed. "
-                "Install with: pip install google-genai"
+                "google-genai library not installed. " "Install with: pip install google-genai"
             )
 
         try:
             if self._client is None:
                 import google.genai as genai
+
                 self._client = genai.Client(api_key=self.api_key)
 
             response = await asyncio.wait_for(
@@ -114,17 +115,17 @@ class GeminiClient:
 
             return response.text or ""
 
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError as exc:
             logger.error(
                 f"[generate] Gemini API call timed out after {_GEMINI_TIMEOUT}s",
                 exc_info=True,
             )
-            raise RuntimeError(f"Gemini generation timed out after {_GEMINI_TIMEOUT}s")
+            raise RuntimeError(f"Gemini generation timed out after {_GEMINI_TIMEOUT}s") from exc
         except (ValueError, ImportError):
             raise
         except Exception as e:
             logger.error(f"Gemini generation failed: {e}", exc_info=True)
-            raise RuntimeError(f"Gemini generation error: {str(e)}")
+            raise RuntimeError(f"Gemini generation error: {str(e)}") from e
 
     async def chat(
         self,
@@ -152,8 +153,7 @@ class GeminiClient:
 
         if not _GENAI_AVAILABLE:
             raise ImportError(
-                "google-genai library not installed. "
-                "Install with: pip install google-genai"
+                "google-genai library not installed. " "Install with: pip install google-genai"
             )
 
         try:
@@ -161,6 +161,7 @@ class GeminiClient:
 
             if self._client is None:
                 import google.genai as genai
+
                 self._client = genai.Client(api_key=self.api_key)
 
             contents = [
@@ -180,17 +181,17 @@ class GeminiClient:
 
             return response.text or ""
 
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError as exc:
             logger.error(
                 f"[chat] Gemini API call timed out after {_GEMINI_TIMEOUT}s",
                 exc_info=True,
             )
-            raise RuntimeError(f"Gemini chat timed out after {_GEMINI_TIMEOUT}s")
+            raise RuntimeError(f"Gemini chat timed out after {_GEMINI_TIMEOUT}s") from exc
         except (ValueError, ImportError):
             raise
         except Exception as e:
             logger.error(f"Gemini chat failed: {e}", exc_info=True)
-            raise RuntimeError(f"Gemini chat error: {str(e)}")
+            raise RuntimeError(f"Gemini chat error: {str(e)}") from e
 
     async def check_health(self) -> Dict[str, Any]:
         """

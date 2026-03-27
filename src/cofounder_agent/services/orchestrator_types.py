@@ -24,15 +24,15 @@ from typing import Any, Dict, Optional
 class RequestType(str, Enum):
     """High-level request types for routing."""
 
-    CONTENT_CREATION = "content_creation"      # Blog posts, articles, copy
-    CONTENT_SUBTASK = "content_subtask"        # Research, creative, QA, format individually
+    CONTENT_CREATION = "content_creation"  # Blog posts, articles, copy
+    CONTENT_SUBTASK = "content_subtask"  # Research, creative, QA, format individually
     FINANCIAL_ANALYSIS = "financial_analysis"
     COMPLIANCE_CHECK = "compliance_check"
-    TASK_MANAGEMENT = "task_management"        # Create/manage tasks
+    TASK_MANAGEMENT = "task_management"  # Create/manage tasks
     INFORMATION_RETRIEVAL = "information_retrieval"  # Look up data, show results
-    DECISION_SUPPORT = "decision_support"      # "What should I..."
-    SYSTEM_OPERATION = "system_operation"      # Status, health, help
-    INTERVENTION = "intervention"              # Manual override, stop, etc.
+    DECISION_SUPPORT = "decision_support"  # "What should I..."
+    SYSTEM_OPERATION = "system_operation"  # Status, health, help
+    INTERVENTION = "intervention"  # Manual override, stop, etc.
 
 
 class ExecutionStatus(str, Enum):

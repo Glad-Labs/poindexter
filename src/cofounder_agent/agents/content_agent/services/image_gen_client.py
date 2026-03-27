@@ -40,7 +40,9 @@ class ImageGenClient:
                 negative_prompt=config.SD_NEGATIVE_PROMPT,  # type: ignore[attr-defined]
                 num_inference_steps=30,
                 guidance_scale=7.5,
-            ).images[0]  # type: ignore[index]
+            ).images[
+                0
+            ]  # type: ignore[index]
 
             # Save the generated image to the provided output path
             image.save(output_path)

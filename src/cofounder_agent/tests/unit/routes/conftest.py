@@ -9,11 +9,7 @@ All fixtures wire up a minimal FastAPI app with:
 This keeps tests fast and deterministic — no real DB or LLM calls.
 """
 
-import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock
-
+from unittest.mock import AsyncMock
 
 # ---------------------------------------------------------------------------
 # Shared test-user stub

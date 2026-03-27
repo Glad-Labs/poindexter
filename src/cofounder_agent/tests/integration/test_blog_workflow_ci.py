@@ -10,9 +10,9 @@ server) to use pure-Python instantiation and AsyncMock patching.
 See also: test_task_lifecycle.py for the full TestClient pattern.
 """
 
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import MagicMock
 
+import pytest
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -71,9 +71,9 @@ class TestBlogPhaseDefinitions:
         registry = PhaseRegistry.get_instance()
         phase_def = registry.get_phase("blog_generate_content")
         assert phase_def is not None
-        assert "topic" in phase_def.input_schema, (
-            "blog_generate_content.input_schema must include 'topic'"
-        )
+        assert (
+            "topic" in phase_def.input_schema
+        ), "blog_generate_content.input_schema must include 'topic'"
 
     def test_blog_phase_tags_contain_blog_keyword(self):
         """All blog phases have 'blog' in their tags list."""
@@ -84,9 +84,9 @@ class TestBlogPhaseDefinitions:
             phase_def = registry.get_phase(phase_name)
             assert phase_def is not None
             tags = [t.lower() for t in (phase_def.tags or [])]
-            assert any("blog" in t for t in tags), (
-                f"Phase '{phase_name}' missing 'blog' tag (got: {phase_def.tags})"
-            )
+            assert any(
+                "blog" in t for t in tags
+            ), f"Phase '{phase_name}' missing 'blog' tag (got: {phase_def.tags})"
 
 
 # ---------------------------------------------------------------------------
@@ -121,9 +121,9 @@ class TestWorkflowExecutorAgentLoading:
         for agent_type in BLOG_AGENT_TYPES:
             agent = executor._get_agent(agent_type)
             assert agent is not None
-            assert hasattr(agent, "run"), (
-                f"Agent '{agent_type}' (class {type(agent).__name__}) has no run() method"
-            )
+            assert hasattr(
+                agent, "run"
+            ), f"Agent '{agent_type}' (class {type(agent).__name__}) has no run() method"
 
     def test_unknown_agent_type_returns_none(self):
         """_get_agent() with an unrecognised type returns None (does not raise)."""
@@ -197,6 +197,6 @@ class TestBlogWorkflowSchema:
 
         registry = PhaseRegistry.get_instance()
         for phase in workflow.phases:
-            assert registry.get_phase(phase.name) is not None, (
-                f"Phase '{phase.name}' not in registry"
-            )
+            assert (
+                registry.get_phase(phase.name) is not None
+            ), f"Phase '{phase.name}' not in registry"

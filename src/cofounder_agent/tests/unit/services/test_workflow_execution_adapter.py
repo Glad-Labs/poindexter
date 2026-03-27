@@ -17,10 +17,10 @@ Tests cover the pure utility functions (no I/O, no LLM calls):
 No async calls, no mocking.
 """
 
-import json
-import pytest
 from datetime import datetime, timezone
 from enum import Enum
+
+import pytest
 
 from services.workflow_execution_adapter import (
     PHASE_TO_AGENT_MAP,
@@ -34,7 +34,6 @@ from services.workflow_execution_adapter import (
     _to_json_safe,
     resolve_phase_agent_name,
 )
-
 
 # ---------------------------------------------------------------------------
 # _normalize_phase_alias
@@ -142,7 +141,9 @@ class TestResolvePhaseAgentName:
         """Every phase in PHASE_TO_AGENT_MAP should resolve via phase_name."""
         for phase, expected_agent in PHASE_TO_AGENT_MAP.items():
             result = resolve_phase_agent_name(None, phase_name=phase)
-            assert result == expected_agent, f"Phase '{phase}' expected '{expected_agent}', got '{result}'"
+            assert (
+                result == expected_agent
+            ), f"Phase '{phase}' expected '{expected_agent}', got '{result}'"
 
 
 # ---------------------------------------------------------------------------
@@ -227,10 +228,19 @@ class TestToJsonSafe:
 
 
 class TestIsContentPhaseForFallback:
-    @pytest.mark.parametrize("phase", [
-        "research", "draft", "assess", "refine",
-        "image", "image_selection", "publish", "finalize",
-    ])
+    @pytest.mark.parametrize(
+        "phase",
+        [
+            "research",
+            "draft",
+            "assess",
+            "refine",
+            "image",
+            "image_selection",
+            "publish",
+            "finalize",
+        ],
+    )
     def test_known_phases_return_true(self, phase):
         assert _is_content_phase_for_fallback(phase) is True
 
@@ -241,14 +251,18 @@ class TestIsContentPhaseForFallback:
         assert _is_content_phase_for_fallback(None) is False
 
     def test_metadata_phase_type_overrides(self):
-        assert _is_content_phase_for_fallback(
-            "custom_phase", phase_metadata={"phase_type": "draft"}
-        ) is True
+        assert (
+            _is_content_phase_for_fallback("custom_phase", phase_metadata={"phase_type": "draft"})
+            is True
+        )
 
     def test_metadata_unknown_phase_type_returns_false(self):
-        assert _is_content_phase_for_fallback(
-            "custom_phase", phase_metadata={"phase_type": "unknown_type"}
-        ) is False
+        assert (
+            _is_content_phase_for_fallback(
+                "custom_phase", phase_metadata={"phase_type": "unknown_type"}
+            )
+            is False
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -274,8 +288,16 @@ class TestBuildContentFallbackPrompt:
         assert "custom_phase" in prompt
 
     def test_all_known_phases_have_instruction(self):
-        for phase in ("research", "draft", "assess", "refine", "image",
-                      "image_selection", "publish", "finalize"):
+        for phase in (
+            "research",
+            "draft",
+            "assess",
+            "refine",
+            "image",
+            "image_selection",
+            "publish",
+            "finalize",
+        ):
             prompt = _build_content_fallback_prompt(phase, {})
             assert len(prompt) > 0
             assert phase in prompt

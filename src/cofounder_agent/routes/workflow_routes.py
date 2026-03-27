@@ -8,19 +8,19 @@ Exposes WorkflowEngine capabilities via HTTP for:
 - Retrieving workflow results and execution metrics
 """
 
-from services.logger_config import get_logger
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from utils.rate_limiter import limiter
 
 from routes.auth_unified import get_current_user
+from services.logger_config import get_logger
 from services.workflow_history import WorkflowHistoryService
+from utils.rate_limiter import limiter
+from utils.route_utils import get_database_dependency
 from utils.route_utils import (
-    get_database_dependency,
-    get_workflow_engine_dependency,
     get_template_execution_service_dependency as get_template_service_dependency,
 )
+from utils.route_utils import get_workflow_engine_dependency
 
 logger = get_logger(__name__)
 
@@ -130,7 +130,7 @@ async def list_workflow_templates():
         return {"templates": templates, "total": len(templates)}
     except Exception as e:
         logger.error(f"Error listing workflow templates: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to list templates")
+        raise HTTPException(status_code=500, detail="Failed to list templates") from e
 
 
 @router.get("/status/{workflow_id}", response_model=Dict[str, Any], name="Get Workflow Status")
@@ -181,7 +181,7 @@ async def get_workflow_status(
         raise
     except Exception as e:
         logger.error(f"Error retrieving workflow status: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to retrieve workflow status")
+        raise HTTPException(status_code=500, detail="Failed to retrieve workflow status") from e
 
 
 @router.post("/{workflow_id}/pause", name="Pause Workflow")
@@ -239,7 +239,7 @@ async def pause_workflow(
         raise
     except Exception as e:
         logger.error(f"Error pausing workflow: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to pause workflow")
+        raise HTTPException(status_code=500, detail="Failed to pause workflow") from e
 
 
 @router.post("/{workflow_id}/resume", name="Resume Workflow")
@@ -297,7 +297,7 @@ async def resume_workflow(
         raise
     except Exception as e:
         logger.error(f"Error resuming workflow: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to resume workflow")
+        raise HTTPException(status_code=500, detail="Failed to resume workflow") from e
 
 
 @router.post("/{workflow_id}/cancel", name="Cancel Workflow")
@@ -356,7 +356,7 @@ async def cancel_workflow(
         raise
     except Exception as e:
         logger.error(f"Error cancelling workflow: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to cancel workflow")
+        raise HTTPException(status_code=500, detail="Failed to cancel workflow") from e
 
 
 @router.get("/executions", name="List Workflow Executions")
@@ -382,7 +382,7 @@ async def list_workflow_executions(
         }
     except Exception as e:
         logger.error(f"Error listing workflow executions: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to list workflow executions")
+        raise HTTPException(status_code=500, detail="Failed to list workflow executions") from e
 
 
 @router.post("/execute/{template_name}", name="Execute Workflow Template")
@@ -423,7 +423,7 @@ async def execute_workflow_template(
             raise HTTPException(
                 status_code=404,
                 detail=f"Template '{template_name}' not found: {e}",
-            )
+            ) from e
 
         result = await template_service.execute_template(
             template_name=template_name,
@@ -439,7 +439,7 @@ async def execute_workflow_template(
         raise
     except Exception as e:
         logger.error(f"Error executing workflow template: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to execute workflow")
+        raise HTTPException(status_code=500, detail="Failed to execute workflow") from e
 
 
 @router.get("/templates/history", name="Get Workflow Execution History")
@@ -475,7 +475,7 @@ async def get_workflow_history(
         return result
     except Exception as e:
         logger.error(f"Error retrieving workflow history: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to retrieve workflow history")
+        raise HTTPException(status_code=500, detail="Failed to retrieve workflow history") from e
 
 
 @router.post("/executions/{execution_id}/cancel", name="Cancel Workflow Execution")
@@ -536,7 +536,7 @@ async def cancel_workflow_execution(
         raise
     except Exception as e:
         logger.error(f"Error cancelling workflow execution: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to cancel workflow execution")
+        raise HTTPException(status_code=500, detail="Failed to cancel workflow execution") from e
 
 
 @router.get("/executions/{execution_id}/progress", name="Get Workflow Execution Progress")
@@ -606,4 +606,4 @@ async def get_workflow_execution_progress(
         raise
     except Exception as e:
         logger.error(f"Error retrieving workflow execution progress: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to retrieve execution progress")
+        raise HTTPException(status_code=500, detail="Failed to retrieve execution progress") from e

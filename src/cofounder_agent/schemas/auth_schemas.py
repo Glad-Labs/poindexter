@@ -3,7 +3,6 @@
 Consolidated schemas for authentication and user management.
 """
 
-
 from pydantic import BaseModel
 
 

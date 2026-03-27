@@ -4,11 +4,11 @@ Unit tests for agents/market_insight_agent/market_insight_agent.py
 Tests for MarketInsightAgent class.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from agents.market_insight_agent.market_insight_agent import MarketInsightAgent
+import pytest
 
+from agents.market_insight_agent.market_insight_agent import MarketInsightAgent
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -32,11 +32,14 @@ def _make_agent():
         }
     )
 
-    with patch(
-        "agents.market_insight_agent.market_insight_agent.ResearchAgent"
-    ) as mock_research_cls, patch(
-        "agents.market_insight_agent.market_insight_agent.CrewAIToolsFactory"
-    ) as mock_factory:
+    with (
+        patch(
+            "agents.market_insight_agent.market_insight_agent.ResearchAgent"
+        ) as mock_research_cls,
+        patch(
+            "agents.market_insight_agent.market_insight_agent.CrewAIToolsFactory"
+        ) as mock_factory,
+    ):
         mock_research_cls.return_value = AsyncMock()
         mock_factory.get_market_agent_tools.return_value = [MagicMock()]
         agent = MarketInsightAgent(llm_client=mock_llm)
@@ -63,9 +66,11 @@ class TestMarketInsightAgentInit:
         assert len(agent.tools) > 0
 
     def test_logs_info_on_init(self):
-        with patch("agents.market_insight_agent.market_insight_agent.logging") as mock_logging, \
-             patch("agents.market_insight_agent.market_insight_agent.ResearchAgent"), \
-             patch("agents.market_insight_agent.market_insight_agent.CrewAIToolsFactory"):
+        with (
+            patch("agents.market_insight_agent.market_insight_agent.logging") as mock_logging,
+            patch("agents.market_insight_agent.market_insight_agent.ResearchAgent"),
+            patch("agents.market_insight_agent.market_insight_agent.CrewAIToolsFactory"),
+        ):
             mock_llm = AsyncMock()
             MarketInsightAgent(llm_client=mock_llm)
             mock_logging.info.assert_called()

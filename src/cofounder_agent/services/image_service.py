@@ -141,9 +141,7 @@ def get_default_image_model() -> ImageModel:
     try:
         return ImageModel(model_name)
     except ValueError:
-        logger.warning(
-            f"Unknown IMAGE_MODEL '{model_name}', falling back to sdxl_lightning"
-        )
+        logger.warning(f"Unknown IMAGE_MODEL '{model_name}', falling back to sdxl_lightning")
         return ImageModel.SDXL_LIGHTNING
 
 
@@ -258,16 +256,12 @@ class ImageService:
 
         # Check prerequisites
         if not DIFFUSERS_AVAILABLE:
-            logger.warning(
-                "Diffusers library not installed - image generation will be unavailable"
-            )
+            logger.warning("Diffusers library not installed - image generation will be unavailable")
             self.sdxl_available = False
             return
 
         if not TORCH_AVAILABLE:
-            logger.warning(
-                "PyTorch not installed - image generation will be unavailable"
-            )
+            logger.warning("PyTorch not installed - image generation will be unavailable")
             self.sdxl_available = False
             return
 
@@ -291,7 +285,15 @@ class ImageService:
                     device_name = torch.cuda.get_device_name(0)
                     current_cap = capability[0] * 10 + capability[1]
                     supported_caps = [
-                        50, 60, 61, 70, 75, 80, 86, 90, 120,
+                        50,
+                        60,
+                        61,
+                        70,
+                        75,
+                        80,
+                        86,
+                        90,
+                        120,
                     ]
 
                     logger.info(
@@ -308,7 +310,9 @@ class ImageService:
                             f"Falling back to CPU mode."
                         )
                 except Exception as e:
-                    logger.warning(f"Could not verify GPU capability: {e}. Using CPU mode.", exc_info=True)
+                    logger.warning(
+                        f"Could not verify GPU capability: {e}. Using CPU mode.", exc_info=True
+                    )
             else:
                 logger.warning("CUDA not available - using CPU mode (slower)")
 
@@ -327,9 +331,7 @@ class ImageService:
             pipeline_cls = self._import_pipeline_class(config.pipeline_class)
 
             # Load model
-            logger.info(
-                f"Loading {config.display_name} ({config.model_id}) on {use_device}..."
-            )
+            logger.info(f"Loading {config.display_name} ({config.model_id}) on {use_device}...")
             load_kwargs = {
                 "torch_dtype": torch_dtype,
                 "use_safetensors": True,
@@ -338,16 +340,12 @@ class ImageService:
             if torch_dtype == torch.float16:
                 load_kwargs["variant"] = "fp16"
 
-            pipe = pipeline_cls.from_pretrained(
-                config.model_id, **load_kwargs
-            ).to(use_device)
+            pipe = pipeline_cls.from_pretrained(config.model_id, **load_kwargs).to(use_device)
 
             # Apply LoRA weights if configured (e.g. SDXL Lightning)
             if config.lora_repo:
                 logger.info(f"Loading LoRA weights from {config.lora_repo}...")
-                pipe.load_lora_weights(
-                    config.lora_repo, weight_name=config.lora_weight_name
-                )
+                pipe.load_lora_weights(config.lora_repo, weight_name=config.lora_weight_name)
                 pipe.fuse_lora()
                 logger.info("LoRA weights fused successfully")
 
@@ -372,7 +370,9 @@ class ImageService:
 
             logger.info(f"{config.display_name} loaded successfully")
             logger.info(f"   Device: {use_device.upper()}")
-            logger.info(f"   Default steps: {config.default_steps}, guidance: {config.default_guidance_scale}")
+            logger.info(
+                f"   Default steps: {config.default_steps}, guidance: {config.default_guidance_scale}"
+            )
             logger.info(
                 f"   Optimizations: {'ENABLED (xformers)' if XFORMERS_AVAILABLE else 'BASIC (no xformers)'}"
             )

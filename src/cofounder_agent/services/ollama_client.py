@@ -24,7 +24,9 @@ logger = structlog.get_logger(__name__)
 # ============================================================================
 
 DEFAULT_MODEL = os.getenv("DEFAULT_OLLAMA_MODEL", "auto")
-DEFAULT_BASE_URL = os.getenv("OLLAMA_BASE_URL") or os.getenv("OLLAMA_HOST") or "http://localhost:11434"
+DEFAULT_BASE_URL = (
+    os.getenv("OLLAMA_BASE_URL") or os.getenv("OLLAMA_HOST") or "http://localhost:11434"
+)
 
 
 # ============================================================================
@@ -94,10 +96,7 @@ class OllamaClient:
                 return self._resolved_default
 
             # Filter out embedding models
-            gen_models = [
-                m for m in models
-                if "embed" not in m.get("name", "").lower()
-            ]
+            gen_models = [m for m in models if "embed" not in m.get("name", "").lower()]
 
             if gen_models:
                 # Pick largest by file size as a reasonable default
@@ -176,8 +175,7 @@ class OllamaClient:
             }
 
         self._model_cache = profiles
-        import time as _t
-        self._cache_ts = _t.time()
+        self._cache_ts = time.time()
 
         logger.info(f"Built {len(profiles)} model profiles from Ollama")
         return profiles
@@ -392,8 +390,12 @@ class OllamaClient:
         for attempt in range(max_retries):
             try:
                 result = await self.generate(
-                    prompt=prompt, model=model, system=system,
-                    temperature=temperature, max_tokens=max_tokens, stream=False,
+                    prompt=prompt,
+                    model=model,
+                    system=system,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    stream=False,
                 )
                 if result and result.get("text"):
                     return result
@@ -401,26 +403,31 @@ class OllamaClient:
             except (httpx.ConnectError, httpx.ReadTimeout) as e:
                 last_error = e
                 if attempt < max_retries - 1:
-                    delay = base_delay * (2 ** attempt)
+                    delay = base_delay * (2**attempt)
                     logger.warning(
                         f"[generate_with_retry] Attempt {attempt + 1} failed, retrying in {delay}s",
-                        error=str(e), model=model,
+                        error=str(e),
+                        model=model,
                     )
                     await asyncio.sleep(delay)
 
             except Exception as e:
                 last_error = e
                 if attempt < max_retries - 1:
-                    delay = base_delay * (2 ** attempt)
+                    delay = base_delay * (2**attempt)
                     logger.warning(
                         f"[generate_with_retry] Attempt {attempt + 1} failed, retrying in {delay}s",
-                        error=str(e), model=model,
+                        error=str(e),
+                        model=model,
                     )
                     await asyncio.sleep(delay)
 
         logger.error(
             "[generate_with_retry] All attempts exhausted",
-            error=str(last_error), max_retries=max_retries, model=model, exc_info=True,
+            error=str(last_error),
+            max_retries=max_retries,
+            model=model,
+            exc_info=True,
         )
         raise last_error if last_error else OllamaError("Generation failed after all retries")
 
@@ -467,7 +474,9 @@ class OllamaClient:
                             continue
 
         except httpx.HTTPError as e:
-            logger.error(f"[stream_generate] Ollama streaming failed: {e}", exc_info=True, model=model)
+            logger.error(
+                f"[stream_generate] Ollama streaming failed: {e}", exc_info=True, model=model
+            )
             raise
 
 

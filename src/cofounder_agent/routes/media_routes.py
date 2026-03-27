@@ -11,7 +11,6 @@ Cost:
 - Much cheaper than DALL-E ($0.02/image)
 """
 
-import asyncio
 import logging
 import os
 import time
@@ -19,10 +18,10 @@ from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query, Request
-from utils.rate_limiter import limiter
 from pydantic import BaseModel, Field
 
 from routes.auth_unified import get_current_user
+from utils.rate_limiter import limiter
 
 # Cloud storage imports
 try:
@@ -125,10 +124,16 @@ class ImageGenerationRequest(BaseModel):
         description="Optimize for high quality output",
     )
     num_inference_steps: Optional[int] = Field(
-        None, ge=1, le=100, description="Override inference steps (defaults to model's recommended steps)"
+        None,
+        ge=1,
+        le=100,
+        description="Override inference steps (defaults to model's recommended steps)",
     )
     guidance_scale: Optional[float] = Field(
-        None, ge=0.0, le=20.0, description="Override guidance scale (defaults to model's recommended value)"
+        None,
+        ge=0.0,
+        le=20.0,
+        description="Override guidance scale (defaults to model's recommended value)",
     )
     task_id: Optional[str] = Field(
         None, description="Optional task ID for WebSocket progress tracking"
@@ -341,7 +346,7 @@ async def generate_featured_image(
             except Exception as e:
                 logger.warning(f"⚠️ STEP 1 ERROR: Pexels search failed: {e}", exc_info=True)
         else:
-            logger.info(f"ℹ️ STEP 1 SKIPPED: use_pexels=false")
+            logger.info("ℹ️ STEP 1 SKIPPED: use_pexels=false")
 
         # Step 2: Fall back to SDXL generation
         if not image and image_request.use_generation:
@@ -355,7 +360,6 @@ async def generate_featured_image(
                 logger.debug(f"   Keywords: {', '.join(keywords)}")
 
             try:
-                import os
                 from pathlib import Path
 
                 # ═══════════════════════════════════════════════════════════
@@ -376,7 +380,9 @@ async def generate_featured_image(
                 success = await image_service.generate_image(
                     prompt=generation_prompt,
                     output_path=output_path,
-                    model=ImageModel(image_request.image_model) if image_request.image_model else None,
+                    model=(
+                        ImageModel(image_request.image_model) if image_request.image_model else None
+                    ),
                     num_inference_steps=image_request.num_inference_steps,
                     guidance_scale=image_request.guidance_scale,
                     high_quality=image_request.high_quality,
@@ -399,7 +405,7 @@ async def generate_featured_image(
                     # This allows users to preview and iterate before publishing
 
                     logger.info(f"📁 Image saved locally to: {output_path}")
-                    logger.info(f"⏳ Image will be uploaded to CDN after approval")
+                    logger.info("⏳ Image will be uploaded to CDN after approval")
 
                     # Create metadata object for generated image
                     # URL is local file path for now (frontend can construct file:// URL)
@@ -418,10 +424,10 @@ async def generate_featured_image(
             except Exception as e:
                 logger.warning(f"⚠️ SDXL generation failed: {e}", exc_info=True)
         elif image and not image_request.use_generation:
-            logger.info(f"ℹ️ STEP 2 SKIPPED: Pexels found image, use_generation=false")
+            logger.info("ℹ️ STEP 2 SKIPPED: Pexels found image, use_generation=false")
         elif not image and not image_request.use_generation:
             logger.info(
-                f"ℹ️ STEP 2 SKIPPED: use_generation=false (Pexels search failed but SDXL disabled)"
+                "ℹ️ STEP 2 SKIPPED: use_generation=false (Pexels search failed but SDXL disabled)"
             )
 
         # Return result
@@ -455,7 +461,7 @@ async def generate_featured_image(
                     width=image.width,
                     height=image.height,
                 ),
-                message=f"✅ Image generated and saved locally (preview mode). Review and approve to publish.",
+                message="✅ Image generated and saved locally (preview mode). Review and approve to publish.",
                 generation_time=elapsed,
             )
 

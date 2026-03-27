@@ -12,11 +12,11 @@ Tests cover:
 No real LLM calls, no DB.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from services.market_service import MarketService
+import pytest
 
+from services.market_service import MarketService
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -65,9 +65,7 @@ class TestAnalyzeMarketTrends:
                 "agents.market_insight_agent.market_insight_agent": MagicMock(
                     MarketInsightAgent=mock_agent_class
                 ),
-                "agents.content_agent.services.llm_client": MagicMock(
-                    LLMClient=mock_llm_class
-                ),
+                "agents.content_agent.services.llm_client": MagicMock(LLMClient=mock_llm_class),
             },
         ):
             svc = _service()
@@ -102,9 +100,7 @@ class TestAnalyzeMarketTrends:
                 "agents.market_insight_agent.market_insight_agent": MagicMock(
                     MarketInsightAgent=mock_agent_class
                 ),
-                "agents.content_agent.services.llm_client": MagicMock(
-                    LLMClient=mock_llm_class
-                ),
+                "agents.content_agent.services.llm_client": MagicMock(LLMClient=mock_llm_class),
             },
         ):
             svc = _service()

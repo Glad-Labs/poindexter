@@ -14,22 +14,21 @@ These tests ensure that what the frontend receives from GET /api/posts and
 GET /api/posts/{slug} is complete enough to render a fully-featured blog post.
 """
 
-import pytest
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from routes.auth_unified import get_current_user
 from routes.cms_routes import (
-    router,
     convert_markdown_to_html,
     generate_excerpt_from_content,
     map_featured_image_to_coverimage,
+    router,
 )
-
 from tests.unit.routes.conftest import TEST_USER
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -127,6 +126,7 @@ SAMPLE_CATEGORY_ROW = {
 
 try:
     import markdown as _md_check
+
     HAS_MARKDOWN = True
 except ImportError:
     HAS_MARKDOWN = False
@@ -337,7 +337,9 @@ class TestListPostsCompleteness:
         post = data["posts"][0]
         assert post["coverImage"] is not None
         assert "data" in post["coverImage"]
-        assert post["coverImage"]["data"]["attributes"]["url"] == FULL_POST_ROW["featured_image_url"]
+        assert (
+            post["coverImage"]["data"]["attributes"]["url"] == FULL_POST_ROW["featured_image_url"]
+        )
 
     def test_content_processed_through_markdown_converter(self):
         """Content should be passed through convert_markdown_to_html (HTML if module available, raw fallback otherwise)."""

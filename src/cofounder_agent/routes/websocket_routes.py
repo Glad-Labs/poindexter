@@ -7,13 +7,13 @@ in real-time with live progress bars and status updates.
 
 import asyncio
 import json
-from services.logger_config import get_logger
 import os
 from typing import Dict, Optional, Set
 
 from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 
 from routes.auth_unified import get_current_user
+from services.logger_config import get_logger
 from services.progress_service import get_progress_service
 from services.websocket_manager import websocket_manager
 
@@ -79,7 +79,9 @@ async def _validate_ws_token(websocket: WebSocket, token: str) -> bool:
     Returns True if valid (or dev bypass accepted), False and closes the
     connection with code 1008 if invalid.
     """
-    if os.getenv("DEVELOPMENT_MODE", "false").lower() == "true" and token.lower().startswith("dev-"):
+    if os.getenv("DEVELOPMENT_MODE", "false").lower() == "true" and token.lower().startswith(
+        "dev-"
+    ):
         return True
     try:
         from services.token_validator import JWTTokenValidator
@@ -186,7 +188,9 @@ async def broadcast_approval_status(
 
 
 @websocket_router.websocket("/workflow/{execution_id}")
-async def websocket_workflow_progress(websocket: WebSocket, execution_id: str, token: str = Query(...)):
+async def websocket_workflow_progress(
+    websocket: WebSocket, execution_id: str, token: str = Query(...)
+):
     """
     WebSocket endpoint for real-time workflow execution progress.
 
@@ -376,7 +380,13 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
         for ns in list(active_namespaces):
             try:
                 await websocket_manager.disconnect(websocket, ns)
-            except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as disconnect_error:
+            except (
+                ValueError,
+                KeyError,
+                AttributeError,
+                TypeError,
+                RuntimeError,
+            ) as disconnect_error:
                 logger.debug(
                     f"[websocket_cleanup] Error disconnecting from namespace {ns}: {disconnect_error}"
                 )
@@ -428,7 +438,9 @@ async def websocket_approval_updates(websocket: WebSocket, task_id: str, token: 
                     message = json.loads(data)
                     # Could handle client requests here (e.g., refresh status)
                 except json.JSONDecodeError:
-                    logger.warning(f"Invalid JSON on approval WebSocket for {task_id}: {data}", exc_info=True)
+                    logger.warning(
+                        f"Invalid JSON on approval WebSocket for {task_id}: {data}", exc_info=True
+                    )
 
             except asyncio.TimeoutError:
                 # Send keep-alive every 60 seconds

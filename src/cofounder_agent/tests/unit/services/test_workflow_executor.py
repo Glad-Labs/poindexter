@@ -12,12 +12,12 @@ Tests cover:
 PhaseRegistry, PhaseMapper, and build_full_phase_pipeline are mocked.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from schemas.custom_workflow_schemas import CustomWorkflow, PhaseResult, WorkflowPhase
-from services.workflow_executor import WorkflowExecutor, WorkflowExecutionError
+import pytest
 
+from schemas.custom_workflow_schemas import CustomWorkflow, WorkflowPhase
+from services.workflow_executor import WorkflowExecutionError, WorkflowExecutor
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -213,9 +213,7 @@ class TestExecuteWorkflow:
             ),
             patch.object(executor, "_get_agent", return_value=agent),
         ):
-            results = await executor.execute_workflow(
-                workflow, execution_id="custom-exec-id-123"
-            )
+            results = await executor.execute_workflow(workflow, execution_id="custom-exec-id-123")
 
         assert "research" in results
 

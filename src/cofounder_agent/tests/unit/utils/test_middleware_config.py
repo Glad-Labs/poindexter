@@ -15,8 +15,7 @@ Covers:
 """
 
 import os
-import pytest
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 from utils.middleware_config import MiddlewareConfig, create_middleware_config, middleware_config
 
@@ -84,7 +83,9 @@ class TestSetupCors:
     def test_env_origins_override_defaults(self):
         mc = MiddlewareConfig()
         app = _make_app()
-        with patch.dict(os.environ, {"ALLOWED_ORIGINS": "https://example.com,https://app.example.com"}):
+        with patch.dict(
+            os.environ, {"ALLOWED_ORIGINS": "https://example.com,https://app.example.com"}
+        ):
             mc._setup_cors(app)
 
         _, kwargs = app.add_middleware.call_args
@@ -195,6 +196,7 @@ class TestSetupRateLimiting:
 class TestSetupCacheControl:
     def test_adds_cache_control_middleware(self):
         from middleware.cache_control import CacheControlMiddleware
+
         mc = MiddlewareConfig()
         app = _make_app()
         mc._setup_cache_control(app)
@@ -222,6 +224,7 @@ class TestSetupInputValidation:
 class TestSetupTokenValidation:
     def test_adds_token_validation_middleware(self):
         from middleware.token_validation import TokenValidationMiddleware
+
         mc = MiddlewareConfig()
         app = _make_app()
         mc._setup_token_validation(app)
@@ -240,6 +243,7 @@ class TestSetupTokenValidation:
 class TestSetupRequestId:
     def test_adds_request_id_middleware(self):
         from middleware.request_id import RequestIDMiddleware
+
         mc = MiddlewareConfig()
         app = _make_app()
         mc._setup_request_id(app)
@@ -257,6 +261,7 @@ class TestSetupSecurityHeaders:
 class TestSetupProfiling:
     def test_adds_profiling_middleware_when_available(self):
         from middleware.profiling_middleware import ProfilingMiddleware
+
         mc = MiddlewareConfig()
         app = _make_app()
         mc._setup_profiling(app)

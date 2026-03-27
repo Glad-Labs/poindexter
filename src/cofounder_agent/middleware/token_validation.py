@@ -9,7 +9,6 @@ Uses:
 - TokenManager for OAuth token status checking (optional)
 """
 
-from services.logger_config import get_logger
 import os
 from typing import Callable
 
@@ -17,7 +16,11 @@ from fastapi import Request, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 
+from services.logger_config import get_logger
+
 logger = get_logger(__name__)
+
+
 class TokenValidationMiddleware(BaseHTTPMiddleware):
     """
     Middleware for validating JWT tokens on protected endpoints.

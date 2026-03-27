@@ -37,12 +37,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from services.orchestrator_types import (
-    ExecutionResult,
-    ExecutionStatus,
-    Request,
-    RequestType,
-)
+from services.orchestrator_types import ExecutionResult, ExecutionStatus, Request, RequestType
 from services.websocket_event_broadcaster import emit_task_progress
 
 logger = logging.getLogger(__name__)
@@ -209,7 +204,7 @@ class UnifiedOrchestrator:
                 logger.error(f"Failed to import agent '{agent_name}': {e}", exc_info=True)
                 raise ValueError(
                     f"Agent '{agent_name}' not found in registry or importable via fallback"
-                )
+                ) from e
 
         raise ValueError(f"Unknown agent: '{agent_name}'. Not in registry or fallback mapping.")
 
@@ -564,7 +559,10 @@ class UnifiedOrchestrator:
             logger.info("   - Quality Preference: %s", quality_preference)
 
             # Generate task ID
-            task_id = "task_%s_%s" % (int(datetime.now(timezone.utc).timestamp()), uuid.uuid4().hex[:6])
+            task_id = "task_%s_%s" % (
+                int(datetime.now(timezone.utc).timestamp()),
+                uuid.uuid4().hex[:6],
+            )
 
             logger.info("[%s] Starting 5-stage pipeline for: %s", request.request_id, topic)
 
@@ -595,39 +593,76 @@ class UnifiedOrchestrator:
 
             # Stage 1: Research
             research_text = await self._run_research_stage(
-                request, task_id, topic, keywords, constraints, phase_targets,
-                compliance_reports, validate_constraints, count_words_in_content,
+                request,
+                task_id,
+                topic,
+                keywords,
+                constraints,
+                phase_targets,
+                compliance_reports,
+                validate_constraints,
+                count_words_in_content,
             )
 
             # Stage 2: Creative Draft
             draft_post, writing_style_guidance, creative_agent = await self._run_draft_stage(
-                request, task_id, topic, style, research_text, constraints,
-                phase_targets, compliance_reports, model_selections,
-                quality_preference, validate_constraints, count_words_in_content,
+                request,
+                task_id,
+                topic,
+                style,
+                research_text,
+                constraints,
+                phase_targets,
+                compliance_reports,
+                model_selections,
+                quality_preference,
+                validate_constraints,
+                count_words_in_content,
             )
 
             # Stage 3: QA Review Loop
             content, feedback, quality_score = await self._run_qa_stage(
-                request, task_id, topic, draft_post, writing_style_guidance,
-                creative_agent, constraints, phase_targets, compliance_reports,
-                model_selections, quality_preference, validate_constraints,
+                request,
+                task_id,
+                topic,
+                draft_post,
+                writing_style_guidance,
+                creative_agent,
+                constraints,
+                phase_targets,
+                compliance_reports,
+                model_selections,
+                quality_preference,
+                validate_constraints,
             )
 
             # Stage 4: Image Selection
             featured_image_url = await self._run_image_stage(
-                request, task_id, topic,
+                request,
+                task_id,
+                topic,
             )
 
             # Stage 5: Formatting / Publishing Prep
             formatted_content, excerpt = await self._run_publishing_prep_stage(
-                request, task_id, topic, content,
+                request,
+                task_id,
+                topic,
+                content,
             )
 
             # Stage 6: Assemble approval result
             return self._build_approval_result(
-                request, task_id, formatted_content, excerpt,
-                featured_image_url, feedback, quality_score,
-                compliance_reports, merge_compliance_reports, apply_strict_mode,
+                request,
+                task_id,
+                formatted_content,
+                excerpt,
+                featured_image_url,
+                feedback,
+                quality_score,
+                compliance_reports,
+                merge_compliance_reports,
+                apply_strict_mode,
             )
 
         except Exception as e:
@@ -647,8 +682,16 @@ class UnifiedOrchestrator:
     # --------------------------------------------------------------------
 
     async def _run_research_stage(
-        self, request, task_id, topic, keywords, constraints, phase_targets,
-        compliance_reports, validate_constraints, count_words_in_content,
+        self,
+        request,
+        task_id,
+        topic,
+        keywords,
+        constraints,
+        phase_targets,
+        compliance_reports,
+        validate_constraints,
+        count_words_in_content,
     ) -> str:
         """STAGE 1: Research (10% -> 25%). Returns research text."""
         logger.info("[%s] STAGE 1: Research", request.request_id)
@@ -666,7 +709,11 @@ class UnifiedOrchestrator:
             )
             research_text = research_data if isinstance(research_data, str) else str(research_data)
         except (TimeoutError, asyncio.TimeoutError):
-            logger.warning("[%s] Research timed out, continuing with empty research", request.request_id, exc_info=True)
+            logger.warning(
+                "[%s] Research timed out, continuing with empty research",
+                request.request_id,
+                exc_info=True,
+            )
             research_text = ""
 
         research_compliance = validate_constraints(
@@ -684,9 +731,19 @@ class UnifiedOrchestrator:
         return research_text
 
     async def _run_draft_stage(
-        self, request, task_id, topic, style, research_text, constraints,
-        phase_targets, compliance_reports, model_selections,
-        quality_preference, validate_constraints, count_words_in_content,
+        self,
+        request,
+        task_id,
+        topic,
+        style,
+        research_text,
+        constraints,
+        phase_targets,
+        compliance_reports,
+        model_selections,
+        quality_preference,
+        validate_constraints,
+        count_words_in_content,
     ):
         """STAGE 2: Creative Draft (25% -> 45%).
 
@@ -737,9 +794,7 @@ class UnifiedOrchestrator:
                     analysis = sample_data.get("analysis", {})
 
                     sample_title = sample_data.get("sample_title", "Unknown")
-                    logger.info(
-                        "[%s] Using writing sample: %s", request.request_id, sample_title
-                    )
+                    logger.info("[%s] Using writing sample: %s", request.request_id, sample_title)
                     logger.info(
                         "[%s]   - Detected tone: %s",
                         request.request_id,
@@ -758,8 +813,11 @@ class UnifiedOrchestrator:
 
             except Exception as e:
                 logger.warning(
-                    "[%s] Could not retrieve writing sample: %s", request.request_id, e
-, exc_info=True)
+                    "[%s] Could not retrieve writing sample: %s",
+                    request.request_id,
+                    e,
+                    exc_info=True,
+                )
 
         post = BlogPost(
             topic=topic,
@@ -780,14 +838,15 @@ class UnifiedOrchestrator:
         try:
             draft_post = await asyncio.wait_for(
                 creative_agent.run(
-                    post, is_refinement=False, word_count_target=phase_target, constraints=constraints
+                    post,
+                    is_refinement=False,
+                    word_count_target=phase_target,
+                    constraints=constraints,
                 ),
                 timeout=DRAFT_TIMEOUT_S,
             )
         except asyncio.TimeoutError:
-            raise TimeoutError(
-                "Creative draft timed out after %ds" % DRAFT_TIMEOUT_S
-            ) from None
+            raise TimeoutError("Creative draft timed out after %ds" % DRAFT_TIMEOUT_S) from None
         draft_text = draft_post.body if hasattr(draft_post, "body") else str(draft_post)
 
         creative_compliance = validate_constraints(
@@ -805,9 +864,19 @@ class UnifiedOrchestrator:
         return draft_post, writing_style_guidance, creative_agent
 
     async def _run_qa_stage(
-        self, request, task_id, topic, draft_post, writing_style_guidance,
-        creative_agent, constraints, phase_targets, compliance_reports,
-        model_selections, quality_preference, validate_constraints,
+        self,
+        request,
+        task_id,
+        topic,
+        draft_post,
+        writing_style_guidance,
+        creative_agent,
+        constraints,
+        phase_targets,
+        compliance_reports,
+        model_selections,
+        quality_preference,
+        validate_constraints,
     ):
         """STAGE 3: QA Review Loop (45% -> 60%).
 
@@ -854,9 +923,7 @@ class UnifiedOrchestrator:
 
             approval_bool = quality_result.passing
             feedback = quality_result.feedback
-            quality_score = int(
-                quality_result.overall_score
-            )  # Already 0-100 from quality_service
+            quality_score = int(quality_result.overall_score)  # Already 0-100 from quality_service
 
             # Check constraint compliance
             if constraints:
@@ -910,7 +977,8 @@ class UnifiedOrchestrator:
                     )
                 except asyncio.TimeoutError:
                     raise TimeoutError(
-                        "Creative refinement timed out after %ds (iteration %d)" % (REFINEMENT_TIMEOUT_S, iteration)
+                        "Creative refinement timed out after %ds (iteration %d)"
+                        % (REFINEMENT_TIMEOUT_S, iteration)
                     ) from None
 
         qa_compliance = validate_constraints(
@@ -973,9 +1041,17 @@ class UnifiedOrchestrator:
         return formatted_content, excerpt
 
     def _build_approval_result(
-        self, request, task_id, formatted_content, excerpt,
-        featured_image_url, feedback, quality_score,
-        compliance_reports, merge_compliance_reports, apply_strict_mode,
+        self,
+        request,
+        task_id,
+        formatted_content,
+        excerpt,
+        featured_image_url,
+        feedback,
+        quality_score,
+        compliance_reports,
+        merge_compliance_reports,
+        apply_strict_mode,
     ) -> ExecutionResult:
         """STAGE 6: Assemble the final approval result from pipeline outputs."""
         logger.info("[%s] STAGE 6: Awaiting Human Approval", request.request_id)
@@ -984,9 +1060,7 @@ class UnifiedOrchestrator:
         strict_mode_valid, strict_mode_error = apply_strict_mode(overall_compliance)
 
         if not strict_mode_valid:
-            logger.warning(
-                "[%s] STRICT MODE VIOLATION: %s", request.request_id, strict_mode_error
-            )
+            logger.warning("[%s] STRICT MODE VIOLATION: %s", request.request_id, strict_mode_error)
 
         result = {
             "task_id": task_id,

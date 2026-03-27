@@ -11,17 +11,17 @@ Rate limiter is disabled via autouse fixture.
 Auth is provided via dependency override.
 """
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock, patch
 
+import routes.media_routes as media_module
 from routes.auth_unified import get_current_user
 from routes.media_routes import media_router
-import routes.media_routes as media_module
-from utils.rate_limiter import limiter
-
 from tests.unit.routes.conftest import TEST_USER
+from utils.rate_limiter import limiter
 
 
 @pytest.fixture(autouse=True)
@@ -44,7 +44,7 @@ def reset_image_service():
 
 def _make_image_metadata(source="pexels"):
     meta = MagicMock()
-    meta.url = f"https://images.pexels.com/photos/12345/photo.jpg"
+    meta.url = "https://images.pexels.com/photos/12345/photo.jpg"
     meta.source = source
     meta.photographer = "Test Photographer"
     meta.photographer_url = "https://pexels.com/test"
@@ -90,18 +90,14 @@ VALID_GENERATE_PAYLOAD = {
 class TestGenerateFeaturedImage:
     def test_returns_200_with_pexels_result(self):
         svc = _make_image_service()
-        with patch(
-            "routes.media_routes.get_image_service", new=AsyncMock(return_value=svc)
-        ):
+        with patch("routes.media_routes.get_image_service", new=AsyncMock(return_value=svc)):
             client = TestClient(_build_app())
             resp = client.post("/api/media/generate-image", json=VALID_GENERATE_PAYLOAD)
         assert resp.status_code == 200
 
     def test_response_has_success_and_image_url(self):
         svc = _make_image_service()
-        with patch(
-            "routes.media_routes.get_image_service", new=AsyncMock(return_value=svc)
-        ):
+        with patch("routes.media_routes.get_image_service", new=AsyncMock(return_value=svc)):
             client = TestClient(_build_app())
             data = client.post("/api/media/generate-image", json=VALID_GENERATE_PAYLOAD).json()
         assert "success" in data
@@ -111,18 +107,14 @@ class TestGenerateFeaturedImage:
     def test_no_pexels_result_returns_200_with_success_false(self):
         svc = _make_image_service(pexels_result=None)
         svc.search_featured_image = AsyncMock(return_value=None)
-        with patch(
-            "routes.media_routes.get_image_service", new=AsyncMock(return_value=svc)
-        ):
+        with patch("routes.media_routes.get_image_service", new=AsyncMock(return_value=svc)):
             client = TestClient(_build_app())
             data = client.post("/api/media/generate-image", json=VALID_GENERATE_PAYLOAD).json()
         assert data["success"] is False
 
     def test_prompt_too_short_returns_422(self):
         client = TestClient(_build_app())
-        resp = client.post(
-            "/api/media/generate-image", json={"prompt": "ab", "use_pexels": True}
-        )
+        resp = client.post("/api/media/generate-image", json={"prompt": "ab", "use_pexels": True})
         assert resp.status_code == 422
 
     def test_requires_auth(self):
@@ -135,9 +127,7 @@ class TestGenerateFeaturedImage:
 
     def test_keywords_accepted(self):
         svc = _make_image_service()
-        with patch(
-            "routes.media_routes.get_image_service", new=AsyncMock(return_value=svc)
-        ):
+        with patch("routes.media_routes.get_image_service", new=AsyncMock(return_value=svc)):
             client = TestClient(_build_app())
             resp = client.post(
                 "/api/media/generate-image",
@@ -149,9 +139,7 @@ class TestGenerateFeaturedImage:
         """Errors are caught and returned as failure response (200)."""
         svc = _make_image_service()
         svc.search_featured_image = AsyncMock(side_effect=RuntimeError("Pexels down"))
-        with patch(
-            "routes.media_routes.get_image_service", new=AsyncMock(return_value=svc)
-        ):
+        with patch("routes.media_routes.get_image_service", new=AsyncMock(return_value=svc)):
             client = TestClient(_build_app())
             data = client.post("/api/media/generate-image", json=VALID_GENERATE_PAYLOAD).json()
         assert data["success"] is False
@@ -166,18 +154,14 @@ class TestGenerateFeaturedImage:
 class TestSearchImages:
     def test_returns_200_when_image_found(self):
         svc = _make_image_service()
-        with patch(
-            "routes.media_routes.get_image_service", new=AsyncMock(return_value=svc)
-        ):
+        with patch("routes.media_routes.get_image_service", new=AsyncMock(return_value=svc)):
             client = TestClient(_build_app())
             resp = client.get("/api/media/images/search?query=mountains")
         assert resp.status_code == 200
 
     def test_response_has_success_and_image_url(self):
         svc = _make_image_service()
-        with patch(
-            "routes.media_routes.get_image_service", new=AsyncMock(return_value=svc)
-        ):
+        with patch("routes.media_routes.get_image_service", new=AsyncMock(return_value=svc)):
             client = TestClient(_build_app())
             data = client.get("/api/media/images/search?query=mountains").json()
         assert "success" in data
@@ -186,9 +170,7 @@ class TestSearchImages:
     def test_no_result_returns_200_with_success_false(self):
         svc = _make_image_service()
         svc.search_featured_image = AsyncMock(return_value=None)
-        with patch(
-            "routes.media_routes.get_image_service", new=AsyncMock(return_value=svc)
-        ):
+        with patch("routes.media_routes.get_image_service", new=AsyncMock(return_value=svc)):
             client = TestClient(_build_app())
             data = client.get("/api/media/images/search?query=mountains").json()
         assert data["success"] is False
@@ -200,9 +182,7 @@ class TestSearchImages:
 
     def test_multiple_count_uses_gallery(self):
         svc = _make_image_service()
-        with patch(
-            "routes.media_routes.get_image_service", new=AsyncMock(return_value=svc)
-        ):
+        with patch("routes.media_routes.get_image_service", new=AsyncMock(return_value=svc)):
             client = TestClient(_build_app())
             data = client.get("/api/media/images/search?query=mountains&count=3").json()
         assert data["success"] is True
@@ -226,18 +206,14 @@ class TestSearchImages:
 class TestHealthCheck:
     def test_returns_200(self):
         svc = _make_image_service()
-        with patch(
-            "routes.media_routes.get_image_service", new=AsyncMock(return_value=svc)
-        ):
+        with patch("routes.media_routes.get_image_service", new=AsyncMock(return_value=svc)):
             client = TestClient(_build_app())
             resp = client.get("/api/media/health")
         assert resp.status_code == 200
 
     def test_response_has_required_fields(self):
         svc = _make_image_service()
-        with patch(
-            "routes.media_routes.get_image_service", new=AsyncMock(return_value=svc)
-        ):
+        with patch("routes.media_routes.get_image_service", new=AsyncMock(return_value=svc)):
             client = TestClient(_build_app())
             data = client.get("/api/media/health").json()
         for field in ["status", "pexels_available", "sdxl_available", "message"]:
@@ -246,9 +222,7 @@ class TestHealthCheck:
     def test_pexels_configured_returns_healthy(self):
         svc = _make_image_service()
         svc.pexels_api_key = "valid-key"
-        with patch(
-            "routes.media_routes.get_image_service", new=AsyncMock(return_value=svc)
-        ):
+        with patch("routes.media_routes.get_image_service", new=AsyncMock(return_value=svc)):
             client = TestClient(_build_app())
             data = client.get("/api/media/health").json()
         assert data["pexels_available"] is True
@@ -258,9 +232,7 @@ class TestHealthCheck:
         svc = _make_image_service()
         svc.pexels_api_key = None  # type: ignore[assignment]
         svc.sdxl_available = False
-        with patch(
-            "routes.media_routes.get_image_service", new=AsyncMock(return_value=svc)
-        ):
+        with patch("routes.media_routes.get_image_service", new=AsyncMock(return_value=svc)):
             client = TestClient(_build_app())
             data = client.get("/api/media/health").json()
         assert data["status"] == "degraded"
@@ -270,13 +242,10 @@ class TestHealthCheck:
         svc = _make_image_service()
         app = FastAPI()
         app.include_router(media_router)
-        with patch(
-            "routes.media_routes.get_image_service", new=AsyncMock(return_value=svc)
-        ):
+        with patch("routes.media_routes.get_image_service", new=AsyncMock(return_value=svc)):
             client = TestClient(app)
             resp = client.get("/api/media/health")
         assert resp.status_code == 200
-
 
 
 # S3 tests removed — S3 storage code was removed in favor of Cloudinary-only (#1187)

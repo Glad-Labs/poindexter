@@ -162,14 +162,12 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
         try:
             async with self.db_pool.acquire() as conn:
                 # Check if memories table exists
-                result = await conn.fetchval(
-                    """
+                result = await conn.fetchval("""
                     SELECT EXISTS(
                         SELECT 1 FROM information_schema.tables 
                         WHERE table_name = 'memories'
                     );
-                """
-                )
+                """)
 
                 if result:
                     self.logger.info("Memory system tables verified in PostgreSQL")
@@ -217,21 +215,17 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
                 self.recent_memories = [self._row_to_memory(row) for row in rows]
 
                 # Load user preferences
-                pref_rows = await conn.fetch(
-                    """
+                pref_rows = await conn.fetch("""
                     SELECT key, value, confidence FROM user_preferences
-                """
-                )
+                """)
                 self.user_preferences = {row["key"]: json.loads(row["value"]) for row in pref_rows}
 
                 # Load knowledge clusters
-                cluster_rows = await conn.fetch(
-                    """
+                cluster_rows = await conn.fetch("""
                     SELECT id, name, description, memories, confidence, 
                            last_updated, importance_score, topics
                     FROM knowledge_clusters
-                """
-                )
+                """)
                 self.knowledge_clusters = {
                     row["id"]: self._row_to_cluster(row) for row in cluster_rows
                 }
@@ -836,11 +830,9 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
                 # Memory statistics
                 total_memories = await conn.fetchval("SELECT COUNT(*) FROM memories")
 
-                memory_by_type_rows = await conn.fetch(
-                    """
+                memory_by_type_rows = await conn.fetch("""
                     SELECT memory_type, COUNT(*) as count FROM memories GROUP BY memory_type
-                """
-                )
+                """)
                 memory_by_type = {row["memory_type"]: row["count"] for row in memory_by_type_rows}
 
                 total_preferences = await conn.fetchval("SELECT COUNT(*) FROM user_preferences")
@@ -926,14 +918,14 @@ async def main(db_pool: asyncpg.Pool):
 
     # Get contextual knowledge
     context = await memory_system.get_contextual_knowledge("business strategy and AI automation")
-    logger.info(f"\n📚 Contextual knowledge gathered:")
+    logger.info("\n📚 Contextual knowledge gathered:")
     logger.info(f"  • Relevant memories: {len(context['relevant_memories'])}")
     logger.info(f"  • User preferences: {len(context['user_preferences'])}")
     logger.info(f"  • Knowledge clusters: {len(context['knowledge_clusters'])}")
 
     # Get system summary
     summary = await memory_system.get_memory_summary()
-    logger.info(f"\n📊 Memory System Summary:")
+    logger.info("\n📊 Memory System Summary:")
     logger.info(f"  • Total memories: {summary['total_memories']}")
     logger.info(f"  • Memory types: {summary['memory_by_type']}")
     logger.info(f"  • User preferences: {summary['total_preferences']}")

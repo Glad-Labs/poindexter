@@ -269,7 +269,9 @@ class HuggingFaceAdapter(ProviderAdapter):
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
-            logger.warning("HuggingFace generation failed", error=str(e), model=model, exc_info=True)
+            logger.warning(
+                "HuggingFace generation failed", error=str(e), model=model, exc_info=True
+            )
             raise
 
     def list_models(self) -> List[str]:
@@ -346,7 +348,9 @@ class GoogleAdapter(ProviderAdapter):
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
-            logger.warning("Google Gemini generation failed", error=str(e), model=model, exc_info=True)
+            logger.warning(
+                "Google Gemini generation failed", error=str(e), model=model, exc_info=True
+            )
             raise
 
     def list_models(self) -> List[str]:
@@ -377,7 +381,10 @@ class AnthropicAdapter(ProviderAdapter):
                 self.api_key = ProviderChecker.get_anthropic_api_key()
                 self.client = AsyncAnthropic(api_key=self.api_key)
             except ImportError:
-                logger.warning("Anthropic SDK not installed. Install with: pip install anthropic", exc_info=True)
+                logger.warning(
+                    "Anthropic SDK not installed. Install with: pip install anthropic",
+                    exc_info=True,
+                )
                 self.client = None
 
         self.provider_type = ProviderType.ANTHROPIC
@@ -459,7 +466,9 @@ class OpenAIAdapter(ProviderAdapter):
                 self.api_key = ProviderChecker.get_openai_api_key()
                 self.client = AsyncOpenAI(api_key=self.api_key)
             except ImportError:
-                logger.warning("OpenAI SDK not installed. Install with: pip install openai", exc_info=True)
+                logger.warning(
+                    "OpenAI SDK not installed. Install with: pip install openai", exc_info=True
+                )
                 self.client = None
 
         self.provider_type = ProviderType.OPENAI
@@ -591,8 +600,11 @@ class ModelConsolidationService:
                 logger.debug("Adapter initialized", provider=provider_type.value)
             except Exception as e:
                 logger.warning(
-                    "Failed to initialize adapter", provider=provider_type.value, error=str(e)
-, exc_info=True)
+                    "Failed to initialize adapter",
+                    provider=provider_type.value,
+                    error=str(e),
+                    exc_info=True,
+                )
 
     async def _check_provider_availability(self, provider_type: ProviderType) -> bool:
         """Check and cache provider availability"""
@@ -620,7 +632,9 @@ class ModelConsolidationService:
 
             return is_available
         except Exception as e:
-            logger.warning("Provider check failed", provider=provider_type.value, error=str(e), exc_info=True)
+            logger.warning(
+                "Provider check failed", provider=provider_type.value, error=str(e), exc_info=True
+            )
 
             self.provider_status[provider_type] = ProviderStatus(
                 provider=provider_type,
@@ -737,7 +751,8 @@ class ModelConsolidationService:
                     f"❌ {provider_type.value} generation failed",
                     provider=provider_type.value,
                     error=str(e),
-                    exc_info=True)
+                    exc_info=True,
+                )
                 continue
 
         # All providers failed
@@ -766,7 +781,12 @@ class ModelConsolidationService:
         if provider:
             adapter = self.adapters.get(provider)
             if adapter:
-                models = await adapter.list_models() if hasattr(adapter.list_models, '__func__') and asyncio.iscoroutinefunction(adapter.list_models) else adapter.list_models()
+                models = (
+                    await adapter.list_models()
+                    if hasattr(adapter.list_models, "__func__")
+                    and asyncio.iscoroutinefunction(adapter.list_models)
+                    else adapter.list_models()
+                )
                 return {provider.value: models}
             return {provider.value: []}
 

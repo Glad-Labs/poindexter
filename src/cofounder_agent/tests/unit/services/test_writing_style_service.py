@@ -6,11 +6,11 @@ three async service methods (get_active_style_prompt, get_style_prompt_for_gener
 get_style_prompt_for_specific_sample), all exercised against a mock DatabaseService.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from services.writing_style_service import WritingStyleService
+import pytest
 
+from services.writing_style_service import WritingStyleService
 
 # ---------------------------------------------------------------------------
 # _sanitize_field

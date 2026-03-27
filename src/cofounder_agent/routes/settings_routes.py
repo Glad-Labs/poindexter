@@ -24,8 +24,8 @@ from typing import Any, List, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
 
-from services.logger_config import get_logger
 from routes.auth_unified import get_current_user
+from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 from schemas.settings_schemas import (
@@ -48,6 +48,7 @@ def _setting_attr(setting: Any, attr: str, default: Any = None) -> Any:
     if isinstance(setting, dict):
         return setting.get(attr, default)
     return getattr(setting, attr, default)
+
 
 # Create router
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -124,7 +125,9 @@ async def list_settings(
                 value=_setting_attr(setting, "value", ""),
                 data_type=_setting_attr(setting, "data_type", SettingDataTypeEnum.STRING),
                 category=_setting_attr(setting, "category", SettingCategoryEnum.DATABASE),
-                environment=_setting_attr(setting, "environment", SettingEnvironmentEnum.PRODUCTION),
+                environment=_setting_attr(
+                    setting, "environment", SettingEnvironmentEnum.PRODUCTION
+                ),
                 description=_setting_attr(setting, "description", ""),
                 is_encrypted=_setting_attr(setting, "is_encrypted", False),
                 is_read_only=_setting_attr(setting, "is_read_only", False),
@@ -141,9 +144,9 @@ async def list_settings(
         return SettingListResponse(
             total=total, page=page, per_page=per_page, pages=pages, items=items
         )
-    except Exception:
+    except Exception as exc:
         logger.error("[list_settings] Failed to retrieve settings", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to retrieve settings")
+        raise HTTPException(status_code=500, detail="Failed to retrieve settings") from exc
 
 
 @router.get(
@@ -206,9 +209,9 @@ async def get_setting(
         )
     except HTTPException:
         raise
-    except Exception:
+    except Exception as exc:
         logger.error("[get_setting] Failed to retrieve setting", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to retrieve setting")
+        raise HTTPException(status_code=500, detail="Failed to retrieve setting") from exc
 
 
 @router.post(
@@ -308,9 +311,9 @@ async def create_setting(
         )
     except HTTPException:
         raise
-    except Exception :
+    except Exception as exc:
         logger.error("[settings_routes] Failed to create setting", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to create setting")
+        raise HTTPException(status_code=500, detail="Failed to create setting") from exc
 
 
 @router.patch(
@@ -368,7 +371,8 @@ async def batch_update_settings(
             is_encrypted=False,
             is_read_only=False,
             tags=[],
-            created_at=(_setting_attr(updated, "created_at") if updated else None) or datetime.now(timezone.utc),
+            created_at=(_setting_attr(updated, "created_at") if updated else None)
+            or datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
             created_by_id=1,
             updated_by_id=1,
@@ -376,9 +380,9 @@ async def batch_update_settings(
         )
     except HTTPException:
         raise
-    except Exception :
+    except Exception as exc:
         logger.error("[settings_routes] Failed to update settings", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to update settings")
+        raise HTTPException(status_code=500, detail="Failed to update settings") from exc
 
 
 @router.delete(
@@ -445,11 +449,17 @@ async def update_setting(
         # Preserve existing values for fields not passed in the update
         new_value = update_data.value if update_data.value else _setting_attr(existing, "value", "")
         new_description = (
-            update_data.description if update_data.description else _setting_attr(existing, "description", "")
+            update_data.description
+            if update_data.description
+            else _setting_attr(existing, "description", "")
         )
         existing_category = _setting_attr(existing, "category")
-        existing_category_str = existing_category.value if hasattr(existing_category, "value") else existing_category
-        existing_display_name = _setting_attr(existing, "display_name") or _setting_attr(existing, "key", setting_id)
+        existing_category_str = (
+            existing_category.value if hasattr(existing_category, "value") else existing_category
+        )
+        existing_display_name = _setting_attr(existing, "display_name") or _setting_attr(
+            existing, "key", setting_id
+        )
 
         success = await db_service.set_setting(
             key=setting_id,
@@ -484,9 +494,9 @@ async def update_setting(
         )
     except HTTPException:
         raise
-    except Exception :
+    except Exception as exc:
         logger.error("[settings_routes] Failed to update setting", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to update setting")
+        raise HTTPException(status_code=500, detail="Failed to update setting") from exc
 
 
 @router.delete(
@@ -545,9 +555,9 @@ async def delete_setting(
         return None
     except HTTPException:
         raise
-    except Exception :
+    except Exception as exc:
         logger.error("[settings_routes] Failed to delete setting", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to delete setting")
+        raise HTTPException(status_code=500, detail="Failed to delete setting") from exc
 
 
 # ============================================================================
@@ -669,7 +679,9 @@ async def bulk_update_settings(
             if existing:
                 cat = _setting_attr(existing, "category")
                 existing_category = cat.value if hasattr(cat, "value") else cat
-                existing_display_name = _setting_attr(existing, "display_name") or _setting_attr(existing, "key", key)
+                existing_display_name = _setting_attr(existing, "display_name") or _setting_attr(
+                    existing, "key", key
+                )
 
             success = await db_service.set_setting(
                 key=key,
@@ -685,9 +697,9 @@ async def bulk_update_settings(
             "updated_count": updated_count,
             "message": "Bulk update completed",
         }
-    except Exception :
+    except Exception as exc:
         logger.error("[settings_routes] Failed to perform bulk update", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to perform bulk update")
+        raise HTTPException(status_code=500, detail="Failed to perform bulk update") from exc
 
 
 @router.get(
@@ -736,9 +748,9 @@ async def export_settings(
             "settings": settings,
             "exported_at": datetime.now(timezone.utc).isoformat(),
         }
-    except Exception:
+    except Exception as exc:
         logger.error("[export_settings] Failed to export settings", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to export settings")
+        raise HTTPException(status_code=500, detail="Failed to export settings") from exc
 
 
 # ============================================================================

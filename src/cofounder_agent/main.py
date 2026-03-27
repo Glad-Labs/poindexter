@@ -146,14 +146,13 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
 
         # Start the scheduled post publisher (publishes posts at their scheduled time)
         from services.scheduled_publisher import run_scheduled_publisher
+
         db_pool = services["database"].pool
 
         async def _get_pool():
             return db_pool
 
-        scheduled_publisher_task = asyncio.create_task(
-            run_scheduled_publisher(_get_pool)
-        )
+        scheduled_publisher_task = asyncio.create_task(run_scheduled_publisher(_get_pool))
         logger.info("[LIFESPAN] ✅ Scheduled post publisher started")
 
         logger.info("[OK] Lifespan: Yielding control to FastAPI application. ..")
@@ -297,7 +296,9 @@ async def api_health():
                 db_health = await database_service.health_check()
                 health_data["components"]["database"] = db_health.get("status", "unknown")
             except Exception as e:  # pylint: disable=broad-except
-                logger.warning("Database health check failed in /api/health: %s", str(e), exc_info=True)
+                logger.warning(
+                    "Database health check failed in /api/health: %s", str(e), exc_info=True
+                )
                 health_data["components"]["database"] = "degraded"
         else:
             health_data["components"]["database"] = "unavailable"
@@ -328,7 +329,9 @@ async def api_health():
                 # Degrade overall status if executor is not running
                 if not executor_stats.get("running", False) and health_data["status"] == "healthy":
                     health_data["status"] = "degraded"
-                    health_data["components"]["task_executor"]["degraded_reason"] = "executor_not_running"
+                    health_data["components"]["task_executor"][
+                        "degraded_reason"
+                    ] = "executor_not_running"
             except Exception as e:  # pylint: disable=broad-except
                 logger.warning("Task executor health check failed: %s", str(e), exc_info=True)
                 health_data["components"]["task_executor"] = "unavailable"
@@ -469,7 +472,9 @@ async def process_command(
             metadata=response.get("metadata"),
         )
     except Exception as e:  # pylint: disable=broad-except
-        logger.error(f"Error processing command: {str(e)} | command={command.command}", exc_info=True)
+        logger.error(
+            f"Error processing command: {str(e)} | command={command.command}", exc_info=True
+        )
         raise HTTPException(status_code=500, detail=f"An internal error occurred: {str(e)}") from e
 
 

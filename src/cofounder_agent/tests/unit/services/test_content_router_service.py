@@ -19,11 +19,11 @@ Covers ContentTaskStore:
 Also covers get_content_task_store singleton behavior.
 """
 
+from unittest.mock import AsyncMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from services.content_router_service import ContentTaskStore, get_content_task_store
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -308,6 +308,7 @@ class TestGetContentTaskStore:
 
     def test_returns_content_task_store_instance(self):
         import services.content_router_service as mod
+
         # Reset singleton for isolated test
         mod._content_task_store = None
         db = _make_db()
@@ -318,6 +319,7 @@ class TestGetContentTaskStore:
 
     def test_second_call_returns_same_instance(self):
         import services.content_router_service as mod
+
         mod._content_task_store = None
         db = _make_db()
         store1 = get_content_task_store(database_service=db)
@@ -327,6 +329,7 @@ class TestGetContentTaskStore:
 
     def test_injects_db_service_if_not_set_on_singleton(self):
         import services.content_router_service as mod
+
         mod._content_task_store = None
         # First call without db
         store1 = get_content_task_store(database_service=None)

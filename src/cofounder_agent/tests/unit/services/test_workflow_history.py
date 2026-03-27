@@ -15,14 +15,14 @@ Tests cover:
 The asyncpg pool is fully mocked; no real database access.
 """
 
-import pytest
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from services.workflow_history import WorkflowHistoryService
+import pytest
 
+from services.workflow_history import WorkflowHistoryService
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -282,9 +282,7 @@ class TestGetUserWorkflowHistory:
         conn.fetch = AsyncMock(return_value=[row])
 
         svc = _service(conn)
-        result = await svc.get_user_workflow_history(
-            "user-1", status_filter="COMPLETED"
-        )
+        result = await svc.get_user_workflow_history("user-1", status_filter="COMPLETED")
 
         assert result["status_filter"] == "COMPLETED"
         assert result["total"] == 1

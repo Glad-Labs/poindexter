@@ -10,14 +10,17 @@ Features:
 """
 
 import asyncio
-from services.logger_config import get_logger
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 from uuid import uuid4
 
+from services.logger_config import get_logger
+
 logger = get_logger(__name__)
+
+
 class CommandStatus(str, Enum):
     """Command execution status"""
 
@@ -218,7 +221,7 @@ class CommandQueue:
 
     async def clear_old_commands(self, max_age_hours: int = 24):
         """Clear old completed commands"""
-        from datetime import datetime, timedelta, timezone
+        from datetime import timedelta
 
         now = datetime.now(timezone.utc)
         cutoff = now - timedelta(hours=max_age_hours)

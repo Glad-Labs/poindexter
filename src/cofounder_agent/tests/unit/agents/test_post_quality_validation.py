@@ -20,8 +20,8 @@ Tests cover:
 """
 
 import pytest
-from agents.content_agent.utils.data_models import BlogPost, ImageDetails
 
+from agents.content_agent.utils.data_models import BlogPost, ImageDetails
 
 # ---------------------------------------------------------------------------
 # Fixtures: Realistic pipeline output data
@@ -152,39 +152,36 @@ class TestPostCompletenessForPublishing:
         """Slug must contain only lowercase alphanumeric chars and hyphens."""
         post = _make_full_post()
         import re
-        assert re.match(r"^[a-z0-9]+(?:-[a-z0-9]+)*$", post.slug), (
-            f"Slug '{post.slug}' is not URL-safe"
-        )
+
+        assert re.match(
+            r"^[a-z0-9]+(?:-[a-z0-9]+)*$", post.slug
+        ), f"Slug '{post.slug}' is not URL-safe"
 
     def test_meta_description_length_seo_optimal(self):
         """Meta description should be between 50 and 160 chars for SEO."""
         post = _make_full_post()
         desc_len = len(post.meta_description)
-        assert 50 <= desc_len <= 160, (
-            f"Meta description length {desc_len} is outside SEO optimal range (50-160)"
-        )
+        assert (
+            50 <= desc_len <= 160
+        ), f"Meta description length {desc_len} is outside SEO optimal range (50-160)"
 
     def test_title_length_seo_optimal(self):
         """Title should be under 70 characters for search engine display."""
         post = _make_full_post()
-        assert len(post.title) <= 70, (
-            f"Title length {len(post.title)} exceeds 70-char SEO limit"
-        )
+        assert len(post.title) <= 70, f"Title length {len(post.title)} exceeds 70-char SEO limit"
 
     def test_content_has_markdown_headings(self):
         """Published content should have structured headings (H1, H2, or H3)."""
         post = _make_full_post()
-        assert "## " in post.raw_content or "# " in post.raw_content, (
-            "Content lacks markdown headings for proper structure"
-        )
+        assert (
+            "## " in post.raw_content or "# " in post.raw_content
+        ), "Content lacks markdown headings for proper structure"
 
     def test_content_has_sufficient_word_count(self):
         """Blog post content should meet minimum word count (300+)."""
         post = _make_full_post()
         word_count = len(post.raw_content.split())
-        assert word_count >= 300, (
-            f"Content has only {word_count} words; minimum 300 expected"
-        )
+        assert word_count >= 300, f"Content has only {word_count} words; minimum 300 expected"
 
     def test_images_present_with_alt_text(self):
         """Published post should have at least one image with alt text."""
@@ -192,9 +189,9 @@ class TestPostCompletenessForPublishing:
         assert post.images is not None and len(post.images) > 0, "No images attached"
         for img in post.images:
             assert img.public_url is not None, "Image missing public_url"
-            assert img.alt_text is not None and len(img.alt_text) > 0, (
-                "Image missing alt_text (accessibility requirement)"
-            )
+            assert (
+                img.alt_text is not None and len(img.alt_text) > 0
+            ), "Image missing alt_text (accessibility requirement)"
 
     def test_category_populated(self):
         """Post must have a category for content organization."""
@@ -215,7 +212,11 @@ class TestPostCompletenessForPublishing:
         """Post should have a writing style for consistency."""
         post = _make_full_post()
         assert post.writing_style in {
-            "technical", "narrative", "listicle", "educational", "thought-leadership"
+            "technical",
+            "narrative",
+            "listicle",
+            "educational",
+            "thought-leadership",
         }
 
 
@@ -238,16 +239,16 @@ class TestQualityScoreTracking:
         """Quality should generally improve across refinement iterations."""
         post = _make_full_post()
         # Final score should be higher than the first
-        assert post.quality_scores[-1] > post.quality_scores[0], (
-            "Final quality score should be higher than initial"
-        )
+        assert (
+            post.quality_scores[-1] > post.quality_scores[0]
+        ), "Final quality score should be higher than initial"
 
     def test_final_quality_above_threshold(self):
         """Final quality score should meet the 75-point threshold."""
         post = _make_full_post()
-        assert post.quality_scores[-1] >= 75.0, (
-            f"Final quality {post.quality_scores[-1]} below 75-point threshold"
-        )
+        assert (
+            post.quality_scores[-1] >= 75.0
+        ), f"Final quality {post.quality_scores[-1]} below 75-point threshold"
 
     def test_qa_feedback_accumulates_across_rounds(self):
         """QA feedback should accumulate from all refinement rounds."""
@@ -271,7 +272,9 @@ class TestQualityScoreTracking:
             post.quality_scores[i] - post.quality_scores[i - 1]
             for i in range(1, len(post.quality_scores))
         ]
-        plateau = all(delta < 2.0 for delta in improvements[-2:]) if len(improvements) >= 2 else False
+        plateau = (
+            all(delta < 2.0 for delta in improvements[-2:]) if len(improvements) >= 2 else False
+        )
         assert plateau is True, "Should detect quality plateau for early exit"
 
     def test_refinement_count_matches_extra_scores(self):
@@ -304,26 +307,26 @@ class TestImageMetadataCompleteness:
         """Every image must have a public URL for rendering."""
         post = _make_full_post()
         for i, img in enumerate(post.images):
-            assert img.public_url is not None and img.public_url.startswith("http"), (
-                f"Image {i} missing valid public_url"
-            )
+            assert img.public_url is not None and img.public_url.startswith(
+                "http"
+            ), f"Image {i} missing valid public_url"
 
     def test_all_images_have_alt_text(self):
         """Every image must have alt text for WCAG compliance."""
         post = _make_full_post()
         for i, img in enumerate(post.images):
-            assert img.alt_text is not None and len(img.alt_text) >= 10, (
-                f"Image {i} alt_text too short or missing (WCAG 1.1.1)"
-            )
+            assert (
+                img.alt_text is not None and len(img.alt_text) >= 10
+            ), f"Image {i} alt_text too short or missing (WCAG 1.1.1)"
 
     def test_image_alt_text_not_generic(self):
         """Alt text should be descriptive, not generic like 'image' or 'photo'."""
         post = _make_full_post()
         generic_patterns = {"image", "photo", "picture", "img", "untitled"}
         for img in post.images:
-            assert img.alt_text.lower().strip() not in generic_patterns, (
-                f"Alt text '{img.alt_text}' is too generic"
-            )
+            assert (
+                img.alt_text.lower().strip() not in generic_patterns
+            ), f"Alt text '{img.alt_text}' is too generic"
 
     def test_post_without_images_still_valid(self):
         """A post with no images should still be a valid model."""
@@ -388,28 +391,38 @@ class TestContentStructureValidation:
         """Content must not contain placeholder text from the pipeline."""
         post = _make_full_post()
         placeholders = [
-            "[INSERT", "[TODO", "[PLACEHOLDER", "Lorem ipsum",
-            "Content here...", "[YOUR", "[EDIT",
+            "[INSERT",
+            "[TODO",
+            "[PLACEHOLDER",
+            "Lorem ipsum",
+            "Content here...",
+            "[YOUR",
+            "[EDIT",
         ]
         content_lower = post.raw_content.lower()
         for placeholder in placeholders:
-            assert placeholder.lower() not in content_lower, (
-                f"Content contains placeholder text: {placeholder}"
-            )
+            assert (
+                placeholder.lower() not in content_lower
+            ), f"Content contains placeholder text: {placeholder}"
 
     def test_content_no_prompt_leakage(self):
         """Content must not leak LLM prompt instructions."""
         post = _make_full_post()
         prompt_leaks = [
-            "as an ai", "i'm an ai", "as a language model",
-            "i cannot", "i don't have access", "my training data",
-            "openai", "anthropic", "claude", "gpt-4",
+            "as an ai",
+            "i'm an ai",
+            "as a language model",
+            "i cannot",
+            "i don't have access",
+            "my training data",
+            "openai",
+            "anthropic",
+            "claude",
+            "gpt-4",
         ]
         content_lower = post.raw_content.lower()
         for leak in prompt_leaks:
-            assert leak not in content_lower, (
-                f"Content contains prompt leakage: '{leak}'"
-            )
+            assert leak not in content_lower, f"Content contains prompt leakage: '{leak}'"
 
 
 # ---------------------------------------------------------------------------
@@ -428,9 +441,7 @@ class TestMetadataCoordination:
         slug_words = set(post.slug.split("-"))
         title_words = {w.lower() for w in post.title.split() if len(w) > 3}
         overlap = slug_words & title_words
-        assert len(overlap) >= 2, (
-            f"Slug '{post.slug}' doesn't appear to match title '{post.title}'"
-        )
+        assert len(overlap) >= 2, f"Slug '{post.slug}' doesn't appear to match title '{post.title}'"
 
     def test_meta_description_relates_to_topic(self):
         """Meta description should reference the post topic."""
@@ -439,9 +450,9 @@ class TestMetadataCoordination:
         topic_words = {w.lower() for w in post.topic.split() if len(w) > 3}
         desc_lower = post.meta_description.lower()
         matches = {w for w in topic_words if w in desc_lower}
-        assert len(matches) >= 1, (
-            f"Meta description doesn't reference topic keywords: {topic_words}"
-        )
+        assert (
+            len(matches) >= 1
+        ), f"Meta description doesn't reference topic keywords: {topic_words}"
 
     def test_research_data_has_sources(self):
         """Research data should include sources for content credibility."""
@@ -467,9 +478,18 @@ class TestMetadataCoordination:
         post = _make_full_post()
         data = post.model_dump()
         required_keys = {
-            "topic", "primary_keyword", "target_audience", "category",
-            "title", "slug", "meta_description", "raw_content",
-            "images", "quality_scores", "qa_feedback", "status",
+            "topic",
+            "primary_keyword",
+            "target_audience",
+            "category",
+            "title",
+            "slug",
+            "meta_description",
+            "raw_content",
+            "images",
+            "quality_scores",
+            "qa_feedback",
+            "status",
         }
         missing = required_keys - set(data.keys())
         assert not missing, f"Serialization missing keys: {missing}"

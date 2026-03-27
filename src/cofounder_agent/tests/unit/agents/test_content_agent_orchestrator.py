@@ -4,8 +4,9 @@ Unit tests for agents/content_agent/orchestrator.py
 Tests for ContentAgentOrchestrator class.
 """
 
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 from agents.content_agent.orchestrator import ContentAgentOrchestrator
 
