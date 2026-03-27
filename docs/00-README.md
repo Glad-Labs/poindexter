@@ -17,15 +17,15 @@
 
 ## 🎯 Core Documentation - 7 Essential Files
 
-| Component                   | File                                                                       |
-| --------------------------- | -------------------------------------------------------------------------- |
-| Fundamentals & Setup        | [01-SETUP_AND_OVERVIEW.md](01-SETUP_AND_OVERVIEW.md)                       |
-| System Architecture         | [02-ARCHITECTURE_AND_DESIGN.md](02-ARCHITECTURE_AND_DESIGN.md)             |
-| Deployment & Infrastructure | [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](03-DEPLOYMENT_AND_INFRASTRUCTURE.md) |
-| Development Workflow        | [04-DEVELOPMENT_WORKFLOW.md](04-DEVELOPMENT_WORKFLOW.md)                   |
-| AI Agents & Integration     | [05-AI_AGENTS_AND_INTEGRATION.md](05-AI_AGENTS_AND_INTEGRATION.md)         |
-| Operations & Maintenance    | [06-OPERATIONS_AND_MAINTENANCE.md](06-OPERATIONS_AND_MAINTENANCE.md)       |
-| Environment & Variables     | [07-BRANCH_SPECIFIC_VARIABLES.md](07-BRANCH_SPECIFIC_VARIABLES.md)         |
+| Component                   | File                                       |
+| --------------------------- | ------------------------------------------ |
+| Fundamentals & Setup        | [01-Getting-Started/](01-Getting-Started/) |
+| System Architecture         | [02-Architecture/](02-Architecture/)       |
+| Deployment & Infrastructure | [05-Operations/](05-Operations/)           |
+| Development Workflow        | [04-Development/](04-Development/)         |
+| AI Agents & Integration     | [03-Features/](03-Features/)               |
+| Operations & Maintenance    | [05-Operations/](05-Operations/)           |
+| Environment & Variables     | [reference/](reference/)                   |
 
 ---
 
@@ -38,16 +38,16 @@
 
 ## 📁 Documentation Structure Overview
 
-### 1. Numbered Core Documentation (7 Files) ✅ CURRENT
+### 1. Section-Based Documentation ✅ CURRENT
 
 - [00-README.md](00-README.md) - Navigation hub
-- [01-SETUP_AND_OVERVIEW.md](01-SETUP_AND_OVERVIEW.md) - Getting started
-- [02-ARCHITECTURE_AND_DESIGN.md](02-ARCHITECTURE_AND_DESIGN.md) - System Design
-- [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](03-DEPLOYMENT_AND_INFRASTRUCTURE.md) - Deployment & Infrastructure
-- [04-DEVELOPMENT_WORKFLOW.md](04-DEVELOPMENT_WORKFLOW.md) - Development Workflow
-- [05-AI_AGENTS_AND_INTEGRATION.md](05-AI_AGENTS_AND_INTEGRATION.md) - AI Agents & Integration
-- [06-OPERATIONS_AND_MAINTENANCE.md](06-OPERATIONS_AND_MAINTENANCE.md) - Operations & Maintenance
-- [07-BRANCH_SPECIFIC_VARIABLES.md](07-BRANCH_SPECIFIC_VARIABLES.md) - Branch-Specific Variables
+- [01-Getting-Started/](01-Getting-Started/) - Setup & onboarding
+- [02-Architecture/](02-Architecture/) - System design & multi-agent pipeline
+- [03-Features/](03-Features/) - Feature documentation
+- [04-Development/](04-Development/) - Development workflow & testing
+- [05-Operations/](05-Operations/) - Deployment, operations & maintenance
+- [06-Security/](06-Security/) - Security documentation
+- [07-Appendices/](07-Appendices/) - Version history & appendices
 
 ### 2. Decisions (3 Files) ✅ ACTIVE
 

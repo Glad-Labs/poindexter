@@ -1,7 +1,6 @@
 # 📋 API Contract Reference
 
-**Version:** 2.0 (Phase 6+)  
-**Current:** 1.0 in production  
+**Version:** 1.0
 **Base URL:** `https://api.glad-labs.com` (or `http://localhost:8000` local)  
 **Status:** ✅ Production Ready
 
@@ -15,38 +14,40 @@ Complete documentation of all REST API endpoints for the Glad Labs Co-Founder sy
 
 - **RESTful:** Standard HTTP methods and status codes
 - **JSON:** All requests/responses in JSON format
-- **Versioning:** URL-based versioning (`/api/v1/`, `/api/v2/`)
+- **Versioning:** No version prefix — all endpoints at `/api/{resource}`
 - **Authentication:** Bearer token in Authorization header
-- **Rate Limiting:** 1000 requests/minute per API key
+- **Rate Limiting:** 100 requests/minute per API key
 - **Pagination:** Limit/offset for list endpoints
 
 ---
 
 ## 🔐 Authentication
 
-### API Key
+### GitHub OAuth + JWT
 
-All requests require authentication:
+All protected requests require a JWT token obtained via GitHub OAuth:
 
 ```bash
-curl -H "Authorization: Bearer YOUR_API_KEY" \
+curl -H "Authorization: Bearer <JWT_TOKEN>" \
      https://api.glad-labs.com/api/tasks
 ```
 
-### Getting an API Key
+### Authentication Flow
 
-1. Log in to Oversight Hub
-2. Go to Settings → API Keys
-3. Click "Create New Key"
-4. Copy the key immediately (it won't be shown again)
-5. Use in requests
+1. User initiates GitHub OAuth via `GET /api/auth/login`
+2. GitHub redirects back with auth code to `/api/auth/callback`
+3. Backend validates and issues a JWT token
+4. Client includes JWT in `Authorization: Bearer <token>` header
+
+### Development Mode
+
+When `DEVELOPMENT_MODE=true`, send `Authorization: Bearer dev-token` to bypass OAuth.
 
 ### Token Format
 
-- **Type:** Bearer token
-- **Length:** 32+ characters
-- **Rotation:** Rotate every 90 days
-- **Revocation:** Immediate via UI
+- **Type:** JWT Bearer token
+- **Signing:** HS256 with `JWT_SECRET_KEY`
+- **Revocation:** Token blocklist checked on each request
 
 ---
 
@@ -69,13 +70,12 @@ curl https://api.glad-labs.com/api/health
 ```json
 {
   "status": "healthy",
-  "timestamp": "2025-11-14T10:30:00Z",
-  "version": "1.0.0",
-  "services": {
+  "service": "glad-labs-cofounder",
+  "version": "0.1.0",
+  "timestamp": "2026-03-26T10:30:00Z",
+  "components": {
     "database": "connected",
-    "cache": "connected",
-    "agents": "ready",
-    "models": "ready"
+    "task_executor": "running"
   }
 }
 ```
