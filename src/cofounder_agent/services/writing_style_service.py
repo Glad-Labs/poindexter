@@ -5,13 +5,15 @@ Service layer for managing and retrieving writing samples for LLM prompt integra
 Handles retrieval of active writing sample and formatting for inclusion in system prompts.
 """
 
-from services.logger_config import get_logger
 import re
 from typing import Any, Dict, Optional
 
 from services.database_service import DatabaseService
+from services.logger_config import get_logger
 
 logger = get_logger(__name__)
+
+
 class WritingStyleService:
     """Service for managing writing samples and style guidance"""
 
@@ -147,7 +149,8 @@ class WritingStyleService:
             return text
         if cls._INJECTION_PATTERNS.search(text):
             logger.warning(
-                "[writing_style] Possible prompt injection in %s field — patterns stripped.", field_name
+                "[writing_style] Possible prompt injection in %s field — patterns stripped.",
+                field_name,
             )
             return cls._INJECTION_PATTERNS.sub("[FILTERED]", text)
         return text

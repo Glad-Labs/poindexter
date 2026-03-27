@@ -6,6 +6,7 @@ excerpt) to support campaign briefs and task context (#116).
 """
 
 from services.logger_config import get_logger
+
 logger = get_logger(__name__)
 async def up(pool) -> None:
     """Add description column to content_tasks if it doesn't already exist."""

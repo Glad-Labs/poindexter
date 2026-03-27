@@ -19,11 +19,12 @@ Eliminates:
 - Unclear error semantics
 """
 
-from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
+
+from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 # ============================================================================

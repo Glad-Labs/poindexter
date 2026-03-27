@@ -128,7 +128,7 @@ async def subscribe_to_newsletter(
 
         return NewsletterSubscribeResponse(
             success=True,
-            message=f"Successfully subscribed to newsletter and campaign updates",
+            message="Successfully subscribed to newsletter and campaign updates",
             subscriber_id=subscriber_id,
         )
 
@@ -137,7 +137,7 @@ async def subscribe_to_newsletter(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to process subscription",
-        )
+        ) from e
 
 
 @router.post("/unsubscribe")
@@ -170,7 +170,9 @@ async def unsubscribe_from_newsletter(
         )
 
         if result == "UPDATE 0":
-            logger.info(f"[newsletter_unsubscribe] No active subscription found for email (not revealing to client)")
+            logger.info(
+                "[newsletter_unsubscribe] No active subscription found for email (not revealing to client)"
+            )
         else:
             logger.info(f"[newsletter_unsubscribe] Successfully unsubscribed: {payload.email}")
 
@@ -184,7 +186,7 @@ async def unsubscribe_from_newsletter(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to process unsubscribe",
-        )
+        ) from e
 
 
 @router.get("/subscribers/count")
@@ -194,12 +196,10 @@ async def get_subscriber_count(
 ):
     """Get total active newsletter subscribers count"""
     try:
-        count = await db.pool.fetchval(
-            """
+        count = await db.pool.fetchval("""
             SELECT COUNT(*) FROM newsletter_subscribers 
             WHERE unsubscribed_at IS NULL AND verified = TRUE
-            """
-        )
+            """)
 
         return {"success": True, "subscriber_count": count or 0}
     except Exception as e:
@@ -207,4 +207,4 @@ async def get_subscriber_count(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch subscriber count",
-        )
+        ) from e

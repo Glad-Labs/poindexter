@@ -2,9 +2,9 @@
 
 **Last Updated:** March 20, 2026
 **Status:** ✅ Production Ready
-**Test Framework:** Vitest (oversight-hub) + Jest (public-site) + pytest (Backend)
+**Test Framework:** Jest (public-site) + pytest (Backend)
 **Coverage Goal:** >80% for critical paths
-**Current Status:** ✅ 153 Playwright E2E, ✅ ~2,050 Vitest (oversight-hub), ✅ ~5,500 pytest (backend)
+**Current Status:** ✅ 153 Playwright E2E, ✅ ~482 Jest (public-site), ✅ ~5,476 pytest (backend)
 
 ---
 
@@ -22,14 +22,7 @@
 
 ## 🏗️ Test Framework Overview
 
-### Frontend: Vitest (oversight-hub) + Jest (public-site)
-
-**oversight-hub uses Vitest:**
-
-- Fast, Vite-native test runner (not Jest)
-- Compatible with Jest API (`describe`, `it`, `expect`, `vi.fn()`)
-- Run: `npx vitest run --pool=forks --poolOptions.forks.maxForks=4`
-- Config: `web/oversight-hub/vitest.config.ts`
+### Frontend: Jest (public-site)
 
 **public-site uses Jest + React Testing Library:**
 
@@ -37,7 +30,7 @@
 - Snapshot testing for UI regression detection
 - Config: `web/public-site/jest.config.cjs`
 
-**Installation:** Already included in both workspaces
+**Installation:** Already included in `web/public-site/`
 
 ### Backend: pytest + pytest-asyncio
 
@@ -68,18 +61,6 @@ pip install pytest pytest-asyncio pytest-cov
 ### Frontend Test Locations
 
 ```text
-web/oversight-hub/
-├── src/
-│   └── components/
-│       ├── Header.test.js          # Component unit test
-│       ├── CommandPane.jsx
-│       └── SettingsManager.jsx
-└── __tests__/                      # Organized test directory
-    ├── components/
-    │   └── SettingsManager.test.jsx      # Component test
-    └── integration/
-        └── SettingsManager.integration.test.jsx  # Integration test
-
 web/public-site/
 ├── components/
 │   ├── Header.test.js              # Component unit test
@@ -147,7 +128,7 @@ src/cofounder_agent/
 # Frontend + Backend together
 npm test
 
-# Frontend only (public-site Jest + oversight-hub Vitest)
+# Frontend only (public-site Jest)
 npm run test:web
 
 # Backend only
@@ -155,16 +136,6 @@ npm run test:python
 ```
 
 #### Run Specific Test Suite
-
-**Frontend - Oversight Hub (Vitest):**
-
-```bash
-cd web/oversight-hub
-npx vitest run                              # Run all tests once
-npx vitest run --pool=forks --poolOptions.forks.maxForks=4  # Stable on Windows
-npx vitest run src/components/MyComponent.test.jsx  # Specific component
-npx vitest --reporter=verbose               # With test names
-```
 
 **Frontend - Public Site:**
 
@@ -208,7 +179,7 @@ python -m pytest tests/ -v -m "not slow"
 ```bash
 # Frontend CI (non-interactive, with coverage)
 npm run test:ci
-# Runs Jest (public-site) + Vitest (oversight-hub) in CI mode
+# Runs Jest (public-site) in CI mode
 
 # Backend smoke tests (quick validation)
 npm run test:python:smoke
@@ -220,10 +191,6 @@ npm run test:python:smoke
 **Frontend - Auto-rerun on file changes:**
 
 ```bash
-cd web/oversight-hub
-npx vitest                        # Vitest watch mode (interactive)
-npx vitest --coverage             # With coverage in watch mode
-
 cd web/public-site
 npm test -- --watch               # Jest watch mode
 ```
@@ -699,18 +666,15 @@ def db():
 
 **Frontend Tests:**
 
-- `web/oversight-hub/`: 8 test files, ~35 tests
-- `web/public-site/`: 10 test files, ~28 tests
-- **Total Frontend:** 63 tests passing ✅
+- `web/public-site/`: ~482 tests passing
+- **Total Frontend:** ~482 tests passing ✅
 
 **Backend Tests:**
 
-- Unit tests: 15+ test suites
-- Integration tests: 12+ test suites
-- E2E tests: 8+ test suites
-- **Total Backend:** 30+ tests passing ✅
+- ~5,476 tests passing across unit, integration, and E2E suites
+- **Total Backend:** ~5,476 tests passing ✅
 
-**Grand Total: 93+ tests passing** ✅
+**Grand Total: ~5,958+ tests passing** ✅
 
 ### Running All Tests
 
@@ -730,9 +694,9 @@ npm run test:python:smoke  # 5-10 minutes
 
 ## 🔗 Related Documentation
 
-- **[Development Workflow](../04-DEVELOPMENT_WORKFLOW.md#🧪-testing)** - Testing section in workflow
+- **[Development Workflow](./Development-Workflow.md#🧪-testing)** - Testing section in workflow
 - **[Core Docs Hub](../00-README.md)** - All documentation
-- **[Setup Guide](../01-SETUP_AND_OVERVIEW.md)** - Getting started
+- **[Setup Guide](../01-Getting-Started/)** - Getting started
 - **[API References](./API_CONTRACT_CONTENT_CREATION.md)** - API testing examples
 
 ---
@@ -768,7 +732,7 @@ git commit -m "feat: your feature"
 
 For questions about specific tests, check the test files directly:
 
-- Frontend: `web/*/components/__tests__/` and `web/*/__tests__/`
+- Frontend: `web/public-site/components/__tests__/` and `web/public-site/__tests__/`
 - Backend: `src/cofounder_agent/tests/`
 
 Each test file has clear, self-documenting test names and comments explaining the test coverage.

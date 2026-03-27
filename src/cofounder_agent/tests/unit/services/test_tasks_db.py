@@ -22,13 +22,13 @@ asyncpg pool fully mocked; no real DB access.
 """
 
 import json
-import pytest
 from contextlib import asynccontextmanager
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from services.tasks_db import TasksDatabase, serialize_value_for_postgres
+import pytest
 
+from services.tasks_db import TasksDatabase, serialize_value_for_postgres
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -399,9 +399,7 @@ class TestUpdateTask:
             patch(f"{_CONVERTER}.to_task_response", return_value=MagicMock()),
             patch(f"{_CONVERTER}.to_dict", return_value=sentinel),
         ):
-            result = await db.update_task(
-                "t-1", {"task_metadata": json.dumps(metadata)}
-            )
+            result = await db.update_task("t-1", {"task_metadata": json.dumps(metadata)})
 
         assert result == sentinel
 

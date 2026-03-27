@@ -241,6 +241,7 @@ async def execute_custom_workflow(
     from services.workflow_engine import WorkflowContext, WorkflowEngine, WorkflowPhase
 
     try:
+
         def _workflow_get(key: str, default: Any = None) -> Any:
             if isinstance(custom_workflow, dict):
                 return custom_workflow.get(key, default)
@@ -407,6 +408,7 @@ async def _execute_workflow_background(
         return phase_results
 
     try:
+
         def _workflow_get(key: str, default: Any = None) -> Any:
             if isinstance(custom_workflow, dict):
                 return custom_workflow.get(key, default)
@@ -524,8 +526,7 @@ async def _execute_workflow_background(
             (
                 phase_data.get("error")
                 for phase_data in phase_results.values()
-                if str(phase_data.get("status", "")).lower() == "failed"
-                and phase_data.get("error")
+                if str(phase_data.get("status", "")).lower() == "failed" and phase_data.get("error")
             ),
             None,
         )
@@ -571,6 +572,7 @@ async def _execute_workflow_background(
         )
 
         try:
+
             def _workflow_get(key: str, default: Any = None) -> Any:
                 if isinstance(custom_workflow, dict):
                     return custom_workflow.get(key, default)
@@ -713,6 +715,7 @@ def _json_default_serializer(obj: Any) -> Any:
     if isinstance(obj, datetime):
         return obj.isoformat()
     from enum import Enum as _Enum
+
     if isinstance(obj, _Enum):
         return obj.value
     if hasattr(obj, "model_dump"):
@@ -760,9 +763,7 @@ _PHASE_INSTRUCTIONS: Dict[str, str] = {
 }
 
 
-def _build_content_fallback_prompt(
-    phase_name: str, input_data: Dict[str, Any]
-) -> str:
+def _build_content_fallback_prompt(phase_name: str, input_data: Dict[str, Any]) -> str:
     """Build a fallback prompt for a content phase."""
     normalised = _normalize_phase_alias(phase_name)
     instruction = _PHASE_INSTRUCTIONS.get(normalised, f"Execute the {phase_name} phase.")

@@ -13,17 +13,16 @@ The POST /upload endpoint requires multipart form data and is tested separately
 with a focus on validation logic.
 """
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock
 
 from routes.auth_unified import get_current_user
-from utils.route_utils import get_database_dependency
 from routes.writing_style_routes import router
-
-from tests.unit.routes.conftest import TEST_USER, make_mock_db
-
+from tests.unit.routes.conftest import TEST_USER
+from utils.route_utils import get_database_dependency
 
 # ---------------------------------------------------------------------------
 # Shared fixtures

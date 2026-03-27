@@ -1,14 +1,16 @@
 """Enhanced status change validation and logging service."""
 
-from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+from services.logger_config import get_logger
 from services.tasks_db import TasksDatabase
-from utils.task_status import StatusTransitionValidator
 from utils.json_encoder import safe_json_load
+from utils.task_status import StatusTransitionValidator
 
 logger = get_logger(__name__)
+
+
 class EnhancedStatusChangeService:
     """Service for validated status changes with comprehensive logging."""
 
@@ -93,9 +95,7 @@ class EnhancedStatusChangeService:
             if metadata:
                 # Merge incoming metadata with existing task_metadata to avoid overwriting
                 # previously persisted generation results and validation diagnostics.
-                existing_metadata = safe_json_load(
-                    task.get("task_metadata") or {}, fallback={}
-                )
+                existing_metadata = safe_json_load(task.get("task_metadata") or {}, fallback={})
                 if not isinstance(existing_metadata, dict):
                     existing_metadata = {}
 
@@ -118,7 +118,7 @@ class EnhancedStatusChangeService:
             updated = await self.db_service.update_task(task_id, update_data)
 
             if not updated:
-                error = f"Failed to update task status"
+                error = "Failed to update task status"
                 return False, error, ["update_failed"]
 
             success_msg = f"Status changed: {current_status} → {new_status}"

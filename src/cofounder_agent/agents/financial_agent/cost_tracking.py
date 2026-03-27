@@ -115,7 +115,9 @@ class CostTrackingService:
                 return data.get("costs", {})
 
         except httpx.HTTPError as e:
-            logger.error("Failed to fetch cost metrics", error=str(e), api_url=self.api_url, exc_info=True)
+            logger.error(
+                "Failed to fetch cost metrics", error=str(e), api_url=self.api_url, exc_info=True
+            )
             return None
         except Exception as e:
             logger.error("Unexpected error fetching cost metrics", error=str(e), exc_info=True)
@@ -441,8 +443,11 @@ class CostTrackingService:
 
         except Exception as e:
             logger.error(
-                "Failed to publish budget alert", error=str(e), alert_level=alert.level.value
-, exc_info=True)
+                "Failed to publish budget alert",
+                error=str(e),
+                alert_level=alert.level.value,
+                exc_info=True,
+            )
 
     def get_monthly_summary(self) -> Dict[str, Any]:
         """

@@ -1,7 +1,8 @@
 # Test Suite Completion Report
 
-**Completion Date:** March 8, 2026  
+**Completion Date:** March 8, 2026
 **Final Status:** ✅ COMPLETE - 378 Tests, 26 Files, 100% Passing
+**Note:** Oversight Hub tests referenced below have been archived to a separate branch.
 
 ---
 

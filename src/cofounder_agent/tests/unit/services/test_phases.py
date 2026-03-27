@@ -12,10 +12,9 @@ Covers:
 All external I/O (AI, DB, image search) is mocked so tests run with zero real deps.
 """
 
-import os
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -49,9 +48,7 @@ def _make_seo_phase(phase_id: str = "phase-4"):
 def _make_capture_phase(phase_id: str = "phase-5"):
     from services.phases.content_phases import CaptureTrainingDataPhase
 
-    return CaptureTrainingDataPhase(
-        phase_id=phase_id, phase_type="capture_training_data"
-    )
+    return CaptureTrainingDataPhase(phase_id=phase_id, phase_type="capture_training_data")
 
 
 def _make_create_post_phase(phase_id: str = "phase-6"):
@@ -165,8 +162,8 @@ class TestBasePhaseValidateInputs:
             BasePhase,
             PhaseConfig,
             PhaseInputSpec,
-            PhaseOutputSpec,
             PhaseInputType,
+            PhaseOutputSpec,
         )
 
         class _StubPhase(BasePhase):
@@ -217,8 +214,8 @@ class TestBasePhaseClassMethods:
         assert GenerateContentPhase.get_phase_type() == "generate_content"
 
     def test_get_phase_config_returns_phase_config(self):
-        from services.phases.content_phases import GenerateContentPhase
         from services.phases.base_phase import PhaseConfig
+        from services.phases.content_phases import GenerateContentPhase
 
         cfg = GenerateContentPhase.get_phase_config()
         assert isinstance(cfg, PhaseConfig)
@@ -267,9 +264,7 @@ class TestGenerateContentPhase:
     async def test_execute_generator_error_propagates(self):
         phase = _make_content_phase()
         mock_generator = AsyncMock()
-        mock_generator.generate_blog_post = AsyncMock(
-            side_effect=RuntimeError("LLM unavailable")
-        )
+        mock_generator.generate_blog_post = AsyncMock(side_effect=RuntimeError("LLM unavailable"))
         with patch.dict(
             "sys.modules",
             {
@@ -434,11 +429,7 @@ class TestSearchImagePhase:
         )
         with patch.dict(
             "sys.modules",
-            {
-                "services.phases.image_service": MagicMock(
-                    get_image_service=lambda: mock_service
-                )
-            },
+            {"services.phases.image_service": MagicMock(get_image_service=lambda: mock_service)},
         ):
             result = await phase.execute(
                 inputs={"topic": "technology"},
@@ -468,11 +459,7 @@ class TestSearchImagePhase:
         mock_service.search_featured_image = AsyncMock(return_value=None)
         with patch.dict(
             "sys.modules",
-            {
-                "services.phases.image_service": MagicMock(
-                    get_image_service=lambda: mock_service
-                )
-            },
+            {"services.phases.image_service": MagicMock(get_image_service=lambda: mock_service)},
         ):
             result = await phase.execute(
                 inputs={"topic": "technology"},
@@ -488,16 +475,10 @@ class TestSearchImagePhase:
         """Image errors should not raise — they return null result."""
         phase = _make_search_image_phase()
         mock_service = AsyncMock()
-        mock_service.search_featured_image = AsyncMock(
-            side_effect=RuntimeError("Pexels API down")
-        )
+        mock_service.search_featured_image = AsyncMock(side_effect=RuntimeError("Pexels API down"))
         with patch.dict(
             "sys.modules",
-            {
-                "services.phases.image_service": MagicMock(
-                    get_image_service=lambda: mock_service
-                )
-            },
+            {"services.phases.image_service": MagicMock(get_image_service=lambda: mock_service)},
         ):
             result = await phase.execute(
                 inputs={"topic": "technology"},
@@ -902,9 +883,7 @@ class TestCreatePostPhase:
         """Owned DB service must be closed in finally block."""
         phase = _make_create_post_phase()
         mock_db = AsyncMock()
-        mock_db.create_post = AsyncMock(
-            return_value={"id": "p1", "slug": "ai", "status": "draft"}
-        )
+        mock_db.create_post = AsyncMock(return_value={"id": "p1", "slug": "ai", "status": "draft"})
         mock_db.close = AsyncMock()
 
         mock_slugify_module = MagicMock()
@@ -995,9 +974,7 @@ class TestPublishPostPhase:
         assert "published_at" in result
         assert result["public_url"] == "https://gladlabs.ai/posts/ai-in-healthcare"
         assert phase.status == "completed"
-        mock_db.update_post.assert_called_once_with(
-            "post-uuid-1", {"status": "published"}
-        )
+        mock_db.update_post.assert_called_once_with("post-uuid-1", {"status": "published"})
 
     @pytest.mark.asyncio
     async def test_execute_post_not_found_raises(self):
@@ -1134,8 +1111,8 @@ class TestExampleWorkflows:
 
     def test_all_workflows_have_required_keys(self):
         from services.phases.example_workflows import (
-            BLOG_GENERATION_ONLY,
             BLOG_COMPLETE_WORKFLOW,
+            BLOG_GENERATION_ONLY,
             BLOG_TO_SOCIAL_WORKFLOW,
             RESEARCH_AND_CONTENT_WORKFLOW,
         )

@@ -4,12 +4,15 @@ Recognizes user intent from natural language and maps to appropriate
 workflow configurations. Phase 3 component for advanced user interaction.
 """
 
-from services.logger_config import get_logger
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+from services.logger_config import get_logger
+
 logger = get_logger(__name__)
+
+
 @dataclass
 class IntentMatch:
     """Result of intent recognition."""

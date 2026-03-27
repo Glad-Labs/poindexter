@@ -8,8 +8,9 @@ Covers:
 - ExecutionResult dataclass defaults and to_dict()
 """
 
-import pytest
 from datetime import datetime, timezone
+
+import pytest
 
 from services.orchestrator_types import (
     ExecutionContext,
@@ -19,10 +20,10 @@ from services.orchestrator_types import (
     RequestType,
 )
 
-
 # ---------------------------------------------------------------------------
 # RequestType
 # ---------------------------------------------------------------------------
+
 
 class TestRequestType:
     def test_all_members_present(self) -> None:
@@ -66,6 +67,7 @@ class TestRequestType:
 # ExecutionStatus
 # ---------------------------------------------------------------------------
 
+
 class TestExecutionStatus:
     def test_all_members_present(self) -> None:
         expected = {
@@ -103,6 +105,7 @@ class TestExecutionStatus:
 # ---------------------------------------------------------------------------
 # Request dataclass
 # ---------------------------------------------------------------------------
+
 
 class TestRequest:
     def _make_request(self, **overrides) -> Request:
@@ -170,6 +173,7 @@ class TestRequest:
 # ExecutionContext dataclass
 # ---------------------------------------------------------------------------
 
+
 class TestExecutionContext:
     def test_minimal_construction(self) -> None:
         ctx = ExecutionContext(
@@ -218,6 +222,7 @@ class TestExecutionContext:
 # ---------------------------------------------------------------------------
 # ExecutionResult dataclass + to_dict()
 # ---------------------------------------------------------------------------
+
 
 class TestExecutionResult:
     def _make_result(self, **overrides) -> ExecutionResult:

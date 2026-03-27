@@ -10,11 +10,14 @@ Provides advanced cost analytics by querying the cost_logs PostgreSQL table:
 Built on top of DatabaseService's log_cost() and get_task_costs() methods.
 """
 
-from services.logger_config import get_logger
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
+from services.logger_config import get_logger
+
 logger = get_logger(__name__)
+
+
 class CostAggregationService:
     """
     Cost analytics service using PostgreSQL cost_logs table

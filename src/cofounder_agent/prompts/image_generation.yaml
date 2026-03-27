@@ -1,0 +1,60 @@
+- key: image.featured_image
+  category: image_generation
+  description: "Generate featured image prompt (no people)"
+  output_format: text
+  notes: "v1.0: Strong safety guardrail against people/faces, aspect ratio specified"
+  example_output: "A modern, minimalist medical technology visualization showing interconnected healthcare nodes and AI algorithms. Abstract blue and green data streams flowing through digital healthcare infrastructure. 1200x630px, professional medical tech aesthetic."
+  template: |
+    Generate a professional, modern featured image prompt for this blog post.
+
+    Title: {title}
+    Category: {category}
+    Content Context: {content_context}
+
+    ⭐ CRITICAL REQUIREMENTS:
+    1. Aspect ratio: 1200x630px (16:9)
+    2. Professional and visually appealing
+    3. Relevant to topic
+    4. Modern design aesthetic
+    5. High quality, suitable for blog thumbnail + social sharing
+
+    ⚠️ MANDATORY: NO PEOPLE IN IMAGE
+    - Do NOT include any human figures, faces, portraits, people of any kind
+    - Focus ONLY on: objects, nature, technology, abstract concepts, landscapes, icons
+    - If scale needed, use non-human elements (buildings, vehicles, props, tools)
+
+    Generate ONLY the image description prompt (2-3 sentences), nothing else.
+
+- key: image.search_queries
+  category: image_generation
+  description: "Generate image search queries with alt-text"
+  output_format: json
+  notes: "v1.0: Accessibility-first, word count guardrails, provides structure example"
+  example_output: '[{"query":"hospital diagnostic AI technology healthcare center","alt_text":"A healthcare professional using AI diagnostic system in a modern hospital"}]'
+  template: |
+    Generate image search queries for this blog post.
+
+    Title: {title}
+    Number of Images: {num_images}
+    Content: {content}
+
+    ⭐ REQUIREMENTS:
+    1. Generate EXACTLY {num_images} image search queries
+    2. Each query: 5-10 words, specific and descriptive
+    3. Each query should describe what the image shows (not "AI" - more like "AI technology in hospital diagnostic center")
+    4. Provide accompanying alt-text for accessibility
+    5. Alt-text: 10-20 words, describes image for blind users
+
+    ⭐ OUTPUT FORMAT (Valid JSON array):
+    [
+      {{
+        "query": "descriptive search term 1 (5-10 words)",
+        "alt_text": "SEO-friendly description for accessibility (10-20 words)"
+      }},
+      {{
+        "query": "descriptive search term 2",
+        "alt_text": "Describes image for accessibility"
+      }}
+    ]
+
+    ⭐ No other text, ONLY valid JSON array.

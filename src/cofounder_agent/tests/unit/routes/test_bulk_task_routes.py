@@ -8,16 +8,16 @@ Tests cover:
 Auth and DB are overridden; no real I/O occurs.
 """
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock
 
-from routes.auth_unified import get_current_user
-from utils.route_utils import get_database_dependency
+from middleware.api_token_auth import verify_api_token
 from routes.bulk_task_routes import router
-
 from tests.unit.routes.conftest import TEST_USER, make_mock_db
+from utils.route_utils import get_database_dependency
 
 VALID_UUID_1 = "550e8400-e29b-41d4-a716-446655440000"
 VALID_UUID_2 = "550e8400-e29b-41d4-a716-446655440001"
@@ -37,7 +37,7 @@ def _build_app(mock_db=None) -> FastAPI:
     app = FastAPI()
     app.include_router(router)
 
-    app.dependency_overrides[get_current_user] = lambda: TEST_USER
+    app.dependency_overrides[verify_api_token] = lambda: "test-token"
     app.dependency_overrides[get_database_dependency] = lambda: mock_db
 
     return app
@@ -51,10 +51,12 @@ def _make_bulk_db(updated_ids=None, missing_ids=None):
     db.create_task = AsyncMock(return_value={"id": VALID_UUID_1})
     # tasks sub-service with bulk_add_tasks (#1089)
     db.tasks = MagicMock()
+
     async def _mock_bulk_add(tasks):
         """Return one UUID per task submitted."""
         uuids = [VALID_UUID_1, VALID_UUID_2]
-        return uuids[:len(tasks)]
+        return uuids[: len(tasks)]
+
     db.tasks.bulk_add_tasks = AsyncMock(side_effect=_mock_bulk_add)
     # bulk_update_task_statuses — new 2-query implementation for #700
     _updated = updated_ids if updated_ids is not None else [VALID_UUID_1, VALID_UUID_2]
@@ -154,9 +156,7 @@ class TestBulkTaskOperations:
 
     def test_partial_success_tracks_both(self):
         """When one task exists and one doesn't, counts should reflect reality."""
-        mock_db = _make_bulk_db(
-            updated_ids=[VALID_UUID_1], missing_ids=[VALID_UUID_2]
-        )
+        mock_db = _make_bulk_db(updated_ids=[VALID_UUID_1], missing_ids=[VALID_UUID_2])
         client = TestClient(_build_app(mock_db))
         data = client.post(
             "/api/tasks/bulk",

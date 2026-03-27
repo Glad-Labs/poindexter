@@ -16,8 +16,7 @@ Tests cover:
 
 import pytest
 
-from services.nlp_intent_recognizer import NLPIntentRecognizer, IntentMatch
-
+from services.nlp_intent_recognizer import IntentMatch, NLPIntentRecognizer
 
 # ---------------------------------------------------------------------------
 # Shared fixture
@@ -186,9 +185,7 @@ class TestRecognizeMultipleIntents:
 class TestExtractTopic:
     @pytest.mark.asyncio
     async def test_extracts_topic_from_about_phrase(self, recognizer):
-        result = await recognizer.extract_topic(
-            "Write a blog about machine learning trends", {}
-        )
+        result = await recognizer.extract_topic("Write a blog about machine learning trends", {})
         assert "topic" in result
         topic = result["topic"]
         assert topic is not None

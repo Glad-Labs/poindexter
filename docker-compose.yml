@@ -38,31 +38,6 @@ services:
       start_period: 40s
 
   # ==================================
-  # React Oversight Hub
-  # ==================================
-  oversight-hub:
-    build:
-      context: ./web/oversight-hub
-      dockerfile: Dockerfile
-    container_name: glad-labs-oversight-hub
-    restart: unless-stopped
-    ports:
-      - "${OVERSIGHT_HUB_PORT:-3001}:80"
-    environment:
-      VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
-      REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost:8000}
-    depends_on:
-      - cofounder-agent
-    networks:
-      - glad-labs-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-
-  # ==================================
   # AI Co-Founder Agent API
   # ==================================
   cofounder-agent:
@@ -94,7 +69,7 @@ services:
 
       # Security
       JWT_SECRET: ${JWT_SECRET}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:3001}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
 
       # Rate Limiting
       RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}

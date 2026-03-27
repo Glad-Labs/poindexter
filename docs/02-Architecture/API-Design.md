@@ -35,7 +35,7 @@ curl -H "Authorization: Bearer YOUR_JWT_TOKEN" \
 
 ### Token Sources
 
-1. **GitHub OAuth** (Production): Log in via GitHub through Oversight Hub; JWT token issued automatically
+1. **API Token** (Production): Set `API_TOKEN` environment variable; include as `Authorization: Bearer <token>` header
 2. **Dev Token** (Development): Use `Bearer dev-token` for local development without OAuth setup
 
 ### Development Bypass

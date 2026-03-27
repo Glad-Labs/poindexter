@@ -7,17 +7,17 @@ All endpoints require JWT authentication
 Integrates with UsageTracker service for real-time metrics collection.
 """
 
-from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
-from routes.auth_unified import get_current_user
-from schemas.auth_schemas import UserProfile
+from middleware.api_token_auth import verify_api_token
+
 from services.cost_aggregation_service import CostAggregationService
 from services.database_service import DatabaseService
+from services.logger_config import get_logger
 from services.usage_tracker import get_usage_tracker
 from utils.route_utils import get_database_dependency
 
@@ -53,7 +53,7 @@ _task_stats = {
 
 @metrics_router.get("/usage", response_model=Dict[str, Any])
 async def get_usage_metrics(
-    current_user: UserProfile = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     period: str = Query("last_24h", description="Time period: last_1h, last_24h, last_7d, all"),
 ) -> Dict[str, Any]:
     """
@@ -156,12 +156,12 @@ async def get_usage_metrics(
 
     except Exception as e:
         logger.error(f"Error retrieving usage metrics: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to retrieve metrics")
+        raise HTTPException(status_code=500, detail="Failed to retrieve metrics") from e
 
 
 @metrics_router.get("/costs")
 async def get_cost_metrics(
-    current_user: UserProfile = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     use_db: bool = Query(True, description="Use PostgreSQL database for costs (recommended)"),
     db_service: DatabaseService = Depends(get_database_dependency),
 ) -> Dict[str, Any]:
@@ -234,7 +234,9 @@ async def get_cost_metrics(
                     "by_provider": {},
                 }
             except Exception as db_error:
-                logger.warning(f"Database costs failed, falling back to tracker: {db_error}", exc_info=True)
+                logger.warning(
+                    f"Database costs failed, falling back to tracker: {db_error}", exc_info=True
+                )
                 use_db = False
 
         # Fallback to legacy usage tracker
@@ -304,11 +306,11 @@ async def get_cost_metrics(
 
     except Exception as e:
         logger.error(f"Error retrieving cost metrics: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to retrieve metrics")
+        raise HTTPException(status_code=500, detail="Failed to retrieve metrics") from e
 
 
 @metrics_router.get("")
-async def get_metrics(current_user: UserProfile = Depends(get_current_user)) -> Dict[str, Any]:
+async def get_metrics(token: str = Depends(verify_api_token)) -> Dict[str, Any]:
     """
     Get aggregated application metrics and health status.
 
@@ -356,12 +358,12 @@ async def get_metrics(current_user: UserProfile = Depends(get_current_user)) -> 
 
     except Exception as e:
         logger.error(f"Error retrieving metrics: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to retrieve metrics")
+        raise HTTPException(status_code=500, detail="Failed to retrieve metrics") from e
 
 
 @metrics_router.get("/summary")
 async def get_metrics_summary(
-    current_user: UserProfile = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ) -> Dict[str, Any]:
     """
     Get a summary of all metrics
@@ -411,7 +413,7 @@ class TrackUsageRequest(BaseModel):
 @metrics_router.post("/track-usage")
 async def track_usage(
     body: TrackUsageRequest,
-    current_user: UserProfile = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ) -> Dict[str, Any]:
     """
     Track AI model usage for cost analysis.
@@ -442,7 +444,7 @@ async def track_usage(
 
 @metrics_router.get("/costs/breakdown/phase")
 async def get_costs_by_phase(
-    current_user: UserProfile = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     period: str = Query("week", regex="^(today|week|month)$"),
     db_service: DatabaseService = Depends(get_database_dependency),
 ) -> Dict[str, Any]:
@@ -464,12 +466,12 @@ async def get_costs_by_phase(
         return result
     except Exception as e:
         logger.error(f"Error getting phase breakdown: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="An internal error occurred")
+        raise HTTPException(status_code=500, detail="An internal error occurred") from e
 
 
 @metrics_router.get("/costs/breakdown/model")
 async def get_costs_by_model(
-    current_user: UserProfile = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     period: str = Query("week", regex="^(today|week|month)$"),
     db_service: DatabaseService = Depends(get_database_dependency),
 ) -> Dict[str, Any]:
@@ -492,12 +494,12 @@ async def get_costs_by_model(
         return result
     except Exception as e:
         logger.error(f"Error getting model breakdown: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="An internal error occurred")
+        raise HTTPException(status_code=500, detail="An internal error occurred") from e
 
 
 @metrics_router.get("/costs/history")
 async def get_cost_history(
-    current_user: UserProfile = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     period: str = Query("week", regex="^(week|month)$"),
     db_service: DatabaseService = Depends(get_database_dependency),
 ) -> Dict[str, Any]:
@@ -519,12 +521,12 @@ async def get_cost_history(
         return result
     except Exception as e:
         logger.error(f"Error getting cost history: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="An internal error occurred")
+        raise HTTPException(status_code=500, detail="An internal error occurred") from e
 
 
 @metrics_router.get("/costs/budget")
 async def get_budget_status(
-    current_user: UserProfile = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     monthly_budget: float = Query(150.0, ge=10, le=10000),
     db_service: DatabaseService = Depends(get_database_dependency),
 ) -> Dict[str, Any]:
@@ -551,7 +553,7 @@ async def get_budget_status(
         return result
     except Exception as e:
         logger.error(f"Error getting budget status: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="An internal error occurred")
+        raise HTTPException(status_code=500, detail="An internal error occurred") from e
 
 
 # NOTE: GET /api/metrics/analytics/kpis was removed (duplicate of GET /api/analytics/kpis).
@@ -566,7 +568,7 @@ async def get_budget_status(
     include_in_schema=False,
 )
 async def get_kpi_analytics_deprecated(
-    current_user: UserProfile = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ):
     """Deprecated. Redirects callers to the canonical endpoint."""
     from fastapi.responses import RedirectResponse
@@ -574,12 +576,10 @@ async def get_kpi_analytics_deprecated(
     return RedirectResponse(url="/api/analytics/kpis", status_code=308)
 
 
-
-
 @metrics_router.get("/performance", response_model=Dict[str, Any])
 async def get_performance_metrics(
     request: Request,
-    current_user: UserProfile = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ) -> Dict[str, Any]:
     """
     Get real-time performance metrics from the running application.
@@ -631,9 +631,7 @@ async def get_performance_metrics(
                 # pre-computed p95/p99 but p50 is the median we approximate
                 # from avg when individual samples are not available.
                 durations_for_ep = [
-                    p.duration_ms
-                    for p in profiling_mw.profiles
-                    if p.endpoint == endpoint
+                    p.duration_ms for p in profiling_mw.profiles if p.endpoint == endpoint
                 ]
                 if durations_for_ep:
                     sorted_d = sorted(durations_for_ep)
@@ -710,7 +708,7 @@ async def get_performance_metrics(
 
     except Exception as e:
         logger.error(f"[get_performance_metrics] Error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to retrieve performance metrics")
+        raise HTTPException(status_code=500, detail="Failed to retrieve performance metrics") from e
 
 
 @metrics_router.get(
@@ -725,7 +723,7 @@ async def get_performance_metrics(
 )
 async def get_operational_metrics(
     request: Request,
-    current_user: UserProfile = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ) -> Dict[str, Any]:
     """
@@ -753,7 +751,9 @@ async def get_operational_metrics(
                 raw = await db_service.tasks.get_task_counts()
                 task_counts = {str(k): int(v) for k, v in (raw or {}).items()}
         except Exception as db_err:
-            logger.warning(f"[operational_metrics] DB task count unavailable: {db_err}", exc_info=True)
+            logger.warning(
+                f"[operational_metrics] DB task count unavailable: {db_err}", exc_info=True
+            )
 
         pending = task_counts.get("pending", 0)
         in_progress = task_counts.get("in_progress", 0)
@@ -763,7 +763,9 @@ async def get_operational_metrics(
         # --- Task executor in-memory stats ---
         executor_stats: Dict[str, Any] = {}
         try:
-            from services.service_container import get_service_container  # type: ignore[import-untyped]
+            from services.service_container import (
+                get_service_container,  # type: ignore[import-untyped]
+            )
 
             container = get_service_container()
             if container and hasattr(container, "task_executor") and container.task_executor:
@@ -776,9 +778,7 @@ async def get_operational_metrics(
         try:
             from services.websocket_manager import websocket_manager
 
-            ws_total = sum(
-                len(conns) for conns in websocket_manager.active_connections.values()
-            )
+            ws_total = sum(len(conns) for conns in websocket_manager.active_connections.values())
         except Exception as ws_err:
             logger.debug(f"[operational_metrics] WebSocket count unavailable: {ws_err}")
 
@@ -822,4 +822,4 @@ async def get_operational_metrics(
 
     except Exception as e:
         logger.error(f"[get_operational_metrics] Error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to retrieve operational metrics")
+        raise HTTPException(status_code=500, detail="Failed to retrieve operational metrics") from e

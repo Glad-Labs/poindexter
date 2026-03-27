@@ -15,10 +15,9 @@ Quick reference for common issues and their solutions.
 Additional troubleshooting guides for specific services:
 
 - **Co-founder Agent** - See `docs/components/cofounder-agent/troubleshooting/`
-- **Oversight Hub** - See `docs/components/oversight-hub/troubleshooting/`
 - **Public Site** - See `docs/components/public-site/troubleshooting/`
 
 ---
 
-**Note:** For architectural questions, see [02-ARCHITECTURE_AND_DESIGN.md](../02-ARCHITECTURE_AND_DESIGN.md)  
-For operations issues, see [06-OPERATIONS_AND_MAINTENANCE.md](../06-OPERATIONS_AND_MAINTENANCE.md)
+**Note:** For architectural questions, see [System-Design.md](../02-Architecture/System-Design.md)
+For operations issues, see [Operations-Maintenance.md](../05-Operations/Operations-Maintenance.md)

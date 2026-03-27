@@ -8,17 +8,19 @@ Heavy GPU/SDXL paths are not exercised; they are tested via flag checks only.
 """
 
 from contextlib import asynccontextmanager
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from services.image_service import (
+    IMAGE_MODEL_REGISTRY,
     FeaturedImageMetadata,
+    ImageModel,
+    ImageModelConfig,
     ImageService,
+    get_default_image_model,
     get_image_service,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -62,6 +64,7 @@ def make_image_service_no_key() -> ImageService:
     """Return an ImageService without Pexels API key."""
     with patch.dict("os.environ", {}, clear=True):
         import os
+
         os.environ.pop("PEXELS_API_KEY", None)
         return ImageService()
 
@@ -158,9 +161,10 @@ class TestImageServiceInit:
 
     def test_sdxl_not_initialized_at_startup(self):
         svc = ImageService()
-        # SDXL is lazily initialized only when generate_image() is called
+        # Models are lazily initialized only when generate_image() is called
         assert svc.sdxl_initialized is False
-        assert svc.sdxl_pipe is None
+        assert svc._gen_pipe is None
+        assert svc._active_model is None
 
     def test_search_cache_starts_empty(self):
         svc = ImageService()
@@ -365,3 +369,364 @@ class TestGetImageServiceFactory:
         s1 = get_image_service()
         s2 = get_image_service()
         assert s1 is not s2
+
+
+# ---------------------------------------------------------------------------
+# ImageModel enum
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestImageModelEnum:
+    def test_has_three_members(self):
+        assert len(ImageModel) == 3
+
+    def test_sdxl_base_value(self):
+        assert ImageModel.SDXL_BASE.value == "sdxl_base"
+
+    def test_sdxl_lightning_value(self):
+        assert ImageModel.SDXL_LIGHTNING.value == "sdxl_lightning"
+
+    def test_flux_schnell_value(self):
+        assert ImageModel.FLUX_SCHNELL.value == "flux_schnell"
+
+    def test_is_str_enum(self):
+        # ImageModel inherits from str, so members are valid strings
+        assert isinstance(ImageModel.SDXL_BASE, str)
+        assert ImageModel.SDXL_LIGHTNING == "sdxl_lightning"
+
+    def test_construct_from_value(self):
+        assert ImageModel("sdxl_base") is ImageModel.SDXL_BASE
+        assert ImageModel("flux_schnell") is ImageModel.FLUX_SCHNELL
+
+    def test_invalid_value_raises(self):
+        with pytest.raises(ValueError):
+            ImageModel("nonexistent_model")
+
+
+# ---------------------------------------------------------------------------
+# ImageModelConfig dataclass
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestImageModelConfig:
+    def test_frozen_cannot_mutate(self):
+        cfg = ImageModelConfig(
+            model_id="test/model",
+            display_name="Test",
+            default_steps=10,
+            default_guidance_scale=7.0,
+            pipeline_class="diffusers.SomePipeline",
+        )
+        with pytest.raises(AttributeError):
+            cfg.model_id = "other/model"  # type: ignore[misc]
+
+    def test_default_optional_fields(self):
+        cfg = ImageModelConfig(
+            model_id="test/model",
+            display_name="Test",
+            default_steps=10,
+            default_guidance_scale=7.0,
+            pipeline_class="diffusers.SomePipeline",
+        )
+        assert cfg.lora_repo is None
+        assert cfg.lora_weight_name is None
+        assert cfg.scheduler_override is None
+        assert cfg.scheduler_kwargs is None
+        assert cfg.torch_dtype_str == "float16"
+        assert cfg.vram_gb == 6.0
+        assert cfg.notes == ""
+
+    def test_explicit_fields_stored(self):
+        cfg = ImageModelConfig(
+            model_id="org/model-name",
+            display_name="My Model",
+            default_steps=30,
+            default_guidance_scale=7.5,
+            pipeline_class="diffusers.StableDiffusionXLPipeline",
+            lora_repo="ByteDance/SDXL-Lightning",
+            lora_weight_name="weights.safetensors",
+            scheduler_override="EulerDiscreteScheduler",
+            scheduler_kwargs={"timestep_spacing": "trailing"},
+            torch_dtype_str="bfloat16",
+            vram_gb=12.0,
+            notes="Test note",
+        )
+        assert cfg.model_id == "org/model-name"
+        assert cfg.display_name == "My Model"
+        assert cfg.default_steps == 30
+        assert cfg.default_guidance_scale == 7.5
+        assert cfg.lora_repo == "ByteDance/SDXL-Lightning"
+        assert cfg.scheduler_kwargs == {"timestep_spacing": "trailing"}
+        assert cfg.torch_dtype_str == "bfloat16"
+        assert cfg.vram_gb == 12.0
+
+
+# ---------------------------------------------------------------------------
+# IMAGE_MODEL_REGISTRY
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestImageModelRegistry:
+    def test_contains_all_three_models(self):
+        assert set(IMAGE_MODEL_REGISTRY.keys()) == {
+            ImageModel.SDXL_BASE,
+            ImageModel.SDXL_LIGHTNING,
+            ImageModel.FLUX_SCHNELL,
+        }
+
+    def test_all_entries_are_image_model_config(self):
+        for model, cfg in IMAGE_MODEL_REGISTRY.items():
+            assert isinstance(cfg, ImageModelConfig), f"{model} value is not ImageModelConfig"
+
+    def test_all_entries_have_required_fields(self):
+        for model, cfg in IMAGE_MODEL_REGISTRY.items():
+            assert cfg.model_id, f"{model} missing model_id"
+            assert cfg.display_name, f"{model} missing display_name"
+            assert cfg.default_steps > 0, f"{model} has non-positive default_steps"
+            assert cfg.default_guidance_scale >= 0, f"{model} has negative guidance_scale"
+            assert cfg.pipeline_class.startswith(
+                "diffusers."
+            ), f"{model} pipeline_class should start with 'diffusers.'"
+            assert cfg.vram_gb > 0, f"{model} has non-positive vram_gb"
+
+    def test_sdxl_base_config(self):
+        cfg = IMAGE_MODEL_REGISTRY[ImageModel.SDXL_BASE]
+        assert cfg.model_id == "stabilityai/stable-diffusion-xl-base-1.0"
+        assert cfg.default_steps == 30
+        assert cfg.lora_repo is None
+
+    def test_sdxl_lightning_config(self):
+        cfg = IMAGE_MODEL_REGISTRY[ImageModel.SDXL_LIGHTNING]
+        assert cfg.lora_repo == "ByteDance/SDXL-Lightning"
+        assert cfg.lora_weight_name is not None
+        assert cfg.scheduler_override == "EulerDiscreteScheduler"
+        assert cfg.default_steps == 4
+        assert cfg.default_guidance_scale == 0.0
+
+    def test_flux_schnell_config(self):
+        cfg = IMAGE_MODEL_REGISTRY[ImageModel.FLUX_SCHNELL]
+        assert cfg.model_id == "black-forest-labs/FLUX.1-schnell"
+        assert cfg.torch_dtype_str == "bfloat16"
+        assert cfg.vram_gb == 12.0
+        assert cfg.pipeline_class == "diffusers.FluxPipeline"
+
+
+# ---------------------------------------------------------------------------
+# get_default_image_model()
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestGetDefaultImageModel:
+    def test_returns_sdxl_lightning_when_env_not_set(self, monkeypatch):
+        monkeypatch.delenv("IMAGE_MODEL", raising=False)
+        result = get_default_image_model()
+        assert result is ImageModel.SDXL_LIGHTNING
+
+    def test_returns_sdxl_base_from_env(self, monkeypatch):
+        monkeypatch.setenv("IMAGE_MODEL", "sdxl_base")
+        result = get_default_image_model()
+        assert result is ImageModel.SDXL_BASE
+
+    def test_returns_flux_schnell_from_env(self, monkeypatch):
+        monkeypatch.setenv("IMAGE_MODEL", "flux_schnell")
+        result = get_default_image_model()
+        assert result is ImageModel.FLUX_SCHNELL
+
+    def test_returns_sdxl_lightning_from_env(self, monkeypatch):
+        monkeypatch.setenv("IMAGE_MODEL", "sdxl_lightning")
+        result = get_default_image_model()
+        assert result is ImageModel.SDXL_LIGHTNING
+
+    def test_falls_back_on_invalid_env(self, monkeypatch):
+        monkeypatch.setenv("IMAGE_MODEL", "nonexistent_model_xyz")
+        result = get_default_image_model()
+        assert result is ImageModel.SDXL_LIGHTNING
+
+    def test_falls_back_on_empty_string_env(self, monkeypatch):
+        monkeypatch.setenv("IMAGE_MODEL", "")
+        result = get_default_image_model()
+        assert result is ImageModel.SDXL_LIGHTNING
+
+
+# ---------------------------------------------------------------------------
+# _initialize_model()
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestInitializeModel:
+    def test_returns_early_when_model_already_loaded(self):
+        """When the requested model is already the active model, _initialize_model is a no-op."""
+        svc = ImageService()
+        svc._active_model = ImageModel.SDXL_BASE
+        svc._gen_pipe = MagicMock()  # pretend a pipeline is loaded
+        original_pipe = svc._gen_pipe
+
+        svc._initialize_model(ImageModel.SDXL_BASE)
+
+        # Pipeline reference unchanged — no reload happened
+        assert svc._gen_pipe is original_pipe
+
+    def test_sets_sdxl_available_false_when_diffusers_unavailable(self):
+        svc = ImageService()
+        with patch("services.image_service.DIFFUSERS_AVAILABLE", False):
+            svc._initialize_model(ImageModel.SDXL_BASE)
+        assert svc.sdxl_available is False
+        assert svc._gen_pipe is None
+
+    def test_sets_sdxl_available_false_when_torch_unavailable(self):
+        svc = ImageService()
+        with (
+            patch("services.image_service.DIFFUSERS_AVAILABLE", True),
+            patch("services.image_service.TORCH_AVAILABLE", False),
+        ):
+            svc._initialize_model(ImageModel.SDXL_BASE)
+        assert svc.sdxl_available is False
+        assert svc._gen_pipe is None
+
+    def test_unloads_previous_model_before_loading_new(self):
+        """When switching models, _unload_model is called before loading the new one."""
+        svc = ImageService()
+        svc._gen_pipe = MagicMock()
+        svc._active_model = ImageModel.SDXL_BASE
+
+        # DIFFUSERS and TORCH must be True so we get past the prerequisite checks
+        # and reach the unload branch. We then let the actual load fail (no real GPU).
+        with (
+            patch("services.image_service.DIFFUSERS_AVAILABLE", True),
+            patch("services.image_service.TORCH_AVAILABLE", True),
+            patch.object(svc, "_unload_model") as mock_unload,
+            patch.object(svc, "_import_pipeline_class", side_effect=ImportError("no GPU")),
+        ):
+            svc._initialize_model(ImageModel.FLUX_SCHNELL)
+            mock_unload.assert_called_once()
+
+    def test_uses_get_default_when_model_is_none(self):
+        svc = ImageService()
+        with (
+            patch("services.image_service.DIFFUSERS_AVAILABLE", False),
+            patch(
+                "services.image_service.get_default_image_model",
+                return_value=ImageModel.FLUX_SCHNELL,
+            ) as mock_default,
+        ):
+            svc._initialize_model(None)
+            mock_default.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _unload_model()
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestUnloadModel:
+    def test_clears_pipeline_and_model(self):
+        svc = ImageService()
+        svc._gen_pipe = MagicMock()
+        svc._active_model = ImageModel.SDXL_BASE
+        svc.sdxl_available = True
+
+        with patch("services.image_service.TORCH_AVAILABLE", False):
+            svc._unload_model()
+
+        assert svc._gen_pipe is None
+        assert svc._active_model is None
+        assert svc.sdxl_available is False
+
+    def test_noop_when_no_pipeline_loaded(self):
+        svc = ImageService()
+        assert svc._gen_pipe is None
+        with patch("services.image_service.TORCH_AVAILABLE", False):
+            svc._unload_model()  # Should not raise
+        assert svc._gen_pipe is None
+        assert svc._active_model is None
+        assert svc.sdxl_available is False
+
+    def test_clears_cuda_cache_when_available(self):
+        svc = ImageService()
+        svc._gen_pipe = MagicMock()
+        svc._active_model = ImageModel.SDXL_LIGHTNING
+
+        mock_torch = MagicMock()
+        mock_torch.cuda.is_available.return_value = True
+
+        import services.image_service as img_mod
+
+        original_torch = getattr(img_mod, "torch", None)
+        try:
+            img_mod.torch = mock_torch
+            with patch("services.image_service.TORCH_AVAILABLE", True):
+                svc._unload_model()
+            mock_torch.cuda.empty_cache.assert_called_once()
+        finally:
+            if original_torch is not None:
+                img_mod.torch = original_torch
+
+    def test_skips_cuda_cache_when_not_available(self):
+        svc = ImageService()
+        svc._gen_pipe = MagicMock()
+        svc._active_model = ImageModel.SDXL_BASE
+
+        mock_torch = MagicMock()
+        mock_torch.cuda.is_available.return_value = False
+
+        import services.image_service as img_mod
+
+        original_torch = getattr(img_mod, "torch", None)
+        try:
+            img_mod.torch = mock_torch
+            with patch("services.image_service.TORCH_AVAILABLE", True):
+                svc._unload_model()
+            mock_torch.cuda.empty_cache.assert_not_called()
+        finally:
+            if original_torch is not None:
+                img_mod.torch = original_torch
+
+
+# ---------------------------------------------------------------------------
+# _import_pipeline_class()
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestImportPipelineClass:
+    def test_valid_dotted_path(self):
+        # Use a known stdlib class as a stand-in
+        cls = ImageService._import_pipeline_class("collections.OrderedDict")
+        from collections import OrderedDict
+
+        assert cls is OrderedDict
+
+    def test_another_valid_path(self):
+        cls = ImageService._import_pipeline_class("os.path")
+        import os.path
+
+        assert cls is os.path
+
+    def test_invalid_path_no_dot(self):
+        with pytest.raises(ImportError, match="Invalid pipeline class path"):
+            ImageService._import_pipeline_class("nodots")
+
+    def test_nonexistent_module(self):
+        with pytest.raises(ModuleNotFoundError):
+            ImageService._import_pipeline_class("nonexistent_module_xyz.SomeClass")
+
+    def test_nonexistent_class_in_valid_module(self):
+        with pytest.raises(AttributeError):
+            ImageService._import_pipeline_class("collections.NonexistentClassXyz")
+
+    def test_with_mock_importlib(self):
+        """Verify the method calls importlib.import_module with the module part."""
+        mock_module = MagicMock()
+        mock_module.MyPipeline = "fake_class"
+
+        with patch("importlib.import_module", return_value=mock_module) as mock_import:
+            result = ImageService._import_pipeline_class("diffusers.MyPipeline")
+
+        mock_import.assert_called_once_with("diffusers")
+        assert result == "fake_class"

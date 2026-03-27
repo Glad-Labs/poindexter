@@ -21,12 +21,7 @@ Sprint 5 adds three observability layers to Glad Labs:
 ### Step 1: Install Frontend Dependencies
 
 ```bash
-cd web/oversight-hub
 npm install
-
-# Verify recharts is installed
-npm ls recharts
-# Should show: recharts@^2.14.6 or higher
 ```
 
 ### Step 2: Restart Services
@@ -34,10 +29,6 @@ npm ls recharts
 ```bash
 # From project root
 npm run dev
-
-# Or if already running, restart oversight-hub:
-# In terminal where npm run dev:oversight is running
-# Press Ctrl+C, then run again
 ```
 
 ### Step 3: Verify Backend is Running
@@ -55,9 +46,9 @@ curl http://localhost:8000/api/analytics/kpis
 
 ### Navigate to Dashboard
 
-1. Open http://localhost:3001 (Oversight Hub)
-2. Click "Analytics" in the navigation menu
-3. Or direct link: http://localhost:3001/analytics
+1. Access the analytics endpoints via API:
+2. `GET /api/analytics/kpis` - Executive KPIs
+3. `GET /api/analytics/performance` - Performance metrics
 
 ### Dashboard Features
 
@@ -326,7 +317,7 @@ psql $DATABASE_URL -c "SELECT COUNT(*) FROM admin_logs LIMIT 1;"
 
 ```bash
 # 1. Is recharts installed?
-npm ls recharts --workspace=oversight-hub
+npm ls recharts
 
 # 2. Is data coming from API?
 curl http://localhost:8000/api/analytics/kpis | jq .
@@ -377,16 +368,6 @@ src/cofounder_agent/
     ├── middleware_config.py          # Middleware setup (MODIFIED)
     └── route_registration.py         # Route setup (MODIFIED)
 
-web/oversight-hub/
-├── src/
-│   ├── pages/
-│   │   ├── AnalyticsDashboard.jsx   # New dashboard (NEW)
-│   │   └── PerformanceDashboard.jsx # Enhanced w/ charts (MODIFIED)
-│   ├── routes/
-│   │   └── AnalyticsDashboard.css   # Dashboard styling (NEW)
-│   └── services/
-│       └── analyticsService.js      # API wrapper (NEW)
-└── package.json                      # recharts added (MODIFIED)
 ```
 
 ---
@@ -395,7 +376,7 @@ web/oversight-hub/
 
 - **Metrics Collection Details:** See [CAPABILITY_BASED_TASK_SYSTEM.md](../CAPABILITY_BASED_TASK_SYSTEM.md)
 - **Production Monitoring:** See [MONITORING_AND_DIAGNOSTICS.md](../MONITORING_AND_DIAGNOSTICS.md)
-- **Architecture:** See [02-ARCHITECTURE_AND_DESIGN.md](../02-ARCHITECTURE_AND_DESIGN.md)
+- **Architecture:** See [System-Design.md](../02-Architecture/System-Design.md)
 
 ---
 

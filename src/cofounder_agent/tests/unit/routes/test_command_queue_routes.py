@@ -15,16 +15,16 @@ create_command and get_command_queue are patched to avoid real I/O.
 Auth is required on these endpoints — get_current_user overridden with TEST_USER.
 """
 
-import pytest
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from routes.auth_unified import get_current_user
 from routes.command_queue_routes import router
 from tests.unit.routes.conftest import TEST_USER
-
 
 COMMAND_ID = "cmd-11111111-1111-1111-1111-111111111111"
 

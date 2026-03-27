@@ -14,14 +14,10 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from schemas.custom_workflow_schemas import (
-    CustomWorkflow,
-    WorkflowPhase,
-    WorkflowValidationResult,
-)
+from schemas.custom_workflow_schemas import CustomWorkflow, WorkflowPhase, WorkflowValidationResult
 from services.phase_registry import PhaseRegistry
-from services.workflow_validator import WorkflowValidator
 from services.workflow_executor import WorkflowExecutor
+from services.workflow_validator import WorkflowValidator
 from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 
 logger = logging.getLogger(__name__)
@@ -107,9 +103,7 @@ class CustomWorkflowsService:
             logger.error(f"Error retrieving workflow {workflow_id}: {str(e)}", exc_info=True)
             raise
 
-    async def get_workflow_by_name(
-        self, name: str, owner_id: str
-    ) -> Optional[CustomWorkflow]:
+    async def get_workflow_by_name(self, name: str, owner_id: str) -> Optional[CustomWorkflow]:
         """
         Retrieve a workflow by name for a given owner.
 
@@ -131,9 +125,7 @@ class CustomWorkflowsService:
                 owner_id,
             )
             if not row:
-                logger.warning(
-                    f"Workflow '{name}' not found for user {owner_id}"
-                )
+                logger.warning(f"Workflow '{name}' not found for user {owner_id}")
                 return None
             return self._row_to_workflow(row)
         except Exception as e:
@@ -234,7 +226,7 @@ class CustomWorkflowsService:
             raise ValueError(f"Workflow {workflow_id} not found or access denied")
 
         if existing.owner_id != owner_id:
-            raise ValueError(f"Cannot update workflow owned by different user")
+            raise ValueError("Cannot update workflow owned by different user")
 
         # Validate
         validation = self.validate_workflow(workflow)
@@ -276,7 +268,7 @@ class CustomWorkflowsService:
             raise ValueError(f"Workflow {workflow_id} not found or access denied")
 
         if existing.owner_id != owner_id:
-            raise ValueError(f"Cannot delete workflow owned by different user")
+            raise ValueError("Cannot delete workflow owned by different user")
 
         try:
             await self.database_service.pool.execute(
@@ -493,8 +485,6 @@ class CustomWorkflowsService:
             True if successful
         """
         try:
-            from datetime import datetime, timezone
-
             now = datetime.now(timezone.utc)
 
             # Convert phase results to JSON

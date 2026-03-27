@@ -14,7 +14,7 @@
 
 ### Quick Links
 
-- **Parent Documentation**: See [05-AI_AGENTS_AND_INTEGRATION.md](../../05-AI_AGENTS_AND_INTEGRATION.md) for overall agent architecture
+- **Parent Documentation**: See [Multi-Agent-Pipeline.md](../../02-Architecture/Multi-Agent-Pipeline.md) for overall agent architecture
 - **Troubleshooting**: See [troubleshooting/](./troubleshooting/) for common issues
 - **Source Code**: See `src/cofounder_agent/README.md` for detailed implementation
 

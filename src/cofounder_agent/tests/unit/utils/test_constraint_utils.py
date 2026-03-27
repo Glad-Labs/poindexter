@@ -9,20 +9,18 @@ Covers all three tiers of constraint utilities:
           calculate_cost_impact
 """
 
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import MagicMock, patch
 
 from utils.constraint_utils import (
-    ContentConstraints,
     ConstraintCompliance,
-    PhaseWordCountTarget,
+    ContentConstraints,
     analyze_style_consistency,
-    apply_strict_mode,
     auto_expand_content,
     auto_trim_content,
     calculate_cost_impact,
     calculate_phase_targets,
-    check_tolerance,
     count_words_in_content,
     extract_constraints_from_request,
     format_compliance_report,
@@ -30,7 +28,6 @@ from utils.constraint_utils import (
     merge_compliance_reports,
     validate_constraints,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -198,7 +195,9 @@ class TestInjectConstraintsIntoPrompt:
     def test_adds_style_guidance_for_thought_leadership(self):
         constraints = ContentConstraints(writing_style="thought-leadership")
         result = inject_constraints_into_prompt("Prompt.", constraints)
-        assert "insight" in result.lower() or "thought" in result.lower() or "expert" in result.lower()
+        assert (
+            "insight" in result.lower() or "thought" in result.lower() or "expert" in result.lower()
+        )
 
     def test_original_prompt_preserved_in_output(self):
         constraints = ContentConstraints()
@@ -511,7 +510,9 @@ class TestAnalyzeStyleConsistency:
         assert score >= 0.5
 
     def test_narrative_style_detected_by_keywords(self):
-        content = "I discovered the story of a journey where I experienced and realized many things."
+        content = (
+            "I discovered the story of a journey where I experienced and realized many things."
+        )
         score, _ = analyze_style_consistency(content, "narrative")
         assert score >= 0.5
 
@@ -620,9 +621,7 @@ class TestFormatComplianceReport:
         assert "FAIL" in result
 
     def test_includes_violation_message_when_present(self):
-        compliance = _make_compliance(
-            within=False, violation="Content too short: 500 words"
-        )
+        compliance = _make_compliance(within=False, violation="Content too short: 500 words")
         result = format_compliance_report(compliance)
         assert "500 words" in result
 

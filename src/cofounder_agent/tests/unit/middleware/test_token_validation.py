@@ -2,10 +2,11 @@
 Unit tests for middleware/token_validation.py — TokenValidationMiddleware
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from middleware.token_validation import TokenValidationMiddleware
 
+import pytest
+
+from middleware.token_validation import TokenValidationMiddleware
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -266,6 +267,7 @@ class TestErrorHandling:
         assert result.status_code == 500
         # body must contain a generic 'detail' key, not the raw exception message
         import json
+
         body = json.loads(bytes(result.body))
         assert "detail" in body
         assert "Secret internal detail" not in body["detail"]
@@ -281,6 +283,7 @@ class TestErrorHandling:
 
         assert result.status_code == 401
         import json
+
         body = json.loads(bytes(result.body))
         body_text = str(body).lower()
         assert "traceback" not in body_text
@@ -309,11 +312,11 @@ class TestProductionModeBypass:
 
         with patch.dict(
             "os.environ",
-            {"DISABLE_AUTH_FOR_DEV": "true", "ENVIRONMENT": "production"},
+            {"DISABLE_AUTH_FOR_DEV": "true", "DEVELOPMENT_MODE": "false"},
         ):
             result = await mw.dispatch(req, call_next)
 
-        # In production, DISABLE_AUTH_FOR_DEV must not bypass — request rejected
+        # When DEVELOPMENT_MODE is not true, DISABLE_AUTH_FOR_DEV must not bypass
         assert not called
         assert result.status_code == 401
 

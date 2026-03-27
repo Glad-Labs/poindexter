@@ -1,7 +1,7 @@
 # 05 - AI Agents & Integration
 
 **Last Updated:** March 10, 2026
-**Version:** 3.0.82
+**Version:** 0.1.0
 **Status:** ✅ Production Ready | Multi-Agent Orchestration | Self-Critiquing Pipeline Active
 
 ---
@@ -16,7 +16,7 @@ Glad Labs implements a sophisticated self-critiquing content generation pipeline
 
 ```text
 ┌─────────────────────────────────────────────┐
-│         Oversight Hub (UI)                  │
+│     API Client / OpenClaw                   │
 └──────────────────┬──────────────────────────┘
                    │ POST /api/tasks
 ┌──────────────────▼──────────────────────────┐
@@ -110,7 +110,7 @@ To add a custom tool:
 Usage is tracked per-task and per-user using the `UsageTracker` service.
 
 - **Metrics Service:** `src/cofounder_agent/services/usage_tracker.py`
-- **Dashboard:** Real-time costs in **Oversight Hub** (Port 3001)
+- **Dashboard:** Real-time costs via **Grafana** monitoring
 - **Reports:** Cost breakdown by model, agent, task type
 
 ---
@@ -560,13 +560,13 @@ curl http://localhost:8000/api/agents/memory/stats
 
 ## 🔗 Related Documentation
 
-- **[Architecture](./02-ARCHITECTURE_AND_DESIGN.md)** - System overview
-- **[Setup Guide](./01-SETUP_AND_OVERVIEW.md)** - Getting started
-- **[Development](../04-DEVELOPMENT_WORKFLOW.md)** - Development patterns
-- **[Deployment](../03-DEPLOYMENT_AND_INFRASTRUCTURE.md)** - Production setup
+- **[Architecture](./System-Design.md)** - System overview
+- **[Setup Guide](../01-Getting-Started/)** - Getting started
+- **[Development](../04-Development/Development-Workflow.md)** - Development patterns
+- **[Deployment](../05-Operations/Operations-Maintenance.md)** - Production setup
 
 ---
 
 **[← Back to Documentation Hub](../00-README.md)**
 
-[Setup](../01-SETUP_AND_OVERVIEW.md) • [Architecture](../02-ARCHITECTURE_AND_DESIGN.md) • [Development](../04-DEVELOPMENT_WORKFLOW.md) • [Operations](../06-OPERATIONS_AND_MAINTENANCE.md)
+[Setup](../01-Getting-Started/) • [Architecture](./System-Design.md) • [Development](../04-Development/Development-Workflow.md) • [Operations](../05-Operations/Operations-Maintenance.md)

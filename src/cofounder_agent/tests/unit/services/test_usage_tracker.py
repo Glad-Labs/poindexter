@@ -13,11 +13,9 @@ Tests UsageMetrics and UsageTracker:
 All tests are pure synchronous — no DB, network, or async calls.
 """
 
-import time
 import pytest
 
 from services.usage_tracker import UsageMetrics, UsageTracker, get_usage_tracker
-
 
 # ---------------------------------------------------------------------------
 # UsageMetrics
@@ -48,7 +46,7 @@ class TestUsageMetrics:
         )
         m.input_tokens = 100
         m.output_tokens = 50
-        m.input_cost_usd = 0.03   # per 1K tokens
+        m.input_cost_usd = 0.03  # per 1K tokens
         m.output_cost_usd = 0.06  # per 1K tokens
 
         m.complete()
@@ -66,8 +64,8 @@ class TestUsageMetrics:
         )
         m.input_tokens = 1000
         m.output_tokens = 500
-        m.input_cost_usd = 0.03    # $0.03 per 1K input → $0.03 for 1K tokens
-        m.output_cost_usd = 0.06   # $0.06 per 1K output → $0.03 for 500 tokens
+        m.input_cost_usd = 0.03  # $0.03 per 1K input → $0.03 for 1K tokens
+        m.output_cost_usd = 0.06  # $0.06 per 1K output → $0.03 for 500 tokens
 
         m.complete()
 

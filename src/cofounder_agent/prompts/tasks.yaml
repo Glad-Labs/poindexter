@@ -1,0 +1,188 @@
+- key: task.creative_blog_generation
+  category: blog_generation
+  description: "Generate blog post with creative section titles"
+  output_format: markdown
+  notes: "v2.0: Added explicit creative title requirements with examples"
+  template: |
+    Create a high-quality {style} blog post about:
+
+    Topic: {topic}
+    Word Count: {length} words
+    Style: {style}
+
+    {research_context}
+
+    ⭐ CRITICAL REQUIREMENTS:
+    1. Compelling title (creative and benefit-driven)
+    2. Clear outline with H2 section headers
+       ⚠️ Section titles MUST be catchy and creative - NOT generic!
+       ❌ AVOID: Introduction, Conclusion, Summary, Background, Overview
+       ✅ USE: "Why This Matters", "The Biggest Challenge", "Your Quick Win", "How This Transforms"
+    3. Engaging introduction
+    4. Well-structured body with key points and real examples
+    5. Strong conclusion with clear call-to-action (avoid "Conclusion" as title)
+
+    Format: Markdown with proper headings and formatting
+
+- key: task.qa_content_evaluation
+  category: content_qa
+  description: "QA evaluation for content tasks"
+  output_format: json
+  notes: "v1.0: Structured QA with per-criterion ratings"
+  example_output: '{"scores":{"clarity":8,"accuracy":9},"feedback":"Well-written","suggestions":["Add more examples"],"overall_score":8.5}'
+  template: |
+    Evaluate this content for quality:
+
+    Topic: {topic}
+
+    Content:
+    {content}
+
+    Evaluation Criteria:
+    {criteria_list}
+
+    For each criterion, provide:
+    1. Rating (1-10)
+    2. Specific feedback
+    3. Improvement suggestions
+
+    Format as JSON with keys: scores (dict), feedback (str), suggestions (list), overall_score (float)
+
+- key: task.business_financial_impact
+  category: financial
+  description: "Financial impact analysis for content workflows"
+  output_format: json
+  notes: "v1.0: ROI and cost-benefit analysis"
+  example_output: '{"recommendations":["Reduce API calls","Automate distribution"],"opportunities":["Expand platforms"],"breakeven_units":50,"projection":{}}'
+  template: |
+    Analyze financial impact of this content workflow:
+
+    Workflow Type: {workflow_type}
+    Content Pieces: {content_count}
+    Social Platforms: {platform_count}
+    Time Period: {time_period}
+
+    Cost Breakdown:
+    {cost_details}
+
+    Estimated Revenue: ${estimated_revenue:.2f}
+    Estimated ROI: {estimated_roi:.1f}%
+
+    Provide:
+    1. Cost optimization recommendations
+    2. Revenue increase opportunities
+    3. Break-even analysis
+    4. 3-month projection
+
+    Format as JSON with keys: recommendations, opportunities, breakeven_units, projection
+
+- key: task.business_market_analysis
+  category: market_analysis
+  description: "Market analysis for business intelligence"
+  output_format: json
+  notes: "v1.0: Comprehensive competitive and market research"
+  template: |
+    Perform detailed market analysis for: {topic}
+
+    Target audience: {target_audience}
+    Time period: {period}
+    Geographic focus: {geography}
+
+    Analyze:
+    1. Market size and growth trends
+    2. Competitive landscape (top 3-5 players and their strategies)
+    3. Customer demographics and pain points
+    4. Price positioning strategies
+    5. Market opportunities and gaps
+    6. Barriers to entry
+    7. Key success factors
+
+    Format as JSON with keys: market_size, competitors, demographics, pricing, opportunities, barriers, success_factors
+
+- key: task.business_performance_analysis
+  category: financial
+  description: "Content performance and metrics analysis"
+  output_format: json
+  notes: "v1.0: Performance metrics and trend analysis"
+  template: |
+    Analyze performance for {period} period:
+
+    Total Content Created: {content_count}
+    Traffic Generated: {traffic}
+    Conversions: {conversions}
+    Revenue: ${revenue:.2f}
+
+    Provide:
+    1. Key metrics summary
+    2. Performance trends (up/down analysis)
+    3. Top performing content types
+    4. Underperforming areas
+    5. Actionable recommendations for improvement
+
+    Format as JSON with keys: summary, trends, top_performers, underperforming, recommendations
+
+- key: task.automation_email_campaign
+  category: social_media
+  description: "Email campaign generation"
+  output_format: json
+  notes: "v1.0: Multi-part email template generation"
+  example_output: '{"subject":"Limited Time Offer","preview":"Exclusive deal inside","body":"<html>...","cta_text":"Claim Now","footer":"Unsubscribe"}'
+  template: |
+    Generate a professional email campaign:
+
+    Campaign Name: {campaign_name}
+    Target Audience: {target_audience}
+    Campaign Goal: {goal}
+    Tone: {tone}
+
+    Create:
+    1. Subject line (compelling, <60 chars)
+    2. Preview text
+    3. Email body (HTML formatted, professional)
+    4. Call-to-action button text
+    5. Footer with unsubscribe link
+
+    Format as JSON with keys: subject, preview, body, cta_text, footer
+
+- key: task.content_summarization
+  category: utility
+  description: "Content summarization at various lengths"
+  output_format: text
+  notes: "v1.0: Flexible length summarization"
+  example_output: "This article discusses AI trends in 2025, focusing on adoption rates, costs, and ethical considerations across industries."
+  template: |
+    Summarize this content in {length} format:
+
+    Original Content:
+    {content}
+
+    ⭐ REQUIREMENTS:
+    - Output length: {length}
+    - Capture key points only
+    - Maintain original tone
+    - Be concise and clear
+    - Include main takeaways
+
+    Generate ONLY the summary, nothing else.
+
+- key: task.utility_json_conversion
+  category: utility
+  description: "Convert content to JSON format"
+  output_format: json
+  notes: "v1.0: Flexible JSON structure conversion"
+  template: |
+    Convert this content to JSON structure:
+
+    Original Format:
+    {content}
+
+    Target Structure: {target_structure}
+
+    ⭐ REQUIREMENTS:
+    1. Maintain all original information
+    2. Organize logically into JSON keys
+    3. Ensure valid JSON format
+    4. Include metadata if applicable
+    5. Preserve relationships between data
+
+    Return ONLY valid JSON, nothing else.

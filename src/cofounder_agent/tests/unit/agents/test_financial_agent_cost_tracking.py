@@ -5,9 +5,10 @@ Tests for CostTrackingService, BudgetAlert, BudgetAlertLevel,
 and initialize_cost_tracking factory function.
 """
 
-import pytest
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from agents.financial_agent.cost_tracking import (
     BudgetAlert,
@@ -15,7 +16,6 @@ from agents.financial_agent.cost_tracking import (
     CostTrackingService,
     initialize_cost_tracking,
 )
-
 
 # ---------------------------------------------------------------------------
 # BudgetAlertLevel enum
@@ -164,7 +164,9 @@ class TestCheckBudgetThresholds:
         result = self.svc._check_budget_thresholds(spent=105.0, budget=100.0, percentage=105.0)
         assert result is not None
         # Critical alerts should have actionable recommendations
-        assert any("IMMEDIATE" in r.upper() or "budget" in r.lower() for r in result.recommendations)
+        assert any(
+            "IMMEDIATE" in r.upper() or "budget" in r.lower() for r in result.recommendations
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -353,7 +355,9 @@ class TestPublishAlert:
         await svc._publish_alert(alert)
         mock_pubsub.publish.assert_called_once()
         call_kwargs = mock_pubsub.publish.call_args
-        assert call_kwargs[1]["topic"] == "financial-alerts" or "financial-alerts" in str(call_kwargs)
+        assert call_kwargs[1]["topic"] == "financial-alerts" or "financial-alerts" in str(
+            call_kwargs
+        )
 
 
 # ---------------------------------------------------------------------------

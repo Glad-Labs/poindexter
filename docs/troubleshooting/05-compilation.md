@@ -1,7 +1,7 @@
 # Compilation Fixes Summary
 
-**Date:** October 25, 2025  
-**Status:** ✅ Oversight Hub Ready | ⏳ Strapi Known Issue
+**Date:** October 25, 2025
+**Status:** ✅ Historical (Oversight Hub has been archived to a separate branch)
 
 ---
 

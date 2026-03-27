@@ -253,7 +253,11 @@ export default async function PostPage({
               {/* Meta Information */}
               <div className="flex flex-wrap items-center gap-4 text-slate-300 mb-8">
                 <time dateTime={post.published_at || post.created_at}>
-                  {publishDate}
+                  {new Date(publishDate).toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                  })}
                 </time>
                 {post.view_count > 0 && (
                   <>

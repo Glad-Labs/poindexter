@@ -16,13 +16,11 @@ from services.error_handler import (
     ForbiddenError,
     NotFoundError,
     ServiceError,
-    StateError,
     TimeoutError,
     UnauthorizedError,
     ValidationError,
     handle_error,
 )
-
 
 # ---------------------------------------------------------------------------
 # AppError base class

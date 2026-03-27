@@ -17,7 +17,6 @@ from services.phase_registry import (
     PhaseRegistry,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -221,8 +220,18 @@ class TestPhaseDefinitionToDict:
         phase = registry.get_phase("research")
         assert phase is not None
         d = phase.to_dict()
-        required = {"name", "agent_type", "description", "input_schema", "output_schema",
-                    "required", "timeout_seconds", "max_retries", "skip_on_error", "tags"}
+        required = {
+            "name",
+            "agent_type",
+            "description",
+            "input_schema",
+            "output_schema",
+            "required",
+            "timeout_seconds",
+            "max_retries",
+            "skip_on_error",
+            "tags",
+        }
         assert required <= set(d.keys())
 
     def test_to_dict_name_matches(self, registry: PhaseRegistry):

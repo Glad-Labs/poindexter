@@ -5,9 +5,10 @@ Replaces Strapi image upload with direct database storage of image metadata and 
 """
 
 import json
-from services.logger_config import get_logger
 from pathlib import Path
 from typing import List, Optional
+
+from services.logger_config import get_logger
 
 from ..config import config
 from ..services.llm_client import LLMClient
@@ -16,6 +17,8 @@ from ..utils.data_models import BlogPost, ImageDetails
 from ..utils.helpers import extract_json_from_string, load_prompts_from_file
 
 logger = get_logger(__name__)
+
+
 class PostgreSQLImageAgent:
     """
     PostgreSQL-based image agent that stores image metadata directly to the database.
@@ -43,7 +46,9 @@ class PostgreSQLImageAgent:
         try:
             self.prompts = load_prompts_from_file(config.PROMPTS_PATH)
         except Exception as e:
-            logger.warning(f"[load_prompts] Could not load prompts: {e}. Using defaults.", exc_info=True)
+            logger.warning(
+                f"[load_prompts] Could not load prompts: {e}. Using defaults.", exc_info=True
+            )
             self.prompts = {}
 
         # Create local image storage if needed
@@ -102,7 +107,7 @@ class PostgreSQLImageAgent:
                 )
             else:
                 logger.info(
-                    f"ℹ️  ImageAgent: No images could be processed, continuing with text-only post"
+                    "ℹ️  ImageAgent: No images could be processed, continuing with text-only post"
                 )
 
         except Exception as e:
@@ -207,7 +212,10 @@ Only return the JSON array, no other text."""
             logger.debug(f"LLM response was: {metadata_text if metadata_text else 'unknown'}")
             return []
         except Exception as e:
-            logger.error(f"[_generate_image_metadata] post_slug={post.slug} title={post.title or post.topic}: {e}", exc_info=True)
+            logger.error(
+                f"[_generate_image_metadata] post_slug={post.slug} title={post.title or post.topic}: {e}",
+                exc_info=True,
+            )
             return []
 
     async def _process_single_image_async(
@@ -260,14 +268,19 @@ Only return the JSON array, no other text."""
                     return image_details
                 logger.warning(f"⚠️  No images found on Pexels for '{query}'")
             except Exception as e:
-                logger.warning(f"[_process_single_image_async] Pexels search failed post_slug={slug} index={index} query={query!r}: {e}", exc_info=True)
+                logger.warning(
+                    f"[_process_single_image_async] Pexels search failed post_slug={slug} index={index} query={query!r}: {e}",
+                    exc_info=True,
+                )
 
             # No fallback placeholder - return None instead
             logger.info(f"ℹ️  No image available for '{query}' - skipping")
             return None
 
         except Exception as e:
-            logger.error(f"[_process_single_image_async] post_slug={slug} index={index}: {e}", exc_info=True)
+            logger.error(
+                f"[_process_single_image_async] post_slug={slug} index={index}: {e}", exc_info=True
+            )
             return None
 
     def _process_single_image(
@@ -307,7 +320,9 @@ Only return the JSON array, no other text."""
             return None
 
         except Exception as e:
-            logger.error(f"[_process_single_image] post_slug={slug} index={index}: {e}", exc_info=True)
+            logger.error(
+                f"[_process_single_image] post_slug={slug} index={index}: {e}", exc_info=True
+            )
             # Return None instead of fallback image
             return None
 

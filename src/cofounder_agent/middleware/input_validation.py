@@ -6,14 +6,17 @@ Provides request size limits, content-type validation, and payload inspection.
 """
 
 import json
-from services.logger_config import get_logger
 from typing import Callable
 
 from fastapi import HTTPException, Request, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 
+from services.logger_config import get_logger
+
 logger = get_logger(__name__)
+
+
 class InputValidationMiddleware(BaseHTTPMiddleware):
     """
     Middleware for validating all incoming requests.
@@ -146,7 +149,7 @@ class InputValidationMiddleware(BaseHTTPMiddleware):
             except ValueError as e:
                 if "exceeds maximum" in str(e):
                     raise
-                raise ValueError("Invalid Content-Length header")
+                raise ValueError("Invalid Content-Length header") from e
 
         # Validate Content-Type header (does not consume stream)
         content_type = request.headers.get("content-type", "")

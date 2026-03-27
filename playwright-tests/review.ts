@@ -13,12 +13,7 @@ export default defineConfig({
 });
 
 // Test file content
-const pagesToTest = [
-  '/',
-  '/oversight-hub-home',
-  '/dashboard-after-task',
-  '/poindexter-chat-prepared',
-];
+const pagesToTest = ['/', '/dashboard-after-task', '/poindexter-chat-prepared'];
 
 describe('Review website', () => {
   pagesToTest.forEach((page) => {

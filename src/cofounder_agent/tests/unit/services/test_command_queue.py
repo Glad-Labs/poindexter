@@ -6,10 +6,8 @@ retry logic, handler notification, statistics, and module-level
 convenience helpers.
 """
 
-import asyncio
 from datetime import datetime, timezone
-from typing import Any, Dict
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -23,7 +21,6 @@ from services.command_queue import (
     dispatch_financial_analysis,
     get_command_queue,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -230,6 +227,7 @@ class TestCommandQueueList:
     @pytest.mark.asyncio
     async def test_list_sorted_descending(self, queue):
         from datetime import timedelta
+
         c1 = Command(agent_type="a", action="x")
         c2 = Command(agent_type="b", action="y")
         # Manually set timestamps so sort order is deterministic
@@ -319,6 +317,7 @@ class TestCommandQueueStats:
         await queue.complete_command(cmd.id, {})
         # Force the updated_at to be very old
         from datetime import timedelta
+
         old_time = datetime.now(timezone.utc) - timedelta(hours=48)
         queue.commands[cmd.id].updated_at = old_time.isoformat()
         await queue.clear_old_commands(max_age_hours=24)

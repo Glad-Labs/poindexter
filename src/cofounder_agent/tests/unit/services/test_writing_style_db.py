@@ -15,13 +15,13 @@ asyncpg pool fully mocked; no real DB access.
 """
 
 import json
-import pytest
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from services.writing_style_db import WritingStyleDatabase
-
 
 # ---------------------------------------------------------------------------
 # Helpers

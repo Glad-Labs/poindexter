@@ -16,12 +16,11 @@ Tests TaskMetrics and MetricsService:
 All tests are pure — no DB or network I/O (database dep is mocked).
 """
 
-import time
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from services.metrics_service import TaskMetrics, MetricsService, get_metrics_service
+import pytest
 
+from services.metrics_service import MetricsService, TaskMetrics, get_metrics_service
 
 # ---------------------------------------------------------------------------
 # TaskMetrics — phase recording
@@ -88,12 +87,22 @@ class TestTaskMetricsLlmCalls:
     def test_llm_call_accumulates_tokens(self):
         m = TaskMetrics("task-2")
         m.record_llm_call(
-            phase="research", model="gpt-4", provider="openai",
-            tokens_in=200, tokens_out=100, cost_usd=0.01, duration_ms=200.0,
+            phase="research",
+            model="gpt-4",
+            provider="openai",
+            tokens_in=200,
+            tokens_out=100,
+            cost_usd=0.01,
+            duration_ms=200.0,
         )
         m.record_llm_call(
-            phase="draft", model="gpt-4", provider="openai",
-            tokens_in=300, tokens_out=150, cost_usd=0.015, duration_ms=250.0,
+            phase="draft",
+            model="gpt-4",
+            provider="openai",
+            tokens_in=300,
+            tokens_out=150,
+            cost_usd=0.015,
+            duration_ms=250.0,
         )
         assert m.total_tokens_in == 500
         assert m.total_tokens_out == 250
@@ -101,29 +110,50 @@ class TestTaskMetricsLlmCalls:
     def test_llm_call_accumulates_cost(self):
         m = TaskMetrics("task-2")
         m.record_llm_call(
-            phase="research", model="gpt-4", provider="openai",
-            tokens_in=100, tokens_out=50, cost_usd=0.005, duration_ms=100.0,
+            phase="research",
+            model="gpt-4",
+            provider="openai",
+            tokens_in=100,
+            tokens_out=50,
+            cost_usd=0.005,
+            duration_ms=100.0,
         )
         m.record_llm_call(
-            phase="draft", model="gpt-4", provider="openai",
-            tokens_in=100, tokens_out=50, cost_usd=0.005, duration_ms=100.0,
+            phase="draft",
+            model="gpt-4",
+            provider="openai",
+            tokens_in=100,
+            tokens_out=50,
+            cost_usd=0.005,
+            duration_ms=100.0,
         )
         assert abs(m.total_cost_usd - 0.010) < 1e-9
 
     def test_llm_call_with_error_stores_error_field(self):
         m = TaskMetrics("task-2")
         m.record_llm_call(
-            phase="research", model="gpt-4", provider="openai",
-            tokens_in=0, tokens_out=0, cost_usd=0, duration_ms=100.0,
-            status="error", error="rate limited",
+            phase="research",
+            model="gpt-4",
+            provider="openai",
+            tokens_in=0,
+            tokens_out=0,
+            cost_usd=0,
+            duration_ms=100.0,
+            status="error",
+            error="rate limited",
         )
         assert m.llm_calls[0]["error"] == "rate limited"
 
     def test_llm_call_total_tokens_field(self):
         m = TaskMetrics("task-2")
         m.record_llm_call(
-            phase="research", model="gpt-4", provider="openai",
-            tokens_in=100, tokens_out=50, cost_usd=0, duration_ms=100.0,
+            phase="research",
+            model="gpt-4",
+            provider="openai",
+            tokens_in=100,
+            tokens_out=50,
+            cost_usd=0,
+            duration_ms=100.0,
         )
         assert m.llm_calls[0]["total_tokens"] == 150
 
@@ -168,8 +198,14 @@ class TestTaskMetricsErrorRate:
         m = TaskMetrics("task-4")
         for i in range(4):
             m.record_llm_call(
-                phase="research", model="gpt-4", provider="openai",
-                tokens_in=10, tokens_out=5, cost_usd=0, duration_ms=50.0, status="success",
+                phase="research",
+                model="gpt-4",
+                provider="openai",
+                tokens_in=10,
+                tokens_out=5,
+                cost_usd=0,
+                duration_ms=50.0,
+                status="success",
             )
         assert m.get_error_rate() == 0.0
 
@@ -177,8 +213,14 @@ class TestTaskMetricsErrorRate:
         m = TaskMetrics("task-4")
         for status in ("success", "error"):
             m.record_llm_call(
-                phase="research", model="gpt-4", provider="openai",
-                tokens_in=10, tokens_out=5, cost_usd=0, duration_ms=50.0, status=status,
+                phase="research",
+                model="gpt-4",
+                provider="openai",
+                tokens_in=10,
+                tokens_out=5,
+                cost_usd=0,
+                duration_ms=50.0,
+                status=status,
             )
         assert m.get_error_rate() == 0.5
 
@@ -222,8 +264,17 @@ class TestTaskMetricsToDict:
     def test_to_dict_contains_required_keys(self):
         m = TaskMetrics("task-6")
         d = m.to_dict()
-        for key in ("task_id", "start_time", "end_time", "total_duration_ms",
-                     "phases", "llm_calls", "llm_stats", "errors", "error_count"):
+        for key in (
+            "task_id",
+            "start_time",
+            "end_time",
+            "total_duration_ms",
+            "phases",
+            "llm_calls",
+            "llm_stats",
+            "errors",
+            "error_count",
+        ):
             assert key in d, f"Missing key: {key}"
 
     def test_to_dict_task_id_matches(self):
@@ -234,8 +285,13 @@ class TestTaskMetricsToDict:
         m = TaskMetrics("task-6")
         d = m.to_dict()
         stats = d["llm_stats"]
-        for key in ("total_calls", "total_tokens_in", "total_tokens_out",
-                     "total_cost_usd", "error_rate"):
+        for key in (
+            "total_calls",
+            "total_tokens_in",
+            "total_tokens_out",
+            "total_cost_usd",
+            "error_rate",
+        ):
             assert key in stats, f"Missing llm_stats key: {key}"
 
 
@@ -298,15 +354,17 @@ class TestMetricsService:
     async def test_get_metrics_with_db_returns_real_values(self):
         """When database_service is wired, get_metrics() delegates to it (#654)."""
         mock_db = AsyncMock()
-        mock_db.get_metrics = AsyncMock(return_value={
-            "totalTasks": 42,
-            "completedTasks": 38,
-            "failedTasks": 4,
-            "pendingTasks": 0,
-            "successRate": 90.48,
-            "avgExecutionTime": 12.5,
-            "totalCost": 1.23,
-        })
+        mock_db.get_metrics = AsyncMock(
+            return_value={
+                "totalTasks": 42,
+                "completedTasks": 38,
+                "failedTasks": 4,
+                "pendingTasks": 0,
+                "successRate": 90.48,
+                "avgExecutionTime": 12.5,
+                "totalCost": 1.23,
+            }
+        )
         svc = MetricsService(database_service=mock_db)
         result = await svc.get_metrics()
         assert result["total_tasks"] == 42
@@ -320,11 +378,17 @@ class TestMetricsService:
     async def test_get_metrics_maps_camelcase_to_snake_case(self):
         """DB returns camelCase keys — output must be snake_case (#654)."""
         mock_db = AsyncMock()
-        mock_db.get_metrics = AsyncMock(return_value={
-            "totalTasks": 10, "completedTasks": 8, "failedTasks": 2,
-            "pendingTasks": 0, "successRate": 80.0, "avgExecutionTime": 5.0,
-            "totalCost": 0.5,
-        })
+        mock_db.get_metrics = AsyncMock(
+            return_value={
+                "totalTasks": 10,
+                "completedTasks": 8,
+                "failedTasks": 2,
+                "pendingTasks": 0,
+                "successRate": 80.0,
+                "avgExecutionTime": 5.0,
+                "totalCost": 0.5,
+            }
+        )
         svc = MetricsService(database_service=mock_db)
         result = await svc.get_metrics()
         assert "total_tasks" in result
@@ -360,12 +424,14 @@ class TestMetricsService:
 class TestGetMetricsServiceSingleton:
     def test_returns_metrics_service_instance(self):
         import services.metrics_service as ms_module
+
         ms_module.metrics_service = None  # Reset singleton
         svc = get_metrics_service()
         assert isinstance(svc, MetricsService)
 
     def test_returns_same_instance(self):
         import services.metrics_service as ms_module
+
         ms_module.metrics_service = None  # Reset singleton
         svc1 = get_metrics_service()
         svc2 = get_metrics_service()

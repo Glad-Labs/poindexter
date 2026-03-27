@@ -13,7 +13,6 @@ Tests cover:
 """
 
 import asyncio
-import importlib
 import types
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -53,11 +52,13 @@ def _make_db_service(pool=None):
 class TestRunMigrationsNoDB:
     def test_no_database_service_returns_false(self):
         from services.migrations import run_migrations
+
         result = _run(run_migrations(None))
         assert result is False
 
     def test_no_pool_returns_false(self):
         from services.migrations import run_migrations
+
         db = _make_db_service(pool=None)
         result = _run(run_migrations(db))
         assert result is False
@@ -67,6 +68,7 @@ class TestRunMigrationsNoDB:
 class TestRunMigrationsNoFiles:
     def test_no_migration_files_returns_true(self):
         from services.migrations import run_migrations
+
         pool, conn = _make_pool()
         db = _make_db_service(pool=pool)
         # Patch glob to return empty list
@@ -76,6 +78,7 @@ class TestRunMigrationsNoFiles:
 
     def test_creates_tracking_table_even_when_no_files(self):
         from services.migrations import run_migrations
+
         pool, conn = _make_pool()
         db = _make_db_service(pool=pool)
         with patch("services.migrations.Path.glob", return_value=iter([])):
@@ -119,8 +122,12 @@ class TestRunMigrationsNewMigration:
         mock_spec.loader.exec_module = MagicMock()
 
         with patch("services.migrations.Path.glob", return_value=iter([mock_file])):
-            with patch("services.migrations.importlib.util.spec_from_file_location", return_value=mock_spec):
-                with patch("services.migrations.importlib.util.module_from_spec", return_value=mock_module):
+            with patch(
+                "services.migrations.importlib.util.spec_from_file_location", return_value=mock_spec
+            ):
+                with patch(
+                    "services.migrations.importlib.util.module_from_spec", return_value=mock_module
+                ):
                     result = _run(run_migrations(db))
 
         assert result is True
@@ -141,8 +148,12 @@ class TestRunMigrationsNewMigration:
         mock_spec.loader.exec_module = MagicMock()
 
         with patch("services.migrations.Path.glob", return_value=iter([mock_file])):
-            with patch("services.migrations.importlib.util.spec_from_file_location", return_value=mock_spec):
-                with patch("services.migrations.importlib.util.module_from_spec", return_value=mock_module):
+            with patch(
+                "services.migrations.importlib.util.spec_from_file_location", return_value=mock_spec
+            ):
+                with patch(
+                    "services.migrations.importlib.util.module_from_spec", return_value=mock_module
+                ):
                     result = _run(run_migrations(db))
 
         assert result is True  # Skipped is not a failure
@@ -189,8 +200,12 @@ class TestRunMigrationsFailure:
             return success_module
 
         with patch("services.migrations.Path.glob", return_value=iter([file1, file2])):
-            with patch("services.migrations.importlib.util.spec_from_file_location", side_effect=fake_spec):
-                with patch("services.migrations.importlib.util.module_from_spec", side_effect=fake_module):
+            with patch(
+                "services.migrations.importlib.util.spec_from_file_location", side_effect=fake_spec
+            ):
+                with patch(
+                    "services.migrations.importlib.util.module_from_spec", side_effect=fake_module
+                ):
                     result = _run(run_migrations(db))
 
         assert result is False  # At least one migration failed

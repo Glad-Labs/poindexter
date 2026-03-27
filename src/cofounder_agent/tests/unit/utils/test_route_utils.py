@@ -10,8 +10,9 @@ Covers:
 - initialize_services: populates global container, sets app.state.services
 """
 
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 # Use a fresh import approach via importlib so each test class can share a
 # clean container without coupling tests to the module-level singleton.
@@ -20,6 +21,7 @@ from unittest.mock import MagicMock
 class TestServiceContainerInit:
     def setup_method(self):
         from utils.route_utils import ServiceContainer
+
         self.container = ServiceContainer()
 
     def test_all_named_attrs_start_as_none(self):
@@ -43,6 +45,7 @@ class TestServiceContainerInit:
 class TestServiceContainerSetGet:
     def setup_method(self):
         from utils.route_utils import ServiceContainer
+
         self.container = ServiceContainer()
 
     def test_set_and_get_database(self):
@@ -101,9 +104,15 @@ class TestServiceContainerSetGet:
     def test_get_all_services_includes_all_keys(self):
         all_svcs = self.container.get_all_services()
         expected_keys = {
-            "database", "orchestrator", "task_executor",
-            "intelligent_orchestrator", "workflow_history", "workflow_engine",
-            "redis_cache", "custom_workflows_service", "template_execution_service",
+            "database",
+            "orchestrator",
+            "task_executor",
+            "intelligent_orchestrator",
+            "workflow_history",
+            "workflow_engine",
+            "redis_cache",
+            "custom_workflows_service",
+            "template_execution_service",
         }
         for key in expected_keys:
             assert key in all_svcs
@@ -124,12 +133,14 @@ class TestServiceContainerSetGet:
 
 class TestGetServicesGlobal:
     def test_get_services_returns_service_container(self):
-        from utils.route_utils import get_services, ServiceContainer
+        from utils.route_utils import ServiceContainer, get_services
+
         result = get_services()
         assert isinstance(result, ServiceContainer)
 
     def test_get_services_same_object_on_repeated_calls(self):
         from utils.route_utils import get_services
+
         assert get_services() is get_services()
 
 
@@ -141,20 +152,24 @@ class TestDependencyFunctions:
 
     def _fresh_container(self):
         from utils.route_utils import ServiceContainer
+
         return ServiceContainer()
 
     def _patch_services(self, container):
         import utils.route_utils as mod
+
         original = mod._services
         mod._services = container
         return original
 
     def _restore_services(self, original):
         import utils.route_utils as mod
+
         mod._services = original
 
     def test_get_database_dependency_returns_db(self):
         from utils.route_utils import get_database_dependency
+
         c = self._fresh_container()
         mock_db = MagicMock()
         c.set_database(mock_db)
@@ -166,6 +181,7 @@ class TestDependencyFunctions:
 
     def test_get_database_dependency_raises_when_none(self):
         from utils.route_utils import get_database_dependency
+
         c = self._fresh_container()
         orig = self._patch_services(c)
         try:
@@ -176,6 +192,7 @@ class TestDependencyFunctions:
 
     def test_get_orchestrator_dependency_returns_orchestrator(self):
         from utils.route_utils import get_orchestrator_dependency
+
         c = self._fresh_container()
         mock_o = MagicMock()
         c.set_orchestrator(mock_o)
@@ -187,6 +204,7 @@ class TestDependencyFunctions:
 
     def test_get_orchestrator_dependency_raises_when_none(self):
         from utils.route_utils import get_orchestrator_dependency
+
         c = self._fresh_container()
         orig = self._patch_services(c)
         try:
@@ -197,6 +215,7 @@ class TestDependencyFunctions:
 
     def test_get_task_executor_dependency_returns_executor(self):
         from utils.route_utils import get_task_executor_dependency
+
         c = self._fresh_container()
         mock_e = MagicMock()
         c.set_task_executor(mock_e)
@@ -208,6 +227,7 @@ class TestDependencyFunctions:
 
     def test_get_task_executor_dependency_raises_when_none(self):
         from utils.route_utils import get_task_executor_dependency
+
         c = self._fresh_container()
         orig = self._patch_services(c)
         try:
@@ -218,6 +238,7 @@ class TestDependencyFunctions:
 
     def test_get_intelligent_orchestrator_dependency_returns_io(self):
         from utils.route_utils import get_intelligent_orchestrator_dependency
+
         c = self._fresh_container()
         mock_io = MagicMock()
         c.set_intelligent_orchestrator(mock_io)
@@ -229,6 +250,7 @@ class TestDependencyFunctions:
 
     def test_get_intelligent_orchestrator_dependency_raises_when_none(self):
         from utils.route_utils import get_intelligent_orchestrator_dependency
+
         c = self._fresh_container()
         orig = self._patch_services(c)
         try:
@@ -239,6 +261,7 @@ class TestDependencyFunctions:
 
     def test_get_workflow_history_dependency_returns_wh(self):
         from utils.route_utils import get_workflow_history_dependency
+
         c = self._fresh_container()
         mock_wh = MagicMock()
         c.set_workflow_history(mock_wh)
@@ -250,6 +273,7 @@ class TestDependencyFunctions:
 
     def test_get_workflow_history_dependency_raises_when_none(self):
         from utils.route_utils import get_workflow_history_dependency
+
         c = self._fresh_container()
         orig = self._patch_services(c)
         try:
@@ -260,6 +284,7 @@ class TestDependencyFunctions:
 
     def test_get_workflow_engine_dependency_returns_engine(self):
         from utils.route_utils import get_workflow_engine_dependency
+
         c = self._fresh_container()
         mock_eng = MagicMock()
         c.set_workflow_engine(mock_eng)
@@ -271,6 +296,7 @@ class TestDependencyFunctions:
 
     def test_get_workflow_engine_dependency_raises_when_none(self):
         from utils.route_utils import get_workflow_engine_dependency
+
         c = self._fresh_container()
         orig = self._patch_services(c)
         try:
@@ -281,6 +307,7 @@ class TestDependencyFunctions:
 
     def test_get_redis_cache_dependency_returns_cache(self):
         from utils.route_utils import get_redis_cache_dependency
+
         c = self._fresh_container()
         mock_c = MagicMock()
         c.set_redis_cache(mock_c)
@@ -292,6 +319,7 @@ class TestDependencyFunctions:
 
     def test_get_redis_cache_dependency_raises_when_none(self):
         from utils.route_utils import get_redis_cache_dependency
+
         c = self._fresh_container()
         orig = self._patch_services(c)
         try:
@@ -302,6 +330,7 @@ class TestDependencyFunctions:
 
     def test_get_redis_cache_optional_returns_none_when_unset(self):
         from utils.route_utils import get_redis_cache_optional
+
         c = self._fresh_container()
         orig = self._patch_services(c)
         try:
@@ -312,6 +341,7 @@ class TestDependencyFunctions:
 
     def test_get_redis_cache_optional_returns_cache_when_set(self):
         from utils.route_utils import get_redis_cache_optional
+
         c = self._fresh_container()
         mock_c = MagicMock()
         c.set_redis_cache(mock_c)
@@ -323,6 +353,7 @@ class TestDependencyFunctions:
 
     def test_get_custom_workflows_service_dependency_returns_svc(self):
         from utils.route_utils import get_custom_workflows_service_dependency
+
         c = self._fresh_container()
         mock_svc = MagicMock()
         c.set_custom_workflows_service(mock_svc)
@@ -334,6 +365,7 @@ class TestDependencyFunctions:
 
     def test_get_custom_workflows_service_dependency_raises_when_none(self):
         from utils.route_utils import get_custom_workflows_service_dependency
+
         c = self._fresh_container()
         orig = self._patch_services(c)
         try:
@@ -344,6 +376,7 @@ class TestDependencyFunctions:
 
     def test_get_custom_workflows_service_optional_returns_none(self):
         from utils.route_utils import get_custom_workflows_service_optional
+
         c = self._fresh_container()
         orig = self._patch_services(c)
         try:
@@ -353,6 +386,7 @@ class TestDependencyFunctions:
 
     def test_get_template_execution_service_dependency_returns_svc(self):
         from utils.route_utils import get_template_execution_service_dependency
+
         c = self._fresh_container()
         mock_svc = MagicMock()
         c.set_template_execution_service(mock_svc)
@@ -364,6 +398,7 @@ class TestDependencyFunctions:
 
     def test_get_template_execution_service_dependency_raises_when_none(self):
         from utils.route_utils import get_template_execution_service_dependency
+
         c = self._fresh_container()
         orig = self._patch_services(c)
         try:
@@ -374,6 +409,7 @@ class TestDependencyFunctions:
 
     def test_get_template_execution_service_optional_returns_none(self):
         from utils.route_utils import get_template_execution_service_optional
+
         c = self._fresh_container()
         orig = self._patch_services(c)
         try:
@@ -383,6 +419,7 @@ class TestDependencyFunctions:
 
     def test_get_service_dependency_returns_named_service(self):
         from utils.route_utils import get_service_dependency
+
         c = self._fresh_container()
         mock_svc = MagicMock()
         c.set_service("analytics", mock_svc)
@@ -394,6 +431,7 @@ class TestDependencyFunctions:
 
     def test_get_service_dependency_raises_when_not_set(self):
         from utils.route_utils import get_service_dependency
+
         c = self._fresh_container()
         orig = self._patch_services(c)
         try:
@@ -405,8 +443,8 @@ class TestDependencyFunctions:
 
 class TestRegisterLegacyDbService:
     def test_delegates_to_set_database(self):
-        from utils.route_utils import ServiceContainer, register_legacy_db_service
         import utils.route_utils as mod
+        from utils.route_utils import ServiceContainer, register_legacy_db_service
 
         c = ServiceContainer()
         orig = mod._services
@@ -421,8 +459,8 @@ class TestRegisterLegacyDbService:
 
 class TestInitializeServices:
     def test_sets_database_on_container_and_app_state(self):
-        from utils.route_utils import ServiceContainer, initialize_services
         import utils.route_utils as mod
+        from utils.route_utils import ServiceContainer, initialize_services
 
         c = ServiceContainer()
         orig = mod._services
@@ -438,8 +476,8 @@ class TestInitializeServices:
             mod._services = orig
 
     def test_skips_none_services(self):
-        from utils.route_utils import ServiceContainer, initialize_services
         import utils.route_utils as mod
+        from utils.route_utils import ServiceContainer, initialize_services
 
         c = ServiceContainer()
         orig = mod._services
@@ -453,8 +491,8 @@ class TestInitializeServices:
             mod._services = orig
 
     def test_registers_additional_kwargs(self):
-        from utils.route_utils import ServiceContainer, initialize_services
         import utils.route_utils as mod
+        from utils.route_utils import ServiceContainer, initialize_services
 
         c = ServiceContainer()
         orig = mod._services
@@ -468,19 +506,27 @@ class TestInitializeServices:
             mod._services = orig
 
     def test_sets_all_standard_services(self):
-        from utils.route_utils import ServiceContainer, initialize_services
         import utils.route_utils as mod
+        from utils.route_utils import ServiceContainer, initialize_services
 
         c = ServiceContainer()
         orig = mod._services
         mod._services = c
         try:
             app = MagicMock()
-            svcs = {name: MagicMock(name=name) for name in [
-                "database_service", "orchestrator", "task_executor",
-                "intelligent_orchestrator", "workflow_history",
-                "redis_cache", "custom_workflows_service", "template_execution_service",
-            ]}
+            svcs = {
+                name: MagicMock(name=name)
+                for name in [
+                    "database_service",
+                    "orchestrator",
+                    "task_executor",
+                    "intelligent_orchestrator",
+                    "workflow_history",
+                    "redis_cache",
+                    "custom_workflows_service",
+                    "template_execution_service",
+                ]
+            }
             initialize_services(app, **svcs)
             assert c.get_database() is svcs["database_service"]
             assert c.get_orchestrator() is svcs["orchestrator"]
@@ -496,8 +542,8 @@ class TestInitializeServices:
 
 class TestGetEnhancedStatusChangeService:
     def test_raises_when_database_not_initialized(self):
-        from utils.route_utils import ServiceContainer, get_enhanced_status_change_service
         import utils.route_utils as mod
+        from utils.route_utils import ServiceContainer, get_enhanced_status_change_service
 
         c = ServiceContainer()
         orig = mod._services
@@ -509,9 +555,10 @@ class TestGetEnhancedStatusChangeService:
             mod._services = orig
 
     def test_returns_service_when_database_initialized(self):
-        from unittest.mock import patch, MagicMock
-        from utils.route_utils import ServiceContainer, get_enhanced_status_change_service
+        from unittest.mock import patch
+
         import utils.route_utils as mod
+        from utils.route_utils import ServiceContainer, get_enhanced_status_change_service
 
         c = ServiceContainer()
         mock_db = MagicMock()
@@ -529,7 +576,10 @@ class TestGetEnhancedStatusChangeService:
             with (
                 patch("utils.route_utils.ServiceContainer"),  # not patched — import already done
                 patch("services.tasks_db.TasksDatabase", mock_tasks_db_cls),
-                patch("services.enhanced_status_change_service.EnhancedStatusChangeService", mock_esc_cls),
+                patch(
+                    "services.enhanced_status_change_service.EnhancedStatusChangeService",
+                    mock_esc_cls,
+                ),
             ):
                 # The imports inside get_enhanced_status_change_service are local,
                 # so we need to patch via the function's module.

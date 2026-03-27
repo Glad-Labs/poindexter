@@ -54,13 +54,12 @@
 
 **Status:** ✅ ACTIVE  
 **Date Decided:** Q3 2025  
-**Impact:** Public site, Oversight Hub UI  
+**Impact:** Public site
 **Trade-offs:** JavaScript ecosystem, bundle size
 
 **Key Benefits:**
 
 - SSG for static content (public site)
-- Real-time updates (Oversight Hub)
 - Component reusability
 - Large ecosystem
 
@@ -140,7 +139,7 @@
 
 **Status:** ✅ ACTIVE  
 **Date Decided:** Q3 2025  
-**Impact:** Public Site, Oversight Hub deployment  
+**Impact:** Public Site deployment  
 **Alternative Considered:** Netlify, AWS Amplify
 
 **Key Benefits:**

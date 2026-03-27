@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import * as Sentry from '@sentry/nextjs';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { searchPosts } from '../../lib/api-fastapi';
@@ -29,8 +30,7 @@ export default function SearchPage() {
           setError(`No articles found for "${query}"`);
         }
       } catch (err) {
-        // eslint-disable-next-line no-console -- Client component, no structured logger
-        console.error('Search error:', err);
+        Sentry.captureException(err);
         setError('Failed to search articles. Please try again.');
       } finally {
         setIsLoading(false);

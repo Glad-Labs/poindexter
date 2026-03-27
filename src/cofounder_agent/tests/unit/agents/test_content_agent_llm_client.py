@@ -13,9 +13,10 @@ Tests focus on (all network calls mocked):
 import hashlib
 import json
 import os
-import pytest
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch, mock_open
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-placeholder")
@@ -52,7 +53,9 @@ def _make_client(provider: str = "ollama", tmp_dir: str | None = None):
                 client.cache_dir = Path(tmp_dir)
             else:
                 client.cache_dir = MagicMock(spec=Path)
-                client.cache_dir.__truediv__ = lambda self, other: MagicMock(spec=Path, exists=MagicMock(return_value=False))
+                client.cache_dir.__truediv__ = lambda self, other: MagicMock(
+                    spec=Path, exists=MagicMock(return_value=False)
+                )
 
     return client
 
@@ -227,7 +230,7 @@ class TestGenerateJsonOllama:
     def _build_http_response(self, response_text: str):
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
-        mock_resp.json.return_value = {"response": response_text}
+        mock_resp.json.return_value = {"message": {"role": "assistant", "content": response_text}}
         return mock_resp
 
     @pytest.mark.asyncio
@@ -347,7 +350,7 @@ class TestGenerateJsonOllama:
             client = LLMClient()
             client.cache_dir = tmp_path
 
-        # Ollama returns JSON without 'response' key
+        # Ollama returns JSON without valid message content
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
         mock_resp.json.return_value = {"wrong_key": "data"}
@@ -426,7 +429,9 @@ class TestGenerateTextOllama:
 
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
-        mock_resp.json.return_value = {"response": "# Generated blog content\n\nHello world."}
+        mock_resp.json.return_value = {
+            "message": {"role": "assistant", "content": "# Generated blog content\n\nHello world."}
+        }
 
         with patch("agents.content_agent.services.llm_client.httpx.AsyncClient") as mock_cls:
             mock_http = AsyncMock()
@@ -523,7 +528,9 @@ class TestGenerateTextOllama:
         prompt = "new uncached prompt"
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
-        mock_resp.json.return_value = {"response": "Fresh content from LLM"}
+        mock_resp.json.return_value = {
+            "message": {"role": "assistant", "content": "Fresh content from LLM"}
+        }
 
         with patch("agents.content_agent.services.llm_client.httpx.AsyncClient") as mock_cls:
             mock_http = AsyncMock()
@@ -567,7 +574,9 @@ class TestGenerateSummary:
 
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
-        mock_resp.json.return_value = {"response": "This is the summary."}
+        mock_resp.json.return_value = {
+            "message": {"role": "assistant", "content": "This is the summary."}
+        }
 
         with patch("agents.content_agent.services.llm_client.httpx.AsyncClient") as mock_cls:
             mock_http = AsyncMock()
@@ -660,16 +669,23 @@ class TestGeminiRunInExecutor:
         mock_model.generate_content.return_value = mock_response
 
         import asyncio
-        with patch.object(asyncio.get_event_loop(), "run_in_executor", wraps=asyncio.get_event_loop().run_in_executor) as mock_executor:
+
+        with patch.object(
+            asyncio.get_event_loop(),
+            "run_in_executor",
+            wraps=asyncio.get_event_loop().run_in_executor,
+        ) as mock_executor:
             result = await client.generate_json("test prompt")
 
         assert result == {"key": "value"}
         # run_in_executor is called for the Gemini blocking call (and possibly by
         # aiofiles for the cache write). Assert the Gemini callable was dispatched.
-        all_callables = [call.args[1] for call in mock_executor.call_args_list if len(call.args) >= 2]
-        assert client._generate_json_gemini in all_callables, (
-            "Expected _generate_json_gemini to be dispatched via run_in_executor"
-        )
+        all_callables = [
+            call.args[1] for call in mock_executor.call_args_list if len(call.args) >= 2
+        ]
+        assert (
+            client._generate_json_gemini in all_callables
+        ), "Expected _generate_json_gemini to be dispatched via run_in_executor"
 
     @pytest.mark.asyncio
     async def test_generate_text_gemini_uses_run_in_executor(self, tmp_path):
@@ -681,14 +697,21 @@ class TestGeminiRunInExecutor:
         mock_model.generate_content.return_value = mock_response
 
         import asyncio
-        with patch.object(asyncio.get_event_loop(), "run_in_executor", wraps=asyncio.get_event_loop().run_in_executor) as mock_executor:
+
+        with patch.object(
+            asyncio.get_event_loop(),
+            "run_in_executor",
+            wraps=asyncio.get_event_loop().run_in_executor,
+        ) as mock_executor:
             result = await client.generate_text("test prompt")
 
         assert result == "Generated text output"
-        all_callables = [call.args[1] for call in mock_executor.call_args_list if len(call.args) >= 2]
-        assert client._generate_text_gemini in all_callables, (
-            "Expected _generate_text_gemini to be dispatched via run_in_executor"
-        )
+        all_callables = [
+            call.args[1] for call in mock_executor.call_args_list if len(call.args) >= 2
+        ]
+        assert (
+            client._generate_text_gemini in all_callables
+        ), "Expected _generate_text_gemini to be dispatched via run_in_executor"
 
     @pytest.mark.asyncio
     async def test_generate_summary_gemini_uses_run_in_executor(self, tmp_path):
@@ -700,14 +723,21 @@ class TestGeminiRunInExecutor:
         mock_model.generate_content.return_value = mock_response
 
         import asyncio
-        with patch.object(asyncio.get_event_loop(), "run_in_executor", wraps=asyncio.get_event_loop().run_in_executor) as mock_executor:
+
+        with patch.object(
+            asyncio.get_event_loop(),
+            "run_in_executor",
+            wraps=asyncio.get_event_loop().run_in_executor,
+        ) as mock_executor:
             result = await client.generate_summary("test prompt")
 
         assert result == "Summary output"
-        all_callables = [call.args[1] for call in mock_executor.call_args_list if len(call.args) >= 2]
-        assert client._generate_summary_gemini in all_callables, (
-            "Expected _generate_summary_gemini to be dispatched via run_in_executor"
-        )
+        all_callables = [
+            call.args[1] for call in mock_executor.call_args_list if len(call.args) >= 2
+        ]
+        assert (
+            client._generate_summary_gemini in all_callables
+        ), "Expected _generate_summary_gemini to be dispatched via run_in_executor"
 
 
 # ---------------------------------------------------------------------------
@@ -737,6 +767,7 @@ class TestAsyncFileIO:
             mock_cfg.GEMINI_MODEL = "gemini-2.0-flash"
             mock_cfg.SUMMARIZER_MODEL = "gemini-2.0-flash"
             from agents.content_agent.services.llm_client import LLMClient
+
             client = LLMClient()
             client.cache_dir = tmp_path
 
@@ -745,7 +776,11 @@ class TestAsyncFileIO:
         cache_path.write_text("cached content", encoding="utf-8")
 
         # Patch Path.read_text to catch any accidental synchronous read
-        with patch.object(cache_path.__class__, "read_text", side_effect=AssertionError("read_text called — must use aiofiles")):
+        with patch.object(
+            cache_path.__class__,
+            "read_text",
+            side_effect=AssertionError("read_text called — must use aiofiles"),
+        ):
             result = await client.generate_text(prompt)
 
         assert result == "cached content"
@@ -766,6 +801,7 @@ class TestAsyncFileIO:
             mock_cfg.GEMINI_MODEL = "gemini-2.0-flash"
             mock_cfg.SUMMARIZER_MODEL = "gemini-2.0-flash"
             from agents.content_agent.services.llm_client import LLMClient
+
             client = LLMClient()
             client.cache_dir = tmp_path
 
@@ -773,7 +809,11 @@ class TestAsyncFileIO:
         cache_path = client._get_cache_path(prompt, "summary.txt")
         cache_path.write_text("cached summary", encoding="utf-8")
 
-        with patch.object(cache_path.__class__, "read_text", side_effect=AssertionError("read_text called — must use aiofiles")):
+        with patch.object(
+            cache_path.__class__,
+            "read_text",
+            side_effect=AssertionError("read_text called — must use aiofiles"),
+        ):
             result = await client.generate_summary(prompt)
 
         assert result == "cached summary"

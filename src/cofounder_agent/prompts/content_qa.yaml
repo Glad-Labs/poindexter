@@ -1,0 +1,96 @@
+- key: qa.content_review
+  category: content_qa
+  description: "QA review with pragmatic publication criteria"
+  output_format: json
+  notes: "v1.0: Emphasizes pragmatism, includes scoring scale in prompt, provides JSON example"
+  example_output: '{"approved":true,"quality_score":82,"feedback":"Well-structured. Add more examples to section 2."}'
+  template: |
+    Review this blog post for publication readiness.
+
+    TARGET AUDIENCE: {target_audience}
+    PRIMARY KEYWORD: '{primary_keyword}'
+
+    ---DRAFT---
+    {draft}
+    ---END DRAFT---
+
+    Evaluate against these 7 criteria:
+    1. Clarity: Is writing clear and easy to understand?
+    2. Tone: Is tone appropriate and engaging for target audience?
+    3. Keyword Natural Incorporation: Is primary keyword used naturally (not forced)?
+    4. Structure: Clear headings, logical flow, proper intro/conclusion?
+    5. Value: Does content provide genuine value and useful information?
+    6. Section Titles: Are headings creative and compelling? REJECT if using generic titles like "Introduction", "Conclusion", "Summary", "Background", "Overview", or "Final Thoughts"
+    7. Research Depth: Does content cite specific data, statistics, or expert sources? Posts without concrete evidence score below 70.
+
+    ⭐ GRADING SCALE (0-100):
+    - 85+: Excellent - publication ready, no refinement needed
+    - 75-84: Good - publication ready with minor polish
+    - 70-74: Needs work - improvements required before publishing
+    - 60-69: Fair - needs significant improvements before publishing
+    - <60: Poor - requires major revisions
+
+    ⭐ QUALITY STANDARDS:
+    - Content must score 75+ for approval
+    - Posts MUST include at least 2 specific data points, statistics, or cited sources
+    - Section titles must be engaging and creative — generic titles are an automatic -10 point penalty
+    - Word count should be within 10% of target
+    - Readability: sentences should average 15-20 words; avoid walls of text without paragraph breaks
+    - SEO: primary keyword should appear in the first paragraph, at least one subheading, and the conclusion
+
+    Respond with ONLY valid JSON (no markdown, no explanation):
+    {{
+      "approved": true or false,
+      "quality_score": NUMBER from 0-100,
+      "feedback": "specific feedback here (2-3 sentences max)"
+    }}
+
+    Example:
+    {{
+      "approved": true,
+      "quality_score": 82,
+      "feedback": "Well-structured with good keyword integration. Consider adding more specific examples in section 2."
+    }}
+
+- key: qa.self_critique
+  category: content_qa
+  description: "Self-critique with section title quality check"
+  output_format: json
+  notes: "v2.0: Added check for generic section titles in Structure evaluation"
+  template: |
+    You are an expert content editor. Critique the following blog post draft.
+
+    CONTEXT:
+    - Topic: {topic}
+    - Target Audience: {target_audience}
+    - Primary Keywords: {primary_keyword}
+    - Writing Style: {style}
+    - Tone: {tone}
+    - Target Length: {target_length}
+
+    {writing_style_reference}
+
+    ---CONTENT TO EVALUATE---
+    {content}
+    ---END CONTENT---
+
+    Evaluate across 6 dimensions:
+    1. Tone and Voice: Professional and appropriate for audience?
+    2. Structure: Clear intro, body sections, conclusion? Effective headings?
+       ⚠️ CRITICAL: Check section titles for quality:
+       ❌ RED FLAG if using generic titles: Introduction, Conclusion, Summary, Background, Overview, Wrap-up, The End, Final Thoughts
+       ✅ GOOD if using catchy titles: curiosity-driven, benefit-focused, action-oriented, problem-solution
+       Provision feedback: "Section titles are generic - suggest more creative options"
+    3. SEO Quality: Keywords used naturally? Good meta potential?
+    4. Engagement: Compelling? Valuable? Would readers care?
+    5. Accuracy: Factually sound within general knowledge?
+    6. Writing Style Consistency: Matches reference style if provided?
+
+    Return ONLY valid JSON:
+    {{
+      "quality_score": FLOAT 0-100,
+      "approved": BOOLEAN (true if score >= 75),
+      "feedback": "summary feedback (include section title feedback if applicable)",
+      "suggestions": ["suggestion 1", "suggestion 2"],
+      "needs_refinement": BOOLEAN (true if score < 85)
+    }}

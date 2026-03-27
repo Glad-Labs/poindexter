@@ -1,6 +1,6 @@
 ---
 name: autonomous-agent
-description: Autonomous agent for improving a Python + Next.js + React monorepo
+description: Autonomous agent for improving a Python + Next.js monorepo
 invokable: true
 ---
 
@@ -38,7 +38,7 @@ invokable: true
   # --- Frontend Guidelines (Next.js + React) ---
   - 'For Next.js/React code, use TypeScript, functional components, and hooks.'
   - 'Maintain component modularity and avoid prop drilling; use context when appropriate.'
-  - 'CSS should use TailwindCSS (Next.js) or Material-UI (React Oversight Hub).'
+  - 'CSS should use TailwindCSS (Next.js).'
   - 'Optimize performance: lazy-load components, memoize expensive computations, optimize images.'
   - 'All API calls should go to http://localhost:8000 (the FastAPI backend).'
 

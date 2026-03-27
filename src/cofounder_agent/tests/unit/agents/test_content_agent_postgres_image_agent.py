@@ -4,12 +4,12 @@ Unit tests for agents/content_agent/agents/postgres_image_agent.py
 Tests for PostgreSQLImageAgent class.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from agents.content_agent.agents.postgres_image_agent import PostgreSQLImageAgent
 from agents.content_agent.utils.data_models import BlogPost, ImageDetails
-
 
 # ---------------------------------------------------------------------------
 # Defaults / helpers
@@ -35,9 +35,14 @@ def _make_agent():
     )
     mock_pexels = AsyncMock()
 
-    with patch("agents.content_agent.agents.postgres_image_agent.config") as mock_cfg, \
-         patch("agents.content_agent.agents.postgres_image_agent.load_prompts_from_file", return_value={}), \
-         patch("agents.content_agent.agents.postgres_image_agent.Path") as mock_path:
+    with (
+        patch("agents.content_agent.agents.postgres_image_agent.config") as mock_cfg,
+        patch(
+            "agents.content_agent.agents.postgres_image_agent.load_prompts_from_file",
+            return_value={},
+        ),
+        patch("agents.content_agent.agents.postgres_image_agent.Path") as mock_path,
+    ):
         mock_cfg.PROMPTS_PATH = "/fake/prompts.json"
         mock_cfg.IMAGE_STORAGE_PATH = "/tmp/images"
         mock_cfg.DEFAULT_IMAGE_PLACEHOLDERS = 3
@@ -173,10 +178,8 @@ class TestGenerateImageMetadata:
     @pytest.mark.asyncio
     async def test_uses_prompt_template_when_available(self):
         agent, mock_llm, _ = _make_agent()
-        agent.prompts = {
-            "image_metadata_generation": "Generate {num_images} images for: {title}"
-        }
-        mock_llm.generate_text = AsyncMock(return_value='[]')
+        agent.prompts = {"image_metadata_generation": "Generate {num_images} images for: {title}"}
+        mock_llm.generate_text = AsyncMock(return_value="[]")
         post = _make_post(title="Test", raw_content="Content")
 
         await agent._generate_image_metadata(post)

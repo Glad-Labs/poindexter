@@ -40,14 +40,6 @@ const LLM_KEYS = [
   'OLLAMA_BASE_URL',
 ];
 
-const OVERSIGHT_RULES = [
-  {
-    key: 'VITE_API_URL',
-    required: false,
-    hint: 'http://localhost:8000  (defaults to this if unset)',
-  },
-];
-
 const PUBLIC_RULES = [
   {
     key: 'NEXT_PUBLIC_API_URL',
@@ -149,17 +141,6 @@ if (target === 'all' || target === 'backend') {
 }
 
 if (target === 'all' || target === 'frontend') {
-  const oversightEnv = loadEnvFile(
-    path.join(ROOT, 'web/oversight-hub/.env.local')
-  );
-  results.push(
-    checkRules(
-      'Oversight Hub (web/oversight-hub/.env.local)',
-      oversightEnv,
-      OVERSIGHT_RULES
-    )
-  );
-
   const publicEnv = loadEnvFile(path.join(ROOT, 'web/public-site/.env.local'));
   results.push(
     checkRules(

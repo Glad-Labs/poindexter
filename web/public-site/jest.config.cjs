@@ -20,8 +20,6 @@ const customJestConfig = {
     '/node_modules/',
     '/e2e/',
     '/.next/',
-    // archive/page.test.js crashes Jest workers on CI (OOM after 4 retries)
-    'app/archive/__tests__/page.test.js',
   ],
   // Enforce minimum coverage thresholds. Fail CI if any threshold is missed.
   coverageThreshold: {

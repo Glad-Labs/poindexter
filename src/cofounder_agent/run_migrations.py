@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import os
 
 from services.database_service import DatabaseService
 from services.migrations import MigrationService

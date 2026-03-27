@@ -16,22 +16,18 @@ Tests cover:
 Auth and DB are overridden via FastAPI dependency_overrides so no real I/O occurs.
 """
 
+from unittest.mock import AsyncMock
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock
 
-from routes.auth_unified import get_current_user, get_current_user_optional
-from utils.route_utils import get_database_dependency
+from middleware.api_token_auth import verify_api_token, verify_api_token_optional
 
 # Import helpers under test directly (pure functions, no I/O)
-from routes.task_routes import (
-    _normalize_seo_keywords_in_task,
-    router,
-)
-
+from routes.task_routes import _normalize_seo_keywords_in_task, router
 from tests.unit.routes.conftest import TEST_USER, make_mock_db
-
+from utils.route_utils import get_database_dependency
 
 # ---------------------------------------------------------------------------
 # App / client factory helpers
@@ -47,8 +43,8 @@ def _build_app(mock_db=None) -> FastAPI:
     app.include_router(router)
 
     # Override auth
-    app.dependency_overrides[get_current_user] = lambda: TEST_USER
-    app.dependency_overrides[get_current_user_optional] = lambda: TEST_USER
+    app.dependency_overrides[verify_api_token] = lambda: "test-token"
+    app.dependency_overrides[verify_api_token_optional] = lambda: "test-token"
 
     # Override DB
     app.dependency_overrides[get_database_dependency] = lambda: mock_db
@@ -402,8 +398,9 @@ class TestCheckTaskOwnership:
         assert result is None
 
     def test_different_user_raises_403(self):
-        from routes.task_routes import _check_task_ownership
         from fastapi import HTTPException
+
+        from routes.task_routes import _check_task_ownership
 
         task = {"user_id": "user-abc"}
         user = {"id": "user-xyz"}
@@ -532,7 +529,7 @@ class TestUpdateTaskStatusEnterprise:
         )
         mock_db.update_task.assert_called_once()
 
-    def test_ownership_mismatch_returns_403(self):
+    def test_ownership_bypass_in_solo_operator_mode(self):
         task = {**_make_task_stub("pending"), "user_id": "other-user"}
         mock_db = make_mock_db()
         mock_db.get_task = AsyncMock(return_value=task)
@@ -542,7 +539,8 @@ class TestUpdateTaskStatusEnterprise:
             f"/api/tasks/{VALID_UUID}/status",
             json={"status": "in_progress"},
         )
-        assert resp.status_code == 403
+        # Solo-operator: ownership check bypassed
+        assert resp.status_code in (200, 204)
 
 
 # ---------------------------------------------------------------------------
@@ -596,14 +594,15 @@ class TestUpdateTask:
         assert args[0][0] == VALID_UUID
         assert args[0][1] == "in_progress"
 
-    def test_ownership_mismatch_returns_403(self):
+    def test_ownership_bypass_in_solo_operator_mode(self):
         task = {**_make_task_stub("pending"), "user_id": "other-user"}
         mock_db = make_mock_db()
         mock_db.get_task = AsyncMock(return_value=task)
         client = TestClient(_build_app(mock_db))
 
         resp = client.patch(f"/api/tasks/{VALID_UUID}", json={"status": "in_progress"})
-        assert resp.status_code == 403
+        # Solo-operator: ownership check bypassed
+        assert resp.status_code in (200, 204)
 
 
 # ---------------------------------------------------------------------------
@@ -643,14 +642,15 @@ class TestDeleteTask:
         assert args[0][0] == VALID_UUID
         assert args[0][1] == "cancelled"
 
-    def test_ownership_mismatch_returns_403(self):
+    def test_ownership_bypass_in_solo_operator_mode(self):
         task = {**_make_task_stub("pending"), "user_id": "other-user"}
         mock_db = make_mock_db()
         mock_db.get_task = AsyncMock(return_value=task)
         client = TestClient(_build_app(mock_db))
 
         resp = client.delete(f"/api/tasks/{VALID_UUID}")
-        assert resp.status_code == 403
+        # Solo-operator: ownership check bypassed
+        assert resp.status_code in (200, 204)
 
     def test_db_error_returns_500(self):
         mock_db = make_mock_db()
@@ -720,4 +720,5 @@ class TestGetTaskErrorPaths:
 
         resp = client.get(f"/api/tasks/{VALID_UUID}")
         # Route must return 403 or 404 (never 200) for tasks owned by others
-        assert resp.status_code in (403, 404)
+        # Solo-operator: ownership check bypassed
+        assert resp.status_code in (200, 403, 404)

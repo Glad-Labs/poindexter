@@ -9,18 +9,19 @@ This module handles:
 5. Progress tracking
 """
 
-from services.logger_config import get_logger
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from schemas.custom_workflow_schemas import CustomWorkflow, InputTrace, PhaseResult, WorkflowPhase
+from services.logger_config import get_logger
 from services.phase_mapper import PhaseMapper, PhaseMappingError, build_full_phase_pipeline
 from services.phase_registry import PhaseRegistry
 
 logger = get_logger(__name__)
+
+
 class WorkflowExecutionError(Exception):
     """Raised when workflow execution fails"""
-
 
 
 class WorkflowExecutor:
@@ -90,7 +91,7 @@ class WorkflowExecutor:
         try:
             phase_mappings = build_full_phase_pipeline(phase_names)
         except PhaseMappingError as e:
-            raise WorkflowExecutionError(f"Failed to build phase pipeline: {str(e)}")
+            raise WorkflowExecutionError(f"Failed to build phase pipeline: {str(e)}") from e
 
         # Initialize results storage
         phase_results: Dict[str, PhaseResult] = {}
@@ -439,8 +440,8 @@ class WorkflowExecutor:
                 if module_path not in WorkflowExecutor._agent_module_cache:
                     import importlib
 
-                    WorkflowExecutor._agent_module_cache[module_path] = (
-                        importlib.import_module(module_path)
+                    WorkflowExecutor._agent_module_cache[module_path] = importlib.import_module(
+                        module_path
                     )
                     logger.debug(f"Imported and cached agent module '{module_path}'")
 

@@ -82,7 +82,7 @@ async def get_registry_schema(current_user: dict = Depends(get_current_user)):
         return {"services": schema}
     except Exception as e:
         logger.error(f"Failed to get registry schema: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal registry error")
+        raise HTTPException(status_code=500, detail="Internal registry error") from e
 
 
 @router.get(
@@ -108,7 +108,7 @@ async def list_services(current_user: dict = Depends(get_current_user)):
         return services
     except Exception as e:
         logger.error(f"Failed to list services: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal registry error")
+        raise HTTPException(status_code=500, detail="Internal registry error") from e
 
 
 @router.get(
@@ -160,7 +160,7 @@ async def get_service_metadata(service_name: str, current_user: dict = Depends(g
         raise
     except Exception as e:
         logger.error(f"Failed to get service metadata for {service_name}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal registry error")
+        raise HTTPException(status_code=500, detail="Internal registry error") from e
 
 
 @router.get(
@@ -201,7 +201,7 @@ async def get_service_actions(service_name: str, current_user: dict = Depends(ge
         raise
     except Exception as e:
         logger.error(f"Failed to get actions for {service_name}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal registry error")
+        raise HTTPException(status_code=500, detail="Internal registry error") from e
 
 
 @router.get(
@@ -210,7 +210,9 @@ async def get_service_actions(service_name: str, current_user: dict = Depends(ge
     summary="Get action details",
     description="Returns detailed schema for a specific action",
 )
-async def get_action_details(service_name: str, action_name: str, current_user: dict = Depends(get_current_user)):
+async def get_action_details(
+    service_name: str, action_name: str, current_user: dict = Depends(get_current_user)
+):
     """
     Get detailed schema for a specific action.
 
@@ -257,7 +259,7 @@ async def get_action_details(service_name: str, action_name: str, current_user: 
             f"Failed to get action details for {service_name}.{action_name}: {e}",
             exc_info=True,
         )
-        raise HTTPException(status_code=500, detail="Internal registry error")
+        raise HTTPException(status_code=500, detail="Internal registry error") from e
 
 
 @router.post(
@@ -325,10 +327,10 @@ async def execute_service_action(
         raise
     except ValueError as e:
         logger.warning(f"Invalid parameters for {service_name}.{action_name}: {e}", exc_info=True)
-        raise HTTPException(status_code=400, detail="Invalid parameters")
+        raise HTTPException(status_code=400, detail="Invalid parameters") from e
     except Exception as e:
         logger.error(f"Failed to execute {service_name}.{action_name}: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail="Action execution failed",
-        )
+        ) from e

@@ -1,0 +1,174 @@
+- key: blog_generation.initial_draft
+  category: blog_generation
+  description: "Generate initial blog post draft with research context and creative section titles"
+  output_format: markdown
+  notes: "v2.0: Added explicit guidance on creative section titles with examples, avoiding generic titles"
+  example_output: |
+    # The Future of AI in Healthcare: 2025 Trends
+
+    ## Why Hospitals Are Rushing to Deploy AI Right Now
+    Healthcare is undergoing a transformation...
+
+    ## The Diagnostic AI Revolution: 94% Accuracy and Counting
+    [IMAGE-1]
+    Modern AI systems are now beating human radiologists...
+
+    ## From Theory to Practice: How Top Hospitals Use AI Today
+    Real-world implementations showing tangible results...
+
+    **Related: [[Internal Link 1]], [[Internal Link 2]]**
+  template: |
+    Generate a comprehensive, well-structured blog post draft about '{topic}'.
+    The target audience is {target_audience}.
+    The primary keyword to focus on is '{primary_keyword}'.
+
+    ⭐ CRITICAL REQUIREMENTS:
+    1. Start your response with a Markdown heading (# Your Title Here) on the first line
+    2. Include 3-5 main sections with ## subheadings
+    3. ⚠️ SECTION TITLES MUST BE CATCHY AND CREATIVE - NOT GENERIC!
+       ❌ AVOID these boring titles: Introduction, Background, Overview, Conclusion, Summary, The End, Final Thoughts, Wrap-up
+       ✅ USE these approaches:
+          - Curiosity-driven: "Why Most People Get [Topic] Wrong", "The Hidden Truth About [Topic]"
+          - Benefit-focused: "How to [Benefit]", "The [Number] Ways [Outcome]", "Your Guide to Better [Result]"
+          - Action-oriented: "Start With [Action]", "Never [Mistake] Again", "The Quickest Way to [Goal]"
+          - Insight-focused: "What the Data Shows", "Industry Insiders Reveal", "The Surprising Connection"
+          - Story-based: "From [Problem] to [Solution]", "How [Entity] Transformed"
+    4. Incorporate research context provided below
+    5. Add [IMAGE-1], [IMAGE-2], etc. where visuals would enhance the content
+    6. ⚠️ MANDATORY: Write FULL CONTENT to reach approximately {word_count} words.
+       This is NOT a suggestion - your response MUST be comprehensive and thorough to hit this target.
+       Break content into multiple detailed sections to meet word count.
+       If you're at 50% of target, you're not done - continue adding value and details.
+    7. Format: Valid Markdown with proper structure
+
+    ⭐ RESEARCH CONTEXT TO INCORPORATE:
+    {research_context}
+
+    ⭐ INTERNAL LINKS (if relevant, suggest these topics):
+    {internal_link_titles}
+
+    ⭐ QUALITY REQUIREMENTS:
+    - Include at least 3 specific statistics, data points, or cited facts from the research context
+    - Each main section should reference at least one research source
+    - Use concrete examples, case studies, or real-world applications — avoid vague generalities
+    - Write with authority: "According to [source]..." or "Research shows that..."
+
+    Ensure the tone is professional and engaging.
+    Include placeholders like '[IMAGE-1]', '[IMAGE-2]', etc., where you think images would be appropriate.
+    Also, suggest a list of external URLs to credible sources that would support the content.
+
+- key: blog_generation.seo_and_social
+  category: blog_generation
+  description: "Generate SEO-optimized title, description, and keywords"
+  output_format: json
+  notes: "v1.0: Enforces character limits, provides JSON example"
+  example_output: '{"title":"AI in Healthcare: 2025 Trends","meta_description":"Discover how AI transforms healthcare in 2025","keywords":["AI healthcare","medical AI","health tech","diagnostic AI","patient care"]}'
+  template: |
+    Analyze the following blog post draft and generate SEO assets:
+
+    ---DRAFT---
+    {draft}
+    ---END DRAFT---
+
+    Generate EXACTLY the following assets in VALID JSON format (no markdown, no extra text):
+    {{
+      "title": "SEO-optimized title (max 60 characters, must include primary keyword)",
+      "meta_description": "Compelling meta description (max 160 characters, actionable)",
+      "keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"]
+    }}
+
+    ⭐ REQUIREMENTS:
+    1. Title must be under 60 characters
+    2. Meta description must be under 160 characters
+    3. All keywords must be relevant to content
+    4. Respond with ONLY valid JSON, no other text
+    5. Include primary keyword in title if possible
+
+    Example output:
+    {{
+      "title": "AI in Healthcare: 2025 Trends & Opportunities",
+      "meta_description": "Discover how AI is transforming healthcare in 2025. Expert insights on diagnostics, treatment, and patient outcomes.",
+      "keywords": ["AI healthcare", "medical AI 2025", "health tech trends", "diagnostic AI", "healthcare innovation"]
+    }}
+
+- key: blog_generation.iterative_refinement
+  category: blog_generation
+  description: "Refine blog post based on QA feedback with focus on creative titles"
+  output_format: markdown
+  notes: "v2.0: Added creative section title guidance and examples, avoiding generic titles"
+  template: |
+    Revise the following blog post draft based on the provided critique.
+    Incorporate all feedback to improve quality while maintaining professional tone and target audience focus.
+
+    ⭐ WORD COUNT CONSTRAINT:
+    {word_count_constraint}
+
+    ---DRAFT---
+    {draft}
+    ---END DRAFT---
+
+    ---CRITIQUE---
+    {critique}
+    ---END CRITIQUE---
+
+    ⭐ CRITICAL REQUIREMENTS:
+    1. Start with Markdown heading (# Title) on first line
+    2. Preserve all original insights and data points
+    3. Improve clarity, structure, and engagement
+    4. Address ALL critique points
+    5. Maintain professional tone for {target_audience}
+    6. Ensure word count falls within specified range
+    7. ⚠️ SECTION TITLES MUST BE CATCHY AND CREATIVE - NOT GENERIC!
+       ❌ AVOID: Introduction, Background, Conclusion, Summary, Wrap-up, Final Thoughts
+       ✅ USE: Curiosity-driven ("Why X Fails"), Benefit-focused ("How to Achieve Y"), Action-oriented ("Start With Z")
+       Examples: "The Hidden Cost", "Why Companies Struggle", "The 3-Step Solution", "What You're Missing"
+
+    Improved version:
+
+- key: blog_generation.blog_system_prompt
+  category: blog_generation
+  description: "System prompt for blog generation with creative title guidance"
+  output_format: markdown
+  notes: "v2.0: Added explicit guidance on creative section titles with examples"
+  template: |
+    You are an expert technical writer and blogger.
+    Your writing style is {style}.
+    Your tone is {tone}.
+    Write for an educated but general audience.
+    Generate approximately {target_length} words (minimum {min_words}, maximum {max_words}).
+    Format as Markdown with proper headings (# for title, ## for sections, ### for subsections).
+
+    ⭐ CRITICAL GUIDANCE ON SECTION TITLES:
+    - Create CATCHY, ENGAGING section titles - NOT generic!
+    - ❌ NEVER use: Introduction, Conclusion, Summary, Background, Overview, The End, Wrap-up, Final Thoughts
+    - ✅ USE creative approaches:
+      * Curiosity-driven: "Why Most People Get This Wrong", "The Hidden Cost Nobody Talks About"
+      * Benefit-focused: "How to Achieve X in 30 Days", "The 5 Ways This Changes Everything"
+      * Problem-solution: "From Struggling With X to Mastering Y", "The Biggest Mistake (And How to Avoid It)"
+      * Data-driven: "What 10,000 Users Taught Us", "The Surprising Statistic Nobody Expected"
+      * Action-oriented: "Start Implementing This Today", "The Quick Win Strategy"
+
+    Include:
+    - Compelling introduction (creative title that hooks the reader)
+    - 3-5 main sections with catchy titles and practical insights
+    - Real-world examples or bullet points
+    - Clear conclusion with call-to-action (avoid "Conclusion" as title - use something like "Your Next Step", "Ready to Begin?")
+    Tags: {tags}
+
+- key: blog_generation.blog_generation_request
+  category: blog_generation
+  description: "Format blog generation request parameters"
+  output_format: text
+  notes: "v1.0: Structured request format for orchestration"
+  template: |
+    Generate a blog post request with the following parameters:
+
+    Topic: {topic}
+    Primary Keyword: {primary_keyword}
+    Target Audience: {target_audience}
+    Category: {category}
+    Style: {style}
+    Tone: {tone}
+    Target Length: {target_length} words
+
+    Create a comprehensive request that can guide content generation.

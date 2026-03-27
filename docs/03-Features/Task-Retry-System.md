@@ -1,7 +1,7 @@
 # Task Retry System & Enhanced Visibility
 
 **Feature Status:** ✅ Production-ready
-**Version:** 3.0.82
+**Version:** 0.1.0
 **Completion Date:** March 10, 2026
 **Phase:** 2C - Task Management UI Enhancements
 
@@ -215,7 +215,7 @@ await update_processing_stage(task_id, "complete", "Task completed successfully"
 
 #### 1. Task Management Page
 
-**File:** `web/oversight-hub/src/routes/TaskManagement.jsx`
+**File:** `archived: web/oversight-hub/src/routes/TaskManagement.jsx`
 
 **Key Helpers:**
 
@@ -264,7 +264,7 @@ const getRetryCount = (task) => {
 
 #### 2. Task Detail Modal
 
-**File:** `web/oversight-hub/src/components/tasks/TaskDetailModal.jsx`
+**File:** `archived: web/oversight-hub/src/components/tasks/TaskDetailModal.jsx`
 
 **Progress Header:**
 
@@ -313,7 +313,7 @@ const getRetryCount = (task) => {
 
 #### 3. CSS Styling
 
-**File:** `web/oversight-hub/src/routes/TaskManagement.css`
+**File:** `archived: web/oversight-hub/src/routes/TaskManagement.css`
 
 **Progress Bar with Stage Colors:**
 
@@ -553,7 +553,7 @@ pytest tests/integration/test_resume_to_pending.py -v
 
 ```bash
 # Run oversight hub tests
-cd web/oversight-hub
+cd archived: web/oversight-hub
 npm test -- --testPathPattern=TaskManagement
 npm test -- --testPathPattern=TaskDetailModal
 ```
@@ -676,10 +676,10 @@ npm test -- --testPathPattern=TaskDetailModal
 - **Backend Service:** `src/cofounder_agent/services/enhanced_status_change_service.py`
 - **Task Executor:** `src/cofounder_agent/services/task_executor.py`
 - **Bulk Routes:** `src/cofounder_agent/routes/bulk_task_routes.py`
-- **Frontend UI:** `web/oversight-hub/src/routes/TaskManagement.jsx`
-- **Detail Modal:** `web/oversight-hub/src/components/tasks/TaskDetailModal.jsx`
-- **Styling:** `web/oversight-hub/src/routes/TaskManagement.css`
-- **Status Components:** `web/oversight-hub/src/components/tasks/StatusComponents.jsx`
+- **Frontend UI:** `archived: web/oversight-hub/src/routes/TaskManagement.jsx`
+- **Detail Modal:** `archived: web/oversight-hub/src/components/tasks/TaskDetailModal.jsx`
+- **Styling:** `archived: web/oversight-hub/src/routes/TaskManagement.css`
+- **Status Components:** `archived: web/oversight-hub/src/components/tasks/StatusComponents.jsx`
 - **Version History:** `VERSION_HISTORY.md` - Phase 2C section
 
 ---

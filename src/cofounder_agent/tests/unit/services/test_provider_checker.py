@@ -5,11 +5,9 @@ Tests provider availability checks, env-var reading, cache behaviour,
 preferred-provider selection, and API key retrieval — no network calls.
 """
 
-import os
 import pytest
 
 from services.provider_checker import ProviderChecker
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -167,8 +165,13 @@ class TestGetAvailableProviders:
         assert isinstance(providers, set)
 
     def test_no_cloud_keys_returns_only_ollama(self, monkeypatch):
-        for key in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY",
-                    "ANTHROPIC_API_KEY", "HUGGINGFACE_API_TOKEN"):
+        for key in (
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+            "OPENAI_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "HUGGINGFACE_API_TOKEN",
+        ):
             monkeypatch.delenv(key, raising=False)
         providers = ProviderChecker.get_available_providers()
         assert providers == {"ollama"}
@@ -188,8 +191,13 @@ class TestGetPreferredProvider:
         assert ProviderChecker.get_preferred_provider() == "gemini"
 
     def test_ollama_when_no_cloud_providers(self, monkeypatch):
-        for key in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY",
-                    "ANTHROPIC_API_KEY", "HUGGINGFACE_API_TOKEN"):
+        for key in (
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+            "OPENAI_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "HUGGINGFACE_API_TOKEN",
+        ):
             monkeypatch.delenv(key, raising=False)
         # Ollama is always available
         assert ProviderChecker.get_preferred_provider() == "ollama"

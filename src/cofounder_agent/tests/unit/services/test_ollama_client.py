@@ -6,7 +6,6 @@ pull_model, model profiles, model recommendation, and retry logic.
 HTTP calls are mocked to avoid requiring a real Ollama server.
 """
 
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -15,14 +14,9 @@ import pytest
 from services.ollama_client import (
     DEFAULT_BASE_URL,
     DEFAULT_MODEL,
-    MODEL_PROFILES,
     OllamaClient,
-    OllamaConnectionError,
-    OllamaError,
-    OllamaModelNotFoundError,
     initialize_ollama_client,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -46,7 +40,7 @@ def make_mock_response(data: dict, status_code: int = 200) -> MagicMock:
 
 
 SAMPLE_GENERATE_RESPONSE = {
-    "response": "This is the generated text.",
+    "message": {"role": "assistant", "content": "This is the generated text."},
     "eval_count": 50,
     "prompt_eval_count": 10,
     "total_duration": 2_000_000_000,  # 2 seconds in ns
@@ -170,7 +164,9 @@ class TestOllamaGenerate:
         await client.generate("Test", system="You are a helpful assistant.")
 
         call_kwargs = client.client.post.call_args[1]
-        assert call_kwargs["json"]["system"] == "You are a helpful assistant."
+        messages = call_kwargs["json"]["messages"]
+        assert messages[0] == {"role": "system", "content": "You are a helpful assistant."}
+        assert messages[1] == {"role": "user", "content": "Test"}
 
     @pytest.mark.asyncio
     async def test_max_tokens_included(self, client):
@@ -184,9 +180,7 @@ class TestOllamaGenerate:
 
     @pytest.mark.asyncio
     async def test_http_error_raised(self, client):
-        client.client.post = AsyncMock(
-            side_effect=httpx.HTTPError("404 model not found")
-        )
+        client.client.post = AsyncMock(side_effect=httpx.HTTPError("404 model not found"))
 
         with pytest.raises(httpx.HTTPError):
             await client.generate("Test")
@@ -210,22 +204,34 @@ class TestOllamaGenerate:
 class TestOllamaChat:
     @pytest.mark.asyncio
     async def test_chat_returns_assistant_content(self, client):
-        mock_resp = make_mock_response({
-            **SAMPLE_GENERATE_RESPONSE,
-            "response": "Assistant: I'm here to help.",
-        })
+        # /api/chat returns { message: { role, content }, eval_count, ... }
+        mock_resp = make_mock_response(
+            {
+                "message": {"role": "assistant", "content": "I'm here to help."},
+                "eval_count": 50,
+                "prompt_eval_count": 10,
+                "total_duration": 2_000_000_000,
+                "done": True,
+            }
+        )
         client.client.post = AsyncMock(return_value=mock_resp)
 
-        result = await client.chat([
-            {"role": "user", "content": "Hello!"}
-        ])
+        result = await client.chat([{"role": "user", "content": "Hello!"}])
 
         assert result["role"] == "assistant"
         assert "here to help" in result["content"]
 
     @pytest.mark.asyncio
     async def test_chat_cost_is_zero(self, client):
-        mock_resp = make_mock_response(SAMPLE_GENERATE_RESPONSE)
+        mock_resp = make_mock_response(
+            {
+                "message": {"role": "assistant", "content": "Hi there"},
+                "eval_count": 10,
+                "prompt_eval_count": 5,
+                "total_duration": 1_000_000_000,
+                "done": True,
+            }
+        )
         client.client.post = AsyncMock(return_value=mock_resp)
 
         result = await client.chat([{"role": "user", "content": "Hi"}])
@@ -233,21 +239,30 @@ class TestOllamaChat:
         assert result["cost"] == 0.0
 
     @pytest.mark.asyncio
-    async def test_chat_formats_multi_turn_messages(self, client):
-        mock_resp = make_mock_response(SAMPLE_GENERATE_RESPONSE)
+    async def test_chat_passes_messages_directly(self, client):
+        """chat() now uses /api/chat which accepts messages natively."""
+        mock_resp = make_mock_response(
+            {
+                "message": {"role": "assistant", "content": "Response"},
+                "eval_count": 10,
+                "prompt_eval_count": 5,
+                "total_duration": 1_000_000_000,
+                "done": True,
+            }
+        )
         client.client.post = AsyncMock(return_value=mock_resp)
 
-        await client.chat([
+        messages = [
             {"role": "user", "content": "What is AI?"},
             {"role": "assistant", "content": "AI is..."},
             {"role": "user", "content": "Tell me more."},
-        ])
+        ]
+        await client.chat(messages)
 
         call_kwargs = client.client.post.call_args[1]
-        prompt = call_kwargs["json"]["prompt"]
-        assert "User: What is AI?" in prompt
-        assert "Assistant: AI is..." in prompt
-        assert "User: Tell me more." in prompt
+        # /api/chat receives messages array directly, not a concatenated prompt
+        assert call_kwargs["json"]["messages"] == messages
+        assert "prompt" not in call_kwargs["json"]
 
 
 # ---------------------------------------------------------------------------
@@ -278,48 +293,85 @@ class TestOllamaPullModel:
 
 
 class TestOllamaModelProfiles:
-    def test_known_model_profile(self):
+    def test_empty_cache_returns_none(self):
         c = OllamaClient()
-        profile = c.get_model_profile("llama2")
-        assert profile is not None
-        assert profile["cost"] == 0.0
-        assert "use_cases" in profile
+        # Cache is empty before get_model_profiles() is called
+        assert c.get_model_profile("any-model") is None
 
-    def test_tagged_model_strips_tag(self):
+    @pytest.mark.asyncio
+    async def test_dynamic_profiles_populated(self):
         c = OllamaClient()
-        profile = c.get_model_profile("llama2:13b")
-        assert profile is not None  # Base "llama2" profile found
+        mock_tags = {
+            "models": [
+                {
+                    "name": "qwen3:8b",
+                    "size": 5_000_000_000,
+                    "details": {
+                        "family": "qwen3",
+                        "parameter_size": "8B",
+                        "quantization_level": "Q4_K_M",
+                        "format": "gguf",
+                    },
+                }
+            ]
+        }
+        with patch.object(c.client, "get", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = MagicMock(
+                status_code=200, json=lambda: mock_tags, raise_for_status=lambda: None
+            )
+            profiles = await c.get_model_profiles(force_refresh=True)
 
-    def test_unknown_model_returns_none(self):
-        c = OllamaClient()
-        profile = c.get_model_profile("gpt-4")
-        assert profile is None
-
-    def test_model_profiles_all_have_cost_zero(self):
-        for model_name, profile in MODEL_PROFILES.items():
-            assert profile["cost"] == 0.0
+        assert "qwen3:8b" in profiles
+        assert profiles["qwen3:8b"]["parameter_size"] == "8B"
+        assert profiles["qwen3:8b"]["cost"] == 0.0
+        # Now get_model_profile returns the cached value
+        assert c.get_model_profile("qwen3:8b") is not None
 
 
 class TestOllamaRecommendModel:
-    def test_code_task_returns_codellama(self):
+    @pytest.mark.asyncio
+    async def test_code_task_prefers_coder_model(self):
         c = OllamaClient()
-        assert c.recommend_model("debug Python code") == "codellama"
+        c._model_cache = {
+            "qwen3:8b": {"parameter_size": "8B"},
+            "qwen3-coder:8b": {"parameter_size": "8B"},
+        }
+        result = await c.recommend_model("debug Python code")
+        assert "coder" in result.lower()
 
-    def test_simple_task_returns_phi(self):
+    @pytest.mark.asyncio
+    async def test_complex_task_prefers_largest_model(self):
         c = OllamaClient()
-        assert c.recommend_model("classify email") == "phi"
+        c._model_cache = {
+            "small:3b": {"parameter_size": "3B"},
+            "large:35b": {"parameter_size": "35B"},
+        }
+        import time
 
-    def test_complex_task_returns_mixtral(self):
-        c = OllamaClient()
-        assert c.recommend_model("complex reasoning task") == "mixtral"
+        c._cache_ts = time.time()  # Mark cache as fresh
+        result = await c.recommend_model("complex reasoning task")
+        assert result == "large:35b"
 
-    def test_default_returns_mistral(self):
-        c = OllamaClient()
-        assert c.recommend_model("write a blog post") == "mistral"
+    @pytest.mark.asyncio
+    async def test_default_task_returns_configured_model(self):
+        c = OllamaClient(model="gpt-oss:20b")
+        c._model_cache = {
+            "gpt-oss:20b": {"parameter_size": "20B"},
+            "other:7b": {"parameter_size": "7B"},
+        }
+        import time
 
-    def test_case_insensitive_matching(self):
-        c = OllamaClient()
-        assert c.recommend_model("CODE GENERATION") == "codellama"
+        c._cache_ts = time.time()
+        result = await c.recommend_model("write a blog post")
+        assert result == "gpt-oss:20b"
+
+    @pytest.mark.asyncio
+    async def test_empty_cache_returns_default(self):
+        c = OllamaClient(model="fallback:7b")
+        # Mock get_model_profiles to return empty (don't hit real server)
+        with patch.object(c, "get_model_profiles", new_callable=AsyncMock, return_value={}):
+            result = await c.recommend_model("anything")
+        assert result == "fallback:7b"
 
 
 # ---------------------------------------------------------------------------
@@ -400,9 +452,7 @@ class TestInitializeOllamaClient:
 
     @pytest.mark.asyncio
     async def test_custom_parameters(self):
-        client = await initialize_ollama_client(
-            base_url="http://remote:11434", model="codellama"
-        )
+        client = await initialize_ollama_client(base_url="http://remote:11434", model="codellama")
         assert client.base_url == "http://remote:11434"
         assert client.model == "codellama"
         await client.close()

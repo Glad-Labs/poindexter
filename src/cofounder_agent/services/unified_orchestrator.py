@@ -37,13 +37,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from services.orchestrator_types import (
-    ExecutionContext,
-    ExecutionResult,
-    ExecutionStatus,
-    Request,
-    RequestType,
-)
+from services.orchestrator_types import ExecutionResult, ExecutionStatus, Request, RequestType
 from services.websocket_event_broadcaster import emit_task_progress
 
 logger = logging.getLogger(__name__)
@@ -210,7 +204,7 @@ class UnifiedOrchestrator:
                 logger.error(f"Failed to import agent '{agent_name}': {e}", exc_info=True)
                 raise ValueError(
                     f"Agent '{agent_name}' not found in registry or importable via fallback"
-                )
+                ) from e
 
         raise ValueError(f"Unknown agent: '{agent_name}'. Not in registry or fallback mapping.")
 
@@ -520,7 +514,16 @@ class UnifiedOrchestrator:
     # ========================================================================
 
     async def _handle_content_creation(self, request: Request) -> ExecutionResult:
-        """Handle content creation request - Full 5-stage pipeline with human approval gate"""
+        """Handle content creation request - Full 6-stage pipeline with human approval gate.
+
+        Coordinates six sequential stages:
+        1. Research - gather background information
+        2. Draft - creative writing with style guidance
+        3. QA - quality review loop with optional refinement
+        4. Image - featured image selection
+        5. Formatting - publishing preparation
+        6. Approval assembly - build result for human review
+        """
         logger.info("[%s] Handling content creation", request.request_id)
 
         from utils.constraint_utils import (  # pylint: disable=import-outside-toplevel
@@ -536,7 +539,6 @@ class UnifiedOrchestrator:
             # Extract parameters
             topic = request.parameters.get("topic", request.original_text)
             style = request.parameters.get("style", "professional")
-            tone = request.parameters.get("tone", "informative")
             keywords = request.parameters.get("keywords", [topic])
             content_constraints = request.parameters.get("content_constraints", {})
 
@@ -557,7 +559,10 @@ class UnifiedOrchestrator:
             logger.info("   - Quality Preference: %s", quality_preference)
 
             # Generate task ID
-            task_id = "task_%s_%s" % (int(datetime.now(timezone.utc).timestamp()), uuid.uuid4().hex[:6])
+            task_id = "task_%s_%s" % (
+                int(datetime.now(timezone.utc).timestamp()),
+                uuid.uuid4().hex[:6],
+            )
 
             logger.info("[%s] Starting 5-stage pipeline for: %s", request.request_id, topic)
 
@@ -586,353 +591,78 @@ class UnifiedOrchestrator:
             )
             compliance_reports = []
 
-            # ====================================================================
-            # STAGE 1: RESEARCH (10% → 25%)
-            # ====================================================================
-            logger.info("[%s] STAGE 1: Research", request.request_id)
-            try:
-                await emit_task_progress(task_id, stage="research", progress=10, status="running")
-            except Exception:
-                pass
+            # Stage 1: Research
+            research_text = await self._run_research_stage(
+                request,
+                task_id,
+                topic,
+                keywords,
+                constraints,
+                phase_targets,
+                compliance_reports,
+                validate_constraints,
+                count_words_in_content,
+            )
 
-            # Instantiate research agent (with registry fallback support)
-            research_agent = self._get_agent_instance("research_agent")
-            try:
-                research_data = await asyncio.wait_for(
-                    research_agent.run(topic, keywords[:5]),
-                    timeout=RESEARCH_TIMEOUT_S,
-                )
-                research_text = research_data if isinstance(research_data, str) else str(research_data)
-            except (TimeoutError, asyncio.TimeoutError):
-                logger.warning("[%s] Research timed out, continuing with empty research", request.request_id, exc_info=True)
-                research_text = ""
-
-            research_compliance = validate_constraints(
+            # Stage 2: Creative Draft
+            draft_post, writing_style_guidance, creative_agent = await self._run_draft_stage(
+                request,
+                task_id,
+                topic,
+                style,
                 research_text,
                 constraints,
-                phase_name="research",
-                word_count_target=phase_targets.get("research"),
-            )
-            compliance_reports.append(research_compliance)
-            logger.info(
-                "[%s] Research complete: %s words",
-                request.request_id,
-                count_words_in_content(research_text),
+                phase_targets,
+                compliance_reports,
+                model_selections,
+                quality_preference,
+                validate_constraints,
+                count_words_in_content,
             )
 
-            # ====================================================================
-            # STAGE 2: CREATIVE DRAFT (25% → 45%)
-            # ====================================================================
-            logger.info("[%s] STAGE 2: Creative Draft", request.request_id)
-            try:
-                await emit_task_progress(task_id, stage="draft", progress=25, status="running")
-            except Exception:
-                pass
-            from agents.content_agent.services.llm_client import (  # pylint: disable=import-outside-toplevel
-                LLMClient,
-            )
-            from agents.content_agent.utils.data_models import (  # pylint: disable=import-outside-toplevel
-                BlogPost,
-            )
-            from services.writing_style_integration import (  # pylint: disable=import-outside-toplevel
-                WritingStyleIntegrationService,
-            )
-
-            # Get model selection for draft phase
-            draft_model = self._get_model_for_phase("draft", model_selections, quality_preference)
-
-            # Create LLMClient with selected model
-            llm_client = LLMClient(model_name=draft_model) if draft_model else LLMClient()
-
-            # Instantiate creative agent with custom parameter (registry fallback support)
-            creative_agent = self._get_agent_instance("creative_agent", llm_client=llm_client)
-
-            # Retrieve writing style guidance - either from specific writing_style_id or active sample
-            writing_style_guidance = ""
-            user_id = request.context.get("user_id") if request.context else None
-            writing_style_id = request.context.get("writing_style_id") if request.context else None
-
-            if self.database_service:
-                try:
-                    # Use enhanced integration service for detailed sample analysis
-                    integration_svc = WritingStyleIntegrationService(self.database_service)
-
-                    # Get sample with full analysis
-                    sample_data = await integration_svc.get_sample_for_content_generation(
-                        writing_style_id=writing_style_id, user_id=user_id
-                    )
-
-                    if sample_data:
-                        writing_style_guidance = sample_data.get("writing_style_guidance", "")
-                        analysis = sample_data.get("analysis", {})
-
-                        sample_title = sample_data.get("sample_title", "Unknown")
-                        logger.info(
-                            "[%s] Using writing sample: %s", request.request_id, sample_title
-                        )
-                        logger.info(
-                            "[%s]   - Detected tone: %s",
-                            request.request_id,
-                            analysis.get("detected_tone"),
-                        )
-                        logger.info(
-                            "[%s]   - Detected style: %s",
-                            request.request_id,
-                            analysis.get("detected_style"),
-                        )
-                        logger.info(
-                            "[%s]   - Avg sentence length: %s words",
-                            request.request_id,
-                            analysis.get("avg_sentence_length"),
-                        )
-
-                except Exception as e:
-                    logger.warning(
-                        "[%s] Could not retrieve writing sample: %s", request.request_id, e
-, exc_info=True)
-
-            post = BlogPost(
-                topic=topic,
-                primary_keyword=topic,
-                target_audience="general",
-                category="general",
-                status="draft",
-                research_data=research_text,
-                writing_style=style,
-            )
-
-            # Store writing style guidance in post metadata for creative agent to use
-            if writing_style_guidance:
-                post.metadata = {"writing_sample_guidance": writing_style_guidance}
-
-            # Pass constraints with phase-specific word count target
-            phase_target = phase_targets.get("creative", 300)
-            try:
-                draft_post = await asyncio.wait_for(
-                    creative_agent.run(
-                        post, is_refinement=False, word_count_target=phase_target, constraints=constraints
-                    ),
-                    timeout=DRAFT_TIMEOUT_S,
-                )
-            except asyncio.TimeoutError:
-                raise TimeoutError(
-                    "Creative draft timed out after %ds" % DRAFT_TIMEOUT_S
-                ) from None
-            draft_text = draft_post.body if hasattr(draft_post, "body") else str(draft_post)
-
-            creative_compliance = validate_constraints(
-                draft_text,
+            # Stage 3: QA Review Loop
+            content, feedback, quality_score = await self._run_qa_stage(
+                request,
+                task_id,
+                topic,
+                draft_post,
+                writing_style_guidance,
+                creative_agent,
                 constraints,
-                phase_name="creative",
-                word_count_target=phase_targets.get("creative"),
-            )
-            compliance_reports.append(creative_compliance)
-            logger.info(
-                "[%s] Draft complete: %s words",
-                request.request_id,
-                count_words_in_content(draft_text),
+                phase_targets,
+                compliance_reports,
+                model_selections,
+                quality_preference,
+                validate_constraints,
             )
 
-            # ====================================================================
-            # STAGE 3: QA REVIEW LOOP (45% → 60%)
-            # ====================================================================
-            logger.info("[%s] STAGE 3: QA Review", request.request_id)
-            try:
-                await emit_task_progress(task_id, stage="qa", progress=45, status="running")
-            except Exception:
-                pass
-            from services.quality_service import (  # pylint: disable=import-outside-toplevel
-                get_content_quality_service,
+            # Stage 4: Image Selection
+            featured_image_url = await self._run_image_stage(
+                request,
+                task_id,
+                topic,
             )
 
-            # Use the application-level database_service (initialized once at startup)
-            # to avoid creating a new connection pool per request (issue #783).
-            quality_service = get_content_quality_service(database_service=self.database_service)
-
-            content = draft_post
-            feedback = ""
-            quality_score = 75
-            max_iterations = 2
-
-            for iteration in range(1, max_iterations + 1):
-                quality_context = {"topic": topic}
-                if writing_style_guidance:
-                    quality_context["writing_style_guidance"] = writing_style_guidance
-
-                try:
-                    quality_result = await asyncio.wait_for(
-                        quality_service.evaluate(
-                            content=getattr(content, "raw_content", str(content)),
-                            context=quality_context,
-                        ),
-                        timeout=QA_TIMEOUT_S,
-                    )
-                except asyncio.TimeoutError:
-                    raise TimeoutError(
-                        "QA evaluation timed out after %ds (iteration %d)" % (QA_TIMEOUT_S, iteration)
-                    ) from None
-
-                approval_bool = quality_result.passing
-                feedback = quality_result.feedback
-                quality_score = int(
-                    quality_result.overall_score
-                )  # Already 0-100 from quality_service
-
-                # Check constraint compliance
-                if constraints:
-                    content_text = getattr(
-                        content, "body", getattr(content, "raw_content", str(content))
-                    )
-                    compliance = validate_constraints(
-                        content_text,
-                        constraints,
-                        phase_name="qa",
-                        word_count_target=phase_targets.get("qa"),
-                    )
-                    if not compliance.word_count_within_tolerance:
-                        logger.warning(
-                            "[%s] QA: Constraint violation - %s",
-                            request.request_id,
-                            compliance.violation_message,
-                        )
-                        approval_bool = False
-                        feedback += " [CONSTRAINT: %s]" % compliance.violation_message
-
-                if approval_bool:
-                    logger.info(
-                        "[%s] QA Approved (iteration %d, score: %d/100)",
-                        request.request_id,
-                        iteration,
-                        quality_score,
-                    )
-                    break
-                elif iteration < max_iterations:
-                    logger.info("[%s] QA Rejected - Refining...", request.request_id)
-                    # Get model selection for refine phase
-                    refine_model = self._get_model_for_phase(
-                        "refine", model_selections, quality_preference
-                    )
-                    if refine_model:
-                        # Create new LLMClient with refine model for refinement
-                        refine_llm_client = LLMClient(model_name=refine_model)
-                        creative_agent = self._get_agent_instance(
-                            "creative_agent", llm_client=refine_llm_client
-                        )
-                    try:
-                        content = await asyncio.wait_for(
-                            creative_agent.run(
-                                content,
-                                is_refinement=True,
-                                word_count_target=phase_targets.get("creative", 300),
-                                constraints=constraints,
-                            ),
-                            timeout=REFINEMENT_TIMEOUT_S,
-                        )
-                    except asyncio.TimeoutError:
-                        raise TimeoutError(
-                            "Creative refinement timed out after %ds (iteration %d)" % (REFINEMENT_TIMEOUT_S, iteration)
-                        ) from None
-
-            qa_compliance = validate_constraints(
-                getattr(content, "body", str(content)),
-                constraints,
-                phase_name="qa",
-                word_count_target=phase_targets.get("qa"),
+            # Stage 5: Formatting / Publishing Prep
+            formatted_content, excerpt = await self._run_publishing_prep_stage(
+                request,
+                task_id,
+                topic,
+                content,
             )
-            compliance_reports.append(qa_compliance)
 
-            # ====================================================================
-            # STAGE 4: IMAGE SELECTION (60% → 75%)
-            # ====================================================================
-            logger.info("[%s] STAGE 4: Image Selection", request.request_id)
-            try:
-                await emit_task_progress(task_id, stage="images", progress=60, status="running")
-            except Exception:
-                pass
-            featured_image_url = None
-            try:
-                from services.image_service import (  # pylint: disable=import-outside-toplevel
-                    get_image_service,
-                )
-
-                image_service = get_image_service()
-                featured_image = await image_service.search_featured_image(topic=topic, keywords=[])
-                if featured_image:
-                    featured_image_url = featured_image.url
-                    logger.info("[%s] Featured image selected", request.request_id)
-            except Exception as e:
-                logger.warning("[%s] Image selection failed: %s", request.request_id, e, exc_info=True)
-
-            # ====================================================================
-            # STAGE 5: FORMATTING (75% → 90%)
-            # ====================================================================
-            logger.info("[%s] STAGE 5: Formatting", request.request_id)
-            try:
-                await emit_task_progress(task_id, stage="formatting", progress=75, status="running")
-            except Exception:
-                pass
-
-            # Instantiate publishing agent (with registry fallback support)
-            publishing_agent = self._get_agent_instance("publishing_agent")
-            try:
-                result_post = await asyncio.wait_for(
-                    publishing_agent.run(content),
-                    timeout=FORMATTING_TIMEOUT_S,
-                )
-            except asyncio.TimeoutError:
-                raise TimeoutError(
-                    "Formatting/publishing timed out after %ds" % FORMATTING_TIMEOUT_S
-                ) from None
-
-            formatted_content = getattr(result_post, "raw_content", str(content))
-            excerpt = getattr(result_post, "meta_description", "Article about %s" % topic)
-
-            # ====================================================================
-            # STAGE 6: AWAITING HUMAN APPROVAL (90% → 100%)
-            # ====================================================================
-            logger.info("[%s] STAGE 6: Awaiting Human Approval", request.request_id)
-
-            overall_compliance = merge_compliance_reports(compliance_reports)
-            strict_mode_valid, strict_mode_error = apply_strict_mode(overall_compliance)
-
-            if not strict_mode_valid:
-                logger.warning(
-                    "[%s] STRICT MODE VIOLATION: %s", request.request_id, strict_mode_error
-                )
-
-            result = {
-                "task_id": task_id,
-                "status": "awaiting_approval",
-                "approval_status": "awaiting_review",
-                "content": formatted_content,
-                "excerpt": excerpt,
-                "featured_image_url": featured_image_url,
-                "qa_feedback": feedback,
-                "quality_score": quality_score,
-                "constraint_compliance": {
-                    "word_count_actual": overall_compliance.word_count_actual,
-                    "word_count_target": overall_compliance.word_count_target,
-                    "word_count_within_tolerance": overall_compliance.word_count_within_tolerance,
-                    "word_count_percentage": overall_compliance.word_count_percentage,
-                    "writing_style": overall_compliance.writing_style_applied,
-                    "strict_mode_enforced": overall_compliance.strict_mode_enforced,
-                    "violation_message": overall_compliance.violation_message,
-                },
-                "message": "✅ Content ready for human review. Human approval required before publishing.",
-                "next_action": "POST /api/content/tasks/%s/approve with human decision" % task_id,
-            }
-
-            logger.info("[%s] ✅ Pipeline complete. Awaiting human approval.", request.request_id)
-
-            return ExecutionResult(
-                request_id=request.request_id,
-                request_type=request.request_type,
-                status=ExecutionStatus.PENDING_APPROVAL,
-                output=result,
-                task_id=task_id,
-                quality_score=quality_score,
-                feedback=feedback,
-                metadata=result,
+            # Stage 6: Assemble approval result
+            return self._build_approval_result(
+                request,
+                task_id,
+                formatted_content,
+                excerpt,
+                featured_image_url,
+                feedback,
+                quality_score,
+                compliance_reports,
+                merge_compliance_reports,
+                apply_strict_mode,
             )
 
         except Exception as e:
@@ -946,6 +676,426 @@ class UnifiedOrchestrator:
                 output=str(e),
                 feedback="Content creation failed: %s" % str(e),
             )
+
+    # --------------------------------------------------------------------
+    # Pipeline stage methods (called exclusively by _handle_content_creation)
+    # --------------------------------------------------------------------
+
+    async def _run_research_stage(
+        self,
+        request,
+        task_id,
+        topic,
+        keywords,
+        constraints,
+        phase_targets,
+        compliance_reports,
+        validate_constraints,
+        count_words_in_content,
+    ) -> str:
+        """STAGE 1: Research (10% -> 25%). Returns research text."""
+        logger.info("[%s] STAGE 1: Research", request.request_id)
+        try:
+            await emit_task_progress(task_id, stage="research", progress=10, status="running")
+        except Exception:
+            logger.debug("Failed to emit progress for research stage", exc_info=True)
+
+        # Instantiate research agent (with registry fallback support)
+        research_agent = self._get_agent_instance("research_agent")
+        try:
+            research_data = await asyncio.wait_for(
+                research_agent.run(topic, keywords[:5]),
+                timeout=RESEARCH_TIMEOUT_S,
+            )
+            research_text = research_data if isinstance(research_data, str) else str(research_data)
+        except (TimeoutError, asyncio.TimeoutError):
+            logger.warning(
+                "[%s] Research timed out, continuing with empty research",
+                request.request_id,
+                exc_info=True,
+            )
+            research_text = ""
+
+        research_compliance = validate_constraints(
+            research_text,
+            constraints,
+            phase_name="research",
+            word_count_target=phase_targets.get("research"),
+        )
+        compliance_reports.append(research_compliance)
+        logger.info(
+            "[%s] Research complete: %s words",
+            request.request_id,
+            count_words_in_content(research_text),
+        )
+        return research_text
+
+    async def _run_draft_stage(
+        self,
+        request,
+        task_id,
+        topic,
+        style,
+        research_text,
+        constraints,
+        phase_targets,
+        compliance_reports,
+        model_selections,
+        quality_preference,
+        validate_constraints,
+        count_words_in_content,
+    ):
+        """STAGE 2: Creative Draft (25% -> 45%).
+
+        Returns (draft_post, writing_style_guidance, creative_agent) so that
+        downstream stages can reuse the creative agent for refinement.
+        """
+        logger.info("[%s] STAGE 2: Creative Draft", request.request_id)
+        try:
+            await emit_task_progress(task_id, stage="draft", progress=25, status="running")
+        except Exception:
+            logger.debug("Failed to emit progress for draft stage", exc_info=True)
+        from agents.content_agent.services.llm_client import (  # pylint: disable=import-outside-toplevel
+            LLMClient,
+        )
+        from agents.content_agent.utils.data_models import (  # pylint: disable=import-outside-toplevel
+            BlogPost,
+        )
+        from services.writing_style_integration import (  # pylint: disable=import-outside-toplevel
+            WritingStyleIntegrationService,
+        )
+
+        # Get model selection for draft phase
+        draft_model = self._get_model_for_phase("draft", model_selections, quality_preference)
+
+        # Create LLMClient with selected model
+        llm_client = LLMClient(model_name=draft_model) if draft_model else LLMClient()
+
+        # Instantiate creative agent with custom parameter (registry fallback support)
+        creative_agent = self._get_agent_instance("creative_agent", llm_client=llm_client)
+
+        # Retrieve writing style guidance - either from specific writing_style_id or active sample
+        writing_style_guidance = ""
+        user_id = request.context.get("user_id") if request.context else None
+        writing_style_id = request.context.get("writing_style_id") if request.context else None
+
+        if self.database_service:
+            try:
+                # Use enhanced integration service for detailed sample analysis
+                integration_svc = WritingStyleIntegrationService(self.database_service)
+
+                # Get sample with full analysis
+                sample_data = await integration_svc.get_sample_for_content_generation(
+                    writing_style_id=writing_style_id, user_id=user_id
+                )
+
+                if sample_data:
+                    writing_style_guidance = sample_data.get("writing_style_guidance", "")
+                    analysis = sample_data.get("analysis", {})
+
+                    sample_title = sample_data.get("sample_title", "Unknown")
+                    logger.info("[%s] Using writing sample: %s", request.request_id, sample_title)
+                    logger.info(
+                        "[%s]   - Detected tone: %s",
+                        request.request_id,
+                        analysis.get("detected_tone"),
+                    )
+                    logger.info(
+                        "[%s]   - Detected style: %s",
+                        request.request_id,
+                        analysis.get("detected_style"),
+                    )
+                    logger.info(
+                        "[%s]   - Avg sentence length: %s words",
+                        request.request_id,
+                        analysis.get("avg_sentence_length"),
+                    )
+
+            except Exception as e:
+                logger.warning(
+                    "[%s] Could not retrieve writing sample: %s",
+                    request.request_id,
+                    e,
+                    exc_info=True,
+                )
+
+        post = BlogPost(
+            topic=topic,
+            primary_keyword=topic,
+            target_audience="general",
+            category="general",
+            status="draft",
+            research_data=research_text,
+            writing_style=style,
+        )
+
+        # Store writing style guidance in post metadata for creative agent to use
+        if writing_style_guidance:
+            post.metadata = {"writing_sample_guidance": writing_style_guidance}
+
+        # Pass constraints with phase-specific word count target
+        phase_target = phase_targets.get("creative", 300)
+        try:
+            draft_post = await asyncio.wait_for(
+                creative_agent.run(
+                    post,
+                    is_refinement=False,
+                    word_count_target=phase_target,
+                    constraints=constraints,
+                ),
+                timeout=DRAFT_TIMEOUT_S,
+            )
+        except asyncio.TimeoutError:
+            raise TimeoutError("Creative draft timed out after %ds" % DRAFT_TIMEOUT_S) from None
+        draft_text = draft_post.body if hasattr(draft_post, "body") else str(draft_post)
+
+        creative_compliance = validate_constraints(
+            draft_text,
+            constraints,
+            phase_name="creative",
+            word_count_target=phase_targets.get("creative"),
+        )
+        compliance_reports.append(creative_compliance)
+        logger.info(
+            "[%s] Draft complete: %s words",
+            request.request_id,
+            count_words_in_content(draft_text),
+        )
+        return draft_post, writing_style_guidance, creative_agent
+
+    async def _run_qa_stage(
+        self,
+        request,
+        task_id,
+        topic,
+        draft_post,
+        writing_style_guidance,
+        creative_agent,
+        constraints,
+        phase_targets,
+        compliance_reports,
+        model_selections,
+        quality_preference,
+        validate_constraints,
+    ):
+        """STAGE 3: QA Review Loop (45% -> 60%).
+
+        Returns (content, feedback, quality_score).
+        """
+        logger.info("[%s] STAGE 3: QA Review", request.request_id)
+        try:
+            await emit_task_progress(task_id, stage="qa", progress=45, status="running")
+        except Exception:
+            logger.debug("Failed to emit progress for qa stage", exc_info=True)
+        from agents.content_agent.services.llm_client import (  # pylint: disable=import-outside-toplevel
+            LLMClient,
+        )
+        from services.quality_service import (  # pylint: disable=import-outside-toplevel
+            get_content_quality_service,
+        )
+
+        # Use the application-level database_service (initialized once at startup)
+        # to avoid creating a new connection pool per request (issue #783).
+        quality_service = get_content_quality_service(database_service=self.database_service)
+
+        content = draft_post
+        feedback = ""
+        quality_score = 75
+        max_iterations = 2
+
+        for iteration in range(1, max_iterations + 1):
+            quality_context = {"topic": topic}
+            if writing_style_guidance:
+                quality_context["writing_style_guidance"] = writing_style_guidance
+
+            try:
+                quality_result = await asyncio.wait_for(
+                    quality_service.evaluate(
+                        content=getattr(content, "raw_content", str(content)),
+                        context=quality_context,
+                    ),
+                    timeout=QA_TIMEOUT_S,
+                )
+            except asyncio.TimeoutError:
+                raise TimeoutError(
+                    "QA evaluation timed out after %ds (iteration %d)" % (QA_TIMEOUT_S, iteration)
+                ) from None
+
+            approval_bool = quality_result.passing
+            feedback = quality_result.feedback
+            quality_score = int(quality_result.overall_score)  # Already 0-100 from quality_service
+
+            # Check constraint compliance
+            if constraints:
+                content_text = getattr(
+                    content, "body", getattr(content, "raw_content", str(content))
+                )
+                compliance = validate_constraints(
+                    content_text,
+                    constraints,
+                    phase_name="qa",
+                    word_count_target=phase_targets.get("qa"),
+                )
+                if not compliance.word_count_within_tolerance:
+                    logger.warning(
+                        "[%s] QA: Constraint violation - %s",
+                        request.request_id,
+                        compliance.violation_message,
+                    )
+                    approval_bool = False
+                    feedback += " [CONSTRAINT: %s]" % compliance.violation_message
+
+            if approval_bool:
+                logger.info(
+                    "[%s] QA Approved (iteration %d, score: %d/100)",
+                    request.request_id,
+                    iteration,
+                    quality_score,
+                )
+                break
+            elif iteration < max_iterations:
+                logger.info("[%s] QA Rejected - Refining...", request.request_id)
+                # Get model selection for refine phase
+                refine_model = self._get_model_for_phase(
+                    "refine", model_selections, quality_preference
+                )
+                if refine_model:
+                    # Create new LLMClient with refine model for refinement
+                    refine_llm_client = LLMClient(model_name=refine_model)
+                    creative_agent = self._get_agent_instance(
+                        "creative_agent", llm_client=refine_llm_client
+                    )
+                try:
+                    content = await asyncio.wait_for(
+                        creative_agent.run(
+                            content,
+                            is_refinement=True,
+                            word_count_target=phase_targets.get("creative", 300),
+                            constraints=constraints,
+                        ),
+                        timeout=REFINEMENT_TIMEOUT_S,
+                    )
+                except asyncio.TimeoutError:
+                    raise TimeoutError(
+                        "Creative refinement timed out after %ds (iteration %d)"
+                        % (REFINEMENT_TIMEOUT_S, iteration)
+                    ) from None
+
+        qa_compliance = validate_constraints(
+            getattr(content, "body", str(content)),
+            constraints,
+            phase_name="qa",
+            word_count_target=phase_targets.get("qa"),
+        )
+        compliance_reports.append(qa_compliance)
+
+        return content, feedback, quality_score
+
+    async def _run_image_stage(self, request, task_id, topic) -> Optional[str]:
+        """STAGE 4: Image Selection (60% -> 75%). Returns featured image URL or None."""
+        logger.info("[%s] STAGE 4: Image Selection", request.request_id)
+        try:
+            await emit_task_progress(task_id, stage="images", progress=60, status="running")
+        except Exception:
+            logger.debug("Failed to emit progress for images stage", exc_info=True)
+        featured_image_url = None
+        try:
+            from services.image_service import (  # pylint: disable=import-outside-toplevel
+                get_image_service,
+            )
+
+            image_service = get_image_service()
+            featured_image = await image_service.search_featured_image(topic=topic, keywords=[])
+            if featured_image:
+                featured_image_url = featured_image.url
+                logger.info("[%s] Featured image selected", request.request_id)
+        except Exception as e:
+            logger.warning("[%s] Image selection failed: %s", request.request_id, e, exc_info=True)
+        return featured_image_url
+
+    async def _run_publishing_prep_stage(self, request, task_id, topic, content):
+        """STAGE 5: Formatting / Publishing Prep (75% -> 90%).
+
+        Returns (formatted_content, excerpt).
+        """
+        logger.info("[%s] STAGE 5: Formatting", request.request_id)
+        try:
+            await emit_task_progress(task_id, stage="formatting", progress=75, status="running")
+        except Exception:
+            logger.debug("Failed to emit progress for formatting stage", exc_info=True)
+
+        # Instantiate publishing agent (with registry fallback support)
+        publishing_agent = self._get_agent_instance("publishing_agent")
+        try:
+            result_post = await asyncio.wait_for(
+                publishing_agent.run(content),
+                timeout=FORMATTING_TIMEOUT_S,
+            )
+        except asyncio.TimeoutError:
+            raise TimeoutError(
+                "Formatting/publishing timed out after %ds" % FORMATTING_TIMEOUT_S
+            ) from None
+
+        formatted_content = getattr(result_post, "raw_content", str(content))
+        excerpt = getattr(result_post, "meta_description", "Article about %s" % topic)
+        return formatted_content, excerpt
+
+    def _build_approval_result(
+        self,
+        request,
+        task_id,
+        formatted_content,
+        excerpt,
+        featured_image_url,
+        feedback,
+        quality_score,
+        compliance_reports,
+        merge_compliance_reports,
+        apply_strict_mode,
+    ) -> ExecutionResult:
+        """STAGE 6: Assemble the final approval result from pipeline outputs."""
+        logger.info("[%s] STAGE 6: Awaiting Human Approval", request.request_id)
+
+        overall_compliance = merge_compliance_reports(compliance_reports)
+        strict_mode_valid, strict_mode_error = apply_strict_mode(overall_compliance)
+
+        if not strict_mode_valid:
+            logger.warning("[%s] STRICT MODE VIOLATION: %s", request.request_id, strict_mode_error)
+
+        result = {
+            "task_id": task_id,
+            "status": "awaiting_approval",
+            "approval_status": "awaiting_review",
+            "content": formatted_content,
+            "excerpt": excerpt,
+            "featured_image_url": featured_image_url,
+            "qa_feedback": feedback,
+            "quality_score": quality_score,
+            "constraint_compliance": {
+                "word_count_actual": overall_compliance.word_count_actual,
+                "word_count_target": overall_compliance.word_count_target,
+                "word_count_within_tolerance": overall_compliance.word_count_within_tolerance,
+                "word_count_percentage": overall_compliance.word_count_percentage,
+                "writing_style": overall_compliance.writing_style_applied,
+                "strict_mode_enforced": overall_compliance.strict_mode_enforced,
+                "violation_message": overall_compliance.violation_message,
+            },
+            "message": "✅ Content ready for human review. Human approval required before publishing.",
+            "next_action": "POST /api/content/tasks/%s/approve with human decision" % task_id,
+        }
+
+        logger.info("[%s] ✅ Pipeline complete. Awaiting human approval.", request.request_id)
+
+        return ExecutionResult(
+            request_id=request.request_id,
+            request_type=request.request_type,
+            status=ExecutionStatus.PENDING_APPROVAL,
+            output=result,
+            task_id=task_id,
+            quality_score=quality_score,
+            feedback=feedback,
+            metadata=result,
+        )
 
     async def _handle_content_subtask(self, request: Request) -> ExecutionResult:
         """Handle individual content subtask (research, creative, QA, etc.)"""

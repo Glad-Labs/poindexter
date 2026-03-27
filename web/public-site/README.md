@@ -2,8 +2,8 @@
 
 Public content website built with Next.js 15 and Tailwind CSS.
 
-**Version:** 3.0.82
-**Stack:** Next.js 15 (App Router) + React 19 + Tailwind CSS
+**Version:** 0.1.0
+**Stack:** Next.js 15 (App Router) + React 18 + Tailwind CSS
 **Port:** 3000
 
 ## Quick Start
@@ -56,7 +56,7 @@ web/public-site/
 │   ├── error-handling.js        # Error handling
 │   └── logger.js                # Client-side logging
 ├── styles/globals.css           # Tailwind global styles
-├── e2e/                         # Playwright E2E tests (~19 specs)
+├── e2e/                         # Playwright E2E tests (~16 specs)
 ├── next.config.js               # Next.js config (331 lines)
 └── tailwind.config.cjs
 ```
@@ -111,7 +111,7 @@ npm run test         # Jest unit tests
 ## Testing
 
 - **Unit tests:** Jest + React Testing Library (`lib/__tests__/`, `app/page.test.js`)
-- **E2E tests:** Playwright (`e2e/` — 19 spec files covering home, posts, legal, auth, tags, authors, accessibility)
+- **E2E tests:** Playwright (`e2e/` — 16 spec files covering home, posts, legal, auth, tags, authors, accessibility)
 
 ```bash
 # E2E (requires backend + frontend running)

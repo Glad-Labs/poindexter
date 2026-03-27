@@ -7,12 +7,7 @@ Tests field validation and model behaviour for webhook schemas.
 import pytest
 from pydantic import ValidationError
 
-from schemas.webhooks_schemas import (
-    ContentWebhookPayload,
-    WebhookEntry,
-    WebhookResponse,
-)
-
+from schemas.webhooks_schemas import ContentWebhookPayload, WebhookEntry, WebhookResponse
 
 # ---------------------------------------------------------------------------
 # WebhookEntry

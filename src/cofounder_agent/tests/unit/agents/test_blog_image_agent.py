@@ -2,10 +2,11 @@
 Unit tests for agents/blog_image_agent.py — BlogImageAgent
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from agents.blog_image_agent import BlogImageAgent, get_blog_image_agent
 
+import pytest
+
+from agents.blog_image_agent import BlogImageAgent, get_blog_image_agent
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -46,8 +47,13 @@ class TestRunSuccess:
         result = await agent.run({"topic": "ocean sunset"})
 
         assert result["status"] == "success"
-        assert result["featured_image"] == {"url": "https://example.com/img.jpg", "alt_text": "test image"}
-        assert "ocean sunset" in result["image_markdown"] or "example.com" in result["image_markdown"]
+        assert result["featured_image"] == {
+            "url": "https://example.com/img.jpg",
+            "alt_text": "test image",
+        }
+        assert (
+            "ocean sunset" in result["image_markdown"] or "example.com" in result["image_markdown"]
+        )
         assert result["gallery_images"] == []
 
     @pytest.mark.asyncio

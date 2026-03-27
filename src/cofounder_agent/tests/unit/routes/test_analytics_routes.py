@@ -9,17 +9,16 @@ Auth and DB are overridden so no real I/O occurs.
 """
 
 import datetime as _dt
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock
 
-from routes.auth_unified import get_current_user
-from utils.route_utils import get_database_dependency
 from routes.analytics_routes import analytics_router
-
-from tests.unit.routes.conftest import TEST_USER, make_mock_db
-
+from routes.auth_unified import get_current_user
+from tests.unit.routes.conftest import TEST_USER
+from utils.route_utils import get_database_dependency
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -42,9 +41,7 @@ def _build_app(mock_db=None) -> FastAPI:
 def _make_analytics_db(agg=None):
     """Create a mock DB that returns KPI aggregates (issue #696 new API)."""
     db = MagicMock()
-    db.get_kpi_aggregates = AsyncMock(
-        return_value=agg or {"rows": [], "total_tasks": 0}
-    )
+    db.get_kpi_aggregates = AsyncMock(return_value=agg or {"rows": [], "total_tasks": 0})
     db.query = AsyncMock(return_value=[])
     return db
 
@@ -57,18 +54,20 @@ def _make_analytics_db(agg=None):
 # preserving test intent without duplicating fixture data.
 # ---------------------------------------------------------------------------
 
+
 def _tasks_to_agg(tasks: list) -> dict:
     """Convert a list of task-dict fixtures into a get_kpi_aggregates payload."""
     from collections import defaultdict
-    import datetime as dt
 
-    buckets: dict = defaultdict(lambda: {
-        "count": 0,
-        "total_cost": 0.0,
-        "duration_sum": 0.0,
-        "duration_count": 0,
-        "completed_count": 0,
-    })
+    buckets: dict = defaultdict(
+        lambda: {
+            "count": 0,
+            "total_cost": 0.0,
+            "duration_sum": 0.0,
+            "duration_count": 0,
+            "completed_count": 0,
+        }
+    )
 
     for t in tasks:
         status = t.get("status", "unknown")
@@ -77,10 +76,10 @@ def _tasks_to_agg(tasks: list) -> dict:
         created = t.get("created_at")
         if isinstance(created, str):
             try:
-                created = dt.datetime.fromisoformat(created.replace("Z", "+00:00"))
+                created = _dt.datetime.fromisoformat(created.replace("Z", "+00:00"))
             except (ValueError, AttributeError):
                 created = None
-        day = created.date() if isinstance(created, dt.datetime) else None
+        day = created.date() if isinstance(created, _dt.datetime) else None
 
         key = (status, model, task_type, day)
         b = buckets[key]
@@ -92,11 +91,11 @@ def _tasks_to_agg(tasks: list) -> dict:
         completed_at = t.get("completed_at")
         if isinstance(completed_at, str):
             try:
-                completed_at = dt.datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
+                completed_at = _dt.datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
             except (ValueError, AttributeError):
                 completed_at = None
 
-        if status == "completed" and completed_at and isinstance(created, dt.datetime):
+        if status == "completed" and completed_at and isinstance(created, _dt.datetime):
             dur = (completed_at - created).total_seconds()
             if dur >= 0:
                 b["duration_sum"] += dur
@@ -106,16 +105,18 @@ def _tasks_to_agg(tasks: list) -> dict:
     rows = []
     for (status, model, task_type, day), b in buckets.items():
         avg_dur = (b["duration_sum"] / b["duration_count"]) if b["duration_count"] > 0 else None
-        rows.append({
-            "status": status,
-            "model_used": model,
-            "task_type": task_type,
-            "day": day,
-            "count": b["count"],
-            "total_cost": b["total_cost"],
-            "avg_duration_s": avg_dur,
-            "completed_count": b["completed_count"],
-        })
+        rows.append(
+            {
+                "status": status,
+                "model_used": model,
+                "task_type": task_type,
+                "day": day,
+                "count": b["count"],
+                "total_cost": b["total_cost"],
+                "avg_duration_s": avg_dur,
+                "completed_count": b["completed_count"],
+            }
+        )
 
     return {"rows": rows, "total_tasks": len(tasks)}
 
@@ -153,10 +154,19 @@ class TestGetKpiMetrics:
         client = TestClient(_build_app())
         data = client.get("/api/analytics/kpis").json()
         required_fields = [
-            "timestamp", "time_range", "total_tasks", "completed_tasks",
-            "failed_tasks", "pending_tasks", "success_rate", "failure_rate",
-            "completion_rate", "avg_execution_time_seconds",
-            "total_cost_usd", "avg_cost_per_task", "primary_model",
+            "timestamp",
+            "time_range",
+            "total_tasks",
+            "completed_tasks",
+            "failed_tasks",
+            "pending_tasks",
+            "success_rate",
+            "failure_rate",
+            "completion_rate",
+            "avg_execution_time_seconds",
+            "total_cost_usd",
+            "avg_cost_per_task",
+            "primary_model",
         ]
         for field in required_fields:
             assert field in data, f"Missing required field: {field}"
@@ -241,10 +251,12 @@ class TestGetTaskDistributions:
 
     def test_with_distribution_data(self):
         mock_db = _make_analytics_db()
-        mock_db.query = AsyncMock(return_value=[
-            {"task_type": "blog_post", "status": "completed", "count": 10},
-            {"task_type": "social_media", "status": "completed", "count": 5},
-        ])
+        mock_db.query = AsyncMock(
+            return_value=[
+                {"task_type": "blog_post", "status": "completed", "count": 10},
+                {"task_type": "social_media", "status": "completed", "count": 5},
+            ]
+        )
         client = TestClient(_build_app(mock_db))
         data = client.get("/api/analytics/distributions?range=7d").json()
         assert data["total_tasks"] == 15
@@ -252,9 +264,11 @@ class TestGetTaskDistributions:
 
     def test_distributions_have_required_fields(self):
         mock_db = _make_analytics_db()
-        mock_db.query = AsyncMock(return_value=[
-            {"task_type": "blog_post", "status": "completed", "count": 5},
-        ])
+        mock_db.query = AsyncMock(
+            return_value=[
+                {"task_type": "blog_post", "status": "completed", "count": 5},
+            ]
+        )
         client = TestClient(_build_app(mock_db))
         data = client.get("/api/analytics/distributions").json()
         if data["distributions"]:
@@ -457,10 +471,12 @@ class TestGetTaskDistributionsEdgeCases:
 
     def test_percentage_sums_to_100_for_two_equal_groups(self):
         mock_db = _make_analytics_db()
-        mock_db.query = AsyncMock(return_value=[
-            {"task_type": "blog_post", "status": "completed", "count": 5},
-            {"task_type": "social_media", "status": "completed", "count": 5},
-        ])
+        mock_db.query = AsyncMock(
+            return_value=[
+                {"task_type": "blog_post", "status": "completed", "count": 5},
+                {"task_type": "social_media", "status": "completed", "count": 5},
+            ]
+        )
         client = TestClient(_build_app(mock_db))
         data = client.get("/api/analytics/distributions").json()
         total_pct = sum(d["percentage"] for d in data["distributions"])
@@ -468,19 +484,23 @@ class TestGetTaskDistributionsEdgeCases:
 
     def test_single_group_has_100_percent(self):
         mock_db = _make_analytics_db()
-        mock_db.query = AsyncMock(return_value=[
-            {"task_type": "blog_post", "status": "completed", "count": 10},
-        ])
+        mock_db.query = AsyncMock(
+            return_value=[
+                {"task_type": "blog_post", "status": "completed", "count": 10},
+            ]
+        )
         client = TestClient(_build_app(mock_db))
         data = client.get("/api/analytics/distributions").json()
         assert data["distributions"][0]["percentage"] == pytest.approx(100.0, abs=0.01)
 
     def test_distribution_counts_match_total(self):
         mock_db = _make_analytics_db()
-        mock_db.query = AsyncMock(return_value=[
-            {"task_type": "blog_post", "status": "completed", "count": 3},
-            {"task_type": "social_media", "status": "failed", "count": 7},
-        ])
+        mock_db.query = AsyncMock(
+            return_value=[
+                {"task_type": "blog_post", "status": "completed", "count": 3},
+                {"task_type": "social_media", "status": "failed", "count": 7},
+            ]
+        )
         client = TestClient(_build_app(mock_db))
         data = client.get("/api/analytics/distributions").json()
         assert data["total_tasks"] == 10

@@ -6,21 +6,19 @@ Covers RetryConfig, RetryableException, async_retry, should_retry_exception,
 and RetryStats.
 """
 
-import asyncio
-from unittest.mock import AsyncMock, call
+from unittest.mock import AsyncMock
 
 import pytest
 
 from utils.retry_utils import (
     API_RETRY_CONFIG,
     DB_RETRY_CONFIG,
+    RetryableException,
     RetryConfig,
     RetryStats,
-    RetryableException,
     async_retry,
     should_retry_exception,
 )
-
 
 # ---------------------------------------------------------------------------
 # RetryConfig

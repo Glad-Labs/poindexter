@@ -16,16 +16,15 @@ WorkflowProgressService is provided via dependency override.
 Auth is router-level via dependencies=[Depends(get_current_user)].
 """
 
+from unittest.mock import MagicMock
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock
 
 from routes.auth_unified import get_current_user
-from routes.workflow_progress_routes import router, get_workflow_progress_service
-
+from routes.workflow_progress_routes import get_workflow_progress_service, router
 from tests.unit.routes.conftest import TEST_USER
-
 
 EXECUTION_ID = "exec-aaaa-1111-2222-3333-444444444444"
 
@@ -137,9 +136,7 @@ class TestStartExecution:
 
     def test_custom_message_accepted(self):
         client = TestClient(_build_app())
-        resp = client.post(
-            f"/api/workflow-progress/start/{EXECUTION_ID}?message=Kicking+off"
-        )
+        resp = client.post(f"/api/workflow-progress/start/{EXECUTION_ID}?message=Kicking+off")
         assert resp.status_code == 200
 
     def test_service_error_returns_500(self):
@@ -168,8 +165,7 @@ class TestStartPhase:
     def test_response_has_success_and_progress(self):
         client = TestClient(_build_app())
         data = client.post(
-            f"/api/workflow-progress/phase/start/{EXECUTION_ID}"
-            "?phase_index=1&phase_name=draft"
+            f"/api/workflow-progress/phase/start/{EXECUTION_ID}" "?phase_index=1&phase_name=draft"
         ).json()
         assert data["success"] is True
         assert "progress" in data
@@ -195,8 +191,7 @@ class TestCompletePhase:
     def test_returns_200(self):
         client = TestClient(_build_app())
         resp = client.post(
-            f"/api/workflow-progress/phase/complete/{EXECUTION_ID}"
-            "?phase_name=research"
+            f"/api/workflow-progress/phase/complete/{EXECUTION_ID}" "?phase_name=research"
         )
         assert resp.status_code == 200
 
@@ -228,8 +223,7 @@ class TestFailPhase:
     def test_returns_200(self):
         client = TestClient(_build_app())
         resp = client.post(
-            f"/api/workflow-progress/phase/fail/{EXECUTION_ID}"
-            "?phase_name=research&error=Timeout"
+            f"/api/workflow-progress/phase/fail/{EXECUTION_ID}" "?phase_name=research&error=Timeout"
         )
         assert resp.status_code == 200
 
@@ -246,8 +240,7 @@ class TestFailPhase:
         svc.fail_phase = MagicMock(side_effect=RuntimeError("db error"))
         client = TestClient(_build_app(svc))
         resp = client.post(
-            f"/api/workflow-progress/phase/fail/{EXECUTION_ID}"
-            "?phase_name=research&error=boom"
+            f"/api/workflow-progress/phase/fail/{EXECUTION_ID}" "?phase_name=research&error=boom"
         )
         assert resp.status_code == 500
 
@@ -287,16 +280,12 @@ class TestMarkComplete:
 class TestMarkFailed:
     def test_returns_200(self):
         client = TestClient(_build_app())
-        resp = client.post(
-            f"/api/workflow-progress/fail/{EXECUTION_ID}?error=LLM+timeout"
-        )
+        resp = client.post(f"/api/workflow-progress/fail/{EXECUTION_ID}?error=LLM+timeout")
         assert resp.status_code == 200
 
     def test_response_has_success_and_progress(self):
         client = TestClient(_build_app())
-        data = client.post(
-            f"/api/workflow-progress/fail/{EXECUTION_ID}?error=crash"
-        ).json()
+        data = client.post(f"/api/workflow-progress/fail/{EXECUTION_ID}?error=crash").json()
         assert data["success"] is True
         assert "progress" in data
 
@@ -304,9 +293,7 @@ class TestMarkFailed:
         svc = _make_progress_service()
         svc.mark_failed = MagicMock(side_effect=RuntimeError("storage error"))
         client = TestClient(_build_app(svc))
-        resp = client.post(
-            f"/api/workflow-progress/fail/{EXECUTION_ID}?error=crash"
-        )
+        resp = client.post(f"/api/workflow-progress/fail/{EXECUTION_ID}?error=crash")
         assert resp.status_code == 500
 
 

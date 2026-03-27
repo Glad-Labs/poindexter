@@ -10,7 +10,6 @@ Handles administrative database operations including:
 """
 
 import json
-from services.logger_config import get_logger
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -24,11 +23,14 @@ from schemas.database_response_models import (
     TaskCostBreakdownResponse,
 )
 from schemas.model_converter import ModelConverter
+from services.logger_config import get_logger
 
 from .database_mixin import DatabaseServiceMixin
 from .decorators import log_query_performance
 
 logger = get_logger(__name__)
+
+
 class AdminDatabase(DatabaseServiceMixin):
     """Administrative database operations (logs, financial, settings, health)."""
 
@@ -416,7 +418,9 @@ class AdminDatabase(DatabaseServiceMixin):
             return default
 
         # Handle both Pydantic model and dict returns
-        value_str = setting.get("value") if isinstance(setting, dict) else getattr(setting, "value", None)
+        value_str = (
+            setting.get("value") if isinstance(setting, dict) else getattr(setting, "value", None)
+        )
         if not value_str:
             return default
         try:
@@ -465,7 +469,11 @@ class AdminDatabase(DatabaseServiceMixin):
             log_id = str(uuid4())
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
-                    sql, log_id, agent_name, level, message,
+                    sql,
+                    log_id,
+                    agent_name,
+                    level,
+                    message,
                     json.dumps(context) if context else None,
                 )
                 return dict(row) if row else {"id": log_id}
@@ -573,7 +581,9 @@ class AdminDatabase(DatabaseServiceMixin):
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(
-                    sql, agent_name, status,
+                    sql,
+                    agent_name,
+                    status,
                     last_run or datetime.now(timezone.utc),
                     json.dumps(metadata) if metadata else None,
                 )

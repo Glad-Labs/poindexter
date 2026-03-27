@@ -4,12 +4,12 @@ Unit tests for agents/content_agent/services/postgres_cms_client.py
 Tests for PostgresCMSClient (no live database required — all DB calls mocked).
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from agents.content_agent.services.postgres_cms_client import PostgresCMSClient
-from agents.content_agent.utils.data_models import BlogPost, ImageDetails
+import pytest
 
+from agents.content_agent.services.postgres_cms_client import PostgresCMSClient
+from agents.content_agent.utils.data_models import BlogPost
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -27,7 +27,9 @@ def _make_post(**kwargs) -> BlogPost:
     return BlogPost(**{**DEFAULTS, **kwargs})  # type: ignore[arg-type]
 
 
-def _make_client(database_url: str = "postgresql://user:pass@localhost/testdb") -> PostgresCMSClient:
+def _make_client(
+    database_url: str = "postgresql://user:pass@localhost/testdb",
+) -> PostgresCMSClient:
     with patch("agents.content_agent.services.postgres_cms_client.config") as mock_cfg:
         mock_cfg.DATABASE_URL = database_url
         client = PostgresCMSClient(database_url=database_url)
@@ -55,8 +57,10 @@ class TestPostgresCMSClientInit:
         assert client.database_url == "postgresql://config:pass@db/prod"
 
     def test_logs_init_info(self):
-        with patch("agents.content_agent.services.postgres_cms_client.logger") as mock_logger, \
-             patch("agents.content_agent.services.postgres_cms_client.config") as mock_cfg:
+        with (
+            patch("agents.content_agent.services.postgres_cms_client.logger") as mock_logger,
+            patch("agents.content_agent.services.postgres_cms_client.config") as mock_cfg,
+        ):
             mock_cfg.DATABASE_URL = "postgresql://user:pass@host/db"
             PostgresCMSClient()
             mock_logger.info.assert_called()

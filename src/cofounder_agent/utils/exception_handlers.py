@@ -14,13 +14,14 @@ All handlers include:
 - Proper logging with context
 """
 
-from services.logger_config import get_logger
 import uuid
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from services.logger_config import get_logger
 
 try:
     import sentry_sdk
@@ -33,6 +34,8 @@ except ImportError:
 from services.error_handler import AppError, create_error_response
 
 logger = get_logger(__name__)
+
+
 async def app_error_handler(request, exc: AppError):
     """
     Handle application-specific errors with structured response.

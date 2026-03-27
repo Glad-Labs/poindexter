@@ -18,13 +18,13 @@ ModelConverter methods are patched to identity functions.
 """
 
 import json
-import pytest
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from services.content_db import ContentDatabase
 from services.error_handler import DatabaseError
-
 
 # ---------------------------------------------------------------------------
 # Helpers

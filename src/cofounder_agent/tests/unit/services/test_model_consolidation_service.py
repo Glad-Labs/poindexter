@@ -18,16 +18,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from services.error_handler import ServiceError
 from services.model_consolidation_service import (
     ModelConsolidationService,
     ModelResponse,
     ProviderStatus,
     ProviderType,
     get_model_consolidation_service,
-    initialize_model_consolidation_service,
 )
-from services.error_handler import ServiceError
-
 
 # ---------------------------------------------------------------------------
 # ProviderStatus
@@ -352,6 +350,7 @@ class TestListModels:
 class TestGlobalSingleton:
     def test_get_returns_model_consolidation_service(self):
         import services.model_consolidation_service as mod
+
         with patch.object(ModelConsolidationService, "_initialize_adapters", return_value=None):
             mod._model_consolidation_service = None
             svc = get_model_consolidation_service()
@@ -359,6 +358,7 @@ class TestGlobalSingleton:
 
     def test_same_instance_returned_twice(self):
         import services.model_consolidation_service as mod
+
         with patch.object(ModelConsolidationService, "_initialize_adapters", return_value=None):
             mod._model_consolidation_service = None
             a = get_model_consolidation_service()

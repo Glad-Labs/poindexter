@@ -1,6 +1,5 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import ArchivePage from '../[page]/page';
 
 // Mock next/link
 jest.mock('next/link', () => {
@@ -11,106 +10,138 @@ jest.mock('next/link', () => {
 jest.mock('next/image', () => ({
   __esModule: true,
   default: (props) => {
+    // eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text
     return <img {...props} />;
   },
 }));
 
-// Mock the PostCard component
-jest.mock('@/components/PostCard', () => {
-  return function MockPostCard({ post }) {
-    return <div data-testid={`post-card-${post.id}`}>{post.title}</div>;
-  };
+// Mock @sentry/nextjs
+jest.mock('@sentry/nextjs', () => ({
+  captureException: jest.fn(),
+}));
+
+// Mock the logger
+jest.mock('@/lib/logger', () => ({
+  __esModule: true,
+  default: { error: jest.fn(), warn: jest.fn(), info: jest.fn() },
+}));
+
+// Mock global fetch to avoid real network calls
+const mockPosts = [
+  {
+    id: '1',
+    title: 'Test Post One',
+    slug: 'test-post-one',
+    excerpt: 'An excerpt for post one',
+    featured_image_url: '/images/test1.jpg',
+    published_at: '2026-01-15T00:00:00Z',
+    created_at: '2026-01-15T00:00:00Z',
+    view_count: 42,
+  },
+  {
+    id: '2',
+    title: 'Test Post Two',
+    slug: 'test-post-two',
+    excerpt: 'An excerpt for post two',
+    featured_image_url: null,
+    published_at: '2026-01-10T00:00:00Z',
+    created_at: '2026-01-10T00:00:00Z',
+    view_count: 0,
+  },
+];
+
+beforeEach(() => {
+  global.fetch = jest.fn(() =>
+    Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve({ posts: mockPosts, total: 2 }),
+    })
+  );
+});
+
+afterEach(() => {
+  jest.restoreAllMocks();
+});
+
+// Dynamic import so the module picks up our mocks
+let ArchivePage;
+beforeAll(async () => {
+  const mod = await import('../[page]/page');
+  ArchivePage = mod.default;
 });
 
 describe('Archive Page (/archive/[page])', () => {
-  const mockParams = { page: '1' };
+  const renderPage = async (page = '1') => {
+    // The component is async — call it as a function and await the JSX
+    const jsx = await ArchivePage({ params: Promise.resolve({ page }) });
+    return render(jsx);
+  };
 
-  test('renders archive page component', () => {
-    const { container } = render(<ArchivePage params={mockParams} />);
+  test('renders archive page component', async () => {
+    const { container } = await renderPage();
     expect(container).toBeInTheDocument();
   });
 
-  test('has archive page heading', () => {
-    render(<ArchivePage params={mockParams} />);
-
-    const headings = screen.queryAllByRole('heading');
-    expect(headings.length).toBeGreaterThan(0);
+  test('has archive page heading', async () => {
+    await renderPage();
+    const heading = screen.getByText('Article Archive');
+    expect(heading).toBeInTheDocument();
   });
 
-  test('displays pagination controls for multiple pages', () => {
-    render(<ArchivePage params={mockParams} />);
-
-    // Archive should have navigation for pagination
-    const nav = screen.queryByRole('navigation');
-    expect(nav).toBeInTheDocument();
+  test('renders post titles', async () => {
+    await renderPage();
+    expect(screen.getByText('Test Post One')).toBeInTheDocument();
+    expect(screen.getByText('Test Post Two')).toBeInTheDocument();
   });
 
-  test('has proper semantic main element', () => {
-    const { container } = render(<ArchivePage params={mockParams} />);
-
-    const mainElement = container.querySelector('main');
-    expect(mainElement).toBeInTheDocument();
-  });
-
-  test('renders with page parameter', () => {
-    const testPage = '3';
-    const { container } = render(<ArchivePage params={{ page: testPage }} />);
-
-    expect(container).toBeInTheDocument();
-  });
-
-  test('renders grid layout for posts', () => {
-    const { container } = render(<ArchivePage params={mockParams} />);
-
-    // Archive should use grid layout
+  test('has proper semantic structure with grid layout', async () => {
+    const { container } = await renderPage();
     const hasGridLayout = Array.from(container.querySelectorAll('*')).some(
       (el) => {
         const classList = el.className || '';
-        return classList.includes('grid') || classList.includes('flex');
+        return classList.includes('grid');
       }
     );
-
     expect(hasGridLayout).toBe(true);
   });
 
-  test('has proper heading hierarchy', () => {
-    const { container } = render(<ArchivePage params={mockParams} />);
-
-    const headings = container.querySelectorAll('h1, h2');
-    expect(headings.length).toBeGreaterThan(0);
+  test('renders responsive container classes', async () => {
+    const { container } = await renderPage();
+    const hasResponsive = Array.from(container.querySelectorAll('*')).some(
+      (el) => {
+        const classList = el.className || '';
+        return classList.includes('mx-auto') || classList.includes('max-w');
+      }
+    );
+    expect(hasResponsive).toBe(true);
   });
 
-  test('page is responsive with container classes', () => {
-    const { container } = render(<ArchivePage params={mockParams} />);
-
-    // Check for responsive container usage
-    const hasResponsiveElements = Array.from(
-      container.querySelectorAll('*')
-    ).some((el) => {
-      const classList = el.className || '';
-      return classList.includes('mx-auto') || classList.includes('max-w');
-    });
-
-    expect(hasResponsiveElements).toBe(true);
+  test('renders empty state when no posts', async () => {
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ posts: [], total: 0 }),
+      })
+    );
+    await renderPage();
+    expect(screen.getByText('No Articles Found')).toBeInTheDocument();
   });
 
-  test('renders archive without errors for page 1', () => {
-    const { container } = render(<ArchivePage params={{ page: '1' }} />);
-
-    expect(container.firstChild).toBeTruthy();
+  test('handles fetch failure gracefully', async () => {
+    global.fetch = jest.fn(() => Promise.reject(new Error('Network error')));
+    await renderPage();
+    expect(screen.getByText('No Articles Found')).toBeInTheDocument();
   });
 
-  test('renders archive without errors for subsequent pages', () => {
-    const { container } = render(<ArchivePage params={{ page: '2' }} />);
-
-    expect(container.firstChild).toBeTruthy();
-  });
-
-  test('pagination links have correct href attributes', () => {
-    render(<ArchivePage params={{ page: '1' }} />);
-
-    // Should have pagination navigation
-    const links = screen.queryAllByRole('link');
-    expect(links.length).toBeGreaterThan(0);
+  test('renders pagination when total exceeds page size', async () => {
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ posts: mockPosts, total: 25 }),
+      })
+    );
+    const { container } = await renderPage();
+    const nav = container.querySelector('nav[aria-label="Archive pagination"]');
+    expect(nav).toBeInTheDocument();
   });
 });

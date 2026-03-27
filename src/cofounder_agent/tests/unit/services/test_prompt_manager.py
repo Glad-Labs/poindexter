@@ -6,6 +6,7 @@ metadata access, category filtering, and JSON export — no LLM or DB calls.
 """
 
 import json
+
 import pytest
 
 from services.prompt_manager import (
@@ -15,7 +16,6 @@ from services.prompt_manager import (
     UnifiedPromptManager,
     get_prompt_manager,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

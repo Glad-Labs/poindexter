@@ -12,7 +12,6 @@ Handles all content-related database operations including:
 
 import json
 import time
-from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
@@ -31,6 +30,7 @@ from schemas.database_response_models import (
     TagResponse,
 )
 from schemas.model_converter import ModelConverter
+from services.logger_config import get_logger
 from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 
 from .database_mixin import DatabaseServiceMixin
@@ -38,6 +38,8 @@ from .decorators import log_query_performance
 from .error_handler import DatabaseError
 
 logger = get_logger(__name__)
+
+
 class ContentDatabase(DatabaseServiceMixin):
     """Content-related database operations (posts, quality, metrics)."""
 
@@ -84,21 +86,17 @@ class ContentDatabase(DatabaseServiceMixin):
             logger.warning(f"⚠️  tag_ids is string, converting to list: {tag_ids}")
             tag_ids = [tag_ids]
 
-        # ✅ Log all values being inserted for debugging
-        logger.info(f"🔍 INSERTING POST WITH THESE VALUES:")
-        logger.info(f"   - id: {post_id}")
-        logger.info(f"   - title: {str(post_data.get('title') or 'EMPTY')[:50]}")
-        logger.info(f"   - slug: {post_data.get('slug')}")
-        logger.info(f"   - featured_image_url: {post_data.get('featured_image_url')}")
-        logger.info(f"   - seo_title: {post_data.get('seo_title')}")
-        logger.info(
-            f"   - seo_description: {str(post_data.get('seo_description') or 'EMPTY')[:50]}"
+        # Log insert details at DEBUG to avoid flooding INFO logs (#1327)
+        logger.debug(
+            "Inserting post",
+            id=post_id,
+            title=str(post_data.get("title") or "EMPTY")[:50],
+            slug=post_data.get("slug"),
+            status=post_data.get("status", "draft"),
+            author_id=post_data.get("author_id"),
+            category_id=post_data.get("category_id"),
+            tag_ids=tag_ids,
         )
-        logger.info(f"   - seo_keywords: {seo_keywords}")
-        logger.info(f"   - status: {post_data.get('status', 'draft')}")
-        logger.info(f"   - author_id: {post_data.get('author_id')}")
-        logger.info(f"   - category_id: {post_data.get('category_id')}")
-        logger.info(f"   - tag_ids (post_tags): {tag_ids}")
 
         async with self.pool.acquire() as conn:
             try:
@@ -167,17 +165,21 @@ class ContentDatabase(DatabaseServiceMixin):
                             post_id,
                             clean_ids,
                         )
-                        logger.info(
-                            f"   - Inserted {len(clean_ids)} tag(s) into post_tags for post {post_id}"
+                        logger.debug(
+                            "Inserted tags into post_tags",
+                            count=len(clean_ids),
+                            post_id=post_id,
                         )
 
-                logger.info(f"✅ POST CREATED SUCCESSFULLY in database with ID: {post_id}")
-                logger.info(f"   - Status: {post_data.get('status', 'draft')}")
-                logger.info(f"   - Published at: {row.get('published_at')}")
+                logger.info(
+                    "Post created successfully",
+                    post_id=post_id,
+                    status=post_data.get("status", "draft"),
+                )
                 return ModelConverter.to_post_response(row)
             except Exception as db_error:
                 logger.error(f"❌ DATABASE ERROR while creating post: {db_error}", exc_info=True)
-                raise DatabaseError(f"Failed to create post in database: {str(db_error)}")
+                raise DatabaseError(f"Failed to create post in database: {str(db_error)}") from db_error
 
     @log_query_performance(
         operation="get_post_by_slug", category="content_retrieval", slow_threshold_ms=50
@@ -234,8 +236,19 @@ class ContentDatabase(DatabaseServiceMixin):
         try:
             # Allowlist of columns that may be updated via this method
             _ALLOWED_POST_COLUMNS = frozenset(
-                ["title", "slug", "content", "excerpt", "featured_image_url", "status",
-                 "tags", "seo_title", "seo_description", "seo_keywords", "published_at"]
+                [
+                    "title",
+                    "slug",
+                    "content",
+                    "excerpt",
+                    "featured_image_url",
+                    "status",
+                    "tags",
+                    "seo_title",
+                    "seo_description",
+                    "seo_keywords",
+                    "published_at",
+                ]
             )
 
             # Filter to only allowed fields; ParameterizedQueryBuilder will also
@@ -480,8 +493,7 @@ class ContentDatabase(DatabaseServiceMixin):
             async with self.pool.acquire() as conn:
                 # Consolidate task counts into a single query using FILTER to avoid
                 # 3 sequential COUNT scans (issue #472).
-                counts_row = await conn.fetchrow(
-                    """
+                counts_row = await conn.fetchrow("""
                     SELECT
                         COUNT(*)                                              AS total_tasks,
                         COUNT(*) FILTER (WHERE status = 'completed')         AS completed_tasks,
@@ -491,8 +503,7 @@ class ContentDatabase(DatabaseServiceMixin):
                         ) FILTER (WHERE status = 'completed'
                                     AND updated_at IS NOT NULL)              AS avg_seconds
                     FROM content_tasks
-                    """
-                )
+                    """)
 
                 total_tasks = int(counts_row["total_tasks"] or 0)
                 completed_tasks = int(counts_row["completed_tasks"] or 0)

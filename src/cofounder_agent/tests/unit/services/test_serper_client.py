@@ -5,14 +5,12 @@ Tests SerperClient search methods by mocking httpx.AsyncClient.
 No real network calls are made.
 """
 
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
 from services.serper_client import SerperClient, get_serper_client
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -58,6 +56,7 @@ class TestSerperClientInit:
     def test_no_api_key_warns(self, monkeypatch, caplog):
         monkeypatch.delenv("SERPER_API_KEY", raising=False)
         import logging
+
         with caplog.at_level(logging.WARNING):
             client = SerperClient()
         assert client.api_key is None
@@ -122,9 +121,7 @@ class TestSerperSearch:
             mock_ctx = AsyncMock()
             mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
             mock_ctx.__aexit__ = AsyncMock(return_value=False)
-            mock_ctx.post = AsyncMock(
-                side_effect=httpx.HTTPError("connection refused")
-            )
+            mock_ctx.post = AsyncMock(side_effect=httpx.HTTPError("connection refused"))
             mock_cls.return_value = mock_ctx
 
             result = await client.search("test")
@@ -179,9 +176,7 @@ class TestSerperSummary:
     @pytest.mark.asyncio
     async def test_summary_structure(self):
         client = SerperClient(api_key="key")
-        with patch.object(
-            client, "search", new=AsyncMock(return_value=SAMPLE_SEARCH_RESPONSE)
-        ):
+        with patch.object(client, "search", new=AsyncMock(return_value=SAMPLE_SEARCH_RESPONSE)):
             result = await client.get_search_results_summary("AI", max_results=2)
 
         assert result["query"] == "AI"
@@ -240,9 +235,7 @@ class TestSerperTrending:
     @pytest.mark.asyncio
     async def test_trending_topics_returns_list(self):
         client = SerperClient(api_key="key")
-        with patch.object(
-            client, "search", new=AsyncMock(return_value=SAMPLE_SEARCH_RESPONSE)
-        ):
+        with patch.object(client, "search", new=AsyncMock(return_value=SAMPLE_SEARCH_RESPONSE)):
             topics = await client.get_trending_topics(category="technology")
         assert isinstance(topics, list)
         assert len(topics) == len(SAMPLE_ORGANIC)
@@ -251,9 +244,7 @@ class TestSerperTrending:
     @pytest.mark.asyncio
     async def test_trending_topics_empty_on_error(self):
         client = SerperClient(api_key="key")
-        with patch.object(
-            client, "search", new=AsyncMock(side_effect=RuntimeError("API down"))
-        ):
+        with patch.object(client, "search", new=AsyncMock(side_effect=RuntimeError("API down"))):
             topics = await client.get_trending_topics()
         assert topics == []
 
@@ -267,9 +258,7 @@ class TestSerperResearchTopic:
     @pytest.mark.asyncio
     async def test_research_topic_structure(self):
         client = SerperClient(api_key="key")
-        with patch.object(
-            client, "search", new=AsyncMock(return_value=SAMPLE_SEARCH_RESPONSE)
-        ):
+        with patch.object(client, "search", new=AsyncMock(return_value=SAMPLE_SEARCH_RESPONSE)):
             result = await client.research_topic("machine learning")
         assert result["topic"] == "machine learning"
         assert "main_sources" in result
@@ -299,9 +288,7 @@ class TestSerperAuthorInfo:
     @pytest.mark.asyncio
     async def test_author_info_returns_results(self):
         client = SerperClient(api_key="key")
-        with patch.object(
-            client, "search", new=AsyncMock(return_value=SAMPLE_SEARCH_RESPONSE)
-        ):
+        with patch.object(client, "search", new=AsyncMock(return_value=SAMPLE_SEARCH_RESPONSE)):
             result = await client.get_author_information("Yann LeCun")
         assert result["author"] == "Yann LeCun"
         assert "results" in result
@@ -310,9 +297,7 @@ class TestSerperAuthorInfo:
     @pytest.mark.asyncio
     async def test_author_info_error_returns_empty(self):
         client = SerperClient(api_key="key")
-        with patch.object(
-            client, "search", new=AsyncMock(side_effect=RuntimeError("error"))
-        ):
+        with patch.object(client, "search", new=AsyncMock(side_effect=RuntimeError("error"))):
             result = await client.get_author_information("Unknown")
         assert result == {}
 

@@ -126,8 +126,7 @@ test.describe('Task Pause/Resume Workflow', () => {
     // Create task
     const createRes = await createTask(request, 'list-check');
     const createBody = await createRes.json().catch(() => null);
-    const taskId: string | undefined =
-      createBody?.id ?? createBody?.task_id;
+    const taskId: string | undefined = createBody?.id ?? createBody?.task_id;
 
     // Guard: if creation failed (backend down / auth issue) skip gracefully
     if (!createRes.ok() || !taskId) {
@@ -165,8 +164,7 @@ test.describe('Task Pause/Resume Workflow', () => {
     }
 
     const createBody = await createRes.json().catch(() => null);
-    const taskId: string | undefined =
-      createBody?.id ?? createBody?.task_id;
+    const taskId: string | undefined = createBody?.id ?? createBody?.task_id;
     if (!taskId) {
       test.skip(true, 'No task ID returned — skipping pause test');
       return;
@@ -200,10 +198,7 @@ test.describe('Task Pause/Resume Workflow', () => {
     ]);
 
     if (!r1.ok() || !r2.ok()) {
-      test.skip(
-        true,
-        'Task creation failed — skipping bulk pause count test'
-      );
+      test.skip(true, 'Task creation failed — skipping bulk pause count test');
       return;
     }
 
@@ -241,8 +236,7 @@ test.describe('Task Pause/Resume Workflow', () => {
     }
 
     const createBody = await createRes.json().catch(() => null);
-    const taskId: string | undefined =
-      createBody?.id ?? createBody?.task_id;
+    const taskId: string | undefined = createBody?.id ?? createBody?.task_id;
     if (!taskId) {
       test.skip(true, 'No task ID — skipping resume test');
       return;
@@ -288,8 +282,7 @@ test.describe('Task Pause/Resume Workflow', () => {
     }
 
     const createBody = await createRes.json().catch(() => null);
-    const taskId: string | undefined =
-      createBody?.id ?? createBody?.task_id;
+    const taskId: string | undefined = createBody?.id ?? createBody?.task_id;
     if (!taskId) {
       test.skip(true, 'No task ID — skipping cancel test');
       return;
@@ -321,8 +314,7 @@ test.describe('Task Pause/Resume Workflow', () => {
     }
 
     const createBody = await createRes.json().catch(() => null);
-    const taskId: string | undefined =
-      createBody?.id ?? createBody?.task_id;
+    const taskId: string | undefined = createBody?.id ?? createBody?.task_id;
     if (!taskId) {
       test.skip(true, 'No task ID');
       return;
@@ -416,8 +408,7 @@ test.describe('Task Pause/Resume Workflow', () => {
     }
 
     const createBody = await createRes.json().catch(() => null);
-    const taskId: string | undefined =
-      createBody?.id ?? createBody?.task_id;
+    const taskId: string | undefined = createBody?.id ?? createBody?.task_id;
     if (!taskId) {
       test.skip(true, 'No task ID — skipping lifecycle test');
       return;

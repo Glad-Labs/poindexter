@@ -17,21 +17,20 @@ Auth and DB are overridden so no real I/O occurs.
 WorkflowHistoryService is patched to avoid real DB calls.
 """
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from routes.auth_unified import get_current_user
+from routes.workflow_routes import router
+from tests.unit.routes.conftest import TEST_USER, make_mock_db
+from utils.route_utils import get_database_dependency
 from utils.route_utils import (
-    get_database_dependency,
-    get_workflow_engine_dependency,
     get_template_execution_service_dependency as get_template_service_dependency,
 )
-from routes.workflow_routes import router
-
-from tests.unit.routes.conftest import TEST_USER, make_mock_db
-
+from utils.route_utils import get_workflow_engine_dependency
 
 # ---------------------------------------------------------------------------
 # Shared fixtures

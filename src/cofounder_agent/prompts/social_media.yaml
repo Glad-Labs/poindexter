@@ -1,0 +1,59 @@
+- key: social.research_trends
+  category: social_media
+  description: "Research platform-specific social media trends"
+  output_format: json
+  notes: "v1.0: Platform-aware hashtag and format guidance"
+  template: |
+    Analyze social media trends for: {topic}
+
+    Target Platforms: {platforms}
+
+    Provide platform-specific insights:
+    1. Trending formats and content types
+    2. 10-15 relevant hashtags
+    3. Current audience sentiment
+    4. Best posting times per platform
+    5. Recommended content formats
+
+    ⭐ OUTPUT FORMAT (Valid JSON):
+    {{
+      "trends_by_platform": {{"twitter": "...", "linkedin": "...", ...}},
+      "hashtags": ["#tag1", "#tag2", ...],
+      "sentiment": "positive|neutral|negative",
+      "posting_times": {{"twitter": "9am-12pm", "linkedin": "Tuesday-Thursday", ...}},
+      "content_formats": {{"twitter": "threads, polls", "linkedin": "articles, thought-leadership", ...}}
+    }}
+
+- key: social.create_post
+  category: social_media
+  description: "Generate platform-optimized social media post"
+  output_format: json
+  notes: "v1.0: Emphasizes hook/CTA, provides platform-specific example"
+  template: |
+    Create a {style} social media {content_type} for {platform}.
+
+    Topic: {topic}
+    Character Limit: {char_limit}
+    Platform Formatting: {format_guide}
+
+    ⭐ REQUIREMENTS:
+    1. Hook in first line (grab attention immediately)
+    2. Platform-native language and tone
+    3. {hashtag_count} relevant hashtags
+    4. Strong call-to-action (Learn more, Link in bio, Explore, etc.)
+    5. Maintain {style} tone throughout
+    6. Stay within {char_limit} character limit
+
+    ⭐ OUTPUT FORMAT (Valid JSON):
+    {{
+      "post_text": "your text here",
+      "hashtags": ["#tag1", "#tag2"],
+      "cta": "call-to-action text"
+    }}
+
+    Example for Twitter:
+    {{
+      "post_text": "AI is transforming healthcare 🔬 Diagnostic accuracy up 45% YoY. Hospitals investing $15B+ in ML. The future of medicine is here. [LINK]",
+      "hashtags": ["#HealthTech", "#AI"],
+      "cta": "Learn more"
+    }}

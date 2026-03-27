@@ -7,13 +7,7 @@ Covers ErrorResponseBuilder fluent API, factory methods, and Pydantic models.
 
 import pytest
 
-from utils.error_responses import (
-    ErrorDetail,
-    ErrorResponse,
-    ErrorResponseBuilder,
-    SuccessResponse,
-)
-
+from utils.error_responses import ErrorDetail, ErrorResponse, ErrorResponseBuilder, SuccessResponse
 
 # ---------------------------------------------------------------------------
 # ErrorDetail model
@@ -106,10 +100,7 @@ class TestErrorResponseBuilderFluent:
 
     def test_basic_build(self):
         response = (
-            ErrorResponseBuilder()
-            .error_code("MY_ERROR")
-            .message("Something went wrong")
-            .build()
+            ErrorResponseBuilder().error_code("MY_ERROR").message("Something went wrong").build()
         )
         assert response.error_code == "MY_ERROR"
         assert response.message == "Something went wrong"
@@ -143,10 +134,12 @@ class TestErrorResponseBuilderFluent:
             ErrorResponseBuilder()
             .error_code("ERR")
             .message("msg")
-            .with_details([
-                {"field": "name", "message": "Required", "code": "REQ"},
-                {"field": "email", "message": "Invalid"},
-            ])
+            .with_details(
+                [
+                    {"field": "name", "message": "Required", "code": "REQ"},
+                    {"field": "email", "message": "Invalid"},
+                ]
+            )
             .build()
         )
         assert response.details is not None
@@ -154,52 +147,28 @@ class TestErrorResponseBuilderFluent:
 
     def test_request_id(self):
         response = (
-            ErrorResponseBuilder()
-            .error_code("ERR")
-            .message("msg")
-            .request_id("req-abc123")
-            .build()
+            ErrorResponseBuilder().error_code("ERR").message("msg").request_id("req-abc123").build()
         )
         assert response.request_id == "req-abc123"
 
     def test_path(self):
         response = (
-            ErrorResponseBuilder()
-            .error_code("ERR")
-            .message("msg")
-            .path("/api/tasks")
-            .build()
+            ErrorResponseBuilder().error_code("ERR").message("msg").path("/api/tasks").build()
         )
         assert response.path == "/api/tasks"
 
     def test_timestamp_adds_iso_string(self):
-        response = (
-            ErrorResponseBuilder()
-            .error_code("ERR")
-            .message("msg")
-            .timestamp()
-            .build()
-        )
+        response = ErrorResponseBuilder().error_code("ERR").message("msg").timestamp().build()
         assert response.timestamp is not None
         assert "Z" in response.timestamp
 
     def test_build_dict_returns_dict(self):
-        result = (
-            ErrorResponseBuilder()
-            .error_code("ERR")
-            .message("msg")
-            .build_dict()
-        )
+        result = ErrorResponseBuilder().error_code("ERR").message("msg").build_dict()
         assert isinstance(result, dict)
         assert result["error_code"] == "ERR"
 
     def test_build_dict_excludes_none(self):
-        result = (
-            ErrorResponseBuilder()
-            .error_code("ERR")
-            .message("msg")
-            .build_dict()
-        )
+        result = ErrorResponseBuilder().error_code("ERR").message("msg").build_dict()
         assert "request_id" not in result
         assert "path" not in result
 
@@ -209,12 +178,7 @@ class TestErrorResponseBuilderFluent:
         assert isinstance(result, ErrorResponseBuilder)
 
     def test_no_details_when_none_added(self):
-        response = (
-            ErrorResponseBuilder()
-            .error_code("ERR")
-            .message("msg")
-            .build()
-        )
+        response = ErrorResponseBuilder().error_code("ERR").message("msg").build()
         assert response.details is None
 
 
@@ -288,9 +252,7 @@ class TestErrorResponseBuilderFactories:
         assert response.error_code == "UNPROCESSABLE_ENTITY"
 
     def test_unprocessable_with_details(self):
-        response = ErrorResponseBuilder.unprocessable(
-            details=[("field", "error message")]
-        ).build()
+        response = ErrorResponseBuilder.unprocessable(details=[("field", "error message")]).build()
         assert response.details is not None
         assert len(response.details) == 1
 

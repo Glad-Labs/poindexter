@@ -2,8 +2,10 @@
 Unit tests for agents/blog_publisher_agent.py — BlogPublisherAgent
 """
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+
 from agents.blog_publisher_agent import BlogPublisherAgent, get_blog_publisher_agent
 
 LONG_CONTENT = "word " * 50  # 250 chars

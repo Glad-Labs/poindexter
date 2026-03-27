@@ -11,11 +11,11 @@ Tests cover:
 No real LLM calls, no DB.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from services.financial_service import FinancialService
+import pytest
 
+from services.financial_service import FinancialService
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -160,9 +160,16 @@ class TestCalculateRoi:
     async def test_result_structure(self):
         svc = _service()
         result = await svc.calculate_roi("c1", 5.0)
-        for key in ("content_id", "generation_cost", "estimated_reach",
-                    "expected_conversions", "expected_revenue", "net_profit",
-                    "roi_percentage", "payback_period_days"):
+        for key in (
+            "content_id",
+            "generation_cost",
+            "estimated_reach",
+            "expected_conversions",
+            "expected_revenue",
+            "net_profit",
+            "roi_percentage",
+            "payback_period_days",
+        ):
             assert key in result, f"Missing key: {key}"
 
 

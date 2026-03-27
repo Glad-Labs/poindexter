@@ -7,7 +7,6 @@ shapes without real external calls.
 """
 
 import pytest
-from unittest.mock import MagicMock, patch
 
 from services.capability_examples import (
     ComplianceCheckCapability,
@@ -19,7 +18,6 @@ from services.capability_examples import (
     research_capability,
     select_images_capability,
 )
-
 
 # ---------------------------------------------------------------------------
 # Function-based capabilities
@@ -278,11 +276,13 @@ class TestRegisterExampleCapabilities:
     def test_registers_without_error(self):
         """register_example_capabilities should not raise."""
         from services.capability_registry import CapabilityRegistry, set_registry
+
         set_registry(CapabilityRegistry())
         register_example_capabilities()
 
     def test_capabilities_available_after_registration(self):
         from services.capability_registry import CapabilityRegistry, get_registry, set_registry
+
         set_registry(CapabilityRegistry())
         register_example_capabilities()
         registry = get_registry()

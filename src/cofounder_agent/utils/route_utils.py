@@ -19,10 +19,11 @@ This eliminates the duplicate pattern of:
 Found in: content_routes, task_routes, subtask_routes, bulk_task_routes, settings_routes
 """
 
-from services.logger_config import get_logger
 from typing import Any, Optional
 
 from fastapi import FastAPI
+
+from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 # ============================================================================

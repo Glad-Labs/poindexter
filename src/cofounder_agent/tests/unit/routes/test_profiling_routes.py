@@ -12,15 +12,15 @@ profiling_middleware module-level variable is patched for each test.
 Auth is router-level (dependencies=[Depends(get_current_user)]).
 """
 
+from unittest.mock import MagicMock
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import MagicMock, patch
 
-from routes.auth_unified import get_current_user
 import routes.profiling_routes as profiling_module
+from routes.auth_unified import get_current_user
 from routes.profiling_routes import router
-
 from tests.unit.routes.conftest import TEST_USER
 
 

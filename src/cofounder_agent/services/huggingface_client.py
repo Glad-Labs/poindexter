@@ -6,15 +6,18 @@ Supports open-source models for blog post generation
 """
 
 import asyncio
-from services.logger_config import get_logger
 import os
 from typing import AsyncGenerator, List, Optional
 
 import aiohttp
 
+from services.logger_config import get_logger
+
 from .error_handler import ServiceError
 
 logger = get_logger(__name__)
+
+
 class HuggingFaceClient:
     """Client for HuggingFace Inference API"""
 
@@ -157,9 +160,9 @@ class HuggingFaceClient:
                     logger.error(f"HuggingFace error ({response.status}): {error_text}")
                     raise ServiceError(f"HuggingFace error: {response.status} - {error_text}")
 
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError as exc:
             logger.error(f"HuggingFace request timeout for model {model}", exc_info=True)
-            raise TimeoutError("HuggingFace request timed out")
+            raise TimeoutError("HuggingFace request timed out") from exc
         except Exception as e:
             logger.error(f"[_generate] HuggingFace generation failed: {e}", exc_info=True)
             raise

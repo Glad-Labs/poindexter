@@ -1,0 +1,132 @@
+- key: seo.generate_title
+  category: seo_metadata
+  description: "Generate SEO-optimized title (60 char max)"
+  output_format: text
+  notes: "v1.0: Strict output constraint reduces hallucination"
+  example_output: "AI in Healthcare: 2025 Trends & Opportunities"
+  template: |
+    Generate a professional, SEO-optimized blog title.
+
+    Content: {content}
+    Primary Keyword: {primary_keyword}
+
+    ⭐ REQUIREMENTS:
+    - Maximum 60 characters
+    - Include primary keyword if naturally possible
+    - Front-load the main benefit/topic
+    - Be specific and descriptive
+    - Avoid clickbait while remaining compelling
+    - Professional tone
+
+    Generate ONLY the title, nothing else. No quotes, no explanation.
+
+- key: seo.generate_meta_description
+  category: seo_metadata
+  description: "Generate SEO meta description (155 char max)"
+  output_format: text
+  notes: "v1.0: Enforces Google's 155-char standard, emphasizes CTA"
+  example_output: "Discover how AI is transforming healthcare in 2025. Expert insights on diagnostics, treatment, and patient outcomes."
+  template: |
+    Generate a compelling SEO meta description for search results.
+
+    Title: {title}
+    Content (first 400 characters): {content}
+
+    ⭐ REQUIREMENTS:
+    - Maximum 155 characters (Google's exact limit)
+    - Include primary keyword naturally
+    - Include call-to-action (Learn more, Discover, Explore, etc.)
+    - Compelling and click-worthy
+    - Accurate reflection of content
+
+    Generate ONLY the description, nothing else. No quotes, no explanation.
+
+- key: seo.extract_keywords
+  category: seo_metadata
+  description: "Extract SEO keywords from content"
+  output_format: text
+  notes: "v1.0: Specifies keyword composition (short vs long-tail)"
+  example_output: "AI healthcare, healthcare AI trends, medical diagnostics, AI patient care, 2025 health tech"
+  template: |
+    Extract 5-7 SEO keywords from this content.
+
+    Title: {title}
+    Content (first 500 characters): {content}
+
+    ⭐ REQUIREMENTS:
+    - 5-7 keywords total
+    - Comma-separated, no quotes
+    - Most important keywords first
+    - Should include primary keyword
+    - Mix of short-tail (2-3 words) and long-tail (4+ words)
+    - Relevant to content
+
+    Example: "AI healthcare, healthcare AI trends, medical diagnostics, AI patient care, 2025 health tech"
+
+    Generate ONLY the comma-separated list, nothing else.
+
+- key: seo.generate_excerpt
+  category: seo_metadata
+  description: "Generate social media excerpt (character-limited)"
+  output_format: text
+  notes: "v1.0: Character limit enforced, CTA encouraged"
+  example_output: "Discover how AI is transforming healthcare diagnostics. New research shows 45% improvement in accuracy rates. Learn what this means for patient outcomes."
+  template: |
+    Generate a concise, engaging excerpt (max {max_length} characters) suitable for social media preview and blog snippets.
+
+    Content: {content}
+
+    ⭐ REQUIREMENTS:
+    - Maximum {max_length} characters
+    - Engaging hook that entices reading the full post
+    - Front-load the main value proposition
+    - Professional and compelling tone
+    - Include a subtle call-to-action (optional)
+
+    Generate ONLY the excerpt, nothing else. No quotes, no explanation.
+
+- key: seo.match_category
+  category: seo_metadata
+  description: "Match content to best category"
+  output_format: text
+  notes: "v1.0: Single-select only, exact name required, no explanation"
+  example_output: "Healthcare Technology"
+  template: |
+    Select the BEST category for this content from the available options.
+
+    Title: {title}
+    Content (first 500 characters): {content}
+
+    Available Categories:
+    {categories_list}
+
+    ⭐ REQUIREMENTS:
+    1. Choose only one category that BEST fits the content
+    2. Consider the content's main theme and primary audience
+    3. Respond with ONLY the exact category name from the list above
+    4. No explanation, no other text
+
+    Examples: If list includes "Technology", "Business", "Health", respond with only: "Technology"
+
+- key: seo.extract_tags
+  category: seo_metadata
+  description: "Extract content tags from available pool"
+  output_format: text
+  notes: "v1.0: Strict selection from available list, comma-separated format"
+  example_output: "AI, Healthcare, Technology, Diagnostics, Innovation"
+  template: |
+    Extract the {max_tags} most relevant tags for this content from the available tags list.
+
+    Title: {title}
+    Content (first 500 characters): {content}
+
+    Available Tags: {tags_list}
+
+    ⭐ REQUIREMENTS:
+    1. Select exactly {max_tags} tags (or fewer if content doesn't support that many)
+    2. Choose ONLY tags from the available list provided
+    3. Tags should accurately describe the content's main topics
+    4. More specific tags are better than generic ones
+    5. Respond with ONLY comma-separated tag names, nothing else
+
+    Example Response Format: tag1, tag2, tag3, tag4, tag5

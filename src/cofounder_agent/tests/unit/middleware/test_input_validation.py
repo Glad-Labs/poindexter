@@ -2,10 +2,11 @@
 Unit tests for middleware/input_validation.py — InputValidationMiddleware
 """
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from middleware.input_validation import InputValidationMiddleware
+from unittest.mock import MagicMock
 
+import pytest
+
+from middleware.input_validation import InputValidationMiddleware
 
 # ---------------------------------------------------------------------------
 # Helpers — build mock starlette Request objects
@@ -22,7 +23,9 @@ def _make_request(
     req = MagicMock()
     req.url.path = path
     req.url.query = query
-    req.url.__str__ = MagicMock(return_value=f"http://localhost{path}?{query}" if query else f"http://localhost{path}")
+    req.url.__str__ = MagicMock(
+        return_value=f"http://localhost{path}?{query}" if query else f"http://localhost{path}"
+    )
     req.method = method
     _headers = {
         "content-type": "application/json",

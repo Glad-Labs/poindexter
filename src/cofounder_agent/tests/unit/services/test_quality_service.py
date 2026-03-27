@@ -9,7 +9,6 @@ import pytest
 
 from services.quality_service import QualityDimensions, UnifiedQualityService
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -91,14 +90,14 @@ class TestScoreCompleteness:
 
     def test_medium_content_scores_mid(self, svc):
         """~500-word content should score around 3-6."""
-        content = " ".join(["word"] * 550)
+        content = " ".join(["word"] * 549) + " end."
         score = svc._score_completeness(content, {})
         assert 3.0 <= score <= 7.0
 
     def test_long_content_with_headings_scores_high(self, svc):
         """2000+ words with multiple headings should approach maximum."""
         headings = "\n".join([f"## Section {i}\n\nSome text." for i in range(6)])
-        paragraphs = "\n\n".join(["paragraph " + " ".join(["word"] * 50)] * 10)
+        paragraphs = "\n\n".join(["paragraph " + " ".join(["word"] * 50) + "." for _ in range(10)])
         content = headings + "\n\n" + paragraphs
         score = svc._score_completeness(content, {})
         assert score > 5.0
@@ -129,6 +128,57 @@ class TestScoreCompleteness:
         content = headings + "\n\n" + body + "\n\n" + bullets
         score = svc._score_completeness(content, {})
         assert score <= 10.0
+
+
+# ---------------------------------------------------------------------------
+# Truncation detection
+# ---------------------------------------------------------------------------
+
+
+class TestTruncationDetection:
+    """Tests for detect_truncation static method."""
+
+    def test_complete_content_not_flagged(self):
+        """Content ending with proper punctuation should not be flagged."""
+        assert not UnifiedQualityService.detect_truncation(
+            "This is a complete article. It ends with a period."
+        )
+
+    def test_mid_sentence_flagged(self):
+        """Content ending mid-sentence should be flagged as truncated."""
+        assert UnifiedQualityService.detect_truncation(
+            "This article discusses many important topics in the field of software engineering and distributed systems. "
+            "The key insight from recent research is that modern architectures need to"
+        )
+
+    def test_ends_with_url_not_flagged(self):
+        """Content ending with a URL (references section) should not be flagged."""
+        assert not UnifiedQualityService.detect_truncation(
+            "For more information see https://example.com/article"
+        )
+
+    def test_empty_content_not_flagged(self):
+        """Empty or very short content should not be flagged."""
+        assert not UnifiedQualityService.detect_truncation("")
+        assert not UnifiedQualityService.detect_truncation("Short.")
+
+    def test_html_content_truncated(self):
+        """HTML content cut off mid-sentence should be detected."""
+        assert UnifiedQualityService.detect_truncation(
+            "<p>The system uses a distributed architecture.</p>"
+            "<p>The key components include the load balancer, the"
+        )
+
+    def test_completeness_penalty_on_truncation(self, svc=None):
+        """Truncated content should receive a completeness score penalty."""
+        svc = UnifiedQualityService()
+        complete = " ".join(["word"] * 549) + " final sentence."
+        truncated = " ".join(["word"] * 549) + " this sentence never finishes and keeps going"
+        score_complete = svc._score_completeness(complete, {})
+        score_truncated = svc._score_completeness(truncated, {})
+        assert (
+            score_truncated < score_complete
+        ), f"Truncated ({score_truncated}) should score lower than complete ({score_complete})"
 
 
 # ---------------------------------------------------------------------------
@@ -308,19 +358,25 @@ class TestQualityDimensionsAverage:
         expected = (80 + 70 + 70 + 75 + 65 + 70 + 70) / 7
         assert dims.average() == pytest.approx(expected, abs=0.01)
 
-    def test_low_readability_caps_overall(self):
-        """Readability below CRITICAL_FLOOR (50) should cap the overall score."""
+    def test_low_readability_does_not_cap_overall(self):
+        """Readability below CRITICAL_FLOOR should NOT cap overall score (#1238).
+
+        Flesch formula penalizes technical vocabulary unfairly, so readability
+        was removed from critical dimensions. It still contributes to the
+        average but does not trigger the hard cap.
+        """
         dims = QualityDimensions(
             clarity=90,
             accuracy=90,
             completeness=90,
             relevance=90,
             seo_quality=90,
-            readability=40,  # below floor
+            readability=40,  # below floor — but NOT a critical dim
             engagement=90,
         )
         avg = dims.average()
-        assert avg <= 40.0  # capped at the critical dimension's value
+        # Raw average: (90*6 + 40) / 7 ≈ 82.9 — not capped
+        assert avg > 80.0, f"Readability should not cap score; got {avg}"
 
     def test_low_clarity_caps_overall(self):
         """Clarity below CRITICAL_FLOOR caps the overall score."""

@@ -161,7 +161,6 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
         onClose();
       }, 2000);
     } catch (error) {
-      console.error('Newsletter signup error:', error);
       Sentry.captureException(error);
       setMessage({
         type: 'error',

@@ -3,29 +3,34 @@ Unified Image Service
 
 Consolidates all image processing functionality:
 - Featured image sourcing (Pexels API - free, unlimited)
-- Image generation (Stable Diffusion XL - local GPU, fallback)
+- Image generation (switchable models: SDXL, SDXL Lightning, Flux)
 - Image optimization and attribution
 - Gallery image sourcing
 - Metadata generation
 
 Architecture:
-- All operations are async (httpx for Pexels, GPU for SDXL)
+- All operations are async (httpx for Pexels, GPU for generation)
+- Model registry pattern — switch models like LLM model_router
+- Lazy loading — models only loaded on first generation request
 - Proper error handling and fallback chains
-- PostgreSQL persistence for image metadata
 - Automatic photographer attribution from Pexels
-- Graceful degradation when images unavailable
 
-Cost Optimization:
-- Pexels: FREE (unlimited searches, no credits)
-- SDXL Local: FREE (if GPU available, else skipped)
-- Result: $0/month vs $0.02/image with DALL-E
+Supported Models:
+- sdxl_base: stabilityai/stable-diffusion-xl-base-1.0 (50 steps, ~6GB VRAM)
+- sdxl_lightning: SDXL base + ByteDance Lightning LoRA (4 steps, ~6GB VRAM)
+- flux_schnell: black-forest-labs/FLUX.1-schnell (4 steps, ~12GB VRAM)
+
+Cost: $0/month for all options (local GPU or CPU fallback)
 """
 
 import asyncio
+import importlib
 import logging
 import os
 import time
+from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
 from typing import Any, Dict, List, Optional
 
 try:
@@ -42,33 +47,102 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
 
-
-# Try to import diffusers - optional for SDXL generation
+# Diffusers pipelines — imported lazily per model type
+DIFFUSERS_AVAILABLE = False
 try:
     from diffusers import StableDiffusionXLPipeline
 
     DIFFUSERS_AVAILABLE = True
 except (ImportError, RuntimeError) as e:
-    DIFFUSERS_AVAILABLE = False
     StableDiffusionXLPipeline = None
     logging.warning(f"Diffusers library not available: {e}")
 
 # Optional optimization packages
 try:
-    pass
+    import xformers  # noqa: F401
 
     XFORMERS_AVAILABLE = True
 except ImportError:
     XFORMERS_AVAILABLE = False
 
-try:
-    pass
-
-    OPTIMUM_AVAILABLE = True
-except ImportError:
-    OPTIMUM_AVAILABLE = False
-
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# IMAGE MODEL REGISTRY
+# =============================================================================
+
+
+class ImageModel(str, Enum):
+    """Available image generation models."""
+
+    SDXL_BASE = "sdxl_base"
+    SDXL_LIGHTNING = "sdxl_lightning"
+    FLUX_SCHNELL = "flux_schnell"
+
+
+@dataclass(frozen=True)
+class ImageModelConfig:
+    """Configuration for an image generation model."""
+
+    model_id: str
+    display_name: str
+    default_steps: int
+    default_guidance_scale: float
+    pipeline_class: str  # dotted import path within diffusers
+    lora_repo: Optional[str] = None
+    lora_weight_name: Optional[str] = None
+    scheduler_override: Optional[str] = None  # e.g. "EulerDiscreteScheduler"
+    scheduler_kwargs: Optional[Dict[str, Any]] = None
+    torch_dtype_str: str = "float16"  # "float16" or "bfloat16"
+    vram_gb: float = 6.0
+    notes: str = ""
+
+
+IMAGE_MODEL_REGISTRY: Dict[ImageModel, ImageModelConfig] = {
+    ImageModel.SDXL_BASE: ImageModelConfig(
+        model_id="stabilityai/stable-diffusion-xl-base-1.0",
+        display_name="SDXL Base",
+        default_steps=30,
+        default_guidance_scale=7.5,
+        pipeline_class="diffusers.StableDiffusionXLPipeline",
+        vram_gb=6.5,
+        notes="Original SDXL, high quality at 30-50 steps",
+    ),
+    ImageModel.SDXL_LIGHTNING: ImageModelConfig(
+        model_id="stabilityai/stable-diffusion-xl-base-1.0",
+        display_name="SDXL Lightning",
+        default_steps=4,
+        default_guidance_scale=0.0,
+        pipeline_class="diffusers.StableDiffusionXLPipeline",
+        lora_repo="ByteDance/SDXL-Lightning",
+        lora_weight_name="sdxl_lightning_4step_lora.safetensors",
+        scheduler_override="EulerDiscreteScheduler",
+        scheduler_kwargs={"timestep_spacing": "trailing"},
+        vram_gb=6.5,
+        notes="4-step distilled LoRA — 10x faster, great quality",
+    ),
+    ImageModel.FLUX_SCHNELL: ImageModelConfig(
+        model_id="black-forest-labs/FLUX.1-schnell",
+        display_name="Flux.1 Schnell",
+        default_steps=4,
+        default_guidance_scale=0.0,
+        pipeline_class="diffusers.FluxPipeline",
+        torch_dtype_str="bfloat16",
+        vram_gb=12.0,
+        notes="Best quality, needs ~12GB VRAM",
+    ),
+}
+
+
+def get_default_image_model() -> ImageModel:
+    """Get the default image model from env var or fallback."""
+    model_name = os.getenv("IMAGE_MODEL", "sdxl_lightning")
+    try:
+        return ImageModel(model_name)
+    except ValueError:
+        logger.warning(f"Unknown IMAGE_MODEL '{model_name}', falling back to sdxl_lightning")
+        return ImageModel.SDXL_LIGHTNING
 
 
 class FeaturedImageMetadata:
@@ -151,27 +225,54 @@ class ImageService:
         self.pexels_base_url = "https://api.pexels.com/v1"
         self.pexels_headers = {"Authorization": self.pexels_api_key} if self.pexels_api_key else {}
 
-        # SDXL Image Generation (optional, GPU-dependent)
-        self.sdxl_pipe = None
-        self.sdxl_refiner_pipe = None
-        self.sdxl_available = False
+        # Image generation state (lazy-loaded on first generate_image call)
+        self._gen_pipe = None  # Active generation pipeline
+        self._active_model: Optional[ImageModel] = None  # Currently loaded model
+        self.sdxl_available = False  # Kept for backward compat (True when any model loaded)
         self.sdxl_initialized = False  # Track if we've attempted initialization
-        self.use_refinement = True  # Use refinement for production quality
-        self.use_device = "cpu"  # Will be updated during lazy initialization
-        # NOTE: SDXL is lazily initialized only when generate_image() is called
-        # This avoids loading huge models if only Pexels search is needed
+        self.use_device = "cpu"  # Updated during model initialization
+        # NOTE: Models are lazily initialized only when generate_image() is called.
+        # This avoids loading huge models if only Pexels search is needed.
 
         self.search_cache: Dict[str, List[FeaturedImageMetadata]] = {}
 
-    def _initialize_sdxl(self) -> None:
-        """Initialize Stable Diffusion XL model with optimization and refinement if GPU available"""
-        # Check if diffusers is available first
+    def _initialize_model(self, model: Optional[ImageModel] = None) -> None:
+        """
+        Initialize or switch the active image generation model.
+
+        Supports lazy loading, hot-swapping between models, and automatic
+        cleanup of previously loaded models to free VRAM.
+
+        Args:
+            model: Which model to load. Defaults to get_default_image_model().
+        """
+        if model is None:
+            model = get_default_image_model()
+
+        # Already loaded — nothing to do
+        if self._active_model == model and self._gen_pipe is not None:
+            logger.debug(f"Model {model.value} already loaded, skipping init")
+            return
+
+        # Check prerequisites
         if not DIFFUSERS_AVAILABLE:
-            logger.warning(
-                "Diffusers library not installed - SDXL image generation will be unavailable"
-            )
+            logger.warning("Diffusers library not installed - image generation will be unavailable")
             self.sdxl_available = False
             return
+
+        if not TORCH_AVAILABLE:
+            logger.warning("PyTorch not installed - image generation will be unavailable")
+            self.sdxl_available = False
+            return
+
+        # Unload any previously loaded model first
+        if self._gen_pipe is not None:
+            logger.info(
+                f"Switching model: {self._active_model.value if self._active_model else 'none'} -> {model.value}"
+            )
+            self._unload_model()
+
+        config = IMAGE_MODEL_REGISTRY[model]
 
         try:
             # Determine device: CUDA (if compatible) or CPU
@@ -180,7 +281,6 @@ class ImageService:
 
             if torch.cuda.is_available():
                 try:
-                    # Check compute capability compatibility
                     capability = torch.cuda.get_device_capability(0)
                     device_name = torch.cuda.get_device_name(0)
                     current_cap = capability[0] * 10 + capability[1]
@@ -194,7 +294,7 @@ class ImageService:
                         86,
                         90,
                         120,
-                    ]  # Added sm_120 (RTX 5090 Blackwell)
+                    ]
 
                     logger.info(
                         f"GPU: {device_name}, Capability: sm_{capability[0]}{capability[1]}"
@@ -203,70 +303,120 @@ class ImageService:
                     if current_cap in supported_caps:
                         use_device = "cuda"
                         gpu_memory = torch.cuda.get_device_properties(0).total_memory / (1024**3)
-                        logger.info(f"✅ GPU Memory: {gpu_memory:.1f}GB - Using CUDA acceleration")
-
-                        # Precision selection for CUDA
-                        if gpu_memory >= 20:
-                            torch_dtype = torch.float32
-                            logger.info("✅ Using fp32 (full precision) for best quality")
-                        else:
-                            torch_dtype = torch.float16
-                            logger.info("✅ Using fp16 (half precision) for memory efficiency")
+                        logger.info(f"GPU Memory: {gpu_memory:.1f}GB - Using CUDA acceleration")
                     else:
                         logger.warning(
-                            f"⚠️  GPU capability sm_{capability[0]}{capability[1]} not officially supported. "
+                            f"GPU capability sm_{capability[0]}{capability[1]} not officially supported. "
                             f"Falling back to CPU mode."
                         )
                 except Exception as e:
-                    logger.warning(f"Could not verify GPU capability: {e}. Using CPU mode.", exc_info=True)
+                    logger.warning(
+                        f"Could not verify GPU capability: {e}. Using CPU mode.", exc_info=True
+                    )
             else:
                 logger.warning("CUDA not available - using CPU mode (slower)")
 
-            # For CPU inference, always use fp32
+            # Determine torch dtype from config
             if use_device == "cpu":
                 torch_dtype = torch.float32
-                logger.info("ℹ️  CPU mode: using fp32 (full precision)")
+                logger.info("CPU mode: using fp32 (full precision)")
+            elif config.torch_dtype_str == "bfloat16":
+                torch_dtype = torch.bfloat16
+                logger.info("Using bfloat16 precision")
+            else:
+                torch_dtype = torch.float16
+                logger.info("Using fp16 (half precision) for memory efficiency")
 
-            # Load base SDXL model with optimizations
-            logger.info(f"🎨 Loading SDXL base model (device: {use_device})...")
-            self.sdxl_pipe = StableDiffusionXLPipeline.from_pretrained(
-                "stabilityai/stable-diffusion-xl-base-1.0",
-                torch_dtype=torch_dtype,
-                use_safetensors=True,
-                variant="fp16" if torch_dtype == torch.float16 else None,
-            ).to(use_device)
+            # Dynamically import the pipeline class
+            pipeline_cls = self._import_pipeline_class(config.pipeline_class)
 
-            # Apply CPU/GPU optimizations
-            self._apply_model_optimizations(self.sdxl_pipe, use_device)
+            # Load model
+            logger.info(f"Loading {config.display_name} ({config.model_id}) on {use_device}...")
+            load_kwargs = {
+                "torch_dtype": torch_dtype,
+                "use_safetensors": True,
+            }
+            # Only pass variant for fp16 models (not bfloat16 or fp32)
+            if torch_dtype == torch.float16:
+                load_kwargs["variant"] = "fp16"
 
-            # Load refinement model for production quality
-            logger.info(f"🎨 Loading SDXL refinement model (device: {use_device})...")
-            self.sdxl_refiner_pipe = StableDiffusionXLPipeline.from_pretrained(
-                "stabilityai/stable-diffusion-xl-refiner-1.0",
-                torch_dtype=torch_dtype,
-                use_safetensors=True,
-                variant="fp16" if torch_dtype == torch.float16 else None,
-            ).to(use_device)
+            pipe = pipeline_cls.from_pretrained(config.model_id, **load_kwargs).to(use_device)
 
-            # Apply optimizations to refiner too
-            self._apply_model_optimizations(self.sdxl_refiner_pipe, use_device)
+            # Apply LoRA weights if configured (e.g. SDXL Lightning)
+            if config.lora_repo:
+                logger.info(f"Loading LoRA weights from {config.lora_repo}...")
+                pipe.load_lora_weights(config.lora_repo, weight_name=config.lora_weight_name)
+                pipe.fuse_lora()
+                logger.info("LoRA weights fused successfully")
 
-            self.use_device = use_device  # Store device for later use
+            # Override scheduler if configured (e.g. EulerDiscreteScheduler for Lightning)
+            if config.scheduler_override:
+                logger.info(f"Applying scheduler override: {config.scheduler_override}")
+                from diffusers import EulerDiscreteScheduler
+
+                sched_kwargs = config.scheduler_kwargs or {}
+                pipe.scheduler = EulerDiscreteScheduler.from_config(
+                    pipe.scheduler.config, **sched_kwargs
+                )
+
+            # Apply performance optimizations
+            self._apply_model_optimizations(pipe, use_device)
+
+            # Store state
+            self._gen_pipe = pipe
+            self._active_model = model
+            self.use_device = use_device
             self.sdxl_available = True
-            self.use_refinement = True
-            logger.info("✅ SDXL base + refinement models loaded successfully")
+
+            logger.info(f"{config.display_name} loaded successfully")
             logger.info(f"   Device: {use_device.upper()}")
             logger.info(
-                f"   Precision: {'fp32 (full precision)' if torch_dtype == torch.float32 else 'fp16 (half precision)'}"
+                f"   Default steps: {config.default_steps}, guidance: {config.default_guidance_scale}"
             )
-            logger.info(f"   Refinement: {'ENABLED' if self.use_refinement else 'DISABLED'}")
             logger.info(
-                f"   Optimizations: {'ENABLED (xformers, flash attention)' if XFORMERS_AVAILABLE else 'BASIC (no xformers)'}"
+                f"   Optimizations: {'ENABLED (xformers)' if XFORMERS_AVAILABLE else 'BASIC (no xformers)'}"
             )
 
         except Exception as e:
-            logger.error(f"Failed to load Stable Diffusion XL models: {e}", exc_info=True)
+            logger.error(f"Failed to load {config.display_name}: {e}", exc_info=True)
             self.sdxl_available = False
+
+    def _initialize_sdxl(self) -> None:
+        """Backward-compatible alias for _initialize_model()."""
+        self._initialize_model()
+
+    def _unload_model(self) -> None:
+        """Unload the current model and free VRAM/RAM."""
+        if self._gen_pipe is not None:
+            model_name = self._active_model.value if self._active_model else "unknown"
+            logger.info(f"Unloading model: {model_name}")
+            del self._gen_pipe
+
+        self._gen_pipe = None
+        self._active_model = None
+        self.sdxl_available = False
+
+        if TORCH_AVAILABLE and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            logger.debug("CUDA cache cleared")
+
+    @staticmethod
+    def _import_pipeline_class(dotted_path: str):
+        """
+        Dynamically import a pipeline class from a dotted path.
+
+        Args:
+            dotted_path: e.g. "diffusers.StableDiffusionXLPipeline"
+
+        Returns:
+            The imported class.
+        """
+        parts = dotted_path.rsplit(".", 1)
+        if len(parts) != 2:
+            raise ImportError(f"Invalid pipeline class path: {dotted_path}")
+        module_path, class_name = parts
+        module = importlib.import_module(module_path)
+        return getattr(module, class_name)
 
     def _apply_model_optimizations(self, pipe, device: str) -> None:
         """
@@ -533,58 +683,52 @@ class ImageService:
         prompt: str,
         output_path: str,
         negative_prompt: Optional[str] = None,
-        num_inference_steps: int = 50,
-        guidance_scale: float = 8.0,
-        use_refinement: bool = True,
+        num_inference_steps: Optional[int] = None,
+        guidance_scale: Optional[float] = None,
         high_quality: bool = True,
         task_id: Optional[str] = None,
+        model: Optional[ImageModel] = None,
     ) -> bool:
         """
-        Generate image using Stable Diffusion XL with full refinement for maximum quality.
-
-        Quality is prioritized over speed. Refinement is ALWAYS enabled to ensure
-        the highest quality output.
+        Generate an image using the configured (or specified) model.
 
         Args:
             prompt: Image generation prompt
             output_path: Local path to save generated image
             negative_prompt: Negative prompt for quality improvement
-            num_inference_steps: Number of inference steps (50+ for high quality)
-            guidance_scale: Guidance scale for quality (7.5-8.5 recommended)
-            use_refinement: Use refinement model (ALWAYS enabled for quality)
-            high_quality: Optimize for high quality (more steps, higher guidance)
+            num_inference_steps: Override inference steps (defaults to model config)
+            guidance_scale: Override guidance scale (defaults to model config)
+            high_quality: Optimize for high quality
             task_id: Optional task ID for progress tracking via WebSocket
+            model: Which model to use (defaults to IMAGE_MODEL env or sdxl_lightning)
 
         Returns:
             True if successful, False otherwise
-
-        Note:
-            - Refinement adds 30+ additional steps (2-stage pipeline)
-            - CPU mode will be slower but maintains maximum quality
-            - GPU mode (when available in PyTorch 2.9.2+) will be 20-40x faster
-            - If task_id provided, progress updates are sent via progress service
         """
-        # Lazy initialize SDXL only when actually needed for generation
-        if not self.sdxl_initialized:
-            logger.info("🎨 First generation request detected - initializing SDXL models...")
-            self._initialize_sdxl()
+        # Lazy initialize on first generation request
+        if not self.sdxl_initialized or (model is not None and model != self._active_model):
+            target = model or get_default_image_model()
+            logger.info(f"First generation request detected - initializing {target.value}...")
+            self._initialize_model(target)
             self.sdxl_initialized = True
 
         if not self.sdxl_available:
-            logger.warning("SDXL model not available - image generation skipped")
+            logger.warning("Image generation model not available - generation skipped")
             return False
 
+        # Resolve defaults from the active model config
+        config = IMAGE_MODEL_REGISTRY[self._active_model]
+        if num_inference_steps is None:
+            num_inference_steps = config.default_steps
+        if guidance_scale is None:
+            guidance_scale = config.default_guidance_scale
+
         try:
-            logger.info(f"🎨 Generating image for prompt: '{prompt}'")
-            if high_quality:
-                logger.info(
-                    f"   Mode: HIGH QUALITY (base steps={num_inference_steps}, guidance={guidance_scale})"
-                )
-                if use_refinement and self.sdxl_refiner_pipe:
-                    logger.info(f"   Refinement: ENABLED (quality priority)")
-                    logger.info(
-                        f"   Device: {self.use_device.upper()} - Note: CPU refinement will take longer"
-                    )
+            logger.info(f"Generating image for prompt: '{prompt}'")
+            logger.info(
+                f"   Model: {config.display_name}, steps={num_inference_steps}, "
+                f"guidance={guidance_scale}, device={self.use_device.upper()}"
+            )
 
             # Run generation in thread pool to avoid blocking
             loop = asyncio.get_event_loop()
@@ -596,12 +740,10 @@ class ImageService:
                 negative_prompt,
                 num_inference_steps,
                 guidance_scale,
-                use_refinement
-                and self.use_refinement,  # Enable refinement on all devices for quality
                 task_id,
             )
 
-            logger.info(f"✅ Image saved to {output_path}")
+            logger.info(f"Image saved to {output_path}")
 
             # Mark progress as complete if tracking
             if task_id:
@@ -619,7 +761,7 @@ class ImageService:
             return True
 
         except Exception as e:
-            logger.error(f"❌ Error generating image: {e}", exc_info=True)
+            logger.error(f"Error generating image: {e}", exc_info=True)
 
             # Mark progress as failed if tracking
             if task_id:
@@ -642,23 +784,18 @@ class ImageService:
         prompt: str,
         output_path: str,
         negative_prompt: Optional[str] = None,
-        num_inference_steps: int = 50,
-        guidance_scale: float = 8.0,
-        use_refinement: bool = True,
+        num_inference_steps: int = 30,
+        guidance_scale: float = 7.5,
         task_id: Optional[str] = None,
     ) -> None:
         """
-        Synchronous two-stage SDXL generation with optional refinement.
+        Synchronous image generation using the active model pipeline.
 
-        Stage 1: Base model generates high-quality image with specified steps
-        Stage 2: Refiner model applies additional detail refinement (if enabled)
-
-        Runs in thread pool to avoid blocking async operations.
-
-        Emits progress updates if task_id provided (for WebSocket streaming).
+        Runs in a thread pool to avoid blocking async operations.
+        Emits progress updates if task_id is provided (for WebSocket streaming).
         """
-        if not self.sdxl_pipe:
-            raise RuntimeError("SDXL model not initialized")
+        if not self._gen_pipe:
+            raise RuntimeError("Image generation model not initialized")
 
         negative_prompt = negative_prompt or ""
         start_time = time.time()
@@ -669,121 +806,69 @@ class ImageService:
             from services.progress_service import get_progress_service
 
             progress_service = get_progress_service()
-            total_steps = num_inference_steps + (
-                30 if use_refinement and self.sdxl_refiner_pipe else 0
-            )
-            progress_service.create_progress(task_id, total_steps)
+            progress_service.create_progress(task_id, num_inference_steps)
 
         def progress_callback(step: int, timestep: Any, latents: Any) -> None:
-            """Callback for each generation step"""
+            """Callback for each generation step."""
             if progress_service and task_id:
                 elapsed = time.time() - start_time
                 progress_service.update_progress(
                     task_id,
                     step + 1,  # 1-indexed for display
-                    stage="base_model",
+                    stage="generation",
                     elapsed_time=elapsed,
-                    message=f"Base model generation: step {step + 1}/{num_inference_steps}",
+                    message=f"Generating: step {step + 1}/{num_inference_steps}",
                 )
 
-        # =====================================================================
-        # STAGE 1: Base Generation
-        # =====================================================================
-        logger.info(f"   ⏱️  Stage 1/2: Base generation ({num_inference_steps} steps)...")
+        model_name = self._active_model.value if self._active_model else "unknown"
+        logger.info(f"   Generating with {model_name} ({num_inference_steps} steps)...")
 
         if progress_service and task_id:
             progress_service.update_progress(
-                task_id, 0, stage="base_model", message=f"Starting base model generation..."
+                task_id, 0, stage="generation", message="Starting image generation..."
             )
 
-        # Generate base image - always output PIL for safety
-        # We'll pass PIL to refiner which handles it correctly
-        logger.info(f"   ⏱️  Stage 1/2: Base generation ({num_inference_steps} steps)...")
-
-        if progress_service and task_id:
-            progress_service.update_progress(
-                task_id, 0, stage="base_model", message=f"Starting base model generation..."
-            )
-
-        base_result = self.sdxl_pipe(
+        result = self._gen_pipe(
             prompt=prompt,
             negative_prompt=negative_prompt,
             num_inference_steps=num_inference_steps,
             guidance_scale=guidance_scale,
-            output_type="pil",  # Always use PIL for compatibility
+            output_type="pil",
             callback=progress_callback if task_id else None,
             callback_steps=1 if task_id else None,
         )
-        base_image_pil = base_result.images[0]
-        logger.info(f"   ✓ Stage 1 complete: Base image generated")
 
-        # =====================================================================
-        # STAGE 2: Refinement (Quality Priority - Per HuggingFace Recommendation)
-        # =====================================================================
-        if use_refinement and self.sdxl_refiner_pipe:
-            logger.info(f"   ⏱️  Stage 2/2: Refinement pass (30 additional steps)...")
+        image = result.images[0]
+        logger.info("   Generation complete, saving image...")
 
-            if progress_service and task_id:
-                progress_service.update_progress(
-                    task_id,
-                    num_inference_steps,
-                    stage="refiner_model",
-                    message=f"Starting refinement pass...",
-                )
+        try:
+            image.save(output_path)
+            elapsed = time.time() - start_time
+            logger.info(f"   Image saved to {output_path} ({elapsed:.1f}s)")
+        except Exception as save_error:
+            logger.error(f"   Save failed: {save_error}", exc_info=True)
+            raise
 
-            def refiner_progress_callback(step: int, timestep: Any, latents: Any) -> None:
-                """Callback for refinement steps"""
-                if progress_service and task_id:
-                    elapsed = time.time() - start_time
-                    current_step = num_inference_steps + step + 1
-                    progress_service.update_progress(
-                        task_id,
-                        current_step,
-                        stage="refiner_model",
-                        elapsed_time=elapsed,
-                        message=f"Refinement: step {step + 1}/30",
-                    )
+    # =========================================================================
+    # MODEL INTROSPECTION
+    # =========================================================================
 
-            try:
-                # Pass PIL image to refiner
-                # The refiner will internally convert to latents if needed
-                refined_image = self.sdxl_refiner_pipe(
-                    prompt=prompt,
-                    negative_prompt=negative_prompt,
-                    image=base_image_pil,  # Pass PIL image directly
-                    num_inference_steps=30,
-                    guidance_scale=guidance_scale,
-                    output_type="pil",
-                    callback=refiner_progress_callback if task_id else None,
-                    callback_steps=1 if task_id else None,
-                ).images[0]
+    def get_active_model(self) -> Optional[ImageModel]:
+        """Return the currently loaded model enum, or None if no model is loaded."""
+        return self._active_model
 
-                logger.info(f"   ✓ Stage 2 complete: Refinement applied successfully")
-                refined_image.save(output_path)
-
-            except Exception as refine_error:
-                logger.warning(
-                    f"   ⚠️  Refinement failed, falling back to base image: {refine_error}"
-, exc_info=True)
-                # Fallback: save base PIL image without refinement
-                try:
-                    base_image_pil.save(output_path)
-                    logger.info(f"   ✓ Saved base image without refinement (fallback)")
-
-                except Exception as save_error:
-                    logger.error(f"   ❌ Save failed: {save_error}", exc_info=True)
-                    raise
-
-        else:
-            # Refinement disabled: save base image directly
-            logger.info(f"   ⏱️  Saving base image...")
-            try:
-                base_image_pil.save(output_path)
-                logger.info(f"   ✓ Saved base image (refinement disabled)")
-
-            except Exception as save_error:
-                logger.error(f"   ❌ Save failed: {save_error}", exc_info=True)
-                raise
+    @staticmethod
+    def list_available_models() -> Dict[str, Dict[str, Any]]:
+        """Return metadata for all registered image models."""
+        return {
+            m.value: {
+                "display_name": c.display_name,
+                "default_steps": c.default_steps,
+                "vram_gb": c.vram_gb,
+                "notes": c.notes,
+            }
+            for m, c in IMAGE_MODEL_REGISTRY.items()
+        }
 
     # =========================================================================
     # UTILITY METHODS

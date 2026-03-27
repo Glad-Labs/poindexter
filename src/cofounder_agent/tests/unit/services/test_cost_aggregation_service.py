@@ -13,12 +13,12 @@ Tests cover:
 The asyncpg pool is fully mocked; no real database access.
 """
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from services.cost_aggregation_service import CostAggregationService
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -53,7 +53,7 @@ def _make_conn(fetchval_values=None, fetch_rows=None, fetchrow_value=None):
 
     # fetch returns mock rows
     rows = []
-    for row_dict in (fetch_rows or []):
+    for row_dict in fetch_rows or []:
         row = _make_row(row_dict)
         rows.append(row)
     conn.fetch = AsyncMock(return_value=rows)
@@ -217,7 +217,12 @@ class TestGetBreakdownByModel:
     @pytest.mark.asyncio
     async def test_with_rows_returns_models_list(self):
         rows = [
-            {"model": "claude-3-haiku", "provider": "anthropic", "total_cost": "1.50", "task_count": "5"},
+            {
+                "model": "claude-3-haiku",
+                "provider": "anthropic",
+                "total_cost": "1.50",
+                "task_count": "5",
+            },
         ]
         conn = _make_conn(fetchval_values=[1.5], fetch_rows=rows)
         db = _make_db(conn=conn)
@@ -406,9 +411,18 @@ class TestEmptyHelpers:
     def test_empty_summary_has_required_fields(self):
         svc = _make_service()
         d = svc._get_empty_summary()
-        for field in ["total_spent", "today_cost", "week_cost", "month_cost",
-                      "monthly_budget", "budget_used_percent", "projected_monthly",
-                      "tasks_completed", "avg_cost_per_task", "last_updated"]:
+        for field in [
+            "total_spent",
+            "today_cost",
+            "week_cost",
+            "month_cost",
+            "monthly_budget",
+            "budget_used_percent",
+            "projected_monthly",
+            "tasks_completed",
+            "avg_cost_per_task",
+            "last_updated",
+        ]:
             assert field in d
 
     def test_empty_breakdown_by_phase_structure(self):

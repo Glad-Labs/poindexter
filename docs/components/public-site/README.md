@@ -14,8 +14,8 @@
 
 ### Quick Links
 
-- **Deployment**: See [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](../../03-DEPLOYMENT_AND_INFRASTRUCTURE.md) for deployment process
-- **Architecture**: See [02-ARCHITECTURE_AND_DESIGN.md](../../02-ARCHITECTURE_AND_DESIGN.md) for system design
+- **Deployment**: See [Operations-Maintenance.md](../../05-Operations/Operations-Maintenance.md) for deployment process
+- **Architecture**: See [System-Design.md](../../02-Architecture/System-Design.md) for system design
 - **Troubleshooting**: See [troubleshooting/](./troubleshooting/) for common issues
 - **Source Code**: See `web/public-site/README.md` for detailed implementation
 

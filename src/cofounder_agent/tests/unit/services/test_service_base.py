@@ -5,7 +5,6 @@ JsonSchema, and ServiceError.
 All tests are pure in-process — no LLM, DB, or network calls.
 """
 
-import asyncio
 import pytest
 
 from services.service_base import (
@@ -19,7 +18,6 @@ from services.service_base import (
     get_service_registry,
     set_service_registry,
 )
-
 
 # ---------------------------------------------------------------------------
 # Concrete test implementations
