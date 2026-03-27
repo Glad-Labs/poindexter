@@ -174,7 +174,7 @@ Located in `.github/workflows/`:
 - `VERCEL_TOKEN` - Vercel API access
 - `DATABASE_URL` - Production DB connection
 
-See [07-BRANCH_SPECIFIC_VARIABLES.md](../07-BRANCH_SPECIFIC_VARIABLES.md) for per-environment configuration.
+See `.env.example` at the project root for per-environment configuration.
 
 ---
 

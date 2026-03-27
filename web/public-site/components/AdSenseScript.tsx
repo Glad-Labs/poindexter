@@ -38,8 +38,6 @@ export default function AdSenseScript() {
         }
       }}
       onError={(e) => {
-        // eslint-disable-next-line no-console
-        console.error('[AdSense] Failed to load script');
         Sentry.captureException(
           e || new Error('[AdSense] Failed to load script')
         );

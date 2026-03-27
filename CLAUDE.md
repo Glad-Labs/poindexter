@@ -93,7 +93,7 @@ npm run build                 # Build all workspaces
 
 ### Backend (`src/cofounder_agent/`)
 
-**Entry point:** `main.py` — FastAPI app initializing service container, database pools, orchestrator, and registering all 30 route modules via `register_all_routes()`.
+**Entry point:** `main.py` — FastAPI app initializing service container, database pools, orchestrator, and registering all 32 route modules via `register_all_routes()`.
 
 **Key services:**
 
@@ -113,7 +113,7 @@ npm run build                 # Build all workspaces
 
 **Oversight Hub** (`web/oversight-hub/`): Vite + React 18 admin app. Vitest for unit tests. Path alias `@/` → `src/`. State managed with Zustand. Real-time updates via WebSocket to `/api/workflow-progress/ws/{execution_id}` (backend URL from `VITE_API_URL`).
 
-**Public Site** (`web/public-site/`): Next.js 15 app router (no `pages/` directory). Markdown content via gray-matter + marked. Static generation with ISR. Jest + React Testing Library for tests.
+**Public Site** (`web/public-site/`): Next.js 15 app router (no `pages/` directory). Markdown content via gray-matter. Static generation with ISR. Jest + React Testing Library for tests.
 
 **API integration:** Both frontends call `http://localhost:8000/*`. No direct database access from frontend.
 
@@ -152,7 +152,7 @@ npm workspaces cover `web/public-site` and `web/oversight-hub`. `npm install` at
 - **PostgreSQL as source of truth:** All task results, agent memories, and content stored there
 - **Model router first:** Use cost tiers (`free`/`budget`/`standard`/`premium`/`flagship`) not hardcoded model names
 - **Monorepo with workspaces:** `npm install` once at root covers everything
-- **API versioning policy:** All ~158 endpoints live at `/api/{resource}` (no `/v1/` prefix). This is the current v1 surface, version read from `pyproject.toml` at startup, OpenAPI at `/api/openapi.json`. **Policy:** Breaking changes to any public endpoint (field renames, status code changes, required field additions) MUST introduce a new URL version prefix (`/api/v2/`). Non-breaking additions (new optional fields, new endpoints) do not require a new version. Document breaking changes in `CHANGELOG.md`.
+- **API versioning policy:** All ~193 endpoints live at `/api/{resource}` (no `/v1/` prefix). This is the current v1 surface, version read from `pyproject.toml` at startup, OpenAPI at `/api/openapi.json`. **Policy:** Breaking changes to any public endpoint (field renames, status code changes, required field additions) MUST introduce a new URL version prefix (`/api/v2/`). Non-breaking additions (new optional fields, new endpoints) do not require a new version. Document breaking changes in `CHANGELOG.md`.
 
 ## Reference Documentation
 

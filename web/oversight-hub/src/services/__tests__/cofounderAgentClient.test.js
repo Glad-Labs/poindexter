@@ -58,14 +58,10 @@ vi.stubGlobal('fetch', mockFetch);
 import {
   makeRequest,
   logout,
-  refreshAccessToken,
   getTasks,
   getTaskStatus,
-  createBlogPost,
   createTask,
   listTasks,
-  getTaskById,
-  getTaskMetrics,
   sendChatMessage,
   getChatHistory,
   clearChatHistory,
@@ -75,11 +71,8 @@ import {
   handleOAuthCallback,
   getCurrentUser,
   getMetrics,
-  publishBlogDraft,
   getAgentStatus,
   getAgentLogs,
-  processOrchestratorRequest,
-  getOrchestratorStatus,
   approveOrchestratorResult,
   getOrchestratorTools,
   generateTaskImage,
@@ -263,43 +256,6 @@ describe('logout', () => {
 });
 
 // ------------------------------------------------------------------
-// refreshAccessToken
-// ------------------------------------------------------------------
-
-describe('refreshAccessToken', () => {
-  beforeEach(() => {
-    localStorage.clear();
-  });
-
-  it('returns false when no refresh_token stored', async () => {
-    const result = await refreshAccessToken();
-    expect(result).toBe(false);
-  });
-
-  it('returns true and stores new token on success', async () => {
-    localStorage.setItem('refresh_token', 'ref-tok');
-    mockFetch.mockResolvedValueOnce(okJson({ access_token: 'new-tok' }));
-    const result = await refreshAccessToken();
-    expect(result).toBe(true);
-    expect(localStorage.getItem('auth_token')).toBe('new-tok');
-  });
-
-  it('returns false when response has no access_token', async () => {
-    localStorage.setItem('refresh_token', 'ref-tok');
-    mockFetch.mockResolvedValueOnce(okJson({}));
-    const result = await refreshAccessToken();
-    expect(result).toBe(false);
-  });
-
-  it('returns false on fetch error', async () => {
-    localStorage.setItem('refresh_token', 'ref-tok');
-    mockFetch.mockRejectedValueOnce(new Error('Server down'));
-    const result = await refreshAccessToken();
-    expect(result).toBe(false);
-  });
-});
-
-// ------------------------------------------------------------------
 // getTasks
 // ------------------------------------------------------------------
 
@@ -348,61 +304,6 @@ describe('getTaskStatus', () => {
 });
 
 // ------------------------------------------------------------------
-// createBlogPost — string form
-// ------------------------------------------------------------------
-
-describe('createBlogPost (string topic)', () => {
-  it('builds payload with capitalized task_name', async () => {
-    mockFetch.mockResolvedValueOnce(okJson({ id: 'task-1' }));
-    await createBlogPost(
-      'ai trends',
-      'AI',
-      'developers',
-      'tech',
-      {},
-      'balanced',
-      0.5
-    );
-    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.task_name).toBe('Blog Post: Ai Trends');
-    expect(body.topic).toBe('ai trends');
-    expect(body.primary_keyword).toBe('AI');
-    expect(body.target_audience).toBe('developers');
-    expect(body.category).toBe('tech');
-  });
-
-  it('throws when topic is empty string', async () => {
-    await expect(createBlogPost('  ')).rejects.toThrow('Topic is required');
-  });
-});
-
-// ------------------------------------------------------------------
-// createBlogPost — options form
-// ------------------------------------------------------------------
-
-describe('createBlogPost (options object)', () => {
-  it('builds payload from options with camelCase aliases', async () => {
-    mockFetch.mockResolvedValueOnce(okJson({ id: 'task-2' }));
-    await createBlogPost({
-      topic: 'machine learning',
-      primaryKeyword: 'ML',
-      targetAudience: 'students',
-      category: 'education',
-    });
-    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.topic).toBe('machine learning');
-    expect(body.primary_keyword).toBe('ML');
-    expect(body.target_audience).toBe('students');
-  });
-
-  it('throws when options.topic is empty', async () => {
-    await expect(createBlogPost({ topic: '' })).rejects.toThrow(
-      'Topic is required'
-    );
-  });
-});
-
-// ------------------------------------------------------------------
 // createTask
 // ------------------------------------------------------------------
 
@@ -442,37 +343,6 @@ describe('listTasks', () => {
     await listTasks(10, 0, null);
     const url = mockFetch.mock.calls[0][0];
     expect(url).not.toContain('status=');
-  });
-});
-
-// ------------------------------------------------------------------
-// getTaskById
-// ------------------------------------------------------------------
-
-describe('getTaskById', () => {
-  it('calls /api/tasks/{id} with GET', async () => {
-    mockFetch.mockResolvedValueOnce(okJson({ id: 'task-1' }));
-    const result = await getTaskById('task-1');
-    expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining('/api/tasks/task-1'),
-      expect.anything()
-    );
-    expect(result.id).toBe('task-1');
-  });
-});
-
-// ------------------------------------------------------------------
-// getTaskMetrics
-// ------------------------------------------------------------------
-
-describe('getTaskMetrics', () => {
-  it('calls /api/tasks/metrics/summary', async () => {
-    mockFetch.mockResolvedValueOnce(okJson({ total: 100 }));
-    await getTaskMetrics();
-    expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining('/api/tasks/metrics/summary'),
-      expect.anything()
-    );
   });
 });
 
@@ -613,19 +483,6 @@ describe('getMetrics', () => {
   });
 });
 
-describe('publishBlogDraft', () => {
-  it('PATCHes /api/tasks/{id}/publish with environment', async () => {
-    mockFetch.mockResolvedValueOnce(okJson({ published: true }));
-    await publishBlogDraft('post-1', 'staging');
-    const [url, opts] = mockFetch.mock.calls[0];
-    expect(url).toContain('/api/tasks/post-1/publish');
-    expect(opts.method).toBe('PATCH');
-    const body = JSON.parse(opts.body);
-    expect(body.environment).toBe('staging');
-    expect(body.status).toBe('published');
-  });
-});
-
 // ------------------------------------------------------------------
 // Agent / Orchestrator endpoints
 // ------------------------------------------------------------------
@@ -648,34 +505,6 @@ describe('getAgentLogs', () => {
     const url = mockFetch.mock.calls[0][0];
     expect(url).toContain('/api/agents/content_agent/logs');
     expect(url).toContain('limit=50');
-  });
-});
-
-describe('processOrchestratorRequest', () => {
-  it('POSTs to /api/orchestrator/process', async () => {
-    mockFetch.mockResolvedValueOnce(okJson({ task_id: 'orch-1' }));
-    await processOrchestratorRequest(
-      'Do X',
-      { revenue: 100 },
-      { speed: 'fast' }
-    );
-    const [url, opts] = mockFetch.mock.calls[0];
-    expect(url).toContain('/api/orchestrator/process');
-    expect(opts.method).toBe('POST');
-    const body = JSON.parse(opts.body);
-    expect(body.request).toBe('Do X');
-    expect(body.business_metrics).toEqual({ revenue: 100 });
-  });
-});
-
-describe('getOrchestratorStatus', () => {
-  it('GETs /api/orchestrator/status/{id}', async () => {
-    mockFetch.mockResolvedValueOnce(okJson({ status: 'running' }));
-    await getOrchestratorStatus('orch-1');
-    expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining('/api/orchestrator/status/orch-1'),
-      expect.anything()
-    );
   });
 });
 

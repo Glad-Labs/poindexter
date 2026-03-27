@@ -177,33 +177,6 @@ export async function logout() {
   // Note: Actual state clearing happens in AuthContext.logout()
 }
 
-export async function refreshAccessToken() {
-  // Token refresh endpoint - requests a new token using refresh token
-  // The backend will validate the refresh token and issue a new access token
-  try {
-    const refreshToken = localStorage.getItem('refresh_token');
-    if (!refreshToken) {
-      // No refresh token available - user needs to re-authenticate
-      return false;
-    }
-
-    const response = await makeRequest('/api/auth/refresh', 'POST', {
-      refresh_token: refreshToken,
-    });
-
-    if (response.access_token) {
-      // Update stored access token
-      localStorage.setItem('auth_token', response.access_token);
-      return true;
-    }
-
-    return false;
-  } catch (error) {
-    logErrorToSentry(error, { customContext: { action: 'tokenRefresh' } });
-    return false;
-  }
-}
-
 export async function getTasks(
   limit = 50,
   offset = 0,
@@ -236,121 +209,8 @@ export async function getTaskStatus(taskId) {
   }
 }
 
-export async function pollTaskStatus(taskId, onProgress, maxWait = 3600000) {
-  const startTime = Date.now();
-  const pollInterval = 5000;
-  return new Promise((resolve, reject) => {
-    const interval = setInterval(async () => {
-      try {
-        const task = await getTaskStatus(taskId);
-        if (onProgress) {
-          onProgress(task);
-        }
-        if (task.status === 'completed' || task.status === 'failed') {
-          clearInterval(interval);
-          resolve(task);
-        }
-        if (Date.now() - startTime > maxWait) {
-          clearInterval(interval);
-          reject(new Error('Task polling timeout'));
-        }
-      } catch (error) {
-        clearInterval(interval);
-        reject(error);
-      }
-    }, pollInterval);
-  });
-}
-
-export async function createBlogPost(
-  topicOrOptions,
-  primaryKeyword,
-  targetAudience,
-  category,
-  modelSelections,
-  qualityPreference,
-  estimatedCost
-) {
-  // Support both old and new API formats for backwards compatibility
-
-  // Old format: createBlogPost(topic, primaryKeyword, targetAudience, category, modelSelections, qualityPreference, estimatedCost)
-  if (typeof topicOrOptions === 'string') {
-    // Validate required fields
-    if (!topicOrOptions?.trim()) {
-      throw new Error('Topic is required and cannot be empty');
-    }
-
-    const payload = {
-      task_name: `Blog Post: ${capitalizeWords(topicOrOptions.trim())}`,
-      topic: topicOrOptions.trim(),
-      primary_keyword: (primaryKeyword || '').trim(),
-      target_audience: (targetAudience || '').trim(),
-      category: (category || 'general').trim(),
-      model_selections: modelSelections || {},
-      quality_preference: qualityPreference || 'balanced',
-      estimated_cost: estimatedCost || 0.0,
-      metadata: {},
-    };
-
-    return makeRequest(
-      '/api/tasks',
-      'POST',
-      payload,
-      false,
-      null,
-      60000 // 60 seconds for content generation
-    );
-  }
-
-  // New format: createBlogPost({ topic, style, tone, modelSelections, qualityPreference, estimatedCost, ... })
-  // Use 60 second timeout for content generation with Ollama
-  const options = topicOrOptions;
-
-  // Validate required fields
-  if (!options.topic?.trim()) {
-    throw new Error('Topic is required and cannot be empty');
-  }
-
-  const payload = {
-    task_name: `Blog Post: ${options.topic.trim()}`,
-    topic: options.topic.trim(),
-    primary_keyword: (
-      options.primaryKeyword ||
-      options.primary_keyword ||
-      ''
-    ).trim(),
-    target_audience: (
-      options.targetAudience ||
-      options.target_audience ||
-      ''
-    ).trim(),
-    category: (options.category || 'general').trim(),
-    model_selections: options.model_selections || options.modelSelections || {},
-    quality_preference:
-      options.quality_preference || options.qualityPreference || 'balanced',
-    estimated_cost: options.estimated_cost || options.estimatedCost || 0.0,
-    metadata: options.metadata || {},
-  };
-
-  return makeRequest(
-    '/api/tasks',
-    'POST',
-    payload,
-    false,
-    null,
-    60000 // 60 seconds for content generation
-  );
-}
-
 export async function getMetrics() {
   return makeRequest('/api/metrics', 'GET');
-}
-
-export async function publishBlogDraft(postId, environment = 'production') {
-  return makeRequest(`/api/tasks/${postId}/publish`, 'PATCH', {
-    environment,
-    status: 'published',
-  });
 }
 
 // ============================================================================
@@ -438,23 +298,6 @@ export async function listTasks(limit = 20, offset = 0, status = null) {
 }
 
 /**
- * Get task details by ID
- * @param {string} taskId - Task ID
- * @returns {Promise} Task data with status and results
- */
-export async function getTaskById(taskId) {
-  return makeRequest(`/api/tasks/${taskId}`, 'GET');
-}
-
-/**
- * Get task metrics summary
- * @returns {Promise} Task statistics and metrics
- */
-export async function getTaskMetrics() {
-  return makeRequest('/api/tasks/metrics/summary', 'GET');
-}
-
-/**
  * Generate an image for a task using AI
  * @param {string} taskId - Task ID
  * @param {Object} options - Image generation options
@@ -470,22 +313,6 @@ export async function generateTaskImage(taskId, options = {}) {
 // ============================================================================
 // Intelligent Orchestrator
 // ============================================================================
-
-export async function processOrchestratorRequest(
-  request,
-  businessMetrics,
-  preferences
-) {
-  return makeRequest('/api/orchestrator/process', 'POST', {
-    request,
-    business_metrics: businessMetrics,
-    preferences,
-  });
-}
-
-export async function getOrchestratorStatus(taskId) {
-  return makeRequest(`/api/orchestrator/status/${taskId}`, 'GET');
-}
 
 export async function getOrchestratorApproval(taskId) {
   return makeRequest(`/api/orchestrator/approval/${taskId}`, 'GET');
@@ -943,12 +770,8 @@ export async function getBusinessMetricsAnalysis() {
 
 export const cofounderAgentClient = {
   logout,
-  refreshAccessToken,
   getTasks,
   getTaskStatus,
-  pollTaskStatus,
-  createBlogPost,
-  publishBlogDraft,
   getMetrics,
   // OAuth functions
   getOAuthProviders,
@@ -958,8 +781,6 @@ export const cofounderAgentClient = {
   // Task management
   createTask,
   listTasks,
-  getTaskById,
-  getTaskMetrics,
   generateTaskImage,
   // Bulk operations
   bulkUpdateTasks,
@@ -978,8 +799,6 @@ export const cofounderAgentClient = {
   getLearningPatterns,
   getBusinessMetricsAnalysis,
   // Intelligent Orchestrator
-  processOrchestratorRequest,
-  getOrchestratorStatus,
   getOrchestratorApproval,
   approveOrchestratorResult,
   getOrchestratorTools,

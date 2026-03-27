@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import * as Sentry from '@sentry/nextjs';
 import Link from 'next/link';
 import { searchPosts, getCategories } from '../lib/api-fastapi';
 
@@ -34,8 +35,7 @@ export default function SearchBar({ compact = false }) {
         const cats = await getCategories();
         setCategories(cats || []);
       } catch (error) {
-        // eslint-disable-next-line no-console -- Client component, no structured logger
-        console.error('Error loading categories:', error);
+        Sentry.captureException(error);
       }
     };
     loadCategories();
@@ -63,8 +63,7 @@ export default function SearchBar({ compact = false }) {
         setIsOpen(true);
         setSelectedIndex(-1);
       } catch (error) {
-        // eslint-disable-next-line no-console -- Client component, no structured logger
-        console.error('Search error:', error);
+        Sentry.captureException(error);
         setResults([]);
       } finally {
         setIsLoading(false);

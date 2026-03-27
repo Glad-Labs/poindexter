@@ -4,7 +4,7 @@
 **Status:** ✅ Production Ready
 **Test Framework:** Vitest (oversight-hub) + Jest (public-site) + pytest (Backend)
 **Coverage Goal:** >80% for critical paths
-**Current Status:** ✅ 153 Playwright E2E, ✅ ~2,050 Vitest (oversight-hub), ✅ ~5,500 pytest (backend)
+**Current Status:** ✅ 153 Playwright E2E, ✅ ~2,050 Vitest (oversight-hub), ✅ ~6,000 pytest (backend)
 
 ---
 

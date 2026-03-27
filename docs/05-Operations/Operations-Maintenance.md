@@ -140,10 +140,12 @@ Kills any processes holding ports 8000, 3000, or 3001.
 ### Pre-deployment Verification
 
 ```bash
-scripts/pre-deployment-verify.sh
+npm run test:python:smoke   # Smoke tests
+npm run lint                # Lint all workspaces
+npm run build               # Verify builds succeed
 ```
 
-Runs smoke tests, checks environment variables, and verifies service connectivity before a production deploy.
+Run smoke tests, lint checks, and a full build before a production deploy.
 
 ### Checking Railway Logs (Production)
 
