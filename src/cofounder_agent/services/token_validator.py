@@ -31,28 +31,28 @@ class TokenType(str, Enum):
 
 
 class AuthConfig:
-    """Auth configuration - minimal version for validation only"""
+    """Auth configuration - minimal version for validation only.
 
-    # Support both JWT_SECRET_KEY and JWT_SECRET for flexibility
-    # SECURITY: Do NOT use hardcoded default - require environment variable
+    Reads JWT_SECRET_KEY / JWT_SECRET from os.environ.  If neither is set,
+    config/__init__.py will have auto-generated one before this module loads
+    (get_config() is called at top of main.py).  The development fallback
+    remains for the rare case this module is imported before get_config().
+    """
+
     _from_env = os.getenv("JWT_SECRET_KEY") or os.getenv("JWT_SECRET")
 
     if not _from_env:
-        # In production, this is a critical error
-        import sys
+        # Auto-generate if missing (config/__init__.py normally does this first)
+        import secrets as _secrets
 
-        if os.getenv("ENVIRONMENT", "development") == "production":
-            _logger.critical(
-                "[AuthConfig] JWT_SECRET_KEY or JWT_SECRET environment variable is required"
-            )
-            sys.exit(1)  # Exit if JWT secret is missing in production
-        else:
-            # Development fallback - MUST MATCH .env.local JWT_SECRET value
-            _from_env = "development-secret-key-change-in-production"
-            _logger.warning(
-                "[AuthConfig] Using development JWT secret — set JWT_SECRET in .env for production"
-            )
-            _secret_source = "FALLBACK (hardcoded development)"
+        _from_env = _secrets.token_urlsafe(48)
+        os.environ["JWT_SECRET_KEY"] = _from_env
+        os.environ["JWT_SECRET"] = _from_env
+        _logger.warning(
+            "[AuthConfig] JWT secret not found — auto-generated. "
+            "Set JWT_SECRET_KEY env var for stable tokens across restarts."
+        )
+        _secret_source = "AUTO-GENERATED"
     else:
         _secret_source = "JWT_SECRET_KEY" if os.getenv("JWT_SECRET_KEY") else "JWT_SECRET"
         _logger.info("[AuthConfig] JWT secret loaded from %s", _secret_source)

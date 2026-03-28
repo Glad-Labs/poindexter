@@ -5,7 +5,7 @@ This module provides centralized configuration loading and access for the entire
 """
 
 import os
-import sys
+import secrets
 from dataclasses import dataclass
 from typing import Optional
 
@@ -91,6 +91,27 @@ def load_env() -> None:
 
 _PLACEHOLDER_SECRET = "your-secret-key-here"
 
+# Auto-generated secrets cache — stable for the lifetime of the process
+_AUTO_SECRETS: dict = {}
+
+
+def _auto_secret(var_name: str, default_value: str) -> str:
+    """Return the env var value, or auto-generate a strong secret if missing/placeholder.
+
+    Generated secrets are cached in-process so they stay stable across calls.
+    They are also written back to os.environ so downstream code (AuthConfig,
+    startup_manager) sees a real value.
+    """
+    value = os.getenv(var_name, "")
+    if value and value != default_value:
+        return value
+    # Generate once per var per process
+    if var_name not in _AUTO_SECRETS:
+        _AUTO_SECRETS[var_name] = secrets.token_urlsafe(48)
+    generated = _AUTO_SECRETS[var_name]
+    os.environ[var_name] = generated
+    return generated
+
 
 def _read_pyproject_version() -> str:
     """Read version from pyproject.toml as fallback when APP_VERSION env var is not set."""
@@ -115,18 +136,22 @@ def get_config() -> Config:
     load_env()
 
     environment = os.getenv("ENVIRONMENT", "development")
-    secret_key = os.getenv("SECRET_KEY", _PLACEHOLDER_SECRET)
 
-    # Production guard: refuse to start with a placeholder SECRET_KEY.
-    # Mirrors the same check in token_validator.py (AuthConfig).
-    if environment == "production" and secret_key == _PLACEHOLDER_SECRET:
+    # Auto-generate secrets if missing or placeholder — never crash on startup.
+    # Generated values are written to os.environ so all downstream code sees them.
+    secret_key = _auto_secret("SECRET_KEY", _PLACEHOLDER_SECRET)
+    _auto_secret("JWT_SECRET_KEY", "development-secret-key-change-in-production")
+    _auto_secret("JWT_SECRET", "development-secret-key-change-in-production")
+    _auto_secret("REVALIDATE_SECRET", "dev-secret-key")
+
+    if _AUTO_SECRETS:
         import logging
 
-        logging.getLogger(__name__).critical(
-            "[Config] SECRET_KEY is the insecure placeholder value. "
-            "Set a strong SECRET_KEY environment variable before running in production."
+        logging.getLogger(__name__).warning(
+            "[Config] Auto-generated secrets for: %s. "
+            "Set these env vars explicitly for stable values across restarts.",
+            ", ".join(_AUTO_SECRETS.keys()),
         )
-        sys.exit(1)
 
     return Config(
         database_url=os.getenv("DATABASE_URL", ""),
