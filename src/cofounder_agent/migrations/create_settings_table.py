@@ -36,7 +36,6 @@ CREATE INDEX idx_settings_key ON settings(key);
 
 import logging
 import os
-from datetime import datetime
 
 import asyncpg
 
@@ -58,21 +57,18 @@ async def run_migration():
 
         async with pool.acquire() as conn:
             # Check if table already exists
-            result = await conn.fetch(
-                """
+            result = await conn.fetch("""
                 SELECT EXISTS(
                     SELECT FROM information_schema.tables 
                     WHERE table_name = 'settings'
                 )
-            """
-            )
+            """)
 
             table_exists = result[0]["exists"] if result else False
 
             if not table_exists:
                 logger.info("Creating settings table...")
-                await conn.execute(
-                    """
+                await conn.execute("""
                     CREATE TABLE settings (
                         settings_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                         key VARCHAR(255) UNIQUE NOT NULL,
@@ -85,31 +81,26 @@ async def run_migration():
                         modified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
-                """
-                )
+                """)
                 logger.info("✅ Settings table created")
 
                 # Create index on key for fast lookups
                 logger.info("Creating index on settings(key)...")
-                await conn.execute(
-                    """
+                await conn.execute("""
                     CREATE INDEX idx_settings_key ON settings(key)
-                """
-                )
+                """)
                 logger.info("✅ Index created")
 
             else:
                 logger.info("✓ Settings table already exists")
 
             # Verify table
-            result = await conn.fetch(
-                """
+            result = await conn.fetch("""
                 SELECT column_name, data_type 
                 FROM information_schema.columns 
                 WHERE table_name = 'settings'
                 ORDER BY ordinal_position
-            """
-            )
+            """)
 
             logger.info("✅ Migration complete!")
             logger.info("Settings table schema:")
