@@ -31,7 +31,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import get_operator_identity, verify_api_token
 from routes.websocket_routes import broadcast_approval_status
 from services.database_service import DatabaseService
 from services.error_handler import AppError
@@ -105,7 +105,7 @@ class PendingApprovalResponse(BaseModel):
 async def reject_task(
     task_id: str,
     request: RejectionRequest,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -150,7 +150,8 @@ async def reject_task(
        - Returns to awaiting_approval on resubmission
     """
     try:
-        logger.info(f"👤 [REJECTION] User {current_user.get('id')} rejecting task {task_id}")
+        operator = get_operator_identity()
+        logger.info(f"👤 [REJECTION] User {operator['id']} rejecting task {task_id}")
 
         # Fetch task
         task = await db_service.get_task(task_id)
@@ -177,7 +178,7 @@ async def reject_task(
         metadata_updates = {
             **(task.get("metadata") or {}),
             "rejection_date": rejection_date.isoformat(),
-            "rejected_by": current_user.get("id"),
+            "rejected_by": operator["id"],
             "rejection_reason": request.reason,
             "rejection_feedback": request.feedback,
             "allow_revisions": request.allow_revisions,
@@ -195,7 +196,7 @@ async def reject_task(
         )
 
         logger.info(
-            f"❌ [REJECTION] Task {task_id} rejected by {current_user.get('id')} (reason: {request.reason})"
+            f"❌ [REJECTION] Task {task_id} rejected by {operator['id']} (reason: {request.reason})"
         )
 
         # Broadcast rejection status to connected WebSocket clients
@@ -204,7 +205,7 @@ async def reject_task(
                 task_id,
                 "rejected",
                 {
-                    "rejected_by": current_user.get("id"),
+                    "rejected_by": operator["id"],
                     "reason": request.reason,
                     "feedback": request.feedback,
                     "allow_revisions": request.allow_revisions,
@@ -219,7 +220,7 @@ async def reject_task(
             "status": final_status,
             "approval_status": "rejected",
             "rejection_date": rejection_date.isoformat(),
-            "rejected_by": current_user.get("id"),
+            "rejected_by": operator["id"],
             "reason": request.reason,
             "feedback": request.feedback,
             "allow_revisions": request.allow_revisions,
@@ -247,7 +248,7 @@ async def reject_task(
 )
 async def bulk_approve_tasks(
     request: BulkApprovalRequest,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -276,8 +277,9 @@ async def bulk_approve_tasks(
     - Returns summary of successful and failed approvals
     """
     try:
+        operator = get_operator_identity()
         logger.info(
-            f"👤 [BULK_APPROVAL] User {current_user.get('id')} bulk approving {len(request.task_ids)} tasks"
+            f"👤 [BULK_APPROVAL] User {operator['id']} bulk approving {len(request.task_ids)} tasks"
         )
 
         approved_count = 0
@@ -307,7 +309,7 @@ async def bulk_approve_tasks(
                 metadata_updates = {
                     **(task.get("metadata") or {}),
                     "approval_date": approval_date,
-                    "approved_by": current_user.get("id"),
+                    "approved_by": operator["id"],
                     "approval_status": "approved",
                     "approval_feedback": request.feedback,
                     "approval_notes": request.reviewer_notes,
@@ -328,7 +330,7 @@ async def bulk_approve_tasks(
                         task_id,
                         "approved",
                         {
-                            "approved_by": current_user.get("id"),
+                            "approved_by": operator["id"],
                             "feedback": request.feedback,
                             "approval_date": approval_date,
                         },
@@ -376,7 +378,7 @@ async def bulk_approve_tasks(
 )
 async def bulk_reject_tasks(
     request: BulkRejectionRequest,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -401,8 +403,9 @@ async def bulk_reject_tasks(
     ```
     """
     try:
+        operator = get_operator_identity()
         logger.info(
-            f"👤 [BULK_REJECTION] User {current_user.get('id')} bulk rejecting {len(request.task_ids)} tasks"
+            f"👤 [BULK_REJECTION] User {operator['id']} bulk rejecting {len(request.task_ids)} tasks"
         )
 
         rejected_count = 0
@@ -433,7 +436,7 @@ async def bulk_reject_tasks(
                 metadata_updates = {
                     **(task.get("metadata") or {}),
                     "rejection_date": rejection_date,
-                    "rejected_by": current_user.get("id"),
+                    "rejected_by": operator["id"],
                     "rejection_reason": request.reason,
                     "rejection_feedback": request.feedback,
                     "allow_revisions": request.allow_revisions,
@@ -454,7 +457,7 @@ async def bulk_reject_tasks(
                         task_id,
                         "rejected",
                         {
-                            "rejected_by": current_user.get("id"),
+                            "rejected_by": operator["id"],
                             "reason": request.reason,
                             "feedback": request.feedback,
                             "allow_revisions": request.allow_revisions,
@@ -512,7 +515,7 @@ async def get_pending_approvals(
         description="Sort field: created_at|quality_score|topic",
     ),
     sort_order: str = Query("desc", description="Sort order: asc|desc"),
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -566,13 +569,14 @@ async def get_pending_approvals(
     - Sort: By quality - sort_by=quality_score&sort_order=desc
     """
     try:
+        operator = get_operator_identity()
         logger.info(
-            f"📋 [PENDING_APPROVAL] User {current_user.get('id')} fetching pending approvals"
+            f"📋 [PENDING_APPROVAL] User {operator['id']} fetching pending approvals"
         )
 
         # Fetch pending tasks from database with pagination
         # Use get_tasks_paginated which handles status filtering and pagination
-        user_id = current_user.get("id") if current_user else None
+        user_id = operator["id"]
 
         try:
             result = await db_service.get_tasks_paginated(
@@ -658,7 +662,7 @@ async def get_pending_approvals(
 )
 async def get_task_approval_status(
     task_id: str,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """

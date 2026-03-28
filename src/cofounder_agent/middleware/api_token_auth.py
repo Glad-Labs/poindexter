@@ -48,6 +48,23 @@ async def verify_api_token(
     return token
 
 
+
+# Fixed operator identity for solo-operator mode.
+# In a single-operator system, all authenticated requests come from the owner.
+OPERATOR_ID = os.getenv("OPERATOR_ID", "operator")
+
+
+def get_operator_identity() -> dict:
+    """Return a fixed operator identity dict for solo-operator mode."""
+    return {
+        "id": OPERATOR_ID,
+        "email": "operator@glad-labs.ai",
+        "username": "operator",
+        "auth_provider": "api_token",
+        "is_active": True,
+    }
+
+
 async def verify_api_token_optional(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> Optional[str]:

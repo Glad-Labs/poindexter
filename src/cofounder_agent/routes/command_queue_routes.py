@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import verify_api_token
 from services.logger_config import get_logger
 
 # Add parent directory to path
@@ -30,7 +30,7 @@ logger = get_logger(__name__)
 router = APIRouter(
     prefix="/api/commands",
     tags=["commands"],
-    dependencies=[Depends(get_current_user)],
+    dependencies=[Depends(verify_api_token)],
 )
 
 

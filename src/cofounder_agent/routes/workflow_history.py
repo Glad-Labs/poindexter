@@ -20,7 +20,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import OPERATOR_ID, verify_api_token
 from schemas.workflow_history_schemas import (
     PerformanceMetrics,
     WorkflowExecutionDetail,
@@ -62,7 +62,7 @@ def initialize_history_service(db_pool) -> None:
 
 @router.get("/history", response_model=WorkflowHistoryResponse)
 async def get_workflow_history(
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     limit: int = Query(20, ge=1, le=100, description="Number of results to return"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
     status: Optional[str] = Query(
@@ -83,9 +83,7 @@ async def get_workflow_history(
     - Total count for pagination
     """
     try:
-        user_id = current_user.get("id")
-        if not user_id:
-            raise HTTPException(status_code=401, detail="User ID not found in token")
+        user_id = OPERATOR_ID
 
         result = await history_service.get_user_workflow_history(
             user_id=user_id,
@@ -112,7 +110,7 @@ async def get_workflow_history(
 @router.get("/{execution_id}/details", response_model=WorkflowExecutionDetail)
 async def get_execution_details(
     execution_id: str = Path(..., description="ID of the workflow execution"),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     history_service: WorkflowHistoryService = Depends(get_history_service),
 ) -> WorkflowExecutionDetail:
     """
@@ -132,9 +130,8 @@ async def get_execution_details(
                 status_code=404, detail=f"Workflow execution {execution_id} not found"
             )
 
-        # Verify user owns this execution
-        user_id = current_user.get("id")
-        if execution.get("user_id") != user_id:
+        # Verify operator owns this execution (solo-operator mode)
+        if execution.get("user_id") != OPERATOR_ID:
             raise HTTPException(
                 status_code=403, detail="Not authorized to access this workflow execution"
             )
@@ -150,7 +147,7 @@ async def get_execution_details(
 
 @router.get("/statistics", response_model=WorkflowStatistics)
 async def get_workflow_statistics(
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     days: int = Query(30, ge=1, le=365, description="Number of days to analyze"),
     history_service: WorkflowHistoryService = Depends(get_history_service),
 ) -> WorkflowStatistics:
@@ -166,9 +163,7 @@ async def get_workflow_statistics(
     - Most common workflow type
     """
     try:
-        user_id = current_user.get("id")
-        if not user_id:
-            raise HTTPException(status_code=401, detail="User ID not found in token")
+        user_id = OPERATOR_ID
 
         stats = await history_service.get_workflow_statistics(
             user_id=user_id,
@@ -186,7 +181,7 @@ async def get_workflow_statistics(
 
 @router.get("/performance-metrics", response_model=PerformanceMetrics)
 async def get_performance_metrics(
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     workflow_type: Optional[str] = Query(None, description="Filter by specific workflow type"),
     days: int = Query(30, ge=1, le=365, description="Number of days to analyze"),
     history_service: WorkflowHistoryService = Depends(get_history_service),
@@ -204,9 +199,7 @@ async def get_performance_metrics(
     - Optimization suggestions based on historical performance
     """
     try:
-        user_id = current_user.get("id")
-        if not user_id:
-            raise HTTPException(status_code=401, detail="User ID not found in token")
+        user_id = OPERATOR_ID
 
         metrics = await history_service.get_performance_metrics(
             user_id=user_id,
@@ -226,7 +219,7 @@ async def get_performance_metrics(
 @router.get("/{workflow_id}/history")
 async def get_workflow_type_history(
     workflow_id: str = Path(..., description="ID of the workflow"),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     history_service: WorkflowHistoryService = Depends(get_history_service),
@@ -246,9 +239,7 @@ async def get_workflow_type_history(
     - Filtered by current user
     """
     try:
-        user_id = current_user.get("id")
-        if not user_id:
-            raise HTTPException(status_code=401, detail="User ID not found in token")
+        user_id = OPERATOR_ID
 
         # Note: In production, you'd want a method that filters by both
         # workflow_id AND user_id in the database_service
