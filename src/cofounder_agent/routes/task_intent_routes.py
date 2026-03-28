@@ -82,7 +82,7 @@ async def create_task_from_intent(
         # Step 3: Convert plan to summary for UI
         plan_summary = planner.plan_to_summary(plan)
 
-        # Store plan in temp record for confirmation step
+        # Serialize plan and return to client for confirmation (client-supplied confirmation flow)
         plan_dict = planner.serialize_plan(plan)
 
         response = TaskIntentResponse(

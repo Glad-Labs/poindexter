@@ -40,7 +40,7 @@ Copy the skill files to your OpenClaw skills directory:
 cp -r skills/openclaw/* ~/.openclaw/skills/
 ```
 
-Each skill is a directory with a `SKILL.md` (trigger phrases and description) and `index.js` (HTTP calls to the FastAPI API).
+Each skill is a directory with a `SKILL.md` (trigger phrases and description) and `scripts/run.sh` (HTTP calls to the FastAPI API).
 
 ### 2. Configure OpenClaw Environment
 
@@ -82,18 +82,18 @@ Generate a secure token: `openssl rand -base64 32`
 
 ## Available Skills (10)
 
-| Skill           | Trigger Phrase          | Description                                                 |
-| --------------- | ----------------------- | ----------------------------------------------------------- |
-| `create-post`   | "write a post about..." | Creates a new content task and starts the 6-stage pipeline  |
-| `list-tasks`    | "show my tasks"         | Lists recent tasks with status and quality scores           |
-| `task-status`   | "check task {id}"       | Gets detailed status for a specific task                    |
-| `approve-task`  | "approve task {id}"     | Approves a completed task for publishing                    |
-| `publish-task`  | "publish task {id}"     | Publishes an approved task to the public site               |
-| `reject-task`   | "reject task {id}"      | Rejects a task with feedback for revision                   |
-| `daily-summary` | "daily summary"         | Shows today's pipeline activity, costs, and published posts |
-| `budget-status` | "budget status"         | Shows current daily LLM spend vs. budget                    |
-| `queue-stats`   | "queue stats"           | Shows command queue depth and processing stats              |
-| `site-health`   | "site health"           | Checks FastAPI backend and database health                  |
+| Skill            | Trigger Phrase             | Description                                                |
+| ---------------- | -------------------------- | ---------------------------------------------------------- |
+| `create-post`    | "write a post about..."    | Creates a new content task and starts the 6-stage pipeline |
+| `batch-create`   | "create 10 posts about..." | Creates multiple content tasks in batch                    |
+| `list-tasks`     | "show my tasks"            | Lists recent tasks with status and quality scores          |
+| `approve-post`   | "approve task {id}"        | Approves a completed task for publishing                   |
+| `reject-post`    | "reject task {id}"         | Rejects a task with feedback for revision                  |
+| `publish-post`   | "publish task {id}"        | Publishes an approved task to the public site              |
+| `cost-report`    | "what's my spend?"         | Shows daily/weekly cost breakdown by model and provider    |
+| `quality-report` | "quality scores today"     | Shows recent quality scores and pass rates                 |
+| `site-manage`    | "show settings"            | View or update pipeline settings (auto-publish, budget)    |
+| `model-status`   | "which models are up?"     | Checks available AI models and provider health             |
 
 See [skills-reference.md](skills-reference.md) for detailed skill documentation.
 
@@ -142,7 +142,7 @@ The FastAPI backend requires `API_TOKEN` to be set in `.env.local`. Without it, 
 
 ### Tasks created but no webhook events
 
-Webhook events are emitted by the publishing routes (`task_publishing_routes.py`). If you create a task via the API but it never reaches the publishing stage (e.g., pipeline fails at research), no webhook event is emitted for completion. Check task status via the `task-status` skill or:
+Webhook events are emitted by the publishing routes (`task_publishing_routes.py`). If you create a task via the API but it never reaches the publishing stage (e.g., pipeline fails at research), no webhook event is emitted for completion. Check task status via the `list-tasks` skill or:
 
 ```bash
 curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:8000/api/tasks/TASK_ID

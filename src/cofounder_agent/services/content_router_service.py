@@ -221,6 +221,7 @@ class ContentGenerationService:
         enhanced: bool = False,
         preferred_model: Optional[str] = None,
         preferred_provider: Optional[str] = None,
+        writing_style_context: Optional[str] = None,
     ) -> tuple:
         """
         Generate blog post content
@@ -234,6 +235,7 @@ class ContentGenerationService:
             enhanced: Whether to use SEO enhancement
             preferred_model: User-selected model name (e.g., 'gpt-4', 'gemini-pro')
             preferred_provider: User-selected provider ('openai', 'anthropic', 'gemini', 'ollama')
+            writing_style_context: Optional writing style excerpts for voice matching
 
         Returns:
             Tuple of (content, model_used, metrics)
@@ -267,6 +269,7 @@ class ContentGenerationService:
                 tags=tags or [],
                 preferred_model=preferred_model,
                 preferred_provider=preferred_provider,
+                writing_style_context=writing_style_context,
             )
             return content, model_used, metrics
 
@@ -432,6 +435,69 @@ def _parse_model_preferences(models_by_phase):
     return preferred_model, preferred_provider
 
 
+async def _build_writing_style_context(
+    database_service: Optional[DatabaseService],
+    max_samples: int = 3,
+    max_words_per_sample: int = 500,
+) -> Optional[str]:
+    """Fetch active writing style samples and build a context string for LLM prompts.
+
+    Queries the writing_samples table for active samples, extracts a truncated
+    excerpt from each (up to *max_words_per_sample* words), and returns a
+    formatted string suitable for injection into a system prompt.
+
+    Returns None if no samples are available or if the database is unreachable.
+    """
+    if not database_service:
+        return None
+
+    try:
+        writing_style_db = getattr(database_service, "writing_style", None)
+        if not writing_style_db:
+            return None
+
+        # Fetch all user samples (we don't know the user in this context,
+        # so we look for any active samples across users)
+        samples = await writing_style_db.get_user_writing_samples(
+            user_id="default", limit=max_samples
+        )
+
+        if not samples:
+            return None
+
+        excerpts = []
+        for sample in samples[:max_samples]:
+            content = sample.get("content", "")
+            title = sample.get("title", "Untitled")
+            if not content:
+                continue
+
+            # Truncate to max_words_per_sample words
+            words = content.split()
+            if len(words) > max_words_per_sample:
+                excerpt = " ".join(words[:max_words_per_sample]) + "..."
+            else:
+                excerpt = content
+
+            excerpts.append(f"### Sample: {title}\n{excerpt}")
+
+        if not excerpts:
+            return None
+
+        logger.info(
+            "Loaded %d writing style sample(s) for voice matching", len(excerpts)
+        )
+        return "\n\n".join(excerpts)
+
+    except Exception as e:
+        logger.warning(
+            "Failed to load writing style samples (non-fatal, proceeding without): %s",
+            e,
+            exc_info=True,
+        )
+        return None
+
+
 async def _stage_generate_content(
     database_service, task_id, topic, style, tone, target_length, tags, models_by_phase, result
 ):
@@ -444,6 +510,9 @@ async def _stage_generate_content(
     content_generator = get_content_generator()
     preferred_model, preferred_provider = _parse_model_preferences(models_by_phase)
 
+    # Fetch active writing style samples for voice/tone matching
+    writing_style_context = await _build_writing_style_context(database_service)
+
     content_text, model_used, metrics = await content_generator.generate_blog_post(
         topic=topic,
         style=style,
@@ -452,6 +521,7 @@ async def _stage_generate_content(
         tags=tags or [],
         preferred_model=preferred_model,
         preferred_provider=preferred_provider,
+        writing_style_context=writing_style_context,
     )
 
     # Validate content_text is not None
