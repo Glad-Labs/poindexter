@@ -282,6 +282,7 @@ class AIContentGenerator:
         tags: list[str],
         preferred_model: Optional[str],
         preferred_provider: Optional[str],
+        writing_style_context: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Set up logging, check providers, load prompts, and initialize metrics.
 
@@ -339,6 +340,18 @@ class AIContentGenerator:
             target_length,
             tags,
         )
+
+        # Inject writing style context into system prompt if provided
+        if writing_style_context:
+            system_prompt = (
+                system_prompt
+                + "\n\n## Writing Style Reference\n"
+                "Match the tone, voice, and stylistic patterns demonstrated in these "
+                "writing samples from the operator. Do not copy them verbatim — use them "
+                "as a style guide.\n\n"
+                + writing_style_context
+            )
+            logger.info("Writing style context injected into system prompt (%d chars)", len(writing_style_context))
 
         # Track metrics
         metrics = {
@@ -1336,6 +1349,7 @@ class AIContentGenerator:
         tags: list[str],
         preferred_model: Optional[str] = None,
         preferred_provider: Optional[str] = None,
+        writing_style_context: Optional[str] = None,
     ) -> Tuple[str, str, Dict[str, Any]]:
         """
         Generate a blog post using best available model with self-checking.
@@ -1355,12 +1369,15 @@ class AIContentGenerator:
             tags: Content tags
             preferred_model: User-selected model (e.g., 'gpt-4', 'claude-3-opus', 'gemini-pro')
             preferred_provider: User-selected provider ('openai', 'anthropic', 'gemini', 'ollama', 'huggingface')
+            writing_style_context: Optional writing style excerpts to include in the prompt
+                for voice/tone matching
 
         Returns:
             Tuple of (content, model_used, metrics_dict)
         """
         ctx = await self._prepare_generation_context(
-            topic, style, tone, target_length, tags, preferred_model, preferred_provider
+            topic, style, tone, target_length, tags, preferred_model, preferred_provider,
+            writing_style_context=writing_style_context,
         )
 
         # ========================================================================
