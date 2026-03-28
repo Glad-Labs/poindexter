@@ -20,7 +20,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import routes.ollama_routes as ollama_module
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import verify_api_token
 from routes.ollama_routes import router
 from tests.unit.routes.conftest import TEST_USER
 
@@ -37,7 +37,7 @@ def disable_warmup_limiter():
 def _build_app() -> FastAPI:
     app = FastAPI()
     app.include_router(router)
-    app.dependency_overrides[get_current_user] = lambda: TEST_USER
+    app.dependency_overrides[verify_api_token] = lambda: "test-token"
     return app
 
 

@@ -3,16 +3,22 @@ Shared fixtures for route-level unit tests.
 
 All fixtures wire up a minimal FastAPI app with:
 - The router under test (no full main.py startup)
-- Auth dependency overridden to return a test user
+- Auth dependency overridden to return a test token
 - DB dependency overridden to return an AsyncMock
 
 This keeps tests fast and deterministic — no real DB or LLM calls.
 """
 
+import os
 from unittest.mock import AsyncMock
 
+# Set OPERATOR_ID to match test fixtures before any route module imports it.
+# This ensures ownership checks in routes (writing_style, workflows, etc.)
+# match the mock data created by tests.
+os.environ.setdefault("OPERATOR_ID", "test-user-id-123")
+
 # ---------------------------------------------------------------------------
-# Shared test-user stub
+# Shared test-user stub (legacy — kept for test_auth_unified.py compatibility)
 # ---------------------------------------------------------------------------
 
 TEST_USER = {

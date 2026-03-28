@@ -16,7 +16,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from routes.analytics_routes import analytics_router
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import verify_api_token
 from tests.unit.routes.conftest import TEST_USER
 from utils.route_utils import get_database_dependency
 
@@ -32,7 +32,7 @@ def _build_app(mock_db=None) -> FastAPI:
     app = FastAPI()
     app.include_router(analytics_router)
 
-    app.dependency_overrides[get_current_user] = lambda: TEST_USER
+    app.dependency_overrides[verify_api_token] = lambda: "test-token"
     app.dependency_overrides[get_database_dependency] = lambda: mock_db
 
     return app

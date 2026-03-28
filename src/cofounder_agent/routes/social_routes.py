@@ -8,7 +8,7 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import verify_api_token
 from schemas.social_schemas import (
     CrossPostRequest,
     GenerateContentRequest,
@@ -61,7 +61,7 @@ async def get_platforms() -> Dict[str, Any]:
 @social_router.post("/connect", status_code=201)
 async def connect_platform(
     request: SocialPlatformConnection,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ) -> Dict[str, Any]:
     """
     Connect a social media platform
@@ -91,7 +91,7 @@ async def connect_platform(
 
 @social_router.get("/posts")
 async def get_posts(
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ) -> Dict[str, Any]:
     """
     Get all social media posts
@@ -121,7 +121,7 @@ async def get_posts(
 async def create_post(
     request: SocialPost,
     background_tasks: BackgroundTasks,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ) -> Dict[str, Any]:
     """
     Create a new social media post
@@ -167,7 +167,7 @@ async def create_post(
 @social_router.delete("/posts/{post_id}", status_code=204)
 async def delete_post(
     post_id: str,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ) -> None:
     """
     Delete a social media post.
@@ -185,7 +185,7 @@ async def delete_post(
 @social_router.get("/posts/{post_id}/analytics")
 async def get_post_analytics(
     post_id: str,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ) -> Dict[str, Any]:
     """
     Get analytics for a specific post
@@ -221,7 +221,7 @@ async def get_post_analytics(
 @social_router.post("/generate")
 async def generate_content(
     request: GenerateContentRequest,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ) -> Dict[str, Any]:
     """
     Generate AI-powered social media content
@@ -318,7 +318,7 @@ async def get_trending_topics(platform: str = "twitter") -> Dict[str, Any]:
 async def cross_post(
     request: CrossPostRequest,
     background_tasks: BackgroundTasks,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ) -> Dict[str, Any]:
     """
     Cross-post content to multiple platforms

@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import OPERATOR_ID, verify_api_token
 from services.database_service import DatabaseService
 from services.logger_config import get_logger
 from utils.route_utils import get_database_dependency
@@ -82,12 +82,9 @@ def _require_writing_style_service(db_service: DatabaseService):
     return db_service.writing_style
 
 
-def _get_user_id(current_user) -> str:
-    """Extract and validate user_id from the current_user token payload."""
-    user_id = current_user.get("id") if isinstance(current_user, dict) else current_user
-    if not user_id:
-        raise HTTPException(status_code=401, detail="User identity could not be determined")
-    return str(user_id)
+def _get_user_id(_current_user=None) -> str:
+    """Return the fixed operator ID for solo-operator mode."""
+    return OPERATOR_ID
 
 
 # ============================================================================
@@ -97,7 +94,7 @@ def _get_user_id(current_user) -> str:
 
 @router.post("/upload", response_model=WritingSampleResponse)
 async def upload_writing_sample(
-    current_user: str = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
     title: str = Form(...),
     description: Optional[str] = Form(None),
@@ -155,7 +152,7 @@ async def upload_writing_sample(
             )
 
         # Create the writing sample
-        user_id = _get_user_id(current_user)
+        user_id = _get_user_id()
         sample = await _require_writing_style_service(db_service).create_writing_sample(
             user_id=user_id,
             title=title,
@@ -178,7 +175,7 @@ async def upload_writing_sample(
 async def list_writing_samples(
     offset: int = Query(0, ge=0, description="Number of samples to skip"),
     limit: int = Query(20, ge=1, le=100, description="Maximum samples to return"),
-    current_user: str = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -188,7 +185,7 @@ async def list_writing_samples(
         Paginated list of WritingSampleResponse objects
     """
     try:
-        user_id = _get_user_id(current_user)
+        user_id = _get_user_id()
         all_samples = await _require_writing_style_service(db_service).get_user_writing_samples(
             user_id
         )
@@ -219,7 +216,7 @@ async def list_writing_samples(
 
 @router.get("/active", response_model=Optional[WritingSampleResponse])
 async def get_active_writing_sample(
-    current_user: str = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -229,7 +226,7 @@ async def get_active_writing_sample(
         Active WritingSampleResponse or null if no active sample
     """
     try:
-        user_id = _get_user_id(current_user)
+        user_id = _get_user_id()
         sample = await _require_writing_style_service(db_service).get_active_writing_sample(user_id)
 
         if not sample:
@@ -245,7 +242,7 @@ async def get_active_writing_sample(
 @router.post("/{sample_id}/activate", response_model=WritingSampleResponse)
 async def activate_writing_sample(
     sample_id: str,
-    current_user: str = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -261,7 +258,7 @@ async def activate_writing_sample(
         Updated WritingSampleResponse
     """
     try:
-        user_id = _get_user_id(current_user)
+        user_id = _get_user_id()
         # Verify sample belongs to user
         sample = await _require_writing_style_service(db_service).get_writing_sample(sample_id)
         if not sample:
@@ -289,7 +286,7 @@ async def activate_writing_sample(
 async def update_writing_sample(
     sample_id: str,
     request: WritingSampleRequest,
-    current_user: str = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -303,7 +300,7 @@ async def update_writing_sample(
         Updated WritingSampleResponse
     """
     try:
-        user_id = _get_user_id(current_user)
+        user_id = _get_user_id()
         # Verify sample belongs to user
         sample = await _require_writing_style_service(db_service).get_writing_sample(sample_id)
         if not sample:
@@ -334,7 +331,7 @@ async def update_writing_sample(
 @router.delete("/{sample_id}", status_code=204)
 async def delete_writing_sample(
     sample_id: str,
-    current_user: str = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -347,7 +344,7 @@ async def delete_writing_sample(
         Success message
     """
     try:
-        user_id = _get_user_id(current_user)
+        user_id = _get_user_id()
         # Verify sample belongs to user
         sample = await _require_writing_style_service(db_service).get_writing_sample(sample_id)
         if not sample:
@@ -402,7 +399,7 @@ async def get_relevant_samples(
     preferred_style: Optional[str] = None,
     preferred_tone: Optional[str] = None,
     limit: int = 3,
-    current_user: str = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ) -> dict:
     """
@@ -437,7 +434,7 @@ async def get_relevant_samples(
     ```
     """
     try:
-        user_id = current_user if isinstance(current_user, str) else current_user.get("id")
+        user_id = OPERATOR_ID
 
         # Get all user samples
         samples = await _require_writing_style_service(db_service).get_user_writing_samples(user_id)
@@ -503,7 +500,7 @@ async def get_relevant_samples(
 async def retrieve_by_style(
     style: str,
     limit: int = 5,
-    current_user: str = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ) -> dict:
     """
@@ -533,7 +530,7 @@ async def retrieve_by_style(
     ```
     """
     try:
-        user_id = current_user if isinstance(current_user, str) else current_user.get("id")
+        user_id = OPERATOR_ID
 
         # Get all user samples
         samples = await _require_writing_style_service(db_service).get_user_writing_samples(user_id)
@@ -574,7 +571,7 @@ async def retrieve_by_style(
 async def retrieve_by_tone(
     tone: str,
     limit: int = 5,
-    current_user: str = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ) -> dict:
     """
@@ -603,7 +600,7 @@ async def retrieve_by_tone(
     ```
     """
     try:
-        user_id = current_user if isinstance(current_user, str) else current_user.get("id")
+        user_id = OPERATOR_ID
 
         # Get all user samples
         samples = await _require_writing_style_service(db_service).get_user_writing_samples(user_id)

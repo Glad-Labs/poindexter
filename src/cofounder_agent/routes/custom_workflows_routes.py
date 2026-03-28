@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import OPERATOR_ID, verify_api_token
 from schemas.custom_workflow_schemas import (
     AvailablePhasesResponse,
     CustomWorkflow,
@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/api/workflows",
     tags=["custom-workflows"],
-    dependencies=[Depends(get_current_user)],
+    dependencies=[Depends(verify_api_token)],
     responses={404: {"description": "Workflow not found"}},
 )
 
@@ -44,12 +44,9 @@ def get_workflows_service(request: Request) -> CustomWorkflowsService:
     return service
 
 
-def get_owner_id(current_user: Dict[str, Any] = Depends(get_current_user)) -> str:
-    """Extract and validate owner_id from the authenticated user."""
-    user_id = current_user.get("id") if isinstance(current_user, dict) else current_user
-    if not user_id:
-        raise HTTPException(status_code=401, detail="User identity could not be determined")
-    return str(user_id)
+def get_owner_id() -> str:
+    """Return the fixed operator ID for solo-operator mode."""
+    return OPERATOR_ID
 
 
 @router.post("/custom", response_model=CustomWorkflow, name="Create Custom Workflow")
