@@ -265,10 +265,6 @@ async def _handle_blog_post_creation(
     request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService
 ) -> Dict[str, Any]:
     """Handle blog post task creation"""
-    import asyncio
-
-    from services.content_router_service import process_content_generation_task
-
     task_id = str(uuid_lib.uuid4())
 
     # Log model selections (#952) so we can confirm user choices are applied

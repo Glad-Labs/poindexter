@@ -166,7 +166,6 @@ strict_equality = true
 [[tool.mypy.overrides]]
 module = [
     "tests.*",
-    "alembic.*",
 ]
 ignore_errors = true
 
