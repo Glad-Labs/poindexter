@@ -134,12 +134,12 @@ class JWTBlocklistService:
             # asyncpg returns "DELETE N" — parse the count
             deleted = int(result.split()[-1]) if result else 0
             if deleted:
-                logger.info("[JWTBlocklistService] Cleaned up %d expired blocklist entries", deleted)
+                logger.info(
+                    "[JWTBlocklistService] Cleaned up %d expired blocklist entries", deleted
+                )
             return deleted
         except Exception:
-            logger.error(
-                "[JWTBlocklistService] Cleanup failed", exc_info=True
-            )
+            logger.error("[JWTBlocklistService] Cleanup failed", exc_info=True)
             return 0
 
 

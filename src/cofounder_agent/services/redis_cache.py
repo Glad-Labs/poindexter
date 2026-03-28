@@ -24,17 +24,14 @@ The system will work normally but without cache benefits.
 import asyncio
 import json
 import logging
-from services.logger_config import get_logger
 import os
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
+
+from services.logger_config import get_logger
 
 try:
     import redis.asyncio as aioredis  # type: ignore[import-untyped]
     from redis.asyncio import Redis  # type: ignore[import-untyped]
-    from redis.exceptions import (
-        ConnectionError as RedisConnectionError,  # type: ignore[import-untyped]
-    )
-    from redis.exceptions import RedisError  # type: ignore[import-untyped]
 
     REDIS_AVAILABLE = True
 except ImportError:
@@ -45,11 +42,11 @@ except ImportError:
         from redis.asyncio import Redis  # type: ignore
     else:
         Redis = None  # type: ignore
-    logging.warning(
-        "Redis SDK not installed. Caching disabled. Install with: pip install redis"
-    )
+    logging.warning("Redis SDK not installed. Caching disabled. Install with: pip install redis")
 
 logger = get_logger(__name__)
+
+
 class CacheConfig:
     """Configuration for cache behavior."""
 
@@ -133,7 +130,7 @@ class RedisCache:
             # Test the connection
             await redis_instance.ping()
 
-            logger.info(f"✅ Redis cache initialized successfully")
+            logger.info("✅ Redis cache initialized successfully")
             logger.info(f"   URL: {redis_url.split('@')[0] if '@' in redis_url else redis_url}...")
             logger.info(f"   Default TTL: {CacheConfig.DEFAULT_TTL}s")
 

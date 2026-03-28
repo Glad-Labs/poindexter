@@ -70,14 +70,17 @@ class FineTuningService:
         # Use provided model, environment config, or default to mistral
         if not base_model:
             base_model = os.getenv("OLLAMA_FINETUNE_BASE_MODEL", "mistral")
-        
+
         job_id = f"ollama_finetune_{datetime.now().timestamp()}"
-        logger.info(f"[Fine-tune] Starting Ollama fine-tune with base model '{base_model}': {job_id}")
+        logger.info(
+            f"[Fine-tune] Starting Ollama fine-tune with base model '{base_model}': {job_id}"
+        )
 
         try:
             # Check if Ollama is running
             check_proc = await asyncio.create_subprocess_exec(
-                "ollama", "list",
+                "ollama",
+                "list",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -284,7 +287,9 @@ PARAMETER learning_rate {learning_rate}
                 "error": "anthropic not installed. Run: pip install anthropic",
             }
         except Exception as e:
-            logger.error(f"[fine_tune_claude] Failed to start Claude fine-tuning: {e}", exc_info=True)
+            logger.error(
+                f"[fine_tune_claude] Failed to start Claude fine-tuning: {e}", exc_info=True
+            )
             return {"job_id": job_id, "status": "failed", "error": str(e)}
 
     # ========================================================================

@@ -16,20 +16,17 @@ Endpoints:
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from routes.auth_unified import get_current_user
 from services.capability_natural_language_composer import get_composer
-from utils.route_utils import get_database_dependency
 from services.capability_registry import get_registry
-from services.capability_task_executor import (
-    CapabilityStep,
-    execute_capability_task,
-)
+from services.capability_task_executor import CapabilityStep, execute_capability_task
 from services.capability_tasks_service import CapabilityTasksService
+from routes.auth_unified import get_current_user
+from utils.route_utils import get_database_dependency
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +39,7 @@ def _get_capability_tasks_service(db=Depends(get_database_dependency)) -> Capabi
     if db.pool is None:
         raise HTTPException(status_code=503, detail="Database pool not initialized")
     return CapabilityTasksService(pool=db.pool)
+
 
 # ============ Request/Response Models ============
 
@@ -180,7 +178,6 @@ router = APIRouter(prefix="/api", tags=["capabilities"])
 # get_owner_id imported from custom_workflows_routes to avoid duplication (#1203)
 from routes.custom_workflows_routes import get_owner_id  # noqa: F401, E402
 
-
 # ============ Capability Discovery Endpoints ============
 
 
@@ -188,6 +185,7 @@ from routes.custom_workflows_routes import get_owner_id  # noqa: F401, E402
 async def list_capabilities(
     tag: Optional[str] = Query(None, description="Filter by tag"),
     cost_tier: Optional[str] = Query(None, description="Filter by cost tier"),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     List all available capabilities.
@@ -242,7 +240,7 @@ async def list_capabilities(
 
 
 @router.get("/capabilities/{name}", response_model=CapabilityDetailResponse)
-async def get_capability(name: str):
+async def get_capability(name: str, current_user: dict = Depends(get_current_user)):
     """Get detailed information about a specific capability."""
     registry = get_registry()
 
@@ -497,7 +495,11 @@ async def list_capability_tasks(
                 ],
                 tags=t.tags,
                 owner_id=t.owner_id,
-                created_at=t.created_at.isoformat() if hasattr(t.created_at, "isoformat") else str(t.created_at),
+                created_at=(
+                    t.created_at.isoformat()
+                    if hasattr(t.created_at, "isoformat")
+                    else str(t.created_at)
+                ),
             )
             for t in tasks
         ],
@@ -532,7 +534,11 @@ async def get_capability_task(
         ],
         tags=task.tags,
         owner_id=task.owner_id,
-        created_at=task.created_at.isoformat() if hasattr(task.created_at, "isoformat") else str(task.created_at),
+        created_at=(
+            task.created_at.isoformat()
+            if hasattr(task.created_at, "isoformat")
+            else str(task.created_at)
+        ),
     )
 
 
@@ -574,7 +580,11 @@ async def update_capability_task(
         ],
         tags=task.tags,
         owner_id=task.owner_id,
-        created_at=task.created_at.isoformat() if hasattr(task.created_at, "isoformat") else str(task.created_at),
+        created_at=(
+            task.created_at.isoformat()
+            if hasattr(task.created_at, "isoformat")
+            else str(task.created_at)
+        ),
     )
 
 
@@ -648,8 +658,16 @@ async def execute_capability_task_endpoint(
         total_duration_ms=result.total_duration_ms,
         progress_percent=result.progress_percent,
         error=result.error,
-        started_at=result.started_at.isoformat() if hasattr(result.started_at, "isoformat") else str(result.started_at),
-        completed_at=result.completed_at.isoformat() if result.completed_at and hasattr(result.completed_at, "isoformat") else None,
+        started_at=(
+            result.started_at.isoformat()
+            if hasattr(result.started_at, "isoformat")
+            else str(result.started_at)
+        ),
+        completed_at=(
+            result.completed_at.isoformat()
+            if result.completed_at and hasattr(result.completed_at, "isoformat")
+            else None
+        ),
     )
 
 
@@ -684,8 +702,16 @@ async def get_execution_result(
         total_duration_ms=execution.total_duration_ms,
         progress_percent=execution.progress_percent,
         error=execution.error,
-        started_at=execution.started_at.isoformat() if hasattr(execution.started_at, "isoformat") else str(execution.started_at),
-        completed_at=execution.completed_at.isoformat() if execution.completed_at and hasattr(execution.completed_at, "isoformat") else None,
+        started_at=(
+            execution.started_at.isoformat()
+            if hasattr(execution.started_at, "isoformat")
+            else str(execution.started_at)
+        ),
+        completed_at=(
+            execution.completed_at.isoformat()
+            if execution.completed_at and hasattr(execution.completed_at, "isoformat")
+            else None
+        ),
     )
 
 

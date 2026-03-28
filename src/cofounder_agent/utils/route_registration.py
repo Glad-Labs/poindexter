@@ -1,7 +1,7 @@
 """
 Route Registration - Centralized route registration for FastAPI application
 
-Handles registration of all 15+ route routers with the FastAPI application.
+Handles registration of 8 active route modules with the FastAPI application.
 Provides dependency injection of database service to route modules.
 
 Unified Task Endpoint (/api/tasks):
@@ -9,20 +9,22 @@ Unified Task Endpoint (/api/tasks):
 - Routes to appropriate handler based on task_type parameter
 - Subtasks bypassed - use /api/tasks with task_type instead
 
-Includes:
-- Core business logic routes (tasks, content, bulk operations)
-- API integration routes (models, auth, chat)
-- System routes (health, metrics, webhooks)
-- Feature-specific routes (agents, social, CMS, WebSocket)
-- Optional routes (workflow history, intelligent orchestrator)
+Active routes:
+- Task management (core CRUD + status + publishing + intent sub-routers)
+- Bulk task operations
+- CMS (posts, categories, tags)
+- Models & AI backends
+- Metrics & analytics
+- Settings
+- Cache revalidation
 """
 
 import importlib
-
-from services.logger_config import get_logger
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI
+
+from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -33,61 +35,47 @@ logger = get_logger(__name__)
 # path /api/tasks/pending-approval is matched before the wildcard /{task_id}.
 # ---------------------------------------------------------------------------
 
+# Active routes for frontier media firm operation
 _ROUTE_MANIFEST = [
-    # ----- Authentication -----
-    ("routes.auth_unified", "router", "auth_router", "auth"),
-    # ----- Approval workflow (MUST be before task_router) -----
-    ("routes.approval_routes", "router", "approval_router", "task approval workflow"),
     # ----- Task management (core) -----
     ("routes.task_routes", "router", "task_router", "task management"),
     # ----- Bulk task operations -----
     ("routes.bulk_task_routes", "router", "bulk_task_router", "bulk task operations"),
-    # ----- Writing style / RAG -----
-    ("routes.writing_style_routes", "router", "writing_style_router", "RAG style matching"),
-    # ----- Media & image management -----
-    ("routes.media_routes", "media_router", "media_router", "image generation & search"),
     # ----- CMS -----
     ("routes.cms_routes", "router", "cms_router", "FastAPI CMS"),
     # ----- Models & AI backends -----
     ("routes.model_routes", "models_router", "models_router", "AI model backends"),
-    # ----- Settings -----
-    ("routes.settings_routes", "router", "settings_router", "user settings"),
-    # ----- Command queue -----
-    ("routes.command_queue_routes", "router", "command_queue_router", "command queue"),
-    # ----- Chat & AI integration -----
-    ("routes.chat_routes", "router", "chat_router", "chat & AI integration"),
-    # ----- Ollama integration -----
-    ("routes.ollama_routes", "router", "ollama_router", "Ollama integration"),
-    # ----- Social media management -----
-    ("routes.social_routes", "social_router", "social_router", "social media management"),
     # ----- Metrics & analytics -----
     ("routes.metrics_routes", "metrics_router", "metrics_router", "metrics & analytics"),
-    # ----- KPI dashboard analytics -----
-    ("routes.analytics_routes", "analytics_router", "analytics_router", "KPI dashboard"),
-    # ----- Performance profiling -----
-    ("routes.profiling_routes", "router", "profiling_router", "performance profiling"),
-    # ----- AI agent management -----
-    ("routes.agents_routes", "router", "agents_router", "agent management"),
-    # ----- Privacy & GDPR compliance -----
-    ("routes.privacy_routes", "router", "privacy_router", "GDPR data subject requests"),
-    # ----- Newsletter & email campaigns -----
-    ("routes.newsletter_routes", "router", "newsletter_router", "email campaigns & subscriptions"),
-    # ----- Service registry -----
-    ("routes.service_registry_routes", "router", "service_registry_router", "service discovery"),
-    # ----- Agent registry -----
-    ("routes.agent_registry_routes", "router", "agent_registry_router", "agent discovery"),
-    # ----- Workflow orchestration -----
-    ("routes.workflow_routes", "router", "workflow_router", "workflow orchestration"),
-    # ----- Custom workflow builder -----
-    ("routes.custom_workflows_routes", "router", "custom_workflows_router", "custom workflow builder"),
-    # ----- Real-time workflow progress -----
-    ("routes.workflow_progress_routes", "router", "workflow_progress_router", "progress tracking & WebSocket broadcasting"),
-    # ----- Capability-based tasks -----
-    ("routes.capability_tasks_routes", "router", "capability_tasks_router", "capability composition"),
-    # ----- WebSocket real-time tracking -----
-    ("routes.websocket_routes", "websocket_router", "websocket_router", "real-time progress tracking"),
+    # ----- Settings -----
+    ("routes.settings_routes", "router", "settings_router", "user settings"),
     # ----- Cache revalidation -----
     ("routes.revalidate_routes", "router", "revalidate_router", "secure cache invalidation"),
+]
+
+# Disabled routes (preserved for potential reuse)
+# To re-enable, move entries back to _ROUTE_MANIFEST
+_DISABLED_ROUTES = [
+    ("routes.auth_unified", "router", "auth_router", "auth"),
+    ("routes.approval_routes", "router", "approval_router", "task approval workflow"),
+    ("routes.writing_style_routes", "router", "writing_style_router", "RAG style matching"),
+    ("routes.media_routes", "media_router", "media_router", "image generation & search"),
+    ("routes.command_queue_routes", "router", "command_queue_router", "command queue"),
+    ("routes.chat_routes", "router", "chat_router", "chat & AI integration"),
+    ("routes.ollama_routes", "router", "ollama_router", "Ollama integration"),
+    ("routes.social_routes", "social_router", "social_router", "social media management"),
+    ("routes.analytics_routes", "analytics_router", "analytics_router", "KPI dashboard"),
+    ("routes.profiling_routes", "router", "profiling_router", "performance profiling"),
+    ("routes.agents_routes", "router", "agents_router", "agent management"),
+    ("routes.privacy_routes", "router", "privacy_router", "GDPR data subject requests"),
+    ("routes.newsletter_routes", "router", "newsletter_router", "email campaigns"),
+    ("routes.service_registry_routes", "router", "service_registry_router", "service discovery"),
+    ("routes.agent_registry_routes", "router", "agent_registry_router", "agent discovery"),
+    ("routes.workflow_routes", "router", "workflow_router", "workflow orchestration"),
+    ("routes.custom_workflows_routes", "router", "custom_workflows_router", "custom workflow builder"),
+    ("routes.workflow_progress_routes", "router", "workflow_progress_router", "progress tracking"),
+    ("routes.capability_tasks_routes", "router", "capability_tasks_router", "capability composition"),
+    ("routes.websocket_routes", "websocket_router", "websocket_router", "real-time tracking"),
 ]
 
 

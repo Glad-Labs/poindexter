@@ -4,8 +4,9 @@ Unit tests for task_status_schemas.py
 Tests field validation, validators, and model behaviour for task status schemas.
 """
 
-import pytest
 from datetime import datetime, timezone
+
+import pytest
 from pydantic import ValidationError
 
 from schemas.task_status_schemas import (
@@ -16,7 +17,6 @@ from schemas.task_status_schemas import (
     TaskStatusUpdateRequest,
     TaskStatusUpdateResponse,
 )
-
 
 # ---------------------------------------------------------------------------
 # TaskStatusUpdateRequest

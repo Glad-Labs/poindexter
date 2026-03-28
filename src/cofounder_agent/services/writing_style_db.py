@@ -7,17 +7,20 @@ Handles all writing sample operations including:
 - Retrieve writing samples for style matching
 """
 
-from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from asyncpg import Pool
 
-from .database_mixin import DatabaseServiceMixin
-from .decorators import log_query_performance
+from services.logger_config import get_logger
 from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 
+from .database_mixin import DatabaseServiceMixin
+from .decorators import log_query_performance
+
 logger = get_logger(__name__)
+
+
 class WritingStyleDatabase(DatabaseServiceMixin):
     """Writing style/sample-related database operations."""
 
@@ -124,7 +127,9 @@ class WritingStyleDatabase(DatabaseServiceMixin):
             raise
 
     @log_query_performance(operation="get_user_writing_samples", category="writing_style_retrieval")
-    async def get_user_writing_samples(self, user_id: str, limit: int = 100) -> List[Dict[str, Any]]:
+    async def get_user_writing_samples(
+        self, user_id: str, limit: int = 100
+    ) -> List[Dict[str, Any]]:
         """
         Get writing samples for a user.
 
@@ -157,7 +162,9 @@ class WritingStyleDatabase(DatabaseServiceMixin):
             )
             raise
 
-    @log_query_performance(operation="get_active_writing_sample", category="writing_style_retrieval")
+    @log_query_performance(
+        operation="get_active_writing_sample", category="writing_style_retrieval"
+    )
     async def get_active_writing_sample(self, user_id: str) -> Optional[Dict[str, Any]]:
         """
         Get the active/current writing sample for a user.
@@ -286,9 +293,17 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                     ("user_id", SQLOperator.EQ, user_id),
                 ],
                 return_columns=[
-                    "id", "user_id", "title", "description", "content",
-                    "is_active", "word_count", "char_count", "metadata",
-                    "created_at", "updated_at",
+                    "id",
+                    "user_id",
+                    "title",
+                    "description",
+                    "content",
+                    "is_active",
+                    "word_count",
+                    "char_count",
+                    "metadata",
+                    "created_at",
+                    "updated_at",
                 ],
             )
 
@@ -323,7 +338,9 @@ class WritingStyleDatabase(DatabaseServiceMixin):
         try:
             async with self.pool.acquire() as conn:
                 result = await conn.execute(
-                    "DELETE FROM writing_samples WHERE id = $1 AND user_id = $2", int(sample_id), user_id
+                    "DELETE FROM writing_samples WHERE id = $1 AND user_id = $2",
+                    int(sample_id),
+                    user_id,
                 )
 
                 # Parse result to check if row was deleted

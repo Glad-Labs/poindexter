@@ -15,13 +15,10 @@ Tests cover:
 """
 
 import os
-from unittest.mock import MagicMock, patch, call
-
-import pytest
+from unittest.mock import MagicMock
 
 import services.telemetry as telemetry_mod
 from services.telemetry import setup_telemetry
-
 
 # ---------------------------------------------------------------------------
 # When OpenTelemetry is not available
@@ -116,8 +113,7 @@ class TestModuleConstants:
         assert isinstance(telemetry_mod.OPENTELEMETRY_AVAILABLE, bool)
 
     def test_openai_instrumentor_is_none_or_class(self):
-        import services.telemetry as _tel
-        oi = getattr(_tel, "OpenAIInstrumentor", None)
+        oi = getattr(telemetry_mod, "OpenAIInstrumentor", None)
         # Either None (if not installed) or a class
         assert oi is None or callable(oi)
 
@@ -161,8 +157,14 @@ def _make_mock_components():
 
 def _apply_mocks(monkeypatch, mocks):
     monkeypatch.setattr(telemetry_mod, "OPENTELEMETRY_AVAILABLE", True)
-    for key in ("Resource", "TracerProvider", "OTLPSpanExporter", "BatchSpanProcessor",
-                "FastAPIInstrumentor", "trace"):
+    for key in (
+        "Resource",
+        "TracerProvider",
+        "OTLPSpanExporter",
+        "BatchSpanProcessor",
+        "FastAPIInstrumentor",
+        "trace",
+    ):
         monkeypatch.setattr(telemetry_mod, key, mocks[key])
 
 
@@ -211,10 +213,7 @@ class TestSetupTelemetryWithOtlpEndpoint:
         setup_telemetry(MagicMock(), service_name="my-custom-service")
 
         call_kwargs = mocks["Resource"].create.call_args
-        attrs = (
-            call_kwargs[1].get("attributes")
-            or (call_kwargs[0][0] if call_kwargs[0] else {})
-        )
+        attrs = call_kwargs[1].get("attributes") or (call_kwargs[0][0] if call_kwargs[0] else {})
         assert attrs.get("service.name") == "my-custom-service"
 
     def test_otlp_exporter_setup_failure_is_caught(self, monkeypatch):

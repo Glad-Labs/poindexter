@@ -20,10 +20,11 @@ Tests cover:
 - HTTP errors raise on all HTTP-calling methods
 """
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
-from clients.progress_client import WorkflowProgressClient, get_progress_client
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
+from clients.progress_client import WorkflowProgressClient, get_progress_client
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -46,10 +47,11 @@ def make_mock_response(json_data: dict, status: int = 200):
 def make_error_response():
     """Return a response mock that raises on raise_for_status."""
     import aiohttp
+
     resp = MagicMock()
-    resp.raise_for_status = MagicMock(side_effect=aiohttp.ClientResponseError(
-        request_info=MagicMock(), history=(), status=500
-    ))
+    resp.raise_for_status = MagicMock(
+        side_effect=aiohttp.ClientResponseError(request_info=MagicMock(), history=(), status=500)
+    )
     resp.json = AsyncMock(return_value={})
 
     cm = MagicMock()
@@ -94,6 +96,7 @@ class TestEnsureSession:
     async def test_creates_session_when_none(self):
         client = WorkflowProgressClient()
         import aiohttp
+
         with patch("aiohttp.ClientSession") as MockSession:
             MockSession.return_value = MagicMock()
             MockSession.return_value.closed = False
@@ -219,6 +222,7 @@ class TestInitializeProgress:
     async def test_raises_on_http_error(self):
         client = WorkflowProgressClient()
         import aiohttp
+
         cm = make_error_response()
         mock_session = MagicMock()
         mock_session.closed = False
@@ -484,6 +488,7 @@ class TestGetStatus:
     async def test_raises_on_http_error(self):
         client = WorkflowProgressClient()
         import aiohttp
+
         cm = make_error_response()
         mock_session = MagicMock()
         mock_session.closed = False
@@ -582,6 +587,7 @@ class TestSubscribeProgress:
     async def test_sync_callback_called_for_message(self):
         """subscribe_progress calls sync callbacks directly."""
         import json as json_mod
+
         client = WorkflowProgressClient()
         received = []
 

@@ -17,10 +17,11 @@ Covers:
 - AIContentGenerator._check_ollama_async: sets ollama_available / ollama_checked
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from services.ai_content_generator import AIContentGenerator, ContentValidationResult
 
+import pytest
+
+from services.ai_content_generator import AIContentGenerator, ContentValidationResult
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -29,8 +30,15 @@ from services.ai_content_generator import AIContentGenerator, ContentValidationR
 
 def _make_generator() -> AIContentGenerator:
     """Instantiate AIContentGenerator with mocked heavy dependencies."""
-    with patch("services.ai_content_generator.ProviderChecker.is_huggingface_available", return_value=False), \
-         patch("services.ai_content_generator.ProviderChecker.is_gemini_available", return_value=False):
+    with (
+        patch(
+            "services.ai_content_generator.ProviderChecker.is_huggingface_available",
+            return_value=False,
+        ),
+        patch(
+            "services.ai_content_generator.ProviderChecker.is_gemini_available", return_value=False
+        ),
+    ):
         gen = AIContentGenerator(quality_threshold=7.5)
     return gen
 
@@ -113,8 +121,16 @@ class TestAIContentGeneratorInit:
         assert gen.quality_threshold == 7.5
 
     def test_custom_quality_threshold(self):
-        with patch("services.ai_content_generator.ProviderChecker.is_huggingface_available", return_value=False), \
-             patch("services.ai_content_generator.ProviderChecker.is_gemini_available", return_value=False):
+        with (
+            patch(
+                "services.ai_content_generator.ProviderChecker.is_huggingface_available",
+                return_value=False,
+            ),
+            patch(
+                "services.ai_content_generator.ProviderChecker.is_gemini_available",
+                return_value=False,
+            ),
+        ):
             gen = AIContentGenerator(quality_threshold=6.0)
         assert gen.quality_threshold == 6.0
 
@@ -183,8 +199,10 @@ class TestValidateContent:
         # Content without any bullets or lists
         content = "word " * 950 + " conclusion summary next "  # add conclusion keywords
         result = gen._validate_content(content, "word topic word", 1000)
-        assert any("practical examples" in issue.lower() or "bullet" in issue.lower()
-                   for issue in result.issues)
+        assert any(
+            "practical examples" in issue.lower() or "bullet" in issue.lower()
+            for issue in result.issues
+        )
 
     def test_score_clamped_to_zero_minimum(self):
         """Very poor content should not produce a negative score."""

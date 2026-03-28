@@ -1,109 +1,126 @@
-# Glad Labs - AI Co-Founder System
+# Glad Labs — Personal Media Operating System
 
-**Version:** 3.0.82
-**Last Updated:** March 2026
+**Version:** 0.1.0 | **License:** [AGPL-3.0](LICENSE) | **Copyright:** 2025-2026 Matthew M. Gladding
 
-AI orchestration system with autonomous agents, multi-provider LLM routing, and full-stack web applications.
+An autonomous AI system that runs content media businesses. Generates quality-scored articles, distributes across platforms, and operates via conversational interface (Discord/Telegram). Built for solo operators who want professional media presence without the operational overhead.
+
+## Architecture
+
+```
+You (Discord / Telegram)
+  │
+  ├─ OpenClaw Gateway ─── 14 custom skills ──→ FastAPI Backend (Railway)
+  │                                               ├─ Content pipeline (6-stage)
+  │                                               ├─ Model router (Ollama/Anthropic/OpenAI/Google)
+  │                                               ├─ Quality scoring (7 criteria + Flesch-Kincaid)
+  │                                               ├─ Auto-publish (configurable threshold)
+  │                                               └─ PostgreSQL (source of truth)
+  │
+  ├─ Next.js Public Sites (Vercel) ─── ISR, SEO, AdSense
+  │
+  └─ SQLAdmin (/admin) ─── Browse tasks, posts, costs, settings
+```
 
 ## Project Structure
 
 ```
 .
-├── src/cofounder_agent/        # Backend orchestrator (FastAPI, port 8000)
-├── web/public-site/            # Content distribution (Next.js 15, port 3000)
-├── web/oversight-hub/          # Admin dashboard (React 18 + Vite, port 3001)
-├── docs/                       # Documentation
-├── .github/                    # CI/CD workflows
-└── scripts/                    # Utility scripts
+├── src/cofounder_agent/     # FastAPI backend (Python)
+│   ├── routes/              # 7 active API route modules
+│   ├── services/            # Content pipeline, model router, quality scoring
+│   ├── agents/              # AI agent implementations
+│   ├── middleware/           # Bearer token auth
+│   ├── migrations/          # PostgreSQL schema migrations
+│   └── admin.py             # SQLAdmin panel
+├── web/public-site/         # Next.js 15 content site
+├── skills/openclaw/         # OpenClaw skill definitions (14 skills)
+├── docs/                    # Technical documentation
+└── scripts/                 # Utility scripts
 ```
 
 ## Quick Start
 
 ```bash
-# Install all dependencies
+# Install dependencies
 npm install
 cd src/cofounder_agent && poetry install && cd ../..
 
-# Start all three services
+# Configure environment
+cp .env.example .env.local
+# Edit .env.local: set DATABASE_URL, API_TOKEN, and at least one LLM provider key
+
+# Start services
 npm run dev
 ```
 
-Requires a `.env.local` at the project root with at minimum:
+The API is at `http://localhost:8000` with:
 
-```env
-DATABASE_URL=postgresql://user:pass@localhost:5432/glad_labs_dev
-# Plus at least one LLM provider key:
-# ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY, or OLLAMA_BASE_URL
+- `/api/docs` — Swagger UI (interactive API explorer)
+- `/admin` — SQLAdmin panel (browse data)
+
+## How It Works
+
+1. **You** tell OpenClaw in Discord: _"write 10 posts about budget gaming PCs"_
+2. **OpenClaw** calls the FastAPI batch creation endpoint
+3. **Task Executor** picks up pending tasks and runs the 6-stage pipeline:
+   - Research → Creative Draft → QA Critique → Refinement → Image Selection → Publishing Prep
+4. **Quality Service** scores each post (7 criteria + readability)
+5. Posts above the auto-publish threshold go live automatically
+6. **Webhook** notifies you in Discord: _"Published 'Budget Gaming PC Guide' (score: 87)"_
+
+## Key Capabilities
+
+- **Multi-provider LLM routing** with cost tiers — Ollama (free) → Anthropic → OpenAI → Google
+- **6-stage self-critiquing pipeline** — QA agents critique, creative agents refine
+- **Quality scoring** — 7 criteria + Flesch-Kincaid readability, configurable threshold
+- **Auto-publish** — posts above quality threshold publish without approval
+- **Batch creation** — create 20+ tasks in one command
+- **Multi-site** — one pipeline serving multiple content domains
+- **Writing style profiles** — RAG-powered voice matching from writing samples
+- **Cost tracking** — per-task, per-model spend with budget alerts
+- **Webhook notifications** — pipeline events pushed to Discord/Telegram
+
+## Operations (via Discord)
+
+```
+"write a post about RTX 5090 builds"     → creates task, pipeline runs
+"show my tasks"                           → lists queue with status/scores
+"approve task abc123"                     → approves for publishing
+"what's my spend this week?"              → cost breakdown by model
+"check railway status"                    → backend health + logs
 ```
 
-See `.env.example` for the full variable reference (~57 variables).
-
-## Services
-
-### Backend — FastAPI (`src/cofounder_agent/`)
-
-Python orchestrator with 80 service modules, 29 route files exposing ~158 REST/WebSocket endpoints. Manages AI agents, task workflows, content pipelines, and cost tracking.
-
-- Multi-provider LLM routing with cost tiers (free/budget/standard/premium/flagship)
-- Four agent types: Content, Financial, Market Insight, Compliance
-- 6-stage content pipeline: Research → Draft → QA → Refinement → Image → Publishing
-- PostgreSQL via asyncpg, real-time WebSocket progress
-
-### Public Site — Next.js 15 (`web/public-site/`)
-
-Headless content consumer using the App Router. All content is fetched from the FastAPI backend — no local markdown files.
-
-- Static generation with ISR
-- Tailwind CSS, Sentry error tracking
-- SEO: sitemap, structured data, Open Graph
-
-### Oversight Hub — React 18 + Vite (`web/oversight-hub/`)
-
-Admin dashboard for task management, workflow orchestration, cost analytics, and agent monitoring.
-
-- Material-UI components, Zustand state management
-- Real-time updates via WebSocket
-- GitHub OAuth authentication
-
-## Key Features
-
-- **Multi-provider LLM routing** — Ollama, Anthropic, OpenAI, Google with automatic fallback
-- **Capability-based tasks** — Composable, reusable task workflows
-- **Real-time monitoring** — WebSocket-powered dashboard with live updates
-- **Custom workflows** — Build and execute automation pipelines
-- **OAuth integration** — GitHub authentication
-- **Analytics** — Cost metrics, task performance, model usage
+See [docs/openclaw/README.md](docs/openclaw/README.md) for the full skill reference.
 
 ## Development
 
 ```bash
-npm run dev                   # All services
-npm run test                  # JS tests (Jest + Vitest)
-npm run test:python:unit      # Python unit tests
-npm run lint                  # ESLint all workspaces
-npm run format                # Prettier formatting
-npm run build                 # Build all frontends
+npm run dev                   # Start all services
+npm run test:python:unit      # Backend tests (5,488 passing)
+npm run test                  # Public site tests (482 passing)
+npm run lint                  # ESLint
+npm run format                # Prettier
 ```
-
-See [CLAUDE.md](CLAUDE.md) for the full command reference.
 
 ## Deployment
 
-- **main** branch auto-deploys: Vercel (frontends) + Railway (backend)
-- **dev** branch deploys to Railway staging
+| Branch    | Target     | Action                                         |
+| --------- | ---------- | ---------------------------------------------- |
+| `main`    | Production | Auto-deploy: Vercel (site) + Railway (backend) |
+| `staging` | Staging    | Auto-deploy: Railway staging                   |
+| `dev`     | CI only    | Tests run, no deployment                       |
 
 ## Documentation
 
-Start at `docs/00-INDEX.md` for the full documentation index.
-
-- `docs/01-Getting-Started/` — Setup and environment configuration
-- `docs/02-Architecture/` — System design, API design, data model
-- `docs/03-Features/` — Feature documentation
-- `docs/04-Development/` — Workflow, testing, CI/CD
-- `docs/05-Operations/` — Deployment, monitoring, maintenance
-- `docs/06-Troubleshooting/` — Common issues and fixes
-- `docs/07-Appendices/` — Reference material, version history
+- [Architecture Vision](docs/architecture/VISION.md) — Product roadmap and full system design
+- [System Design](docs/architecture/system-design.md) — Technical architecture
+- [API Contracts](docs/architecture/api-contracts.md) — REST endpoint reference
+- [OpenClaw Setup](docs/openclaw/README.md) — Discord/Telegram integration
+- [Environment Variables](docs/operations/env-vars.md) — Configuration reference
+- [Deployment](docs/operations/deployment.md) — Railway + Vercel setup
 
 ## License
 
-See [LICENSE](LICENSE) for details.
+GNU Affero General Public License v3.0 — see [LICENSE](LICENSE).
+
+For commercial licensing inquiries: support@gladlabs.io

@@ -10,7 +10,6 @@ Workflow: [blog_generate_content] → [blog_quality_evaluation] → [blog_search
 import asyncio
 import logging
 import os
-from typing import Any, Dict
 
 import pytest
 
@@ -24,7 +23,7 @@ logger = logging.getLogger(__name__)
 @pytest.mark.integration
 @pytest.mark.skipif(
     not os.getenv("INTEGRATION_TESTS"),
-    reason="Set INTEGRATION_TESTS=1 to run integration tests (requires live server)"
+    reason="Set INTEGRATION_TESTS=1 to run integration tests (requires live server)",
 )
 async def test_blog_workflow():
     """Test complete blog workflow execution"""

@@ -13,17 +13,16 @@ mock pool so no real database connection is required.
 cms_status requires authentication — get_current_user overridden with TEST_USER.
 """
 
-import pytest
 from datetime import datetime, timezone
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from routes.auth_unified import get_current_user
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from middleware.api_token_auth import verify_api_token
 from routes.cms_routes import router
-
 from tests.unit.routes.conftest import TEST_USER
-
 
 # ---------------------------------------------------------------------------
 # Helper: build a minimal app.
@@ -35,7 +34,7 @@ def _build_app():
     app = FastAPI()
     app.include_router(router)
     # Override auth for protected endpoints (cms_status)
-    app.dependency_overrides[get_current_user] = lambda: TEST_USER
+    app.dependency_overrides[verify_api_token] = lambda: "test-token"
     return app
 
 

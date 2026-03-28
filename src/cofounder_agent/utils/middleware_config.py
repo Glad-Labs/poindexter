@@ -10,7 +10,6 @@ Configures:
 All middleware can be optionally enabled/disabled and configured via environment variables.
 """
 
-from services.logger_config import get_logger
 import os
 
 from fastapi import FastAPI, Request, Response
@@ -18,7 +17,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from services.logger_config import get_logger
+
 logger = get_logger(__name__)
+
+
 class MiddlewareConfig:
     """Manages middleware configuration and registration"""
 
@@ -151,7 +154,6 @@ class MiddlewareConfig:
 
         Default development origins (localhost, 127.0.0.1 on ports 3000-3004):
         - http://localhost:3000 (Next.js public site)
-        - http://localhost:3001 (React oversight hub)
         - http://127.0.0.1:3000-3004 (alternative localhost addresses)
 
         For production, set ALLOWED_ORIGINS env var to comma-separated list:
@@ -183,7 +185,14 @@ class MiddlewareConfig:
             allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
             # SECURITY: Explicit header list required — allow_headers=["*"] with
             # allow_credentials=True violates the CORS spec (#220)
-            allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With", "X-Request-ID"],
+            allow_headers=[
+                "Authorization",
+                "Content-Type",
+                "Accept",
+                "Origin",
+                "X-Requested-With",
+                "X-Request-ID",
+            ],
             expose_headers=["X-Request-ID"],
             max_age=600,
         )
@@ -253,8 +262,9 @@ class MiddlewareConfig:
         except ImportError:
             logger.warning(
                 "⚠️  slowapi not installed - rate limiting disabled. "
-                "Install with: pip install slowapi"
-, exc_info=True)
+                "Install with: pip install slowapi",
+                exc_info=True,
+            )
             self.limiter = None
 
     def _setup_token_validation(self, app: FastAPI) -> None:

@@ -1,6 +1,8 @@
 ﻿from services.logger_config import get_logger
 
 logger = get_logger(__name__)
+
+
 class ContentAgentOrchestrator:
     def __init__(self, api_url: str = "http://localhost:8000"):
         self.api_url = api_url

@@ -26,7 +26,7 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent / ".env.local")
 
-API_URL = os.getenv("VITE_API_URL", "http://localhost:8000")
+API_URL = os.getenv("API_URL", "http://localhost:8000")
 HEADERS = {"Authorization": "Bearer dev-token", "Content-Type": "application/json"}
 POLL_INTERVAL = 5  # seconds
 

@@ -14,15 +14,12 @@ import pytest
 
 from services.huggingface_client import HuggingFaceClient
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def make_aiohttp_response(
-    data: Any = None, text: str = "", status: int = 200
-) -> MagicMock:
+def make_aiohttp_response(data: Any = None, text: str = "", status: int = 200) -> MagicMock:
     """Build an async context-manager mock for aiohttp response."""
     resp = MagicMock()
     resp.status = status
@@ -203,13 +200,12 @@ class TestHuggingFaceGenerate:
     @pytest.mark.asyncio
     async def test_api_error_raises_service_error(self):
         client = HuggingFaceClient(api_token="token")
-        mock_resp = make_aiohttp_response(
-            text="Rate limit exceeded", status=429
-        )
+        mock_resp = make_aiohttp_response(text="Rate limit exceeded", status=429)
         mock_session = make_session_context(mock_resp)
         client.session = mock_session
 
         from services.error_handler import ServiceError
+
         with pytest.raises(ServiceError, match="HuggingFace error: 429"):
             await client.generate(MODEL_ID, "prompt")
 
@@ -295,12 +291,8 @@ class TestHuggingFaceChatCompletion:
     @pytest.mark.asyncio
     async def test_returns_assistant_response(self):
         client = HuggingFaceClient(api_token="token")
-        with patch.object(
-            client, "generate", new=AsyncMock(return_value="AI response text")
-        ):
-            result = await client.chat_completion(
-                MODEL_ID, [{"role": "user", "content": "Hello"}]
-            )
+        with patch.object(client, "generate", new=AsyncMock(return_value="AI response text")):
+            result = await client.chat_completion(MODEL_ID, [{"role": "user", "content": "Hello"}])
         assert result == "AI response text"
 
     @pytest.mark.asyncio
@@ -310,6 +302,4 @@ class TestHuggingFaceChatCompletion:
             client, "generate", new=AsyncMock(side_effect=RuntimeError("Model down"))
         ):
             with pytest.raises(RuntimeError, match="Model down"):
-                await client.chat_completion(
-                    MODEL_ID, [{"role": "user", "content": "Hi"}]
-                )
+                await client.chat_completion(MODEL_ID, [{"role": "user", "content": "Hi"}])

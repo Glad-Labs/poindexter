@@ -17,17 +17,13 @@ All external I/O (asyncpg pool, PhaseRegistry, WorkflowValidator, WorkflowExecut
 """
 
 import json
-import pytest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from schemas.custom_workflow_schemas import (
-    CustomWorkflow,
-    WorkflowPhase,
-    WorkflowValidationResult,
-)
-from services.custom_workflows_service import CustomWorkflowsService
+import pytest
 
+from schemas.custom_workflow_schemas import CustomWorkflow, WorkflowPhase, WorkflowValidationResult
+from services.custom_workflows_service import CustomWorkflowsService
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -36,7 +32,9 @@ from services.custom_workflows_service import CustomWorkflowsService
 _NOW = datetime(2026, 3, 12, 10, 0, 0, tzinfo=timezone.utc)
 
 
-_DEFAULT_PHASES = json.dumps([{"index": 0, "name": "research", "user_inputs": {}, "input_mapping": {}}])
+_DEFAULT_PHASES = json.dumps(
+    [{"index": 0, "name": "research", "user_inputs": {}, "input_mapping": {}}]
+)
 
 
 def _make_row(**kwargs):

@@ -28,6 +28,8 @@ from fastapi import HTTPException
 # create a circular import through services/__init__.py. stdlib logger is used
 # intentionally for this base-layer utility.
 logger = logging.getLogger(__name__)
+
+
 class ErrorResponse:
     """Standardized error response format."""
 

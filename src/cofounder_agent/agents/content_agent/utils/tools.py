@@ -1,6 +1,7 @@
-from services.logger_config import get_logger
 import os
 from typing import Optional
+
+from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 # Try to import crewai_tools, fall back to mock if not available
@@ -28,8 +29,9 @@ except ImportError:
     logger.warning(
         "[crewai_tools] crewai_tools package not installed — using STUB implementations. "
         "Web search, file reading, and code execution tools will return placeholder strings "
-        "instead of real results. Install crewai-tools to enable real tool functionality."
-, exc_info=True)
+        "instead of real results. Install crewai-tools to enable real tool functionality.",
+        exc_info=True,
+    )
 
 
 class WebSearchTool(SerperDevTool):  # type: ignore[misc]
@@ -63,10 +65,13 @@ class CompetitorContentSearchTool(WebsiteSearchTool):  # type: ignore[misc]
             logger.info("CompetitorContentSearchTool initialized successfully")
         except Exception as e:
             # Handle missing CHROMA_OPENAI_API_KEY or other initialization errors gracefully
-            logger.warning(f"CompetitorContentSearchTool initialization failed: {str(e)[:200]}", exc_info=True)
             logger.warning(
-                "Competitor content search will be unavailable - continuing without this tool"
-, exc_info=True)
+                f"CompetitorContentSearchTool initialization failed: {str(e)[:200]}", exc_info=True
+            )
+            logger.warning(
+                "Competitor content search will be unavailable - continuing without this tool",
+                exc_info=True,
+            )
             # Store the error for later reference, but don't raise
             self._initialization_error = str(e)
             self._is_available = False

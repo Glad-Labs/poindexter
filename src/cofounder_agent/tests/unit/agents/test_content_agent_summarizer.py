@@ -8,7 +8,6 @@ Tests focus on:
 """
 
 import os
-import pytest
 from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
@@ -60,9 +59,7 @@ class TestSummarizerAgentRun:
         result = agent.run(text, template)
 
         assert result == "Concise summary."
-        llm_client.generate_summary.assert_called_once_with(
-            f"Please summarize: {text}"
-        )
+        llm_client.generate_summary.assert_called_once_with(f"Please summarize: {text}")
 
     def test_returns_empty_string_on_llm_exception(self):
         agent, llm_client = make_summarizer()

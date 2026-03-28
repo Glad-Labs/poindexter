@@ -5,12 +5,14 @@ This module registers agents from the agents/ folder with the central
 AgentRegistry, making them discoverable and selectable at runtime.
 """
 
-from services.logger_config import get_logger
 from typing import Optional
 
 from agents.registry import AgentRegistry, get_agent_registry
+from services.logger_config import get_logger
 
 logger = get_logger(__name__)
+
+
 def register_all_agents(registry: Optional[AgentRegistry] = None) -> AgentRegistry:
     """
     Register all agents with the AgentRegistry.
@@ -27,10 +29,10 @@ def register_all_agents(registry: Optional[AgentRegistry] = None) -> AgentRegist
     try:
         # Import agent classes
         from agents.content_agent.agents.creative_agent import CreativeAgent
-        from agents.content_agent.agents.postgres_image_agent import PostgreSQLImageAgent as ImageAgent
-        from agents.content_agent.agents.postgres_publishing_agent import (
-            PostgreSQLPublishingAgent,
+        from agents.content_agent.agents.postgres_image_agent import (
+            PostgreSQLImageAgent as ImageAgent,
         )
+        from agents.content_agent.agents.postgres_publishing_agent import PostgreSQLPublishingAgent
         from agents.content_agent.agents.qa_agent import QAAgent
         from agents.content_agent.agents.research_agent import ResearchAgent
 

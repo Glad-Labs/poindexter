@@ -14,16 +14,14 @@ Covers:
 - Ping/pong message handling
 """
 
-import asyncio
-import json
 import os
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock, patch
 
-from routes.websocket_routes import websocket_router, connection_manager, ConnectionManager
-
+from routes.websocket_routes import ConnectionManager, websocket_router
 
 # ---------------------------------------------------------------------------
 # App factory
@@ -155,9 +153,7 @@ class TestBroadcastApprovalStatus:
         mgr_mock = MagicMock()
         mgr_mock.broadcast = AsyncMock()
         with patch("routes.websocket_routes.connection_manager", mgr_mock):
-            await broadcast_approval_status(
-                "task-abc", "rejected", {"reason": "Content quality"}
-            )
+            await broadcast_approval_status("task-abc", "rejected", {"reason": "Content quality"})
         args = mgr_mock.broadcast.call_args
         message_sent = args[0][1]
         assert message_sent["status"] == "rejected"
@@ -218,7 +214,9 @@ class TestWebSocketWorkflowProgress:
         client = TestClient(app, raise_server_exceptions=False)
         with patch.dict(os.environ, {"DEVELOPMENT_MODE": "false"}):
             # Patch the token validator inside the _validate_ws_token function's import
-            with patch("services.token_validator.JWTTokenValidator.verify_token", return_value=None):
+            with patch(
+                "services.token_validator.JWTTokenValidator.verify_token", return_value=None
+            ):
                 try:
                     with client.websocket_connect(
                         f"{WS_PREFIX}/workflow/exec-001?token=invalid-token"

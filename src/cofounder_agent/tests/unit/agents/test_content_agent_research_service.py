@@ -4,11 +4,11 @@ Unit tests for agents/content_agent/research_service.py
 Tests for SearXNGResearchService and research_content_topic helper.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from agents.content_agent.research_service import SearXNGResearchService
+import pytest
 
+from agents.content_agent.research_service import SearXNGResearchService
 
 # ---------------------------------------------------------------------------
 # __init__
@@ -212,8 +212,9 @@ class TestSearch:
     async def test_result_count_matches_results(self):
         svc = SearXNGResearchService()
         mock_client = AsyncMock()
-        raw_results = [{"title": f"r{i}", "url": "", "content": "", "engine": [], "score": 0}
-                       for i in range(3)]
+        raw_results = [
+            {"title": f"r{i}", "url": "", "content": "", "engine": [], "score": 0} for i in range(3)
+        ]
         mock_client.get = AsyncMock(return_value=self._make_mock_response(raw_results))
         svc.client = mock_client
 

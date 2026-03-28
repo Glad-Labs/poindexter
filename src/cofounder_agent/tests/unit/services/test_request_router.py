@@ -5,15 +5,14 @@ Tests verify that classify_request returns the correct RequestType and intent
 for the documented keyword patterns, and that the default fallback to
 CONTENT_CREATION works correctly.
 """
-import pytest
 
 from services.orchestrator_types import Request, RequestType
-from services.request_router import classify_request, _match_routing_table
-
+from services.request_router import _match_routing_table, classify_request
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _no_op_extractor(text: str):
     """Stub for extract_content_params_fn — just returns the raw text as topic."""
@@ -32,6 +31,7 @@ def _classify(user_input: str, context=None) -> Request:
 # ---------------------------------------------------------------------------
 # Tests: _match_routing_table
 # ---------------------------------------------------------------------------
+
 
 class TestMatchRoutingTable:
     def test_content_creation_keyword(self):
@@ -101,6 +101,7 @@ class TestMatchRoutingTable:
 # ---------------------------------------------------------------------------
 # Tests: classify_request — returned Request object
 # ---------------------------------------------------------------------------
+
 
 class TestClassifyRequestType:
     def test_content_creation_returns_correct_type(self):

@@ -285,9 +285,9 @@ class CostLogResponse(BaseModel):
     id: str = Field(..., description="Cost log UUID")
     task_id: str = Field(..., description="Associated task UUID")
     user_id: Optional[str] = Field(None, description="Associated user UUID")
-    phase: Literal["research", "outline", "draft", "assess", "refine", "finalize", "content_generation"] = Field(
-        ..., description="Execution phase"
-    )
+    phase: Literal[
+        "research", "outline", "draft", "assess", "refine", "finalize", "content_generation"
+    ] = Field(..., description="Execution phase")
     model: str = Field(..., description="LLM model used (gpt-4, claude-3-opus, etc.)")
     provider: Literal["ollama", "openai", "anthropic", "google", "gemini", "unknown"] = Field(
         ..., description="LLM provider"
@@ -468,4 +468,6 @@ class ErrorResponse(BaseModel):
     error: str = Field(..., description="Error type")
     message: str = Field(..., description="Error message")
     details: Optional[Dict[str, Any]] = Field(None, description="Additional error details")
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Error timestamp")
+    timestamp: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc), description="Error timestamp"
+    )

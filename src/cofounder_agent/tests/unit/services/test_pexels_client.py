@@ -12,7 +12,6 @@ import pytest
 
 from services.pexels_client import PexelsClient, get_pexels_client
 
-
 # ---------------------------------------------------------------------------
 # Test data
 # ---------------------------------------------------------------------------
@@ -210,9 +209,7 @@ class TestGetFeaturedImage:
         client = PexelsClient(api_key="key")
         expected = {"url": "https://example.com/img.jpg", "source": "pexels"}
 
-        with patch.object(
-            client, "search_images", new=AsyncMock(return_value=[expected])
-        ):
+        with patch.object(client, "search_images", new=AsyncMock(return_value=[expected])):
             result = await client.get_featured_image("AI landscape")
         assert result is expected
 

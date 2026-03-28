@@ -11,11 +11,11 @@ Tests cover:
 No real agents, no LLM calls, no DB.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from services.compliance_service import ComplianceService
+import pytest
 
+from services.compliance_service import ComplianceService
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -105,9 +105,7 @@ class TestCheckLegalCompliance:
             },
         ):
             svc = _service()
-            result = await svc.check_legal_compliance(
-                "content", jurisdictions=["EU", "US"]
-            )
+            result = await svc.check_legal_compliance("content", jurisdictions=["EU", "US"])
 
         assert result["jurisdictions"] == ["EU", "US"]
 
@@ -162,8 +160,15 @@ class TestAssessPrivacyCompliance:
     async def test_result_structure(self):
         svc = _service()
         result = await svc.assess_privacy_compliance("text", contains_personal_data=False)
-        for key in ("assessment_type", "compliance_score", "target_regions",
-                    "contains_personal_data", "issues", "warnings", "compliant"):
+        for key in (
+            "assessment_type",
+            "compliance_score",
+            "target_regions",
+            "contains_personal_data",
+            "issues",
+            "warnings",
+            "compliant",
+        ):
             assert key in result, f"Missing key: {key}"
 
 

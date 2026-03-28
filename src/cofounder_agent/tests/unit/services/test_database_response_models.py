@@ -4,35 +4,25 @@ Unit tests for database_response_models.py and model_converter.py
 Tests field validation, model construction, and converter logic.
 """
 
-import json
-import pytest
 from datetime import datetime, timezone
 from uuid import UUID
 
+import pytest
+
 from schemas.database_response_models import (
-    AgentStatusResponse,
     CategoryResponse,
     CostLogResponse,
     ErrorResponse,
-    FinancialEntryResponse,
-    FinancialSummaryResponse,
-    LogResponse,
     MetricsResponse,
-    OAuthAccountResponse,
-    OrchestratorTrainingDataResponse,
     PaginatedResponse,
     PostResponse,
     QualityEvaluationResponse,
-    QualityImprovementLogResponse,
-    SettingResponse,
     TagResponse,
-    TaskCostBreakdownResponse,
     TaskCountsResponse,
     TaskResponse,
     UserResponse,
 )
 from schemas.model_converter import ModelConverter
-
 
 NOW = datetime.now(timezone.utc)
 
@@ -266,8 +256,13 @@ class TestCostLogResponse:
 
     def test_all_valid_phases(self):
         valid_phases = [
-            "research", "outline", "draft", "assess", "refine",
-            "finalize", "content_generation",
+            "research",
+            "outline",
+            "draft",
+            "assess",
+            "refine",
+            "finalize",
+            "content_generation",
         ]
         for phase in valid_phases:
             log = self._valid(phase=phase)
@@ -438,9 +433,7 @@ class TestModelConverter:
         assert result["tag_ids"] == ["550e8400-e29b-41d4-a716-446655440000"]
 
     def test_to_task_counts_response(self):
-        counts = ModelConverter.to_task_counts_response(
-            {"total": 10, "pending": 2, "completed": 8}
-        )
+        counts = ModelConverter.to_task_counts_response({"total": 10, "pending": 2, "completed": 8})
         assert counts.total == 10
 
     def test_to_metrics_response(self):

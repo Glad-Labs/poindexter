@@ -10,17 +10,17 @@ Covers:
 """
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.testclient import TestClient
 
-from services.error_handler import AppError, ErrorCode, NotFoundError, ValidationError as AppValidationError
+from services.error_handler import AppError, NotFoundError
+from services.error_handler import ValidationError as AppValidationError
 from utils.exception_handlers import (
     _STATUS_TO_ERROR_CODE,
     app_error_handler,
@@ -29,7 +29,6 @@ from utils.exception_handlers import (
     register_exception_handlers,
     validation_error_handler,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -381,9 +380,7 @@ class TestRegisterExceptionHandlers:
         register_exception_handlers(app)
         # FastAPI stores exception handlers in exception_handlers dict
         # The presence of the handler types can be checked
-        from services.error_handler import AppError as _AppError
-
-        assert _AppError in app.exception_handlers or True  # handlers registered without error
+        assert AppError in app.exception_handlers or True  # handlers registered without error
 
     def test_integration_app_error_returns_404(self):
         """Full-stack integration: AppError raised in route → 404 JSON."""

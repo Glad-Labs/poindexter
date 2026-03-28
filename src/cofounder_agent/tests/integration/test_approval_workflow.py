@@ -14,15 +14,15 @@ Covers:
 - Flow 7: Rejecting with allow_revisions=True produces failed_revisions_requested status
 """
 
-import pytest
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, patch
+
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from routes.auth_unified import get_current_user
 from utils.route_utils import get_database_dependency
-
 
 # ---------------------------------------------------------------------------
 # Test constants
@@ -318,7 +318,9 @@ class TestGetPendingApprovals:
         client = TestClient(_build_approval_app(db))
         data = client.get("/api/tasks/pending-approval").json()
         # The response should include the mocked task with awaiting_approval status
-        tasks_key = "tasks" if "tasks" in data else ("pending_tasks" if "pending_tasks" in data else "data")
+        tasks_key = (
+            "tasks" if "tasks" in data else ("pending_tasks" if "pending_tasks" in data else "data")
+        )
         if tasks_key in data and isinstance(data[tasks_key], list):
             if len(data[tasks_key]) > 0:
                 # Each task should have awaiting_approval-related fields

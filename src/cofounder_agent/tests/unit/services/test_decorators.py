@@ -12,14 +12,13 @@ All tests are pure async — no DB or network calls.
 """
 
 import os
+
 import pytest
-import pytest_asyncio
 
 # Ensure monitoring is enabled for all tests (override env before import)
 os.environ.setdefault("ENABLE_QUERY_MONITORING", "true")
 
 from services.decorators import log_api_call, log_query_performance
-
 
 # ---------------------------------------------------------------------------
 # log_query_performance
@@ -85,9 +84,7 @@ class TestLogQueryPerformance:
 
     @pytest.mark.asyncio
     async def test_custom_slow_threshold_does_not_break(self):
-        @log_query_performance(
-            operation="fast_op", category="test", slow_threshold_ms=1000
-        )
+        @log_query_performance(operation="fast_op", category="test", slow_threshold_ms=1000)
         async def fast_query():
             return "ok"
 

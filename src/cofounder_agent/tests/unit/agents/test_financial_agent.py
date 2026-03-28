@@ -4,7 +4,6 @@ Unit tests for agents/financial_agent/financial_agent.py
 Tests for FinancialAgent class.
 """
 
-import pytest
 from unittest.mock import MagicMock, patch
 
 from agents.financial_agent.financial_agent import FinancialAgent
@@ -20,8 +19,10 @@ class TestFinancialAgentInit:
         assert len(agent.tools) == 2
 
     def test_init_logs_info(self):
-        with patch("agents.financial_agent.financial_agent.logging") as mock_logging, \
-             patch("agents.financial_agent.financial_agent.CrewAIToolsFactory"):
+        with (
+            patch("agents.financial_agent.financial_agent.logging") as mock_logging,
+            patch("agents.financial_agent.financial_agent.CrewAIToolsFactory"),
+        ):
             FinancialAgent()
             mock_logging.info.assert_called()
 
@@ -36,6 +37,7 @@ class TestGetFinancialSummary:
         with patch.dict("os.environ", {}, clear=False):
             # Ensure both keys are absent
             import os
+
             os.environ.pop("MERCURY_API_KEY", None)
             os.environ.pop("GCP_BILLING_PROJECT", None)
             result = agent.get_financial_summary()
@@ -50,6 +52,7 @@ class TestGetFinancialSummary:
     def test_lists_missing_keys_in_message(self):
         agent = self._make_agent()
         import os
+
         os.environ.pop("MERCURY_API_KEY", None)
         os.environ.pop("GCP_BILLING_PROJECT", None)
         result = agent.get_financial_summary()
@@ -67,6 +70,7 @@ class TestGetFinancialSummary:
     def test_logs_warning_for_missing_keys(self):
         agent = self._make_agent()
         import os
+
         os.environ.pop("MERCURY_API_KEY", None)
         os.environ.pop("GCP_BILLING_PROJECT", None)
         with patch("agents.financial_agent.financial_agent.logging") as mock_logging:

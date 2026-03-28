@@ -7,9 +7,10 @@ Covers:
 - get_database_service: success (app.state.db_service), fallback (app.state.database), missing
 """
 
+from unittest.mock import MagicMock
+
 import pytest
 from fastapi import HTTPException
-from unittest.mock import MagicMock
 
 from utils.service_dependencies import (
     get_database_service,
@@ -115,4 +116,7 @@ class TestGetDatabaseService:
         req = _make_request({"db_service": None, "database": None})
         with pytest.raises(HTTPException) as exc_info:
             get_database_service(req)
-        assert "not initialized" in exc_info.value.detail.lower() or "DatabaseService" in exc_info.value.detail
+        assert (
+            "not initialized" in exc_info.value.detail.lower()
+            or "DatabaseService" in exc_info.value.detail
+        )

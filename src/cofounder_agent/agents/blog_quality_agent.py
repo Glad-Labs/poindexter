@@ -9,12 +9,14 @@ This agent:
 3. Returns results compatible with workflow executor
 """
 
-from services.logger_config import get_logger
 from typing import Any, Dict
 
+from services.logger_config import get_logger
 from services.quality_service import EvaluationMethod, get_quality_service
 
 logger = get_logger(__name__)
+
+
 class BlogQualityAgent:
     """
     Agent that evaluates blog post quality using unified quality service.
@@ -87,8 +89,9 @@ class BlogQualityAgent:
                 evaluation_method = EvaluationMethod(evaluation_method_str)
             except ValueError:
                 logger.warning(
-                    f"Unknown evaluation method '{evaluation_method_str}', using pattern-based"
-, exc_info=True)
+                    f"Unknown evaluation method '{evaluation_method_str}', using pattern-based",
+                    exc_info=True,
+                )
                 evaluation_method = EvaluationMethod.PATTERN_BASED
 
             # Build context for evaluation

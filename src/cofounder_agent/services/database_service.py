@@ -80,8 +80,13 @@ class DatabaseService:
         """Initialize connection pool and all delegate modules."""
         try:
             # PostgreSQL requires connection pooling
-            min_size = int(os.getenv("DATABASE_POOL_MIN_SIZE", "20"))
-            max_size = int(os.getenv("DATABASE_POOL_MAX_SIZE", "50"))
+            is_dev = os.getenv("ENVIRONMENT", "production").lower() in (
+                "development",
+                "dev",
+                "local",
+            )
+            min_size = int(os.getenv("DATABASE_POOL_MIN_SIZE", "5" if is_dev else "20"))
+            max_size = int(os.getenv("DATABASE_POOL_MAX_SIZE", "20" if is_dev else "50"))
 
             self.pool = await asyncpg.create_pool(
                 self.database_url,
@@ -170,9 +175,7 @@ class DatabaseService:
         """Delegate bulk task fetch to tasks module (1 query for all IDs)."""
         return await self.tasks.get_tasks_by_ids(task_ids)
 
-    async def bulk_update_task_statuses(
-        self, task_ids: list, new_status: str
-    ) -> dict:
+    async def bulk_update_task_statuses(self, task_ids: list, new_status: str) -> dict:
         """Delegate bulk status update to tasks module (2 queries regardless of batch size)."""
         return await self.tasks.bulk_update_task_statuses(task_ids, new_status)
 
@@ -213,9 +216,7 @@ class DatabaseService:
         """Delegate to tasks module."""
         return await self.tasks.get_tasks_by_date_range(start_date, end_date, status, limit)
 
-    async def get_kpi_aggregates(
-        self, start_date=None, end_date=None
-    ) -> Dict:
+    async def get_kpi_aggregates(self, start_date=None, end_date=None) -> Dict:
         """Delegate to tasks module — single-query KPI aggregation (issue #696)."""
         return await self.tasks.get_kpi_aggregates(start_date, end_date)
 

@@ -7,11 +7,7 @@ Tests field validation and model behaviour for Ollama integration schemas.
 import pytest
 from pydantic import ValidationError
 
-from schemas.ollama_schemas import (
-    OllamaHealthResponse,
-    OllamaModelSelection,
-    OllamaWarmupResponse,
-)
+from schemas.ollama_schemas import OllamaHealthResponse, OllamaModelSelection, OllamaWarmupResponse
 
 
 @pytest.mark.unit

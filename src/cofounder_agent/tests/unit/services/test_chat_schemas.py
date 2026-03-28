@@ -7,11 +7,7 @@ Tests field validation and model behaviour for chat schemas.
 import pytest
 from pydantic import ValidationError
 
-from schemas.chat_schemas import (
-    ChatMessage,
-    ChatRequest,
-    ChatResponse,
-)
+from schemas.chat_schemas import ChatMessage, ChatRequest, ChatResponse
 
 
 @pytest.mark.unit

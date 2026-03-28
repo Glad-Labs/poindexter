@@ -3,7 +3,6 @@
 Consolidated schemas for authentication and user management.
 """
 
-
 from pydantic import BaseModel
 
 
@@ -11,11 +10,11 @@ class UserProfile(BaseModel):
     """User profile response model."""
 
     id: str
-    email: str
+    email: str = ""  # GitHub users may have private emails (None)
     username: str
     auth_provider: str  # "jwt", "oauth", "github"
-    is_active: bool
-    created_at: str
+    is_active: bool = True
+    created_at: str = ""
 
 
 class LogoutResponse(BaseModel):

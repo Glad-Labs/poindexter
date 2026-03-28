@@ -13,12 +13,15 @@ New phases only require:
 The registry is extensible and supports dynamic phase addition.
 """
 
-from services.logger_config import get_logger
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+from services.logger_config import get_logger
+
 logger = get_logger(__name__)
+
+
 class ContentType(str, Enum):
     """Output content types for mapping purposes"""
 
@@ -178,6 +181,13 @@ class PhaseRegistry:
 
     def _register_builtin_phases(self) -> None:
         """Register all built-in workflow phases"""
+        self._register_content_creation_phases()
+        self._register_quality_phases()
+        self._register_media_and_publishing_phases()
+        logger.info(f"Initialized PhaseRegistry with {len(self._phases)} built-in phases")
+
+    def _register_content_creation_phases(self) -> None:
+        """Register research and draft phases"""
 
         # Research Phase
         self.register_phase(
@@ -277,6 +287,9 @@ class PhaseRegistry:
             )
         )
 
+    def _register_quality_phases(self) -> None:
+        """Register assess and refine phases"""
+
         # Assess Phase
         self.register_phase(
             PhaseDefinition(
@@ -374,6 +387,9 @@ class PhaseRegistry:
                 tags=["content-generation", "refinement"],
             )
         )
+
+    def _register_media_and_publishing_phases(self) -> None:
+        """Register image and publish phases"""
 
         # Image Phase
         self.register_phase(
@@ -503,10 +519,14 @@ class PhaseRegistry:
             )
         )
 
-        logger.info(f"Initialized PhaseRegistry with {len(self._phases)} built-in phases")
-
     def _register_blog_phases(self) -> None:
         """Register blog post workflow phases"""
+        self._register_blog_content_phases()
+        self._register_blog_media_and_publishing_phases()
+        logger.info(f"Registered {4} blog phases - Total phases: {len(self._phases)}")
+
+    def _register_blog_content_phases(self) -> None:
+        """Register blog content generation and quality evaluation phases"""
 
         # Blog Content Generator Phase
         self.register_phase(
@@ -707,6 +727,9 @@ class PhaseRegistry:
             )
         )
 
+    def _register_blog_media_and_publishing_phases(self) -> None:
+        """Register blog image search and post creation phases"""
+
         # Blog Image Search Phase
         self.register_phase(
             PhaseDefinition(
@@ -871,5 +894,3 @@ class PhaseRegistry:
                 tags=["blog", "publishing"],
             )
         )
-
-        logger.info(f"Registered {4} blog phases - Total phases: {len(self._phases)}")

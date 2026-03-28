@@ -152,11 +152,11 @@ class SentryIntegration:
             sentry_sdk.set_tag("service", service_name)
             sentry_sdk.set_tag("version", release)
 
-            logger.info(f"[OK] Sentry initialized successfully")
+            logger.info("[OK] Sentry initialized successfully")
             logger.info(f"   Environment: {environment}")
             logger.info(f"   Release: {release}")
             logger.info(f"   Traces Sample Rate: {0.1 if environment == 'production' else 1.0}")
-            logger.info(f"   Dashboard: https://sentry.io")
+            logger.info("   Dashboard: https://sentry.io")
 
             cls._initialized = True
             cls._sentry_enabled = True

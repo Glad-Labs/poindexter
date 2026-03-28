@@ -5,9 +5,10 @@ API endpoints for accessing performance profile data collected by ProfilingMiddl
 Helps identify slow endpoints and performance bottlenecks.
 """
 
-from services.logger_config import get_logger
 from fastapi import APIRouter, Depends, HTTPException, Query
+
 from routes.auth_unified import get_current_user
+from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 # Will be set by main.py during app initialization

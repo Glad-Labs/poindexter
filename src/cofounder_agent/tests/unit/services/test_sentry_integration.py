@@ -6,8 +6,9 @@ Because Sentry is optional infrastructure, all tests run with
 _sentry_enabled = False (no real Sentry calls).
 """
 
+from unittest.mock import MagicMock
+
 import pytest
-from unittest.mock import MagicMock, patch
 
 from services.sentry_integration import SentryIntegration, setup_sentry
 

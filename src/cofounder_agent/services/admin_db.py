@@ -10,7 +10,6 @@ Handles administrative database operations including:
 """
 
 import json
-from services.logger_config import get_logger
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -24,11 +23,14 @@ from schemas.database_response_models import (
     TaskCostBreakdownResponse,
 )
 from schemas.model_converter import ModelConverter
+from services.logger_config import get_logger
 
 from .database_mixin import DatabaseServiceMixin
 from .decorators import log_query_performance
 
 logger = get_logger(__name__)
+
+
 class AdminDatabase(DatabaseServiceMixin):
     """Administrative database operations (logs, financial, settings, health)."""
 
@@ -416,7 +418,9 @@ class AdminDatabase(DatabaseServiceMixin):
             return default
 
         # Handle both Pydantic model and dict returns
-        value_str = setting.get("value") if isinstance(setting, dict) else getattr(setting, "value", None)
+        value_str = (
+            setting.get("value") if isinstance(setting, dict) else getattr(setting, "value", None)
+        )
         if not value_str:
             return default
         try:
@@ -451,6 +455,7 @@ class AdminDatabase(DatabaseServiceMixin):
     # Logging Operations (delegated from DatabaseService)
     # ================================================================
 
+    @log_query_performance(operation="add_log_entry", category="log_write")
     async def add_log_entry(
         self, agent_name: str, level: str, message: str, context: Optional[Dict] = None
     ) -> Dict[str, Any]:
@@ -464,7 +469,11 @@ class AdminDatabase(DatabaseServiceMixin):
             log_id = str(uuid4())
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
-                    sql, log_id, agent_name, level, message,
+                    sql,
+                    log_id,
+                    agent_name,
+                    level,
+                    message,
                     json.dumps(context) if context else None,
                 )
                 return dict(row) if row else {"id": log_id}
@@ -472,6 +481,7 @@ class AdminDatabase(DatabaseServiceMixin):
             logger.error("[add_log_entry] Failed to add log entry", exc_info=True)
             return {"id": str(uuid4()), "error": "Failed to save log entry"}
 
+    @log_query_performance(operation="get_logs", category="log_retrieval")
     async def get_logs(
         self, agent_name: Optional[str] = None, level: Optional[str] = None, limit: int = 100
     ) -> List[Dict[str, Any]]:
@@ -505,6 +515,7 @@ class AdminDatabase(DatabaseServiceMixin):
     # Financial Operations (delegated from DatabaseService)
     # ================================================================
 
+    @log_query_performance(operation="add_financial_entry", category="financial_write")
     async def add_financial_entry(self, entry_data: Dict[str, Any]) -> Dict[str, Any]:
         """Add a financial entry."""
         sql = """
@@ -529,6 +540,7 @@ class AdminDatabase(DatabaseServiceMixin):
             logger.error("[add_financial_entry] Failed to add financial entry", exc_info=True)
             return {}
 
+    @log_query_performance(operation="get_financial_summary", category="financial_retrieval")
     async def get_financial_summary(self, days: int = 30) -> Dict[str, Any]:
         """Get financial summary for the specified period."""
         sql = """
@@ -552,6 +564,7 @@ class AdminDatabase(DatabaseServiceMixin):
     # Agent Status Operations (delegated from DatabaseService)
     # ================================================================
 
+    @log_query_performance(operation="update_agent_status", category="agent_write")
     async def update_agent_status(
         self, agent_name: str, status: str, last_run=None, metadata: Optional[Dict] = None
     ) -> bool:
@@ -568,7 +581,9 @@ class AdminDatabase(DatabaseServiceMixin):
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(
-                    sql, agent_name, status,
+                    sql,
+                    agent_name,
+                    status,
                     last_run or datetime.now(timezone.utc),
                     json.dumps(metadata) if metadata else None,
                 )

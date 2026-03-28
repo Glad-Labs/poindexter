@@ -5,15 +5,16 @@ and workflow_history_schemas.py
 Tests field validation and model behaviour.
 """
 
-import pytest
 from datetime import datetime, timezone
+
+import pytest
 from pydantic import ValidationError
 
 from schemas.models_schemas import (
     ModelInfo,
     ModelsListResponse,
-    ProviderStatus,
     ProvidersStatusResponse,
+    ProviderStatus,
 )
 from schemas.unified_task_response import (
     CostBreakdown,
@@ -28,7 +29,6 @@ from schemas.workflow_history_schemas import (
     WorkflowHistoryResponse,
     WorkflowStatistics,
 )
-
 
 NOW = datetime.now(timezone.utc)
 
@@ -316,12 +316,16 @@ class TestUnifiedTaskResponse:
         )
         assert task.created_at == "2026-01-01T00:00:00Z"
 
-    def test_missing_status_raises(self):
+    def test_missing_status_raises_validation_error(self):
+        """Status is required — omitting it should raise ValidationError."""
+        import pytest
+        from pydantic import ValidationError
+
         with pytest.raises(ValidationError):
             UnifiedTaskResponse(  # type: ignore[call-arg]
                 created_at=NOW,
                 updated_at=NOW,
-                # missing status
+                # status omitted — should raise
             )
 
 

@@ -173,7 +173,7 @@
       "number": 14,
       "priority": "P4-Low",
       "title": "[P4] Evaluate public-site tooling (Next.js already modern)",
-      "description": "Oversight Hub uses CRA with CRACO (reverted from Vite for stability). Public Site uses Next.js (already modern). No action needed unless Next.js upgrade plan changes.",
+      "description": "Public Site uses Next.js 15 (already modern). No action needed unless Next.js upgrade plan changes.",
       "files": ["web/public-site/"],
       "effort_hours": "6-8",
       "labels": ["tech-debt:P4-low", "dependencies", "frontend"],

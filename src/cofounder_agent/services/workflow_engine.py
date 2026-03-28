@@ -19,15 +19,17 @@ Architecture:
 
 import asyncio
 import json
-from services.logger_config import get_logger
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
+from services.logger_config import get_logger
 from services.websocket_event_broadcaster import WebSocketEventBroadcaster
 
 logger = get_logger(__name__)
+
+
 class PhaseStatus(str, Enum):
     """Execution status of a phase"""
 
@@ -263,7 +265,9 @@ class WorkflowEngine:
         self,
         phases: List[WorkflowPhase],
         context: WorkflowContext,
-        progress_callback: Optional[Callable[[WorkflowContext, WorkflowPhase, PhaseResult], Any]] = None,
+        progress_callback: Optional[
+            Callable[[WorkflowContext, WorkflowPhase, PhaseResult], Any]
+        ] = None,
     ) -> WorkflowContext:
         """
         Execute a workflow with multiple phases.
@@ -312,7 +316,8 @@ class WorkflowEngine:
                         context.workflow_id,
                         phase.name,
                         callback_error,
-                        exc_info=True)
+                        exc_info=True,
+                    )
 
             # Check if we should continue
             if phase_result.status == PhaseStatus.FAILED:

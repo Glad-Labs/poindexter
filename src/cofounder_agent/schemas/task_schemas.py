@@ -104,7 +104,8 @@ class UnifiedTaskRequest(BaseModel):
     )
     # Legacy alias — callers using model_selections are mapped to models_by_phase (#952)
     model_selections: Optional[Dict[str, str]] = Field(
-        None, description="DEPRECATED: Use models_by_phase. Legacy per-phase model selections.",
+        None,
+        description="DEPRECATED: Use models_by_phase. Legacy per-phase model selections.",
         exclude=True,
     )
     quality_preference: Optional[Literal["fast", "balanced", "quality"]] = Field(
@@ -121,6 +122,7 @@ class UnifiedTaskRequest(BaseModel):
             if legacy and not canonical:
                 values["models_by_phase"] = legacy
         return values
+
     enforce_constraints: Optional[bool] = Field(
         True,
         description="Whether to enforce word count and style validation gates. Set False to skip validation failures.",

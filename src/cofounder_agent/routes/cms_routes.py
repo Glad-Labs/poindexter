@@ -5,14 +5,14 @@ ASYNC REST endpoints for blog content, categories, and tags.
 Using pure asyncpg for non-blocking database access.
 """
 
-from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 
-from routes.auth_unified import UserProfile, get_current_user, get_current_user_optional
+from middleware.api_token_auth import verify_api_token, verify_api_token_optional
+from services.logger_config import get_logger
 from utils.error_handler import handle_route_error
 from utils.route_utils import get_database_dependency
 
@@ -139,7 +139,6 @@ async def get_db_pool():
     return db_service.pool
 
 
-
 # ============================================================================
 # POSTS ENDPOINTS
 # ============================================================================
@@ -151,7 +150,7 @@ async def list_posts(
     skip: int = Query(0, ge=0, le=10000, description="Alias for offset (deprecated — use offset)"),
     limit: int = Query(20, ge=1, le=100),
     published_only: bool = Query(True),
-    current_user: Optional[UserProfile] = Depends(get_current_user_optional),
+    token: Optional[str] = Depends(verify_api_token_optional),
 ):
     """
     List all blog posts with pagination (ASYNC).
@@ -163,7 +162,7 @@ async def list_posts(
     # Resolve offset: explicit 'offset' param wins; fall back to legacy 'skip'
     offset = offset if offset != 0 else skip
     # Unauthenticated callers cannot request draft/unpublished posts
-    if current_user is None:
+    if token is None:
         published_only = True
     try:
         pool = await get_db_pool()
@@ -285,7 +284,9 @@ async def get_post_by_slug(
                 tags = [dict(row) for row in tag_rows]
             except Exception as tag_error:
                 # If tags table doesn't exist or query fails, just return empty tags
-                logger.warning(f"Could not fetch tags for post {post_id}: {str(tag_error)}", exc_info=True)
+                logger.warning(
+                    f"Could not fetch tags for post {post_id}: {str(tag_error)}", exc_info=True
+                )
                 tags = []
 
             # Get category
@@ -319,7 +320,7 @@ async def get_post_by_slug(
 async def update_post(
     post_id: str,
     updates: dict,
-    current_user: UserProfile = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ):
     """
     Update a blog post by ID.
@@ -331,9 +332,19 @@ async def update_post(
     provided, it defaults to the current UTC time.
     """
     try:
-        allowed = {"title", "slug", "content", "excerpt", "featured_image_url",
-                   "status", "tags", "seo_title", "seo_description", "seo_keywords",
-                   "published_at"}
+        allowed = {
+            "title",
+            "slug",
+            "content",
+            "excerpt",
+            "featured_image_url",
+            "status",
+            "tags",
+            "seo_title",
+            "seo_description",
+            "seo_keywords",
+            "published_at",
+        }
         filtered = {k: v for k, v in updates.items() if k in allowed}
         if not filtered:
             raise HTTPException(status_code=400, detail="No valid fields to update")
@@ -350,10 +361,14 @@ async def update_post(
                     value = value[:-1] + "+00:00"
                 try:
                     parsed = datetime.fromisoformat(value)
-                except ValueError:
-                    raise HTTPException(status_code=400, detail="published_at must be a valid ISO 8601 datetime")
+                except ValueError as exc:
+                    raise HTTPException(
+                        status_code=400, detail="published_at must be a valid ISO 8601 datetime"
+                    ) from exc
             else:
-                raise HTTPException(status_code=400, detail="published_at must be a datetime or ISO 8601 string")
+                raise HTTPException(
+                    status_code=400, detail="published_at must be a datetime or ISO 8601 string"
+                )
 
             if parsed.tzinfo is None:
                 parsed = parsed.replace(tzinfo=timezone.utc)
@@ -363,9 +378,14 @@ async def update_post(
         # Handle scheduling: if status is 'scheduled', published_at must be a future date
         if filtered.get("status") == "scheduled":
             if parsed_published_at is None:
-                raise HTTPException(status_code=400, detail="published_at is required when scheduling a post")
+                raise HTTPException(
+                    status_code=400, detail="published_at is required when scheduling a post"
+                )
             if parsed_published_at <= datetime.now(timezone.utc):
-                raise HTTPException(status_code=400, detail="published_at must be a future datetime when status is 'scheduled'")
+                raise HTTPException(
+                    status_code=400,
+                    detail="published_at must be a future datetime when status is 'scheduled'",
+                )
         # When publishing immediately, set published_at to now if not provided
         elif filtered.get("status") == "published" and "published_at" not in filtered:
             filtered["published_at"] = datetime.now(timezone.utc)
@@ -397,15 +417,13 @@ async def update_post(
 @router.delete("/api/posts/{post_id}", status_code=204)
 async def delete_post(
     post_id: str,
-    current_user: UserProfile = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ):
     """Delete a blog post by ID."""
     try:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
-            result = await conn.execute(
-                "DELETE FROM posts WHERE id = $1", post_id
-            )
+            result = await conn.execute("DELETE FROM posts WHERE id = $1", post_id)
             if result == "DELETE 0":
                 raise HTTPException(status_code=404, detail="Post not found")
     except HTTPException:
@@ -431,13 +449,11 @@ async def list_categories(
     try:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
+            rows = await conn.fetch("""
                 SELECT id, name, slug, description, created_at, updated_at
                 FROM categories
                 ORDER BY name
-            """
-            )
+            """)
 
             all_categories = []
             for row in rows:
@@ -470,13 +486,11 @@ async def list_tags(
     try:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
+            rows = await conn.fetch("""
                 SELECT id, name, slug, description, created_at, updated_at
                 FROM tags
                 ORDER BY name
-            """
-            )
+            """)
 
             all_tags = []
             for row in rows:
@@ -498,7 +512,7 @@ async def list_tags(
 
 
 @router.get("/api/cms/status")
-async def cms_status(current_user: UserProfile = Depends(get_current_user)):
+async def cms_status(token: str = Depends(verify_api_token)):
     """
     Check CMS database status and table existence (ASYNC).
     Requires: Valid JWT authentication (admin health endpoint — not public)
@@ -556,27 +570,23 @@ async def cms_status(current_user: UserProfile = Depends(get_current_user)):
 
 
 @router.post("/api/cms/populate-missing-excerpts")
-async def populate_missing_excerpts(current_user: UserProfile = Depends(get_current_user)):
+async def populate_missing_excerpts(token: str = Depends(verify_api_token)):
     """
     Populate missing excerpts in the database for existing posts.
     Requires: Valid JWT authentication (admin)
     Returns: {updated_count: int, success: bool}
     """
     try:
-        # Check user has admin role
-        if not getattr(current_user, "is_admin", False):
-            raise HTTPException(status_code=403, detail="Admin access required")
+        # Solo operator — admin access granted by valid token
 
         pool = await get_db_pool()
         async with pool.acquire() as conn:
             # Find posts with missing or empty excerpts
-            posts = await conn.fetch(
-                """
+            posts = await conn.fetch("""
                 SELECT id, content, excerpt
                 FROM posts
                 WHERE excerpt IS NULL OR excerpt = ''
-            """
-            )
+            """)
 
             updated_count = 0
             for post in posts:

@@ -7,6 +7,7 @@ learn from interactions, build domain expertise, and maintain context across ses
 Uses PostgreSQL for persistent storage (no SQLite).
 """
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -125,9 +126,8 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
         self.db_pool = db_pool
         self.logger = logging.getLogger("ai_memory_system")
 
-        # Embedding model for semantic similarity
+        # Embedding model for semantic similarity (loaded async in initialize())
         self.embedding_model = None
-        self._init_embedding_model()
 
         # Memory caches
         self.recent_memories: List[Memory] = []
@@ -150,6 +150,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
         Async initialization - loads memories from PostgreSQL.
         Must be called after instantiation before using the system.
         """
+        await asyncio.to_thread(self._init_embedding_model)
         await self._verify_tables_exist()
         await self._load_persistent_memory()
 
@@ -162,14 +163,12 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
         try:
             async with self.db_pool.acquire() as conn:
                 # Check if memories table exists
-                result = await conn.fetchval(
-                    """
+                result = await conn.fetchval("""
                     SELECT EXISTS(
                         SELECT 1 FROM information_schema.tables 
                         WHERE table_name = 'memories'
                     );
-                """
-                )
+                """)
 
                 if result:
                     self.logger.info("Memory system tables verified in PostgreSQL")
@@ -217,21 +216,19 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
                 self.recent_memories = [self._row_to_memory(row) for row in rows]
 
                 # Load user preferences
-                pref_rows = await conn.fetch(
-                    """
+                pref_rows = await conn.fetch("""
                     SELECT key, value, confidence FROM user_preferences
-                """
-                )
+                    LIMIT 1000
+                """)
                 self.user_preferences = {row["key"]: json.loads(row["value"]) for row in pref_rows}
 
                 # Load knowledge clusters
-                cluster_rows = await conn.fetch(
-                    """
-                    SELECT id, name, description, memories, confidence, 
+                cluster_rows = await conn.fetch("""
+                    SELECT id, name, description, memories, confidence,
                            last_updated, importance_score, topics
                     FROM knowledge_clusters
-                """
-                )
+                    LIMIT 1000
+                """)
                 self.knowledge_clusters = {
                     row["id"]: self._row_to_cluster(row) for row in cluster_rows
                 }
@@ -338,7 +335,8 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
         embedding = None
         if self.embedding_model:
             try:
-                embedding = self.embedding_model.encode([content])[0].tolist()
+                raw = await asyncio.to_thread(self.embedding_model.encode, [content])
+                embedding = raw[0].tolist()
             except Exception as e:  # pylint: disable=broad-except
                 self.logger.error("Error generating embedding: %s", e, exc_info=True)
 
@@ -434,7 +432,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
             # Generate query embedding
             query_embedding = None
             if self.embedding_model:
-                query_embedding = self.embedding_model.encode([query])[0]
+                query_embedding = (await asyncio.to_thread(self.embedding_model.encode, [query]))[0]
 
             # Search through memories
             search_memories = self.recent_memories + self.important_memories
@@ -490,9 +488,9 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
             relevant_memories.sort(key=lambda x: x[1], reverse=True)
             result = [memory for memory, _ in relevant_memories[:limit]]
 
-            # Update access counts in database
-            for memory in result:
-                await self._update_memory_access(memory)
+            # Update access counts in database (batched)
+            if result:
+                await self._batch_update_memory_access(result)
 
             return result
 
@@ -516,6 +514,21 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
                 )
         except Exception as e:  # pylint: disable=broad-except
             self.logger.error("Error updating memory access: %s", e, exc_info=True)
+
+    async def _batch_update_memory_access(self, memories: List[Memory]) -> None:
+        """Batch-update memory access information in PostgreSQL"""
+        try:
+            async with self.db_pool.acquire() as conn:
+                await conn.executemany(
+                    """
+                    UPDATE memories
+                    SET last_accessed = NOW(), access_count = access_count + 1
+                    WHERE id = $1::uuid
+                """,
+                    [(m.id,) for m in memories],
+                )
+        except Exception as e:  # pylint: disable=broad-except
+            self.logger.error("Error batch-updating memory access: %s", e, exc_info=True)
 
     async def learn_user_preference(
         self,
@@ -836,11 +849,9 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
                 # Memory statistics
                 total_memories = await conn.fetchval("SELECT COUNT(*) FROM memories")
 
-                memory_by_type_rows = await conn.fetch(
-                    """
+                memory_by_type_rows = await conn.fetch("""
                     SELECT memory_type, COUNT(*) as count FROM memories GROUP BY memory_type
-                """
-                )
+                """)
                 memory_by_type = {row["memory_type"]: row["count"] for row in memory_by_type_rows}
 
                 total_preferences = await conn.fetchval("SELECT COUNT(*) FROM user_preferences")
@@ -926,14 +937,14 @@ async def main(db_pool: asyncpg.Pool):
 
     # Get contextual knowledge
     context = await memory_system.get_contextual_knowledge("business strategy and AI automation")
-    logger.info(f"\n📚 Contextual knowledge gathered:")
+    logger.info("\n📚 Contextual knowledge gathered:")
     logger.info(f"  • Relevant memories: {len(context['relevant_memories'])}")
     logger.info(f"  • User preferences: {len(context['user_preferences'])}")
     logger.info(f"  • Knowledge clusters: {len(context['knowledge_clusters'])}")
 
     # Get system summary
     summary = await memory_system.get_memory_summary()
-    logger.info(f"\n📊 Memory System Summary:")
+    logger.info("\n📊 Memory System Summary:")
     logger.info(f"  • Total memories: {summary['total_memories']}")
     logger.info(f"  • Memory types: {summary['memory_by_type']}")
     logger.info(f"  • User preferences: {summary['total_preferences']}")

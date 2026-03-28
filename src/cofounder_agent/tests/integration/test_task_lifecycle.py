@@ -12,15 +12,15 @@ Covers:
 - Flow 5: Task ownership — user A cannot access user B's task
 """
 
-import pytest
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock
+
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from routes.auth_unified import get_current_user, get_current_user_optional
 from utils.route_utils import get_database_dependency
-
 
 # ---------------------------------------------------------------------------
 # Test constants
@@ -254,9 +254,11 @@ class TestTaskAuthEnforcement:
         client = TestClient(app, raise_server_exceptions=False)
         # No Authorization header → expect 401 or 403
         response = client.get(f"{BASE}/{TASK_ID}")
-        assert response.status_code in (401, 403, 422), (
-            f"Expected auth failure (401/403/422), got {response.status_code}"
-        )
+        assert response.status_code in (
+            401,
+            403,
+            422,
+        ), f"Expected auth failure (401/403/422), got {response.status_code}"
 
     def test_authenticated_request_succeeds(self):
         db = _make_mock_db()
@@ -286,9 +288,10 @@ class TestTaskOwnership:
 
         response = client.get(f"{BASE}/{TASK_ID}")
         # Should get 403 Forbidden (task belongs to User A, not User B)
-        assert response.status_code in (403, 404), (
-            f"Expected 403/404 for cross-user access, got {response.status_code}"
-        )
+        assert response.status_code in (
+            403,
+            404,
+        ), f"Expected 403/404 for cross-user access, got {response.status_code}"
 
     def test_owner_can_access_own_task(self):
         db = _make_mock_db(user_id=TEST_USER_A["id"])

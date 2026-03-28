@@ -53,7 +53,6 @@ jobs:
           check_secret "${{ secrets.VERCEL_ORG_ID }}"                       "VERCEL_ORG_ID"
           check_secret "${{ secrets.PUBLIC_SITE_STAGING_PROJECT_ID }}"      "PUBLIC_SITE_STAGING_PROJECT_ID"
           check_secret "${{ secrets.PUBLIC_SITE_STAGING_FASTAPI_URL }}"     "PUBLIC_SITE_STAGING_FASTAPI_URL"
-          check_secret "${{ secrets.OVERSIGHT_STAGING_PROJECT_ID }}"        "OVERSIGHT_STAGING_PROJECT_ID"
           check_secret "${{ secrets.COFOUNDER_STAGING_URL }}"               "COFOUNDER_STAGING_URL"
 
           if [ -n "$MISSING" ]; then
@@ -86,23 +85,12 @@ jobs:
       # TEST PHASE (must pass before deploy)
       # ============================================
 
-      - name: 🧪 Run frontend tests (oversight-hub)
-        run: npm run test --workspace=web/oversight-hub --if-present
-        continue-on-error: true  # 41 pre-existing failures in workflowAPI.test.js, PhaseNode, TaskControlPanel
-
       - name: 🧪 Run frontend tests (public-site)
         run: npm run test --workspace=web/public-site --if-present
 
       - name: 🧪 Run backend unit tests
         run: |
-          cd src/cofounder_agent && poetry run pytest tests/unit/ -v --tb=short \
-            --ignore=tests/unit/services/test_task_executor.py \
-            --ignore=tests/unit/services/test_template_execution_service.py \
-            --ignore=tests/unit/services/test_task_schemas.py
-        # Ignored tests have pre-existing failures from code refactors:
-        # - test_task_executor: mock assertion IndexErrors (5 tests)
-        # - test_template_execution_service: mock pattern mismatch (4 tests)
-        # - test_task_schemas: result field type change (1 test)
+          cd src/cofounder_agent && poetry run pytest tests/unit/ -v --tb=short
 
       - name: 🧪 Run backend integration tests
         run: cd src/cofounder_agent && poetry run pytest tests/integration/ tests/e2e/ -v --tb=short
@@ -159,26 +147,6 @@ jobs:
           NEXT_PUBLIC_SENTRY_DSN: ${{ secrets.PUBLIC_SITE_STAGING_SENTRY_DSN }}
 
       # ============================================
-      # DEPLOYMENT PHASE - OVERSIGHT HUB
-      # ============================================
-
-      - name: 🚀 Deploy Oversight Hub to Vercel (Staging)
-        run: |
-          echo "📤 Deploying Oversight Hub to staging environment..."
-          npx vercel --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_ORG_ID }} --archive=tgz
-          echo "✅ Oversight Hub staging deployment completed"
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_PROJECT_ID: ${{ secrets.OVERSIGHT_STAGING_PROJECT_ID }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          # Oversight Hub uses Vite (VITE_* prefix).
-          # Keep REACT_APP_* aliases during transition for backward compatibility.
-          VITE_API_URL: ${{ secrets.OVERSIGHT_STAGING_API_URL }}
-          VITE_GH_OAUTH_CLIENT_ID: ${{ secrets.OVERSIGHT_STAGING_GH_OAUTH_CLIENT_ID }}
-          REACT_APP_API_URL: ${{ secrets.OVERSIGHT_STAGING_API_URL }}
-          REACT_APP_GH_OAUTH_CLIENT_ID: ${{ secrets.OVERSIGHT_STAGING_GH_OAUTH_CLIENT_ID }}
-
-      # ============================================
       # VERIFICATION PHASE
       # ============================================
 
@@ -190,7 +158,6 @@ jobs:
 
           FAILURES=0
           COFOUNDER_URL="${{ secrets.COFOUNDER_STAGING_URL }}"
-          OVERSIGHT_URL="${{ secrets.OVERSIGHT_STAGING_URL }}"
           PUBLIC_SITE_URL="${{ secrets.PUBLIC_SITE_STAGING_SITE_URL }}"
 
           echo "Testing Co-Founder Agent..."
@@ -209,14 +176,6 @@ jobs:
             FAILURES=$((FAILURES + 1))
           fi
 
-          echo "Testing Oversight Hub..."
-          if curl -sf --retry 3 --retry-delay 5 "${OVERSIGHT_URL}" > /dev/null; then
-            echo "✅ Oversight Hub is reachable"
-          else
-            echo "❌ Oversight Hub check FAILED"
-            FAILURES=$((FAILURES + 1))
-          fi
-
           if [ "$FAILURES" -gt 0 ]; then
             echo "❌ $FAILURES service(s) failed verification"
             exit 1
@@ -231,7 +190,6 @@ jobs:
             echo "🌍 Staging URLs:"
             echo "  - Agent API: ${{ secrets.COFOUNDER_STAGING_URL }}/docs"
             echo "  - Public Site: ${{ secrets.PUBLIC_SITE_STAGING_SITE_URL }}"
-            echo "  - Oversight Hub: ${{ secrets.OVERSIGHT_STAGING_URL }}"
           else
             echo "❌ Staging deployment failed — check GitHub Actions logs"
           fi

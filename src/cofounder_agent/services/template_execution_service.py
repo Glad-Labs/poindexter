@@ -9,13 +9,15 @@ Provides:
 - Progress tracking and WebSocket integration (Phase 2)
 """
 
-from services.logger_config import get_logger
 import uuid
 from typing import Any, Dict, List, Optional
 
 from schemas.custom_workflow_schemas import CustomWorkflow, WorkflowPhase
+from services.logger_config import get_logger
 
 logger = get_logger(__name__)
+
+
 class TemplateExecutionService:
     """Service for executing workflow templates"""
 
@@ -84,6 +86,7 @@ class TemplateExecutionService:
         self.custom_workflows_service = custom_workflows_service
         if workflow_executor is None:
             from services.workflow_executor import WorkflowExecutor
+
             workflow_executor = WorkflowExecutor()
         self.workflow_executor = workflow_executor
         logger.info("TemplateExecutionService initialized")

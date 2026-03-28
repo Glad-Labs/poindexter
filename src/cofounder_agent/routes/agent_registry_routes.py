@@ -102,7 +102,7 @@ async def get_agent_registry_endpoint(
         }
     except Exception as e:
         logger.error(f"Error retrieving agent registry: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to retrieve agent registry")
+        raise HTTPException(status_code=500, detail="Failed to retrieve agent registry") from e
 
 
 @router.get("/list", response_model=List[str], name="List Agent Names")
@@ -137,7 +137,7 @@ async def list_agents(
         return agents
     except Exception as e:
         logger.error(f"Error listing agents: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to list agents")
+        raise HTTPException(status_code=500, detail="Failed to list agents") from e
 
 
 @router.get("/search", response_model=List[Dict[str, Any]], name="Search Agents")
@@ -165,7 +165,7 @@ async def search_agents(
         return all_agents
     except Exception as e:
         logger.error(f"Error searching agents: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to search agents")
+        raise HTTPException(status_code=500, detail="Failed to search agents") from e
 
 
 @router.get("/{agent_name}", response_model=Dict[str, Any], name="Get Agent Metadata")
@@ -217,7 +217,7 @@ async def get_agent_metadata(
         raise
     except Exception as e:
         logger.error(f"Error retrieving agent '{agent_name}': {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to retrieve agent")
+        raise HTTPException(status_code=500, detail="Failed to retrieve agent") from e
 
 
 @router.get("/{agent_name}/phases", response_model=List[str], name="Get Agent Phases")
@@ -256,7 +256,7 @@ async def get_agent_phases(
         raise
     except Exception as e:
         logger.error(f"Error retrieving phases for agent '{agent_name}': {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to retrieve agent phases")
+        raise HTTPException(status_code=500, detail="Failed to retrieve agent phases") from e
 
 
 @router.get("/{agent_name}/capabilities", response_model=List[str], name="Get Agent Capabilities")
@@ -295,9 +295,7 @@ async def get_agent_capabilities(
         raise
     except Exception as e:
         logger.error(f"Error retrieving capabilities for agent '{agent_name}': {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail="Failed to retrieve agent capabilities"
-        )
+        raise HTTPException(status_code=500, detail="Failed to retrieve agent capabilities") from e
 
 
 @router.get("/by-phase/{phase}", name="Get Agents by Phase")
@@ -347,9 +345,7 @@ async def get_agents_by_phase(
         return agents
     except Exception as e:
         logger.error(f"Error retrieving agents for phase '{phase}': {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail="Failed to retrieve agents for phase"
-        )
+        raise HTTPException(status_code=500, detail="Failed to retrieve agents for phase") from e
 
 
 @router.get("/by-capability/{capability}", name="Get Agents by Capability")
@@ -398,9 +394,7 @@ async def get_agents_by_capability(
         return agents
     except Exception as e:
         logger.error(f"Error retrieving agents for capability '{capability}': {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail="Failed to retrieve agents for capability"
-        )
+        raise HTTPException(status_code=500, detail="Failed to retrieve agents for capability") from e
 
 
 @router.get(
@@ -450,8 +444,4 @@ async def get_agents_by_category(
         return agents
     except Exception as e:
         logger.error(f"Error retrieving agents in category '{category}': {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail="Failed to retrieve agents for category"
-        )
-
-
+        raise HTTPException(status_code=500, detail="Failed to retrieve agents for category") from e

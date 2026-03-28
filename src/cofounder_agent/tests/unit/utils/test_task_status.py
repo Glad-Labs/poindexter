@@ -8,10 +8,8 @@ and all helper functions.
 
 import pytest
 
+from utils.constraint_utils import ConstraintCompliance, apply_strict_mode, check_tolerance
 from utils.task_status import (
-    ACTIVE_STATUSES,
-    TERMINAL_STATUSES,
-    VALID_TRANSITIONS,
     StatusTransitionValidator,
     TaskStatus,
     get_allowed_transitions,
@@ -25,12 +23,6 @@ from utils.task_status import (
     transition_with_validation,
     validate_status,
 )
-from utils.constraint_utils import (
-    apply_strict_mode,
-    check_tolerance,
-    ConstraintCompliance,
-)
-
 
 # ---------------------------------------------------------------------------
 # TaskStatus enum
@@ -57,8 +49,15 @@ class TestTaskStatusEnum:
 
     def test_all_expected_statuses_exist(self):
         expected = {
-            "pending", "in_progress", "awaiting_approval", "approved",
-            "published", "failed", "on_hold", "rejected", "cancelled",
+            "pending",
+            "in_progress",
+            "awaiting_approval",
+            "approved",
+            "published",
+            "failed",
+            "on_hold",
+            "rejected",
+            "cancelled",
         }
         assert {s.value for s in TaskStatus} == expected
 
@@ -337,7 +336,6 @@ class TestCheckTolerance:
 # ---------------------------------------------------------------------------
 
 
-
 class TestApplyStrictMode:
     """Tests for apply_strict_mode."""
 
@@ -523,8 +521,6 @@ class TestStatusTransitionValidator:
         validator = StatusTransitionValidator()
         validator.validate_transition("pending", "in_progress", task_id="t1")
         validator.validate_transition("in_progress", "awaiting_approval", task_id="t1")
-        validator.validate_transition(
-            "awaiting_approval", "approved", task_id="t1"
-        )
+        validator.validate_transition("awaiting_approval", "approved", task_id="t1")
         history = validator.get_transition_history()
         assert len(history) == 3

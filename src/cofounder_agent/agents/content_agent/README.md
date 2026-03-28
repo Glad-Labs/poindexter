@@ -1,7 +1,7 @@
 # Content Agent System
 
 **Status:** Active
-**Version:** 3.0.82
+**Version:** 0.1.0
 **Architecture:** Self-Critiquing Multi-Agent Pipeline
 
 Content is published directly to PostgreSQL via the `content_db` module.
@@ -426,7 +426,7 @@ python orchestrator.py
 
 ### **Integration Points**
 
-- **Oversight Hub**: Real-time monitoring and control interface
+- **OpenClaw/Grafana**: Operations monitoring and control
 - **PostgreSQL**: Automatic content publishing and management
 - **Firebase**: Operational logging and metrics storage
 - **Google Cloud**: Optional cloud deployment and storage

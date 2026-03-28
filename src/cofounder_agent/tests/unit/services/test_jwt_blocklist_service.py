@@ -13,13 +13,12 @@ Covers:
   - Module-level jwt_blocklist singleton exists
 """
 
-from datetime import datetime, timezone, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from services.jwt_blocklist_service import JWTBlocklistService, jwt_blocklist
-
 
 # ---------------------------------------------------------------------------
 # Helpers

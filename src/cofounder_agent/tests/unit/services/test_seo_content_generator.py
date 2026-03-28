@@ -7,10 +7,7 @@ SEOOptimizedContentGenerator, and the factory function.
 All tests are pure / synchronous — no LLM calls.
 """
 
-from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from services.seo_content_generator import (
     ContentMetadata,
@@ -19,7 +16,6 @@ from services.seo_content_generator import (
     SEOOptimizedContentGenerator,
     get_seo_content_generator,
 )
-
 
 # ---------------------------------------------------------------------------
 # ContentMetadata
@@ -257,7 +253,9 @@ class TestGenerateCategoryAndTags:
         self.gen = ContentMetadataGenerator()
 
     def test_ai_content_categorized_correctly(self):
-        content = "This article covers machine learning and neural networks and automation algorithms."
+        content = (
+            "This article covers machine learning and neural networks and automation algorithms."
+        )
         result = self.gen.generate_category_and_tags(content, "AI")
         assert result["category"] == "AI & Technology"
 
@@ -294,7 +292,9 @@ class TestGenerateJsonLdSchema:
         assert schema["@context"] == "https://schema.org"
 
     def test_headline_field(self):
-        schema = self.gen.generate_json_ld_schema({"title": "My Post", "excerpt": "", "keywords": []})
+        schema = self.gen.generate_json_ld_schema(
+            {"title": "My Post", "excerpt": "", "keywords": []}
+        )
         assert schema["headline"] == "My Post"
 
     def test_author_is_glad_labs(self):

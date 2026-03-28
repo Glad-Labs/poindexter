@@ -4,17 +4,12 @@ Publishing Phases
 Handle post creation, publication, and metadata updates.
 """
 
-from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Any, Dict, Tuple
 
-from .base_phase import (
-    BasePhase,
-    PhaseConfig,
-    PhaseInputSpec,
-    PhaseInputType,
-    PhaseOutputSpec,
-)
+from services.logger_config import get_logger
+
+from .base_phase import BasePhase, PhaseConfig, PhaseInputSpec, PhaseInputType, PhaseOutputSpec
 
 
 async def _resolve_database_service(config: Dict[str, Any]) -> Tuple[Any, bool]:
@@ -61,6 +56,8 @@ def _extract_field(payload: Any, field: str, default: Any = None) -> Any:
 
 
 logger = get_logger(__name__)
+
+
 class CreatePostPhase(BasePhase):
     """
     Create a post record in the database (draft status).

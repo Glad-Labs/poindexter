@@ -1,14 +1,16 @@
-from services.logger_config import get_logger
 from typing import Any, Dict
 
 import httpx
 
+from services.logger_config import get_logger
 from services.research_quality_service import ResearchQualityService
 
 from ..config import config
 from ..utils.tools import CrewAIToolsFactory
 
 logger = get_logger(__name__)
+
+
 class ResearchAgent:
     """
     Performs initial research on a given topic to provide context

@@ -67,8 +67,8 @@ class MarketService:
             Dictionary with trend analysis and insights
         """
         try:
-            from agents.market_insight_agent.market_insight_agent import MarketInsightAgent
             from agents.content_agent.services.llm_client import LLMClient
+            from agents.market_insight_agent.market_insight_agent import MarketInsightAgent
 
             llm_client = LLMClient()
             market_agent = MarketInsightAgent(llm_client=llm_client)

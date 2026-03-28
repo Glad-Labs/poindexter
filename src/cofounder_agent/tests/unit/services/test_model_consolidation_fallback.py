@@ -12,18 +12,16 @@ Tests the end-to-end fallback behaviour:
 No live LLM calls are made.  All adapters are replaced with AsyncMock stubs.
 """
 
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
-from datetime import datetime, timezone
+from unittest.mock import AsyncMock, patch
 
+import pytest
+
+from services.error_handler import ServiceError
 from services.model_consolidation_service import (
     ModelConsolidationService,
     ModelResponse,
     ProviderType,
-    ProviderStatus,
 )
-from services.error_handler import ServiceError
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -101,7 +99,12 @@ class TestFallbackChain:
         service.adapters[ProviderType.OLLAMA] = _available_adapter(ollama_response)
 
         # All other adapters should not be called
-        for p in [ProviderType.HUGGINGFACE, ProviderType.GOOGLE, ProviderType.ANTHROPIC, ProviderType.OPENAI]:
+        for p in [
+            ProviderType.HUGGINGFACE,
+            ProviderType.GOOGLE,
+            ProviderType.ANTHROPIC,
+            ProviderType.OPENAI,
+        ]:
             service.adapters[p] = _unavailable_adapter()
 
         result = await service.generate("test prompt")
@@ -145,9 +148,7 @@ class TestFallbackChain:
     async def test_all_providers_fail_raises_service_error(self, service):
         """When every provider either fails or is unavailable, ServiceError is raised."""
         for p in ProviderType:
-            service.adapters[p] = _failing_adapter(
-                ConnectionError(f"{p.value} connection refused")
-            )
+            service.adapters[p] = _failing_adapter(ConnectionError(f"{p.value} connection refused"))
 
         with pytest.raises(ServiceError, match="All model providers failed"):
             await service.generate("test prompt")
@@ -170,9 +171,7 @@ class TestFallbackChain:
         for p in [ProviderType.HUGGINGFACE, ProviderType.GOOGLE, ProviderType.OPENAI]:
             service.adapters[p] = _unavailable_adapter()
 
-        result = await service.generate(
-            "test prompt", preferred_provider=ProviderType.ANTHROPIC
-        )
+        result = await service.generate("test prompt", preferred_provider=ProviderType.ANTHROPIC)
 
         assert result.provider == ProviderType.ANTHROPIC
 

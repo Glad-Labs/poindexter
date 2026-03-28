@@ -5,15 +5,12 @@ Tests RedisCache when Redis is disabled (no real connection required).
 Also tests the @cached decorator and CacheConfig constants.
 """
 
-import asyncio
 import json
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from services.redis_cache import CacheConfig, RedisCache, cached, setup_redis_cache
-
 
 # ---------------------------------------------------------------------------
 # Helpers

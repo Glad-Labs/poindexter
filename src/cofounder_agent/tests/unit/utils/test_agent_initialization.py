@@ -10,8 +10,7 @@ Covers:
 - Final agent count logged at end
 """
 
-import pytest
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 from utils.agent_initialization import register_all_agents
 
@@ -51,33 +50,44 @@ class TestRegisterAllAgentsContentAgentGroup:
         with patch.dict(
             "sys.modules",
             {
-                "agents.content_agent.agents.creative_agent": MagicMock(CreativeAgent=mock_creative),
-                "agents.content_agent.agents.postgres_image_agent": MagicMock(PostgreSQLImageAgent=mock_image),
+                "agents.content_agent.agents.creative_agent": MagicMock(
+                    CreativeAgent=mock_creative
+                ),
+                "agents.content_agent.agents.postgres_image_agent": MagicMock(
+                    PostgreSQLImageAgent=mock_image
+                ),
                 "agents.content_agent.agents.postgres_publishing_agent": MagicMock(
                     PostgreSQLPublishingAgent=mock_pg_pub
                 ),
                 "agents.content_agent.agents.qa_agent": MagicMock(QAAgent=mock_qa),
-                "agents.content_agent.agents.research_agent": MagicMock(ResearchAgent=mock_research),
+                "agents.content_agent.agents.research_agent": MagicMock(
+                    ResearchAgent=mock_research
+                ),
             },
         ):
             result = register_all_agents(registry=registry)
 
-        return result, registry, {
-            "creative": mock_creative,
-            "image": mock_image,
-            "pg_pub": mock_pg_pub,
-            "qa": mock_qa,
-            "research": mock_research,
-        }
+        return (
+            result,
+            registry,
+            {
+                "creative": mock_creative,
+                "image": mock_image,
+                "pg_pub": mock_pg_pub,
+                "qa": mock_qa,
+                "research": mock_research,
+            },
+        )
 
     def test_registers_five_content_agents(self):
         result, registry, mocks = self._run_with_content_mocks()
         # 5 content agents + potentially financial/market/compliance/services
         # At minimum the content group must have registered 5 times
         calls_with_category_content = [
-            c for c in registry.register.call_args_list
-            if c.kwargs.get("category") == "content" or
-               (c.args and len(c.args) > 1 and False)  # kwargs form
+            c
+            for c in registry.register.call_args_list
+            if c.kwargs.get("category") == "content"
+            or (c.args and len(c.args) > 1 and False)  # kwargs form
         ]
         # Check by agent_class presence
         all_classes = [c.kwargs.get("agent_class") for c in registry.register.call_args_list]
@@ -90,7 +100,13 @@ class TestRegisterAllAgentsContentAgentGroup:
     def test_register_called_with_correct_agent_names(self):
         _, registry, _ = self._run_with_content_mocks()
         registered_names = [c.kwargs.get("name") for c in registry.register.call_args_list]
-        for expected_name in ["research_agent", "creative_agent", "qa_agent", "imaging_agent", "publishing_agent"]:
+        for expected_name in [
+            "research_agent",
+            "creative_agent",
+            "qa_agent",
+            "imaging_agent",
+            "publishing_agent",
+        ]:
             assert expected_name in registered_names
 
 

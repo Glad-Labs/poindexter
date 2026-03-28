@@ -2,10 +2,11 @@
 Unit tests for agents/blog_quality_agent.py — BlogQualityAgent
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from agents.blog_quality_agent import BlogQualityAgent, get_blog_quality_agent
 
+import pytest
+
+from agents.blog_quality_agent import BlogQualityAgent, get_blog_quality_agent
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -45,7 +46,9 @@ def make_agent():
     return agent, mock_svc
 
 
-GOOD_CONTENT = "This is a well-written blog post about artificial intelligence and its applications."
+GOOD_CONTENT = (
+    "This is a well-written blog post about artificial intelligence and its applications."
+)
 
 
 # ---------------------------------------------------------------------------

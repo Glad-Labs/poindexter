@@ -16,16 +16,16 @@ This layer allows LLMs to:
 """
 
 import asyncio
-from services.logger_config import get_logger
 from abc import ABC
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from services.error_handler import ServiceError as _CanonicalServiceError
-
 from pydantic import BaseModel, Field
+
+from services.error_handler import ServiceError as _CanonicalServiceError
+from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 # ============================================================================

@@ -5,6 +5,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: write
+
 concurrency:
   group: production-deployment
   cancel-in-progress: false
@@ -60,12 +63,9 @@ jobs:
           check_secret "${{ secrets.VERCEL_TOKEN }}"                        "VERCEL_TOKEN"
           check_secret "${{ secrets.VERCEL_ORG_ID }}"                       "VERCEL_ORG_ID"
           check_secret "${{ secrets.PUBLIC_SITE_PROD_PROJECT_ID }}"         "PUBLIC_SITE_PROD_PROJECT_ID"
-          check_secret "${{ secrets.OVERSIGHT_PROD_PROJECT_ID }}"           "OVERSIGHT_PROD_PROJECT_ID"
           check_secret "${{ secrets.COFOUNDER_PROD_URL }}"                  "COFOUNDER_PROD_URL"
           check_secret "${{ secrets.PUBLIC_SITE_PROD_FASTAPI_URL }}"        "PUBLIC_SITE_PROD_FASTAPI_URL"
           check_secret "${{ secrets.PUBLIC_SITE_PROD_SITE_URL }}"           "PUBLIC_SITE_PROD_SITE_URL"
-          check_secret "${{ secrets.OVERSIGHT_PROD_API_URL }}"              "OVERSIGHT_PROD_API_URL"
-          check_secret "${{ secrets.OVERSIGHT_PROD_GH_OAUTH_CLIENT_ID }}"   "OVERSIGHT_PROD_GH_OAUTH_CLIENT_ID"
 
           if [ -n "$MISSING" ]; then
             echo ""
@@ -92,9 +92,8 @@ jobs:
       # TEST PHASE (Full suite + security before production)
       # ============================================
 
-      - name: 🧪 Run all tests
-        run: npm run test:ci
-        # No continue-on-error — broken tests must block production (#144)
+      - name: 🧪 Run frontend tests (public-site)
+        run: npm run test --workspace=web/public-site --if-present
 
       - name: 🧪 Run backend unit tests
         run: cd src/cofounder_agent && poetry run pytest tests/unit/ -v --tb=short
@@ -116,18 +115,14 @@ jobs:
       # DEPLOYMENT PHASE - CO-FOUNDER AGENT
       # ============================================
 
-      - name: 📦 Cache Railway CLI
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: ~/.npm-global
-          key: railway-cli-v1
+      - name: 📦 Install Railway CLI
+        run: |
+          npm install -g @railway/cli
+          railway --version
 
       - name: 🚀 Deploy Co-Founder Agent to Railway (Production)
         run: |
           echo "📤 Deploying Co-Founder Agent to production environment..."
-          curl -fsSL https://railway.app/install.sh | sh
-          export PATH="$HOME/.railway/bin:$PATH"
-          railway --version
           railway up --service cofounder
           echo "✅ Co-Founder Agent production deployment completed"
         env:
@@ -158,32 +153,6 @@ jobs:
           NEXT_PUBLIC_SENTRY_DSN: ${{ secrets.PUBLIC_SITE_PROD_SENTRY_DSN }}
 
       # ============================================
-      # DEPLOYMENT PHASE - OVERSIGHT HUB
-      # ============================================
-
-      - name: 📝 Generate Oversight Hub .env.production
-        run: |
-          cat > web/oversight-hub/.env.production << 'ENVEOF'
-          REACT_APP_API_URL=${{ secrets.OVERSIGHT_PROD_API_URL }}
-          REACT_APP_API_BASE_URL=${{ secrets.OVERSIGHT_PROD_API_URL }}
-          REACT_APP_WS_BASE_URL=${{ secrets.OVERSIGHT_PROD_API_URL }}
-          REACT_APP_AGENT_URL=${{ secrets.OVERSIGHT_PROD_API_URL }}
-          REACT_APP_GH_OAUTH_CLIENT_ID=${{ secrets.OVERSIGHT_PROD_GH_OAUTH_CLIENT_ID }}
-          REACT_APP_USE_MOCK_AUTH=false
-          REACT_APP_LOG_LEVEL=warn
-          ENVEOF
-
-      - name: 🚀 Deploy Oversight Hub to Vercel (Production)
-        run: |
-          echo "📤 Deploying Oversight Hub to production environment..."
-          npx vercel deploy --prod --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_ORG_ID }} --yes
-          echo "✅ Oversight Hub production deployment completed"
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_PROJECT_ID: ${{ secrets.OVERSIGHT_PROD_PROJECT_ID }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-
-      # ============================================
       # POST-DEPLOYMENT VERIFICATION
       # ============================================
 
@@ -196,7 +165,6 @@ jobs:
 
           FAILURES=0
           COFOUNDER_URL="${{ secrets.COFOUNDER_PROD_URL }}"
-          OVERSIGHT_URL="${{ secrets.OVERSIGHT_PROD_URL }}"
 
           echo "Testing Co-Founder Agent health..."
           if curl -sf --retry 3 --retry-delay 5 "${COFOUNDER_URL}/health" | grep -q "healthy"; then
@@ -211,14 +179,6 @@ jobs:
             echo "✅ Public Site is reachable"
           else
             echo "❌ Public Site health check FAILED"
-            FAILURES=$((FAILURES + 1))
-          fi
-
-          echo "Testing Oversight Hub health..."
-          if curl -sf --retry 3 --retry-delay 5 "${OVERSIGHT_URL}" > /dev/null; then
-            echo "✅ Oversight Hub is reachable"
-          else
-            echo "❌ Oversight Hub health check FAILED"
             FAILURES=$((FAILURES + 1))
           fi
 
@@ -248,7 +208,6 @@ jobs:
           echo "🌍 Production URLs:"
           echo "  - Co-Founder Agent API: ${{ secrets.COFOUNDER_PROD_URL }}/docs"
           echo "  - Public Site: https://glad-labs.com"
-          echo "  - Oversight Hub: ${{ secrets.OVERSIGHT_PROD_URL }}"
           echo "🎉 Production environment is live and healthy"
 
       # ============================================
@@ -262,11 +221,9 @@ jobs:
           echo "📋 Deployment Summary:"
           echo "  ✅ Co-Founder Agent deployed to Railway"
           echo "  ✅ Public Site deployed to Vercel"
-          echo "  ✅ Oversight Hub deployed to Vercel"
           echo "🔗 Production Links:"
           echo "  - Public Site: https://glad-labs.com"
           echo "  - Co-Founder Agent API: ${{ secrets.COFOUNDER_PROD_URL }}/docs"
-          echo "  - Oversight Hub: ${{ secrets.OVERSIGHT_PROD_URL }}"
 
       - name: 📢 Failure Notification
         if: failure()
@@ -279,3 +236,47 @@ jobs:
           echo "  4. Review recent code changes for breaking issues"
           echo "  5. Consider rolling back to previous stable version"
           exit 1
+
+  # ============================================
+  # CREATE RELEASE TAG ON MAIN
+  # Release Please runs on staging (PR + changelog only, no GitHub Release).
+  # After staging → main merge + successful deploy, tag main with the version.
+  # ============================================
+  create-release-tag:
+    runs-on: ubuntu-latest
+    needs: test-and-deploy
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: 🏷️ Read version and create GitHub Release
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="v${VERSION}"
+
+          # Check if this tag already exists (idempotent — skip if already released)
+          if git ls-remote --tags origin "$TAG" | grep -q "$TAG"; then
+            echo "Tag $TAG already exists — skipping release creation"
+            exit 0
+          fi
+
+          echo "Creating GitHub Release $TAG on main..."
+
+          # Extract changelog section for this version
+          CHANGELOG=""
+          if [ -f CHANGELOG.md ]; then
+            CHANGELOG=$(awk "/^## \[${VERSION}\]/{found=1; next} /^## \[/{if(found) exit} found{print}" CHANGELOG.md)
+          fi
+
+          if [ -z "$CHANGELOG" ]; then
+            CHANGELOG="Release ${TAG}"
+          fi
+
+          gh release create "$TAG" \
+            --target main \
+            --title "$TAG" \
+            --notes "$CHANGELOG"
+
+          echo "✅ GitHub Release $TAG created on main"
+        env:
+          GH_TOKEN: ${{ github.token }}

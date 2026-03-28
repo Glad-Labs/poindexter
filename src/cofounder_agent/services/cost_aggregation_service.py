@@ -10,11 +10,14 @@ Provides advanced cost analytics by querying the cost_logs PostgreSQL table:
 Built on top of DatabaseService's log_cost() and get_task_costs() methods.
 """
 
-from services.logger_config import get_logger
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
+from services.logger_config import get_logger
+
 logger = get_logger(__name__)
+
+
 class CostAggregationService:
     """
     Cost analytics service using PostgreSQL cost_logs table
@@ -166,16 +169,8 @@ class CostAggregationService:
                     date_filter,
                 )
 
-                # Get total cost for percentage calculation
-                total_cost_row = await conn.fetchval(
-                    """
-                    SELECT COALESCE(SUM(cost_usd), 0)
-                    FROM cost_logs
-                    WHERE created_at >= $1 AND success = true
-                    """,
-                    date_filter,
-                )
-                total_cost = float(total_cost_row or 0.0)
+                # Compute total cost from GROUP BY results (no redundant query)
+                total_cost = sum(float(row["total_cost"] or 0.0) for row in rows)
 
                 phases = []
                 for row in rows:
@@ -252,16 +247,8 @@ class CostAggregationService:
                     date_filter,
                 )
 
-                # Get total cost for percentage calculation
-                total_cost_row = await conn.fetchval(
-                    """
-                    SELECT COALESCE(SUM(cost_usd), 0)
-                    FROM cost_logs
-                    WHERE created_at >= $1 AND success = true
-                    """,
-                    date_filter,
-                )
-                total_cost = float(total_cost_row or 0.0)
+                # Compute total cost from GROUP BY results (no redundant query)
+                total_cost = sum(float(row["total_cost"] or 0.0) for row in rows)
 
                 models = []
                 for row in rows:

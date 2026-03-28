@@ -16,12 +16,14 @@ This service consolidates:
 - PublishingAgent (agents/content_agent/agents/postgres_publishing_agent.py)
 """
 
-from services.logger_config import get_logger
 from typing import Any, Dict, Optional
 
+from services.logger_config import get_logger
 from services.service_base import ServiceBase
 
 logger = get_logger(__name__)
+
+
 class ContentService(ServiceBase):
     """
     Unified content generation service with phase-based execution.
@@ -211,7 +213,7 @@ class ContentService(ServiceBase):
                 writing_style=writing_style or writing_style_guidance,  # type: ignore[call-arg]
             )
 
-            logger.info(f"Draft phase completed")
+            logger.info("Draft phase completed")
 
             return {
                 "phase": "draft",
@@ -320,7 +322,7 @@ class ContentService(ServiceBase):
                 feedback=feedback,  # type: ignore[call-arg]
             )
 
-            logger.info(f"Refinement phase completed")
+            logger.info("Refinement phase completed")
 
             return {
                 "phase": "refine",
@@ -420,7 +422,7 @@ class ContentService(ServiceBase):
             formatted_content = getattr(result, "raw_content", str(content))
             meta_description = getattr(result, "meta_description", f"Article: {topic}")
 
-            logger.info(f"Finalize phase completed")
+            logger.info("Finalize phase completed")
 
             return {
                 "phase": "finalize",
@@ -546,7 +548,7 @@ class ContentService(ServiceBase):
             )
             results["finalize"] = finalize_result
 
-            logger.info(f"Content workflow completed successfully")
+            logger.info("Content workflow completed successfully")
 
             return {
                 "status": "completed",

@@ -2,7 +2,7 @@
 
 FastAPI orchestrator for the Glad Labs AI system. Coordinates specialized agents through a multi-provider model router with task management and real-time monitoring.
 
-**Version:** 3.0.82
+**Version:** 0.1.0
 **Runtime:** Python 3.10+ with FastAPI
 **Port:** 8000
 **Database:** PostgreSQL via asyncpg (raw SQL, no ORM)
@@ -24,8 +24,8 @@ Requires `.env.local` at project root with `DATABASE_URL` and at least one LLM A
 src/cofounder_agent/
 ├── main.py                    # FastAPI app entry point
 ├── config/                    # Configuration loading
-├── routes/                    # 28 REST endpoint modules
-├── services/                  # 80+ service modules
+├── routes/                    # 31 REST endpoint modules
+├── services/                  # ~76 service modules
 │   ├── database_service.py    # Coordinates 5 DB domain modules
 │   ├── model_router.py        # LLM provider selection + fallback
 │   ├── unified_orchestrator.py # Master agent choreography
@@ -38,7 +38,7 @@ src/cofounder_agent/
 │   ├── financial_agent/       # Cost tracking + analysis
 │   ├── market_insight_agent/  # Market research
 │   └── compliance_agent/      # Compliance checks
-├── schemas/                   # 24 Pydantic model files
+├── schemas/                   # Pydantic model files
 ├── middleware/                 # 5 middleware modules (auth, validation, etc.)
 ├── utils/                     # 20 utility modules
 └── tests/                     # pytest suite
@@ -57,7 +57,7 @@ src/cofounder_agent/
 
 ## API
 
-28 route modules at `/api/*`. OpenAPI docs at `/api/openapi.json` when running.
+30 route modules at `/api/*`. OpenAPI docs at `/api/openapi.json` when running.
 
 Key endpoint groups: `/api/tasks`, `/api/posts`, `/api/workflows`, `/api/agents`, `/api/metrics`, `/api/analytics`, `/api/social`, `/api/settings`.
 

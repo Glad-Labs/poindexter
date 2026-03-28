@@ -5,8 +5,8 @@ Tests for mock CrewAI tool implementations (BaseTool, SerperDevTool,
 WebsiteSearchTool, FileReadTool, DirectoryReadTool, CodeInterpreterTool).
 """
 
-import pytest
 from unittest.mock import patch
+
 from agents.content_agent.utils.crewai_tools_mock import (
     BaseTool,
     CodeInterpreterTool,
@@ -15,7 +15,6 @@ from agents.content_agent.utils.crewai_tools_mock import (
     SerperDevTool,
     WebsiteSearchTool,
 )
-
 
 # ---------------------------------------------------------------------------
 # BaseTool

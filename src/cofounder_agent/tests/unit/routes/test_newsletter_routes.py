@@ -10,17 +10,17 @@ DB calls (db.pool.fetchrow / fetchval / execute) are mocked.
 Rate limiter is bypassed in tests.
 """
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from routes.auth_unified import get_current_user
-from utils.route_utils import get_database_dependency
 from routes.newsletter_routes import router
-from utils.rate_limiter import limiter
-
 from tests.unit.routes.conftest import TEST_USER
+from utils.rate_limiter import limiter
+from utils.route_utils import get_database_dependency
 
 
 @pytest.fixture(autouse=True)

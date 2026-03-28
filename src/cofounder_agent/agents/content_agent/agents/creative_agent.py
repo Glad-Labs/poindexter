@@ -1,8 +1,8 @@
 import json
-from services.logger_config import get_logger
 import re
 from typing import Optional
 
+from services.logger_config import get_logger
 from services.prompt_manager import get_prompt_manager
 
 from ..services.llm_client import LLMClient
@@ -11,6 +11,8 @@ from ..utils.helpers import extract_json_from_string, slugify
 from ..utils.tools import CrewAIToolsFactory
 
 logger = get_logger(__name__)
+
+
 class CreativeAgent:
     def _extract_asset(self, text: str, asset_name: str) -> str:
         """
@@ -31,7 +33,9 @@ class CreativeAgent:
             self.tools = CrewAIToolsFactory.get_content_agent_tools()
             logger.info("CreativeAgent: Initialized with all content agent tools")
         except Exception as e:
-            logger.warning(f"[init_tools] CreativeAgent: Failed to initialize tools: {e}", exc_info=True)
+            logger.warning(
+                f"[init_tools] CreativeAgent: Failed to initialize tools: {e}", exc_info=True
+            )
             logger.warning("CreativeAgent will continue without some tools", exc_info=True)
             # Initialize with empty tools list - LLMClient can still generate content
             self.tools = []
@@ -109,7 +113,9 @@ class CreativeAgent:
                 tolerance = constraints.word_count_tolerance
                 min_words = int(word_count_target * (1 - tolerance / 100))
                 max_words = int(word_count_target * (1 + tolerance / 100))
-                word_count_constraint = f"{min_words}–{max_words} words (target: {word_count_target} ±{tolerance}%)"
+                word_count_constraint = (
+                    f"{min_words}–{max_words} words (target: {word_count_target} ±{tolerance}%)"
+                )
             else:
                 word_count_constraint = "No strict word count constraint"
             refinement_prompt = self.pm.get_prompt(
@@ -150,7 +156,7 @@ class CreativeAgent:
             # Inject writing sample guidance (RAG style matching) if provided
             if post.metadata and post.metadata.get("writing_sample_guidance"):
                 draft_prompt += f"\n\n{post.metadata['writing_sample_guidance']}"
-                logger.info(f"CreativeAgent: Using user's writing sample for style matching")
+                logger.info("CreativeAgent: Using user's writing sample for style matching")
             # Otherwise, inject basic style guidance
             elif post.writing_style:
                 style_guidance = {
@@ -255,8 +261,12 @@ class CreativeAgent:
             post.title = (post.topic[:60] if post.topic else "Untitled Post").strip()
             logger.warning(f"CreativeAgent: Using fallback title from topic: '{post.title}'")
         if not post.meta_description:
-            post.meta_description = f"An in-depth guide covering {post.topic}."[:160] if post.topic else "Read more about this topic."
-            logger.warning(f"CreativeAgent: Using fallback meta_description")
+            post.meta_description = (
+                f"An in-depth guide covering {post.topic}."[:160]
+                if post.topic
+                else "Read more about this topic."
+            )
+            logger.warning("CreativeAgent: Using fallback meta_description")
         if not post.slug:
             post.slug = slugify(post.title)
             logger.warning(f"CreativeAgent: Using fallback slug: '{post.slug}'")

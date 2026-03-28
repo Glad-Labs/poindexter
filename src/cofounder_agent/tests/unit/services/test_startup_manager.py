@@ -14,7 +14,6 @@ import pytest
 
 from utils.startup_manager import StartupManager
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -122,9 +121,11 @@ class TestValidateSecretsEdgeCases:
         """Unset vars (empty string) are not treated as violations — only log."""
         env = {"ENVIRONMENT": "production"}
         # Remove the known-default vars from the environment to simulate unset
-        clean_env = {k: v for k, v in os.environ.items() if k not in (
-            "JWT_SECRET_KEY", "JWT_SECRET", "SECRET_KEY", "REVALIDATE_SECRET"
-        )}
+        clean_env = {
+            k: v
+            for k, v in os.environ.items()
+            if k not in ("JWT_SECRET_KEY", "JWT_SECRET", "SECRET_KEY", "REVALIDATE_SECRET")
+        }
         clean_env["ENVIRONMENT"] = "production"
         with patch.dict(os.environ, clean_env, clear=True):
             # Unset vars → empty string → not a default value → should NOT raise

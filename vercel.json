@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "cd web/public-site && npm run build",
   "devCommand": "cd web/public-site && npm run dev",
-  "installCommand": "npm install --workspaces",
+  "installCommand": "npm ci",
   "framework": "nextjs",
   "cleanUrls": true,
   "trailingSlash": false,

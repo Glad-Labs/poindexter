@@ -11,19 +11,17 @@ Cost:
 - Much cheaper than DALL-E ($0.02/image)
 """
 
-import asyncio
 import logging
 import os
 import time
-import uuid
 from datetime import datetime
-from io import BytesIO
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 
 from routes.auth_unified import get_current_user
+from utils.rate_limiter import limiter
 
 # Cloud storage imports
 try:
@@ -34,15 +32,7 @@ try:
 except ImportError:
     CLOUDINARY_AVAILABLE = False
 
-try:
-    import boto3
-    from botocore.config import Config
-
-    S3_AVAILABLE = True
-except ImportError:
-    S3_AVAILABLE = False
-
-from services.image_service import FeaturedImageMetadata, ImageService
+from services.image_service import FeaturedImageMetadata, ImageModel, ImageService
 
 logger = logging.getLogger(__name__)
 media_router = APIRouter(prefix="/api/media", tags=["Media"])
@@ -97,106 +87,6 @@ async def upload_to_cloudinary(file_path: str, task_id: Optional[str] = None) ->
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# S3 CLIENT SETUP (Fallback/Future)
-# ═══════════════════════════════════════════════════════════════════════════
-
-_s3_client = None
-
-
-def get_s3_client():
-    """Get or create S3 client for image uploads (fallback option)"""
-    global _s3_client
-    if _s3_client is None:
-        # Check if AWS credentials are configured
-        if S3_AVAILABLE and os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_S3_BUCKET"):
-            try:
-                _s3_client = boto3.client(
-                    "s3",
-                    aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-                    aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-                    region_name=os.getenv("AWS_S3_REGION", "us-east-1"),
-                    config=Config(signature_version="s3v4") if S3_AVAILABLE else None,
-                )
-                logger.info("✅ S3 client initialized (fallback)")
-            except Exception as e:
-                logger.warning(f"⚠️ S3 client initialization failed: {e}", exc_info=True)
-                _s3_client = False  # Mark as explicitly disabled
-        else:
-            logger.info("ℹ️ AWS S3 not configured (optional fallback)")
-            _s3_client = False
-
-    return _s3_client if _s3_client else None
-
-
-async def upload_to_s3(file_path: str, task_id: Optional[str] = None) -> Optional[str]:
-    """
-    Upload generated image to S3 and return public URL.
-
-    Args:
-        file_path: Local path to image file
-        task_id: Task ID for metadata (optional)
-
-    Returns:
-        Public URL if successful, None if S3 not configured
-    """
-    s3 = get_s3_client()
-    if not s3:
-        return None
-
-    try:
-        bucket = os.getenv("AWS_S3_BUCKET")
-        if not bucket:
-            logger.warning("S3 bucket not configured")
-            return None
-
-        # Generate unique key
-        image_key = f"generated/{int(time.time())}-{uuid.uuid4()}.png"
-
-        # Read file — offload blocking I/O to thread pool so event loop is not stalled
-        loop = asyncio.get_event_loop()
-        file_data = await loop.run_in_executor(
-            None, lambda: open(file_path, "rb").read()
-        )
-
-        # Prepare metadata
-        metadata = {"generated-date": datetime.now().isoformat()}
-        if task_id:
-            metadata["task-id"] = task_id
-
-        # Upload to S3 — boto3 is synchronous; run in executor to avoid blocking
-        await loop.run_in_executor(
-            None,
-            lambda: s3.upload_fileobj(
-                BytesIO(file_data),
-                bucket,
-                image_key,
-                ExtraArgs={
-                    "ContentType": "image/png",
-                    "CacheControl": "max-age=31536000, immutable",  # Cache 1 year
-                    "Metadata": metadata,
-                },
-            ),
-        )
-
-        logger.info(f"✅ Uploaded to S3: s3://{bucket}/{image_key}")
-
-        # Return CloudFront URL if configured, otherwise S3 URL
-        cdn_domain = os.getenv("AWS_CLOUDFRONT_DOMAIN")
-        if cdn_domain:
-            public_url = f"https://{cdn_domain}/{image_key}"
-            logger.info(f"✅ CloudFront URL: {public_url}")
-        else:
-            public_url = f"https://s3.amazonaws.com/{bucket}/{image_key}"
-            logger.info(f"✅ S3 URL: {public_url}")
-
-        return public_url
-
-    except Exception as e:
-        logger.error(f"❌ S3 upload failed: {e}", exc_info=True)
-        return None
-
-
-# ═══════════════════════════════════════════════════════════════════════════
 # REQUEST/RESPONSE SCHEMAS
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -225,22 +115,25 @@ class ImageGenerationRequest(BaseModel):
     use_generation: bool = Field(
         False, description="Generate custom image with SDXL if Pexels fails (requires GPU)"
     )
-    use_refinement: bool = Field(
-        False,
-        description="Apply SDXL refinement model (DISABLED - known tensor incompatibility between base/refiner models; base model at 50 steps produces excellent quality)",
+    image_model: Optional[str] = Field(
+        None,
+        description="Image generation model to use (sdxl_base, sdxl_lightning, flux_schnell). Defaults to IMAGE_MODEL env var.",
     )
     high_quality: bool = Field(
         True,
-        description="Optimize for high quality: 50 base steps (refinement disabled due to model compatibility)",
+        description="Optimize for high quality output",
     )
-    num_inference_steps: int = Field(
-        50,
-        ge=20,
+    num_inference_steps: Optional[int] = Field(
+        None,
+        ge=1,
         le=100,
-        description="Number of base inference steps (50+ recommended for quality)",
+        description="Override inference steps (defaults to model's recommended steps)",
     )
-    guidance_scale: float = Field(
-        8.0, ge=1.0, le=20.0, description="Guidance scale for quality (7.5-8.5 recommended)"
+    guidance_scale: Optional[float] = Field(
+        None,
+        ge=0.0,
+        le=20.0,
+        description="Override guidance scale (defaults to model's recommended value)",
     )
     task_id: Optional[str] = Field(
         None, description="Optional task ID for WebSocket progress tracking"
@@ -286,6 +179,7 @@ class HealthResponse(BaseModel):
     status: str = Field(..., description="overall status")
     pexels_available: bool = Field(..., description="Pexels API configured")
     sdxl_available: bool = Field(..., description="SDXL GPU available")
+    active_model: Optional[str] = Field(None, description="Currently loaded model name")
     message: str = Field(..., description="Detailed status message")
 
 
@@ -364,8 +258,10 @@ def build_enhanced_search_prompt(
     summary="Generate or search for featured image",
     description="Search Pexels for free stock images, with optional SDXL fallback",
 )
+@limiter.limit("10/minute")
 async def generate_featured_image(
-    request: ImageGenerationRequest,
+    request: Request,
+    image_request: ImageGenerationRequest,
     current_user: dict = Depends(get_current_user),
 ):
     """
@@ -424,15 +320,15 @@ async def generate_featured_image(
 
         # Log the request configuration
         logger.info(
-            f"📸 Image generation request: use_pexels={request.use_pexels}, use_generation={request.use_generation}"
+            f"📸 Image generation request: use_pexels={image_request.use_pexels}, use_generation={image_request.use_generation}"
         )
 
         # Step 1: Try Pexels search first (recommended)
-        if request.use_pexels:
-            keywords = request.keywords or []
+        if image_request.use_pexels:
+            keywords = image_request.keywords or []
 
             # Build enhanced search prompt using keywords if available
-            search_prompt = build_enhanced_search_prompt(request.prompt, keywords)
+            search_prompt = build_enhanced_search_prompt(image_request.prompt, keywords)
 
             logger.info(f"🔍 STEP 1: Searching Pexels for: {search_prompt}")
             if keywords:
@@ -440,7 +336,7 @@ async def generate_featured_image(
 
             try:
                 image = await image_service.search_featured_image(
-                    topic=search_prompt, keywords=keywords, page=request.page
+                    topic=search_prompt, keywords=keywords, page=image_request.page
                 )
 
                 if image:
@@ -450,25 +346,20 @@ async def generate_featured_image(
             except Exception as e:
                 logger.warning(f"⚠️ STEP 1 ERROR: Pexels search failed: {e}", exc_info=True)
         else:
-            logger.info(f"ℹ️ STEP 1 SKIPPED: use_pexels=false")
+            logger.info("ℹ️ STEP 1 SKIPPED: use_pexels=false")
 
         # Step 2: Fall back to SDXL generation
-        if not image and request.use_generation:
-            keywords = request.keywords or []
+        if not image and image_request.use_generation:
+            keywords = image_request.keywords or []
 
             # Build enhanced generation prompt using keywords if available
-            generation_prompt = build_enhanced_search_prompt(request.prompt, keywords)
+            generation_prompt = build_enhanced_search_prompt(image_request.prompt, keywords)
 
-            logger.info(f"🎨 STEP 2: Generating image with SDXL: {generation_prompt}")
+            logger.info(f"🎨 STEP 2: Generating image: {generation_prompt}")
             if keywords:
                 logger.debug(f"   Keywords: {', '.join(keywords)}")
-            if request.use_refinement:
-                logger.info(
-                    f"   Refinement: ENABLED (base {request.num_inference_steps} steps + 30 refinement steps)"
-                )
 
             try:
-                import os
                 from pathlib import Path
 
                 # ═══════════════════════════════════════════════════════════
@@ -480,7 +371,7 @@ async def generate_featured_image(
 
                 # Create filename with timestamp and task_id for traceability
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                task_id_str = request.task_id if request.task_id else "no-task"
+                task_id_str = image_request.task_id if image_request.task_id else "no-task"
                 output_file = f"sdxl_{timestamp}_{task_id_str}.png"
                 output_path = os.path.join(downloads_path, output_file)
 
@@ -489,11 +380,13 @@ async def generate_featured_image(
                 success = await image_service.generate_image(
                     prompt=generation_prompt,
                     output_path=output_path,
-                    num_inference_steps=request.num_inference_steps,
-                    guidance_scale=request.guidance_scale,
-                    use_refinement=request.use_refinement,
-                    high_quality=request.high_quality,
-                    task_id=request.task_id,  # Pass task_id for progress tracking
+                    model=(
+                        ImageModel(image_request.image_model) if image_request.image_model else None
+                    ),
+                    num_inference_steps=image_request.num_inference_steps,
+                    guidance_scale=image_request.guidance_scale,
+                    high_quality=image_request.high_quality,
+                    task_id=image_request.task_id,  # Pass task_id for progress tracking
                 )
 
                 if success and os.path.exists(output_path):
@@ -512,7 +405,7 @@ async def generate_featured_image(
                     # This allows users to preview and iterate before publishing
 
                     logger.info(f"📁 Image saved locally to: {output_path}")
-                    logger.info(f"⏳ Image will be uploaded to CDN after approval")
+                    logger.info("⏳ Image will be uploaded to CDN after approval")
 
                     # Create metadata object for generated image
                     # URL is local file path for now (frontend can construct file:// URL)
@@ -523,18 +416,18 @@ async def generate_featured_image(
                         photographer_url="",
                         width=1024,  # SDXL standard output
                         height=1024,
-                        alt_text=request.prompt,
+                        alt_text=image_request.prompt,
                         source="sdxl-local-preview",  # Mark as local preview
-                        search_query=request.prompt,
+                        search_query=image_request.prompt,
                     )
                     logger.info(f"✅ Created image metadata (local preview): {output_path}")
             except Exception as e:
                 logger.warning(f"⚠️ SDXL generation failed: {e}", exc_info=True)
-        elif image and not request.use_generation:
-            logger.info(f"ℹ️ STEP 2 SKIPPED: Pexels found image, use_generation=false")
-        elif not image and not request.use_generation:
+        elif image and not image_request.use_generation:
+            logger.info("ℹ️ STEP 2 SKIPPED: Pexels found image, use_generation=false")
+        elif not image and not image_request.use_generation:
             logger.info(
-                f"ℹ️ STEP 2 SKIPPED: use_generation=false (Pexels search failed but SDXL disabled)"
+                "ℹ️ STEP 2 SKIPPED: use_generation=false (Pexels search failed but SDXL disabled)"
             )
 
         # Return result
@@ -544,8 +437,8 @@ async def generate_featured_image(
             # ═══════════════════════════════════════════════════════════
             # Unload SDXL models after generation to free memory
             # ═══════════════════════════════════════════════════════════
-            if hasattr(image_service, "_unload_sdxl"):
-                image_service._unload_sdxl()
+            if hasattr(image_service, "_unload_model"):
+                image_service._unload_model()
 
             # ═══════════════════════════════════════════════════════════
             # NOTE: Image is in Downloads folder for preview/approval
@@ -568,15 +461,15 @@ async def generate_featured_image(
                     width=image.width,
                     height=image.height,
                 ),
-                message=f"✅ Image generated and saved locally (preview mode). Review and approve to publish.",
+                message="✅ Image generated and saved locally (preview mode). Review and approve to publish.",
                 generation_time=elapsed,
             )
 
         # ═══════════════════════════════════════════════════════════
         # Unload SDXL models if generation was requested but failed
         # ═══════════════════════════════════════════════════════════
-        if request.use_generation and hasattr(image_service, "_unload_sdxl"):
-            image_service._unload_sdxl()
+        if image_request.use_generation and hasattr(image_service, "_unload_model"):
+            image_service._unload_model()
 
         elapsed = time.time() - start_time
         return ImageGenerationResponse(
@@ -732,10 +625,16 @@ async def health_check():
         else:
             message_parts.append("❌ SDXL not available (requires CUDA GPU)")
 
+        # Check if a model is currently loaded
+        active_model = None
+        if hasattr(image_service, "_active_model") and image_service._active_model is not None:
+            active_model = image_service._active_model.value
+
         return HealthResponse(
             status=status,
             pexels_available=pexels_ok,
             sdxl_available=sdxl_ok,
+            active_model=active_model,
             message=" | ".join(message_parts),
         )
 

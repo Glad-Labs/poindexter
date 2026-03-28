@@ -10,13 +10,11 @@ import pytest
 from services.model_router import (
     MAX_TOKENS_BY_TASK,
     ModelRouter,
-    ModelTier,
     TaskComplexity,
     get_model_for_phase,
     get_model_router,
     initialize_model_router,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

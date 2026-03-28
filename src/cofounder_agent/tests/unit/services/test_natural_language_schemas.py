@@ -4,8 +4,9 @@ Unit tests for natural_language_schemas.py
 Tests field validation and model behaviour for natural language schemas.
 """
 
-import pytest
 from datetime import datetime, timezone
+
+import pytest
 from pydantic import ValidationError
 
 from schemas.natural_language_schemas import (
@@ -33,7 +34,9 @@ class TestNaturalLanguageRequest:
             NaturalLanguageRequest(prompt="x" * 2001)  # type: ignore[call-arg]
 
     def test_prompt_at_minimum_length(self):
-        req = NaturalLanguageRequest(prompt="1234567890")  # exactly 10 chars  # type: ignore[call-arg]
+        req = NaturalLanguageRequest(
+            prompt="1234567890"
+        )  # exactly 10 chars  # type: ignore[call-arg]
         assert len(req.prompt) == 10
 
     def test_prompt_at_maximum_length(self):

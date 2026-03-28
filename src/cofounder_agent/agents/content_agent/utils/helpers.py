@@ -14,13 +14,15 @@ def load_prompts_from_file(file_path: str) -> Dict[str, str]:
             return json.load(f)
     except FileNotFoundError:
         logger.critical(
-            f"FATAL: Prompts file not found at {file_path}. The application cannot start."
-, exc_info=True)
+            f"FATAL: Prompts file not found at {file_path}. The application cannot start.",
+            exc_info=True,
+        )
         raise
     except json.JSONDecodeError:
         logger.critical(
-            f"FATAL: Prompts file at {file_path} is corrupted. The application cannot start."
-, exc_info=True)
+            f"FATAL: Prompts file at {file_path} is corrupted. The application cannot start.",
+            exc_info=True,
+        )
         raise
 
 
