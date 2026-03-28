@@ -1,0 +1,20 @@
+{
+  "skills": {
+    "entries": {
+      "create_post": { "enabled": true },
+      "batch_create": { "enabled": true },
+      "list_tasks": { "enabled": true },
+      "approve_post": { "enabled": true },
+      "reject_post": { "enabled": true },
+      "publish_post": { "enabled": true },
+      "cost_report": { "enabled": true },
+      "quality_report": { "enabled": true },
+      "site_manage": { "enabled": true },
+      "model_status": { "enabled": true },
+      "railway_status": { "enabled": true },
+      "railway_deploy": { "enabled": true },
+      "railway_vars": { "enabled": true },
+      "vercel_status": { "enabled": true }
+    }
+  }
+}

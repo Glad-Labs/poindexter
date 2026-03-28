@@ -203,6 +203,9 @@ class QualityAssessment:
     content_length: Optional[int] = None
     word_count: Optional[int] = None
 
+    # Flesch-Kincaid Grade Level (complementary readability metric)
+    flesch_kincaid_grade_level: Optional[float] = None
+
     # Truncation detection
     truncation_detected: bool = False
 
@@ -224,6 +227,7 @@ class QualityAssessment:
             "evaluated_by": self.evaluated_by,
             "content_length": self.content_length,
             "word_count": self.word_count,
+            "flesch_kincaid_grade_level": self.flesch_kincaid_grade_level,
             "truncation_detected": self.truncation_detected,
             "refinement_attempts": self.refinement_attempts,
             "needs_refinement": self.needs_refinement,
@@ -383,10 +387,26 @@ class UnifiedQualityService:
 
         truncated = self.detect_truncation(content)
 
+        # Flesch-Kincaid Grade Level (complementary readability metric)
+        fk_grade = self.flesch_kincaid_grade_level(content)
+
         # Truncated content cannot pass quality — it's incomplete by definition
         passing = overall_score >= 70 and not truncated
 
         suggestions = self._generate_suggestions(dimensions)
+
+        # Add FK-based suggestion when outside target range (grade 8-12)
+        if fk_grade > 12:
+            suggestions.append(
+                f"Flesch-Kincaid grade level is {fk_grade:.1f} (target: 8-12). "
+                "Simplify vocabulary and shorten sentences for broader readability."
+            )
+        elif fk_grade < 8 and word_count > 100:
+            suggestions.append(
+                f"Flesch-Kincaid grade level is {fk_grade:.1f} (target: 8-12). "
+                "Content may be too simplistic; consider adding more depth."
+            )
+
         if truncated:
             suggestions.insert(
                 0,
@@ -402,6 +422,7 @@ class UnifiedQualityService:
             evaluation_method=EvaluationMethod.PATTERN_BASED,
             content_length=len(content),
             word_count=word_count,
+            flesch_kincaid_grade_level=fk_grade,
             truncation_detected=truncated,
         )
 
@@ -481,6 +502,7 @@ class UnifiedQualityService:
                 evaluation_method=EvaluationMethod.LLM_BASED,
                 content_length=len(content),
                 word_count=len(content.split()),
+                flesch_kincaid_grade_level=self.flesch_kincaid_grade_level(content),
             )
 
         except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
@@ -535,7 +557,65 @@ class UnifiedQualityService:
             evaluation_method=EvaluationMethod.HYBRID,
             content_length=len(content),
             word_count=len(content.split()),
+            flesch_kincaid_grade_level=self.flesch_kincaid_grade_level(content),
         )
+
+    # ========================================================================
+    # FLESCH-KINCAID GRADE LEVEL
+    # ========================================================================
+
+    @staticmethod
+    def flesch_kincaid_grade_level(text: str) -> float:
+        """Compute the Flesch-Kincaid Grade Level for *text*.
+
+        Formula:
+            0.39 * (total_words / total_sentences)
+            + 11.8 * (total_syllables / total_words)
+            - 15.59
+
+        Syllable counting uses a simple vowel-group heuristic: each
+        consecutive run of vowels (a, e, i, o, u) in a word counts as
+        one syllable, with a minimum of 1 syllable per word.
+
+        Returns the grade level as a float.  Lower values indicate easier
+        readability (target: 8-12 for general audience content).
+        """
+        if not text or not text.strip():
+            return 0.0
+
+        # Strip HTML/markdown for cleaner analysis
+        clean = re.sub(r"<[^>]+>", "", text)
+        clean = re.sub(r"#{1,6}\s", "", clean)
+
+        words = re.findall(r"[A-Za-z]+(?:'[A-Za-z]+)?", clean)
+        total_words = len(words)
+        if total_words == 0:
+            return 0.0
+
+        # Sentence splitting: split on . ! ? (ignore abbreviations as noise)
+        sentences = [s for s in re.split(r"[.!?]+", clean) if s.strip()]
+        total_sentences = max(len(sentences), 1)
+
+        # Count syllables using vowel-group heuristic
+        def _count_syllables(word: str) -> int:
+            word = word.lower()
+            count = 0
+            prev_vowel = False
+            for ch in word:
+                is_vowel = ch in "aeiou"
+                if is_vowel and not prev_vowel:
+                    count += 1
+                prev_vowel = is_vowel
+            return max(count, 1)
+
+        total_syllables = sum(_count_syllables(w) for w in words)
+
+        grade = (
+            0.39 * (total_words / total_sentences)
+            + 11.8 * (total_syllables / total_words)
+            - 15.59
+        )
+        return round(grade, 2)
 
     # ========================================================================
     # SCORING METHODS (Pattern-Based Heuristics)
@@ -865,6 +945,7 @@ class UnifiedQualityService:
                         "seo_quality": assessment.dimensions.seo_quality,
                         "readability": assessment.dimensions.readability,
                         "engagement": assessment.dimensions.engagement,
+                        "flesch_kincaid_grade_level": assessment.flesch_kincaid_grade_level,
                     },
                     "passing": assessment.passing,
                     "feedback": assessment.feedback,

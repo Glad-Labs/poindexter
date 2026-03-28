@@ -95,7 +95,7 @@ jobs:
           NEXT_PUBLIC_API_BASE_URL: "http://localhost:8000"
           NEXT_PUBLIC_FASTAPI_URL: "http://localhost:8000"
           NEXT_PUBLIC_SITE_URL: "http://localhost:3000"
-        continue-on-error: true  # E2E may be flaky in CI — surface results without blocking
+        # E2E failures block the pipeline — upload artifacts for debugging
 
       - name: ✅ Testing complete for dev
         run: echo "Dev branch testing complete - ready for staging deployment"

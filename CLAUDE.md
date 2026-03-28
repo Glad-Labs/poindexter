@@ -150,8 +150,9 @@ npm workspaces cover `web/public-site`. `npm install` at root installs everythin
 
 ## Reference Documentation
 
-- Architecture: `docs/02-Architecture/System-Design.md`
-- Deployment/CI: `docs/05-Operations/Operations-Maintenance.md`, `docs/04-Development/Development-Workflow.md`
-- AI agents: `docs/02-Architecture/Multi-Agent-Pipeline.md`
-- Troubleshooting: `docs/troubleshooting/`
-- Full env variable reference: `.env.example` (~57 variables)
+- Documentation index: `docs/README.md`
+- Architecture: `docs/architecture/system-design.md`
+- Deployment/CI: `docs/operations/deployment.md`, `docs/development/workflow.md`
+- AI agents: `docs/architecture/multi-agent-pipeline.md`
+- Troubleshooting: `docs/operations/troubleshooting.md`
+- Environment variables: `docs/operations/env-vars.md`, `.env.example`
