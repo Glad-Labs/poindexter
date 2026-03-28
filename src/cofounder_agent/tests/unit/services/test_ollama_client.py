@@ -331,11 +331,14 @@ class TestOllamaModelProfiles:
 class TestOllamaRecommendModel:
     @pytest.mark.asyncio
     async def test_code_task_prefers_coder_model(self):
+        import time
+
         c = OllamaClient()
         c._model_cache = {
             "qwen3:8b": {"parameter_size": "8B"},
             "qwen3-coder:8b": {"parameter_size": "8B"},
         }
+        c._cache_ts = time.time()  # Prevent cache refresh from hitting Ollama
         result = await c.recommend_model("debug Python code")
         assert "coder" in result.lower()
 

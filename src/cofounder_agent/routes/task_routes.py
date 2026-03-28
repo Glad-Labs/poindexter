@@ -265,10 +265,6 @@ async def _handle_blog_post_creation(
     request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService
 ) -> Dict[str, Any]:
     """Handle blog post task creation"""
-    import asyncio
-
-    from services.content_router_service import process_content_generation_task
-
     task_id = str(uuid_lib.uuid4())
 
     # Log model selections (#952) so we can confirm user choices are applied
@@ -701,9 +697,11 @@ async def get_metrics_alias(
     token: str = Depends(verify_api_token),
 ):
     """Deprecated alias. Use GET /api/tasks/metrics/summary."""
+    from urllib.parse import urlencode
+
     from fastapi.responses import RedirectResponse
 
-    query = f"?time_range={time_range}" if time_range else ""
+    query = f"?{urlencode({'time_range': time_range})}" if time_range else ""
     return RedirectResponse(url=f"/api/tasks/metrics/summary{query}", status_code=308)
 
 

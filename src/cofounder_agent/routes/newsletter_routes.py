@@ -10,7 +10,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr
 
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import verify_api_token
 from utils.rate_limiter import limiter
 from utils.route_utils import get_database_dependency
 
@@ -192,7 +192,7 @@ async def unsubscribe_from_newsletter(
 @router.get("/subscribers/count")
 async def get_subscriber_count(
     db=Depends(get_database_dependency),
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ):
     """Get total active newsletter subscribers count"""
     try:
