@@ -5,6 +5,7 @@ Implements PostgreSQL database with REST API command queue integration
 """
 
 import asyncio
+import os
 import sys
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -139,21 +140,55 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         )
         logger.info("[LIFESPAN] ✅ Services registered in global DI container")
 
-        # Start the background task executor now that all services are wired up
-        logger.info("[LIFESPAN] Starting background task executor...")
-        await services["task_executor"].start()
-        logger.info("[LIFESPAN] ✅ Task executor started")
+        # Branch startup behaviour based on deployment mode
+        deployment_mode = os.getenv("DEPLOYMENT_MODE", "coordinator")
+        logger.info(f"[LIFESPAN] Deployment mode: {deployment_mode}")
 
-        # Start the scheduled post publisher (publishes posts at their scheduled time)
-        from services.scheduled_publisher import run_scheduled_publisher
+        if deployment_mode == "worker":
+            # Worker mode: register worker, start heartbeat, start task executor
+            try:
+                from services.worker_service import WorkerService
 
-        db_pool = services["database"].pool
+                worker_service = WorkerService(services["database"].pool)
+                await worker_service.register()
+                await worker_service.start_heartbeat()
+                app.state.worker_service = worker_service
+                logger.info("[LIFESPAN] Worker: registered and heartbeat started")
+            except ImportError:
+                logger.warning("[LIFESPAN] Worker: worker_service module not yet available, skipping")
+            except Exception as e:
+                logger.error(f"[LIFESPAN] Worker: failed to start worker service: {e}", exc_info=True)
 
-        async def _get_pool():
-            return db_pool
+            # Start task executor (claims tasks from queue)
+            task_executor = services.get("task_executor")
+            if task_executor:
+                await task_executor.start()
+                logger.info("[LIFESPAN] Worker: task executor started")
+        else:
+            # Coordinator mode: start webhook delivery, scheduled publisher
+            # Do NOT start task executor (workers handle that)
+            try:
+                from services.webhook_delivery_service import WebhookDeliveryService
 
-        scheduled_publisher_task = asyncio.create_task(run_scheduled_publisher(_get_pool))
-        logger.info("[LIFESPAN] ✅ Scheduled post publisher started")
+                webhook_service = WebhookDeliveryService(services["database"].pool)
+                await webhook_service.start()
+                app.state.webhook_service = webhook_service
+                logger.info("[LIFESPAN] Coordinator: webhook delivery started")
+            except ImportError:
+                logger.warning("[LIFESPAN] Coordinator: webhook_delivery_service not yet available, skipping")
+            except Exception as e:
+                logger.error(f"[LIFESPAN] Coordinator: failed to start webhook delivery: {e}", exc_info=True)
+
+            # Start the scheduled post publisher (publishes posts at their scheduled time)
+            from services.scheduled_publisher import run_scheduled_publisher
+
+            db_pool = services["database"].pool
+
+            async def _get_pool():
+                return db_pool
+
+            scheduled_publisher_task = asyncio.create_task(run_scheduled_publisher(_get_pool))
+            logger.info("[LIFESPAN] Coordinator: scheduled post publisher started")
 
         logger.info("[OK] Lifespan: Yielding control to FastAPI application. ..")
         try:
@@ -184,15 +219,33 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
                 await scheduled_publisher_task
             except asyncio.CancelledError:
                 pass
+        # Stop worker service if running in worker mode
+        if hasattr(app.state, "worker_service"):
+            try:
+                await app.state.worker_service.stop()
+                logger.info("[STOP] Worker service stopped")
+            except Exception as e:
+                logger.error(f"[STOP] Error stopping worker service: {e}", exc_info=True)
+        # Stop webhook delivery service if running in coordinator mode
+        if hasattr(app.state, "webhook_service"):
+            try:
+                await app.state.webhook_service.stop()
+                logger.info("[STOP] Webhook delivery service stopped")
+            except Exception as e:
+                logger.error(f"[STOP] Error stopping webhook delivery: {e}", exc_info=True)
         await startup_manager.shutdown()
 
 
+_deployment_mode = os.getenv("DEPLOYMENT_MODE", "coordinator")
+
 app = FastAPI(
-    title="Glad Labs AI Co-Founder",
-    description="""
+    title=f"Glad Labs AI Co-Founder ({_deployment_mode})",
+    description=f"""
 ## Comprehensive AI-powered business co-founder system
 
-The Glad Labs AI Co-Founder provides autonomous agents and intelligent orchestration 
+**Deployment mode: `{_deployment_mode}`** — {"always-on lightweight coordinator (Railway)" if _deployment_mode == "coordinator" else "heavy-compute worker (local PC)"}
+
+The Glad Labs AI Co-Founder provides autonomous agents and intelligent orchestration
 for complete business operations including:
 - **Task Planning & Execution**: Intelligent task decomposition and multi-agent execution
 - **Content Generation**: AI-powered content creation with quality evaluation and multi-channel publishing
@@ -251,10 +304,11 @@ middleware_config = MiddlewareConfig()
 middleware_config.register_all_middleware(app)
 
 # ===== ROUTE REGISTRATION =====
-# Register all API routes from routes/ modules
-logger.info("[STARTUP] Registering all routes...")
-register_all_routes(app)
-logger.info("[STARTUP] ✅ All routes registered")
+# Register API routes based on deployment mode (coordinator or worker)
+deployment_mode = os.getenv("DEPLOYMENT_MODE", "coordinator")
+logger.info("[STARTUP] Registering routes for deployment mode: %s", deployment_mode)
+register_all_routes(app, deployment_mode=deployment_mode)
+logger.info("[STARTUP] ✅ Routes registered (mode=%s)", deployment_mode)
 
 # ===== UNIFIED HEALTH CHECK ENDPOINT =====
 # Consolidated from: /api/health, /status, /metrics/health, and route-specific health endpoints
