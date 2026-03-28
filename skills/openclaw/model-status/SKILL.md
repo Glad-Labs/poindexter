@@ -1,5 +1,5 @@
 ---
-name: model_status
+name: model-status
 description: Check which AI models are available and their health status. Use when the user says "which models are available", "model status", "check models", "is Anthropic/OpenAI/Ollama up", or "LLM health".
 ---
 

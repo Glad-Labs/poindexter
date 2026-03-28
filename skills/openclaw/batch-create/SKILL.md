@@ -1,5 +1,5 @@
 ---
-name: batch_create
+name: batch-create
 description: Create multiple blog posts or content tasks at once. Use when the user says "create several posts", "batch create", "make 5 articles about", or wants multiple topics queued simultaneously.
 ---
 

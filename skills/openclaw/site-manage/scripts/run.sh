@@ -2,10 +2,10 @@
 # scripts/run.sh — View or update site settings
 
 FASTAPI_URL="${FASTAPI_URL:-http://localhost:8000}"
-API_TOKEN="${API_TOKEN}"
+GLADLABS_KEY="${GLADLABS_KEY}"
 
-if [ -z "$API_TOKEN" ]; then
-  echo "Error: API_TOKEN not configured"
+if [ -z "$GLADLABS_KEY" ]; then
+  echo "Error: GLADLABS_KEY not configured"
   exit 1
 fi
 
@@ -17,7 +17,7 @@ if [ -z "$SETTING_KEY" ]; then
   echo "Fetching current settings..."
 
   RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "${FASTAPI_URL}/api/settings" \
-    -H "Authorization: Bearer ${API_TOKEN}" \
+    -H "Authorization: Bearer ${GLADLABS_KEY}" \
     -H "Content-Type: application/json")
 
   HTTP_CODE=$(echo "$RESPONSE" | tail -1)
@@ -44,7 +44,7 @@ else
   PAYLOAD=$(jq -n --arg key "$SETTING_KEY" --arg value "$SETTING_VALUE" '{($key): $value}')
 
   RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${FASTAPI_URL}/api/settings" \
-    -H "Authorization: Bearer ${API_TOKEN}" \
+    -H "Authorization: Bearer ${GLADLABS_KEY}" \
     -H "Content-Type: application/json" \
     -d "$PAYLOAD")
 

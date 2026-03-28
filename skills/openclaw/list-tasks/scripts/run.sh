@@ -2,10 +2,10 @@
 # scripts/run.sh — List content tasks with optional status filter
 
 FASTAPI_URL="${FASTAPI_URL:-http://localhost:8000}"
-API_TOKEN="${API_TOKEN}"
+GLADLABS_KEY="${GLADLABS_KEY}"
 
-if [ -z "$API_TOKEN" ]; then
-  echo "Error: API_TOKEN not configured"
+if [ -z "$GLADLABS_KEY" ]; then
+  echo "Error: GLADLABS_KEY not configured"
   exit 1
 fi
 
@@ -20,7 +20,7 @@ fi
 echo "Fetching tasks (status=${STATUS:-all}, limit=${LIMIT})..."
 
 RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "${FASTAPI_URL}/api/tasks?${QUERY}" \
-  -H "Authorization: Bearer ${API_TOKEN}" \
+  -H "Authorization: Bearer ${GLADLABS_KEY}" \
   -H "Content-Type: application/json")
 
 HTTP_CODE=$(echo "$RESPONSE" | tail -1)

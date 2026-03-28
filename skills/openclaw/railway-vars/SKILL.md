@@ -1,5 +1,5 @@
 ---
-name: railway_vars
+name: railway-vars
 description: View or set Railway environment variables. Use when asked about env vars, configuration, or to change a setting on Railway.
 ---
 

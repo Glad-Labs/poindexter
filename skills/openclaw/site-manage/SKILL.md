@@ -1,5 +1,5 @@
 ---
-name: site_manage
+name: site-manage
 description: View or change site settings like auto-publish threshold, budget limits, or pipeline configuration. Use when the user says "show settings", "change settings", "set auto-publish", "update budget", or "configure pipeline".
 ---
 

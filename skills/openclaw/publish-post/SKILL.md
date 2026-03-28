@@ -1,5 +1,5 @@
 ---
-name: publish_post
+name: publish-post
 description: Manually publish a completed content task. Use when the user says "publish post", "push it live", "publish task", or "publish [id]".
 ---
 

@@ -2,10 +2,10 @@
 # scripts/run.sh — Bulk create content tasks
 
 FASTAPI_URL="${FASTAPI_URL:-http://localhost:8000}"
-API_TOKEN="${API_TOKEN}"
+GLADLABS_KEY="${GLADLABS_KEY}"
 
-if [ -z "$API_TOKEN" ]; then
-  echo "Error: API_TOKEN not configured"
+if [ -z "$GLADLABS_KEY" ]; then
+  echo "Error: GLADLABS_KEY not configured"
   exit 1
 fi
 
@@ -29,7 +29,7 @@ PAYLOAD=$(echo "$TASKS" | jq '{tasks: .}')
 echo "Creating $(echo "$TASKS" | jq length) tasks..."
 
 RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${FASTAPI_URL}/api/tasks/bulk/create" \
-  -H "Authorization: Bearer ${API_TOKEN}" \
+  -H "Authorization: Bearer ${GLADLABS_KEY}" \
   -H "Content-Type: application/json" \
   -d "$PAYLOAD")
 

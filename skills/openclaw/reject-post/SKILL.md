@@ -1,5 +1,5 @@
 ---
-name: reject_post
+name: reject-post
 description: Reject a content task and send it back for revision. Use when the user says "reject task", "reject post", "send it back", "needs more work", or "reject [id]".
 ---
 

@@ -1,5 +1,5 @@
 ---
-name: quality_report
+name: quality-report
 description: Show content quality scores and QA results for completed tasks. Use when the user says "quality report", "show quality scores", "how's the content quality", or "QA results".
 ---
 

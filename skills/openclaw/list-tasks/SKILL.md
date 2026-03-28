@@ -1,5 +1,5 @@
 ---
-name: list_tasks
+name: list-tasks
 description: List content tasks, show the pipeline queue, or check task status. Use when the user says "show tasks", "what's in the queue", "pipeline status", "list posts", or "what's pending".
 ---
 

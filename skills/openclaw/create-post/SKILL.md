@@ -1,5 +1,5 @@
 ---
-name: create_post
+name: create-post
 description: Create a new blog post or content task about a given topic. Use when the user says "write a post about", "create content about", "draft an article on", or similar.
 ---
 

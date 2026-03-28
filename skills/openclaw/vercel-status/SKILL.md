@@ -1,5 +1,5 @@
 ---
-name: vercel_status
+name: vercel-status
 description: Check Vercel deployment status for the public site. Use when asked about the website, site status, or Vercel deployments.
 ---
 

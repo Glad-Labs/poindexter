@@ -1,5 +1,5 @@
 ---
-name: approve_post
+name: approve-post
 description: Approve a content task for publishing. Use when the user says "approve task", "approve post", "looks good, approve it", or "approve [id]".
 ---
 

@@ -1,5 +1,5 @@
 ---
-name: railway_status
+name: railway-status
 description: Check Railway deployment status, recent logs, and backend health. Use when asked about backend status, deployment, or API health.
 ---
 
