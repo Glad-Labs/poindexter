@@ -1,155 +1,31 @@
-# ==================================
-# Glad LABS - Docker Compose Configuration
-# ==================================
-# Full-stack orchestration for development and production
+# Glad Labs — Local Docker Compose
+#
+# OpenClaw gateway for Discord/Telegram operations.
+# Mounts your existing ~/.openclaw config — no reconfiguration needed.
+#
+# Usage:
+#   docker compose up -d             # start OpenClaw
+#   docker compose logs -f openclaw  # watch logs
+#   docker compose restart openclaw  # restart after config changes
+#   docker compose down              # stop
+#
+# FastAPI backend runs on Railway (production).
+# Ollama runs natively on Windows (GPU access).
+# This compose file is just for the OpenClaw gateway.
 
 services:
-  # ==================================
-  # Next.js Public Site
-  # ==================================
-  public-site:
-    build:
-      context: ./web/public-site
-      dockerfile: Dockerfile
-    container_name: glad-labs-public-site
-    restart: unless-stopped
-    ports:
-      - "${PUBLIC_SITE_PORT:-3000}:3000"
-    environment:
-      NODE_ENV: ${NODE_ENV:-production}
-      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
-      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
-    depends_on:
-      cofounder-agent:
-        condition: service_healthy
-    networks:
-      - glad-labs-network
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "require('http').get('http://localhost:3000/api/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})",
-        ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-
-  # ==================================
-  # AI Co-Founder Agent API
-  # ==================================
-  cofounder-agent:
-    build:
-      context: ./src/cofounder_agent
-      dockerfile: Dockerfile
-    container_name: glad-labs-cofounder-agent
-    restart: unless-stopped
-    ports:
-      - "${COFOUNDER_AGENT_PORT:-8000}:8000"
-    environment:
-      PYTHONUNBUFFERED: 1
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      DATABASE_URL: ${DATABASE_URL}
-
-      # API Keys
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
-
-      # Google Cloud
-      GCP_PROJECT_ID: ${GCP_PROJECT_ID}
-      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS}
-
-      # Firebase
-      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID}
-      FIREBASE_PRIVATE_KEY: ${FIREBASE_PRIVATE_KEY}
-      FIREBASE_CLIENT_EMAIL: ${FIREBASE_CLIENT_EMAIL}
-
-      # Security
-      JWT_SECRET: ${JWT_SECRET}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
-
-      # Rate Limiting
-      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
-      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-20}
+  openclaw:
+    image: ghcr.io/openclaw/openclaw:latest
+    container_name: glad-labs-openclaw
+    restart: always
     volumes:
-      - cofounder-logs:/app/logs
-      - cofounder-cache:/app/.cache
-    networks:
-      - glad-labs-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-
-  # ==================================
-  # PostgreSQL Database (Optional - for production)
-  # ==================================
-  postgres:
-    image: postgres:16-alpine
-    container_name: glad-labs-postgres
-    restart: unless-stopped
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # Mount existing config — same skills, .env, memory, everything
+      - ${USERPROFILE:-.}/.openclaw:/home/node/.openclaw
+      - ${USERPROFILE:-.}/.openclaw/workspace:/home/node/.openclaw/workspace
+    extra_hosts:
+      # Allow container to reach Ollama on Windows host
+      - "host.docker.internal:host-gateway"
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-gladlabs}
-      POSTGRES_USER: ${POSTGRES_USER:-gladlabs}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    networks:
-      - glad-labs-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gladlabs}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    profiles:
-      - production
-
-  # ==================================
-  # Redis Cache (Optional - for production)
-  # ==================================
-  redis:
-    image: redis:7-alpine
-    container_name: glad-labs-redis
-    restart: unless-stopped
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
-    command: redis-server --requirepass ${REDIS_PASSWORD}
-    volumes:
-      - redis-data:/data
-    networks:
-      - glad-labs-network
-    healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    profiles:
-      - production
-
-# ==================================
-# Networks
-# ==================================
-networks:
-  glad-labs-network:
-    driver: bridge
-    name: glad-labs-network
-
-# ==================================
-# Volumes
-# ==================================
-volumes:
-  cofounder-logs:
-    name: glad-labs-cofounder-logs
-  cofounder-cache:
-    name: glad-labs-cofounder-cache
-  postgres-data:
-    name: glad-labs-postgres-data
-  redis-data:
-    name: glad-labs-redis-data
+      TZ: America/New_York
+      # Ollama on host machine (not inside container)
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
