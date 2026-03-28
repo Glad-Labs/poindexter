@@ -20,7 +20,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import verify_api_token
 from utils.rate_limiter import limiter
 
 # Cloud storage imports
@@ -262,7 +262,7 @@ def build_enhanced_search_prompt(
 async def generate_featured_image(
     request: Request,
     image_request: ImageGenerationRequest,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ):
     """
     Generate or search for a featured image.
@@ -502,7 +502,7 @@ async def generate_featured_image(
 async def search_images(
     query: str = Query(..., min_length=3, description="Search query"),
     count: int = Query(1, ge=1, le=20, description="Number of images (1-20)"),
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ):
     """
     Search for images by query.

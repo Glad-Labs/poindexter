@@ -26,7 +26,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import verify_api_token
 from routes.capability_tasks_routes import router
 from tests.unit.routes.conftest import TEST_USER, make_mock_db
 from utils.route_utils import get_database_dependency
@@ -147,7 +147,7 @@ def _make_db():
 def _build_app(task_svc_patch=None, registry=None, composer=None) -> FastAPI:
     app = FastAPI()
     app.include_router(router)
-    app.dependency_overrides[get_current_user] = lambda: TEST_USER
+    app.dependency_overrides[verify_api_token] = lambda: "test-token"
     app.dependency_overrides[get_database_dependency] = lambda: _make_db()
     return app
 
@@ -339,7 +339,7 @@ class TestCreateCapabilityTask:
         db.pool = None  # Pool not initialized
         app = FastAPI()
         app.include_router(router)
-        app.dependency_overrides[get_current_user] = lambda: TEST_USER
+        app.dependency_overrides[verify_api_token] = lambda: "test-token"
         app.dependency_overrides[get_database_dependency] = lambda: db
         with patch("routes.capability_tasks_routes.get_registry", return_value=reg):
             client = TestClient(app, raise_server_exceptions=False)

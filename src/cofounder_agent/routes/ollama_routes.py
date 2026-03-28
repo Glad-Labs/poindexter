@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import verify_api_token
 from schemas.ollama_schemas import OllamaHealthResponse, OllamaWarmupResponse
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ OLLAMA_TIMEOUT = 5.0
 
 @router.get("/health", response_model=OllamaHealthResponse)
 async def check_ollama_health(
-    _current_user: Dict[str, Any] = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ) -> OllamaHealthResponse:
     """
     Check if Ollama is running and accessible
@@ -123,7 +123,7 @@ async def check_ollama_health(
 
 @router.get("/models", response_model=dict)
 async def get_ollama_models(
-    _current_user: Dict[str, Any] = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ) -> dict:
     """
     Get list of available Ollama models (FAST - no timeout/warmup)
@@ -167,7 +167,7 @@ async def get_ollama_models(
 async def warmup_ollama(
     request: Request,
     model: Optional[str] = None,
-    _current_user: Dict[str, Any] = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ) -> OllamaWarmupResponse:
     """
     Warm up an Ollama model by running a simple prompt
@@ -307,7 +307,7 @@ async def warmup_ollama(
 
 @router.get("/status")
 async def get_ollama_status(
-    _current_user: Dict[str, Any] = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ) -> Dict[str, Any]:
     """
     Get detailed Ollama system status
@@ -358,7 +358,7 @@ async def get_ollama_status(
 @router.get("/select-model")
 async def select_ollama_model(
     model: str = Query(..., description="Model name to validate and select"),
-    _current_user: Dict[str, Any] = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ) -> Dict[str, Any]:
     """
     Validate and select an Ollama model for use.

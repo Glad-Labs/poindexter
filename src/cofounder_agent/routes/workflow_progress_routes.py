@@ -15,7 +15,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import verify_api_token
 from services.logger_config import get_logger
 from services.workflow_progress_service import (
     WorkflowProgressService,
@@ -26,7 +26,7 @@ logger = get_logger(__name__)
 router = APIRouter(
     prefix="/api/workflow-progress",
     tags=["workflow-progress"],
-    dependencies=[Depends(get_current_user)],
+    dependencies=[Depends(verify_api_token)],
 )
 
 # Global WebSocket connections for broadcasting

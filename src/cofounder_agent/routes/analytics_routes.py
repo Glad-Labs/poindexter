@@ -17,7 +17,7 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import verify_api_token
 from services.database_service import DatabaseService
 from services.logger_config import get_logger
 from utils.error_handler import handle_route_error
@@ -117,7 +117,7 @@ class KPIMetrics(BaseModel):
 async def get_kpi_metrics(
     range: str = Query("7d", description="Time range: 1d, 7d, 30d, 90d, all"),
     db: DatabaseService = Depends(get_database_dependency),
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ):
     """
     Get comprehensive KPI metrics for the executive dashboard.
@@ -380,7 +380,7 @@ class DistributionResponse(BaseModel):
 async def get_task_distributions(
     range: str = Query("7d", description="Time range: 1d, 7d, 30d, 90d, all"),
     db: DatabaseService = Depends(get_database_dependency),
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ):
     """
     Get task distribution breakdown by type and status for visualization.

@@ -15,7 +15,7 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import OPERATOR_ID, verify_api_token
 from schemas.chat_schemas import ChatRequest, ChatResponse
 from services.gemini_client import GeminiClient
 from services.model_router import ModelRouter
@@ -43,7 +43,7 @@ conversations: Dict[str, list] = {}
 async def chat(
     request: Request,
     chat_request: ChatRequest,
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ) -> ChatResponse:
     """
     Process a chat message and return AI response
@@ -93,8 +93,8 @@ async def chat(
 
         logger.info(f"[Chat] PARSED MODEL - provider: '{provider}', model_name: '{model_name}'")
 
-        # Scope conversations by user_id to prevent cross-user access
-        user_id = current_user.get("id", "anonymous")
+        # Scope conversations by operator ID (solo-operator mode)
+        user_id = OPERATOR_ID
         scoped_key = f"{user_id}:{chat_request.conversationId}"
 
         # Initialize conversation if needed
@@ -295,7 +295,7 @@ async def chat(
 @router.get("/history/{conversation_id}")
 async def get_conversation(
     conversation_id: str,
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ) -> Dict[str, Any]:
     """
     Get the full conversation history for a conversation ID
@@ -311,7 +311,7 @@ async def get_conversation(
     - last_message: Timestamp of last message
     """
     try:
-        user_id = current_user.get("id", "anonymous")
+        user_id = OPERATOR_ID
         scoped_key = f"{user_id}:{conversation_id}"
         if scoped_key not in conversations:
             return {
@@ -339,7 +339,7 @@ async def get_conversation(
 @router.delete("/history/{conversation_id}")
 async def clear_conversation(
     conversation_id: str,
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ) -> Dict[str, str]:
     """
     Clear conversation history
@@ -352,7 +352,7 @@ async def clear_conversation(
     - conversation_id: The cleared conversation ID
     """
     try:
-        user_id = current_user.get("id", "anonymous")
+        user_id = OPERATOR_ID
         scoped_key = f"{user_id}:{conversation_id}"
         if scoped_key in conversations:
             del conversations[scoped_key]
@@ -370,7 +370,7 @@ async def clear_conversation(
 
 @router.get("/models")
 async def get_available_models(
-    _current_user: Dict[str, Any] = Depends(get_current_user),
+    _token: str = Depends(verify_api_token),
 ) -> Dict[str, Any]:
     """
     Get list of available chat models

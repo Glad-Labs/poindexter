@@ -22,7 +22,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import verify_api_token
 from routes.custom_workflows_routes import get_workflows_service, router
 from schemas.custom_workflow_schemas import (
     AvailablePhase,
@@ -118,7 +118,7 @@ def _build_app(svc=None) -> FastAPI:
     app.include_router(router)
     # Override the service and auth dependencies
     app.dependency_overrides[get_workflows_service] = lambda: svc
-    app.dependency_overrides[get_current_user] = lambda: TEST_USER
+    app.dependency_overrides[verify_api_token] = lambda: "test-token"
     return app
 
 

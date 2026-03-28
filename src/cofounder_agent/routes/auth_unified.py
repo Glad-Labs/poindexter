@@ -26,6 +26,7 @@ import httpx
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from middleware.api_token_auth import verify_api_token
 from utils.rate_limiter import limiter
 
 # Lazy-initialized httpx client for GitHub OAuth — avoids per-request connection overhead
@@ -209,34 +210,14 @@ def create_jwt_token(user_data: Dict[str, Any]) -> str:
 
 async def get_current_user(request: Request) -> Dict[str, Any]:
     """
+    DEPRECATED: This function is retained for backward compatibility with tests.
+    New route code should use verify_api_token from middleware.api_token_auth
+    combined with get_operator_identity() for user data.
+
     Extract and validate JWT token from Authorization header.
-
-    Works for all auth types (traditional JWT, OAuth, GitHub OAuth).
-    Auto-detects auth provider from token claims.
-
-    Args:
-        request: FastAPI request object
-
-    Returns:
-        Dictionary with user info and auth provider details
-
-    Raises:
-        HTTPException: 401 if no valid token or token invalid
-
-    Example:
-        GET /api/auth/me
-        Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
-
-        Returns:
-        {
-            "id": "user-123",
-            "email": "user@example.com",
-            "username": "username",
-            "auth_provider": "github",
-            "is_active": true,
-            "created_at": "2025-01-15T10:30:00Z"
-        }
     """
+    from middleware.api_token_auth import get_operator_identity
+
     try:
         auth_header = request.headers.get("Authorization", "")
 
@@ -477,139 +458,31 @@ async def issue_dev_token(request: Request) -> Dict[str, Any]:
     }
 
 
-@router.post("/logout", response_model=LogoutResponse)
-@limiter.limit("30/minute")
-async def unified_logout(
-    request: Request,
-    current_user: Dict[str, Any] = Depends(get_current_user),
-) -> LogoutResponse:
-    """
-    Unified logout endpoint for all authentication types.
-
-    Auto-detects authentication type from JWT token and routes to appropriate
-    logout logic:
-
-    - **Traditional JWT**: Remove from token blacklist (if implemented)
-    - **OAuth**: Revoke refresh token with OAuth provider
-    - **GitHub OAuth**: Invalidate session with GitHub
-
-    In current implementation (stub), simply acknowledges logout.
-    Token is invalidated on frontend by removing it from localStorage/cookies.
-
-    Headers:
-        Authorization: Bearer <JWT token>
-
-    Returns:
-        LogoutResponse with success status and message
-
-    Raises:
-        HTTPException: 401 if token is invalid
-
-    Example:
-        POST /api/auth/logout
-        Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
-
-        Response:
-        {
-          "success": true,
-          "message": "Successfully logged out"
-        }
-    """
-    auth_provider = current_user.get("auth_provider", "jwt")
-    user_id = current_user.get("id", "unknown")
-    token = current_user.get("token", "")
-
-    logger.info(f"Logout request for user {user_id} (auth_provider: {auth_provider})")
-
-    try:
-        # Server-side token invalidation — prevents session replay after logout (#721).
-        # Derive the JTI from the token claims; fall back to a hash of the raw token
-        # when the token does not carry a 'jti' claim (e.g. tokens issued before this
-        # change was deployed).
-        if token:
-            try:
-                claims = JWTTokenValidator.verify_token(token)
-                if claims:
-                    jti = claims.get("jti") or hashlib.sha256(token.encode()).hexdigest()[:16]
-                    exp_ts = claims.get("exp")
-                    if exp_ts:
-                        expires_at = datetime.fromtimestamp(exp_ts, tz=timezone.utc)
-                    else:
-                        # Fallback: treat as expiring in ACCESS_TOKEN_EXPIRE_MINUTES
-                        expires_at = datetime.now(timezone.utc) + timedelta(
-                            minutes=AuthConfig.ACCESS_TOKEN_EXPIRE_MINUTES
-                        )
-                    await jwt_blocklist.add_token(jti, user_id, expires_at)
-            except Exception:
-                # Token may already be expired; still mark logout as successful
-                logger.warning(
-                    "[unified_logout] Could not extract claims for blocklisting "
-                    "(token may already be expired) — user_id=%s",
-                    user_id,
-                    exc_info=True,
-                )
-
-        logger.info(f"User {user_id} logged out successfully ({auth_provider})")
-
-        return LogoutResponse(
-            success=True, message=f"Successfully logged out ({auth_provider} authentication)"
-        )
-
-    except Exception as e:
-        logger.error(f"[unified_logout] Logout error for user {user_id}: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Logout failed"
-        ) from e
-
-
 @router.get("/me", response_model=UserProfile)
 async def get_current_user_profile(
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ) -> UserProfile:
     """
-    Get current user's profile (works for all auth types).
+    Get current user's profile.
 
-    Returns the authenticated user's profile information with details about
-    which authentication method was used.
-
-    This endpoint works transparently for:
-    - Traditional JWT authentication
-    - OAuth authentication
-    - GitHub OAuth authentication
+    Returns the operator identity for the solo-operator system.
 
     Headers:
-        Authorization: Bearer <JWT token>
+        Authorization: Bearer <API_TOKEN>
 
     Returns:
-        UserProfile with user information and auth provider details
-
-    Raises:
-        HTTPException: 401 if token is invalid or expired
-
-    Example:
-        GET /api/auth/me
-        Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
-
-        Response:
-        {
-          "id": "550e8400-e29b-41d4-a716-446655440000",
-          "email": "user@github.com",
-          "username": "octocat",
-          "auth_provider": "github",
-          "is_active": true,
-          "created_at": "2025-01-15T10:30:00Z"
-        }
+        UserProfile with operator information
     """
-    logger.info(
-        f"Profile request for user {current_user.get('id')} "
-        f"(auth_provider: {current_user.get('auth_provider', 'unknown')})"
-    )
+    from middleware.api_token_auth import get_operator_identity
+
+    operator = get_operator_identity()
+    logger.info(f"Profile request for operator {operator['id']}")
 
     return UserProfile(
-        id=current_user["id"],
-        email=current_user.get("email") or "",
-        username=current_user.get("username") or "",
-        auth_provider=current_user.get("auth_provider") or "jwt",
-        is_active=current_user.get("is_active", True),
-        created_at=current_user.get("created_at") or datetime.now(timezone.utc).isoformat(),
+        id=operator["id"],
+        email=operator["email"],
+        username=operator["username"],
+        auth_provider=operator["auth_provider"],
+        is_active=operator["is_active"],
+        created_at=datetime.now(timezone.utc).isoformat(),
     )

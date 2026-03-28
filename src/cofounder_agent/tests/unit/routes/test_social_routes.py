@@ -21,7 +21,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import routes.social_routes as social_module
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import verify_api_token
 from routes.social_routes import social_router
 from tests.unit.routes.conftest import TEST_USER
 
@@ -45,7 +45,7 @@ def clear_social_state():
 def _build_app() -> FastAPI:
     app = FastAPI()
     app.include_router(social_router)
-    app.dependency_overrides[get_current_user] = lambda: TEST_USER
+    app.dependency_overrides[verify_api_token] = lambda: "test-token"
     return app
 
 

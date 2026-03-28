@@ -18,7 +18,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import routes.media_routes as media_module
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import verify_api_token
 from routes.media_routes import media_router
 from tests.unit.routes.conftest import TEST_USER
 from utils.rate_limiter import limiter
@@ -70,7 +70,7 @@ def _make_image_service(pexels_result=None, sdxl_result=False, gallery_result=No
 def _build_app() -> FastAPI:
     app = FastAPI()
     app.include_router(media_router)
-    app.dependency_overrides[get_current_user] = lambda: TEST_USER
+    app.dependency_overrides[verify_api_token] = lambda: "test-token"
     return app
 
 
