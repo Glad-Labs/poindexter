@@ -1239,3 +1239,87 @@ class TasksDatabase(DatabaseServiceMixin):
         except Exception as e:
             logger.error(f"Failed to bulk update task statuses: {e}", exc_info=True)
             raise
+
+    @log_query_performance(operation="claim_next_task", category="task_write")
+    async def claim_next_task(
+        self, worker_id: str, task_categories: list = None
+    ) -> Optional[Dict[str, Any]]:
+        """Atomically claim the next pending task using FOR UPDATE SKIP LOCKED.
+
+        This prevents race conditions when multiple workers poll simultaneously.
+        The task is locked and immediately set to 'in_progress' in a single query.
+
+        Args:
+            worker_id: The claiming worker's ID
+            task_categories: Optional list of task categories this worker handles
+
+        Returns:
+            The claimed task dict, or None if no tasks available
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                # Build category filter
+                category_filter = ""
+                params = [worker_id]
+                if task_categories:
+                    placeholders = ", ".join(
+                        f"${i+2}" for i in range(len(task_categories))
+                    )
+                    category_filter = f"AND (task_category IN ({placeholders}) OR task_category IS NULL)"
+                    params.extend(task_categories)
+
+                row = await conn.fetchrow(
+                    f"""
+                    UPDATE content_tasks
+                    SET status = 'in_progress',
+                        assigned_worker = $1,
+                        worker_claimed_at = NOW(),
+                        updated_at = NOW()
+                    WHERE id = (
+                        SELECT id FROM content_tasks
+                        WHERE status = 'pending'
+                        {category_filter}
+                        ORDER BY
+                            is_urgent DESC NULLS LAST,
+                            created_at ASC
+                        LIMIT 1
+                        FOR UPDATE SKIP LOCKED
+                    )
+                    RETURNING *
+                    """,
+                    *params,
+                )
+
+                if row:
+                    return dict(row)
+                return None
+        except Exception:
+            logger.error("[claim_next_task] Failed to claim task", exc_info=True)
+            return None
+
+    async def release_task(
+        self, task_id: str, worker_id: str, error_message: str = None
+    ):
+        """Release a claimed task back to pending (e.g., on worker failure)."""
+        try:
+            status = "failed" if error_message else "pending"
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    UPDATE content_tasks
+                    SET status = $3,
+                        assigned_worker = NULL,
+                        worker_claimed_at = NULL,
+                        error_message = $4,
+                        updated_at = NOW()
+                    WHERE task_id = $1 AND assigned_worker = $2
+                    """,
+                    task_id,
+                    worker_id,
+                    status,
+                    error_message,
+                )
+        except Exception:
+            logger.error(
+                f"[release_task] Failed to release task {task_id}", exc_info=True
+            )
