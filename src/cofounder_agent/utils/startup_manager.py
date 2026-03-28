@@ -38,28 +38,31 @@ class StartupManager:
         self.startup_error = None
 
     def _validate_secrets(self) -> None:
-        """Validate that default secret values are not used in production."""
+        """Check that secrets have been set (auto-generated or explicit).
+
+        Config.__init__ auto-generates secrets when missing/placeholder and
+        writes them to os.environ, so by the time this runs all secrets should
+        have real values. This method just logs confirmation.
+        """
         _DEFAULTS = {
             "JWT_SECRET_KEY": "development-secret-key-change-in-production",
             "JWT_SECRET": "development-secret-key-change-in-production",
             "SECRET_KEY": "your-secret-key-here",
             "REVALIDATE_SECRET": "dev-secret-key",
         }
-        env = os.getenv("ENVIRONMENT", "production")
-        is_production = env == "production"
         violations = []
         for var, default_value in _DEFAULTS.items():
             actual = os.getenv(var, "")
-            if actual and actual == default_value:
+            if not actual or actual == default_value:
                 violations.append(var)
-        if violations and is_production:
-            raise RuntimeError(
-                f"Refusing to start in production with default secret values: {', '.join(violations)}"
-            )
         if violations:
+            # This shouldn't happen if get_config() ran first, but log just in case
             logger.warning(
-                f"[startup] Default secret values detected (non-production): {', '.join(violations)}"
+                f"[startup] Secrets still at default/empty (should have been auto-generated): "
+                f"{', '.join(violations)}"
             )
+        else:
+            logger.info("[startup] All secrets validated OK")
 
     async def initialize_all_services(self) -> Dict[str, Any]:
         """
