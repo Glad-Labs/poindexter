@@ -6,17 +6,20 @@ Covers:
 - register_all_routes: marks pre-excluded routers as False
 - register_all_routes: ImportError for a route sets status to False (no crash)
 - register_all_routes: unknown Exception for a route sets status to False (no crash)
+- register_all_routes: deployment_mode selects correct manifest
 - register_workflow_history_routes: returns False when either service is None
 - register_workflow_history_routes: returns False on ImportError
 - register_workflow_history_routes: returns False on generic Exception
 - register_workflow_history_routes: success path calls initialize_history_service + include_router
-- _ROUTE_MANIFEST: structure is valid (4-tuples with non-empty strings)
+- _ROUTE_MANIFEST / _COORDINATOR_ROUTES / _WORKER_ROUTES: structure is valid
 """
 
 from unittest.mock import MagicMock, patch
 
 from utils.route_registration import (
+    _COORDINATOR_ROUTES,
     _ROUTE_MANIFEST,
+    _WORKER_ROUTES,
     register_all_routes,
     register_workflow_history_routes,
 )
@@ -30,6 +33,8 @@ def _make_app():
 
 
 class TestRouteManifestStructure:
+    """Validate structure of all route manifests."""
+
     def test_manifest_is_non_empty(self):
         assert len(_ROUTE_MANIFEST) > 0
 
@@ -62,9 +67,34 @@ class TestRouteManifestStructure:
         status_keys = [entry[2] for entry in _ROUTE_MANIFEST]
         assert status_keys[0] == "task_router"
 
-    def test_manifest_has_7_active_routes(self):
-        """Active manifest should have exactly 7 route entries."""
-        assert len(_ROUTE_MANIFEST) == 7
+    def test_coordinator_manifest_has_7_active_routes(self):
+        """Coordinator manifest should have exactly 7 route entries."""
+        assert len(_COORDINATOR_ROUTES) == 7
+
+    def test_manifest_alias_equals_coordinator(self):
+        """_ROUTE_MANIFEST should be an alias for _COORDINATOR_ROUTES."""
+        assert _ROUTE_MANIFEST is _COORDINATOR_ROUTES
+
+    def test_worker_manifest_is_subset_of_coordinator(self):
+        """Every worker route should also exist in coordinator manifest."""
+        coordinator_keys = {entry[2] for entry in _COORDINATOR_ROUTES}
+        for entry in _WORKER_ROUTES:
+            assert entry[2] in coordinator_keys, f"Worker route {entry[2]} not in coordinator"
+
+    def test_worker_manifest_has_3_routes(self):
+        """Worker manifest should have exactly 3 route entries."""
+        assert len(_WORKER_ROUTES) == 3
+
+    def test_worker_task_router_is_first(self):
+        """Task router should be first in the worker manifest."""
+        assert _WORKER_ROUTES[0][2] == "task_router"
+
+    def test_worker_manifest_structure_valid(self):
+        """All worker manifest entries should be valid 4-tuples."""
+        for entry in _WORKER_ROUTES:
+            assert len(entry) == 4
+            for field in entry:
+                assert isinstance(field, str) and field
 
 
 class TestRegisterAllRoutes:
@@ -171,6 +201,41 @@ class TestRegisterAllRoutes:
             for k, v in result.items()
             if k != first_key and k not in ("sample_upload_router", "workflow_history_router")
         )
+
+    def test_worker_mode_registers_fewer_routes(self):
+        app = _make_app()
+        with patch("utils.route_registration.importlib.import_module") as mock_import:
+            mock_module = MagicMock()
+            mock_import.return_value = mock_module
+            result = register_all_routes(app, deployment_mode="worker")
+        # Worker mode should register exactly the worker routes
+        registered = [k for k, v in result.items() if v is True]
+        assert len(registered) == len(_WORKER_ROUTES)
+
+    def test_worker_mode_does_not_include_cms_router(self):
+        app = _make_app()
+        with patch("utils.route_registration.importlib.import_module") as mock_import:
+            mock_module = MagicMock()
+            mock_import.return_value = mock_module
+            result = register_all_routes(app, deployment_mode="worker")
+        assert "cms_router" not in result or result.get("cms_router") is not True
+
+    def test_coordinator_mode_includes_all_7_routes(self):
+        app = _make_app()
+        with patch("utils.route_registration.importlib.import_module") as mock_import:
+            mock_module = MagicMock()
+            mock_import.return_value = mock_module
+            result = register_all_routes(app, deployment_mode="coordinator")
+        assert app.include_router.call_count == len(_COORDINATOR_ROUTES)
+
+    def test_default_mode_is_coordinator(self):
+        app = _make_app()
+        with patch("utils.route_registration.importlib.import_module") as mock_import:
+            mock_module = MagicMock()
+            mock_import.return_value = mock_module
+            result = register_all_routes(app)
+        # Default should register coordinator route count
+        assert app.include_router.call_count == len(_COORDINATOR_ROUTES)
 
 
 class TestRegisterWorkflowHistoryRoutes:

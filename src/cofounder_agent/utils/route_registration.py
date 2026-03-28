@@ -1,15 +1,19 @@
 """
 Route Registration - Centralized route registration for FastAPI application
 
-Handles registration of 8 active route modules with the FastAPI application.
+Handles registration of route modules with the FastAPI application.
 Provides dependency injection of database service to route modules.
+
+Deployment modes (controlled by DEPLOYMENT_MODE env var):
+- coordinator (default): Railway always-on lightweight server. All routes active.
+- worker: Local PC heavy compute. Minimal routes — workers claim tasks from DB.
 
 Unified Task Endpoint (/api/tasks):
 - Single endpoint for all task types (blog_post, social_media, email, newsletter, business_analytics, data_retrieval, market_research, financial_analysis)
 - Routes to appropriate handler based on task_type parameter
 - Subtasks bypassed - use /api/tasks with task_type instead
 
-Active routes:
+Coordinator routes:
 - Task management (core CRUD + status + publishing + intent sub-routers)
 - Bulk task operations
 - CMS (posts, categories, tags)
@@ -17,6 +21,11 @@ Active routes:
 - Metrics & analytics
 - Settings
 - Cache revalidation
+
+Worker routes:
+- Task management (core CRUD + status)
+- Metrics & analytics
+- Settings
 """
 
 import importlib
@@ -35,23 +44,28 @@ logger = get_logger(__name__)
 # path /api/tasks/pending-approval is matched before the wildcard /{task_id}.
 # ---------------------------------------------------------------------------
 
-# Active routes for frontier media firm operation
-_ROUTE_MANIFEST = [
-    # ----- Task management (core) -----
+# Routes for coordinator mode (Railway — always-on, lightweight)
+_COORDINATOR_ROUTES = [
     ("routes.task_routes", "router", "task_router", "task management"),
-    # ----- Bulk task operations -----
     ("routes.bulk_task_routes", "router", "bulk_task_router", "bulk task operations"),
-    # ----- CMS -----
     ("routes.cms_routes", "router", "cms_router", "FastAPI CMS"),
-    # ----- Models & AI backends -----
     ("routes.model_routes", "models_router", "models_router", "AI model backends"),
-    # ----- Metrics & analytics -----
     ("routes.metrics_routes", "metrics_router", "metrics_router", "metrics & analytics"),
-    # ----- Settings -----
     ("routes.settings_routes", "router", "settings_router", "user settings"),
-    # ----- Cache revalidation -----
     ("routes.revalidate_routes", "router", "revalidate_router", "secure cache invalidation"),
 ]
+
+# Routes for worker mode (local PC — heavy compute)
+# Workers primarily claim tasks from the DB and report results back.
+# They don't need CMS or webhook routes.
+_WORKER_ROUTES = [
+    ("routes.task_routes", "router", "task_router", "task management"),
+    ("routes.metrics_routes", "metrics_router", "metrics_router", "metrics & analytics"),
+    ("routes.settings_routes", "router", "settings_router", "user settings"),
+]
+
+# Backward-compatible alias: defaults to coordinator manifest
+_ROUTE_MANIFEST = _COORDINATOR_ROUTES
 
 # Disabled routes (preserved for potential reuse)
 # To re-enable, move entries back to _ROUTE_MANIFEST
@@ -81,13 +95,14 @@ _DISABLED_ROUTES = [
 
 def register_all_routes(
     app: FastAPI,
+    deployment_mode: str = "coordinator",
     database_service: Optional[Any] = None,
     workflow_history_service: Optional[Any] = None,
     training_data_service: Optional[Any] = None,
     fine_tuning_service: Optional[Any] = None,
 ) -> Dict[str, bool]:
     """
-    Register all route routers with the FastAPI application.
+    Register route routers with the FastAPI application based on deployment mode.
 
     This function consolidates all route registration into one place,
     making it easy to see which routes are available and to add/remove
@@ -95,6 +110,7 @@ def register_all_routes(
 
     Args:
         app: FastAPI application instance
+        deployment_mode: "coordinator" (default) or "worker"
         database_service: Optional database service to inject into routes
         workflow_history_service: Optional workflow history service
 
@@ -110,6 +126,7 @@ def register_all_routes(
 
         registration_status = register_all_routes(
             app,
+            deployment_mode="coordinator",
             database_service=db,
             workflow_history_service=wh,
         )
@@ -118,6 +135,17 @@ def register_all_routes(
         if registration_status['task_router']:
             logger.info("Task routes available")
     """
+    if deployment_mode == "worker":
+        manifest = _WORKER_ROUTES
+    else:
+        manifest = _COORDINATOR_ROUTES
+
+    logger.info(
+        " Deployment mode: %s — registering %d route modules",
+        deployment_mode,
+        len(manifest),
+    )
+
     status: Dict[str, bool] = {}
 
     # Routes that are intentionally absent (module removed or registered elsewhere)
@@ -126,7 +154,7 @@ def register_all_routes(
     # workflow_history registered via register_workflow_history_routes() in lifespan
     status["workflow_history_router"] = False
 
-    for module_path, router_attr, status_key, description in _ROUTE_MANIFEST:
+    for module_path, router_attr, status_key, description in manifest:
         try:
             module = importlib.import_module(module_path)
             router = getattr(module, router_attr)

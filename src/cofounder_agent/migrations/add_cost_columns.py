@@ -19,7 +19,6 @@ These columns store:
 
 import logging
 import os
-from datetime import datetime
 
 import asyncpg
 
@@ -41,14 +40,12 @@ async def run_migration():
 
         async with pool.acquire() as conn:
             # Check if columns already exist
-            result = await conn.fetch(
-                """
+            result = await conn.fetch("""
                 SELECT column_name 
                 FROM information_schema.columns 
                 WHERE table_name = 'content_tasks' 
                 AND column_name IN ('estimated_cost', 'actual_cost', 'cost_breakdown')
-            """
-            )
+            """)
 
             existing_columns = {row["column_name"] for row in result}
             logger.info(f"Existing cost columns: {existing_columns}")
@@ -56,12 +53,10 @@ async def run_migration():
             # Add estimated_cost if needed
             if "estimated_cost" not in existing_columns:
                 logger.info("Adding estimated_cost column...")
-                await conn.execute(
-                    """
+                await conn.execute("""
                     ALTER TABLE content_tasks 
                     ADD COLUMN estimated_cost DECIMAL(10,6) DEFAULT 0.0
-                """
-                )
+                """)
                 logger.info("✅ Added estimated_cost column")
             else:
                 logger.info("✓ estimated_cost column already exists")
@@ -69,12 +64,10 @@ async def run_migration():
             # Add actual_cost if needed
             if "actual_cost" not in existing_columns:
                 logger.info("Adding actual_cost column...")
-                await conn.execute(
-                    """
+                await conn.execute("""
                     ALTER TABLE content_tasks 
                     ADD COLUMN actual_cost DECIMAL(10,6) DEFAULT NULL
-                """
-                )
+                """)
                 logger.info("✅ Added actual_cost column")
             else:
                 logger.info("✓ actual_cost column already exists")
@@ -82,26 +75,22 @@ async def run_migration():
             # Add cost_breakdown if needed
             if "cost_breakdown" not in existing_columns:
                 logger.info("Adding cost_breakdown column...")
-                await conn.execute(
-                    """
+                await conn.execute("""
                     ALTER TABLE content_tasks 
                     ADD COLUMN cost_breakdown JSONB DEFAULT NULL
-                """
-                )
+                """)
                 logger.info("✅ Added cost_breakdown column")
             else:
                 logger.info("✓ cost_breakdown column already exists")
 
             # Verify columns
-            result = await conn.fetch(
-                """
+            result = await conn.fetch("""
                 SELECT column_name, data_type 
                 FROM information_schema.columns 
                 WHERE table_name = 'content_tasks' 
                 AND column_name IN ('estimated_cost', 'actual_cost', 'cost_breakdown')
                 ORDER BY column_name
-            """
-            )
+            """)
 
             logger.info("✅ Migration complete!")
             logger.info("Cost columns:")
