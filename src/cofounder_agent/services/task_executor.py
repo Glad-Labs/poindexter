@@ -41,6 +41,26 @@ from .usage_tracker import get_usage_tracker
 # Import webhook event emission for OpenClaw notifications
 from .webhook_delivery_service import emit_webhook_event
 
+# Local OpenClaw notification — worker sends messages through the local gateway
+import os as _os
+import httpx as _httpx
+
+OPENCLAW_GATEWAY_URL = _os.getenv("OPENCLAW_GATEWAY_URL", "http://localhost:18789")
+OPENCLAW_HOOKS_TOKEN = _os.getenv("OPENCLAW_HOOKS_TOKEN", "hooks-gladlabs")
+
+
+async def _notify_openclaw(message: str) -> None:
+    """Send a notification through the local OpenClaw gateway to Discord/Telegram."""
+    try:
+        async with _httpx.AsyncClient(timeout=5) as client:
+            await client.post(
+                f"{OPENCLAW_GATEWAY_URL}/hooks/agent",
+                headers={"Authorization": f"Bearer {OPENCLAW_HOOKS_TOKEN}"},
+                json={"message": message},
+            )
+    except Exception:
+        pass  # Non-critical — don't block pipeline on notification failure
+
 # Import WebSocket progress emission (re-exported so tests can patch at this module)
 from .websocket_event_broadcaster import emit_notification, emit_task_progress  # noqa: F401
 
@@ -324,6 +344,7 @@ class TaskExecutor:
             logger.info(
                 f"🚀 [TASK_SINGLE] Executing content router pipeline (timeout: {TASK_TIMEOUT_SECONDS}s)..."
             )
+            await _notify_openclaw(f"Processing: \"{topic}\"...")
             try:
                 from services.content_router_service import process_content_generation_task
 
@@ -413,6 +434,18 @@ class TaskExecutor:
                         })
                 except Exception:
                     logger.warning("[WEBHOOK] Failed to emit completion event", exc_info=True)
+
+                # Notify OpenClaw locally (worker sends to local gateway -> Discord/Telegram)
+                if auto_published:
+                    await _notify_openclaw(
+                        f"Published: \"{topic}\" (score: {quality_score}). "
+                        f"View: https://gladlabs.io"
+                    )
+                else:
+                    await _notify_openclaw(
+                        f"Ready for review: \"{topic}\" (score: {quality_score}). "
+                        f"Approve in Grafana or say 'approve post {task_id[:8]}'"
+                    )
 
                 return
 
@@ -514,6 +547,7 @@ class TaskExecutor:
                     })
                 except Exception:
                     logger.warning("[WEBHOOK] Failed to emit task.failed event", exc_info=True)
+                await _notify_openclaw(f"Failed: \"{topic}\" - {str(error_msg)[:100]}")
             else:
                 logger.info(
                     "✅ [TASK_SINGLE] Task %s: task_id=%s user_id=%s category=%s quality_score=%s",
