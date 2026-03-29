@@ -121,10 +121,20 @@ class ConnectionPoolHealth:
                 if not status.get("healthy", False):
                     consecutive = status.get("consecutive_failures", 0)
                     if consecutive >= self.max_consecutive_failures:
-                        logger.error(
-                            f"🚨 CRITICAL: Pool unhealthy for {consecutive} consecutive checks"
+                        logger.critical(
+                            "[POOL_UNHEALTHY] Connection pool has failed %d consecutive "
+                            "health checks — manual intervention may be required",
+                            consecutive,
                         )
-                        # Could trigger alerting here
+                        try:
+                            import sentry_sdk
+
+                            sentry_sdk.capture_message(
+                                f"Connection pool unhealthy: {consecutive} consecutive failures",
+                                level="error",
+                            )
+                        except Exception:
+                            pass
 
             except asyncio.CancelledError:
                 logger.info("🏥 Connection pool health checks stopped")

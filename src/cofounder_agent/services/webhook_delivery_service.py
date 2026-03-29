@@ -60,7 +60,13 @@ class WebhookDeliveryService:
                 """
                 SELECT id, event_type, payload, delivery_attempts
                 FROM webhook_events
-                WHERE delivered = FALSE AND delivery_attempts < $1
+                WHERE delivered = FALSE
+                  AND delivery_attempts < $1
+                  AND (
+                    last_attempt_at IS NULL
+                    OR last_attempt_at < NOW() - INTERVAL '1 second'
+                        * POWER(2, delivery_attempts) * 15
+                  )
                 ORDER BY created_at ASC
                 LIMIT 50
                 """,
