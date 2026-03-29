@@ -79,10 +79,17 @@ Respond with ONLY valid JSON:
 
 
 class MultiModelQA:
-    """Multi-model quality assurance for content pipeline."""
+    """Multi-model quality assurance for content pipeline.
 
-    def __init__(self, pool=None):
+    Model assignments are configurable via app_settings:
+      pipeline_critic_model = "anthropic/claude-haiku-4-5"
+      pipeline_factcheck_model = "programmatic"
+    Change at runtime via OpenClaw or the settings API.
+    """
+
+    def __init__(self, pool=None, settings_service=None):
         self.pool = pool
+        self.settings = settings_service
         self.router = get_model_router()
 
     async def review(self, title: str, content: str, topic: str = "") -> MultiModelResult:
@@ -115,8 +122,11 @@ class MultiModelQA:
             )
 
         # 2. Cross-model review using a DIFFERENT provider than the writer
-        # The writer uses Ollama, so we review with Anthropic (different DNA)
-        cross_review = await self._review_with_cloud_model(title, content, topic)
+        # Model is configurable via app_settings (pipeline_critic_model)
+        critic_model = None
+        if self.settings:
+            critic_model = await self.settings.get("pipeline_critic_model")
+        cross_review = await self._review_with_cloud_model(title, content, topic, model_override=critic_model)
         if cross_review:
             reviews.append(cross_review)
 
@@ -147,7 +157,7 @@ class MultiModelQA:
         return result
 
     async def _review_with_cloud_model(
-        self, title: str, content: str, topic: str
+        self, title: str, content: str, topic: str, model_override: Optional[str] = None,
     ) -> Optional[ReviewerResult]:
         """Review content using a cloud LLM (different provider than the writer)."""
         try:
