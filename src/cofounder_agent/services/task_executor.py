@@ -390,7 +390,7 @@ class TaskExecutor:
                         await self._auto_publish_task(task_id, quality_score)
                         auto_published = True
                 except Exception:
-                    logger.debug("Auto-publish check failed, task stays in awaiting_approval", exc_info=True)
+                    logger.warning("Auto-publish check failed, task stays in awaiting_approval", exc_info=True)
 
                 # Emit webhook event for OpenClaw notifications
                 try:
@@ -403,7 +403,7 @@ class TaskExecutor:
                             "task_id": task_id, "topic": topic, "quality_score": quality_score,
                         })
                 except Exception:
-                    logger.debug("[WEBHOOK] Failed to emit completion event", exc_info=True)
+                    logger.warning("[WEBHOOK] Failed to emit completion event", exc_info=True)
 
                 return
 
@@ -504,7 +504,7 @@ class TaskExecutor:
                         "task_id": task_id, "topic": topic, "error": str(error_msg)[:200],
                     })
                 except Exception:
-                    logger.debug("[WEBHOOK] Failed to emit task.failed event", exc_info=True)
+                    logger.warning("[WEBHOOK] Failed to emit task.failed event", exc_info=True)
             else:
                 logger.info(
                     "✅ [TASK_SINGLE] Task %s: task_id=%s user_id=%s category=%s quality_score=%s",
