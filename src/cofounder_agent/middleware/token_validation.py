@@ -57,6 +57,7 @@ class TokenValidationMiddleware(BaseHTTPMiddleware):
     PUBLIC_PATHS = {
         "/api/public",
         "/api/auth",
+        "/api/cms/status",
         "/health",
         "/docs",
         "/redoc",

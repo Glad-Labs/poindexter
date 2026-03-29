@@ -34,6 +34,7 @@ from utils.exception_handlers import register_exception_handlers
 from utils.middleware_config import MiddlewareConfig
 from utils.route_registration import register_all_routes
 from utils.route_utils import initialize_services
+from utils.connection_health import ConnectionPoolHealth
 from utils.startup_manager import StartupManager
 
 try:
@@ -68,6 +69,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
     """
     startup_manager = StartupManager()
     scheduled_publisher_task = None
+    pool_health_task = None
 
     try:
         logger.info("=" * 80)
@@ -190,6 +192,28 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             scheduled_publisher_task = asyncio.create_task(run_scheduled_publisher(_get_pool))
             logger.info("[LIFESPAN] Coordinator: scheduled post publisher started")
 
+        # Start connection pool health monitor (#819)
+        db_service = services.get("database")
+        if db_service and getattr(db_service, "pool", None):
+            pool_health = ConnectionPoolHealth(db_service.pool)
+            pool_health_task = asyncio.create_task(pool_health.auto_health_check())
+            app.state.pool_health = pool_health
+            logger.info("[LIFESPAN] Connection pool health monitor started")
+
+        # Initialize global model router singleton and seed spend counter from
+        # cost_logs so budget enforcement survives restarts (issue #1385).
+        try:
+            from services.model_router import get_model_router, initialize_model_router
+
+            _router = get_model_router()
+            if _router is None:
+                _router = initialize_model_router()
+            if _router and getattr(db_service, "pool", None):
+                await _router.seed_spend_from_db(db_service.pool)
+                logger.info("[LIFESPAN] Model router spend seeded from cost_logs")
+        except Exception as e:
+            logger.warning(f"[LIFESPAN] Failed to seed model router spend: {e}", exc_info=True)
+
         logger.info("[OK] Lifespan: Yielding control to FastAPI application. ..")
         try:
             logger.info("[OK] Application is now running")
@@ -217,6 +241,12 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             scheduled_publisher_task.cancel()
             try:
                 await scheduled_publisher_task
+            except asyncio.CancelledError:
+                pass
+        if pool_health_task is not None:
+            pool_health_task.cancel()
+            try:
+                await pool_health_task
             except asyncio.CancelledError:
                 pass
         # Stop worker service if running in worker mode
