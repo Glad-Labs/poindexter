@@ -1,4 +1,7 @@
 """
+from __future__ import annotations
+
+"""
 Process Composer — intent-to-workflow orchestration layer.
 
 Reads intent (natural language or structured) and dynamically assembles
@@ -64,6 +67,48 @@ class StepDefinition:
     category: str = "general"  # content, qa, notification, monitoring, etc.
     requires: List[str] = field(default_factory=list)  # Input keys needed
     produces: List[str] = field(default_factory=list)  # Output keys produced
+
+
+@dataclass
+class ProcessPlan:
+    """A proposed execution plan — awaiting approval before execution.
+
+    Flow: plan() → review → approve() → execute_plan()
+    """
+    plan_id: str
+    process_name: str
+    intent: str
+    reason: str
+    steps: List[Dict[str, Any]]  # Step definitions with descriptions
+    context: Dict[str, Any] = field(default_factory=dict)
+    status: str = "pending_approval"  # pending_approval, approved, rejected, executed
+
+    def approve(self) -> "ProcessPlan":
+        """Mark plan as approved for execution."""
+        self.status = "approved"
+        return self
+
+    def reject(self, reason: str = "") -> "ProcessPlan":
+        """Reject the plan."""
+        self.status = "rejected"
+        if reason:
+            self.context["rejection_reason"] = reason
+        return self
+
+    @property
+    def summary(self) -> str:
+        """Human-readable plan summary for review."""
+        lines = [
+            f"Plan: {self.plan_id}",
+            f"Intent: {self.intent}",
+            f"Process: {self.process_name}",
+            f"Reason: {self.reason}",
+            f"Status: {self.status}",
+            f"Steps ({len(self.steps)}):",
+        ]
+        for i, step in enumerate(self.steps, 1):
+            lines.append(f"  {i}. {step['name']} [{step.get('category', '?')}] — {step.get('description', '?')}")
+        return "\n".join(lines)
 
 
 INTENT_CLASSIFIER_PROMPT = """You are a business process router. Given a user intent, select the right steps to execute.
@@ -153,18 +198,82 @@ class ProcessComposer:
 
         return {"process_name": "unknown", "steps": [], "reason": "no matching intent"}
 
+    async def plan(self, intent: str, context: Optional[Dict[str, Any]] = None) -> "ProcessPlan":
+        """
+        Create an execution plan from intent WITHOUT executing it.
+
+        Returns a plan that can be reviewed, modified, then approved for execution.
+        This is the "propose → approve → execute" pattern.
+        """
+        context = context or {}
+
+        # Classify intent
+        classification = await self.classify_intent(intent)
+        process_name = classification.get("process_name", "unknown")
+        step_names = classification.get("steps", [])
+        reason = classification.get("reason", "")
+
+        # Check predefined processes
+        if process_name in self._predefined_processes:
+            step_names = self._predefined_processes[process_name]
+
+        # Filter to registered steps
+        valid_steps = [s for s in step_names if s in self._steps]
+
+        # Build the plan with step descriptions
+        planned_steps = []
+        for step_name in valid_steps:
+            step_def = self._steps[step_name]
+            planned_steps.append({
+                "name": step_name,
+                "description": step_def.description,
+                "category": step_def.category,
+                "requires": step_def.requires,
+                "produces": step_def.produces,
+            })
+
+        plan = ProcessPlan(
+            plan_id=f"plan_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}",
+            process_name=process_name,
+            intent=intent,
+            reason=reason,
+            steps=planned_steps,
+            context=context,
+            status="pending_approval",
+        )
+
+        logger.info("[COMPOSER] Plan created: %s (%d steps) — awaiting approval", plan.plan_id, len(planned_steps))
+        return plan
+
+    async def execute_plan(self, plan: "ProcessPlan") -> ProcessResult:
+        """
+        Execute a previously approved plan.
+
+        Only runs if plan.status == "approved". Rejects otherwise.
+        """
+        if plan.status != "approved":
+            return ProcessResult(
+                process_name=plan.process_name, intent=plan.intent, success=False,
+                steps=[StepResult(step_name="approval_check", success=False,
+                       error=f"Plan not approved (status: {plan.status})")],
+                started_at=datetime.now(timezone.utc), completed_at=datetime.now(timezone.utc),
+            )
+
+        return await self._execute_steps(
+            process_name=plan.process_name,
+            intent=plan.intent,
+            step_names=[s["name"] for s in plan.steps],
+            context=plan.context,
+        )
+
     async def execute(self, intent: str, context: Optional[Dict[str, Any]] = None) -> ProcessResult:
         """
-        Execute a business process from natural language intent.
+        Execute a business process immediately (skip approval).
 
-        1. Classify the intent
-        2. Select/compose the step chain
-        3. Execute each step in order
-        4. Return aggregated results
+        For automated/trusted processes. Human-facing requests should
+        use plan() + approve + execute_plan() instead.
         """
-        import time
         context = context or {}
-        started = datetime.now(timezone.utc)
 
         # Classify intent
         classification = await self.classify_intent(intent)
@@ -182,26 +291,38 @@ class ProcessComposer:
 
         # Filter to registered steps only
         valid_steps = [s for s in step_names if s in self._steps]
-        if not valid_steps:
+
+        return await self._execute_steps(process_name, intent, valid_steps, context)
+
+    async def _execute_steps(
+        self, process_name: str, intent: str, step_names: List[str],
+        context: Optional[Dict[str, Any]] = None,
+    ) -> ProcessResult:
+        """Internal: execute a list of steps with context passing."""
+        import time
+        context = context or {}
+        started = datetime.now(timezone.utc)
+
+        if not step_names:
             return ProcessResult(
                 process_name=process_name, intent=intent, success=False,
                 steps=[StepResult(step_name="classification", success=False, error="No valid steps found")],
                 started_at=started, completed_at=datetime.now(timezone.utc),
             )
 
-        # Execute steps in order, passing context between them
         results: List[StepResult] = []
         pipeline_context = {**context, "intent": intent, "process_name": process_name}
 
-        for step_name in valid_steps:
-            step_def = self._steps[step_name]
+        for step_name in step_names:
+            step_def = self._steps.get(step_name)
+            if not step_def:
+                continue
             step_start = time.monotonic()
 
             try:
                 output = await step_def.fn(**pipeline_context)
                 duration = (time.monotonic() - step_start) * 1000
 
-                # Merge step output into context for next steps
                 if isinstance(output, dict):
                     pipeline_context.update(output)
 
@@ -214,7 +335,6 @@ class ProcessComposer:
                 results.append(StepResult(
                     step_name=step_name, success=False, error=str(e)[:200], duration_ms=duration,
                 ))
-                # Don't stop on failure — let subsequent steps handle it
                 pipeline_context["last_error"] = str(e)
 
         success = all(r.success for r in results)
