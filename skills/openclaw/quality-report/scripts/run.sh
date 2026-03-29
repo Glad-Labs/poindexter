@@ -1,7 +1,7 @@
 #!/bin/bash
 # scripts/run.sh — Fetch completed tasks and display quality scores
 
-FASTAPI_URL="${FASTAPI_URL:-http://localhost:8000}"
+FASTAPI_URL="${FASTAPI_URL:-https://cofounder-production.up.railway.app}"
 GLADLABS_KEY="${GLADLABS_KEY}"
 
 if [ -z "$GLADLABS_KEY" ]; then
@@ -24,19 +24,25 @@ if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
   echo "=== Quality Report ==="
   echo ""
 
-  TOTAL=$(echo "$BODY" | jq '.total // 0')
+  TOTAL=$(echo "$BODY" | python -c "import sys,json; print(json.load(sys.stdin).get('total',0))" 2>/dev/null || echo "0")
   echo "Completed tasks: $TOTAL"
   echo ""
 
-  echo "$BODY" | jq '.tasks[]? | {
-    id,
-    task_name,
-    topic,
-    quality_score: (.quality_score // .metadata.quality_score // "N/A"),
-    completed_at: (.completed_at // .updated_at // "N/A")
-  }' 2>/dev/null || echo "$BODY" | jq .
+  echo "$BODY" | python -c "
+import sys,json
+d=json.load(sys.stdin)
+for t in d.get('tasks',[]):
+    meta = t.get('metadata') or {}
+    print(json.dumps({
+        'id': t.get('id'),
+        'task_name': t.get('task_name'),
+        'topic': t.get('topic'),
+        'quality_score': t.get('quality_score') or meta.get('quality_score','N/A'),
+        'completed_at': t.get('completed_at') or t.get('updated_at','N/A')
+    }, indent=2))
+" 2>/dev/null || echo "$BODY" | python -m json.tool 2>/dev/null || echo "$BODY"
 else
   echo "Error: API returned HTTP $HTTP_CODE"
-  echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
+  echo "$BODY" | python -m json.tool 2>/dev/null || echo "$BODY"
   exit 1
 fi

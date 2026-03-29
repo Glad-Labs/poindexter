@@ -1,7 +1,7 @@
 #!/bin/bash
 # scripts/run.sh — View or update site settings
 
-FASTAPI_URL="${FASTAPI_URL:-http://localhost:8000}"
+FASTAPI_URL="${FASTAPI_URL:-https://cofounder-production.up.railway.app}"
 GLADLABS_KEY="${GLADLABS_KEY}"
 
 if [ -z "$GLADLABS_KEY" ]; then
@@ -25,10 +25,10 @@ if [ -z "$SETTING_KEY" ]; then
 
   if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
     echo "=== Current Settings ==="
-    echo "$BODY" | jq .
+    echo "$BODY" | python -m json.tool 2>/dev/null || echo "$BODY"
   else
     echo "Error: API returned HTTP $HTTP_CODE"
-    echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
+    echo "$BODY" | python -m json.tool 2>/dev/null || echo "$BODY"
     exit 1
   fi
 else
@@ -41,7 +41,7 @@ else
 
   echo "Updating setting: $SETTING_KEY = $SETTING_VALUE"
 
-  PAYLOAD=$(jq -n --arg key "$SETTING_KEY" --arg value "$SETTING_VALUE" '{($key): $value}')
+  PAYLOAD=$(python -c "import json,sys; print(json.dumps({sys.argv[1]: sys.argv[2]}))" "$SETTING_KEY" "$SETTING_VALUE")
 
   RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${FASTAPI_URL}/api/settings" \
     -H "Authorization: Bearer ${GLADLABS_KEY}" \
@@ -53,10 +53,10 @@ else
 
   if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
     echo "Setting updated successfully."
-    echo "$BODY" | jq .
+    echo "$BODY" | python -m json.tool 2>/dev/null || echo "$BODY"
   else
     echo "Error: API returned HTTP $HTTP_CODE"
-    echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
+    echo "$BODY" | python -m json.tool 2>/dev/null || echo "$BODY"
     exit 1
   fi
 fi

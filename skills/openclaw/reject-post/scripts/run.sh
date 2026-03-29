@@ -1,7 +1,7 @@
 #!/bin/bash
 # scripts/run.sh — Reject a content task
 
-FASTAPI_URL="${FASTAPI_URL:-http://localhost:8000}"
+FASTAPI_URL="${FASTAPI_URL:-https://cofounder-production.up.railway.app}"
 GLADLABS_KEY="${GLADLABS_KEY}"
 
 if [ -z "$GLADLABS_KEY" ]; then
@@ -21,7 +21,7 @@ fi
 echo "Rejecting task: $TASK_ID"
 
 if [ -n "$REASON" ]; then
-  PAYLOAD=$(jq -n --arg reason "$REASON" '{reason: $reason}')
+  PAYLOAD=$(python -c "import json,sys; print(json.dumps({'reason': sys.argv[1]}))" "$REASON")
 else
   PAYLOAD='{}'
 fi
@@ -36,9 +36,9 @@ BODY=$(echo "$RESPONSE" | sed '$d')
 
 if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
   echo "Task $TASK_ID rejected."
-  echo "$BODY" | jq .
+  echo "$BODY" | python -m json.tool 2>/dev/null || echo "$BODY"
 else
   echo "Error: API returned HTTP $HTTP_CODE"
-  echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
+  echo "$BODY" | python -m json.tool 2>/dev/null || echo "$BODY"
   exit 1
 fi

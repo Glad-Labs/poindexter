@@ -1,7 +1,7 @@
 #!/bin/bash
 # scripts/run.sh — List content tasks with optional status filter
 
-FASTAPI_URL="${FASTAPI_URL:-http://localhost:8000}"
+FASTAPI_URL="${FASTAPI_URL:-https://cofounder-production.up.railway.app}"
 GLADLABS_KEY="${GLADLABS_KEY}"
 
 if [ -z "$GLADLABS_KEY" ]; then
@@ -27,17 +27,22 @@ HTTP_CODE=$(echo "$RESPONSE" | tail -1)
 BODY=$(echo "$RESPONSE" | sed '$d')
 
 if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-  TOTAL=$(echo "$BODY" | jq '.total // empty')
-  TASKS=$(echo "$BODY" | jq '.tasks // empty')
+  TOTAL=$(echo "$BODY" | python -c "import sys,json; d=json.load(sys.stdin); v=d.get('total'); print(v if v is not None else '')" 2>/dev/null)
 
   if [ -n "$TOTAL" ]; then
     echo "Total tasks: $TOTAL"
     echo ""
   fi
 
-  echo "$BODY" | jq '.tasks[]? | {id, task_name, status, topic, created_at}' 2>/dev/null || echo "$BODY" | jq .
+  echo "$BODY" | python -c "
+import sys,json
+d=json.load(sys.stdin)
+tasks=d.get('tasks',[])
+for t in tasks:
+    print(json.dumps({k: t.get(k) for k in ('id','task_name','status','topic','created_at')}, indent=2))
+" 2>/dev/null || echo "$BODY" | python -m json.tool 2>/dev/null || echo "$BODY"
 else
   echo "Error: API returned HTTP $HTTP_CODE"
-  echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
+  echo "$BODY" | python -m json.tool 2>/dev/null || echo "$BODY"
   exit 1
 fi

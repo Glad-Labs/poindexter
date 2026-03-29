@@ -20,7 +20,12 @@ case "$ACTION" in
       RESPONSE=$(curl -s "${FASTAPI_URL}/api/settings" \
         -H "Authorization: Bearer ${GLADLABS_KEY}")
     fi
-    echo "$RESPONSE" | jq -r '.settings[] | "\(.category)/\(.key) = \(.value)"' 2>/dev/null || echo "$RESPONSE"
+    echo "$RESPONSE" | python -c "
+import sys,json
+d=json.load(sys.stdin)
+for s in d.get('settings',[]):
+    print(f\"{s.get('category','')}/{s.get('key','')} = {s.get('value','')}\")
+" 2>/dev/null || echo "$RESPONSE"
     ;;
 
   get)
@@ -32,7 +37,7 @@ case "$ACTION" in
     fi
     RESPONSE=$(curl -s "${FASTAPI_URL}/api/settings/${KEY}" \
       -H "Authorization: Bearer ${GLADLABS_KEY}")
-    echo "$RESPONSE" | jq . 2>/dev/null || echo "$RESPONSE"
+    echo "$RESPONSE" | python -m json.tool 2>/dev/null || echo "$RESPONSE"
     ;;
 
   set)
@@ -43,12 +48,12 @@ case "$ACTION" in
       echo "Usage: run.sh set <key> <value>"
       exit 1
     fi
-    PAYLOAD=$(jq -n --arg key "$KEY" --arg value "$VALUE" '{key: $key, value: $value}')
+    PAYLOAD=$(python -c "import json,sys; print(json.dumps({'key': sys.argv[1], 'value': sys.argv[2]}))" "$KEY" "$VALUE")
     RESPONSE=$(curl -s -X PUT "${FASTAPI_URL}/api/settings/${KEY}" \
       -H "Authorization: Bearer ${GLADLABS_KEY}" \
       -H "Content-Type: application/json" \
       -d "$PAYLOAD")
-    echo "$RESPONSE" | jq . 2>/dev/null || echo "$RESPONSE"
+    echo "$RESPONSE" | python -m json.tool 2>/dev/null || echo "$RESPONSE"
     ;;
 
   *)
