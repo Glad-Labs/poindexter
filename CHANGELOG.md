@@ -1,5 +1,63 @@
 # Changelog
 
+## [3.4.0](https://github.com/Glad-Labs/glad-labs-codebase/compare/v3.3.0...v3.4.0) (2026-03-29)
+
+
+### Features
+
+* add Flesch-Kincaid readability scoring + writing style profiles ([9ca0775](https://github.com/Glad-Labs/glad-labs-codebase/commit/9ca077595154c406dd68db5c60f34926b81fa64b))
+* add Grafana dashboard configs for pipeline, cost, and quality monitoring ([#1349](https://github.com/Glad-Labs/glad-labs-codebase/issues/1349)) ([149a82a](https://github.com/Glad-Labs/glad-labs-codebase/commit/149a82a795a14fd6bd8b6b438d8e48c2c301e740))
+* add OpenClaw git-tracked config + self-healing watchdogs ([3993d0b](https://github.com/Glad-Labs/glad-labs-codebase/commit/3993d0b5ab56f88fa5433927df43a189d44b63ed))
+* add Railway + Vercel OpenClaw management skills ([530de62](https://github.com/Glad-Labs/glad-labs-codebase/commit/530de6243f1fd9a5ad06872367a3fecd508dc9ba))
+* add schema reconciliation migration (0056) ([573fcb8](https://github.com/Glad-Labs/glad-labs-codebase/commit/573fcb81c23ec553fe2f2dcc223ab4d5e538aae6))
+* add SQLAdmin panel at /admin — lightweight DB browser ([1fc3472](https://github.com/Glad-Labs/glad-labs-codebase/commit/1fc3472f21c096abb2e428b2d12997165e3abe5d))
+* auto-generate secrets — hands-off deployment ([2670813](https://github.com/Glad-Labs/glad-labs-codebase/commit/2670813f86d5a0eab1cc8bc7e8ba3cd3e7c39d5a))
+* auto-generate secrets on startup — never crash on missing env vars ([30b68c6](https://github.com/Glad-Labs/glad-labs-codebase/commit/30b68c6ac9e8612de9f6d2c2279a5007e328ffb1))
+* DB settings table, missing endpoints, public CMS status ([285c3ad](https://github.com/Glad-Labs/glad-labs-codebase/commit/285c3ad98db6383dd9460b1029ee555389e6cf89))
+* full-stack docker-compose for one-command local setup ([9bb297d](https://github.com/Glad-Labs/glad-labs-codebase/commit/9bb297d265e4ee4f4fa51d99a895fd878878e899))
+* image model registry with switchable models, remove S3 + refiner ([#1187](https://github.com/Glad-Labs/glad-labs-codebase/issues/1187)) ([9f4f698](https://github.com/Glad-Labs/glad-labs-codebase/commit/9f4f698450e964e04e8ee077c71f1f2e1cce9b07))
+* Phase 1 — frontier firm pivot (sites, auto-publish, batch creation) ([1878914](https://github.com/Glad-Labs/glad-labs-codebase/commit/18789144d7ada44972e2ac7da2e7abb59c13d238))
+* Phase 2+3 — Bearer token auth, route consolidation, webhooks, OpenClaw skills ([6172ec7](https://github.com/Glad-Labs/glad-labs-codebase/commit/6172ec77d1f4684ff34e818c808d300b36f95f9c))
+* Phase A — hybrid architecture coordinator/worker split ([d0270a4](https://github.com/Glad-Labs/glad-labs-codebase/commit/d0270a4f51da3055506b0e5a0571a8148ee20d56))
+* rewrite docker-compose for OpenClaw gateway ([afc21e2](https://github.com/Glad-Labs/glad-labs-codebase/commit/afc21e2e422f9206dfc1f7db60aecb364e4c718b))
+* single auth system — API_TOKEN replaces JWT ([2889cca](https://github.com/Glad-Labs/glad-labs-codebase/commit/2889cca3b62e0529a75a669a24e1092ab1571af1))
+* unify auth to single API_TOKEN system — eliminate JWT dependency ([0ca8023](https://github.com/Glad-Labs/glad-labs-codebase/commit/0ca8023b4feba872ce5fc8a12ec9d73e3a180b65))
+
+
+### Bug Fixes
+
+* add nixpacks.toml for Railway build — install deps at build time ([9860134](https://github.com/Glad-Labs/glad-labs-codebase/commit/986013427d4976e8d26ae7c5b567ca39ee9b6f86))
+* add rollup linux binaries for Vercel build ([abee7d4](https://github.com/Glad-Labs/glad-labs-codebase/commit/abee7d4ea139dd826416cbbfb6035aff3826e7b6))
+* add rollup linux binaries for Vercel build ([32460a1](https://github.com/Glad-Labs/glad-labs-codebase/commit/32460a179718daf865028e3054772dc91ea36932))
+* address Copilot PR review feedback ([b80c944](https://github.com/Glad-Labs/glad-labs-codebase/commit/b80c94484d599dd3f0314225654a80735e0dba43))
+* address remaining Copilot review feedback ([46245fe](https://github.com/Glad-Labs/glad-labs-codebase/commit/46245fe27ceec7f4882f19c3d27ae8a1cc46b05d))
+* CodeQL url-redirection alert in task_routes ([ca0181b](https://github.com/Glad-Labs/glad-labs-codebase/commit/ca0181b65d164cba15e43ca9011884c3b822183a))
+* deploy schema reconciliation to staging ([2c5d139](https://github.com/Glad-Labs/glad-labs-codebase/commit/2c5d13906bf0238bb7d55531e8cc20e62ee00335))
+* flaky NewsletterModal test blocking CI deploy ([3d03335](https://github.com/Glad-Labs/glad-labs-codebase/commit/3d0333577994fc07b580c72e4a0b254351967ec7))
+* nixpacks build config — install deps at build time ([a3f7f7e](https://github.com/Glad-Labs/glad-labs-codebase/commit/a3f7f7e69d1c3089a8730d2ff95c1379b90e884b))
+* observability gaps — webhook logging, corrupt embeddings, pipeline failure webhooks ([8ed5c02](https://github.com/Glad-Labs/glad-labs-codebase/commit/8ed5c02810aca3792b2a0bc7602da08e9b9af431))
+* observability gaps + remove dead get_model_for_phase duplicate ([1fccda7](https://github.com/Glad-Labs/glad-labs-codebase/commit/1fccda7d5d89152beadb42b3db306d5862d8d8db))
+* ollama test cache timestamp for CI ([0f25a2f](https://github.com/Glad-Labs/glad-labs-codebase/commit/0f25a2f6fe5c92d7e8c5d27a3d1016916990a4f3))
+* openclaw config — correct API names, hooks token, remove stale plugins ([e813fd9](https://github.com/Glad-Labs/glad-labs-codebase/commit/e813fd92e1812d2bbbdc42a8487f94e94dd6f8a1))
+* railway.json invalid builder — causing deploy failures ([d9a8a80](https://github.com/Glad-Labs/glad-labs-codebase/commit/d9a8a8086d673cbb04acbb8336298109346da4bc))
+* regenerate poetry.lock after pillow removal ([365d0d9](https://github.com/Glad-Labs/glad-labs-codebase/commit/365d0d9cc8783c8fb18404ce1295a894179ed96f))
+* remaining sprint observability + reliability issues ([#1384](https://github.com/Glad-Labs/glad-labs-codebase/issues/1384)-1389) ([c355141](https://github.com/Glad-Labs/glad-labs-codebase/commit/c35514152bc6635d71aa38417aee9245d7e535de))
+* remove flaky jest.runOnlyPendingTimers in NewsletterModal test ([8695a24](https://github.com/Glad-Labs/glad-labs-codebase/commit/8695a245ec76c7ce7b1c7a052021f9c856a60298))
+* remove invalid DOCKERFILE builder from railway.json ([82f8218](https://github.com/Glad-Labs/glad-labs-codebase/commit/82f8218ef3d5f9f422e6013f7895e11d9f6801eb))
+* rename API_TOKEN to GLADLABS_KEY in OpenClaw skills ([fe18ea2](https://github.com/Glad-Labs/glad-labs-codebase/commit/fe18ea2a35bf29319c69d47bba1ce57966d888ff))
+* resolve 3 test failures + 7 skipped tests ([979a054](https://github.com/Glad-Labs/glad-labs-codebase/commit/979a0548f2b6688974e0f2dfa0de29a2f6934e4c))
+* resolve all 16 P2/P3/P4 issues from auditor run ([9e8259e](https://github.com/Glad-Labs/glad-labs-codebase/commit/9e8259e9cb7a592aadf46393c23f6b20cf988aca))
+* resolve all 5 P1 issues from auditor run ([d3f3afd](https://github.com/Glad-Labs/glad-labs-codebase/commit/d3f3afd86207b4e87b46a0d2c708e5cb9f5fd734))
+* resolve pre-existing test failures, ESLint errors, and formatting ([5c7911a](https://github.com/Glad-Labs/glad-labs-codebase/commit/5c7911af96aeeb30c12239791396c463b34d71ab))
+* restore railway.json and Procfile deleted during cleanup ([b5f1de7](https://github.com/Glad-Labs/glad-labs-codebase/commit/b5f1de78fdb56b0af2a1f29195627af1be0f3de5))
+* restore railway.json and Procfile for production deploy ([846a462](https://github.com/Glad-Labs/glad-labs-codebase/commit/846a4623d36261c8d263270f799dc94acd50adac))
+* run watchdog scheduled tasks windowless (hidden PowerShell) ([f06d72b](https://github.com/Glad-Labs/glad-labs-codebase/commit/f06d72b505645518ea828f05504c2191bd7b5b07))
+* set cache timestamp in ollama recommend_model test ([33b7bea](https://github.com/Glad-Labs/glad-labs-codebase/commit/33b7bea68475f5f32d2c6bdffea07dd69c770a1e))
+* simplify startCommand — trigger fresh Railway build ([d683633](https://github.com/Glad-Labs/glad-labs-codebase/commit/d68363325c4bf3c42b45659273e3becf5f199e02))
+* trigger Railway rebuild ([a1c078d](https://github.com/Glad-Labs/glad-labs-codebase/commit/a1c078db502471d6c25a895e22f73bb838f009fa))
+* URL-encode redirect parameter to resolve CodeQL url-redirection alert ([cd2aac2](https://github.com/Glad-Labs/glad-labs-codebase/commit/cd2aac23dce26d03082a40459af32e4e5b3f63b5))
+* wire up ConnectionPoolHealth monitor in lifespan ([#819](https://github.com/Glad-Labs/glad-labs-codebase/issues/819)) ([89b39a7](https://github.com/Glad-Labs/glad-labs-codebase/commit/89b39a7d9fbc8cd59e6d99572522270e3f465d16))
+
 ## [3.3.0](https://github.com/Glad-Labs/glad-labs-codebase/compare/v3.2.0...v3.3.0) (2026-03-25)
 
 ### Features
