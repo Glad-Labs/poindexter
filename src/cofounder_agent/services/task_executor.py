@@ -447,16 +447,27 @@ class TaskExecutor:
                 except Exception:
                     logger.warning("[WEBHOOK] Failed to emit completion event", exc_info=True)
 
-                # Notify OpenClaw locally (worker sends to local gateway -> Discord/Telegram)
+                # Notify via direct Discord webhook + Telegram bot API
                 if auto_published:
+                    # Get the slug from the posts table for the direct link
+                    slug = ""
+                    try:
+                        slug_row = await self.database_service.pool.fetchrow(
+                            "SELECT slug FROM posts WHERE task_id = $1", task_id
+                        )
+                        if slug_row:
+                            slug = slug_row["slug"]
+                    except Exception:
+                        pass
+                    link = f"https://gladlabs.io/posts/{slug}" if slug else "https://gladlabs.io"
                     await _notify_openclaw(
-                        f"Published: \"{topic}\" (score: {quality_score}). "
-                        f"View: https://gladlabs.io"
+                        f"Published: \"{topic}\" (score: {quality_score:.0f})\n{link}"
                     )
                 else:
+                    review_link = f"https://gladlabs.grafana.net/d/ops-live/glad-labs-operations"
                     await _notify_openclaw(
-                        f"Ready for review: \"{topic}\" (score: {quality_score}). "
-                        f"Approve in Grafana or say 'approve post {task_id[:8]}'"
+                        f"Ready for review: \"{topic}\" (score: {quality_score:.0f})\n"
+                        f"Review: {review_link}"
                     )
 
                 return
