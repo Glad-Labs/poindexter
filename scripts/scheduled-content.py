@@ -23,12 +23,14 @@ TOPIC_TEMPLATES = [
     "The Developer's Guide to {tech}",
     "{tech} vs {alt_tech}: Which One Should You Choose?",
     "Why {domain} Teams Are Adopting {tech}",
-    "Building Production-Ready {tech} Applications: Lessons Learned",
+    "Building Production-Ready {tech} Applications",
     "The Hidden Costs of {tech} Nobody Talks About",
     "From Prototype to Production: Scaling {tech}",
     "{number} Mistakes Developers Make With {tech}",
     "The Business Case for {tech} in {domain}",
-    "What We Learned Running {tech} for {timeframe}",
+    "A Practical Introduction to {tech} for {domain}",
+    "When to Use {tech} Instead of {alt_tech}",
+    "Getting Started With {tech}: What You Need to Know",
 ]
 
 TECHS = [
@@ -52,7 +54,7 @@ DOMAINS = [
 ]
 
 NUMBERS = ["3", "5", "7", "10"]
-TIMEFRAMES = ["6 Months", "1 Year", "100 Days", "3 Years"]
+TIMEFRAMES = ["30 Days", "60 Days", "90 Days", "6 Months"]
 
 
 def generate_topic() -> str:
