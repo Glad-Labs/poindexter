@@ -233,6 +233,39 @@ class QARegistry:
             for r in self._reviewers.values()
         ]
 
+    async def load_dynamic_workflows(self) -> None:
+        """Load workflow definitions from app_settings.
+
+        Settings format (key: qa_workflow_{name}, value: JSON):
+            {"reviewers": ["programmatic_validator", "seo_checker"],
+             "min_score": 70, "require_unanimous": false,
+             "description": "Blog content QA"}
+
+        This allows workflows to be created/modified at runtime via
+        OpenClaw or the settings API without code changes.
+        """
+        if not self.settings:
+            return
+
+        import json
+        all_settings = await self.settings.get_by_category("qa_workflows")
+        for key, value in all_settings.items():
+            if not key.startswith("qa_workflow_"):
+                continue
+            workflow_name = key.replace("qa_workflow_", "")
+            try:
+                config = json.loads(value) if isinstance(value, str) else value
+                self.register_workflow(
+                    name=workflow_name,
+                    reviewer_names=config.get("reviewers", []),
+                    min_score=config.get("min_score", 70.0),
+                    require_unanimous=config.get("require_unanimous", False),
+                    description=config.get("description", f"Dynamic workflow: {workflow_name}"),
+                )
+                logger.info("[QA_REGISTRY] Loaded dynamic workflow: %s", workflow_name)
+            except Exception as e:
+                logger.warning("[QA_REGISTRY] Failed to load workflow %s: %s", key, e)
+
 
 # ============================================================================
 # BUILT-IN REVIEWERS
