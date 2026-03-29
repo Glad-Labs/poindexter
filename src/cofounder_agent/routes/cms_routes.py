@@ -8,11 +8,12 @@ Using pure asyncpg for non-blocking database access.
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
 from middleware.api_token_auth import verify_api_token, verify_api_token_optional
 from services.logger_config import get_logger
+from utils.rate_limiter import limiter
 from utils.error_handler import handle_route_error
 from utils.route_utils import get_database_dependency
 
@@ -145,7 +146,9 @@ async def get_db_pool():
 
 
 @router.get("/api/posts")
+@limiter.limit("60/minute")
 async def list_posts(
+    request: Request,
     offset: int = Query(0, ge=0, le=10000, description="Number of posts to skip"),
     skip: int = Query(0, ge=0, le=10000, description="Alias for offset (deprecated — use offset)"),
     limit: int = Query(20, ge=1, le=100),
@@ -225,7 +228,9 @@ async def list_posts(
 
 
 @router.get("/api/posts/search")
+@limiter.limit("30/minute")
 async def search_posts(
+    request: Request,
     q: str = Query("", description="Search term to match against title, content, or slug"),
     limit: int = Query(50, ge=1, le=100, description="Maximum posts to return"),
 ):
@@ -284,7 +289,9 @@ async def search_posts(
 
 
 @router.get("/api/posts/{slug}")
+@limiter.limit("60/minute")
 async def get_post_by_slug(
+    request: Request,
     slug: str,
 ):
     """
@@ -497,7 +504,9 @@ async def delete_post(
 
 
 @router.get("/api/categories")
+@limiter.limit("60/minute")
 async def list_categories(
+    request: Request,
     offset: int = Query(0, ge=0, description="Number of categories to skip"),
     limit: int = Query(100, ge=1, le=500, description="Maximum categories to return"),
 ):
@@ -529,7 +538,8 @@ async def list_categories(
 
 
 @router.get("/api/categories/{slug}")
-async def get_category_by_slug(slug: str):
+@limiter.limit("60/minute")
+async def get_category_by_slug(request: Request, slug: str):
     """
     Get a single category by slug (ASYNC).
     Returns: {data: {...}}
@@ -571,7 +581,9 @@ async def get_category_by_slug(slug: str):
 
 
 @router.get("/api/tags")
+@limiter.limit("60/minute")
 async def list_tags(
+    request: Request,
     offset: int = Query(0, ge=0, description="Number of tags to skip"),
     limit: int = Query(100, ge=1, le=500, description="Maximum tags to return"),
 ):
@@ -608,7 +620,8 @@ async def list_tags(
 
 
 @router.get("/api/cms/status")
-async def cms_status():
+@limiter.limit("30/minute")
+async def cms_status(request: Request):
     """
     Check CMS database status and table existence (ASYNC).
     Public endpoint — no authentication required.
