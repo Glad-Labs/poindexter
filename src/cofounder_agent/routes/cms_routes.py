@@ -224,6 +224,65 @@ async def list_posts(
         raise await handle_route_error(e, "list_posts", logger)
 
 
+@router.get("/api/posts/search")
+async def search_posts(
+    q: str = Query("", description="Search term to match against title, content, or slug"),
+    limit: int = Query(50, ge=1, le=100, description="Maximum posts to return"),
+):
+    """
+    Search published posts by title, content, or slug (ASYNC).
+    Returns: {posts: [...], total: N, offset: 0, limit: N}
+    No auth required (public endpoint).
+    """
+    try:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            if not q.strip():
+                return {"posts": [], "total": 0, "offset": 0, "limit": limit}
+
+            search_term = f"%{q}%"
+            rows = await conn.fetch(
+                """
+                SELECT id, title, slug, excerpt, featured_image_url, cover_image_url,
+                       category_id, published_at, created_at, updated_at,
+                       seo_title, seo_description, seo_keywords, status, content, author_id
+                FROM posts
+                WHERE status = 'published'
+                  AND (title ILIKE $1 OR content ILIKE $1 OR slug ILIKE $1)
+                ORDER BY updated_at DESC
+                LIMIT $2
+                """,
+                search_term,
+                limit,
+            )
+
+            posts = [dict(row) for row in rows]
+
+            for post in posts:
+                post["published_at"] = (
+                    post["published_at"].isoformat() if post["published_at"] else None
+                )
+                post["created_at"] = post["created_at"].isoformat() if post["created_at"] else None
+                post["updated_at"] = post["updated_at"].isoformat() if post["updated_at"] else None
+
+                if not post.get("excerpt") and post.get("content"):
+                    post["excerpt"] = generate_excerpt_from_content(post["content"])
+
+                if post.get("content"):
+                    post["content"] = convert_markdown_to_html(post["content"])
+
+                map_featured_image_to_coverimage(post)
+
+            return {
+                "posts": posts,
+                "total": len(posts),
+                "offset": 0,
+                "limit": limit,
+            }
+    except Exception as e:
+        raise await handle_route_error(e, "search_posts", logger)
+
+
 @router.get("/api/posts/{slug}")
 async def get_post_by_slug(
     slug: str,
@@ -469,6 +528,43 @@ async def list_categories(
         raise await handle_route_error(e, "list_categories", logger)
 
 
+@router.get("/api/categories/{slug}")
+async def get_category_by_slug(slug: str):
+    """
+    Get a single category by slug (ASYNC).
+    Returns: {data: {...}}
+    No auth required (public endpoint).
+    """
+    try:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT id, name, slug, description, created_at, updated_at
+                FROM categories
+                WHERE slug = $1
+                """,
+                slug,
+            )
+
+            if not row:
+                raise HTTPException(status_code=404, detail="Category not found")
+
+            category = dict(row)
+            category["created_at"] = (
+                category["created_at"].isoformat() if category["created_at"] else None
+            )
+            category["updated_at"] = (
+                category["updated_at"].isoformat() if category["updated_at"] else None
+            )
+
+            return {"data": category}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise await handle_route_error(e, "get_category_by_slug", logger)
+
+
 # ============================================================================
 # TAGS ENDPOINTS
 # ============================================================================
@@ -512,10 +608,10 @@ async def list_tags(
 
 
 @router.get("/api/cms/status")
-async def cms_status(token: str = Depends(verify_api_token)):
+async def cms_status():
     """
     Check CMS database status and table existence (ASYNC).
-    Requires: Valid JWT authentication (admin health endpoint — not public)
+    Public endpoint — no authentication required.
     Returns: {status: "healthy"|"error", tables: {...}}
     """
     try:
