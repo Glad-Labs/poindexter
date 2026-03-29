@@ -29,6 +29,7 @@ from fastapi import HTTPException, Request
 from services.database_service import DatabaseService
 from services.logger_config import get_logger
 from services.quality_service import UnifiedQualityService
+from services.settings_service import SettingsService
 from services.unified_orchestrator import UnifiedOrchestrator
 
 logger = get_logger(__name__)
@@ -62,4 +63,13 @@ def get_database_service(request: Request) -> DatabaseService:
     if not service:
         logger.error("DatabaseService not initialized in app state")
         raise HTTPException(status_code=500, detail="Service not initialized: DatabaseService")
+    return service
+
+
+def get_settings_service(request: Request) -> SettingsService:
+    """Get SettingsService from app state"""
+    service = getattr(request.app.state, "settings_service", None)
+    if not service:
+        logger.error("SettingsService not initialized in app state")
+        raise HTTPException(status_code=500, detail="Service not initialized: SettingsService")
     return service

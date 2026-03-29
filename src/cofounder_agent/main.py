@@ -108,6 +108,20 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         except Exception as e:
             logger.warning(f"[LIFESPAN] ⚠️ Failed to initialize capabilities: {e}", exc_info=True)
 
+        # Initialize settings service (DB-backed key-value config)
+        logger.info("[LIFESPAN] Initializing settings service. ..")
+        try:
+            from services.settings_service import SettingsService
+            db_pool = services["database"].pool
+            settings_service = SettingsService(db_pool)
+            await settings_service.refresh_cache()
+            app.state.settings_service = settings_service
+            service_container.register("settings", settings_service)
+            logger.info("[LIFESPAN] Settings service initialized")
+        except Exception as e:
+            logger.warning(f"[LIFESPAN] Settings service failed (non-critical): {e}", exc_info=True)
+            app.state.settings_service = None
+
         # Initialize quality service
         logger.info("[LIFESPAN] Initializing quality service. ..")
         quality_service = UnifiedQualityService()
