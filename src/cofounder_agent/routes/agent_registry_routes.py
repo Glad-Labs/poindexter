@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from agents.registry import get_agent_registry
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import verify_api_token
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ router = APIRouter(
 
 @router.get("/registry", response_model=Dict[str, Any], name="Get Agent Registry")
 async def get_agent_registry_endpoint(
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ):
     """
     Get the complete agent registry with all agents and their metadata.
@@ -107,7 +107,7 @@ async def get_agent_registry_endpoint(
 
 @router.get("/list", response_model=List[str], name="List Agent Names")
 async def list_agents(
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ):
     """
     Get a simple list of all available agent names.
@@ -145,7 +145,7 @@ async def search_agents(
     capability: Optional[str] = Query(None, description="Filter by capability"),
     phase: Optional[str] = Query(None, description="Filter by phase"),
     category: Optional[str] = Query(None, description="Filter by category"),
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ):
     """
     Search for agents by optional filters.
@@ -171,7 +171,7 @@ async def search_agents(
 @router.get("/{agent_name}", response_model=Dict[str, Any], name="Get Agent Metadata")
 async def get_agent_metadata(
     agent_name: str,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ):
     """
     Get metadata for a specific agent.
@@ -223,7 +223,7 @@ async def get_agent_metadata(
 @router.get("/{agent_name}/phases", response_model=List[str], name="Get Agent Phases")
 async def get_agent_phases(
     agent_name: str,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ):
     """
     Get the pipeline phases that an agent handles.
@@ -262,7 +262,7 @@ async def get_agent_phases(
 @router.get("/{agent_name}/capabilities", response_model=List[str], name="Get Agent Capabilities")
 async def get_agent_capabilities(
     agent_name: str,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ):
     """
     Get the capabilities/skills of an agent.
@@ -301,7 +301,7 @@ async def get_agent_capabilities(
 @router.get("/by-phase/{phase}", name="Get Agents by Phase")
 async def get_agents_by_phase(
     phase: str,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ):
     """
     Get all agents that handle a specific pipeline phase.
@@ -351,7 +351,7 @@ async def get_agents_by_phase(
 @router.get("/by-capability/{capability}", name="Get Agents by Capability")
 async def get_agents_by_capability(
     capability: str,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ):
     """
     Get all agents that have a specific capability.
@@ -402,7 +402,7 @@ async def get_agents_by_capability(
 )
 async def get_agents_by_category(
     category: str,
-    current_user: dict = Depends(get_current_user),
+    token: str = Depends(verify_api_token),
 ):
     """
     Get all agents in a specific category.

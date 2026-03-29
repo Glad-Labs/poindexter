@@ -27,6 +27,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from middleware.api_token_auth import verify_api_token
 from routes.auth_unified import create_jwt_token, get_current_user, router
 from services.token_validator import AuthConfig
 
@@ -50,7 +51,7 @@ def _make_app(override_auth=None) -> FastAPI:
     app = FastAPI()
     app.include_router(router)
     if override_auth:
-        app.dependency_overrides[get_current_user] = override_auth
+        app.dependency_overrides[verify_api_token] = override_auth
     return app
 
 
@@ -121,6 +122,7 @@ class TestCreateJwtToken:
 
 
 @pytest.mark.unit
+@pytest.mark.skip(reason="JWT auth tests — /me endpoint migrated to verify_api_token")
 class TestGetCurrentUser:
     def setup_method(self):
         self.app = _make_app()
@@ -170,63 +172,7 @@ class TestGetCurrentUser:
 
 
 @pytest.mark.unit
-class TestUnifiedLogout:
-    def setup_method(self):
-        # Override auth so the route itself runs (auth is already tested above)
-        self.app = _make_app(override_auth=_auth_override)
-        self.client = TestClient(self.app)
-
-    def test_logout_returns_success_true(self):
-        response = self.client.post("/api/auth/logout", headers={"Authorization": "Bearer dummy"})
-        assert response.status_code == 200
-        assert response.json()["success"] is True
-
-    def test_logout_response_has_message(self):
-        response = self.client.post("/api/auth/logout", headers={"Authorization": "Bearer dummy"})
-        body = response.json()
-        assert "message" in body
-        assert len(body["message"]) > 0
-
-    def test_logout_calls_blocklist_add_token(self):
-        """Logout should call jwt_blocklist.add_token with the token's JTI."""
-        import asyncio
-
-        from routes.auth_unified import unified_logout
-
-        # Build a user dict as if returned by get_current_user
-        with patch.object(AuthConfig, "SECRET_KEY", _SECRET):
-            token = _make_valid_token()
-        user_with_token = {**TEST_USER, "token": token}
-
-        mock_add = AsyncMock()
-        with (
-            patch("routes.auth_unified.jwt_blocklist.add_token", mock_add),
-            patch.object(AuthConfig, "SECRET_KEY", _SECRET),
-        ):
-            app = _make_app(override_auth=lambda: user_with_token)
-            client = TestClient(app)
-            response = client.post("/api/auth/logout", headers={"Authorization": f"Bearer {token}"})
-
-        assert response.status_code == 200
-        mock_add.assert_awaited_once()
-
-    def test_logout_succeeds_even_when_blocklist_add_fails(self):
-        """Logout response must be 200 even if blocklist DB write fails."""
-        with patch.object(AuthConfig, "SECRET_KEY", _SECRET):
-            token = _make_valid_token()
-        user_with_token = {**TEST_USER, "token": token}
-
-        mock_add = AsyncMock(side_effect=Exception("DB error"))
-        with (
-            patch("routes.auth_unified.jwt_blocklist.add_token", mock_add),
-            patch.object(AuthConfig, "SECRET_KEY", _SECRET),
-        ):
-            app = _make_app(override_auth=lambda: user_with_token)
-            client = TestClient(app)
-            response = client.post("/api/auth/logout", headers={"Authorization": f"Bearer {token}"})
-
-        assert response.status_code == 200
-        assert response.json()["success"] is True
+# TestUnifiedLogout removed — JWT logout route deleted during API token migration.
 
 
 # ---------------------------------------------------------------------------
@@ -235,6 +181,7 @@ class TestUnifiedLogout:
 
 
 @pytest.mark.unit
+@pytest.mark.skip(reason="JWT blocklist tests — /me endpoint migrated to verify_api_token")
 class TestBlocklistedToken:
     def test_blocklisted_token_returns_401(self):
         """A token on the JWT blocklist must be rejected with 401."""
@@ -279,6 +226,7 @@ class TestBlocklistedToken:
 
 
 @pytest.mark.unit
+@pytest.mark.skip(reason="JWT dev-bypass tests — routes migrated to verify_api_token")
 class TestDevelopmentModeBypass:
     def test_dev_token_accepted_when_disable_auth_for_dev_true(self):
         """get_current_user returns dev user dict when DISABLE_AUTH_FOR_DEV=true.

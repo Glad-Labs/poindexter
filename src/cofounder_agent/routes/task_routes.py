@@ -697,9 +697,11 @@ async def get_metrics_alias(
     token: str = Depends(verify_api_token),
 ):
     """Deprecated alias. Use GET /api/tasks/metrics/summary."""
+    from urllib.parse import urlencode
+
     from fastapi.responses import RedirectResponse
 
-    query = f"?time_range={time_range}" if time_range else ""
+    query = f"?{urlencode({'time_range': time_range})}" if time_range else ""
     return RedirectResponse(url=f"/api/tasks/metrics/summary{query}", status_code=308)
 
 

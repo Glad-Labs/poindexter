@@ -22,7 +22,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from routes.auth_unified import get_current_user
+from middleware.api_token_auth import verify_api_token
 from routes.workflow_progress_routes import get_workflow_progress_service, router
 from tests.unit.routes.conftest import TEST_USER
 
@@ -66,7 +66,7 @@ def _make_progress_service(progress=None):
 def _build_app(svc=None) -> FastAPI:
     app = FastAPI()
     app.include_router(router)
-    app.dependency_overrides[get_current_user] = lambda: TEST_USER
+    app.dependency_overrides[verify_api_token] = lambda: "test-token"
     app.dependency_overrides[get_workflow_progress_service] = lambda: (
         svc if svc is not None else _make_progress_service()
     )
