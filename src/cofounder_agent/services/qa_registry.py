@@ -267,6 +267,98 @@ class QARegistry:
                 logger.warning("[QA_REGISTRY] Failed to load workflow %s: %s", key, e)
 
 
+    async def select_workflow_for_task(
+        self, topic: str, category: str = "", target_audience: str = "", task_type: str = "blog_post",
+    ) -> str:
+        """
+        Dynamically select or build a QA workflow based on task intent.
+
+        Uses a lightweight LLM call to analyze the task and pick the best
+        reviewer chain from registered reviewers. Falls back to "blog_content"
+        if the LLM is unavailable.
+
+        Returns the workflow name (creates it dynamically if needed).
+        """
+        available_reviewers = self.list_reviewers()
+        if not available_reviewers:
+            return "blog_content"
+
+        # Build context for the selector
+        reviewer_catalog = "\n".join(
+            f"- {r['name']}: {r['description']} (weight={r['weight']}, stop_on_fail={r['stop_on_fail']})"
+            for r in available_reviewers
+        )
+
+        selector_prompt = f"""You are a QA workflow selector. Given a content task, pick the right reviewers.
+
+Available reviewers:
+{reviewer_catalog}
+
+Task:
+- Topic: {topic}
+- Category: {category}
+- Audience: {target_audience}
+- Type: {task_type}
+
+Rules:
+- programmatic_validator should ALWAYS be first (catches hallucinations)
+- Technical content should include code/accuracy reviewers
+- SEO content should include seo_checker
+- Opinion/editorial needs tone_checker if available
+- More reviewers = slower but higher quality
+
+Return ONLY valid JSON:
+{{"workflow_name": "auto_{task_type}", "reviewers": ["reviewer1", "reviewer2"], "min_score": 70, "reason": "brief explanation"}}
+"""
+
+        try:
+            from services.model_router import get_model_router
+            router = get_model_router()
+            if router:
+                response = await router.route_request(
+                    prompt=selector_prompt,
+                    cost_tier="free",  # Use Ollama for this — it's a simple classification
+                    task_type="qa_selector",
+                )
+                if response and response.get("content"):
+                    import json as _json
+                    import re
+                    text = response["content"]
+                    # Extract JSON
+                    match = re.search(r"\{[^{}]*\"reviewers\"[^{}]*\}", text)
+                    if match:
+                        config = _json.loads(match.group(0))
+                        workflow_name = config.get("workflow_name", f"auto_{task_type}")
+                        reviewers = config.get("reviewers", [])
+
+                        # Filter to only registered reviewers
+                        valid_reviewers = [r for r in reviewers if r in self._reviewers]
+                        if not valid_reviewers:
+                            valid_reviewers = ["programmatic_validator"]
+
+                        # Ensure programmatic_validator is always first
+                        if "programmatic_validator" in valid_reviewers:
+                            valid_reviewers.remove("programmatic_validator")
+                        valid_reviewers.insert(0, "programmatic_validator")
+
+                        # Register the dynamic workflow
+                        self.register_workflow(
+                            name=workflow_name,
+                            reviewer_names=valid_reviewers,
+                            min_score=config.get("min_score", 70.0),
+                            description=config.get("reason", f"Auto-selected for: {topic[:50]}"),
+                        )
+                        logger.info(
+                            "[QA_REGISTRY] Auto-selected workflow '%s': %s (reason: %s)",
+                            workflow_name, valid_reviewers, config.get("reason", ""),
+                        )
+                        return workflow_name
+        except Exception as e:
+            logger.warning("[QA_REGISTRY] Workflow auto-selection failed, using default: %s", e)
+
+        return "blog_content"
+
+
 # ============================================================================
 # BUILT-IN REVIEWERS
 # ============================================================================
