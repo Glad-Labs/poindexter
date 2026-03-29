@@ -1037,6 +1037,26 @@ async def process_content_generation_task(
             topic, tags, generate_featured_image, image_service, result
         )
 
+        # Stage 3.5: Programmatic content validation (catches hallucinations)
+        from services.content_validator import validate_content
+        validation = validate_content(
+            _normalize_text(result.get("seo_title", topic)),
+            _normalize_text(content_text),
+            topic,
+        )
+        if not validation.passed:
+            issues_summary = "; ".join(i.description[:60] for i in validation.issues[:3])
+            logger.warning(
+                "[VALIDATOR] Content rejected for task %s: %s", task_id[:8], issues_summary
+            )
+            result["validation_issues"] = issues_summary
+            result["status"] = "rejected"
+            await database_service.update_task(task_id, {
+                "status": "rejected",
+                "error_message": f"Content validation failed: {issues_summary}",
+            })
+            return result
+
         # Stage 4: Generate SEO metadata
         content_generator = get_content_generator()
         seo_title, seo_description, seo_keywords = await _stage_generate_seo_metadata(
