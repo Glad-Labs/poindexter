@@ -14,7 +14,9 @@
       "railway_status": { "enabled": true },
       "railway_deploy": { "enabled": true },
       "railway_vars": { "enabled": true },
-      "vercel_status": { "enabled": true }
+      "vercel_status": { "enabled": true },
+      "site_settings": { "enabled": true },
+      "sprint_status": { "enabled": true }
     }
   }
 }
