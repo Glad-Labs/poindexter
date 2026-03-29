@@ -48,10 +48,12 @@
     {internal_link_titles}
 
     ⭐ QUALITY REQUIREMENTS:
-    - Include at least 3 specific statistics, data points, or cited facts from the research context
-    - Each main section should reference at least one research source
-    - Use concrete examples, case studies, or real-world applications — avoid vague generalities
-    - Write with authority: "According to [source]..." or "Research shows that..."
+    - NEVER fabricate statistics, data points, quotes, or named sources. If research context does not provide a specific fact, do not invent one.
+    - NEVER invent people, job titles, company names, or attribute quotes to fictional individuals.
+    - Only cite statistics or data that appear in the research context above. If no research data is available, write from general knowledge without making up specific numbers.
+    - Use concrete examples and real-world applications you can verify — avoid fabricated case studies.
+    - It is better to say "many companies have found..." than to invent "According to a 2025 McKinsey study..."
+    - Write with expertise and insight, not with fabricated authority.
 
     Ensure the tone is professional and engaging.
     Include placeholders like '[IMAGE-1]', '[IMAGE-2]', etc., where you think images would be appropriate.
@@ -148,10 +150,17 @@
       * Data-driven: "What 10,000 Users Taught Us", "The Surprising Statistic Nobody Expected"
       * Action-oriented: "Start Implementing This Today", "The Quick Win Strategy"
 
+    ⭐ FACTUAL INTEGRITY (NON-NEGOTIABLE):
+    - NEVER fabricate people, quotes, statistics, or company names.
+    - NEVER invent data like "40% improvement" or "according to a 2025 study."
+    - If you don't have a real source, write from expertise without faking one.
+    - Use "many organizations have found..." instead of inventing specific companies.
+    - It is better to be honestly general than dishonestly specific.
+
     Include:
     - Compelling introduction (creative title that hooks the reader)
     - 3-5 main sections with catchy titles and practical insights
-    - Real-world examples or bullet points
+    - Real examples you can verify, or general insights without fabricated specifics
     - Clear conclusion with call-to-action (avoid "Conclusion" as title - use something like "Your Next Step", "Ready to Begin?")
     Tags: {tags}
 
