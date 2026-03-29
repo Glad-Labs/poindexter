@@ -464,10 +464,11 @@ class TaskExecutor:
                         f"Published: \"{topic}\" (score: {quality_score:.0f})\n{link}"
                     )
                 else:
-                    review_link = f"https://gladlabs.grafana.net/d/ops-live/glad-labs-operations"
+                    api_link = f"https://cofounder-production.up.railway.app/api/tasks/{task_id}"
                     await _notify_openclaw(
                         f"Ready for review: \"{topic}\" (score: {quality_score:.0f})\n"
-                        f"Review: {review_link}"
+                        f"Preview: {api_link}\n"
+                        f"Dashboard: https://gladlabs.grafana.net/d/ops-live"
                     )
 
                 return
