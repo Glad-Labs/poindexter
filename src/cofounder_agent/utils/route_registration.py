@@ -53,6 +53,7 @@ _COORDINATOR_ROUTES = [
     ("routes.metrics_routes", "metrics_router", "metrics_router", "metrics & analytics"),
     ("routes.settings_routes", "router", "settings_router", "user settings"),
     ("routes.revalidate_routes", "router", "revalidate_router", "secure cache invalidation"),
+    ("routes.composer_routes", "router", "composer_router", "process composer (intent-to-workflow)"),
 ]
 
 # Routes for worker mode (local PC — heavy compute)
