@@ -19,7 +19,7 @@ API_TOKEN = "REDACTED_API_TOKEN"
 
 # Topic templates — {angle} gets filled with a random perspective
 TOPIC_TEMPLATES = [
-    "How {tech} Are Changing {domain} in 2026",
+    "How {tech} Is Reshaping {domain} in 2026",
     "The Developer's Guide to {tech}",
     "{tech} vs {alt_tech}: Which One Should You Choose?",
     "Why {domain} Teams Are Adopting {tech}",
