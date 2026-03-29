@@ -55,7 +55,7 @@
       "google": {
         "baseUrl": "https://generativelanguage.googleapis.com",
         "apiKey": "${GEMINI_API_KEY}",
-        "api": "gemini",
+        "api": "google-generative-ai",
         "models": [
           {
             "id": "gemini-2.0-flash",
@@ -82,7 +82,7 @@
       },
       "workspace": "C:\\Users\\mattm\\.openclaw\\workspace",
       "compaction": {
-        "mode": "full"
+        "mode": "default"
       }
     }
   },
@@ -213,27 +213,19 @@
       "duckduckgo",
       "elevenlabs",
       "talk-voice",
-      "voice-call",
-      "notion",
-      "google-calendar",
-      "github"
+      "voice-call"
     ],
     "entries": {
       "voice-call": { "enabled": true },
       "duckduckgo": { "enabled": true },
       "elevenlabs": { "enabled": true },
-      "talk-voice": { "enabled": true },
-      "notion": { "enabled": true }
+      "talk-voice": { "enabled": true }
     }
   },
-  "memory": {
-    "enabled": true,
-    "durable": true,
-    "directory": "memory"
-  },
+  "memory": {},
   "hooks": {
     "enabled": true,
-    "token": "ollama",
+    "token": "hooks-gladlabs",
     "path": "/hooks",
     "defaultSessionKey": "hook:pipeline",
     "allowedSessionKeyPrefixes": ["hook:"],
