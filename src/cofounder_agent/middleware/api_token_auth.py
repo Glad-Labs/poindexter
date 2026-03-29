@@ -42,7 +42,8 @@ async def verify_api_token(
     if not api_token:
         raise HTTPException(status_code=500, detail="API_TOKEN not configured")
 
-    if token != api_token:
+    import hmac
+    if not hmac.compare_digest(token, api_token):
         raise HTTPException(status_code=401, detail="Invalid token")
 
     return token
@@ -84,7 +85,8 @@ async def verify_api_token_optional(
     if dev_mode and token == "dev-token":
         return token
 
-    if not api_token or token != api_token:
+    import hmac
+    if not api_token or not hmac.compare_digest(token, api_token):
         return None
 
     return token

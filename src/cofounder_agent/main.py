@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 # Third-party imports
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel, validator
 
 # Import configuration
@@ -32,6 +32,7 @@ from services.telemetry import setup_telemetry
 # Local application imports (must come after path setup)
 from utils.exception_handlers import register_exception_handlers
 from utils.middleware_config import MiddlewareConfig
+from middleware.api_token_auth import verify_api_token
 from utils.route_registration import register_all_routes
 from utils.route_utils import initialize_services
 from utils.connection_health import ConnectionPoolHealth
@@ -448,7 +449,7 @@ async def api_health():
         return health_data
     except Exception as e:  # pylint: disable=broad-except
         logger.error("Health check failed: %s", str(e), exc_info=True)
-        return {"status": "unhealthy", "service": "cofounder-agent", "error": str(e)}
+        return {"status": "unhealthy", "service": "cofounder-agent", "error": "health_check_failed"}
 
 
 @app.get("/health")
@@ -513,7 +514,7 @@ async def get_metrics_endpoint():
             "success_rate": 0.0,
             "avg_execution_time": 0.0,
             "total_cost": 0.0,
-            "error": str(e),
+            "error": "metrics_retrieval_failed",
         }
 
 
@@ -556,6 +557,7 @@ async def process_command(
     request: Request,
     command: CommandRequest,
     background_tasks: BackgroundTasks,
+    token: str = Depends(verify_api_token),
 ):  # pylint: disable=unused-argument
     """
     Processes a command sent to the Co-Founder agent.
@@ -582,7 +584,7 @@ async def process_command(
         logger.error(
             f"Error processing command: {str(e)} | command={command.command}", exc_info=True
         )
-        raise HTTPException(status_code=500, detail=f"An internal error occurred: {str(e)}") from e
+        raise HTTPException(status_code=500, detail="An internal error occurred") from e
 
 
 @app.get("/")

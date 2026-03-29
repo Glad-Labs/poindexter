@@ -342,7 +342,17 @@ class WritingSampleAdmin(ModelView, model=WritingSample):
 
 
 def setup_admin(app):
-    """Mount SQLAdmin on /admin. Call after FastAPI app is created."""
+    """Mount SQLAdmin on /admin. Call after FastAPI app is created.
+
+    SECURITY: Disabled in production — no authentication backend configured.
+    Only available when ENVIRONMENT != 'production' (i.e., local development).
+    """
+    import os
+    if os.getenv("ENVIRONMENT", "development") == "production":
+        import logging
+        logging.getLogger(__name__).info("[ADMIN] SQLAdmin disabled in production (no auth backend)")
+        return
+
     database_url = _get_sync_database_url()
     if not database_url:
         return
