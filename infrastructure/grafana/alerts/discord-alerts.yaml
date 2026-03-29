@@ -1,0 +1,118 @@
+# Grafana Alert Rules for Glad Labs
+#
+# These are reference definitions for manual import into Grafana Cloud.
+# Create each alert rule under Alerting > Alert rules > New alert rule,
+# then route them to a Discord contact point.
+#
+# Contact point setup:
+#   Type: Discord
+#   Webhook URL: <your Discord channel webhook URL>
+
+alerts:
+  - name: Daily Spend Over 80% Budget
+    folder: Glad Labs
+    group: cost-alerts
+    condition: spend > 4.0
+    for: 0m
+    annotations:
+      summary: "Daily LLM spend has exceeded 80% of the $5 budget"
+      description: >
+        Current daily spend is {{ $value }} USD.
+        Budget limit is $5.00/day. Investigate provider costs
+        and consider switching to cheaper model tiers.
+    labels:
+      severity: warning
+      team: glad-labs
+    query:
+      datasource_uid: gladlabs-postgres
+      rawSql: >
+        SELECT SUM(cost_usd) as spend
+        FROM cost_logs
+        WHERE created_at > date_trunc('day', NOW())
+    threshold:
+      operator: gt
+      value: 4.0
+
+  - name: Pipeline Failure Rate Over 20%
+    folder: Glad Labs
+    group: pipeline-alerts
+    condition: failure_rate > 20
+    for: 0m
+    annotations:
+      summary: "Pipeline failure rate exceeded 20% in the last hour"
+      description: >
+        {{ $value }}% of tasks failed in the last hour.
+        Check error logs for common failure patterns.
+        Review model availability and API key status.
+    labels:
+      severity: critical
+      team: glad-labs
+    query:
+      datasource_uid: gladlabs-postgres
+      rawSql: >
+        SELECT
+          ROUND(
+            COUNT(*) FILTER (WHERE status = 'failed') * 100.0
+            / NULLIF(COUNT(*), 0),
+            1
+          ) as failure_rate
+        FROM content_tasks
+        WHERE created_at > NOW() - INTERVAL '1 hour'
+    threshold:
+      operator: gt
+      value: 20
+
+  - name: Tasks Stuck In Progress
+    folder: Glad Labs
+    group: pipeline-alerts
+    condition: stuck_count > 0
+    for: 0m
+    annotations:
+      summary: "{{ $value }} task(s) stuck in_progress for over 30 minutes"
+      description: >
+        Tasks have been in_progress without updates for more than 30 minutes.
+        This may indicate a hung worker, lost WebSocket connection,
+        or an unhandled exception in the pipeline.
+    labels:
+      severity: warning
+      team: glad-labs
+    query:
+      datasource_uid: gladlabs-postgres
+      rawSql: >
+        SELECT COUNT(*) as stuck_count
+        FROM content_tasks
+        WHERE status = 'in_progress'
+          AND updated_at < NOW() - INTERVAL '30 minutes'
+    threshold:
+      operator: gt
+      value: 0
+
+  - name: Quality Pass Rate Below 60%
+    folder: Glad Labs
+    group: quality-alerts
+    condition: pass_rate < 60
+    for: 0m
+    annotations:
+      summary: "Quality pass rate dropped below 60% in the last 24 hours"
+      description: >
+        Only {{ $value }}% of scored content passed the quality threshold
+        (score >= 7.0) in the last 24 hours. Review QA agent feedback
+        and consider adjusting prompts or model tier.
+    labels:
+      severity: warning
+      team: glad-labs
+    query:
+      datasource_uid: gladlabs-postgres
+      rawSql: >
+        SELECT
+          ROUND(
+            COUNT(*) FILTER (WHERE quality_score >= 7.0) * 100.0
+            / NULLIF(COUNT(*), 0),
+            1
+          ) as pass_rate
+        FROM content_tasks
+        WHERE quality_score IS NOT NULL
+          AND created_at > NOW() - INTERVAL '24 hours'
+    threshold:
+      operator: lt
+      value: 60

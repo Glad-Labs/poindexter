@@ -901,6 +901,7 @@ class ImageService:
         """
         # Placeholder for future image optimization
         # Could integrate with imgix, Cloudinary, or local optimization
+        logger.warning("[image_service] optimize_image called but not implemented — returning unoptimized")
         logger.info(f"Image optimization placeholder for {image_url}")
         return {
             "url": image_url,
