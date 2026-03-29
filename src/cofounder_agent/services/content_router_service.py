@@ -23,6 +23,7 @@ from .image_service import get_image_service
 from .prompt_manager import get_prompt_manager
 from .quality_service import EvaluationMethod, UnifiedQualityService
 from .seo_content_generator import get_seo_content_generator
+from .webhook_delivery_service import emit_webhook_event
 
 logger = logging.getLogger(__name__)
 
@@ -1074,6 +1075,14 @@ async def process_content_generation_task(
                 },
             )
             logger.debug("[BG-TASK] ✅ Task status updated to 'failed' with preserved data")
+
+            # Emit webhook so OpenClaw is notified of pipeline failure
+            try:
+                await emit_webhook_event(database_service.pool, "task.failed", {
+                    "task_id": task_id, "topic": topic, "error": str(e)[:200],
+                })
+            except Exception:
+                logger.warning("[WEBHOOK] Failed to emit task.failed event from pipeline", exc_info=True)
         except Exception as db_error:
             logger.error(f"❌ [BG-TASK] Failed to update task status: {db_error}", exc_info=True)
 
