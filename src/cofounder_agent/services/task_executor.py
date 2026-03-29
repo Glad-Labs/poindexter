@@ -50,13 +50,28 @@ OPENCLAW_HOOKS_TOKEN = _os.getenv("OPENCLAW_HOOKS_TOKEN", "hooks-gladlabs")
 
 
 async def _notify_openclaw(message: str) -> None:
-    """Send a notification through the local OpenClaw gateway to Discord/Telegram."""
+    """Send a notification through the local OpenClaw gateway to Discord and Telegram."""
     try:
-        async with _httpx.AsyncClient(timeout=5) as client:
+        async with _httpx.AsyncClient(timeout=10) as client:
+            # Send to Discord
             await client.post(
                 f"{OPENCLAW_GATEWAY_URL}/hooks/agent",
                 headers={"Authorization": f"Bearer {OPENCLAW_HOOKS_TOKEN}"},
-                json={"message": message},
+                json={
+                    "message": f"Send this exact message to Discord channel: {message}",
+                    "channel": "discord",
+                    "target": "1435132885429522434",
+                },
+            )
+            # Send to Telegram
+            await client.post(
+                f"{OPENCLAW_GATEWAY_URL}/hooks/agent",
+                headers={"Authorization": f"Bearer {OPENCLAW_HOOKS_TOKEN}"},
+                json={
+                    "message": f"Send this exact message to Telegram: {message}",
+                    "channel": "telegram",
+                    "target": "5318613610",
+                },
             )
     except Exception:
         pass  # Non-critical — don't block pipeline on notification failure
