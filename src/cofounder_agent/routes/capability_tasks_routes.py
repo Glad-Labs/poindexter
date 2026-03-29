@@ -172,7 +172,7 @@ class ExecutionResponse(BaseModel):
 
 # ============ Router ============
 
-router = APIRouter(prefix="/api", tags=["capabilities"])
+router = APIRouter(prefix="/api", tags=["capabilities"], dependencies=[Depends(verify_api_token)])
 
 
 # get_owner_id imported from custom_workflows_routes to avoid duplication (#1203)
