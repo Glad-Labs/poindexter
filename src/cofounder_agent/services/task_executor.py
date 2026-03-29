@@ -377,9 +377,18 @@ class TaskExecutor:
                     f"(status={final_status}, task_id={task_id})"
                 )
 
+                # Emit task.completed webhook unconditionally for all successful completions
+                quality_score = float(result.get("quality_score", 0)) if isinstance(result, dict) else 0.0
+                try:
+                    await emit_webhook_event(self.database_service.pool, "task.completed", {
+                        "task_id": task_id, "topic": topic, "quality_score": quality_score,
+                        "status": final_status,
+                    })
+                except Exception:
+                    logger.warning("[WEBHOOK] Failed to emit task.completed event", exc_info=True)
+
                 # Check auto-publish threshold
                 auto_published = False
-                quality_score = float(result.get("quality_score", 0)) if isinstance(result, dict) else 0.0
                 try:
                     auto_threshold = await self._get_auto_publish_threshold()
                     if auto_threshold > 0 and quality_score >= auto_threshold:
@@ -390,7 +399,7 @@ class TaskExecutor:
                         await self._auto_publish_task(task_id, quality_score)
                         auto_published = True
                 except Exception:
-                    logger.debug("Auto-publish check failed, task stays in awaiting_approval", exc_info=True)
+                    logger.warning("Auto-publish check failed, task stays in awaiting_approval", exc_info=True)
 
                 # Emit webhook event for OpenClaw notifications
                 try:
@@ -403,7 +412,7 @@ class TaskExecutor:
                             "task_id": task_id, "topic": topic, "quality_score": quality_score,
                         })
                 except Exception:
-                    logger.debug("[WEBHOOK] Failed to emit completion event", exc_info=True)
+                    logger.warning("[WEBHOOK] Failed to emit completion event", exc_info=True)
 
                 return
 
@@ -504,7 +513,7 @@ class TaskExecutor:
                         "task_id": task_id, "topic": topic, "error": str(error_msg)[:200],
                     })
                 except Exception:
-                    logger.debug("[WEBHOOK] Failed to emit task.failed event", exc_info=True)
+                    logger.warning("[WEBHOOK] Failed to emit task.failed event", exc_info=True)
             else:
                 logger.info(
                     "✅ [TASK_SINGLE] Task %s: task_id=%s user_id=%s category=%s quality_score=%s",

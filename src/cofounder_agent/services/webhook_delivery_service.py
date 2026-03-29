@@ -50,7 +50,7 @@ class WebhookDeliveryService:
             try:
                 await self._deliver_pending()
             except Exception:
-                logger.debug("[WEBHOOK] Delivery loop error", exc_info=True)
+                logger.warning("[WEBHOOK] Delivery loop error", exc_info=True)
             await asyncio.sleep(POLL_INTERVAL)
 
     async def _deliver_pending(self):
@@ -60,7 +60,13 @@ class WebhookDeliveryService:
                 """
                 SELECT id, event_type, payload, delivery_attempts
                 FROM webhook_events
-                WHERE delivered = FALSE AND delivery_attempts < $1
+                WHERE delivered = FALSE
+                  AND delivery_attempts < $1
+                  AND (
+                    last_attempt_at IS NULL
+                    OR last_attempt_at < NOW() - INTERVAL '1 second'
+                        * POWER(2, delivery_attempts) * 15
+                  )
                 ORDER BY created_at ASC
                 LIMIT 50
                 """,
@@ -112,7 +118,7 @@ class WebhookDeliveryService:
                     datetime.now(timezone.utc),
                     event_id,
                 )
-            logger.debug(f"[WEBHOOK] Failed to deliver event {event_id}", exc_info=True)
+            logger.warning(f"[WEBHOOK] Failed to deliver event {event_id}", exc_info=True)
 
     def _format_message(self, event_type: str, payload: dict) -> str:
         """Format a webhook event into a human-readable message for OpenClaw."""
@@ -150,4 +156,4 @@ async def emit_webhook_event(pool, event_type: str, payload: dict):
                 json.dumps(payload),
             )
     except Exception:
-        logger.debug(f"[WEBHOOK] Failed to emit {event_type} event", exc_info=True)
+        logger.warning(f"[WEBHOOK] Failed to emit {event_type} event", exc_info=True)

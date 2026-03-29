@@ -289,6 +289,45 @@ class ModelRouter:
             "Model router initialized", default_model=default_model, use_ollama=self.use_ollama
         )
 
+    async def seed_spend_from_db(self, pool) -> None:
+        """
+        Seed the in-memory spend counter from the cost_logs table.
+
+        Call during startup (after DB pool is ready) so that
+        _session_cloud_spend reflects the real month-to-date spend
+        rather than resetting to zero on each restart.
+
+        Args:
+            pool: asyncpg connection pool
+        """
+        try:
+            row = await pool.fetchrow(
+                "SELECT COALESCE(SUM(cost_usd), 0) AS total "
+                "FROM cost_logs "
+                "WHERE created_at >= date_trunc('month', NOW())"
+            )
+            if row:
+                self._session_cloud_spend = float(row["total"])
+                logger.info(
+                    "[BUDGET] Seeded session spend from cost_logs",
+                    month_to_date_spend=self._session_cloud_spend,
+                    monthly_limit=self._monthly_spend_limit,
+                )
+                # If already over budget on startup, log immediately
+                if self._session_cloud_spend > self._monthly_spend_limit:
+                    logger.critical(
+                        f"[BUDGET_EXCEEDED] Month-to-date spend "
+                        f"(${self._session_cloud_spend:.2f}) already exceeds limit "
+                        f"(${self._monthly_spend_limit:.2f}) at startup."
+                    )
+                    self._budget_exceeded_logged = True
+        except Exception:
+            logger.error(
+                "[BUDGET] Failed to seed spend from cost_logs — "
+                "starting with $0.00 (spend cap may be inaccurate)",
+                exc_info=True,
+            )
+
     def record_provider_failure(self, provider: str) -> None:
         """
         Record a runtime LLM call failure for a provider.
@@ -386,7 +425,7 @@ class ModelRouter:
             if self._session_cloud_spend > self._monthly_spend_limit:
                 if not self._budget_exceeded_logged:
                     logger.critical(
-                        f"[BUDGET] Monthly spend limit (${self._monthly_spend_limit:.2f}) "
+                        f"[BUDGET_EXCEEDED] Monthly spend limit (${self._monthly_spend_limit:.2f}) "
                         f"exceeded — session spend: ${self._session_cloud_spend:.2f}. "
                         f"Blocking cloud API calls; falling back to Ollama."
                     )

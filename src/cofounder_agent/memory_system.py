@@ -251,8 +251,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
             try:
                 embedding = pickle.loads(row["embedding"])
             except (pickle.UnpicklingError, EOFError, ValueError):
-                # Unable to deserialize embedding data
-                pass
+                self.logger.warning("[memory_system] Failed to deserialize embedding, skipping", exc_info=True)
 
         # Handle tags: PostgreSQL text[] returns as list, not JSON string
         tags = row["tags"]

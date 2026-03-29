@@ -156,5 +156,9 @@
   },
   "dependencies": {
     "@vercel/speed-insights": "^2.0.0"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-linux-x64-gnu": "^4.60.0",
+    "@rollup/rollup-linux-x64-musl": "^4.60.0"
   }
 }
