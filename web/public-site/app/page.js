@@ -42,9 +42,9 @@ async function getPosts() {
 
     try {
       const response = await fetch(url, {
-        // ISR: Revalidate every 1 hour (3600 seconds)
+        // ISR: Revalidate every 5 minutes (300 seconds)
         // On-demand revalidation via publish webhook triggers instant updates
-        next: { revalidate: 3600 },
+        next: { revalidate: 300 },
         headers: {
           'Content-Type': 'application/json',
         },
