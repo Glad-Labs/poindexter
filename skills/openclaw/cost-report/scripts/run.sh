@@ -1,7 +1,7 @@
 #!/bin/bash
 # scripts/run.sh — Fetch and display cost/spending metrics
 
-FASTAPI_URL="${FASTAPI_URL:-http://localhost:8000}"
+FASTAPI_URL="${FASTAPI_URL:-https://cofounder-production.up.railway.app}"
 GLADLABS_KEY="${GLADLABS_KEY}"
 
 if [ -z "$GLADLABS_KEY" ]; then
@@ -23,20 +23,26 @@ if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
   echo ""
 
   # Extract cost-related fields if present
-  TOTAL_COST=$(echo "$BODY" | jq -r '.total_cost // .cost_summary.total // "N/A"')
+  TOTAL_COST=$(echo "$BODY" | python -c "import sys,json; d=json.load(sys.stdin); print(d.get('total_cost') or d.get('cost_summary',{}).get('total','N/A'))" 2>/dev/null || echo "N/A")
   echo "Total Cost: $TOTAL_COST"
 
   # Show per-model breakdown if available
   echo ""
   echo "--- Per-Model Breakdown ---"
-  echo "$BODY" | jq '.cost_by_model // .model_costs // empty' 2>/dev/null
+  echo "$BODY" | python -c "
+import sys,json
+d=json.load(sys.stdin)
+costs = d.get('cost_by_model') or d.get('model_costs')
+if costs:
+    print(json.dumps(costs, indent=2))
+" 2>/dev/null
 
   # Show full response as fallback
   echo ""
   echo "--- Full Metrics ---"
-  echo "$BODY" | jq .
+  echo "$BODY" | python -m json.tool 2>/dev/null || echo "$BODY"
 else
   echo "Error: API returned HTTP $HTTP_CODE"
-  echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
+  echo "$BODY" | python -m json.tool 2>/dev/null || echo "$BODY"
   exit 1
 fi
