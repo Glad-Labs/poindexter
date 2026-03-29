@@ -132,6 +132,9 @@ def validate_content(title: str, content: str, topic: str = "") -> ValidationRes
     Content fails if ANY critical issue is found.
     """
     issues: List[ValidationIssue] = []
+    title = title or ""
+    content = content or ""
+    topic = topic or ""
     full_text = f"{title}\n{content}"
 
     # 1. Check for fabricated people
