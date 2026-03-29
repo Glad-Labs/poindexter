@@ -65,7 +65,7 @@ def load_env() -> None:
     env_local_path = os.path.join(project_root, ".env.local")
 
     if os.path.exists(env_local_path):
-        load_dotenv(env_local_path, override=True)
+        load_dotenv(env_local_path, override=False)
         try:
             logger.info(f"[INFO] Loaded .env.local from: {env_local_path}")
         except UnicodeEncodeError:
