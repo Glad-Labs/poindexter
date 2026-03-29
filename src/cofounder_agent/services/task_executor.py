@@ -49,32 +49,29 @@ OPENCLAW_GATEWAY_URL = _os.getenv("OPENCLAW_GATEWAY_URL", "http://localhost:1878
 OPENCLAW_HOOKS_TOKEN = _os.getenv("OPENCLAW_HOOKS_TOKEN", "hooks-gladlabs")
 
 
+_DISCORD_WEBHOOK = _os.getenv(
+    "DISCORD_WEBHOOK_URL",
+    "https://discord.com/api/webhooks/1487684026138361856/1HSr4TUzZ73VWPtYMtbzCL3Z_-reCfepGAw7sXHHpav9YMS9H9bp6jVjWGXkQkGJ9kQr",
+)
+_TELEGRAM_BOT_TOKEN = _os.getenv("OPENCLAW_TELEGRAM_BOT_TOKEN", "REDACTED_TELEGRAM_TOKEN")
+_TELEGRAM_CHAT_ID = _os.getenv("OPENCLAW_TELEGRAM_CHAT_ID", "5318613610")
+
+
 async def _notify_openclaw(message: str) -> None:
-    """Send a notification through the local OpenClaw gateway to Discord and Telegram."""
+    """Send pipeline notifications directly to Discord webhook and Telegram bot API."""
+    _logger = logging.getLogger(__name__)
     try:
         async with _httpx.AsyncClient(timeout=10) as client:
-            # Send to Discord
+            _logger.info(f"[NOTIFY] {message[:80]}")
+            # Discord webhook — direct, no agent needed
+            await client.post(_DISCORD_WEBHOOK, json={"content": message, "username": "Glad Labs Pipeline"})
+            # Telegram bot API — direct
             await client.post(
-                f"{OPENCLAW_GATEWAY_URL}/hooks/agent",
-                headers={"Authorization": f"Bearer {OPENCLAW_HOOKS_TOKEN}"},
-                json={
-                    "message": f"Send this exact message to Discord channel: {message}",
-                    "channel": "discord",
-                    "target": "1435132885429522434",
-                },
+                f"https://api.telegram.org/bot{_TELEGRAM_BOT_TOKEN}/sendMessage",
+                json={"chat_id": _TELEGRAM_CHAT_ID, "text": message},
             )
-            # Send to Telegram
-            await client.post(
-                f"{OPENCLAW_GATEWAY_URL}/hooks/agent",
-                headers={"Authorization": f"Bearer {OPENCLAW_HOOKS_TOKEN}"},
-                json={
-                    "message": f"Send this exact message to Telegram: {message}",
-                    "channel": "telegram",
-                    "target": "5318613610",
-                },
-            )
-    except Exception:
-        pass  # Non-critical — don't block pipeline on notification failure
+    except Exception as e:
+        _logger.warning(f"[NOTIFY] Failed: {e}")
 
 # Import WebSocket progress emission (re-exported so tests can patch at this module)
 from .websocket_event_broadcaster import emit_notification, emit_task_progress  # noqa: F401
