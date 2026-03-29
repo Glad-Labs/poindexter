@@ -182,7 +182,7 @@ const nextConfig = {
                 "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://giscus.app",
                 "img-src 'self' data: https:",
                 "font-src 'self' data: https://fonts.gstatic.com",
-                `connect-src 'self'${cspBackendOrigin ? ' ' + cspBackendOrigin : ''} https://www.google-analytics.com https://cofounder-production.up.railway.app https://api.railway.app https://va.vercel-scripts.com https://vitals.vercel-insights.com`,
+                `connect-src 'self'${cspBackendOrigin ? ' ' + cspBackendOrigin : ''} https://www.google-analytics.com https://va.vercel-scripts.com https://vitals.vercel-insights.com`,
                 "frame-src 'self' https://pagead2.googlesyndication.com https://giscus.app",
               ].join('; ') + ';',
           },
