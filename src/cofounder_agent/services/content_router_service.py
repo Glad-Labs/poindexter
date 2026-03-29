@@ -29,6 +29,32 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
+# TEXT NORMALIZATION — replace Unicode smart quotes / dashes with ASCII
+# ============================================================================
+
+def _normalize_text(text: str) -> str:
+    """Replace Unicode smart quotes, dashes, and special whitespace with ASCII equivalents.
+
+    Ollama (and other LLMs) frequently produce these characters, which can cause
+    encoding / rendering issues on the public site.
+    """
+    if not text:
+        return text
+    return (
+        text
+        .replace("\u2019", "'")   # right single quote
+        .replace("\u2018", "'")   # left single quote
+        .replace("\u201c", '"')   # left double quote
+        .replace("\u201d", '"')   # right double quote
+        .replace("\u2014", "--")  # em dash
+        .replace("\u2013", "-")   # en dash
+        .replace("\u2026", "...") # ellipsis
+        .replace("\u00a0", " ")   # non-breaking space
+        .replace("\u2011", "-")   # non-breaking hyphen
+    )
+
+
+# ============================================================================
 # ENUMS
 # ============================================================================
 # NOTE: ContentStyle, ContentTone, PublishMode are now defined in schemas/content_schemas.py
@@ -538,6 +564,10 @@ async def _stage_generate_content(
         title = topic  # Fallback to topic if title generation fails
     logger.info(f"✅ Title generated: {title}")
 
+    # Normalize smart quotes / special chars before persisting
+    content_text = _normalize_text(content_text)
+    title = _normalize_text(title)
+
     # Update content_task with generated content, title, and model tracking
     await database_service.update_task(
         task_id=task_id,
@@ -669,6 +699,8 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
             logger.error(f"  ❌ [IMAGE-{num}] search failed: {e}", exc_info=True)
             content_text = _re.sub(rf"\[IMAGE-{num}[^\]]*\]", "", content_text, count=1)
 
+    # Normalize again after image placeholder substitution
+    content_text = _normalize_text(content_text)
     # Update DB with image-populated content
     await database_service.update_task(task_id=task_id, updates={"content": content_text})
     result["content"] = content_text
@@ -856,6 +888,11 @@ async def _stage_finalize_task(
     result["post_slug"] = None
     result["stages"]["5_post_created"] = False
     logger.info("ℹ️  Skipping automatic post creation\n")
+
+    # Normalize SEO text fields before final persist
+    seo_title = _normalize_text(seo_title) if seo_title else seo_title
+    seo_description = _normalize_text(seo_description) if seo_description else seo_description
+    content_text = _normalize_text(content_text)
 
     # 🔑 CRITICAL: Store featured_image_url and all other metadata so approval endpoint can find it
     await database_service.update_task(
