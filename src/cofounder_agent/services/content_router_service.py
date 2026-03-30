@@ -1077,9 +1077,9 @@ async def process_content_generation_task(
                 temperature=0.3,
                 preferred_provider=ProviderType.ANTHROPIC,
             )
-            if _review and _review.content:
+            if _review and _review.text:
                 import re as _re
-                _match = _re.search(r"\{[^{}]*\"score\"[^{}]*\}", _review.content)
+                _match = _re.search(r"\{[^{}]*\"score\"[^{}]*\}", _review.text)
                 if _match:
                     import json as _json
                     _qa_data = _json.loads(_match.group(0))
