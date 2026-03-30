@@ -36,7 +36,9 @@ export const metadata = {
     creator: '@GladLabsAI',
   },
   verification: {
-    google: process.env.NEXT_PUBLIC_GOOGLE_VERIFICATION || '',
+    google:
+      process.env.NEXT_PUBLIC_GOOGLE_VERIFICATION ||
+      'C-pZ-_sOD4wRU9OVPAcG-1TVQAYEwZfdaApx-BxkgsM',
   },
   robots: {
     index: true,
