@@ -674,6 +674,94 @@ async def cms_status(request: Request):
 
 
 # ============================================================================
+# ANALYTICS — lightweight view tracking (feeds Grafana + revenue engine)
+# ============================================================================
+
+
+@router.post("/api/track/view")
+@limiter.limit("120/minute")
+async def track_page_view(request: Request):
+    """Track a page view. Called by the frontend beacon. No auth required.
+
+    Body: {"path": "/posts/slug-here", "slug": "slug-here", "referrer": "..."}
+    Returns: 204 No Content
+    """
+    try:
+        body = await request.json()
+        path = body.get("path", "")[:500]
+        slug = body.get("slug", "")[:500]
+        referrer = body.get("referrer", "")[:1000]
+        ua = (request.headers.get("user-agent") or "")[:500]
+
+        if not path:
+            return JSONResponse(status_code=204, content=None)
+
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO page_views (path, slug, referrer, user_agent) VALUES ($1, $2, $3, $4)",
+                path, slug, referrer, ua,
+            )
+
+        # Also increment view_count on the post for quick access
+        if slug:
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE posts SET view_count = COALESCE(view_count, 0) + 1 WHERE slug = $1",
+                    slug,
+                )
+    except Exception:
+        pass  # Never fail on tracking — non-critical
+
+    return JSONResponse(status_code=204, content=None)
+
+
+@router.get("/api/analytics/views")
+@limiter.limit("30/minute")
+async def get_view_stats(
+    request: Request,
+    days: int = Query(7, ge=1, le=90),
+    token: str = Depends(verify_api_token),
+):
+    """Get page view statistics. Auth required."""
+    try:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            # Views per day
+            daily = await conn.fetch(
+                "SELECT date_trunc('day', created_at)::date as day, COUNT(*) as views "
+                "FROM page_views WHERE created_at > NOW() - ($1 || ' days')::interval "
+                "GROUP BY 1 ORDER BY 1",
+                str(days),
+            )
+            # Top posts
+            top = await conn.fetch(
+                "SELECT slug, COUNT(*) as views FROM page_views "
+                "WHERE slug IS NOT NULL AND slug != '' "
+                "AND created_at > NOW() - ($1 || ' days')::interval "
+                "GROUP BY slug ORDER BY views DESC LIMIT 20",
+                str(days),
+            )
+            # Top referrers
+            refs = await conn.fetch(
+                "SELECT referrer, COUNT(*) as views FROM page_views "
+                "WHERE referrer IS NOT NULL AND referrer != '' "
+                "AND created_at > NOW() - ($1 || ' days')::interval "
+                "GROUP BY referrer ORDER BY views DESC LIMIT 10",
+                str(days),
+            )
+        return {
+            "period_days": days,
+            "daily": [{"day": str(r["day"]), "views": r["views"]} for r in daily],
+            "top_posts": [{"slug": r["slug"], "views": r["views"]} for r in top],
+            "top_referrers": [{"referrer": r["referrer"], "views": r["views"]} for r in refs],
+        }
+    except Exception as e:
+        logger.error("[ANALYTICS] Failed: %s", e, exc_info=True)
+        return {"error": "analytics_unavailable"}
+
+
+# ============================================================================
 # UTILITY ENDPOINTS
 # ============================================================================
 

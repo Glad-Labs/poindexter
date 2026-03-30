@@ -58,6 +58,7 @@ class TokenValidationMiddleware(BaseHTTPMiddleware):
         "/api/public",
         "/api/auth",
         "/api/cms/status",
+        "/api/track",
         "/health",
         "/docs",
         "/redoc",
