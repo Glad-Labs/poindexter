@@ -27,8 +27,9 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 GLAD_LABS_FACTS = {
+    "founded_date": "2025-09-25",
     "founded_year": 2025,
-    "age_months": 6,
+    "age_months": 6,  # As of March 2026
     "team_size": 1,  # Solo founder
     "founder_name": "Matt",
     "known_employees": set(),  # No employees — solo operation
