@@ -15,7 +15,8 @@ import { useEffect, useState } from 'react';
 
 export default function AdSenseScript() {
   const [mounted, setMounted] = useState(false);
-  const adSenseId = process.env.NEXT_PUBLIC_ADSENSE_ID;
+  const adSenseId =
+    process.env.NEXT_PUBLIC_ADSENSE_ID || 'ca-pub-4578747062758519';
 
   useEffect(() => {
     setMounted(true);
