@@ -161,9 +161,18 @@ def validate_content(title: str, content: str, topic: str = "") -> ValidationRes
         "Fabricated quote detected: '{matched}'"
     ))
 
-    # 5. Check title for impossible claims
+    # 5. Check title for impossible claims (numeric and written-out years)
+    WRITTEN_YEARS = {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
+    for word, num in WRITTEN_YEARS.items():
+        if re.search(rf"\b{word}\s+years?\b", title, re.IGNORECASE) and num > 1:
+            issues.append(ValidationIssue(
+                severity="critical", category="glad_labs_claim",
+                description=f"Title claims {word} years — Glad Labs is {GLAD_LABS_FACTS['age_months']} months old",
+                matched_text=title,
+            ))
     if re.search(r"\d+\s*years?", title, re.IGNORECASE):
-        years = int(re.search(r"(\d+)\s*years?", title, re.IGNORECASE).group(1))
+        match = re.search(r"(\d+)\s*years?", title, re.IGNORECASE)
+        years = int(match.group(1)) if match else 0
         if years > 1:
             issues.append(ValidationIssue(
                 severity="critical",
