@@ -63,15 +63,23 @@ if not DB_URL:
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "5318613610")
 
-# Service endpoints to monitor
+# Detect if running on Railway (cloud) or locally
+IS_RAILWAY = bool(os.getenv("RAILWAY_SERVICE_ID"))
+
+# Cloud-reachable services (always monitored)
 SERVICES = {
     "site": {"url": "https://gladlabs.io", "type": "http", "critical": True},
     "api": {"url": "https://cofounder-production.up.railway.app/api/health", "type": "json_status", "critical": True},
-    "worker": {"url": "http://localhost:8002/api/health", "type": "json_status", "critical": False},
-    "openclaw": {"url": "http://localhost:18789/status", "type": "http", "critical": False},
-    "nvidia_exporter": {"url": "http://localhost:9835/metrics", "type": "http", "critical": False},
-    "windows_exporter": {"url": "http://localhost:9182/metrics", "type": "http", "critical": False},
 }
+
+# Local-only services (only monitored when running on Matt's PC)
+if not IS_RAILWAY:
+    SERVICES.update({
+        "worker": {"url": "http://localhost:8002/api/health", "type": "json_status", "critical": False},
+        "openclaw": {"url": "http://localhost:18789/status", "type": "http", "critical": False},
+        "nvidia_exporter": {"url": "http://localhost:9835/metrics", "type": "http", "critical": False},
+        "windows_exporter": {"url": "http://localhost:9182/metrics", "type": "http", "critical": False},
+    })
 
 CYCLE_SECONDS = 300  # 5 minutes between full cycles
 
@@ -118,19 +126,26 @@ def send_telegram(message: str):
 
 
 def restart_service(name: str):
-    """Attempt to restart a local service."""
+    """Attempt to restart a local service. Only works on the local PC, not Railway."""
+    if IS_RAILWAY:
+        logger.info("[BRAIN] Cannot restart local service %s from Railway — alert sent instead", name)
+        send_telegram(f"Service {name} is down. Brain cannot restart from cloud — check your PC.")
+        return
     try:
+        kwargs = {}
+        if sys.platform == "win32":
+            kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
         if name == "worker":
             subprocess.Popen(
                 ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
                  "-File", r"C:\Users\mattm\glad-labs-website\scripts\start-worker.ps1"],
-                creationflags=subprocess.CREATE_NO_WINDOW,
+                **kwargs,
             )
             logger.info("[BRAIN] Restarted worker")
         elif name == "openclaw":
             subprocess.Popen(
                 ["powershell", "-NoProfile", "-Command", "openclaw gateway restart"],
-                creationflags=subprocess.CREATE_NO_WINDOW,
+                **kwargs,
             )
             logger.info("[BRAIN] Restarted OpenClaw")
     except Exception as e:
