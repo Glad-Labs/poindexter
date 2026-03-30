@@ -49,26 +49,33 @@ OPENCLAW_GATEWAY_URL = _os.getenv("OPENCLAW_GATEWAY_URL", "http://localhost:1878
 OPENCLAW_HOOKS_TOKEN = _os.getenv("OPENCLAW_HOOKS_TOKEN", "hooks-gladlabs")
 
 
-_DISCORD_WEBHOOK = _os.getenv(
-    "DISCORD_WEBHOOK_URL",
-    "https://discord.com/api/webhooks/1487684026138361856/1HSr4TUzZ73VWPtYMtbzCL3Z_-reCfepGAw7sXHHpav9YMS9H9bp6jVjWGXkQkGJ9kQr",
-)
+_OPENCLAW_URL = _os.getenv("OPENCLAW_GATEWAY_URL", "http://localhost:18789")
+_OPENCLAW_TOKEN = _os.getenv("OPENCLAW_HOOKS_TOKEN", "hooks-gladlabs")
 _TELEGRAM_BOT_TOKEN = _os.getenv("OPENCLAW_TELEGRAM_BOT_TOKEN", "REDACTED_TELEGRAM_TOKEN")
 _TELEGRAM_CHAT_ID = _os.getenv("OPENCLAW_TELEGRAM_CHAT_ID", "5318613610")
+_DISCORD_OPS_CHANNEL = "1487683559065125055"
 
 
 async def _notify_openclaw(message: str) -> None:
-    """Send pipeline notifications directly to Discord webhook and Telegram bot API."""
+    """Send pipeline notifications to Telegram (direct) and Discord (via OpenClaw)."""
     _logger = logging.getLogger(__name__)
     try:
         async with _httpx.AsyncClient(timeout=10) as client:
             _logger.info(f"[NOTIFY] {message[:80]}")
-            # Discord webhook — direct, no agent needed
-            await client.post(_DISCORD_WEBHOOK, json={"content": message, "username": "Glad Labs Pipeline"})
-            # Telegram bot API — direct
+            # Telegram — direct bot API (reliable)
             await client.post(
                 f"https://api.telegram.org/bot{_TELEGRAM_BOT_TOKEN}/sendMessage",
                 json={"chat_id": _TELEGRAM_CHAT_ID, "text": message},
+            )
+            # Discord — via OpenClaw hooks (posts to #ops channel)
+            await client.post(
+                f"{_OPENCLAW_URL}/hooks/agent",
+                headers={"Authorization": f"Bearer {_OPENCLAW_TOKEN}"},
+                json={
+                    "message": f"Post this to the #ops channel in Discord: {message}",
+                    "channel": "discord",
+                    "target": _DISCORD_OPS_CHANNEL,
+                },
             )
     except Exception as e:
         _logger.warning(f"[NOTIFY] Failed: {e}")
