@@ -83,12 +83,11 @@ I built a Grafana dashboard that tracks real-time electricity cost. FROM MY PHON
 TWEET 8 (what's next):
 What's next:
 
-• Multi-tenant SaaS (same pipeline, many sites) — $99/mo per customer
-• 850 customers = $1M/year
-• Revenue engine that tracks what content makes money and generates more of it
-• Anticipation system that fills content gaps before I ask
+• More content verticals (not just tech)
+• Revenue tracking dashboard that shows real ROI per post
+• System that learns what content performs and generates more of it
 
-The AI factory that builds AI factories.
+The goal: a business that improves itself while I sleep.
 
 ---
 
