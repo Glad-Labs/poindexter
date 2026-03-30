@@ -1057,6 +1057,53 @@ async def process_content_generation_task(
             })
             return result
 
+        # Stage 3.7: Cross-model QA review (different model critiques the draft)
+        try:
+            from services.model_router import get_model_router
+            _router = get_model_router()
+            if _router and _router.use_ollama is False:
+                # Only run cross-model review if cloud models are available
+                # (don't waste budget if only Ollama is configured)
+                logger.info("[CROSS_QA] Skipping cross-model review — no cloud API keys configured")
+            elif _router:
+                _cross_qa_prompt = (
+                    f"Review this blog post for quality. Be critical.\n\n"
+                    f"TITLE: {_normalize_text(result.get('seo_title', topic))}\n"
+                    f"CONTENT (first 3000 chars):\n{_normalize_text(content_text[:3000])}\n\n"
+                    f"Check for: fabricated claims, weak arguments, generic filler, "
+                    f"hallucinated people/stats, and overall readability.\n\n"
+                    f"Respond with ONLY JSON: {{\"score\": 0-100, \"pass\": true/false, "
+                    f"\"feedback\": \"2 sentences max\"}}"
+                )
+                # Use budget tier (Haiku) for cost efficiency
+                _review = await _router.route_request(
+                    prompt=_cross_qa_prompt,
+                    cost_tier="budget",
+                    task_type="cross_model_qa",
+                )
+                if _review and _review.get("content"):
+                    import re as _re
+                    _match = _re.search(r"\{[^{}]*\"score\"[^{}]*\}", _review["content"])
+                    if _match:
+                        import json as _json
+                        _qa_data = _json.loads(_match.group(0))
+                        _cross_score = float(_qa_data.get("score", 0))
+                        logger.info(
+                            "[CROSS_QA] %s scored %s (pass=%s): %s",
+                            topic[:40], _cross_score, _qa_data.get("pass"),
+                            _qa_data.get("feedback", "")[:100],
+                        )
+                        if _cross_score < 60:
+                            logger.warning("[CROSS_QA] Rejected by cross-model review: score %s", _cross_score)
+                            result["status"] = "rejected"
+                            await database_service.update_task(task_id, {
+                                "status": "rejected",
+                                "error_message": f"Cross-model QA rejected (score: {_cross_score}): {_qa_data.get('feedback', '')}",
+                            })
+                            return result
+        except Exception as _e:
+            logger.debug("[CROSS_QA] Cross-model review skipped: %s", _e)
+
         # Stage 4: Generate SEO metadata
         content_generator = get_content_generator()
         seo_title, seo_description, seo_keywords = await _stage_generate_seo_metadata(
