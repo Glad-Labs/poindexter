@@ -39,7 +39,14 @@ logging.basicConfig(
 logger = logging.getLogger("daemon")
 
 API_URL = "https://cofounder-production.up.railway.app"
-API_TOKEN = "REDACTED_API_TOKEN"
+API_TOKEN = os.getenv("GLADLABS_KEY", "")
+if not API_TOKEN:
+    # Try reading from OpenClaw workspace .env
+    _env_path = os.path.join(os.path.expanduser("~"), ".openclaw", "workspace", ".env")
+    if os.path.exists(_env_path):
+        for _line in open(_env_path):
+            if _line.startswith("GLADLABS_KEY="):
+                API_TOKEN = _line.split("=", 1)[1].strip()
 AUTH = f"Bearer {API_TOKEN}"
 
 PUBLISH_INTERVAL = 300  # 5 minutes
