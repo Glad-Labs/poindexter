@@ -792,7 +792,7 @@ async def _stage_generate_seo_metadata(topic, tags, content_text, content_genera
 
     result["seo_title"] = seo_title
     result["seo_description"] = seo_description
-    result["seo_keywords"] = seo_keywords
+    result["seo_keywords"] = ", ".join(seo_keywords) if isinstance(seo_keywords, list) else (seo_keywords or "")
     result["stages"]["4_seo_metadata_generated"] = True
     logger.info("✅ SEO metadata generated:")
     logger.info(f"   Title: {seo_title}")
@@ -904,7 +904,7 @@ async def _stage_finalize_task(
             "featured_image_url": result.get("featured_image_url"),
             "seo_title": seo_title,
             "seo_description": seo_description,
-            "seo_keywords": seo_keywords,
+            "seo_keywords": ", ".join(seo_keywords) if isinstance(seo_keywords, list) else (seo_keywords or ""),
             "style": style,
             "tone": tone,
             "category": result.get("category") or category,
