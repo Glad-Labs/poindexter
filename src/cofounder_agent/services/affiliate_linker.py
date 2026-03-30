@@ -57,7 +57,7 @@ def add_affiliate_links(
     if not content:
         return content
 
-    links = affiliates or DEFAULT_AFFILIATES
+    links = affiliates if affiliates is not None else DEFAULT_AFFILIATES
     linked_count = 0
 
     for keyword, (url, display) in links.items():
@@ -82,8 +82,36 @@ def add_affiliate_links(
     return content
 
 
+async def load_affiliates_from_db(pool) -> Dict[str, Tuple[str, str]]:
+    """Load active affiliate links from the database.
+
+    Falls back to DEFAULT_AFFILIATES if DB is unavailable.
+    Manage via: INSERT/UPDATE/DELETE on affiliate_links table,
+    or via the settings API.
+    """
+    try:
+        rows = await pool.fetch(
+            "SELECT keyword, url, display_text FROM affiliate_links WHERE is_active = true"
+        )
+        if rows:
+            affiliates = {
+                row["keyword"]: (row["url"], row["display_text"] or row["keyword"])
+                for row in rows
+            }
+            logger.info("[AFFILIATE] Loaded %d affiliates from DB", len(affiliates))
+            return affiliates
+    except Exception as e:
+        logger.debug("[AFFILIATE] DB not available, using defaults: %s", e)
+    return DEFAULT_AFFILIATES
+
+
 async def add_affiliates_to_all_posts(pool) -> int:
-    """Retroactively add affiliate links to all published posts."""
+    """Retroactively add affiliate links to all published posts.
+
+    Loads affiliate mappings from the affiliate_links DB table.
+    """
+    affiliates = await load_affiliates_from_db(pool)
+
     try:
         rows = await pool.fetch(
             "SELECT id, content, slug FROM posts WHERE status = 'published'"
@@ -102,7 +130,7 @@ async def add_affiliates_to_all_posts(pool) -> int:
         if 'rel="noopener sponsored"' in content:
             continue
 
-        new_content = add_affiliate_links(content)
+        new_content = add_affiliate_links(content, affiliates=affiliates)
         if new_content != content:
             try:
                 await pool.execute(
