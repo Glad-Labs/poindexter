@@ -98,9 +98,11 @@ class CostGuard:
         if provider == "ollama" or provider.startswith("ollama"):
             return True, "local"
 
-        # Google free tier — allow (but track)
+        # Google: only Gemini Flash is free — paid models must be budget-checked
+        # The $300 Gemini incident was caused by this blanket "free_tier" bypass
         if provider == "google":
-            return True, "free_tier"
+            # Still check budget limits for Google — flash is cheap but not always free
+            pass  # Fall through to budget checks below
 
         daily_limit = await self._get_limit("daily_spend_limit", 2.0)
         monthly_limit = await self._get_limit("monthly_spend_limit", 10.0)
