@@ -22,6 +22,13 @@ import time
 import urllib.request
 from datetime import datetime
 
+# pythonw.exe sets stdout/stderr to None — redirect to devnull before any imports
+# that might trigger warnings (e.g., pydantic) writing to stderr
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w")
+
 # Add backend to path for content_validator
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "cofounder_agent"))
 
@@ -218,9 +225,12 @@ def main():
         # Auto-publish check
         if now - last_publish >= PUBLISH_INTERVAL:
             try:
-                auto_publish()
+                pub, rej = auto_publish()
+                logger.info("Publish cycle done (published=%d, rejected=%d)", pub, rej)
             except Exception as e:
                 logger.error("Auto-publish error: %s", e)
+            for h in logging.getLogger().handlers:
+                h.flush()
             last_publish = now
 
         # Content generation check
