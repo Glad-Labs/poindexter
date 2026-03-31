@@ -17,24 +17,15 @@ from typing import Dict, Tuple
 
 logger = logging.getLogger(__name__)
 
-# Default affiliate links — loaded from DB (affiliate_links table) at runtime.
-# This hardcoded fallback contains ONLY official project/tool homepages
-# with NO affiliate codes, tracking params, or referral IDs.
-# All monetized links (Amazon Associates, referral programs) MUST live in
-# the affiliate_links DB table, managed via OpenClaw or the settings API.
+# Default affiliate links — ONLY real referral/affiliate links go here.
+# If a company doesn't have a referral program, it has NO entry.
+# Plain homepage links without tracking codes are not affiliate links.
+# Source of truth: affiliate_links DB table, managed via OpenClaw.
 DEFAULT_AFFILIATES: Dict[str, Tuple[str, str]] = {
-    # Official tool/service homepages only — no tracking codes
-    "Railway": ("https://railway.app", "Railway"),
-    "Vercel": ("https://vercel.com", "Vercel"),
-    "Ollama": ("https://ollama.com", "Ollama"),
+    # Real referral links only — verified by Matt
     "Grafana": ("https://grafana.com/auth/sign-up?refCode=gr8rVwcGQFHaXaG", "Grafana Cloud"),
-    "PostgreSQL": ("https://www.postgresql.org", "PostgreSQL"),
-    "FastAPI": ("https://fastapi.tiangolo.com", "FastAPI"),
-    "Next.js": ("https://nextjs.org", "Next.js"),
-    "Docker": ("https://www.docker.com", "Docker"),
-    "GitHub": ("https://github.com", "GitHub"),
-    "Anthropic": ("https://www.anthropic.com", "Anthropic"),
-    "Claude": ("https://claude.ai", "Claude"),
+    "Railway": ("https://railway.app?referralCode=gladlabs", "Railway"),
+    "Mercury": ("https://mercury.com/r/glad-labs", "Mercury"),
 }
 
 
