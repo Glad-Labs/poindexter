@@ -160,12 +160,42 @@ class RevenueEngine:
 
         return suggestions
 
+    async def get_traffic_trends(self, days: int = 7) -> dict:
+        """Get traffic trends from page_views table for the last N days."""
+        if not self.pool:
+            return {"daily": [], "top_referrers": [], "total": 0}
+        try:
+            daily = await self.pool.fetch("""
+                SELECT date_trunc('day', created_at)::date AS day,
+                       COUNT(*) AS views
+                FROM page_views
+                WHERE created_at >= NOW() - INTERVAL '1 day' * $1
+                GROUP BY 1 ORDER BY 1
+            """, days)
+            referrers = await self.pool.fetch("""
+                SELECT COALESCE(NULLIF(referrer, ''), '(direct)') AS referrer,
+                       COUNT(*) AS views
+                FROM page_views
+                WHERE created_at >= NOW() - INTERVAL '1 day' * $1
+                GROUP BY 1 ORDER BY 2 DESC LIMIT 10
+            """, days)
+            total = sum(r["views"] for r in daily)
+            return {
+                "daily": [{"day": str(r["day"]), "views": r["views"]} for r in daily],
+                "top_referrers": [{"referrer": r["referrer"], "views": r["views"]} for r in referrers],
+                "total": total,
+            }
+        except Exception as e:
+            logger.error("[REVENUE] Failed to get traffic trends: %s", e)
+            return {"daily": [], "top_referrers": [], "total": 0}
+
     async def analyze_content_performance(self) -> dict:
         """Generate a comprehensive content performance analysis."""
         top_posts = await self.get_top_performing_posts(10)
         categories = await self.get_category_performance()
         keywords = await self.get_keyword_performance()
         suggestions = await self.suggest_topics_from_performance()
+        traffic = await self.get_traffic_trends(7)
 
         total_views = sum(p.get("views", 0) for p in top_posts)
         avg_content_length = (
@@ -176,6 +206,7 @@ class RevenueEngine:
         return {
             "summary": {
                 "total_views": total_views,
+                "views_last_7d": traffic["total"],
                 "avg_content_length": int(avg_content_length),
                 "top_category": categories[0]["category"] if categories else "none",
                 "top_keyword": keywords[0]["keyword"] if keywords else "none",
@@ -184,6 +215,7 @@ class RevenueEngine:
                 {"title": p["title"][:60], "views": p.get("views", 0), "slug": p["slug"]}
                 for p in top_posts[:5]
             ],
+            "traffic_trends": traffic,
             "category_breakdown": categories,
             "top_keywords": keywords[:10],
             "suggested_topics": suggestions,
@@ -197,7 +229,8 @@ class RevenueEngine:
 
         lines = [
             "=== CONTENT PERFORMANCE REPORT ===",
-            f"Total views: {s['total_views']}",
+            f"Total views (all time): {s['total_views']}",
+            f"Views (last 7 days): {s.get('views_last_7d', 'N/A')}",
             f"Avg content length: {s['avg_content_length']} chars",
             f"Top category: {s['top_category']}",
             f"Top keyword: {s['top_keyword']}",

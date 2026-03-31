@@ -1,0 +1,448 @@
+{
+  "uid": "page-views",
+  "title": "Page Views & Traffic",
+  "description": "Page view analytics, top posts, referrers, and traffic trends",
+  "tags": ["glad-labs", "analytics", "traffic"],
+  "timezone": "browser",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": ["5m", "15m", "30m", "1h"],
+    "time_options": ["5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"]
+  },
+  "refresh": "5m",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {
+      "id": 1,
+      "title": "Total Views (period)",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "gladlabs-postgres"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*) AS \"Total Views\" FROM page_views WHERE $__timeFilter(created_at)",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 50 },
+              { "color": "green", "value": 200 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 2,
+      "title": "Unique Posts Viewed",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "gladlabs-postgres"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(DISTINCT slug) AS \"Unique Posts\" FROM page_views WHERE slug IS NOT NULL AND $__timeFilter(created_at)",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "green", "value": 10 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "title": "Views Today",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "gladlabs-postgres"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*) AS \"Today\" FROM page_views WHERE created_at >= CURRENT_DATE",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 10 },
+              { "color": "green", "value": 50 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Published Posts",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "gladlabs-postgres"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*) AS \"Posts\" FROM posts WHERE status = 'published'",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "green", "value": 50 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 5,
+      "title": "Daily Page Views",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 5 },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "gladlabs-postgres"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT date_trunc('day', created_at) AS time, COUNT(*) AS \"Views\" FROM page_views WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 30,
+            "gradientMode": "scheme",
+            "showPoints": "auto",
+            "pointSize": 5
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "single" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Hourly Traffic Pattern",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 15 },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "gladlabs-postgres"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT date_trunc('hour', created_at) AS time, COUNT(*) AS \"Views\" FROM page_views WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "blue", "mode": "fixed" },
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 15,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "single" },
+        "legend": { "displayMode": "hidden" }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Views by Day of Week",
+      "type": "barchart",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 15 },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "gladlabs-postgres"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT to_char(created_at, 'Dy') AS \"Day\", COUNT(*) AS \"Views\" FROM page_views WHERE $__timeFilter(created_at) GROUP BY EXTRACT(DOW FROM created_at), to_char(created_at, 'Dy') ORDER BY EXTRACT(DOW FROM created_at)",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xTickLabelRotation": 0,
+        "groupWidth": 0.7,
+        "barWidth": 0.7
+      }
+    },
+    {
+      "id": 8,
+      "title": "Top Posts (by views)",
+      "type": "table",
+      "gridPos": { "h": 12, "w": 12, "x": 0, "y": 25 },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "gladlabs-postgres"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT p.title AS \"Post\", p.view_count AS \"Total Views\", COUNT(pv.id) AS \"Period Views\", p.category AS \"Category\" FROM posts p LEFT JOIN page_views pv ON pv.slug = p.slug AND $__timeFilter(pv.created_at) WHERE p.status = 'published' GROUP BY p.title, p.view_count, p.category ORDER BY p.view_count DESC NULLS LAST LIMIT 20",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Post" },
+            "properties": [{ "id": "custom.width", "value": 400 }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Total Views" },
+            "properties": [{ "id": "custom.width", "value": 120 }]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "displayName": "Total Views", "desc": true }]
+      }
+    },
+    {
+      "id": 9,
+      "title": "Top Referrers",
+      "type": "table",
+      "gridPos": { "h": 12, "w": 12, "x": 12, "y": 25 },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "gladlabs-postgres"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT CASE WHEN referrer = '' OR referrer IS NULL THEN '(direct)' ELSE REGEXP_REPLACE(referrer, '^https?://(www\\.)?', '') END AS \"Referrer\", COUNT(*) AS \"Views\" FROM page_views WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 2 DESC LIMIT 20",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Referrer" },
+            "properties": [{ "id": "custom.width", "value": 400 }]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "displayName": "Views", "desc": true }]
+      }
+    },
+    {
+      "id": 10,
+      "title": "New Posts vs Views (correlation)",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 37 },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "gladlabs-postgres"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT date_trunc('day', created_at) AS time, COUNT(*) AS \"Page Views\" FROM page_views WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
+          "format": "time_series",
+          "refId": "A"
+        },
+        {
+          "rawSql": "SELECT date_trunc('day', published_at) AS time, COUNT(*) AS \"Posts Published\" FROM posts WHERE $__timeFilter(published_at) AND status = 'published' GROUP BY 1 ORDER BY 1",
+          "format": "time_series",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Page Views" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "fixedColor": "blue", "mode": "fixed" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Posts Published" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "fixedColor": "green", "mode": "fixed" }
+              },
+              { "id": "custom.axisPlacement", "value": "right" }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 11,
+      "title": "Category Performance",
+      "type": "piechart",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 47 },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "gladlabs-postgres"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COALESCE(p.category, 'uncategorized') AS \"Category\", SUM(COALESCE(p.view_count, 0)) AS \"Views\" FROM posts p WHERE p.status = 'published' GROUP BY 1 ORDER BY 2 DESC",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "pieType": "donut",
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": ["value", "percent"]
+        }
+      }
+    },
+    {
+      "id": 12,
+      "title": "Revenue Potential (views vs monetization)",
+      "type": "stat",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 47 },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "gladlabs-postgres"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT SUM(COALESCE(view_count, 0)) AS \"Total Lifetime Views\" FROM posts WHERE status = 'published'",
+          "format": "table",
+          "refId": "A"
+        },
+        {
+          "rawSql": "SELECT ROUND(SUM(COALESCE(view_count, 0)) * 0.005, 2) AS \"Est. AdSense Revenue ($)\" FROM posts WHERE status = 'published'",
+          "format": "table",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "blue", "value": null }]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background",
+        "textMode": "auto"
+      }
+    }
+  ]
+}
