@@ -113,12 +113,13 @@ def auto_publish():
                     continue
 
             # Gate 2: QA score threshold — only auto-publish high scorers
-            qa_score = 0
+            # quality_score is a top-level field on the task response;
+            # qa_final_score lives inside result dict (when multi-model QA ran)
+            qa_score = full.get("quality_score", 0) or 0
             result_data = full.get("result") if isinstance(full.get("result"), dict) else {}
-            qa_score = result_data.get("qa_final_score", 0) or 0
-            # Also check quality_score from the quality evaluation stage
-            if not qa_score:
-                qa_score = result_data.get("quality_score", 0) or 0
+            qa_final = result_data.get("qa_final_score", 0) or 0
+            # Use the higher of the two scores (multi-model QA or quality eval)
+            qa_score = max(qa_score, qa_final)
             if qa_score < MIN_PUBLISH_SCORE:
                 if qa_score > 0:
                     logger.info("HELD: %s — QA score %.0f < %d (needs manual review)",
