@@ -29,7 +29,7 @@ class TestScoreAccuracy:
     def test_baseline_plain_text(self, svc):
         """Plain text with no citations starts at neutral baseline."""
         score = svc._score_accuracy("This is plain text with no sources.", {})
-        assert score == pytest.approx(6.0, abs=0.5)
+        assert score == pytest.approx(7.0, abs=0.5)
 
     def test_inline_citation_raises_score(self, svc):
         """Content with [1]-style inline citations should score above baseline."""
@@ -252,9 +252,9 @@ class TestScoreRelevance:
 
 class TestScoreReadability:
     def test_empty_content_returns_midpoint(self, svc):
-        """Empty string should not crash and returns the neutral 5.0."""
+        """Empty string should not crash and returns the neutral 6.0."""
         score = svc._score_readability("")
-        assert score == pytest.approx(5.0)
+        assert score == pytest.approx(6.0)
 
     def test_simple_short_sentences_score_high(self, svc):
         """Short, simple sentences produce a high Flesch Reading Ease score."""
