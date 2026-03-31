@@ -233,8 +233,24 @@ def main():
                 h.flush()
             last_publish = now
 
-        # Content generation check
+        # Content generation check (with cost guard)
         if now - last_generate >= GENERATE_INTERVAL:
+            # Check daily cost before creating more tasks
+            # Each task can cost $0.50-5.00 if it hits cloud models
+            try:
+                cost_check = json.loads(urllib.request.urlopen(
+                    urllib.request.Request(f"{API_URL}/api/metrics/costs/today",
+                                          headers={"Authorization": AUTH}),
+                    timeout=10,
+                ).read())
+                daily_spend = cost_check.get("total_cost", 0) or 0
+                if daily_spend >= 5.0:
+                    logger.warning("COST GUARD: Daily spend $%.2f >= $5.00 — skipping content gen", daily_spend)
+                    last_generate = now
+                    continue
+            except Exception:
+                pass  # If cost API unavailable, proceed with generation (Ollama is free)
+
             try:
                 generate_content(3)
             except Exception as e:
