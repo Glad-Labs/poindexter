@@ -77,17 +77,81 @@ def generate_topic() -> str:
     )
 
 
-def get_recent_topics() -> set:
-    """Fetch recent task topics to avoid duplicates."""
+def _normalize_words(text: str) -> list:
+    """Lowercase, strip punctuation, split into words."""
+    import re
+    return re.sub(r"[^a-z0-9 ]", "", text.lower()).split()
+
+
+def _get_ngrams(words: list, n: int) -> set:
+    """Return set of n-grams (tuples of n consecutive words)."""
+    return {tuple(words[i:i + n]) for i in range(len(words) - n + 1)}
+
+
+def _extract_template_base(topic: str) -> str:
+    """Extract the template skeleton (first 4 + last 4 words).
+
+    E.g. "The Hidden Costs of Local LLMs Nobody Talks About"
+      -> "the hidden costs of ... nobody talks about"
+    """
+    words = _normalize_words(topic)
+    if len(words) <= 6:
+        return " ".join(words)
+    return " ".join(words[:4]) + " ... " + " ".join(words[-4:])
+
+
+def _is_too_similar(topic: str, existing_topics: set) -> bool:
+    """Check if topic is too similar to any existing topic.
+
+    Checks: exact match, 3+ consecutive shared words, same template skeleton.
+    """
+    topic_words = _normalize_words(topic)
+    topic_ngrams = _get_ngrams(topic_words, 3)
+    topic_base = _extract_template_base(topic)
+
+    for existing in existing_topics:
+        if topic.lower() == existing.lower():
+            return True
+        existing_words = _normalize_words(existing)
+        existing_ngrams = _get_ngrams(existing_words, 3)
+        if topic_ngrams & existing_ngrams:
+            return True
+        if _extract_template_base(existing) == topic_base:
+            return True
+    return False
+
+
+def get_existing_topics() -> set:
+    """Fetch recent task topics AND published post titles to avoid duplicates."""
+    auth = f"Bearer {API_TOKEN}"
+    topics = set()
+    # Recent tasks
     try:
         req = urllib.request.Request(
             f"{API_URL}/api/tasks?limit=50",
-            headers={"Authorization": f"Bearer {API_TOKEN}"},
+            headers={"Authorization": auth},
         )
         data = json.loads(urllib.request.urlopen(req, timeout=10).read())
-        return {t.get("topic", "").lower() for t in data.get("tasks", [])}
+        for t in data.get("tasks", []):
+            topic = t.get("topic", "")
+            if topic:
+                topics.add(topic)
     except Exception:
-        return set()
+        pass
+    # Published posts
+    try:
+        req = urllib.request.Request(
+            f"{API_URL}/api/posts?limit=100",
+            headers={"Authorization": auth},
+        )
+        data = json.loads(urllib.request.urlopen(req, timeout=10).read())
+        for p in data.get("posts", data if isinstance(data, list) else []):
+            title = p.get("title", "")
+            if title:
+                topics.add(title)
+    except Exception:
+        pass
+    return topics
 
 
 def create_task(topic: str) -> bool:
@@ -122,7 +186,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Print topics without creating")
     args = parser.parse_args()
 
-    recent = get_recent_topics()
+    existing = get_existing_topics()
     created = 0
     attempts = 0
     max_attempts = args.count * 5  # Avoid infinite loop
@@ -132,8 +196,8 @@ def main():
         topic = generate_topic()
         attempts += 1
 
-        # Skip if too similar to recent
-        if topic.lower() in recent:
+        # Skip if too similar to existing tasks or published posts
+        if _is_too_similar(topic, existing):
             continue
 
         if args.dry_run:
@@ -142,7 +206,7 @@ def main():
         else:
             if create_task(topic):
                 created += 1
-                recent.add(topic.lower())
+                existing.add(topic)
 
     print(f"Done: {created}/{args.count} tasks created ({attempts} attempts)")
 
