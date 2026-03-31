@@ -712,25 +712,29 @@ class UnifiedQualityService:
         return False
 
     def _score_completeness(self, content: str, context: Dict[str, Any]) -> float:
-        """Score completeness based on depth signals beyond raw word count."""
+        """Score completeness based on depth signals beyond raw word count.
+
+        Calibrated so that our default target length (1500 words) with decent
+        structure scores 7.5-8.5/10 (75-85/100), not 6.5/10 as before.
+        """
         word_count = len(content.split())
         score = 0.0
 
-        # Word-count baseline (necessary but not sufficient)
+        # Word-count baseline — calibrated to default target of 1500 words
         if word_count >= 2000:
-            score += 5.0
+            score += 6.5
         elif word_count >= 1500:
-            score += 4.5
+            score += 6.0
         elif word_count >= 1000:
-            score += 4.0
+            score += 5.0
         elif word_count >= 500:
-            score += 3.0
+            score += 3.5
         else:
-            score += 1.5
+            score += 2.0
 
         # Structural depth signals
         heading_count = len(re.findall(r"^#{1,3}\s", content, re.MULTILINE))
-        score += min(heading_count * 0.4, 2.0)  # Up to +2 for 5+ headings
+        score += min(heading_count * 0.3, 1.5)  # Up to +1.5 for 5+ headings
 
         paragraphs = [p.strip() for p in content.split("\n\n") if p.strip()]
         if len(paragraphs) >= 5:
