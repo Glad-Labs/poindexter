@@ -28,13 +28,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "cofound
 LOG_FILE = os.path.join(os.path.expanduser("~"), ".gladlabs", "daemon.log")
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 
+# pythonw.exe sets stdout/stderr to None — only use file handler when windowless
+_handlers = [logging.FileHandler(LOG_FILE)]
+if sys.stdout is not None:
+    _handlers.append(logging.StreamHandler(sys.stdout))
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler(LOG_FILE),
-        logging.StreamHandler(sys.stdout),
-    ],
+    handlers=_handlers,
 )
 logger = logging.getLogger("daemon")
 
