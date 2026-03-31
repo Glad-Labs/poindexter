@@ -1541,6 +1541,70 @@ The key to success with {topic} is staying informed, adapting to changes, and co
         except Exception:
             logger.error("[_sweep_stale_tasks] Failed to sweep stale tasks", exc_info=True)
 
+        # Also auto-retry recently failed/rejected tasks with adjusted params
+        await self._auto_retry_failed_tasks()
+
+    async def _auto_retry_failed_tasks(self) -> None:
+        """Retry failed/rejected tasks with adjusted parameters.
+
+        Strategy:
+        - Retry 1: Use a different model (qwen3-coder instead of glm-4.7)
+        - Retry 2: Lower target length (1000 words), skip featured image
+        - Retry 3+: Give up (stays failed)
+        """
+        if not self.database_service or not self.database_service.pool:
+            return
+        try:
+            # Find failed/rejected tasks with retry_count < MAX_TASK_RETRIES
+            # Only retry tasks from the last 24 hours to avoid re-processing ancient failures
+            rows = await self.database_service.pool.fetch("""
+                SELECT task_id, status, topic, task_metadata,
+                       COALESCE((task_metadata::jsonb->>'retry_count')::int, 0) as retry_count
+                FROM content_tasks
+                WHERE status IN ('failed', 'rejected')
+                AND created_at > NOW() - INTERVAL '24 hours'
+                AND COALESCE((task_metadata::jsonb->>'retry_count')::int, 0) < $1
+                LIMIT 3
+            """, MAX_TASK_RETRIES)
+
+            for row in rows:
+                task_id = row["task_id"]
+                retry_count = row["retry_count"]
+                topic = row.get("topic", "unknown")
+
+                # Build adjusted parameters based on retry number
+                adjustments = {}
+                if retry_count == 0:
+                    # First retry: try a different model
+                    adjustments = {"model_selections": {"draft": "qwen3-coder:30b"}}
+                elif retry_count == 1:
+                    # Second retry: shorter content, skip image
+                    adjustments = {
+                        "target_length": 1000,
+                        "generate_featured_image": False,
+                    }
+
+                # Reset to pending with incremented retry count
+                meta = row.get("task_metadata") or {}
+                if isinstance(meta, str):
+                    import json
+                    meta = json.loads(meta) if meta else {}
+                meta["retry_count"] = retry_count + 1
+                meta["last_retry_at"] = datetime.now(timezone.utc).isoformat()
+                meta["retry_adjustments"] = adjustments
+
+                await self.database_service.update_task(task_id, {
+                    "status": "pending",
+                    "error_message": None,
+                    "task_metadata": meta,
+                })
+                logger.info(
+                    "[AUTO_RETRY] Reset task %s to pending (retry %d/%d, topic: %s)",
+                    task_id[:8], retry_count + 1, MAX_TASK_RETRIES, topic[:40],
+                )
+        except Exception:
+            logger.debug("[AUTO_RETRY] Auto-retry sweep failed", exc_info=True)
+
     def get_stats(self) -> Dict[str, Any]:
         """Get executor statistics"""
         last_poll_age: Optional[float] = None
