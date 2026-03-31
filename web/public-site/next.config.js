@@ -237,6 +237,20 @@ const nextConfig = {
       { source: '/tags', destination: '/archive/1', permanent: true },
       { source: '/archive', destination: '/archive/1', permanent: true },
       { source: '/page/:num', destination: '/archive/:num', permanent: true },
+      // Old WordPress URLs from Search Console — redirect valuable ones
+      { source: '/2025/:path*', destination: '/archive/1', permanent: true },
+      {
+        source: '/category/:path*',
+        destination: '/archive/1',
+        permanent: true,
+      },
+      { source: '/tag/:path*', destination: '/archive/1', permanent: true },
+      { source: '/author/:path*', destination: '/about', permanent: true },
+      { source: '/es/:path*', destination: '/', permanent: true },
+      { source: '/contact-us', destination: '/about', permanent: true },
+      { source: '/my-account', destination: '/', permanent: true },
+      { source: '/sample-page', destination: '/', permanent: true },
+      { source: '/privacy-policy-2', destination: '/privacy', permanent: true },
     ];
   },
 
