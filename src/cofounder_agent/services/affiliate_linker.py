@@ -21,11 +21,20 @@ logger = logging.getLogger(__name__)
 # Format: keyword → (url, display_text)
 # These are placeholder URLs — replace with actual affiliate links
 DEFAULT_AFFILIATES: Dict[str, Tuple[str, str]] = {
+    # Amazon Associates (gladlabsllc-20)
+    "Python": ("https://www.amazon.com/Learning-Python-5th-Mark-Lutz/dp/1449355730?tag=gladlabsllc-20", "Python"),
+    "Raspberry Pi": ("https://www.amazon.com/s?k=raspberry+pi&tag=gladlabsllc-20", "Raspberry Pi"),
+    "NAS": ("https://www.amazon.com/s?k=nas+storage&tag=gladlabsllc-20", "NAS"),
+    "GPU": ("https://www.amazon.com/s?k=nvidia+gpu&tag=gladlabsllc-20", "GPU"),
+    "SSD": ("https://www.amazon.com/s?k=nvme+ssd&tag=gladlabsllc-20", "SSD"),
+    "mechanical keyboard": ("https://www.amazon.com/s?k=mechanical+keyboard&tag=gladlabsllc-20", "mechanical keyboard"),
+    # Service referrals
     "Railway": ("https://railway.app?referralCode=gladlabs", "Railway"),
     "Vercel": ("https://vercel.com", "Vercel"),
     "Ollama": ("https://ollama.com", "Ollama"),
     "Grafana": ("https://grafana.com/products/cloud/", "Grafana Cloud"),
-    "Pexels": ("https://www.pexels.com", "Pexels"),
+    "DigitalOcean": ("https://www.digitalocean.com/?refcode=gladlabs", "DigitalOcean"),
+    # Tools we write about
     "PostgreSQL": ("https://www.postgresql.org", "PostgreSQL"),
     "FastAPI": ("https://fastapi.tiangolo.com", "FastAPI"),
     "Next.js": ("https://nextjs.org", "Next.js"),
