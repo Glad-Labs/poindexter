@@ -17,6 +17,7 @@ Usage:
 import json
 import logging
 import os
+import subprocess
 import sys
 import time
 import urllib.request
@@ -62,6 +63,7 @@ AUTH = f"Bearer {API_TOKEN}"
 
 PUBLISH_INTERVAL = 300  # 5 minutes
 GENERATE_INTERVAL = 28800  # 8 hours
+OPPORTUNISTIC_INTERVAL = 120  # 2 minutes — check for idle GPU work
 
 
 def auto_publish():
@@ -212,12 +214,113 @@ def generate_content(count=3):
     return created
 
 
+def get_gpu_utilization():
+    """Get current GPU utilization percentage (0-100)."""
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=5
+        )
+        return int(result.stdout.strip()) if result.returncode == 0 else -1
+    except Exception:
+        return -1
+
+
+def get_pending_task_count():
+    """Check how many tasks are waiting in the queue."""
+    try:
+        req = urllib.request.Request(
+            f"{API_URL}/api/tasks?status=pending&limit=1",
+            headers={"Authorization": AUTH},
+        )
+        data = json.loads(urllib.request.urlopen(req, timeout=10).read())
+        return len(data.get("tasks", []))
+    except Exception:
+        return -1
+
+
+def run_opportunistic_task():
+    """Pick and run an opportunistic task when GPU is idle.
+
+    Priority order (highest value first):
+    1. Re-score held posts with updated quality service
+    2. Generate content for next batch (pre-generate)
+    3. Run benchmark on untested model variant
+
+    Only runs when GPU < 10% utilization and no pending tasks in queue.
+    """
+    gpu_util = get_gpu_utilization()
+    if gpu_util < 0:
+        return  # Can't read GPU, skip
+
+    if gpu_util >= 10:
+        return  # GPU is busy, don't compete
+
+    pending = get_pending_task_count()
+    if pending > 0:
+        return  # Worker has tasks to process, don't create more load
+
+    # GPU is idle and no tasks pending — find productive work
+    logger.info("🔋 GPU idle (%d%%), looking for opportunistic work...", gpu_util)
+
+    # Priority 1: Re-score held posts that have old quality scores
+    # These were scored before calibration and might now pass the threshold
+    try:
+        req = urllib.request.Request(
+            f"{API_URL}/api/tasks?status=awaiting_approval&limit=50",
+            headers={"Authorization": AUTH},
+        )
+        data = json.loads(urllib.request.urlopen(req, timeout=10).read())
+        held_tasks = data.get("tasks", [])
+        low_scored = [t for t in held_tasks if (t.get("quality_score") or 0) < 75]
+
+        if low_scored:
+            # Pick one to re-evaluate — create a lightweight re-score task
+            task = low_scored[0]
+            logger.info("🔄 [OPPORTUNISTIC] Re-scoring held post: %s (current: %s)",
+                        task.get("topic", "?")[:40], task.get("quality_score"))
+            # Reset to pending so the worker re-processes with updated scoring
+            try:
+                urllib.request.urlopen(urllib.request.Request(
+                    f"{API_URL}/api/tasks/{task['task_id']}",
+                    data=json.dumps({"status": "pending"}).encode(),
+                    headers={"Authorization": AUTH, "Content-Type": "application/json"},
+                    method="PATCH",
+                ), timeout=10)
+                logger.info("🔄 [OPPORTUNISTIC] Task reset to pending for re-scoring")
+                return
+            except Exception as e:
+                logger.debug("Re-score reset failed: %s", e)
+    except Exception:
+        pass
+
+    # Priority 2: Pre-generate content if we're running low
+    try:
+        req = urllib.request.Request(
+            f"{API_URL}/api/tasks?status=awaiting_approval&limit=1",
+            headers={"Authorization": AUTH},
+        )
+        data = json.loads(urllib.request.urlopen(req, timeout=10).read())
+        ready_count = len(data.get("tasks", []))
+
+        if ready_count < 10:
+            logger.info("🔋 [OPPORTUNISTIC] Content buffer low (%d), pre-generating 1 task", ready_count)
+            generate_content(1)
+            return
+    except Exception:
+        pass
+
+    # GPU is idle but nothing to do — that's fine
+    logger.debug("GPU idle (%d%%) but no opportunistic work available", gpu_util)
+
+
 def main():
     one_shot = "--once" in sys.argv
     logger.info("Glad Labs Daemon starting (once=%s)", one_shot)
 
     last_publish = 0
     last_generate = 0
+    last_opportunistic = 0
 
     while True:
         now = time.time()
@@ -256,6 +359,14 @@ def main():
             except Exception as e:
                 logger.error("Content generation error: %s", e)
             last_generate = now
+
+        # Opportunistic GPU work — use idle compute productively
+        if now - last_opportunistic >= OPPORTUNISTIC_INTERVAL:
+            try:
+                run_opportunistic_task()
+            except Exception as e:
+                logger.debug("Opportunistic task error: %s", e)
+            last_opportunistic = now
 
         if one_shot:
             break
