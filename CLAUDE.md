@@ -2,9 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## IMPORTANT: Read session_45_handoff.md first
+## IMPORTANT: New session startup
 
-If this is a new session, read `~/.claude/projects/C--users-mattm-glad-labs-website/memory/session_45_handoff.md` for full context on what was built March 29-30, 2026.
+If this is a new session, read these in order:
+
+1. `~/.claude/projects/C--users-mattm-glad-labs-website/memory/matts_voice.md` — How Matt thinks and communicates
+2. `~/.claude/projects/C--users-mattm-glad-labs-website/memory/decision_log.md` — Key decisions and WHY
+3. The latest `session_*_handoff.md` — What was built and what's pending
 
 ## Project Overview
 
