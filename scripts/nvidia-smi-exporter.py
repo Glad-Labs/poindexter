@@ -168,115 +168,123 @@ def get_total_power_metrics(gpu_text, cpu_text):
     return "\n".join(lines) + "\n"
 
 
+def _read_aida64_shm():
+    """Read raw data from AIDA64 shared memory using Windows API."""
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.MapViewOfFile.restype = ctypes.c_void_p
+    kernel32.MapViewOfFile.argtypes = [
+        wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD, wintypes.DWORD, ctypes.c_size_t,
+    ]
+    kernel32.UnmapViewOfFile.argtypes = [ctypes.c_void_p]
+    kernel32.UnmapViewOfFile.restype = wintypes.BOOL
+
+    handle = kernel32.OpenFileMappingW(0x0004, False, "AIDA64_SensorValues")
+    if not handle:
+        return None
+
+    buf = kernel32.MapViewOfFile(handle, 0x0004, 0, 0, 0)
+    if not buf:
+        kernel32.CloseHandle(handle)
+        return None
+
+    raw = ctypes.cast(buf, ctypes.c_char_p).value
+    data = raw.decode("utf-8", errors="ignore").strip() if raw else ""
+    kernel32.UnmapViewOfFile(buf)
+    kernel32.CloseHandle(handle)
+    return data
+
+
 def get_aida64_metrics():
     """Read all sensors from AIDA64 shared memory.
 
-    AIDA64 shared memory format: pipe-delimited key=value pairs.
-    Example: TCPU=45|TGPU=62|PCPUPKG=95.2|PPSU12V=185.3|...
+    AIDA64 shared memory uses XML-like format with typed sections:
+      <temp>  — Temperature (Celsius)
+      <fan>   — Fan speed (RPM)
+      <volt>  — Voltage (V)
+      <pwr>   — Power (W)
+      <curr>  — Current (A)
+      <duty>  — Duty cycle (%)
+      <sys>   — System info (clocks, utilization, memory, etc.)
 
-    Sensor ID prefixes:
-      T = Temperature (Celsius)
-      F = Fan speed (RPM)
-      V = Voltage (V)
-      P = Power (W)
-      C = Current (A)
-      U = Utilization (%)
-      S = Speed (MB/s, etc.)
-      D = Duty cycle (%)
+    Each entry: <type><id>ID</id><label>Label</label><value>Value</value></type>
     """
     if sys.platform != "win32":
         return ""
-    try:
-        shm = mmap.mmap(-1, 0, "AIDA64_SensorValues", access=mmap.ACCESS_READ)
-        raw = shm[:].decode("utf-8", errors="ignore").rstrip("\x00").strip()
-        shm.close()
-    except (FileNotFoundError, OSError):
-        return "# aida64: shared memory not available (enable in AIDA64 Preferences > External Applications)\n"
 
+    raw = _read_aida64_shm()
+    if raw is None:
+        return "# aida64: shared memory not available (enable in AIDA64 Preferences > External Applications)\n"
     if not raw:
         return "# aida64: shared memory empty\n"
 
+    # Map AIDA64 XML tag types to Prometheus metric names
+    type_map = {
+        "temp": ("aida64_temperature_celsius", "Temperature sensors from AIDA64"),
+        "fan": ("aida64_fan_rpm", "Fan speed sensors from AIDA64"),
+        "volt": ("aida64_voltage_volts", "Voltage sensors from AIDA64"),
+        "pwr": ("aida64_power_watts", "Power sensors from AIDA64"),
+        "curr": ("aida64_current_amps", "Current sensors from AIDA64"),
+        "duty": ("aida64_duty_percent", "Duty cycle sensors from AIDA64"),
+    }
+
+    # Parse XML-like entries: <type><id>X</id><label>Y</label><value>Z</value></type>
+    pattern = re.compile(
+        r"<(temp|fan|volt|pwr|curr|duty|sys)>"
+        r"<id>([^<]+)</id>"
+        r"<label>([^<]+)</label>"
+        r"<value>([^<]*)</value>"
+        r"</\1>"
+    )
+
     lines = []
+    seen_metrics = set()
     psu_total_power = None
 
-    # Parse pipe-delimited entries
-    for entry in raw.split("|"):
-        entry = entry.strip()
-        if not entry or "=" not in entry:
-            continue
-        sensor_id, val_str = entry.split("=", 1)
+    for match in pattern.finditer(raw):
+        sensor_type, sensor_id, label, val_str = match.groups()
+
         try:
             value = float(val_str)
-        except ValueError:
+        except (ValueError, TypeError):
             continue
 
-        # Classify by prefix
-        prefix = sensor_id[0].upper() if sensor_id else ""
-        # Make a prometheus-safe metric name
         safe_id = re.sub(r"[^a-zA-Z0-9_]", "_", sensor_id).lower()
+        safe_label = label.replace('"', '\\"')
 
-        if prefix == "T":
-            metric = f"aida64_temperature_celsius"
-            lines.append(f'{metric}{{sensor="{safe_id}"}} {value}')
-        elif prefix == "F":
-            metric = f"aida64_fan_rpm"
-            lines.append(f'{metric}{{sensor="{safe_id}"}} {value}')
-        elif prefix == "V":
-            metric = f"aida64_voltage_volts"
-            lines.append(f'{metric}{{sensor="{safe_id}"}} {value}')
-        elif prefix == "P":
-            metric = f"aida64_power_watts"
-            lines.append(f'{metric}{{sensor="{safe_id}"}} {value}')
-            # Capture PSU total power if available
-            sid = safe_id.lower()
-            if "psu" in sid and ("total" in sid or "12v" in sid):
+        if sensor_type == "sys":
+            # System sensors — selective export of numeric values
+            # Skip date/time/string-only values
+            metric = "aida64_system"
+            if metric not in seen_metrics:
+                seen_metrics.add(metric)
+                lines.append(f"# HELP {metric} System sensors from AIDA64")
+                lines.append(f"# TYPE {metric} gauge")
+            lines.append(f'{metric}{{sensor="{safe_id}",label="{safe_label}"}} {value}')
+        elif sensor_type in type_map:
+            metric, help_text = type_map[sensor_type]
+            if metric not in seen_metrics:
+                seen_metrics.add(metric)
+                lines.append(f"# HELP {metric} {help_text}")
+                lines.append(f"# TYPE {metric} gauge")
+            lines.append(f'{metric}{{sensor="{safe_id}",label="{safe_label}"}} {value}')
+
+            # Track PSU power if present
+            if sensor_type == "pwr" and "psu" in safe_id.lower():
                 psu_total_power = value
-        elif prefix == "C":
-            metric = f"aida64_current_amps"
-            lines.append(f'{metric}{{sensor="{safe_id}"}} {value}')
-        elif prefix == "U":
-            metric = f"aida64_utilization_percent"
-            lines.append(f'{metric}{{sensor="{safe_id}"}} {value}')
-        elif prefix == "D":
-            metric = f"aida64_duty_percent"
-            lines.append(f'{metric}{{sensor="{safe_id}"}} {value}')
-        else:
-            # Unknown prefix — still export it
-            lines.append(f'aida64_sensor{{sensor="{safe_id}"}} {value}')
 
     if not lines:
         return "# aida64: no numeric sensors found\n"
 
-    # Add HELP/TYPE headers for each metric type used
-    output_lines = []
-    seen_metrics = set()
-    metric_help = {
-        "aida64_temperature_celsius": ("Temperature sensors from AIDA64", "gauge"),
-        "aida64_fan_rpm": ("Fan speed sensors from AIDA64", "gauge"),
-        "aida64_voltage_volts": ("Voltage sensors from AIDA64", "gauge"),
-        "aida64_power_watts": ("Power sensors from AIDA64 (includes PSU rails)", "gauge"),
-        "aida64_current_amps": ("Current sensors from AIDA64", "gauge"),
-        "aida64_utilization_percent": ("Utilization sensors from AIDA64", "gauge"),
-        "aida64_duty_percent": ("Duty cycle sensors from AIDA64", "gauge"),
-        "aida64_sensor": ("Other AIDA64 sensors", "gauge"),
-    }
-    for line in lines:
-        metric_name = line.split("{")[0] if "{" in line else line.split()[0]
-        if metric_name not in seen_metrics:
-            seen_metrics.add(metric_name)
-            if metric_name in metric_help:
-                help_text, type_text = metric_help[metric_name]
-                output_lines.append(f"# HELP {metric_name} {help_text}")
-                output_lines.append(f"# TYPE {metric_name} {type_text}")
-        output_lines.append(line)
-
     # If we got PSU total power, expose it as a dedicated metric
     if psu_total_power is not None:
-        output_lines.append("# HELP psu_total_power_watts Total system power from Corsair HXi PSU")
-        output_lines.append("# TYPE psu_total_power_watts gauge")
-        output_lines.append(f"psu_total_power_watts {psu_total_power}")
+        lines.append("# HELP psu_total_power_watts Total system power from Corsair HXi PSU")
+        lines.append("# TYPE psu_total_power_watts gauge")
+        lines.append(f"psu_total_power_watts {psu_total_power}")
 
-    return "\n".join(output_lines) + "\n"
+    return "\n".join(lines) + "\n"
 
 
 class MetricsHandler(BaseHTTPRequestHandler):
