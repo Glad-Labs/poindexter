@@ -1062,6 +1062,21 @@ class AIContentGenerator:
 
             generated_content = response.content[0].text if response.content else ""
 
+            # Track cost from usage data
+            usage = getattr(response, "usage", None)
+            if usage:
+                input_tokens = getattr(usage, "input_tokens", 0) or 0
+                output_tokens = getattr(usage, "output_tokens", 0) or 0
+                # Anthropic pricing: Haiku ~$0.001/1K, Sonnet ~$0.015/1K
+                rate = 0.015 if "sonnet" in model_name.lower() else 0.001
+                cost_usd = (input_tokens + output_tokens) / 1000 * rate
+                metrics["cost_log"] = {
+                    "provider": "anthropic", "model": model_name,
+                    "input_tokens": input_tokens, "output_tokens": output_tokens,
+                    "cost_usd": round(cost_usd, 6), "phase": "content_generation",
+                }
+                logger.info("💰 Anthropic cost: $%.4f (%d in + %d out tokens)", cost_usd, input_tokens, output_tokens)
+
             if generated_content and len(generated_content) > 100:
                 validation = self._validate_content(generated_content, topic, target_length)
                 word_count = len(generated_content.split())
@@ -1151,6 +1166,20 @@ class AIContentGenerator:
             )
 
             generated_content = response.text
+            # Track cost from Gemini usage metadata
+            usage_meta = getattr(response, "usage_metadata", None)
+            if usage_meta:
+                input_tokens = getattr(usage_meta, "prompt_token_count", 0) or 0
+                output_tokens = getattr(usage_meta, "candidates_token_count", 0) or 0
+                # Gemini Flash: ~$0.0001/1K input, ~$0.0004/1K output
+                cost_usd = input_tokens / 1000 * 0.0001 + output_tokens / 1000 * 0.0004
+                metrics["cost_log"] = {
+                    "provider": "google", "model": gemini_model_name,
+                    "input_tokens": input_tokens, "output_tokens": output_tokens,
+                    "cost_usd": round(cost_usd, 6), "phase": "content_generation",
+                }
+                logger.info("💰 Gemini cost: $%.4f (%d in + %d out tokens)", cost_usd, input_tokens, output_tokens)
+
             logger.info(f"   Generated {len(generated_content)} characters")
             if generated_content and len(generated_content) > 100:
                 # Self-check: Validate content quality
@@ -1245,6 +1274,22 @@ class AIContentGenerator:
             )
 
             generated_content = response.choices[0].message.content or ""
+
+            # Track cost from OpenAI usage
+            usage = getattr(response, "usage", None)
+            if usage:
+                input_tokens = getattr(usage, "prompt_tokens", 0) or 0
+                output_tokens = getattr(usage, "completion_tokens", 0) or 0
+                # GPT-4o-mini: ~$0.00015/1K input, ~$0.0006/1K output
+                rate_in = 0.00015 if "mini" in model_name else 0.005
+                rate_out = 0.0006 if "mini" in model_name else 0.015
+                cost_usd = input_tokens / 1000 * rate_in + output_tokens / 1000 * rate_out
+                metrics["cost_log"] = {
+                    "provider": "openai", "model": model_name,
+                    "input_tokens": input_tokens, "output_tokens": output_tokens,
+                    "cost_usd": round(cost_usd, 6), "phase": "content_generation",
+                }
+                logger.info("💰 OpenAI cost: $%.4f (%d in + %d out tokens)", cost_usd, input_tokens, output_tokens)
 
             if generated_content and len(generated_content) > 100:
                 validation = self._validate_content(generated_content, topic, target_length)

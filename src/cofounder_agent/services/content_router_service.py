@@ -602,6 +602,16 @@ async def _stage_generate_content(
     result["stages"]["2_content_generated"] = True
     logger.info(f"✅ Content generated ({len(content_text)} chars) using {model_used}\n")
 
+    # Log cloud API cost if tracked by the generator
+    cost_log = metrics.get("cost_log")
+    if cost_log and database_service:
+        try:
+            cost_log["task_id"] = task_id
+            await database_service.log_cost(cost_log)
+            logger.info("💰 Cost logged: $%.4f (%s/%s)", cost_log["cost_usd"], cost_log["provider"], cost_log["model"])
+        except Exception as e:
+            logger.debug("Cost logging failed (non-critical): %s", e)
+
     return content_text, model_used, metrics, title
 
 
