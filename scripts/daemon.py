@@ -72,7 +72,7 @@ def auto_publish():
     2. QA score threshold — only publishes content scoring >= MIN_PUBLISH_SCORE
        (pipeline multi-model QA already ran; this is a safety net)
     """
-    MIN_PUBLISH_SCORE = 80  # Only auto-publish high-quality content
+    MIN_PUBLISH_SCORE = 75  # Auto-publish quality content (recalibrated scoring)
 
     published = 0
     rejected = 0

@@ -252,9 +252,9 @@ class TestScoreRelevance:
 
 class TestScoreReadability:
     def test_empty_content_returns_midpoint(self, svc):
-        """Empty string should not crash and returns the neutral 6.0."""
+        """Empty string should not crash and returns the neutral 7.0."""
         score = svc._score_readability("")
-        assert score == pytest.approx(6.0)
+        assert score == pytest.approx(7.0)
 
     def test_simple_short_sentences_score_high(self, svc):
         """Short, simple sentences produce a high Flesch Reading Ease score."""

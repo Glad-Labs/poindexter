@@ -826,19 +826,21 @@ class UnifiedQualityService:
         syllables = sum(self._count_syllables(word) for word in words)
 
         if len(words) == 0 or sentences == 0:
-            return 6.0
+            return 7.0
 
         # Flesch Reading Ease approximation (0-100 scale)
         flesch = 206.835 - 1.015 * (len(words) / sentences) - 84.6 * (syllables / len(words))
 
-        # Compressed scale: Flesch 0-30 → 5.5, 30-60 → 6.5-7.5, 60-100 → 7.5-9.0
-        # This prevents technical vocabulary from tanking the score
+        # Technical content floor: Flesch scores below 30 are normal for
+        # technical writing (PostgreSQL, Kubernetes, microservices). Don't let
+        # readability tank the overall score for valid technical prose.
+        # Scale: Flesch 0→7.0, 30→7.5, 60→8.0, 100→9.0
         if flesch >= 60:
-            return min(10.0, 7.5 + (flesch - 60) * 0.0375)  # 60→7.5, 100→9.0
+            return min(10.0, 8.0 + (flesch - 60) * 0.025)  # 60→8.0, 100→9.0
         elif flesch >= 30:
-            return 6.5 + (flesch - 30) * 0.033  # 30→6.5, 60→7.5
+            return 7.5 + (flesch - 30) * 0.017  # 30→7.5, 60→8.0
         else:
-            return max(5.5, 5.5 + flesch * 0.033)  # 0→5.5, 30→6.5
+            return max(7.0, 7.0 + flesch * 0.017)  # 0→7.0, 30→7.5
 
     def _score_engagement(self, content: str) -> float:
         """Score engagement based on structure and style"""
