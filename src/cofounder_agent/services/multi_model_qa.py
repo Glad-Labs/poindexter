@@ -159,32 +159,44 @@ class MultiModelQA:
     async def _review_with_cloud_model(
         self, title: str, content: str, topic: str, model_override: Optional[str] = None,
     ) -> Optional[ReviewerResult]:
-        """Review content using a cloud LLM (different provider than the writer)."""
+        """Review content using Gemini Flash (cheap, $1K credit, GCP metrics).
+
+        Strategy: Use Google Gemini for API work, keep Anthropic for development.
+        Gemini Flash is 10x cheaper than Haiku and gives full GCP billing visibility.
+        """
+        import json
+        import os
+        import re
+
+        api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            logger.debug("[MULTI_QA] No Google API key, skipping cloud review")
+            return None
+
         try:
+            import google.genai as genai
+
+            client = genai.Client(api_key=api_key)
             prompt = QA_PROMPT.format(
                 title=title,
                 topic=topic or title,
-                content=content[:8000],  # Truncate to fit context
+                content=content[:8000],
             )
 
-            # Use the model router to call a cloud provider
-            # Try Anthropic first (best for critique), fall back to others
-            response = await self.router.route_request(
-                prompt=prompt,
-                cost_tier="budget",  # Use budget tier for QA (Haiku-class)
-                task_type="qa_review",
+            model_name = model_override or "gemini-2.5-flash"
+            response = client.models.generate_content(
+                model=f"models/{model_name}",
+                contents=prompt,
+                config={"max_output_tokens": 300, "temperature": 0.3},
             )
 
-            if not response or not response.get("content"):
+            text = response.text
+            if not text:
                 return None
 
             # Parse JSON response
-            import json
-            text = response["content"]
-            # Extract JSON from response (LLM might wrap it in markdown)
             json_match = text
             if "```" in text:
-                import re
                 match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
                 if match:
                     json_match = match.group(1)
@@ -192,23 +204,31 @@ class MultiModelQA:
             try:
                 data = json.loads(json_match)
             except json.JSONDecodeError:
-                # Try to find JSON object in the text
-                import re
                 match = re.search(r"\{[^{}]*\"approved\"[^{}]*\}", text)
                 if match:
                     data = json.loads(match.group(0))
                 else:
                     return None
 
-            provider = response.get("provider", "unknown")
+            # Log cost for tracking
+            usage = getattr(response, "usage_metadata", None)
+            if usage:
+                in_tok = getattr(usage, "prompt_token_count", 0) or 0
+                out_tok = getattr(usage, "candidates_token_count", 0) or 0
+                cost = in_tok / 1000 * 0.0001 + out_tok / 1000 * 0.0004
+                logger.info("[MULTI_QA] Gemini cost: $%.4f (%d in + %d out)", cost, in_tok, out_tok)
+
             return ReviewerResult(
-                reviewer=f"{provider}_critic",
+                reviewer="gemini_critic",
                 approved=data.get("approved", False),
                 score=float(data.get("quality_score", 0)),
                 feedback=data.get("feedback", "No feedback"),
-                provider=provider,
+                provider="google",
             )
 
+        except ImportError:
+            logger.debug("[MULTI_QA] google-genai not installed")
+            return None
         except Exception as e:
-            logger.warning("[MULTI_QA] Cloud review failed (non-critical): %s", e)
+            logger.warning("[MULTI_QA] Gemini review failed (non-critical): %s", e)
             return None
