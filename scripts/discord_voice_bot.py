@@ -77,9 +77,10 @@ if not API_TOKEN:
                 API_TOKEN = _line.split("=", 1)[1].strip()
 
 
-class AudioSink(discord.sinks.WaveSink):
-    """Custom audio sink that captures voice data per user."""
-    pass
+# Note: discord.py v2.x doesn't have built-in voice recording (sinks).
+# We use a manual approach: bot joins voice, user speaks, audio captured
+# via the receive callback. For full recording, py-cord or a custom
+# voice receive handler is needed. For now, we use text commands + TTS.
 
 
 class VoiceBot(commands.Bot):
@@ -225,91 +226,47 @@ async def leave(ctx):
         await ctx.send("Not in a voice channel.")
 
 
-@bot.command(name="listen")
-async def listen(ctx):
-    """Start listening for voice input."""
+@bot.command(name="say")
+async def say(ctx, *, text: str):
+    """Text-to-speech: type a message, bot speaks it in voice channel."""
     vc = ctx.voice_client
     if not vc or not vc.is_connected():
         await ctx.send("Not in a voice channel. Use `!join` first.")
         return
 
-    if bot.recording:
-        await ctx.send("Already listening.")
-        return
+    tts_path = await bot.generate_tts(text)
+    if tts_path:
+        source = discord.FFmpegPCMAudio(tts_path)
+        if vc.is_playing():
+            vc.stop()
+        vc.play(source)
+        await ctx.send(f"Speaking: {text[:100]}")
+        logger.info("TTS playing: %s", text[:60])
+    else:
+        await ctx.send("TTS generation failed.")
 
-    bot.recording = True
+
+@bot.command(name="ask")
+async def ask(ctx, *, question: str):
+    """Ask the system a question. Response in text + voice."""
     bot.text_channel = ctx.channel
+    await ctx.send(f"Processing: *{question[:100]}*...")
+    logger.info("Question: %s", question[:60])
 
-    sink = AudioSink()
-    vc.start_recording(sink, _recording_finished, ctx)
-    await ctx.send("Listening... Speak when ready. Use `!stop` when done.")
-    logger.info("Started listening")
+    # For now, echo back + system info. Future: route to Claude/Ollama
+    response = f"Received your question: {question}. Full AI response routing coming soon."
 
+    await ctx.send(f"**Poindexter:** {response}")
 
-async def _recording_finished(sink: AudioSink, ctx):
-    """Called when recording stops. Transcribe and respond."""
-    logger.info("Recording finished, processing %d audio streams", len(sink.audio_data))
-
-    for user_id, audio_data in sink.audio_data.items():
-        # Save audio to temp WAV file
-        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-        tmp_path = tmp.name
-
-        try:
-            audio_data.file.seek(0)
-            with wave.open(tmp_path, "wb") as wf:
-                wf.setnchannels(2)
-                wf.setsampwidth(2)
-                wf.setframerate(48000)
-                wf.writeframes(audio_data.file.read())
-
-            # Transcribe with Whisper
-            text = await bot.transcribe_audio(tmp_path)
-
-            if not text or text.strip() in ["", "[Whisper not loaded]"]:
-                continue
-
-            user = ctx.guild.get_member(user_id)
-            user_name = user.display_name if user else f"User {user_id}"
-
-            # Send transcription to text channel
-            if bot.text_channel:
-                await bot.text_channel.send(f"**{user_name}:** {text}")
-
-            # Generate response (for now, echo + acknowledge)
-            response = f"Heard: {text}"
-
-            # Try TTS response
-            tts_path = await bot.generate_tts(response)
-            if tts_path and ctx.voice_client and ctx.voice_client.is_connected():
-                source = discord.FFmpegPCMAudio(tts_path)
-                ctx.voice_client.play(source)
-                logger.info("Playing TTS response")
-
-            if bot.text_channel:
-                await bot.text_channel.send(f"**System:** {response}")
-
-        except Exception as e:
-            logger.error("Error processing audio from user %s: %s", user_id, e)
-        finally:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
-
-
-@bot.command(name="stop")
-async def stop(ctx):
-    """Stop listening."""
+    # TTS if in voice channel
     vc = ctx.voice_client
-    if not vc or not bot.recording:
-        await ctx.send("Not currently listening.")
-        return
-
-    bot.recording = False
-    vc.stop_recording()
-    await ctx.send("Stopped listening.")
-    logger.info("Stopped listening")
+    if vc and vc.is_connected():
+        tts_path = await bot.generate_tts(response[:200])
+        if tts_path:
+            source = discord.FFmpegPCMAudio(tts_path)
+            if vc.is_playing():
+                vc.stop()
+            vc.play(source)
 
 
 @bot.command(name="status")

@@ -156,6 +156,87 @@ def auto_publish():
     return published, rejected
 
 
+def _normalize_words(text):
+    """Lowercase, strip punctuation, split into words."""
+    import re
+    return re.sub(r"[^a-z0-9 ]", "", text.lower()).split()
+
+
+def _get_ngrams(words, n):
+    """Return set of n-grams (tuples of n consecutive words)."""
+    return {tuple(words[i:i + n]) for i in range(len(words) - n + 1)}
+
+
+def _extract_template_base(topic):
+    """Extract the template pattern from a topic, ignoring fill-in values.
+
+    E.g. "The Hidden Costs of Local LLMs Nobody Talks About"
+      -> "the hidden costs of ... nobody talks about"
+
+    Returns the first 4 and last 4 words joined, which captures the template
+    skeleton while ignoring the variable middle.
+    """
+    words = _normalize_words(topic)
+    if len(words) <= 6:
+        return " ".join(words)
+    return " ".join(words[:4]) + " ... " + " ".join(words[-4:])
+
+
+def _is_too_similar(topic, existing_topics):
+    """Check if topic is too similar to any existing topic.
+
+    Similarity checks:
+    1. Exact match (case-insensitive)
+    2. Shares 3+ consecutive words with an existing topic
+    3. Same template skeleton (first 4 + last 4 words match)
+    """
+    topic_words = _normalize_words(topic)
+    topic_ngrams = _get_ngrams(topic_words, 3)
+    topic_base = _extract_template_base(topic)
+
+    for existing in existing_topics:
+        existing_lower = existing.lower()
+        # Exact match
+        if topic.lower() == existing_lower:
+            return True
+        existing_words = _normalize_words(existing)
+        # 3+ consecutive word overlap
+        existing_ngrams = _get_ngrams(existing_words, 3)
+        shared = topic_ngrams & existing_ngrams
+        if len(shared) >= 1:
+            return True
+        # Same template skeleton
+        if _extract_template_base(existing) == topic_base:
+            return True
+    return False
+
+
+def _fetch_existing_topics():
+    """Fetch both recent task topics AND published post titles for dedup."""
+    topics = set()
+    # Recent tasks (pending, in-progress, awaiting approval, etc.)
+    try:
+        req = urllib.request.Request(f"{API_URL}/api/tasks?limit=50", headers={"Authorization": AUTH})
+        data = json.loads(urllib.request.urlopen(req, timeout=10).read())
+        for t in data.get("tasks", []):
+            topic = t.get("topic", "")
+            if topic:
+                topics.add(topic)
+    except Exception:
+        pass
+    # Published posts — check titles to avoid duplicating already-published content
+    try:
+        req = urllib.request.Request(f"{API_URL}/api/posts?limit=100", headers={"Authorization": AUTH})
+        data = json.loads(urllib.request.urlopen(req, timeout=10).read())
+        for p in data.get("posts", data if isinstance(data, list) else []):
+            title = p.get("title", "")
+            if title:
+                topics.add(title)
+    except Exception:
+        pass
+    return topics
+
+
 def generate_content(count=3):
     """Generate content tasks from topic templates."""
     import random
@@ -180,14 +261,8 @@ def generate_content(count=3):
                "Solo Founders", "E-commerce", "Marketing"]
     NUMS = ["3", "5", "7", "10"]
 
-    # Get recent topics to avoid duplicates
-    recent = set()
-    try:
-        req = urllib.request.Request(f"{API_URL}/api/tasks?limit=50", headers={"Authorization": AUTH})
-        data = json.loads(urllib.request.urlopen(req, timeout=10).read())
-        recent = {t.get("topic", "").lower() for t in data.get("tasks", [])}
-    except Exception:
-        pass
+    # Get recent topics AND published post titles to avoid duplicates
+    existing = _fetch_existing_topics()
 
     created = 0
     for _ in range(count * 3):
@@ -197,7 +272,7 @@ def generate_content(count=3):
             tech=random.choice(TECHS), alt=random.choice(ALTS),
             domain=random.choice(DOMAINS), num=random.choice(NUMS),
         )
-        if topic.lower() in recent:
+        if _is_too_similar(topic, existing):
             continue
         try:
             payload = json.dumps({"task_name": f"Blog post: {topic}", "topic": topic,
@@ -206,7 +281,7 @@ def generate_content(count=3):
                 f"{API_URL}/api/tasks", data=payload,
                 headers={"Authorization": AUTH, "Content-Type": "application/json"}), timeout=10)
             created += 1
-            recent.add(topic.lower())
+            existing.add(topic)
             logger.info("Created task: %s", topic[:60])
         except Exception:
             pass
