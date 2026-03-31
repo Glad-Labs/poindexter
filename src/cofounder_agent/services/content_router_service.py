@@ -779,8 +779,11 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
             import os
             import tempfile
             sdxl_prompt = (
-                f"Professional blog header image for article about {topic}. "
-                f"Clean, modern, tech-themed. No text overlay. High quality digital art."
+                f"Cyberpunk tech aesthetic blog header about {topic}. "
+                f"Dark matte black background, cyan and teal neon accents, "
+                f"chrome metallic details, subtle purple highlights. "
+                f"Clean but raw, polished but technical. No text overlay. "
+                f"Professional digital art, 16:9 aspect ratio."
             )
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False, dir=os.path.join(
                 os.path.expanduser("~"), "Downloads", "glad-labs-generated-images"
