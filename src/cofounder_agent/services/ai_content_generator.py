@@ -198,6 +198,7 @@ class AIContentGenerator:
         tone: str,
         target_length: int,
         tags: list[str],
+        research_context: str = "",
     ) -> Tuple[str, str, Any]:
         """Load system prompt, generation prompt, and refinement prompt getter from prompt manager.
 
@@ -244,7 +245,7 @@ class AIContentGenerator:
                 topic=topic,
                 target_audience=style,
                 primary_keyword=tags[0] if tags else "",
-                research_context="",
+                research_context=research_context,
                 internal_link_titles=internal_links_str,
                 word_count=target_length,
                 style=style,
@@ -283,6 +284,7 @@ class AIContentGenerator:
         preferred_model: Optional[str],
         preferred_provider: Optional[str],
         writing_style_context: Optional[str] = None,
+        research_context: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Set up logging, check providers, load prompts, and initialize metrics.
 
@@ -332,13 +334,14 @@ class AIContentGenerator:
             use_ollama = self.ollama_available
             logger.info(f"📌 Ollama check result: {use_ollama}\n")
 
-        # Load all prompts
+        # Load all prompts (research context injected into generation prompt)
         system_prompt, generation_prompt, get_refinement_prompt = self._load_generation_prompts(
             topic,
             style,
             tone,
             target_length,
             tags,
+            research_context=research_context or "",
         )
 
         # Inject writing style context into system prompt if provided
@@ -1350,6 +1353,7 @@ class AIContentGenerator:
         preferred_model: Optional[str] = None,
         preferred_provider: Optional[str] = None,
         writing_style_context: Optional[str] = None,
+        research_context: Optional[str] = None,
     ) -> Tuple[str, str, Dict[str, Any]]:
         """
         Generate a blog post using best available model with self-checking.
@@ -1378,6 +1382,7 @@ class AIContentGenerator:
         ctx = await self._prepare_generation_context(
             topic, style, tone, target_length, tags, preferred_model, preferred_provider,
             writing_style_context=writing_style_context,
+            research_context=research_context,
         )
 
         # ========================================================================

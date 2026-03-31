@@ -540,6 +540,17 @@ async def _stage_generate_content(
     # Fetch active writing style samples for voice/tone matching
     writing_style_context = await _build_writing_style_context(database_service)
 
+    # Build research context — real links, internal posts, web sources
+    research_context = ""
+    try:
+        from services.research_service import ResearchService
+        research_svc = ResearchService(pool=database_service.pool if database_service else None)
+        research_context = await research_svc.build_context(topic)
+        if research_context:
+            logger.info("📚 Research context built: %d chars", len(research_context))
+    except Exception as e:
+        logger.debug("Research context skipped: %s", e)
+
     content_text, model_used, metrics = await content_generator.generate_blog_post(
         topic=topic,
         style=style,
@@ -549,6 +560,7 @@ async def _stage_generate_content(
         preferred_model=preferred_model,
         preferred_provider=preferred_provider,
         writing_style_context=writing_style_context,
+        research_context=research_context,
     )
 
     # Validate content_text is not None
