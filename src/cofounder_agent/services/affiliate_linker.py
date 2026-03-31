@@ -27,7 +27,7 @@ DEFAULT_AFFILIATES: Dict[str, Tuple[str, str]] = {
     "Railway": ("https://railway.app", "Railway"),
     "Vercel": ("https://vercel.com", "Vercel"),
     "Ollama": ("https://ollama.com", "Ollama"),
-    "Grafana": ("https://grafana.com/products/cloud/", "Grafana Cloud"),
+    "Grafana": ("https://grafana.com/auth/sign-up?refCode=gr8rVwcGQFHaXaG", "Grafana Cloud"),
     "PostgreSQL": ("https://www.postgresql.org", "PostgreSQL"),
     "FastAPI": ("https://fastapi.tiangolo.com", "FastAPI"),
     "Next.js": ("https://nextjs.org", "Next.js"),
