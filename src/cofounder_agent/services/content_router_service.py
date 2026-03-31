@@ -669,9 +669,35 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
     import re as _re
 
     image_placeholders = _re.findall(r"\[IMAGE-(\d+)(?::\s*([^\]]*))?\]", content_text)
+
+    # If LLM didn't produce placeholders (common with local models), inject them
+    # after the 2nd and 4th ## headings for visual variety
+    if not image_placeholders:
+        headings = list(_re.finditer(r"^## .+$", content_text, _re.MULTILINE))
+        if len(headings) >= 3:
+            # Insert after 2nd heading's paragraph, and after 4th if available
+            insert_positions = []
+            for idx in [1, 3]:
+                if idx < len(headings):
+                    h = headings[idx]
+                    # Find end of first paragraph after this heading
+                    para_end = content_text.find("\n\n", h.end())
+                    if para_end > 0:
+                        insert_positions.append((para_end, idx + 1))
+
+            # Insert in reverse order to preserve positions
+            for pos, img_num in reversed(insert_positions):
+                placeholder = f"\n[IMAGE-{img_num}: {topic} illustration]\n"
+                content_text = content_text[:pos] + placeholder + content_text[pos:]
+
+            # Re-scan for the injected placeholders
+            image_placeholders = _re.findall(r"\[IMAGE-(\d+)(?::\s*([^\]]*))?\]", content_text)
+            if image_placeholders:
+                logger.info("📌 Injected %d image placeholders (LLM didn't produce any)", len(image_placeholders))
+
     if not image_placeholders:
         result["stages"]["2c_inline_images_replaced"] = False
-        logger.info("⏭️  No [IMAGE-N] placeholders found in content\n")
+        logger.info("⏭️  No [IMAGE-N] placeholders to replace\n")
         return content_text
 
     logger.info(
