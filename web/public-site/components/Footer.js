@@ -112,6 +112,18 @@ const Footer = () => {
                 <span className="w-1 h-1 rounded-full bg-cyan-400 opacity-0 group-hover:opacity-100 transition-opacity" />
                 Cookie Policy
               </Link>
+              <button
+                onClick={() => {
+                  localStorage.removeItem('cookieConsent');
+                  localStorage.removeItem('cookieConsentDate');
+                  window.location.reload();
+                }}
+                className="text-sm text-slate-300 hover:text-cyan-300 transition-colors duration-200 font-medium group inline-flex items-center gap-2 cursor-pointer"
+                type="button"
+              >
+                <span className="w-1 h-1 rounded-full bg-cyan-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                Cookie Settings
+              </button>
             </nav>
           </div>
 

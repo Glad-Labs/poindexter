@@ -358,6 +358,10 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
               <p className="text-xs text-slate-500 text-center mt-3">
                 We respect your privacy. Unsubscribe at any time.
               </p>
+              <p className="text-xs text-slate-500 text-center mt-1">
+                Your IP address and user-agent are collected with your
+                subscription for security and fraud prevention purposes.
+              </p>
             </form>
           </div>
         </div>

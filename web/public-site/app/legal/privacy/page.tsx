@@ -7,7 +7,7 @@ export const metadata: Metadata = {
 };
 
 export default function PrivacyPolicy() {
-  const lastUpdated = new Date('2026-02-10').toLocaleDateString('en-US', {
+  const lastUpdated = new Date('2026-03-30').toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
@@ -18,12 +18,12 @@ export default function PrivacyPolicy() {
     {
       question: 'How long do you keep my data?',
       answer:
-        'We keep Google Analytics data for 14 months, AdSense data for 30 months, server logs for 90 days, and cookie preferences indefinitely unless you delete them.',
+        'We keep Google Analytics data for 14 months, AdSense data for 30 months, ViewTracker page view data indefinitely (no IP stored), Sentry error data for 90 days, server logs for 90 days, and cookie preferences indefinitely unless you delete them.',
     },
     {
       question: 'What third parties have access to my data?',
       answer:
-        'We work with Google LLC (Analytics & AdSense) and Vercel (Hosting). Each has their own privacy policies that you can review.',
+        'We work with Google LLC (Analytics & AdSense), Vercel (Hosting), Sentry (Error Monitoring), and GitHub (Giscus Comments). Each has their own privacy policies that you can review.',
     },
     {
       question: 'How do I download my data?',
@@ -118,6 +118,19 @@ export default function PrivacyPolicy() {
             understand how visitors interact with our website.
           </li>
           <li>
+            <strong>ViewTracker (First-Party Analytics):</strong> We operate our
+            own lightweight analytics system that records page path, post slug,
+            referrer URL, and user-agent string for each page view. This data is
+            stored in our own database and is not shared with third parties.
+            Legal basis: Legitimate Interest (Article 6(1)(f)).
+          </li>
+          <li>
+            <strong>Sentry (Error Monitoring):</strong> We use Sentry to detect
+            and diagnose errors on our website. Sentry may collect IP addresses,
+            browser information, and error stack traces when an error occurs.
+            Legal basis: Legitimate Interest (Article 6(1)(f)).
+          </li>
+          <li>
             <strong>Log Data:</strong> Our servers automatically log IP
             addresses, browser type, operating system, pages visited, and time
             spent on pages.
@@ -132,6 +145,14 @@ export default function PrivacyPolicy() {
             <strong>Google AdSense:</strong> We partner with Google AdSense to
             serve advertisements on our website. Google may use cookies to
             personalize ads based on your interests.
+          </li>
+          <li>
+            <strong>Giscus (Comments):</strong> Our blog uses Giscus, a
+            commenting system powered by GitHub Discussions. When you post a
+            comment, you authenticate via your GitHub account. Your GitHub
+            username, avatar, and comment content are stored on GitHub. Giscus
+            does not use cookies or track you beyond the comment interaction.
+            Review GitHub's privacy policy for details.
           </li>
           <li>
             <strong>Social Media:</strong> If you interact with our content on
@@ -265,6 +286,15 @@ export default function PrivacyPolicy() {
             retained for up to 30 months, subject to user activity.
           </li>
           <li>
+            <strong>ViewTracker Data:</strong> Page view analytics (path, slug,
+            referrer, user-agent) are retained indefinitely in aggregated form.
+            No IP addresses are stored.
+          </li>
+          <li>
+            <strong>Sentry Error Data:</strong> Error reports are retained for
+            90 days.
+          </li>
+          <li>
             <strong>Server Logs:</strong> IP addresses and server logs are
             retained for 90 days for security purposes.
           </li>
@@ -341,6 +371,42 @@ export default function PrivacyPolicy() {
                 <td className="px-3 py-2 border border-gray-600">
                   <a
                     href="https://vercel.com/legal/privacy"
+                    className="text-cyan-400 hover:text-cyan-300"
+                  >
+                    View Policy
+                  </a>
+                </td>
+              </tr>
+              <tr className="bg-gray-900">
+                <td className="px-3 py-2 border border-gray-600">
+                  Sentry (Functional Software Inc)
+                </td>
+                <td className="px-3 py-2 border border-gray-600">
+                  Error Monitoring
+                </td>
+                <td className="px-3 py-2 border border-gray-600">
+                  IP, browser info, error data
+                </td>
+                <td className="px-3 py-2 border border-gray-600">
+                  <a
+                    href="https://sentry.io/privacy/"
+                    className="text-cyan-400 hover:text-cyan-300"
+                  >
+                    View Policy
+                  </a>
+                </td>
+              </tr>
+              <tr>
+                <td className="px-3 py-2 border border-gray-600">GitHub Inc</td>
+                <td className="px-3 py-2 border border-gray-600">
+                  Comments (Giscus)
+                </td>
+                <td className="px-3 py-2 border border-gray-600">
+                  GitHub username, avatar, comments
+                </td>
+                <td className="px-3 py-2 border border-gray-600">
+                  <a
+                    href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement"
                     className="text-cyan-400 hover:text-cyan-300"
                   >
                     View Policy
