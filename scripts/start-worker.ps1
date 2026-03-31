@@ -49,14 +49,21 @@ if (Test-Path $OpenClawEnv) {
     Write-Warning "No .env found at $OpenClawEnv — worker will have no API keys"
 }
 
-# Get production DATABASE_URL from Railway
+# Get production DATABASE_URL from Railway (public proxy, not internal)
 Write-Host "Fetching production DATABASE_URL from Railway..." -ForegroundColor Cyan
-$railwayOutput = & railway run --service cofounder -- printenv DATABASE_URL 2>&1
-if ($LASTEXITCODE -eq 0 -and $railwayOutput) {
-    $env:DATABASE_URL = $railwayOutput.Trim()
-    Write-Host "Connected to production database" -ForegroundColor Green
-} else {
-    Write-Warning "Could not fetch DATABASE_URL from Railway. Falling back to local DB."
+$railwayOutput = & railway variables --service Postgres --json 2>&1
+try {
+    $railwayJson = $railwayOutput | ConvertFrom-Json
+    $publicUrl = $railwayJson.DATABASE_PUBLIC_URL
+    if ($publicUrl) {
+        $env:DATABASE_URL = $publicUrl
+        Write-Host "Connected to production database (public proxy)" -ForegroundColor Green
+    } else {
+        throw "No DATABASE_PUBLIC_URL found"
+    }
+} catch {
+    Write-Warning "Could not fetch DATABASE_PUBLIC_URL from Railway: $_"
+    Write-Warning "Falling back to local DB."
     if (-not $env:DATABASE_URL) {
         $env:DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/glad_labs_dev"
     }
