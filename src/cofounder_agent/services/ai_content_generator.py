@@ -852,6 +852,15 @@ class AIContentGenerator:
                             metrics["models_used_by_phase"]["draft"] = metrics["model_used"]
                             metrics["final_quality_score"] = validation.quality_score
                             metrics["generation_time_seconds"] = time.time() - start_time
+                            # Track Ollama usage (free but visible in dashboards)
+                            word_count = len(generated_content.split())
+                            est_tokens = int(word_count * 1.3)  # ~1.3 tokens/word
+                            metrics["cost_log"] = {
+                                "provider": "ollama", "model": model_name,
+                                "input_tokens": len(generation_prompt.split()) * 2,
+                                "output_tokens": est_tokens,
+                                "cost_usd": 0.0, "phase": "content_generation",
+                            }
                             logger.info(f"\n{'='*80}")
                             logger.info("✅ GENERATION COMPLETE")
                             logger.info(f"   Model: {metrics['model_used']}")
