@@ -960,6 +960,7 @@ async def process_content_generation_task(
     STAGE 2B: Early quality evaluation
     STAGE 2C: Replace inline image placeholders
     STAGE 3: Source featured image from Pexels
+    STAGE 3.5+3.7: Multi-model QA (programmatic validator + cloud critic)
     STAGE 4: Generate SEO metadata
     STAGE 5: (Skipped) Posts record created at approval time
     STAGE 6: Capture training data for learning
@@ -1037,68 +1038,37 @@ async def process_content_generation_task(
             topic, tags, generate_featured_image, image_service, result
         )
 
-        # Stage 3.5: Programmatic content validation (catches hallucinations)
-        from services.content_validator import validate_content
-        validation = validate_content(
-            _normalize_text(result.get("seo_title", topic)),
-            _normalize_text(content_text),
-            topic,
+        # Stage 3.5 + 3.7: Multi-Model QA (programmatic validator + cloud critic)
+        # Replaces separate programmatic validation and ad-hoc cross-model review
+        # with unified MultiModelQA: deterministic hallucination checks (40% weight)
+        # + adversarial cloud model review (60% weight). Approval requires all
+        # reviewers to pass AND weighted score >= 70.
+        from services.multi_model_qa import MultiModelQA
+        _qa = MultiModelQA(pool=database_service.pool)
+        _qa_result = await _qa.review(
+            title=_normalize_text(result.get("seo_title", topic)),
+            content=_normalize_text(content_text),
+            topic=topic,
         )
-        if not validation.passed:
-            issues_summary = "; ".join(i.description[:60] for i in validation.issues[:3])
+        result["qa_final_score"] = _qa_result.final_score
+        result["qa_reviews"] = [
+            {"reviewer": r.reviewer, "score": r.score, "approved": r.approved,
+             "feedback": r.feedback, "provider": r.provider}
+            for r in _qa_result.reviews
+        ]
+        if not _qa_result.approved:
             logger.warning(
-                "[VALIDATOR] Content rejected for task %s: %s", task_id[:8], issues_summary
+                "[MULTI_QA] Content rejected for task %s:\n%s",
+                task_id[:8], _qa_result.summary,
             )
-            result["validation_issues"] = issues_summary
             result["status"] = "rejected"
             await database_service.update_task(task_id, {
                 "status": "rejected",
-                "error_message": f"Content validation failed: {issues_summary}",
+                "error_message": f"Multi-model QA rejected (score: {_qa_result.final_score:.0f}): "
+                    + (_qa_result.reviews[-1].feedback[:200] if _qa_result.reviews else "No feedback"),
             })
             return result
-
-        # Stage 3.7: Cross-model QA review (different model critiques the draft)
-        try:
-            from services.model_consolidation_service import ModelConsolidationService, ProviderType
-            _mcs = ModelConsolidationService()
-            # Use Anthropic (different DNA from Ollama writer) for the review
-            _cross_qa_prompt = (
-                f"Review this blog post for quality. Be critical.\n\n"
-                f"TITLE: {_normalize_text(result.get('seo_title', topic))}\n"
-                f"CONTENT (first 3000 chars):\n{_normalize_text(content_text[:3000])}\n\n"
-                f"Check for: fabricated claims, weak arguments, generic filler, "
-                f"hallucinated people/stats, and overall readability.\n\n"
-                f"Respond with ONLY JSON: {{\"score\": 0-100, \"pass\": true/false, "
-                f"\"feedback\": \"2 sentences max\"}}"
-            )
-            _review = await _mcs.generate(
-                prompt=_cross_qa_prompt,
-                max_tokens=200,
-                temperature=0.3,
-                preferred_provider=ProviderType.ANTHROPIC,
-            )
-            if _review and _review.text:
-                import re as _re
-                _match = _re.search(r"\{[^{}]*\"score\"[^{}]*\}", _review.text)
-                if _match:
-                    import json as _json
-                    _qa_data = _json.loads(_match.group(0))
-                    _cross_score = float(_qa_data.get("score", 0))
-                    logger.info(
-                        "[CROSS_QA] %s scored %s (pass=%s) by %s: %s",
-                        topic[:40], _cross_score, _qa_data.get("pass"),
-                        _review.provider, _qa_data.get("feedback", "")[:100],
-                    )
-                    if _cross_score < 60:
-                        logger.warning("[CROSS_QA] Rejected by cross-model review: score %s", _cross_score)
-                        result["status"] = "rejected"
-                        await database_service.update_task(task_id, {
-                            "status": "rejected",
-                            "error_message": f"Cross-model QA rejected (score: {_cross_score}): {_qa_data.get('feedback', '')}",
-                        })
-                        return result
-        except Exception as _e:
-            logger.debug("[CROSS_QA] Cross-model review skipped: %s", _e)
+        logger.info("[MULTI_QA] Content approved for task %s: %s", task_id[:8], _qa_result.summary.split("\\n")[0])
 
         # Stage 4: Generate SEO metadata
         content_generator = get_content_generator()
