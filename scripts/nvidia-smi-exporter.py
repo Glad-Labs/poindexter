@@ -1,13 +1,16 @@
-"""Prometheus exporter for NVIDIA GPU + system power + AIDA64 sensor metrics.
+"""Prometheus exporter for NVIDIA GPU + system power + AIDA64 + liquidctl metrics.
 Serves on port 9835. Scraped by Grafana Alloy every 15s.
+
+Cross-platform: works on Windows (AIDA64 + Energy Meter) and Linux (lm-sensors + liquidctl).
 
 Metrics:
   - nvidia_gpu_* — GPU utilization, memory, temp, power, clocks, fan
   - system_cpu_power_watts — Total CPU package power (AMD RAPL via Energy Meter)
   - system_cpu_core_power_watts — Per-core power draw
   - system_total_power_watts — CPU + GPU combined power estimate
-  - aida64_* — All AIDA64 sensors (when shared memory is enabled)
-  - psu_* — Corsair HXi PSU power/voltage/current/temp (via AIDA64)
+  - aida64_* — All AIDA64 sensors (when shared memory is enabled, Windows)
+  - psu_* — Corsair HXi PSU metrics (via liquidctl or AIDA64)
+  - lm_sensors_* — Linux hardware sensors (temps, voltages, fans)
 """
 import mmap
 import re
@@ -287,15 +290,137 @@ def get_aida64_metrics():
     return "\n".join(lines) + "\n"
 
 
+def get_liquidctl_psu_metrics():
+    """Read Corsair HXi PSU metrics via liquidctl (cross-platform).
+
+    Returns Prometheus-format metrics for PSU power, voltages, temps, fan.
+    Works on both Windows and Linux — no AIDA64 dependency.
+    """
+    try:
+        from liquidctl import find_liquidctl_devices
+    except ImportError:
+        return ""  # liquidctl not installed, skip silently
+
+    lines = []
+    try:
+        devices = find_liquidctl_devices()
+        for dev in devices:
+            # Only process Corsair HXi/RMi PSUs
+            desc = str(dev.description).lower()
+            if "hx" not in desc and "rm" not in desc:
+                continue
+
+            with dev.connect():
+                status = dev.get_status()
+
+            for key, value, unit in status:
+                key_lower = key.lower().replace(" ", "_")
+                safe_key = re.sub(r"[^a-zA-Z0-9_]", "_", key_lower)
+
+                if unit == "W":
+                    metric = f'psu_{safe_key}_watts'
+                    if "psu_total" not in "".join(lines):
+                        lines.append("# HELP psu_power_watts Corsair HXi PSU power metrics (via liquidctl)")
+                        lines.append("# TYPE psu_power_watts gauge")
+                    lines.append(f'psu_power_watts{{sensor="{safe_key}",label="{key}"}} {value}')
+                elif unit == "V":
+                    if "psu_voltage" not in "".join(lines):
+                        lines.append("# HELP psu_voltage_volts Corsair HXi PSU voltage metrics (via liquidctl)")
+                        lines.append("# TYPE psu_voltage_volts gauge")
+                    lines.append(f'psu_voltage_volts{{sensor="{safe_key}",label="{key}"}} {value}')
+                elif unit == "A":
+                    if "psu_current" not in "".join(lines):
+                        lines.append("# HELP psu_current_amps Corsair HXi PSU current metrics (via liquidctl)")
+                        lines.append("# TYPE psu_current_amps gauge")
+                    lines.append(f'psu_current_amps{{sensor="{safe_key}",label="{key}"}} {value}')
+                elif unit == "°C":
+                    if "psu_temperature" not in "".join(lines):
+                        lines.append("# HELP psu_temperature_celsius Corsair HXi PSU temperature (via liquidctl)")
+                        lines.append("# TYPE psu_temperature_celsius gauge")
+                    lines.append(f'psu_temperature_celsius{{sensor="{safe_key}",label="{key}"}} {value}')
+                elif unit == "rpm":
+                    if "psu_fan" not in "".join(lines):
+                        lines.append("# HELP psu_fan_rpm Corsair HXi PSU fan speed (via liquidctl)")
+                        lines.append("# TYPE psu_fan_rpm gauge")
+                    lines.append(f'psu_fan_rpm{{sensor="{safe_key}",label="{key}"}} {value}')
+
+    except Exception:
+        pass  # Non-critical — other sources provide data
+
+    return "\n".join(lines) + "\n" if lines else ""
+
+
+def get_lm_sensors_metrics():
+    """Read hardware sensors via lm-sensors on Linux.
+
+    Returns Prometheus-format metrics for CPU temps, voltages, fan speeds.
+    Only runs on Linux — returns empty string on other platforms.
+    """
+    if sys.platform != "linux":
+        return ""
+
+    try:
+        import json as _json
+        result = subprocess.run(
+            ["sensors", "-j"], capture_output=True, text=True, timeout=5
+        )
+        if result.returncode != 0:
+            return ""
+
+        data = _json.loads(result.stdout)
+        lines = []
+        header_added = {"temp": False, "fan": False, "volt": False}
+
+        for chip_name, chip_data in data.items():
+            if not isinstance(chip_data, dict):
+                continue
+            safe_chip = re.sub(r"[^a-zA-Z0-9_]", "_", chip_name)
+
+            for sensor_name, sensor_data in chip_data.items():
+                if not isinstance(sensor_data, dict):
+                    continue
+
+                for key, value in sensor_data.items():
+                    if not isinstance(value, (int, float)):
+                        continue
+
+                    safe_sensor = re.sub(r"[^a-zA-Z0-9_]", "_", sensor_name)
+
+                    if "temp" in key and "input" in key:
+                        if not header_added["temp"]:
+                            lines.append("# HELP lm_sensors_temperature_celsius Temperature from lm-sensors")
+                            lines.append("# TYPE lm_sensors_temperature_celsius gauge")
+                            header_added["temp"] = True
+                        lines.append(f'lm_sensors_temperature_celsius{{chip="{safe_chip}",sensor="{safe_sensor}"}} {value}')
+                    elif "fan" in key and "input" in key:
+                        if not header_added["fan"]:
+                            lines.append("# HELP lm_sensors_fan_rpm Fan speed from lm-sensors")
+                            lines.append("# TYPE lm_sensors_fan_rpm gauge")
+                            header_added["fan"] = True
+                        lines.append(f'lm_sensors_fan_rpm{{chip="{safe_chip}",sensor="{safe_sensor}"}} {value}')
+                    elif "in" in key and "input" in key:
+                        if not header_added["volt"]:
+                            lines.append("# HELP lm_sensors_voltage_volts Voltage from lm-sensors")
+                            lines.append("# TYPE lm_sensors_voltage_volts gauge")
+                            header_added["volt"] = True
+                        lines.append(f'lm_sensors_voltage_volts{{chip="{safe_chip}",sensor="{safe_sensor}"}} {value}')
+
+        return "\n".join(lines) + "\n" if lines else ""
+    except Exception:
+        return ""
+
+
 class MetricsHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/metrics":
             gpu = get_gpu_metrics()
             cpu = get_cpu_power_metrics()
             aida = get_aida64_metrics()
+            psu = get_liquidctl_psu_metrics()
+            lm = get_lm_sensors_metrics()
             total = get_total_power_metrics(gpu, cpu)
-            # If AIDA64 has PSU data, the real wall power is in aida metrics
-            body = (gpu + cpu + aida + total).encode()
+            # Combine all sources — AIDA64/lm-sensors/liquidctl complement each other
+            body = (gpu + cpu + aida + psu + lm + total).encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; version=0.0.4")
             self.send_header("Content-Length", str(len(body)))
