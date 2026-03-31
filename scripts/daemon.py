@@ -32,20 +32,22 @@ if sys.stderr is None:
 # Add backend to path for content_validator
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "cofounder_agent"))
 
+# Import content_validator early — its import chain triggers configure_standard_logging()
+# which reconfigures the root logger. We must let that run BEFORE setting up our own handler.
+from services.content_validator import validate_content  # noqa: E402
+
 LOG_FILE = os.path.join(os.path.expanduser("~"), ".gladlabs", "daemon.log")
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 
-# pythonw.exe sets stdout/stderr to None — only use file handler when windowless
-_handlers = [logging.FileHandler(LOG_FILE)]
-if sys.stdout is not None:
-    _handlers.append(logging.StreamHandler(sys.stdout))
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=_handlers,
-)
+# Set up the "daemon" logger with its own file handler that won't be blown away
+# by any subsequent root logger reconfiguration.
 logger = logging.getLogger("daemon")
+logger.setLevel(logging.INFO)
+_file_handler = logging.FileHandler(LOG_FILE)
+_file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+logger.addHandler(_file_handler)
+if sys.stdout is not None and not sys.stdout.name == os.devnull:
+    logger.addHandler(logging.StreamHandler(sys.stdout))
 
 API_URL = "https://cofounder-production.up.railway.app"
 API_TOKEN = os.getenv("GLADLABS_KEY", "")
@@ -70,8 +72,6 @@ def auto_publish():
     2. QA score threshold — only publishes content scoring >= MIN_PUBLISH_SCORE
        (pipeline multi-model QA already ran; this is a safety net)
     """
-    from services.content_validator import validate_content
-
     MIN_PUBLISH_SCORE = 80  # Only auto-publish high-quality content
 
     published = 0
