@@ -17,23 +17,17 @@ from typing import Dict, Tuple
 
 logger = logging.getLogger(__name__)
 
-# Default affiliate links — override via app_settings
-# Format: keyword → (url, display_text)
-# These are placeholder URLs — replace with actual affiliate links
+# Default affiliate links — loaded from DB (affiliate_links table) at runtime.
+# This hardcoded fallback contains ONLY official project/tool homepages
+# with NO affiliate codes, tracking params, or referral IDs.
+# All monetized links (Amazon Associates, referral programs) MUST live in
+# the affiliate_links DB table, managed via OpenClaw or the settings API.
 DEFAULT_AFFILIATES: Dict[str, Tuple[str, str]] = {
-    # Amazon Associates (gladlabsllc-20)
-    "Python": ("https://www.amazon.com/Learning-Python-5th-Mark-Lutz/dp/1449355730?tag=gladlabsllc-20", "Python"),
-    "Raspberry Pi": ("https://www.amazon.com/s?k=raspberry+pi&tag=gladlabsllc-20", "Raspberry Pi"),
-    "NAS": ("https://www.amazon.com/s?k=nas+storage&tag=gladlabsllc-20", "NAS"),
-    "GPU": ("https://www.amazon.com/s?k=nvidia+gpu&tag=gladlabsllc-20", "GPU"),
-    "SSD": ("https://www.amazon.com/s?k=nvme+ssd&tag=gladlabsllc-20", "SSD"),
-    "mechanical keyboard": ("https://www.amazon.com/s?k=mechanical+keyboard&tag=gladlabsllc-20", "mechanical keyboard"),
-    # Service links (no referral codes yet — add real ones when available)
+    # Official tool/service homepages only — no tracking codes
     "Railway": ("https://railway.app", "Railway"),
     "Vercel": ("https://vercel.com", "Vercel"),
     "Ollama": ("https://ollama.com", "Ollama"),
     "Grafana": ("https://grafana.com/products/cloud/", "Grafana Cloud"),
-    # Tools we write about
     "PostgreSQL": ("https://www.postgresql.org", "PostgreSQL"),
     "FastAPI": ("https://fastapi.tiangolo.com", "FastAPI"),
     "Next.js": ("https://nextjs.org", "Next.js"),
