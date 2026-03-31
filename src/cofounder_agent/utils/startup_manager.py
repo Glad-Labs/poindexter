@@ -507,7 +507,6 @@ class StartupManager:
                     output_path=output_path,
                     num_inference_steps=1,
                     guidance_scale=7.5,
-                    use_refinement=False,
                     high_quality=False,
                 )
 

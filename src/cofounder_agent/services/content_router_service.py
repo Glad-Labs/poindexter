@@ -712,39 +712,85 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
 
 
 async def _stage_source_featured_image(topic, tags, generate_featured_image, image_service, result):
-    """Stage 3: Source a featured image from Pexels.
+    """Stage 3: Source a featured image — try SDXL generation first, fall back to Pexels.
 
     Returns the featured_image object (or None).
     """
-    logger.info("🖼️  STAGE 3: Sourcing featured image from Pexels...")
+    logger.info("🖼️  STAGE 3: Sourcing featured image...")
 
     featured_image = None
 
-    if generate_featured_image:
-        search_keywords = tags or [topic]
-
-        try:
-            featured_image = await image_service.search_featured_image(
-                topic=topic, keywords=search_keywords
-            )
-
-            if featured_image:
-                result["featured_image_url"] = featured_image.url
-                result["featured_image_photographer"] = featured_image.photographer
-                result["featured_image_source"] = featured_image.source
-                result["stages"]["3_featured_image_found"] = True
-                logger.info(
-                    f"✅ Featured image found: {featured_image.photographer} (Pexels)\n"
-                )
-            else:
-                result["stages"]["3_featured_image_found"] = False
-                logger.warning(f"⚠️  No featured image found for '{topic}'\n")
-        except Exception as e:
-            logger.error(f"❌ Image search failed: {e}", exc_info=True)
-            result["stages"]["3_featured_image_found"] = False
-    else:
+    if not generate_featured_image:
         result["stages"]["3_featured_image_found"] = False
         logger.info("⏭️  Image search skipped (disabled)\n")
+        return featured_image
+
+    # Strategy 1: Try SDXL generation for a unique image
+    if image_service.sdxl_available or not image_service.sdxl_initialized:
+        try:
+            import os
+            import tempfile
+            sdxl_prompt = (
+                f"Professional blog header image for article about {topic}. "
+                f"Clean, modern, tech-themed. No text overlay. High quality digital art."
+            )
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False, dir=os.path.join(
+                os.path.expanduser("~"), "Downloads", "glad-labs-generated-images"
+            )) as tmp:
+                output_path = tmp.name
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+            success = await image_service.generate_image(
+                prompt=sdxl_prompt,
+                output_path=output_path,
+                high_quality=True,
+            )
+            if success and os.path.exists(output_path):
+                # Create a featured_image-like object for the pipeline
+                from dataclasses import dataclass
+
+                @dataclass
+                class GeneratedImage:
+                    url: str
+                    photographer: str
+                    source: str
+
+                featured_image = GeneratedImage(
+                    url=output_path,  # Local path for now
+                    photographer="SDXL (generated)",
+                    source="sdxl_local",
+                )
+                result["featured_image_url"] = output_path
+                result["featured_image_photographer"] = "SDXL (generated)"
+                result["featured_image_source"] = "sdxl_local"
+                result["stages"]["3_featured_image_found"] = True
+                result["stages"]["3_image_source"] = "sdxl"
+                logger.info("✅ Featured image generated via SDXL\n")
+                return featured_image
+        except Exception as e:
+            logger.info("SDXL generation skipped (%s), falling back to Pexels", e)
+
+    # Strategy 2: Fall back to Pexels (free stock photos)
+    search_keywords = tags or [topic]
+    try:
+        featured_image = await image_service.search_featured_image(
+            topic=topic, keywords=search_keywords
+        )
+        if featured_image:
+            result["featured_image_url"] = featured_image.url
+            result["featured_image_photographer"] = featured_image.photographer
+            result["featured_image_source"] = featured_image.source
+            result["stages"]["3_featured_image_found"] = True
+            result["stages"]["3_image_source"] = "pexels"
+            logger.info(
+                f"✅ Featured image found: {featured_image.photographer} (Pexels)\n"
+            )
+        else:
+            result["stages"]["3_featured_image_found"] = False
+            logger.warning(f"⚠️  No featured image found for '{topic}'\n")
+    except Exception as e:
+        logger.error(f"❌ Image search failed: {e}", exc_info=True)
+        result["stages"]["3_featured_image_found"] = False
 
     return featured_image
 
