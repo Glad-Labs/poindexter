@@ -156,8 +156,11 @@ def configure_standard_logging() -> None:
 
     # Use a UTF-8 stream to avoid UnicodeEncodeError on Windows (cp1252)
     # when log messages contain emoji or other non-ASCII characters.
-    utf8_stream = open(sys.stdout.fileno(), mode="w", encoding="utf-8", closefd=False)
-    handlers: list[logging.Handler] = [logging.StreamHandler(utf8_stream)]
+    # Under pythonw.exe, stdout is None — skip console handler entirely.
+    handlers: list[logging.Handler] = []
+    if sys.stdout is not None:
+        utf8_stream = open(sys.stdout.fileno(), mode="w", encoding="utf-8", closefd=False)
+        handlers.append(logging.StreamHandler(utf8_stream))
 
     if LOG_TO_FILE:
         try:
