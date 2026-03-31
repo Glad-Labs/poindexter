@@ -947,9 +947,12 @@ async def _stage_capture_training_data(
         }
     )
 
-    await database_service.create_orchestrator_training_data(
-        {
-            "execution_id": task_id,
+    # Wrap in try/except — re-processed tasks (auto-retry, GPU scheduler)
+    # may already have training data from a previous run.
+    try:
+        await database_service.create_orchestrator_training_data(
+            {
+                "execution_id": task_id,
             "user_request": f"Generate blog post on: {topic}",
             "intent": "content_generation",
             "business_state": {
@@ -965,6 +968,8 @@ async def _stage_capture_training_data(
             "source_agent": "content_router_service",
         }
     )
+    except Exception as _td_err:
+        logger.debug("Training data insert skipped (likely re-processed task): %s", _td_err)
 
     result["stages"]["6_training_data_captured"] = True
     logger.info("✅ Training data captured for learning pipeline\n")
