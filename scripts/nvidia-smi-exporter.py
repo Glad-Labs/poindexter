@@ -1,8 +1,18 @@
-"""Lightweight Prometheus exporter for NVIDIA GPU metrics via nvidia-smi.
+"""Prometheus exporter for NVIDIA GPU + system power + AIDA64 sensor metrics.
 Serves on port 9835. Scraped by Grafana Alloy every 15s.
+
+Metrics:
+  - nvidia_gpu_* — GPU utilization, memory, temp, power, clocks, fan
+  - system_cpu_power_watts — Total CPU package power (AMD RAPL via Energy Meter)
+  - system_cpu_core_power_watts — Per-core power draw
+  - system_total_power_watts — CPU + GPU combined power estimate
+  - aida64_* — All AIDA64 sensors (when shared memory is enabled)
+  - psu_* — Corsair HXi PSU power/voltage/current/temp (via AIDA64)
 """
+import mmap
+import re
 import subprocess
-import time
+import sys
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 PORT = 9835
@@ -61,10 +71,223 @@ def get_gpu_metrics():
         return f"# error: {e}\n"
 
 
+def get_cpu_power_metrics():
+    """Read CPU power from Windows Energy Meter performance counters (AMD RAPL).
+    Returns Prometheus-format metrics string.
+    """
+    if sys.platform != "win32":
+        return ""
+    try:
+        ps_script = (
+            "Get-Counter '\\Energy Meter(*)\\Power' -ErrorAction Stop | "
+            "ForEach-Object { $_.CounterSamples | ForEach-Object { "
+            "\"$($_.InstanceName)=$([math]::Round($_.CookedValue / 1000, 2))\" } }"
+        )
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps_script],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode != 0:
+            return "# cpu power: counter read failed\n"
+
+        lines = []
+        pkg_power = 0.0
+        core_lines = []
+
+        for entry in result.stdout.strip().split("\n"):
+            entry = entry.strip()
+            if not entry or "=" not in entry:
+                continue
+            name, val = entry.rsplit("=", 1)
+            try:
+                watts = float(val)
+            except ValueError:
+                continue
+
+            if name == "_total":
+                continue
+            elif "pkg" in name:
+                pkg_power = watts
+            elif "core" in name:
+                # Extract core number: rapl_package0_core5_core -> 5
+                parts = name.split("_")
+                core_num = "0"
+                for p in parts:
+                    if p.startswith("core") and p[4:].isdigit():
+                        core_num = p[4:]
+                        break
+                core_lines.append(
+                    f'system_cpu_core_power_watts{{core="{core_num}"}} {watts}'
+                )
+
+        lines.append("# HELP system_cpu_package_power_watts Total CPU package power draw (AMD RAPL)")
+        lines.append("# TYPE system_cpu_package_power_watts gauge")
+        lines.append(f"system_cpu_package_power_watts {pkg_power}")
+
+        if core_lines:
+            lines.append("# HELP system_cpu_core_power_watts Per-core CPU power draw (AMD RAPL)")
+            lines.append("# TYPE system_cpu_core_power_watts gauge")
+            lines.extend(core_lines)
+
+        return "\n".join(lines) + "\n"
+    except Exception as e:
+        return f"# cpu power error: {e}\n"
+
+
+def get_total_power_metrics(gpu_text, cpu_text):
+    """Calculate combined system power estimate from GPU + CPU metrics."""
+    gpu_watts = 0.0
+    cpu_watts = 0.0
+    try:
+        for line in gpu_text.split("\n"):
+            if line.startswith("nvidia_gpu_power_draw_watts{"):
+                gpu_watts = float(line.split()[-1])
+                break
+    except (ValueError, IndexError):
+        pass
+    try:
+        for line in cpu_text.split("\n"):
+            if line.startswith("system_cpu_package_power_watts "):
+                cpu_watts = float(line.split()[-1])
+                break
+    except (ValueError, IndexError):
+        pass
+
+    # Estimate: CPU + GPU + ~50W for mobo/RAM/drives/fans (typical desktop overhead)
+    overhead_watts = 50.0
+    total = cpu_watts + gpu_watts + overhead_watts
+
+    lines = [
+        "# HELP system_total_power_estimate_watts Estimated total system power (CPU + GPU + 50W overhead)",
+        "# TYPE system_total_power_estimate_watts gauge",
+        f"system_total_power_estimate_watts {total:.1f}",
+        "# HELP system_overhead_power_estimate_watts Estimated non-CPU/GPU power (mobo, RAM, drives, fans)",
+        "# TYPE system_overhead_power_estimate_watts gauge",
+        f"system_overhead_power_estimate_watts {overhead_watts}",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def get_aida64_metrics():
+    """Read all sensors from AIDA64 shared memory.
+
+    AIDA64 shared memory format: pipe-delimited key=value pairs.
+    Example: TCPU=45|TGPU=62|PCPUPKG=95.2|PPSU12V=185.3|...
+
+    Sensor ID prefixes:
+      T = Temperature (Celsius)
+      F = Fan speed (RPM)
+      V = Voltage (V)
+      P = Power (W)
+      C = Current (A)
+      U = Utilization (%)
+      S = Speed (MB/s, etc.)
+      D = Duty cycle (%)
+    """
+    if sys.platform != "win32":
+        return ""
+    try:
+        shm = mmap.mmap(-1, 0, "AIDA64_SensorValues", access=mmap.ACCESS_READ)
+        raw = shm[:].decode("utf-8", errors="ignore").rstrip("\x00").strip()
+        shm.close()
+    except (FileNotFoundError, OSError):
+        return "# aida64: shared memory not available (enable in AIDA64 Preferences > External Applications)\n"
+
+    if not raw:
+        return "# aida64: shared memory empty\n"
+
+    lines = []
+    psu_total_power = None
+
+    # Parse pipe-delimited entries
+    for entry in raw.split("|"):
+        entry = entry.strip()
+        if not entry or "=" not in entry:
+            continue
+        sensor_id, val_str = entry.split("=", 1)
+        try:
+            value = float(val_str)
+        except ValueError:
+            continue
+
+        # Classify by prefix
+        prefix = sensor_id[0].upper() if sensor_id else ""
+        # Make a prometheus-safe metric name
+        safe_id = re.sub(r"[^a-zA-Z0-9_]", "_", sensor_id).lower()
+
+        if prefix == "T":
+            metric = f"aida64_temperature_celsius"
+            lines.append(f'{metric}{{sensor="{safe_id}"}} {value}')
+        elif prefix == "F":
+            metric = f"aida64_fan_rpm"
+            lines.append(f'{metric}{{sensor="{safe_id}"}} {value}')
+        elif prefix == "V":
+            metric = f"aida64_voltage_volts"
+            lines.append(f'{metric}{{sensor="{safe_id}"}} {value}')
+        elif prefix == "P":
+            metric = f"aida64_power_watts"
+            lines.append(f'{metric}{{sensor="{safe_id}"}} {value}')
+            # Capture PSU total power if available
+            sid = safe_id.lower()
+            if "psu" in sid and ("total" in sid or "12v" in sid):
+                psu_total_power = value
+        elif prefix == "C":
+            metric = f"aida64_current_amps"
+            lines.append(f'{metric}{{sensor="{safe_id}"}} {value}')
+        elif prefix == "U":
+            metric = f"aida64_utilization_percent"
+            lines.append(f'{metric}{{sensor="{safe_id}"}} {value}')
+        elif prefix == "D":
+            metric = f"aida64_duty_percent"
+            lines.append(f'{metric}{{sensor="{safe_id}"}} {value}')
+        else:
+            # Unknown prefix — still export it
+            lines.append(f'aida64_sensor{{sensor="{safe_id}"}} {value}')
+
+    if not lines:
+        return "# aida64: no numeric sensors found\n"
+
+    # Add HELP/TYPE headers for each metric type used
+    output_lines = []
+    seen_metrics = set()
+    metric_help = {
+        "aida64_temperature_celsius": ("Temperature sensors from AIDA64", "gauge"),
+        "aida64_fan_rpm": ("Fan speed sensors from AIDA64", "gauge"),
+        "aida64_voltage_volts": ("Voltage sensors from AIDA64", "gauge"),
+        "aida64_power_watts": ("Power sensors from AIDA64 (includes PSU rails)", "gauge"),
+        "aida64_current_amps": ("Current sensors from AIDA64", "gauge"),
+        "aida64_utilization_percent": ("Utilization sensors from AIDA64", "gauge"),
+        "aida64_duty_percent": ("Duty cycle sensors from AIDA64", "gauge"),
+        "aida64_sensor": ("Other AIDA64 sensors", "gauge"),
+    }
+    for line in lines:
+        metric_name = line.split("{")[0] if "{" in line else line.split()[0]
+        if metric_name not in seen_metrics:
+            seen_metrics.add(metric_name)
+            if metric_name in metric_help:
+                help_text, type_text = metric_help[metric_name]
+                output_lines.append(f"# HELP {metric_name} {help_text}")
+                output_lines.append(f"# TYPE {metric_name} {type_text}")
+        output_lines.append(line)
+
+    # If we got PSU total power, expose it as a dedicated metric
+    if psu_total_power is not None:
+        output_lines.append("# HELP psu_total_power_watts Total system power from Corsair HXi PSU")
+        output_lines.append("# TYPE psu_total_power_watts gauge")
+        output_lines.append(f"psu_total_power_watts {psu_total_power}")
+
+    return "\n".join(output_lines) + "\n"
+
+
 class MetricsHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/metrics":
-            body = get_gpu_metrics().encode()
+            gpu = get_gpu_metrics()
+            cpu = get_cpu_power_metrics()
+            aida = get_aida64_metrics()
+            total = get_total_power_metrics(gpu, cpu)
+            # If AIDA64 has PSU data, the real wall power is in aida metrics
+            body = (gpu + cpu + aida + total).encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; version=0.0.4")
             self.send_header("Content-Length", str(len(body)))
@@ -72,7 +295,7 @@ class MetricsHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
         else:
             self.send_response(200)
-            body = b"nvidia-smi exporter. /metrics for Prometheus metrics.\n"
+            body = b"GPU + system power exporter. /metrics for Prometheus metrics.\n"
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)

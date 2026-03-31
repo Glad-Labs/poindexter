@@ -81,6 +81,33 @@ if not IS_RAILWAY:
         "windows_exporter": {"url": "http://localhost:9182/metrics", "type": "http", "critical": False},
     })
 
+# External service status pages (always monitored from anywhere)
+EXTERNAL_SERVICES = {
+    "github": {
+        "url": "https://www.githubstatus.com/api/v2/status.json",
+        "type": "statuspage",  # Atlassian Statuspage format
+    },
+    "vercel": {
+        "url": "https://www.vercel-status.com/api/v2/status.json",
+        "type": "statuspage",
+    },
+    "railway": {
+        "url": "https://railway.instatus.com/summary.json",
+        "type": "instatus",  # Instatus format
+    },
+    "grafana_cloud": {
+        "url": "https://status.grafana.com/api/v2/status.json",
+        "type": "statuspage",
+    },
+    "anthropic": {
+        "url": "https://status.anthropic.com/api/v2/status.json",
+        "type": "statuspage",
+    },
+}
+
+# Track previous external status to detect transitions
+_prev_external_status = {}
+
 CYCLE_SECONDS = 300  # 5 minutes between full cycles
 
 
@@ -94,6 +121,31 @@ def check_http(url: str, timeout: int = 10) -> tuple:
         return False, e.code, str(e.reason)[:100]
     except Exception as e:
         return False, 0, str(e)[:100]
+
+
+def check_statuspage(url: str, timeout: int = 10) -> tuple:
+    """Check an Atlassian Statuspage API. Returns (ok, indicator, description)."""
+    try:
+        resp = urllib.request.urlopen(url, timeout=timeout)
+        data = json.loads(resp.read())
+        indicator = data.get("status", {}).get("indicator", "unknown")
+        description = data.get("status", {}).get("description", "unknown")
+        ok = indicator == "none"  # "none" = all systems operational
+        return ok, indicator, description
+    except Exception as e:
+        return False, "unreachable", str(e)[:100]
+
+
+def check_instatus(url: str, timeout: int = 10) -> tuple:
+    """Check an Instatus summary endpoint. Returns (ok, status, description)."""
+    try:
+        resp = urllib.request.urlopen(url, timeout=timeout)
+        data = json.loads(resp.read())
+        status = data.get("page", {}).get("status", "UNKNOWN")
+        ok = status in ("UP", "HASISSUES")  # UP = good, HASISSUES = degraded but alive
+        return ok, status.lower(), status
+    except Exception as e:
+        return False, "unreachable", str(e)[:100]
 
 
 def check_json_status(url: str, timeout: int = 10) -> tuple:
@@ -183,6 +235,47 @@ async def monitor_services(pool) -> list:
                 send_telegram(f"ALERT: {name} is DOWN — {detail}")
         else:
             logger.debug("[BRAIN] Service %s: OK", name)
+
+    return issues
+
+
+async def monitor_external_services(pool) -> list:
+    """Check external service status pages, log to knowledge graph, alert on changes."""
+    global _prev_external_status
+    issues = []
+
+    for name, config in EXTERNAL_SERVICES.items():
+        if config["type"] == "statuspage":
+            ok, indicator, description = check_statuspage(config["url"])
+        elif config["type"] == "instatus":
+            ok, indicator, description = check_instatus(config["url"])
+        else:
+            continue
+
+        # Store in knowledge graph
+        await pool.execute("""
+            INSERT INTO brain_knowledge (entity, attribute, value, confidence, source, tags)
+            VALUES ($1, $2, $3, $4, 'brain_monitor', $5)
+            ON CONFLICT (entity, attribute) DO UPDATE SET
+                value = EXCLUDED.value, updated_at = NOW()
+        """, f"external.{name}", "status", f"{indicator}: {description}",
+            1.0, ["monitoring", "external"])
+
+        prev = _prev_external_status.get(name)
+        _prev_external_status[name] = indicator
+
+        if not ok:
+            issues.append({"service": name, "indicator": indicator, "description": description})
+            # Alert only on transition to degraded/outage (not every cycle)
+            if prev != indicator:
+                logger.warning("[BRAIN] External %s: %s — %s", name, indicator, description)
+                send_telegram(f"⚠️ {name.upper()} status: {description}")
+        else:
+            # Alert on recovery too
+            if prev and prev != indicator and prev != "none":
+                logger.info("[BRAIN] External %s recovered: %s", name, description)
+                send_telegram(f"✅ {name.upper()} recovered: {description}")
+            logger.debug("[BRAIN] External %s: OK", name)
 
     return issues
 
@@ -278,21 +371,24 @@ async def run_cycle(pool):
     logger.info("[BRAIN] === Cycle start ===")
 
     issues = await monitor_services(pool)
+    ext_issues = await monitor_external_services(pool)
     await process_queue(pool)
     await self_maintain(pool)
     await update_system_metrics(pool)
+
+    all_issues = issues + ext_issues
 
     # Log cycle result
     await pool.execute("""
         INSERT INTO brain_decisions (decision, reasoning, context, confidence)
         VALUES ($1, $2, $3::jsonb, $4)
-    """, f"Cycle complete: {len(issues)} issues",
-        f"Monitored {len(SERVICES)} services, processed queue, updated metrics",
-        json.dumps({"issues": issues, "timestamp": datetime.now(timezone.utc).isoformat()}),
+    """, f"Cycle complete: {len(all_issues)} issues ({len(issues)} internal, {len(ext_issues)} external)",
+        f"Monitored {len(SERVICES)} internal + {len(EXTERNAL_SERVICES)} external services, processed queue, updated metrics",
+        json.dumps({"issues": issues, "external_issues": ext_issues, "timestamp": datetime.now(timezone.utc).isoformat()}),
         1.0,
     )
 
-    logger.info("[BRAIN] === Cycle end: %d issues ===", len(issues))
+    logger.info("[BRAIN] === Cycle end: %d issues (%d internal, %d external) ===", len(all_issues), len(issues), len(ext_issues))
 
 
 async def main():
