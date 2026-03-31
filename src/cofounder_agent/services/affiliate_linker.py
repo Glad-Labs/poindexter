@@ -28,12 +28,11 @@ DEFAULT_AFFILIATES: Dict[str, Tuple[str, str]] = {
     "GPU": ("https://www.amazon.com/s?k=nvidia+gpu&tag=gladlabsllc-20", "GPU"),
     "SSD": ("https://www.amazon.com/s?k=nvme+ssd&tag=gladlabsllc-20", "SSD"),
     "mechanical keyboard": ("https://www.amazon.com/s?k=mechanical+keyboard&tag=gladlabsllc-20", "mechanical keyboard"),
-    # Service referrals
-    "Railway": ("https://railway.app?referralCode=gladlabs", "Railway"),
+    # Service links (no referral codes yet — add real ones when available)
+    "Railway": ("https://railway.app", "Railway"),
     "Vercel": ("https://vercel.com", "Vercel"),
     "Ollama": ("https://ollama.com", "Ollama"),
     "Grafana": ("https://grafana.com/products/cloud/", "Grafana Cloud"),
-    "DigitalOcean": ("https://www.digitalocean.com/?refcode=gladlabs", "DigitalOcean"),
     # Tools we write about
     "PostgreSQL": ("https://www.postgresql.org", "PostgreSQL"),
     "FastAPI": ("https://fastapi.tiangolo.com", "FastAPI"),
