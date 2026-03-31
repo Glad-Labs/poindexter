@@ -496,6 +496,7 @@ async def main_async():
     while True:
         try:
             await run_cycle(pool)
+            await cleanup_old_data(pool)
         except Exception as e:
             logger.error("Cerebellum cycle error: %s", e)
 
@@ -520,3 +521,32 @@ if __name__ == "__main__":
     import asyncio
     logger.info("Cerebellum starting (once=%s)", "--once" in sys.argv)
     asyncio.run(main_async())
+
+
+async def cleanup_old_data(pool):
+    """Enforce data retention policies. Run as part of cerebellum cycle.
+    
+    Policies:
+    - page_views older than 90 days: delete (privacy policy says 90 days)
+    - brain_knowledge with source='cerebellum' older than 30 days: delete stale observations
+    - cost_logs: keep forever (financial records)
+    - content_tasks: keep forever (content asset)
+    """
+    try:
+        # page_views: 90-day retention
+        result = await pool.execute(
+            "DELETE FROM page_views WHERE created_at < NOW() - INTERVAL '90 days'"
+        )
+        deleted_views = int(result.split()[-1]) if result else 0
+        
+        # Stale cerebellum observations: 30-day retention
+        result = await pool.execute(
+            "DELETE FROM brain_knowledge WHERE source = 'cerebellum' AND updated_at < NOW() - INTERVAL '30 days'"
+        )
+        deleted_obs = int(result.split()[-1]) if result else 0
+        
+        if deleted_views > 0 or deleted_obs > 0:
+            logger.info("Data retention cleanup: %d page_views, %d stale observations deleted",
+                        deleted_views, deleted_obs)
+    except Exception as e:
+        logger.debug("Data retention cleanup failed: %s", e)
