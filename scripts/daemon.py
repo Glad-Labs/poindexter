@@ -54,11 +54,20 @@ GENERATE_INTERVAL = 28800  # 8 hours
 
 
 def auto_publish():
-    """Approve and publish all awaiting tasks."""
+    """Approve and publish awaiting tasks that pass quality gates.
+
+    Quality gates (all must pass):
+    1. Programmatic content validator — rejects hallucinations, fabricated claims
+    2. QA score threshold — only publishes content scoring >= MIN_PUBLISH_SCORE
+       (pipeline multi-model QA already ran; this is a safety net)
+    """
     from services.content_validator import validate_content
+
+    MIN_PUBLISH_SCORE = 80  # Only auto-publish high-quality content
 
     published = 0
     rejected = 0
+    held = 0  # Tasks held for manual review (below threshold but not rejected)
 
     for status in ["awaiting_approval", "approved"]:
         try:
@@ -76,7 +85,7 @@ def auto_publish():
             topic = t.get("topic", "")
             title = t.get("task_name", topic)
 
-            # Fetch content for validation
+            # Fetch full task for content and QA score
             try:
                 full = json.loads(urllib.request.urlopen(
                     urllib.request.Request(f"{API_URL}/api/tasks/{tid}", headers={"Authorization": AUTH}),
@@ -90,8 +99,9 @@ def auto_publish():
                     content = full.get("content", "")
             except Exception:
                 content = ""
+                full = {}
 
-            # Validate
+            # Gate 1: Programmatic content validation
             if content:
                 validation = validate_content(title or "", content, topic)
                 if not validation.passed:
@@ -100,7 +110,21 @@ def auto_publish():
                     rejected += 1
                     continue
 
-            # Approve + publish
+            # Gate 2: QA score threshold — only auto-publish high scorers
+            qa_score = 0
+            result_data = full.get("result") if isinstance(full.get("result"), dict) else {}
+            qa_score = result_data.get("qa_final_score", 0) or 0
+            # Also check quality_score from the quality evaluation stage
+            if not qa_score:
+                qa_score = result_data.get("quality_score", 0) or 0
+            if qa_score < MIN_PUBLISH_SCORE:
+                if qa_score > 0:
+                    logger.info("HELD: %s — QA score %.0f < %d (needs manual review)",
+                                topic[:50], qa_score, MIN_PUBLISH_SCORE)
+                    held += 1
+                continue
+
+            # Both gates passed — approve + publish
             try:
                 if status == "awaiting_approval":
                     urllib.request.urlopen(urllib.request.Request(
@@ -110,12 +134,13 @@ def auto_publish():
                     f"{API_URL}/api/tasks/{tid}/publish", method="POST",
                     headers={"Authorization": AUTH}), timeout=10)
                 published += 1
+                logger.info("PUBLISHED: %s (QA: %.0f)", topic[:50], qa_score)
             except Exception:
                 pass
             time.sleep(0.3)
 
-    if published or rejected:
-        logger.info("Published: %d, Rejected: %d", published, rejected)
+    if published or rejected or held:
+        logger.info("Published: %d, Rejected: %d, Held for review: %d", published, rejected, held)
     return published, rejected
 
 
