@@ -74,11 +74,11 @@ describe('robots()', () => {
     expect(result.sitemap).toBe('https://example.com/sitemap.xml');
   });
 
-  it('should fall back to glad-labs.com when SITE_URL is unset', async () => {
+  it('should fall back to www.gladlabs.io when SITE_URL is unset', async () => {
     delete process.env.NEXT_PUBLIC_SITE_URL;
     const { default: robots } = await import('../../app/robots');
     const result = robots();
 
-    expect(result.sitemap).toBe('https://glad-labs.com/sitemap.xml');
+    expect(result.sitemap).toBe('https://www.gladlabs.io/sitemap.xml');
   });
 });

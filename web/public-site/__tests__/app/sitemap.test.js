@@ -43,7 +43,7 @@ async function loadSitemap() {
 }
 
 describe('sitemap()', () => {
-  it('should always include static pages (home, about, privacy, terms)', async () => {
+  it('should always include static and legal pages', async () => {
     // API returns empty
     global.fetch.mockResolvedValue({
       ok: true,
@@ -56,8 +56,11 @@ describe('sitemap()', () => {
     const urls = result.map((entry) => entry.url);
     expect(urls).toContain('https://example.com');
     expect(urls).toContain('https://example.com/about');
-    expect(urls).toContain('https://example.com/privacy-policy');
-    expect(urls).toContain('https://example.com/terms-of-service');
+    expect(urls).toContain('https://example.com/archive/1');
+    expect(urls).toContain('https://example.com/legal/privacy');
+    expect(urls).toContain('https://example.com/legal/terms');
+    expect(urls).toContain('https://example.com/legal/cookie-policy');
+    expect(urls).toContain('https://example.com/legal/data-requests');
   });
 
   // Skip in CI: sitemap.ts reads NEXT_PUBLIC_FASTAPI_URL at import time,
@@ -105,8 +108,8 @@ describe('sitemap()', () => {
     const sitemap = await loadSitemap();
     const result = await sitemap();
 
-    // Should have exactly 4 static pages
-    expect(result.length).toBe(4);
+    // Should have exactly 7 static + legal pages
+    expect(result.length).toBe(7);
   });
 
   it('should set priority=1 for the homepage', async () => {
@@ -129,8 +132,8 @@ describe('sitemap()', () => {
     const sitemap = await loadSitemap();
     const result = await sitemap();
 
-    // Only static pages — no API calls made
-    expect(result.length).toBe(4);
+    // Only static + legal pages — no API calls made
+    expect(result.length).toBe(7);
     expect(global.fetch).not.toHaveBeenCalled();
   });
 });

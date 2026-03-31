@@ -30,10 +30,16 @@ afterAll(() => {
 });
 
 describe('AdSenseScript Component', () => {
-  it('should render empty fragment when ADSENSE_ID is not set', () => {
-    const { container } = render(<AdSenseScript />);
-    // Empty fragment means no meaningful child
-    expect(container.innerHTML).toBe('');
+  it('should render with default ADSENSE_ID when env var is not set', async () => {
+    // Component has a hardcoded fallback ID (ca-pub-4578747062758519)
+    const { findByTestId } = render(<AdSenseScript />);
+
+    const script = await findByTestId('adsense-script');
+    expect(script).toBeInTheDocument();
+    expect(script).toHaveAttribute(
+      'src',
+      expect.stringContaining('ca-pub-4578747062758519')
+    );
   });
 
   it('should render Script element when ADSENSE_ID is set and component is mounted', async () => {
