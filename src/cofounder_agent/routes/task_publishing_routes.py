@@ -654,6 +654,36 @@ async def publish_task(
             # Don't fail the publish operation if post creation fails
             # The task is still published, just warn about the post creation issue
 
+        # Generate and distribute social media posts (non-fatal)
+        try:
+            from services.social_poster import generate_and_distribute_social_posts
+            _post_slug = merged_result.get("post_slug", "")
+            _post_title = task.get("title") or task.get("topic") or ""
+            _seo_desc = task.get("seo_description") or ""
+            _seo_kw = task.get("seo_keywords") or []
+            if isinstance(_seo_kw, str):
+                _seo_kw = [k.strip() for k in _seo_kw.split(",") if k.strip()]
+            if _post_title and _post_slug:
+                if background_tasks:
+                    background_tasks.add_task(
+                        generate_and_distribute_social_posts,
+                        title=_post_title,
+                        slug=_post_slug,
+                        excerpt=_seo_desc,
+                        keywords=_seo_kw,
+                    )
+                    logger.info("[SOCIAL] Queued social post generation for %s", _post_slug)
+                else:
+                    await generate_and_distribute_social_posts(
+                        title=_post_title,
+                        slug=_post_slug,
+                        excerpt=_seo_desc,
+                        keywords=_seo_kw,
+                    )
+                    logger.info("[SOCIAL] Social posts generated for %s", _post_slug)
+        except Exception as e:
+            logger.debug("[SOCIAL] Social posting failed (non-fatal): %s", e)
+
         # Trigger ISR revalidation on public site (#955)
         # Non-fatal: publish succeeds even if revalidation fails
         revalidation_success = False
