@@ -354,6 +354,116 @@ async def write_observations(pool, observations):
     return written
 
 
+async def analyze_data_freshness(pool):
+    """Check if key metrics are up to date. Flags stale data.
+
+    The system should know when what it knows is outdated.
+    """
+    observations = []
+
+    # Define freshness expectations: (setting_key, max_age_description, max_age_days)
+    freshness_rules = [
+        ("mercury_balance", "weekly", 7),
+        ("electricity_rate_kwh", "monthly", 30),
+        ("investment_total_estimate", "quarterly", 90),
+    ]
+
+    try:
+        for key, frequency, max_days in freshness_rules:
+            row = await pool.fetchrow(
+                "SELECT value, updated_at FROM app_settings WHERE key = $1", key
+            )
+            if not row:
+                observations.append({
+                    "entity": f"freshness.{key}",
+                    "attribute": "status",
+                    "value": "missing",
+                    "confidence": 1.0,
+                    "source": "cerebellum",
+                })
+                continue
+
+            from datetime import datetime, timezone
+            age_days = (datetime.now(timezone.utc) - row["updated_at"]).total_seconds() / 86400
+            is_stale = age_days > max_days
+
+            observations.append({
+                "entity": f"freshness.{key}",
+                "attribute": "status",
+                "value": "stale" if is_stale else "fresh",
+                "confidence": 0.95,
+                "source": "cerebellum",
+                "metadata": json.dumps({
+                    "age_days": round(age_days, 1),
+                    "max_days": max_days,
+                    "frequency": frequency,
+                    "current_value": row["value"][:50],
+                }),
+            })
+
+        # Check data pipeline freshness — are we generating and receiving data?
+        pipeline_checks = [
+            ("cost_logs", "SELECT MAX(created_at) FROM cost_logs", 1),
+            ("page_views", "SELECT MAX(created_at) FROM page_views", 1),
+            ("content_tasks", "SELECT MAX(created_at) FROM content_tasks WHERE status != 'pending'", 1),
+            ("brain_knowledge", "SELECT MAX(updated_at) FROM brain_knowledge WHERE source = 'cerebellum'", 0.05),  # 72 min
+        ]
+
+        for name, query, max_hours_stale in pipeline_checks:
+            try:
+                row = await pool.fetchrow(query)
+                latest = row[0] if row else None
+                if latest:
+                    from datetime import datetime, timezone
+                    age_hours = (datetime.now(timezone.utc) - latest).total_seconds() / 3600
+                    is_stale = age_hours > max_hours_stale * 24 if max_hours_stale >= 1 else age_hours > max_hours_stale * 24
+
+                    observations.append({
+                        "entity": f"freshness.pipeline.{name}",
+                        "attribute": "last_data",
+                        "value": "stale" if is_stale else "fresh",
+                        "confidence": 0.9,
+                        "source": "cerebellum",
+                        "metadata": json.dumps({
+                            "age_hours": round(age_hours, 1),
+                            "threshold_days": max_hours_stale,
+                        }),
+                    })
+                else:
+                    observations.append({
+                        "entity": f"freshness.pipeline.{name}",
+                        "attribute": "last_data",
+                        "value": "empty",
+                        "confidence": 1.0,
+                        "source": "cerebellum",
+                    })
+            except Exception:
+                pass
+
+        # Check DB size
+        try:
+            row = await pool.fetchrow(
+                "SELECT pg_database_size(current_database()) AS size_bytes"
+            )
+            if row:
+                size_mb = row["size_bytes"] / (1024 * 1024)
+                observations.append({
+                    "entity": "infra.database_size",
+                    "attribute": "current_mb",
+                    "value": str(round(size_mb, 1)),
+                    "confidence": 1.0,
+                    "source": "cerebellum",
+                    "metadata": json.dumps({"bytes": row["size_bytes"]}),
+                })
+        except Exception:
+            pass
+
+    except Exception as e:
+        logger.debug("Data freshness analysis failed: %s", e)
+
+    return observations
+
+
 async def run_cycle(pool):
     """Run one analysis cycle across all systems."""
     all_observations = []
@@ -362,6 +472,7 @@ async def run_cycle(pool):
     all_observations.extend(await analyze_content_trends(pool))
     all_observations.extend(await analyze_traffic_trends(pool))
     all_observations.extend(await analyze_infrastructure_trends(pool))
+    all_observations.extend(await analyze_data_freshness(pool))
 
     written = await write_observations(pool, all_observations)
     logger.info("Cerebellum cycle: %d observations, %d written to brain_knowledge",
