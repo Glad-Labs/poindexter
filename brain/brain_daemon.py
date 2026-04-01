@@ -26,7 +26,7 @@ import logging
 import os
 import subprocess
 import sys
-import time
+import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
@@ -267,13 +267,15 @@ async def monitor_external_services(pool) -> list:
 
         if not ok:
             issues.append({"service": name, "indicator": indicator, "description": description})
-            # Alert only on transition to degraded/outage (not every cycle)
+            # Only Telegram alert on MAJOR outages (not minor/degraded — reduces spam)
+            is_major = indicator in ("major", "critical", "major_outage")
             if prev != indicator:
                 logger.warning("[BRAIN] External %s: %s — %s", name, indicator, description)
-                send_telegram(f"⚠️ {name.upper()} status: {description}")
+                if is_major:
+                    send_telegram(f"🚨 {name.upper()} MAJOR OUTAGE: {description}")
         else:
-            # Alert on recovery too
-            if prev and prev != indicator and prev != "none":
+            # Alert on recovery from major outage only
+            if prev and prev in ("major", "critical", "major_outage") and prev != indicator:
                 logger.info("[BRAIN] External %s recovered: %s", name, description)
                 send_telegram(f"✅ {name.upper()} recovered: {description}")
             logger.debug("[BRAIN] External %s: OK", name)
@@ -293,9 +295,6 @@ async def process_queue(pool, max_items: int = 5):
         for item in items:
             try:
                 # Simple processing — extract facts from observations
-                content = item["content"]
-                context = json.loads(item["context"]) if isinstance(item["context"], str) else (item["context"] or {})
-
                 # Log as processed
                 await pool.execute(
                     "UPDATE brain_queue SET status = 'processed', processed_at = NOW(), result = $1 WHERE id = $2",
@@ -400,7 +399,7 @@ async def main():
     if not db_url:
         # Try Railway CLI
         try:
-            result = subprocess.run(
+            subprocess.run(
                 ["railway", "service", "Postgres"],
                 capture_output=True, text=True, timeout=10,
             )
