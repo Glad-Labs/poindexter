@@ -20,10 +20,10 @@ Usage:
         # Fall back to Ollama or skip
 """
 
-import logging
+from services.logger_config import get_logger
 from typing import Optional, Tuple
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # Approximate cost per 1K tokens by provider (USD)

@@ -12,7 +12,7 @@ Features:
 """
 
 import json
-import logging
+from services.logger_config import get_logger
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
@@ -24,7 +24,7 @@ from services.capability_task_executor import (
 )
 from services.model_router import ModelRouter
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass

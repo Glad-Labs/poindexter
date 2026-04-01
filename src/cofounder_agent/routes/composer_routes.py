@@ -7,7 +7,7 @@ POST /api/compose/approve/{plan_id} — Approve a pending plan
 GET  /api/compose/steps — List available building blocks
 """
 
-import logging
+from services.logger_config import get_logger
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Request
@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from middleware.api_token_auth import verify_api_token
 from services.process_composer import create_default_composer
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/compose", tags=["composer"], dependencies=[Depends(verify_api_token)])
 

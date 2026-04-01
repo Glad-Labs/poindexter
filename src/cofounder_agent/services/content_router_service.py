@@ -14,7 +14,7 @@ Provides centralized blog post generation with:
 - Comprehensive task tracking
 """
 
-import logging
+from services.logger_config import get_logger
 from typing import Any, Dict, List, Optional
 
 from .ai_content_generator import get_content_generator
@@ -26,7 +26,7 @@ from .quality_service import EvaluationMethod, UnifiedQualityService
 from .seo_content_generator import get_seo_content_generator
 from .webhook_delivery_service import emit_webhook_event
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # ============================================================================

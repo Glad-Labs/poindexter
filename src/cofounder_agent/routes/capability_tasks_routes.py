@@ -14,7 +14,7 @@ Endpoints:
 - GET /api/tasks/capability/{id}/executions - List execution history
 """
 
-import logging
+from services.logger_config import get_logger
 from datetime import datetime
 from typing import List, Optional
 
@@ -28,7 +28,7 @@ from services.capability_tasks_service import CapabilityTasksService
 from middleware.api_token_auth import verify_api_token
 from utils.route_utils import get_database_dependency
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _get_capability_tasks_service(db=Depends(get_database_dependency)) -> CapabilityTasksService:

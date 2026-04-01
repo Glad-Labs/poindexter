@@ -29,9 +29,9 @@ except ImportError:
     # Graceful no-op if slowapi is not installed.
     # Routes decorated with @limiter.limit() will still work but limiting
     # will be silently skipped.
-    import logging
+    from services.logger_config import get_logger
 
-    logging.getLogger(__name__).warning(
+    get_logger(__name__).warning(
         "slowapi not installed — rate limiting disabled. " "Install with: pip install slowapi"
     )
 

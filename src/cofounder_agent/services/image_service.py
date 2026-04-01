@@ -26,6 +26,7 @@ Cost: $0/month for all options (local GPU or CPU fallback)
 import asyncio
 import importlib
 import logging
+from services.logger_config import get_logger
 import os
 import time
 from dataclasses import dataclass
@@ -65,7 +66,7 @@ try:
 except ImportError:
     XFORMERS_AVAILABLE = False
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # =============================================================================

@@ -17,7 +17,7 @@ information about GDPR rights. In production, implement:
 4. Audit logging
 """
 
-import logging
+from services.logger_config import get_logger
 import re
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field
 
 from utils.rate_limiter import limiter
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/privacy", tags=["privacy"])
 

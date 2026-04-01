@@ -18,7 +18,6 @@ ASYNC-FIRST: All I/O operations use httpx async client (no blocking calls)
 """
 
 import asyncio
-import logging
 import os
 import re
 import time
@@ -27,10 +26,11 @@ from typing import Any, Dict, Optional, Tuple
 
 import httpx
 
+from services.logger_config import get_logger
 from .prompt_manager import get_prompt_manager
 from .provider_checker import ProviderChecker
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ContentValidationResult:
@@ -1570,8 +1570,6 @@ def get_content_generator() -> AIContentGenerator:
 
 async def test_generation():
     """Test content generation"""
-    from services.logger_config import get_logger
-
     logger = get_logger(__name__)
     generator = get_content_generator()
 

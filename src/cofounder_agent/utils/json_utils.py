@@ -7,10 +7,10 @@ service files (issue #634).
 """
 
 import json
-import logging
+from services.logger_config import get_logger
 from typing import Any
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def parse_json_field(

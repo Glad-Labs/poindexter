@@ -18,9 +18,9 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 import httpx
-import structlog
+from services.logger_config import get_logger
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class BudgetAlertLevel(str, Enum):

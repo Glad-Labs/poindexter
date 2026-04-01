@@ -4,12 +4,12 @@ Provides interface to Google's Gemini AI models
 """
 
 import asyncio
-import logging
+from services.logger_config import get_logger
 import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 try:
     import google.genai  # noqa: F401

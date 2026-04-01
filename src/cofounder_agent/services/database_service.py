@@ -18,7 +18,7 @@ When LOCAL_DATABASE_URL is not set, self.local_pool = self.pool (backward compat
 All existing methods are delegated to appropriate modules.
 """
 
-import logging
+from services.logger_config import get_logger
 import os
 from typing import Dict, List, Optional
 
@@ -32,7 +32,7 @@ from .tasks_db import TasksDatabase
 from .users_db import UsersDatabase
 from .writing_style_db import WritingStyleDatabase
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class DatabaseService:

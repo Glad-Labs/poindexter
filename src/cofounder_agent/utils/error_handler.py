@@ -18,6 +18,7 @@ Import guide:
 """
 
 import logging
+from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -27,7 +28,7 @@ from fastapi import HTTPException
 # content_router_service → image_service → here). Using get_logger() here would
 # create a circular import through services/__init__.py. stdlib logger is used
 # intentionally for this base-layer utility.
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ErrorResponse:

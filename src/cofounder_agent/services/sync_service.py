@@ -14,13 +14,13 @@ Graceful failure: if either DB is unreachable, log and skip.
 """
 
 import asyncio
-import logging
+from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import asyncpg
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Connection string defaults (overridable via constructor or env)

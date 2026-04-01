@@ -7,7 +7,7 @@ and runtime agent selection based on workflow requirements.
 This follows the same pattern as service_registry_routes.py but for agents instead of services.
 """
 
-import logging
+from services.logger_config import get_logger
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from agents.registry import get_agent_registry
 from middleware.api_token_auth import verify_api_token
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter(
     prefix="/api/agents",

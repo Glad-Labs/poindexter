@@ -17,12 +17,12 @@ Usage:
     # context is a formatted string ready for the generation prompt
 """
 
-import logging
+from services.logger_config import get_logger
 import os
 import re
 from typing import Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Verified reference links — official documentation that won't go stale.
 # These are real URLs to real documentation. NO fabricated links.

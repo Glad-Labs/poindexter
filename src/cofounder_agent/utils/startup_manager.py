@@ -14,11 +14,11 @@ Handles all startup and shutdown operations for the Glad Labs AI Co-Founder:
 - Graceful shutdown
 """
 
-import logging
+from services.logger_config import get_logger
 import os
 from typing import Any, Dict
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class StartupManager:

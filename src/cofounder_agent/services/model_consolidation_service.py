@@ -36,12 +36,12 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-import structlog
+from services.logger_config import get_logger
 
 from .error_handler import ServiceError
 from .provider_checker import ProviderChecker
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 # ============================================================================

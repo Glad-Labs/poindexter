@@ -9,7 +9,7 @@ Supports fine-tuning with:
 """
 
 import asyncio
-import logging
+from services.logger_config import get_logger
 import os
 import tempfile
 from datetime import datetime
@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional
 
 import aiofiles
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class FineTuneTarget(str, Enum):

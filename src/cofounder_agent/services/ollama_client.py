@@ -14,9 +14,9 @@ import os
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 import httpx
-import structlog
+from services.logger_config import get_logger
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 # ============================================================================

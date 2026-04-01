@@ -15,12 +15,12 @@ Architecture:
 
 import asyncio
 import json
-import logging
+from services.logger_config import get_logger
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 async def create_phase_handler(phase_name: str, agent_name: str, database_service: Any) -> Callable:
