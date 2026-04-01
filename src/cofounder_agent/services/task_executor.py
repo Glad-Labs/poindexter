@@ -51,8 +51,8 @@ OPENCLAW_HOOKS_TOKEN = _os.getenv("OPENCLAW_HOOKS_TOKEN", "hooks-gladlabs")
 
 _OPENCLAW_URL = _os.getenv("OPENCLAW_GATEWAY_URL", "http://localhost:18789")
 _OPENCLAW_TOKEN = _os.getenv("OPENCLAW_HOOKS_TOKEN", "hooks-gladlabs")
-_TELEGRAM_BOT_TOKEN = _os.getenv("OPENCLAW_TELEGRAM_BOT_TOKEN", "REDACTED_TELEGRAM_TOKEN")
-_TELEGRAM_CHAT_ID = _os.getenv("OPENCLAW_TELEGRAM_CHAT_ID", "5318613610")
+from services.telegram_config import TELEGRAM_BOT_TOKEN as _TELEGRAM_BOT_TOKEN  # noqa: E402
+from services.telegram_config import TELEGRAM_CHAT_ID as _TELEGRAM_CHAT_ID  # noqa: E402
 _DISCORD_OPS_CHANNEL = "1487683559065125055"
 
 

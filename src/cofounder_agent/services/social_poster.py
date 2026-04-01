@@ -38,11 +38,8 @@ logger = logging.getLogger(__name__)
 SITE_BASE_URL = os.getenv("SITE_BASE_URL", "https://gladlabs.io")
 
 # Notification targets (mirrors task_executor._notify_openclaw)
-_TELEGRAM_BOT_TOKEN = os.getenv(
-    "OPENCLAW_TELEGRAM_BOT_TOKEN",
-    "REDACTED_TELEGRAM_TOKEN",
-)
-_TELEGRAM_CHAT_ID = os.getenv("OPENCLAW_TELEGRAM_CHAT_ID", "5318613610")
+from services.telegram_config import TELEGRAM_BOT_TOKEN as _TELEGRAM_BOT_TOKEN
+from services.telegram_config import TELEGRAM_CHAT_ID as _TELEGRAM_CHAT_ID
 _OPENCLAW_URL = os.getenv("OPENCLAW_GATEWAY_URL", "http://localhost:18789")
 _OPENCLAW_TOKEN = os.getenv("OPENCLAW_HOOKS_TOKEN", "hooks-gladlabs")
 _DISCORD_OPS_CHANNEL = "1487683559065125055"
