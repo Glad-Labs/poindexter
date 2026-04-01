@@ -33,6 +33,8 @@ from datetime import datetime, timezone
 # Standalone — no imports from the FastAPI codebase
 import asyncpg
 
+from health_probes import run_health_probes
+
 LOG_DIR = os.path.join(os.path.expanduser("~"), ".gladlabs")
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIR, "brain.log")
@@ -376,19 +378,24 @@ async def run_cycle(pool):
     await self_maintain(pool)
     await update_system_metrics(pool)
 
+    # Health probes — exercise services with real inputs (each on its own schedule)
+    probe_results = await run_health_probes(pool, send_telegram_fn=send_telegram)
+    probe_failures = [name for name, r in probe_results.items() if not r.get("ok")]
+
     all_issues = issues + ext_issues
 
     # Log cycle result
     await pool.execute("""
         INSERT INTO brain_decisions (decision, reasoning, context, confidence)
         VALUES ($1, $2, $3::jsonb, $4)
-    """, f"Cycle complete: {len(all_issues)} issues ({len(issues)} internal, {len(ext_issues)} external)",
-        f"Monitored {len(SERVICES)} internal + {len(EXTERNAL_SERVICES)} external services, processed queue, updated metrics",
-        json.dumps({"issues": issues, "external_issues": ext_issues, "timestamp": datetime.now(timezone.utc).isoformat()}),
+    """, f"Cycle complete: {len(all_issues)} issues ({len(issues)} internal, {len(ext_issues)} external), {len(probe_results)} probes ({len(probe_failures)} failed)",
+        f"Monitored {len(SERVICES)} internal + {len(EXTERNAL_SERVICES)} external services, ran {len(probe_results)} probes, processed queue, updated metrics",
+        json.dumps({"issues": issues, "external_issues": ext_issues, "probe_failures": probe_failures, "timestamp": datetime.now(timezone.utc).isoformat()}),
         1.0,
     )
 
-    logger.info("[BRAIN] === Cycle end: %d issues (%d internal, %d external) ===", len(all_issues), len(issues), len(ext_issues))
+    logger.info("[BRAIN] === Cycle end: %d issues (%d internal, %d external), %d probes (%d failed) ===",
+                len(all_issues), len(issues), len(ext_issues), len(probe_results), len(probe_failures))
 
 
 async def main():

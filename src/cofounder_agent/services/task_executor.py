@@ -236,7 +236,6 @@ class TaskExecutor:
                             break
 
                         task_id = task.get("id")
-                        task_name = task.get("task_name", "Untitled")
 
                         try:
                             logger.info(f"⚡ [TASK_EXEC_LOOP] Starting to process task: {task_id}")
@@ -764,7 +763,6 @@ class TaskExecutor:
         """Phase 1: Generate content via orchestrator or fallback."""
         generated_content = None
         orchestrator_error = None
-        generation_start_time = time.time()
         _phase1_start = task_metrics.record_phase_start("content_generation")
 
         logger.info("📝 [TASK_EXECUTE] PHASE 1: Generating content via orchestrator...")
@@ -1094,6 +1092,9 @@ class TaskExecutor:
         logger.info(
             f"   Original content length: {len(generated_content) if generated_content else 0} chars"
         )
+        if not self.orchestrator:
+            logger.warning("[TASK_EXECUTE] No orchestrator available for refinement")
+            return generated_content, quality_score, approved, critique_result
         try:
             # Check if orchestrator supports modern process_request
             if hasattr(self.orchestrator, "process_request") and not hasattr(
@@ -1367,15 +1368,6 @@ class TaskExecutor:
             approved,
             result.get("status") if isinstance(result, dict) else "unknown",
         )
-
-        # Store metadata in result
-        metadata = {
-            "task_id": str(task_id),
-            "task_name": task.get("task_name", ""),
-            "content_length": len(generated_content) if generated_content else 0,
-            "quality_score": quality_score,
-            "approved": approved,
-        }
 
     async def _fallback_generate_content(self, task: Dict[str, Any]) -> str:
         """
