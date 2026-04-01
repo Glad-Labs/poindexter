@@ -39,8 +39,74 @@ services:
       postgres-local:
         condition: service_healthy
 
+  # ===========================================
+  # Gitea — self-hosted git (replaces GitHub)
+  # ===========================================
+  gitea:
+    image: gitea/gitea:latest
+    container_name: gladlabs-gitea
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+      - "2222:22"
+    environment:
+      USER_UID: 1000
+      USER_GID: 1000
+      GITEA__database__DB_TYPE: postgres
+      GITEA__database__HOST: postgres-local:5432
+      GITEA__database__NAME: gladlabs_brain
+      GITEA__database__USER: gladlabs
+      GITEA__database__PASSWD: gladlabs-brain-local
+      GITEA__server__ROOT_URL: http://localhost:3001
+      GITEA__server__SSH_DOMAIN: localhost
+      GITEA__server__SSH_PORT: 2222
+    volumes:
+      - gitea-data:/data
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+
+  # ===========================================
+  # Woodpecker CI — pipelines (replaces GitHub Actions)
+  # ===========================================
+  woodpecker-server:
+    image: woodpeckerci/woodpecker-server:latest
+    container_name: gladlabs-woodpecker
+    restart: unless-stopped
+    ports:
+      - "8280:8000"
+    environment:
+      WOODPECKER_OPEN: "true"
+      WOODPECKER_HOST: http://localhost:8280
+      WOODPECKER_GITEA: "true"
+      WOODPECKER_GITEA_URL: http://gitea:3000
+      WOODPECKER_GITEA_CLIENT: ""
+      WOODPECKER_GITEA_SECRET: ""
+      WOODPECKER_SECRET: ***REMOVED***
+      WOODPECKER_ADMIN: gladlabs
+    volumes:
+      - woodpecker-data:/var/lib/woodpecker
+    depends_on:
+      - gitea
+
+  woodpecker-agent:
+    image: woodpeckerci/woodpecker-agent:latest
+    container_name: gladlabs-woodpecker-agent
+    restart: unless-stopped
+    environment:
+      WOODPECKER_SERVER: woodpecker-server:9000
+      WOODPECKER_SECRET: ***REMOVED***
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - woodpecker-server
+
 volumes:
   postgres-local-data:
     name: gladlabs-postgres-local-data
   grafana-data:
     name: gladlabs-grafana-data
+  gitea-data:
+    name: gladlabs-gitea-data
+  woodpecker-data:
+    name: gladlabs-woodpecker-data
