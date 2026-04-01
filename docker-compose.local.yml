@@ -34,6 +34,7 @@ services:
     volumes:
       - grafana-data:/var/lib/grafana
       - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning
+      - ./infrastructure/grafana/dashboards:/etc/grafana/dashboards
     depends_on:
       postgres-local:
         condition: service_healthy
