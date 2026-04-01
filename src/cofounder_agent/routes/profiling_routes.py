@@ -5,6 +5,8 @@ API endpoints for accessing performance profile data collected by ProfilingMiddl
 Helps identify slow endpoints and performance bottlenecks.
 """
 
+from typing import Any, Dict
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from middleware.api_token_auth import verify_api_token
@@ -61,7 +63,7 @@ async def get_slow_endpoints(threshold_ms: int = Query(1000, ge=0)):
 
 
 @router.get("/endpoint-stats")
-async def get_endpoint_stats():
+async def get_endpoint_stats() -> Dict[str, Any]:
     """
     Get comprehensive statistics for all endpoints.
 
@@ -110,7 +112,7 @@ async def get_recent_requests(limit: int = Query(100, ge=1, le=1000)):
 
 
 @router.get("/phase-breakdown")
-async def get_phase_breakdown():
+async def get_phase_breakdown() -> Dict[str, Any]:
     """
     Get breakdown of task execution by phase.
     Analyzes request patterns to /tasks endpoints and their phases.
@@ -157,7 +159,7 @@ async def get_phase_breakdown():
 
 
 @router.get("/health")
-async def profiling_health():
+async def profiling_health() -> Dict[str, Any]:
     """Health check for profiling system"""
     if profiling_middleware is None:
         return {"status": "not_initialized"}
