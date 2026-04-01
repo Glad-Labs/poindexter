@@ -22,7 +22,7 @@
       "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "targets": [
         {
@@ -56,7 +56,7 @@
       "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "targets": [
         {
@@ -91,7 +91,7 @@
       "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "targets": [
         {
@@ -126,7 +126,7 @@
       "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "targets": [
         {
@@ -161,7 +161,7 @@
       "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "targets": [
         {
@@ -196,7 +196,7 @@
       "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "targets": [
         {
@@ -233,7 +233,7 @@
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 4 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "targets": [
         {
@@ -263,7 +263,7 @@
       "gridPos": { "h": 8, "w": 16, "x": 8, "y": 4 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "targets": [
         {
@@ -313,7 +313,7 @@
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 12 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "targets": [
         {
@@ -335,7 +335,7 @@
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 12 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "targets": [
         {
@@ -357,7 +357,7 @@
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 12 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "targets": [
         {
@@ -387,7 +387,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "targets": [
         {
@@ -414,7 +414,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "targets": [
         {
@@ -443,7 +443,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "targets": [
         {
@@ -470,7 +470,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "targets": [
         {
@@ -498,7 +498,7 @@
       "gridPos": { "h": 6, "w": 12, "x": 0, "y": 36 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "targets": [
         {
@@ -517,7 +517,7 @@
       "gridPos": { "h": 6, "w": 12, "x": 12, "y": 36 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "targets": [
         {

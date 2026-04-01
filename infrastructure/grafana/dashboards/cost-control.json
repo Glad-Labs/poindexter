@@ -26,7 +26,7 @@
       "gridPos": { "h": 10, "w": 16, "x": 0, "y": 0 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -66,7 +66,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "gladlabs-postgres"
+            "uid": "local-brain-db"
           },
           "rawSql": "SELECT date_trunc('day', created_at) as time, SUM(cost_usd) as daily_cost FROM cost_logs WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
           "format": "time_series",
@@ -81,7 +81,7 @@
       "gridPos": { "h": 10, "w": 8, "x": 16, "y": 0 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -116,7 +116,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "gladlabs-postgres"
+            "uid": "local-brain-db"
           },
           "rawSql": "SELECT SUM(cost_usd) as today_spend FROM cost_logs WHERE created_at > date_trunc('day', NOW())",
           "format": "table",
@@ -131,7 +131,7 @@
       "gridPos": { "h": 9, "w": 8, "x": 0, "y": 10 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -198,7 +198,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "gladlabs-postgres"
+            "uid": "local-brain-db"
           },
           "rawSql": "SELECT provider, SUM(cost_usd) as total FROM cost_logs WHERE created_at > NOW() - INTERVAL '30 days' GROUP BY provider",
           "format": "table",
@@ -213,7 +213,7 @@
       "gridPos": { "h": 9, "w": 8, "x": 8, "y": 10 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -244,7 +244,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "gladlabs-postgres"
+            "uid": "local-brain-db"
           },
           "rawSql": "SELECT phase, SUM(cost_usd) as total FROM cost_logs WHERE created_at > NOW() - INTERVAL '30 days' GROUP BY phase ORDER BY total DESC",
           "format": "table",
@@ -259,7 +259,7 @@
       "gridPos": { "h": 9, "w": 8, "x": 16, "y": 10 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -295,7 +295,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "gladlabs-postgres"
+            "uid": "local-brain-db"
           },
           "rawSql": "SELECT ROUND(AVG(task_cost), 4) as avg_cost_per_post FROM (SELECT task_id, SUM(cost_usd) as task_cost FROM cost_logs GROUP BY task_id) sub",
           "format": "table",
@@ -310,7 +310,7 @@
       "gridPos": { "h": 10, "w": 24, "x": 0, "y": 19 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -341,7 +341,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "gladlabs-postgres"
+            "uid": "local-brain-db"
           },
           "rawSql": "SELECT model, SUM(total_tokens) as tokens FROM cost_logs WHERE created_at > NOW() - INTERVAL '7 days' GROUP BY model ORDER BY tokens DESC",
           "format": "table",
