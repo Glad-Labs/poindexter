@@ -129,6 +129,47 @@ class TestConfigureStructlog:
 
 
 # ---------------------------------------------------------------------------
+# _add_request_id structlog processor
+# ---------------------------------------------------------------------------
+
+
+class TestAddRequestIdProcessor:
+    def test_injects_request_id_from_contextvar(self):
+        from middleware.request_id import _request_id_var
+
+        token = _request_id_var.set("test-abc-123")
+        try:
+            event_dict: dict = {"event": "hello"}
+            result = lc._add_request_id(None, "info", event_dict)  # type: ignore[arg-type]
+            assert result["request_id"] == "test-abc-123"
+        finally:
+            _request_id_var.reset(token)
+
+    def test_defaults_to_dash_when_no_request(self):
+        from middleware.request_id import _request_id_var
+
+        token = _request_id_var.set(None)
+        try:
+            event_dict: dict = {"event": "startup"}
+            result = lc._add_request_id(None, "info", event_dict)  # type: ignore[arg-type]
+            assert result["request_id"] == "-"
+        finally:
+            _request_id_var.reset(token)
+
+    def test_does_not_overwrite_explicitly_bound_request_id(self):
+        """If a caller already bound request_id (e.g. via structlog.bind), preserve it."""
+        from middleware.request_id import _request_id_var
+
+        token = _request_id_var.set("from-contextvar")
+        try:
+            event_dict: dict = {"event": "msg", "request_id": "explicit-id"}
+            result = lc._add_request_id(None, "info", event_dict)  # type: ignore[arg-type]
+            assert result["request_id"] == "explicit-id"
+        finally:
+            _request_id_var.reset(token)
+
+
+# ---------------------------------------------------------------------------
 # Module-level constants
 # ---------------------------------------------------------------------------
 

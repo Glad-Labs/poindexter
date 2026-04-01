@@ -76,6 +76,27 @@ if LOG_LEVEL not in VALID_LOG_LEVELS:
 # ============================================================================
 
 
+def _add_request_id(
+    logger: logging.Logger, method_name: str, event_dict: dict
+) -> dict:
+    """
+    Structlog processor that injects the current request ID into every log event.
+
+    Reads from the ``_request_id_var`` ContextVar set by
+    ``middleware.request_id.RequestIDMiddleware``.  When no request is active
+    (startup, background workers, etc.) the field is set to ``"-"`` so log
+    parsers can always rely on its presence.
+    """
+    # Import lazily to avoid circular imports at module-load time.
+    try:
+        from middleware.request_id import _request_id_var
+    except ImportError:
+        event_dict.setdefault("request_id", "-")
+        return event_dict
+    event_dict.setdefault("request_id", _request_id_var.get() or "-")
+    return event_dict
+
+
 def configure_structlog() -> bool:
     """
     Configure structlog for structured JSON logging.
@@ -92,6 +113,8 @@ def configure_structlog() -> bool:
                 # Add context information
                 structlog.stdlib.add_logger_name,
                 structlog.stdlib.add_log_level,
+                # Inject current request ID from contextvar
+                _add_request_id,
                 # Format positional arguments
                 structlog.stdlib.PositionalArgumentsFormatter(),
                 # Add timestamps in ISO format
@@ -257,6 +280,7 @@ def set_log_level(level: str) -> None:
                 structlog.stdlib.filter_by_level,
                 structlog.stdlib.add_logger_name,
                 structlog.stdlib.add_log_level,
+                _add_request_id,
                 structlog.stdlib.PositionalArgumentsFormatter(),
                 structlog.processors.TimeStamper(fmt="ISO"),
                 structlog.processors.StackInfoRenderer(),
