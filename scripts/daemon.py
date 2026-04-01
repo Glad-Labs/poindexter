@@ -23,6 +23,11 @@ import time
 import urllib.request
 from datetime import datetime
 
+# Ensure scripts/ is on sys.path so `from lib.…` works
+sys.path.insert(0, os.path.dirname(__file__))
+from lib.config import load_api_token  # noqa: E402
+from lib.topic_dedup import fetch_existing_topics, is_too_similar  # noqa: E402
+
 # pythonw.exe sets stdout/stderr to None — redirect to devnull before any imports
 # that might trigger warnings (e.g., pydantic) writing to stderr
 if sys.stdout is None:
@@ -51,14 +56,7 @@ if sys.stdout is not None and not sys.stdout.name == os.devnull:
     logger.addHandler(logging.StreamHandler(sys.stdout))
 
 API_URL = "https://cofounder-production.up.railway.app"
-API_TOKEN = os.getenv("GLADLABS_KEY", "")
-if not API_TOKEN:
-    # Try reading from OpenClaw workspace .env
-    _env_path = os.path.join(os.path.expanduser("~"), ".openclaw", "workspace", ".env")
-    if os.path.exists(_env_path):
-        for _line in open(_env_path):
-            if _line.startswith("GLADLABS_KEY="):
-                API_TOKEN = _line.split("=", 1)[1].strip()
+API_TOKEN = load_api_token()
 AUTH = f"Bearer {API_TOKEN}"
 
 PUBLISH_INTERVAL = 300  # 5 minutes
@@ -157,87 +155,6 @@ def auto_publish():
     return published, rejected
 
 
-def _normalize_words(text):
-    """Lowercase, strip punctuation, split into words."""
-    import re
-    return re.sub(r"[^a-z0-9 ]", "", text.lower()).split()
-
-
-def _get_ngrams(words, n):
-    """Return set of n-grams (tuples of n consecutive words)."""
-    return {tuple(words[i:i + n]) for i in range(len(words) - n + 1)}
-
-
-def _extract_template_base(topic):
-    """Extract the template pattern from a topic, ignoring fill-in values.
-
-    E.g. "The Hidden Costs of Local LLMs Nobody Talks About"
-      -> "the hidden costs of ... nobody talks about"
-
-    Returns the first 4 and last 4 words joined, which captures the template
-    skeleton while ignoring the variable middle.
-    """
-    words = _normalize_words(topic)
-    if len(words) <= 6:
-        return " ".join(words)
-    return " ".join(words[:4]) + " ... " + " ".join(words[-4:])
-
-
-def _is_too_similar(topic, existing_topics):
-    """Check if topic is too similar to any existing topic.
-
-    Similarity checks:
-    1. Exact match (case-insensitive)
-    2. Shares 3+ consecutive words with an existing topic
-    3. Same template skeleton (first 4 + last 4 words match)
-    """
-    topic_words = _normalize_words(topic)
-    topic_ngrams = _get_ngrams(topic_words, 3)
-    topic_base = _extract_template_base(topic)
-
-    for existing in existing_topics:
-        existing_lower = existing.lower()
-        # Exact match
-        if topic.lower() == existing_lower:
-            return True
-        existing_words = _normalize_words(existing)
-        # 3+ consecutive word overlap
-        existing_ngrams = _get_ngrams(existing_words, 3)
-        shared = topic_ngrams & existing_ngrams
-        if len(shared) >= 1:
-            return True
-        # Same template skeleton
-        if _extract_template_base(existing) == topic_base:
-            return True
-    return False
-
-
-def _fetch_existing_topics():
-    """Fetch both recent task topics AND published post titles for dedup."""
-    topics = set()
-    # Recent tasks (pending, in-progress, awaiting approval, etc.)
-    try:
-        req = urllib.request.Request(f"{API_URL}/api/tasks?limit=50", headers={"Authorization": AUTH})
-        data = json.loads(urllib.request.urlopen(req, timeout=10).read())
-        for t in data.get("tasks", []):
-            topic = t.get("topic", "")
-            if topic:
-                topics.add(topic)
-    except Exception:
-        pass
-    # Published posts — check titles to avoid duplicating already-published content
-    try:
-        req = urllib.request.Request(f"{API_URL}/api/posts?limit=100", headers={"Authorization": AUTH})
-        data = json.loads(urllib.request.urlopen(req, timeout=10).read())
-        for p in data.get("posts", data if isinstance(data, list) else []):
-            title = p.get("title", "")
-            if title:
-                topics.add(title)
-    except Exception:
-        pass
-    return topics
-
-
 def generate_content(count=3):
     """Generate content tasks from topic templates."""
     import random
@@ -263,7 +180,7 @@ def generate_content(count=3):
     NUMS = ["3", "5", "7", "10"]
 
     # Get recent topics AND published post titles to avoid duplicates
-    existing = _fetch_existing_topics()
+    existing = fetch_existing_topics(API_URL, AUTH)
 
     created = 0
     for _ in range(count * 3):
@@ -273,7 +190,7 @@ def generate_content(count=3):
             tech=random.choice(TECHS), alt=random.choice(ALTS),
             domain=random.choice(DOMAINS), num=random.choice(NUMS),
         )
-        if _is_too_similar(topic, existing):
+        if is_too_similar(topic, existing):
             continue
         try:
             payload = json.dumps({"task_name": f"Blog post: {topic}", "topic": topic,
