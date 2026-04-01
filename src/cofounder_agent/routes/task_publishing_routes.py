@@ -61,6 +61,40 @@ async def _embed_published_post(db_service: DatabaseService, post_dict: dict) ->
         logger.warning("[RAG] Failed to embed published post (non-fatal): %s", e)
 
 
+async def _sync_published_post(post_id: str) -> None:
+    """Push a newly published post to the cloud Railway DB as a background task.
+
+    Non-blocking: if either database is unreachable, logs a warning
+    and returns silently so the publish flow is never interrupted.
+    Skipped entirely when LOCAL_DATABASE_URL is not set (Railway coordinator mode).
+    """
+    if not os.getenv("LOCAL_DATABASE_URL"):
+        logger.debug("[SYNC] Skipping post sync: LOCAL_DATABASE_URL not set (coordinator mode)")
+        return
+
+    try:
+        from services.sync_service import SyncService
+
+        async with SyncService() as sync:
+            ok = await sync.push_post(post_id)
+            if ok:
+                logger.info("[SYNC] Pushed published post to cloud DB: %s", post_id)
+            else:
+                logger.warning("[SYNC] push_post returned False for post %s", post_id)
+    except Exception as e:
+        logger.warning("[SYNC] Failed to sync published post (non-fatal): %s", e)
+
+
+def _should_run_post_publish_hooks() -> bool:
+    """Return True if post-publish hooks (sync + embed) should run.
+
+    They require LOCAL_DATABASE_URL to be set, meaning we are on the
+    local workstation with the brain DB. On Railway (coordinator mode)
+    LOCAL_DATABASE_URL is absent and hooks are silently skipped.
+    """
+    return bool(os.getenv("LOCAL_DATABASE_URL"))
+
+
 # ============================================================================
 # CONTENT CLEANING UTILITIES
 # ============================================================================
@@ -395,6 +429,19 @@ async def approve_task(
                             })
                         except Exception:
                             logger.debug("[WEBHOOK] Failed to emit post.published event", exc_info=True)
+
+                        # Fire-and-forget sync + embed (no BackgroundTasks available in approve)
+                        if _should_run_post_publish_hooks():
+                            _auto_pub_post_id = merged_result.get("post_id", "")
+                            _auto_pub_post_dict = {
+                                "id": _auto_pub_post_id,
+                                "title": post_title,
+                                "excerpt": seo_description,
+                                "content": post_content,
+                            }
+                            asyncio.ensure_future(_sync_published_post(_auto_pub_post_id))
+                            asyncio.ensure_future(_embed_published_post(db_service, _auto_pub_post_dict))
+                            logger.info("[AUTO-PUBLISH] Queued sync + embed for post %s", _auto_pub_post_id)
                     else:
                         logger.warning("⚠️  Skipping post creation: missing content or topic")
                 except (ValueError, KeyError, TypeError) as e:
@@ -671,6 +718,18 @@ async def publish_task(
                     })
                 except Exception:
                     logger.debug("[WEBHOOK] Failed to emit post.published event", exc_info=True)
+
+                # Queue sync + embed as fire-and-forget background tasks
+                if _should_run_post_publish_hooks() and background_tasks:
+                    post_dict_for_embed = {
+                        "id": post_id_val,
+                        "title": post_title,
+                        "excerpt": seo_description,
+                        "content": post_content,
+                    }
+                    background_tasks.add_task(_sync_published_post, post_id_val)
+                    background_tasks.add_task(_embed_published_post, db_service, post_dict_for_embed)
+                    logger.info("[PUBLISH] Queued sync + embed background tasks for post %s", post_id_val)
             else:
                 logger.warning("⚠️  Skipping post creation: missing content or topic")
         except Exception as e:
