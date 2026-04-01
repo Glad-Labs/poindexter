@@ -480,6 +480,88 @@ class OllamaClient:
             raise
 
 
+    # ========================================================================
+    # Embeddings
+    # ========================================================================
+
+    async def embed(self, text: str, model: str = "nomic-embed-text") -> list[float]:
+        """Generate embedding vector for a single text.
+
+        Args:
+            text: The text to embed.
+            model: Embedding model name (default: nomic-embed-text).
+
+        Returns:
+            Embedding vector as list of floats.
+        """
+        try:
+            response = await self.client.post(
+                f"{self.base_url}/api/embed",
+                json={"model": model, "input": text},
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            result = response.json()
+
+            embeddings = result.get("embeddings", [])
+            if not embeddings:
+                raise OllamaError("No embeddings returned from Ollama")
+
+            logger.info(
+                "Ollama embedding complete",
+                model=model,
+                dimensions=len(embeddings[0]),
+            )
+            return embeddings[0]
+
+        except httpx.HTTPError as e:
+            logger.error(f"[embed] Ollama embedding failed: {e}", exc_info=True, model=model)
+            raise
+
+    async def embed_batch(
+        self, texts: list[str], model: str = "nomic-embed-text"
+    ) -> list[list[float]]:
+        """Generate embedding vectors for multiple texts.
+
+        Args:
+            texts: List of texts to embed.
+            model: Embedding model name (default: nomic-embed-text).
+
+        Returns:
+            List of embedding vectors.
+        """
+        try:
+            response = await self.client.post(
+                f"{self.base_url}/api/embed",
+                json={"model": model, "input": texts},
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            result = response.json()
+
+            embeddings = result.get("embeddings", [])
+            if len(embeddings) != len(texts):
+                raise OllamaError(
+                    f"Expected {len(texts)} embeddings, got {len(embeddings)}"
+                )
+
+            logger.info(
+                "Ollama batch embedding complete",
+                model=model,
+                count=len(embeddings),
+                dimensions=len(embeddings[0]) if embeddings else 0,
+            )
+            return embeddings
+
+        except httpx.HTTPError as e:
+            logger.error(
+                f"[embed_batch] Ollama batch embedding failed: {e}",
+                exc_info=True,
+                model=model,
+            )
+            raise
+
+
 # Initialize function for easy integration
 async def initialize_ollama_client(
     base_url: str | None = None, model: str | None = None
