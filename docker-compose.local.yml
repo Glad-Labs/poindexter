@@ -1,0 +1,45 @@
+# Local brain infrastructure — pgvector + Grafana
+# Start: docker compose -f docker-compose.local.yml up -d
+
+services:
+  postgres-local:
+    image: pgvector/pgvector:pg16
+    container_name: gladlabs-postgres-local
+    restart: unless-stopped
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: gladlabs_brain
+      POSTGRES_USER: gladlabs
+      POSTGRES_PASSWORD: gladlabs-brain-local
+    volumes:
+      - postgres-local-data:/var/lib/postgresql/data
+      - ./infrastructure/local-db/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gladlabs"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: gladlabs-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: gladlabs
+      GF_INSTALL_PLUGINS: grafana-clock-panel
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+
+volumes:
+  postgres-local-data:
+    name: gladlabs-postgres-local-data
+  grafana-data:
+    name: gladlabs-grafana-data

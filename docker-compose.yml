@@ -43,6 +43,51 @@ services:
       retries: 5
 
   # ===========================================
+  # Local PostgreSQL + pgvector — brain + ops
+  # ===========================================
+  # The brain's database: tasks, cost logs, brain knowledge,
+  # training data, embeddings, and all operational state.
+  # Also serves local Grafana dashboards via Tailscale.
+  postgres-local:
+    image: pgvector/pgvector:pg16
+    container_name: gladlabs-postgres-local
+    restart: unless-stopped
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: ${LOCAL_POSTGRES_DB:-gladlabs_brain}
+      POSTGRES_USER: ${LOCAL_POSTGRES_USER:-gladlabs}
+      POSTGRES_PASSWORD: ${LOCAL_POSTGRES_PASSWORD:-gladlabs-brain-local}
+    volumes:
+      - postgres-local-data:/var/lib/postgresql/data
+      - ./infrastructure/local-db/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${LOCAL_POSTGRES_USER:-gladlabs}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ===========================================
+  # Grafana — local dashboards (Tailscale)
+  # ===========================================
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: gladlabs-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-gladlabs}
+      GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+
+  # ===========================================
   # FastAPI — content pipeline + API + admin
   # ===========================================
   cofounder:
@@ -119,3 +164,7 @@ services:
 volumes:
   postgres-data:
     name: gladlabs-postgres-data
+  postgres-local-data:
+    name: gladlabs-postgres-local-data
+  grafana-data:
+    name: gladlabs-grafana-data
