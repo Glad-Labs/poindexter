@@ -127,10 +127,8 @@ def get_cpu_power_metrics():
         lines.append("# TYPE system_cpu_package_power_watts gauge")
         lines.append(f"system_cpu_package_power_watts {pkg_power}")
 
-        if core_lines:
-            lines.append("# HELP system_cpu_core_power_watts Per-core CPU power draw (AMD RAPL)")
-            lines.append("# TYPE system_cpu_core_power_watts gauge")
-            lines.extend(core_lines)
+        # Per-core power dropped to reduce metric series count (Grafana free tier)
+        # Package total is sufficient for monitoring
 
         return "\n".join(lines) + "\n"
     except Exception as e:
@@ -246,6 +244,17 @@ def get_aida64_metrics():
     seen_metrics = set()
     psu_total_power = None
 
+    # Only export important sensors to stay within Grafana Cloud free tier limits.
+    # Skip: sys sensors (clocks, dates — not useful), most voltages, per-pin GPU power.
+    # Keep: temps, fan RPMs, total power, duty cycles, PSU data.
+    SKIP_SENSORS = {
+        "syear", "smonth", "sdayofmonth", "sdow", "sweekofyear",
+        "shour12", "shour24", "smin", "ssec",  # date/time — useless
+        "scpumul",  # CPU multiplier — not needed
+    }
+    # Skip per-pin GPU power (6 pins), keep total GPU power
+    SKIP_PREFIXES = ("scc_1_", "vgpu1p", "pgpu1p")  # per-core clocks, per-pin voltage/power
+
     for match in pattern.finditer(raw):
         sensor_type, sensor_id, label, val_str = match.groups()
 
@@ -257,16 +266,16 @@ def get_aida64_metrics():
         safe_id = re.sub(r"[^a-zA-Z0-9_]", "_", sensor_id).lower()
         safe_label = label.replace('"', '\\"')
 
+        # Skip unimportant sensors
+        if sensor_id.lower() in SKIP_SENSORS:
+            continue
+        if any(safe_id.startswith(p) for p in SKIP_PREFIXES):
+            continue
+        # Skip all sys sensors (clocks, utilization — duplicated by nvidia-smi/RAPL)
         if sensor_type == "sys":
-            # System sensors — selective export of numeric values
-            # Skip date/time/string-only values
-            metric = "aida64_system"
-            if metric not in seen_metrics:
-                seen_metrics.add(metric)
-                lines.append(f"# HELP {metric} System sensors from AIDA64")
-                lines.append(f"# TYPE {metric} gauge")
-            lines.append(f'{metric}{{sensor="{safe_id}",label="{safe_label}"}} {value}')
-        elif sensor_type in type_map:
+            continue
+
+        if sensor_type in type_map:
             metric, help_text = type_map[sensor_type]
             if metric not in seen_metrics:
                 seen_metrics.add(metric)
