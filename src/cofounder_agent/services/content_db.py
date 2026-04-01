@@ -592,6 +592,16 @@ class ContentDatabase(DatabaseServiceMixin):
                     quality_score, success, tags, created_at, source_agent
                 )
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), $9)
+                ON CONFLICT (execution_id) DO UPDATE SET
+                    user_request = EXCLUDED.user_request,
+                    intent = EXCLUDED.intent,
+                    business_state = EXCLUDED.business_state,
+                    execution_result = EXCLUDED.execution_result,
+                    quality_score = EXCLUDED.quality_score,
+                    success = EXCLUDED.success,
+                    tags = EXCLUDED.tags,
+                    created_at = NOW(),
+                    source_agent = EXCLUDED.source_agent
                 RETURNING *
             """
             params = [
@@ -613,7 +623,7 @@ class ContentDatabase(DatabaseServiceMixin):
 
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(sql, *params)
-                logger.info(f"✅ Created orchestrator_training_data: {train_data['execution_id']}")
+                logger.info(f"✅ Upserted orchestrator_training_data: {train_data['execution_id']}")
                 return ModelConverter.to_orchestrator_training_data_response(row)
         except Exception as e:
             logger.error(

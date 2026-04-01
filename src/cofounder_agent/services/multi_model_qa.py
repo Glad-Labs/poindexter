@@ -46,6 +46,7 @@ class MultiModelResult:
     final_score: float
     reviews: List[ReviewerResult] = field(default_factory=list)
     validation: Optional[ValidationResult] = None
+    cost_log: Optional[dict] = None
 
     @property
     def summary(self) -> str:
@@ -126,15 +127,17 @@ class MultiModelQA:
         critic_model = None
         if self.settings:
             critic_model = await self.settings.get("pipeline_critic_model")
-        cross_review = await self._review_with_cloud_model(title, content, topic, model_override=critic_model)
-        if cross_review:
+        qa_cost_log = None
+        cross_result = await self._review_with_cloud_model(title, content, topic, model_override=critic_model)
+        if cross_result:
+            cross_review, qa_cost_log = cross_result
             reviews.append(cross_review)
 
         # 3. Aggregate scores
         scored_reviews = [r for r in reviews if r.score > 0]
         if scored_reviews:
             # Weighted: programmatic validator gets 40%, cloud reviewer gets 60%
-            weights = {"programmatic": 0.4, "anthropic": 0.6, "google": 0.6, "ollama": 0.3}
+            weights = {"programmatic": 0.4, "anthropic": 0.6, "google": 0.6, "ollama": 0.6}
             total_weight = sum(weights.get(r.provider, 0.5) for r in scored_reviews)
             final_score = sum(
                 r.score * weights.get(r.provider, 0.5) for r in scored_reviews
@@ -151,6 +154,7 @@ class MultiModelQA:
             final_score=final_score,
             reviews=reviews,
             validation=validation,
+            cost_log=qa_cost_log,
         )
 
         logger.info("[MULTI_QA] %s — %s", title[:50], result.summary.split("\n")[0])
@@ -158,11 +162,108 @@ class MultiModelQA:
 
     async def _review_with_cloud_model(
         self, title: str, content: str, topic: str, model_override: Optional[str] = None,
-    ) -> Optional[ReviewerResult]:
-        """Review content using Gemini Flash (cheap, $1K credit, GCP metrics).
+    ):
+        """Review content using local Ollama first, falling back to Gemini Flash.
 
-        Strategy: Use Google Gemini for API work, keep Anthropic for development.
-        Gemini Flash is 10x cheaper than Haiku and gives full GCP billing visibility.
+        Strategy: Try Ollama (free, local) first. If Ollama is unavailable or fails,
+        fall back to Gemini Flash as a paid backup.
+        """
+        # Try Ollama first (free, fast, local)
+        ollama_result = await self._review_with_ollama(title, content, topic, model_override)
+        if ollama_result is not None:
+            return ollama_result
+
+        # Fall back to Gemini if Ollama is unavailable
+        logger.info("[MULTI_QA] Ollama unavailable, falling back to Gemini")
+        return await self._review_with_gemini(title, content, topic, model_override)
+
+    async def _review_with_ollama(
+        self, title: str, content: str, topic: str, model_override: Optional[str] = None,
+    ) -> Optional[ReviewerResult]:
+        """Review content using local Ollama (zero cost).
+
+        Uses gemma3:27b by default — strong at structured JSON output.
+        """
+        import json
+        import re
+
+        try:
+            from services.ollama_client import OllamaClient
+
+            client = OllamaClient()
+            if not await client.check_health():
+                logger.debug("[MULTI_QA] Ollama not available, skipping local review")
+                await client.close()
+                return None
+
+            prompt = QA_PROMPT.format(
+                title=title,
+                topic=topic or title,
+                content=content[:8000],
+            )
+
+            # Use gemma3:27b for QA — good at structured output
+            ollama_model = model_override or "gemma3:27b"
+            result = await client.generate(
+                prompt=prompt,
+                model=ollama_model,
+                temperature=0.3,
+                max_tokens=300,
+            )
+            await client.close()
+
+            text = result.get("text", "")
+            if not text:
+                logger.warning("[MULTI_QA] Ollama returned empty response")
+                return None
+
+            # Parse JSON response
+            json_match = text
+            if "```" in text:
+                match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+                if match:
+                    json_match = match.group(1)
+
+            try:
+                data = json.loads(json_match)
+            except json.JSONDecodeError:
+                match = re.search(r"\{[^{}]*\"approved\"[^{}]*\}", text)
+                if match:
+                    data = json.loads(match.group(0))
+                else:
+                    logger.warning("[MULTI_QA] Ollama response was not valid JSON: %s", text[:200])
+                    return None
+
+            cost_log = {
+                "provider": "ollama", "model": ollama_model,
+                "input_tokens": result.get("prompt_tokens", 0),
+                "output_tokens": result.get("tokens", 0),
+                "cost_usd": 0.0, "phase": "qa_review",
+            }
+            logger.info(
+                "[MULTI_QA] Ollama QA complete (free): model=%s, tokens=%d",
+                ollama_model, result.get("tokens", 0),
+            )
+
+            review = ReviewerResult(
+                reviewer="ollama_critic",
+                approved=data.get("approved", False),
+                score=float(data.get("quality_score", 0)),
+                feedback=data.get("feedback", "No feedback"),
+                provider="ollama",
+            )
+            return review, cost_log
+
+        except Exception as e:
+            logger.warning("[MULTI_QA] Ollama review failed (non-critical): %s", e)
+            return None
+
+    async def _review_with_gemini(
+        self, title: str, content: str, topic: str, model_override: Optional[str] = None,
+    ) -> Optional[ReviewerResult]:
+        """Review content using Gemini Flash (paid fallback).
+
+        Only called when Ollama is unavailable.
         """
         import json
         import os
@@ -210,21 +311,28 @@ class MultiModelQA:
                 else:
                     return None
 
-            # Log cost for tracking
+            # Track cost from usage metadata
+            cost_log = None
             usage = getattr(response, "usage_metadata", None)
             if usage:
                 in_tok = getattr(usage, "prompt_token_count", 0) or 0
                 out_tok = getattr(usage, "candidates_token_count", 0) or 0
                 cost = in_tok / 1000 * 0.0001 + out_tok / 1000 * 0.0004
+                cost_log = {
+                    "provider": "google", "model": model_name,
+                    "input_tokens": in_tok, "output_tokens": out_tok,
+                    "cost_usd": round(cost, 6), "phase": "qa_review",
+                }
                 logger.info("[MULTI_QA] Gemini cost: $%.4f (%d in + %d out)", cost, in_tok, out_tok)
 
-            return ReviewerResult(
+            result = ReviewerResult(
                 reviewer="gemini_critic",
                 approved=data.get("approved", False),
                 score=float(data.get("quality_score", 0)),
                 feedback=data.get("feedback", "No feedback"),
                 provider="google",
             )
+            return result, cost_log
 
         except ImportError:
             logger.debug("[MULTI_QA] google-genai not installed")

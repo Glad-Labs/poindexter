@@ -1158,6 +1158,15 @@ async def process_content_generation_task(
              "feedback": r.feedback, "provider": r.provider}
             for r in _qa_result.reviews
         ]
+        # Log QA review cost to database
+        if _qa_result.cost_log and database_service:
+            try:
+                _qa_result.cost_log["task_id"] = task_id
+                await database_service.log_cost(_qa_result.cost_log)
+                logger.info("💰 QA cost logged: $%.4f (%s/%s)", _qa_result.cost_log["cost_usd"], _qa_result.cost_log["provider"], _qa_result.cost_log["model"])
+            except Exception as e:
+                logger.debug("QA cost logging failed (non-critical): %s", e)
+
         if not _qa_result.approved:
             logger.warning(
                 "[MULTI_QA] Content rejected for task %s:\n%s",
