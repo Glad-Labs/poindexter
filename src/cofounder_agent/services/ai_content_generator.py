@@ -540,6 +540,19 @@ class AIContentGenerator:
                 logger.error(f"Failed to extract text from Gemini response: {e}", exc_info=True)
                 generated_content = ""
 
+            # Track cost from Gemini usage metadata
+            usage_meta = getattr(response, "usage_metadata", None)
+            if usage_meta:
+                input_tokens = getattr(usage_meta, "prompt_token_count", 0) or 0
+                output_tokens = getattr(usage_meta, "candidates_token_count", 0) or 0
+                cost_usd = input_tokens / 1000 * 0.0001 + output_tokens / 1000 * 0.0004
+                metrics["cost_log"] = {
+                    "provider": "google", "model": model_name,
+                    "input_tokens": input_tokens, "output_tokens": output_tokens,
+                    "cost_usd": round(cost_usd, 6), "phase": "content_generation",
+                }
+                logger.info("💰 Gemini cost: $%.4f (%d in + %d out tokens)", cost_usd, input_tokens, output_tokens)
+
             if generated_content and len(generated_content) > 100:
                 validation = self._validate_content(generated_content, topic, target_length)
 
