@@ -953,21 +953,21 @@ async def _stage_capture_training_data(
         await database_service.create_orchestrator_training_data(
             {
                 "execution_id": task_id,
-            "user_request": f"Generate blog post on: {topic}",
-            "intent": "content_generation",
-            "business_state": {
-                "topic": topic,
-                "style": style,
-                "tone": tone,
-                "featured_image": featured_image is not None,
-            },
-            "execution_result": "success",
-            "quality_score": quality_result.overall_score / 10,
-            "success": quality_result.passing,
-            "tags": tags or [],
-            "source_agent": "content_router_service",
-        }
-    )
+                "user_request": f"Generate blog post on: {topic}",
+                "intent": "content_generation",
+                "business_state": {
+                    "topic": topic,
+                    "style": style,
+                    "tone": tone,
+                    "featured_image": featured_image is not None,
+                },
+                "execution_result": "success",
+                "quality_score": quality_result.overall_score / 10,
+                "success": quality_result.passing,
+                "tags": tags or [],
+                "source_agent": "content_router_service",
+            }
+        )
     except Exception as _td_err:
         logger.debug("Training data insert skipped (likely re-processed task): %s", _td_err)
 
