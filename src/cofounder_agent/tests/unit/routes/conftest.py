@@ -12,6 +12,8 @@ This keeps tests fast and deterministic — no real DB or LLM calls.
 import os
 from unittest.mock import AsyncMock
 
+import pytest
+
 # Set OPERATOR_ID to match test fixtures before any route module imports it.
 # This ensures ownership checks in routes (writing_style, workflows, etc.)
 # match the mock data created by tests.
@@ -49,3 +51,34 @@ def make_mock_db() -> AsyncMock:
     db.log_status_change = AsyncMock(return_value=None)
     db.create_post = AsyncMock(return_value={"id": "post-id-789"})
     return db
+
+
+# ---------------------------------------------------------------------------
+# Autouse: ensure OPERATOR_ID is correct in all route modules
+# ---------------------------------------------------------------------------
+# When the full test suite runs, other test files may import the route modules
+# before this conftest's os.environ.setdefault() takes effect, causing
+# OPERATOR_ID to resolve to the default "operator" instead of TEST_USER["id"].
+# This fixture patches OPERATOR_ID at the module level so ownership checks pass.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _patch_operator_id(monkeypatch):
+    """Force OPERATOR_ID to match TEST_USER in every route module that uses it."""
+    target_id = TEST_USER["id"]
+    monkeypatch.setattr("middleware.api_token_auth.OPERATOR_ID", target_id)
+    # Patch the cached module-level reference in each route module that
+    # does ``from middleware.api_token_auth import OPERATOR_ID``.
+    try:
+        import routes.writing_style_routes as ws_mod
+
+        monkeypatch.setattr(ws_mod, "OPERATOR_ID", target_id)
+    except ImportError:
+        pass
+    try:
+        import routes.workflow_history as wh_mod
+
+        monkeypatch.setattr(wh_mod, "OPERATOR_ID", target_id)
+    except ImportError:
+        pass
