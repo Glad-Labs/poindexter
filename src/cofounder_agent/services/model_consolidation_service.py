@@ -556,9 +556,9 @@ class ModelConsolidationService:
     FALLBACK_CHAIN = [
         ProviderType.OLLAMA,
         ProviderType.HUGGINGFACE,
-        ProviderType.GOOGLE,
         ProviderType.ANTHROPIC,
         ProviderType.OPENAI,
+        # Google/Gemini removed — using local Ollama instead
     ]
 
     def __init__(self):

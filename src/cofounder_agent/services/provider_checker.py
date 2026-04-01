@@ -114,14 +114,11 @@ class ProviderChecker:
         Get the preferred provider based on availability.
 
         Priority:
-        1. Gemini (reliable, good quality)
-        2. Ollama (free, local)
-        3. OpenAI (expensive)
-        4. Anthropic
-        5. HuggingFace (rate limited)
+        1. Ollama (free, local, preferred)
+        2. Anthropic (quality fallback)
+        3. OpenAI
+        4. HuggingFace (rate limited)
         """
-        if cls.is_gemini_available():
-            return "gemini"
         if cls.is_ollama_available():
             return "ollama"
         if cls.is_openai_available():

@@ -317,7 +317,7 @@ class AIContentGenerator:
 
         # Determine effective provider preference
         # When no provider specified, let the fallback chain handle it:
-        # Ollama → HuggingFace → Anthropic → Gemini → OpenAI → template
+        # Ollama → HuggingFace → Anthropic → OpenAI → template
         effective_provider = preferred_provider
         if not effective_provider:
             logger.info("📌 No provider specified, will try fallback chain (Ollama first)")
