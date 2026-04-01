@@ -15,15 +15,11 @@ Requires:
 """
 
 import asyncio
-import io
 import logging
 import os
-import struct
 import sys
 import tempfile
 import time
-import wave
-from datetime import datetime, timezone
 
 # pythonw.exe compatibility
 if sys.stdout is None:

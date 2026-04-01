@@ -88,7 +88,8 @@ def auto_publish():
             )
             data = json.loads(urllib.request.urlopen(req, timeout=10).read())
             tasks = data.get("tasks", [])
-        except Exception:
+        except Exception as _e:
+            logger.debug("API request failed: %s", _e)
             continue
 
         for t in tasks:
@@ -108,7 +109,7 @@ def auto_publish():
                     content = result.get("content", "")
                 if not content:
                     content = full.get("content", "")
-            except Exception:
+            except Exception as _e:
                 content = ""
                 full = {}
 
@@ -147,8 +148,8 @@ def auto_publish():
                     headers={"Authorization": AUTH}), timeout=10)
                 published += 1
                 logger.info("PUBLISHED: %s (QA: %.0f)", topic[:50], qa_score)
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.debug("Operation failed: %s", _e)
             time.sleep(0.3)
 
     if published or rejected or held:
@@ -283,8 +284,8 @@ def generate_content(count=3):
             created += 1
             existing.add(topic)
             logger.info("Created task: %s", topic[:60])
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.debug("Operation failed: %s", _e)
 
     return created
 
@@ -426,8 +427,8 @@ def main():
                     logger.warning("COST GUARD: Daily spend $%.2f >= $5.00 — skipping content gen", daily_spend)
                     last_generate = now
                     continue
-            except Exception:
-                pass  # If cost API unavailable, proceed with generation (Ollama is free)
+            except Exception as _e:
+                logger.debug("Operation failed: %s", _e)  # If cost API unavailable, proceed with generation (Ollama is free)
 
             try:
                 generate_content(3)

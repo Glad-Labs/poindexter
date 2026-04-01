@@ -12,7 +12,6 @@ Metrics:
   - psu_* — Corsair HXi PSU metrics (via liquidctl or AIDA64)
   - lm_sensors_* — Linux hardware sensors (temps, voltages, fans)
 """
-import mmap
 import re
 import subprocess
 import sys

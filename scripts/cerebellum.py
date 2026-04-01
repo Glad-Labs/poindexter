@@ -416,7 +416,9 @@ async def analyze_data_freshness(pool):
                 if latest:
                     from datetime import datetime, timezone
                     age_hours = (datetime.now(timezone.utc) - latest).total_seconds() / 3600
-                    is_stale = age_hours > max_hours_stale * 24 if max_hours_stale >= 1 else age_hours > max_hours_stale * 24
+                    # max_hours_stale is in days; convert to hours for comparison
+                    threshold_hours = max_hours_stale * 24
+                    is_stale = age_hours > threshold_hours
 
                     observations.append({
                         "entity": f"freshness.pipeline.{name}",
