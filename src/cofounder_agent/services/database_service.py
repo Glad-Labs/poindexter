@@ -24,6 +24,8 @@ from typing import Dict, List, Optional
 
 import asyncpg
 
+from config import get_config
+
 from .admin_db import AdminDatabase
 from .audit_log import AuditLogger, init_global_audit_logger
 from .content_db import ContentDatabase
@@ -103,7 +105,8 @@ class DatabaseService:
         """Initialize connection pool(s) and all delegate modules."""
         try:
             # PostgreSQL requires connection pooling
-            is_dev = os.getenv("ENVIRONMENT", "production").lower() in (
+            _config = get_config()
+            is_dev = _config.environment.lower() in (
                 "development",
                 "dev",
                 "local",

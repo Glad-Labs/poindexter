@@ -158,7 +158,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         logger.info("[LIFESPAN] ✅ Services registered in global DI container")
 
         # Branch startup behaviour based on deployment mode
-        deployment_mode = os.getenv("DEPLOYMENT_MODE", "coordinator")
+        deployment_mode = _deployment_mode
         logger.info(f"[LIFESPAN] Deployment mode: {deployment_mode}")
 
         if deployment_mode == "worker":
@@ -351,10 +351,9 @@ middleware_config.register_all_middleware(app)
 
 # ===== ROUTE REGISTRATION =====
 # Register API routes based on deployment mode (coordinator or worker)
-deployment_mode = os.getenv("DEPLOYMENT_MODE", "coordinator")
-logger.info("[STARTUP] Registering routes for deployment mode: %s", deployment_mode)
-register_all_routes(app, deployment_mode=deployment_mode)
-logger.info("[STARTUP] ✅ Routes registered (mode=%s)", deployment_mode)
+logger.info("[STARTUP] Registering routes for deployment mode: %s", _deployment_mode)
+register_all_routes(app, deployment_mode=_deployment_mode)
+logger.info("[STARTUP] ✅ Routes registered (mode=%s)", _deployment_mode)
 
 # ===== UNIFIED HEALTH CHECK ENDPOINT =====
 # Consolidated from: /api/health, /status, /metrics/health, and route-specific health endpoints

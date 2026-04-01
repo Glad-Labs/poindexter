@@ -224,9 +224,13 @@ async def diagnose_connection_issues() -> Dict[str, Any]:
         diagnostics["issues"].append("DATABASE_URL environment variable not set")
         diagnostics["recommendations"].append("Set DATABASE_URL environment variable")
 
-    # Check pool configuration
-    pool_min = os.getenv("DATABASE_POOL_MIN_SIZE", "20")
-    pool_max = os.getenv("DATABASE_POOL_MAX_SIZE", "50")
+    # Check pool configuration — defaults must match database_service.py
+    from config import get_config
+
+    _config = get_config()
+    _is_dev = _config.environment.lower() in ("development", "dev", "local")
+    pool_min = os.getenv("DATABASE_POOL_MIN_SIZE", "5" if _is_dev else "20")
+    pool_max = os.getenv("DATABASE_POOL_MAX_SIZE", "20" if _is_dev else "50")
 
     try:
         pool_min_val = int(pool_min)
