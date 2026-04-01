@@ -315,7 +315,7 @@ def main():
     last_generate = 0
     last_opportunistic = 0
 
-    while True:
+    while not _shutdown:
         now = time.time()
 
         # Auto-publish check
@@ -366,6 +366,20 @@ def main():
 
         time.sleep(60)  # Check every minute
 
+    logger.info("Daemon shutting down")
+
+
+_shutdown = False
+
+
+def _handle_signal(signum, frame):
+    global _shutdown
+    logger.info("Shutdown signal received (signal %d)", signum)
+    _shutdown = True
+
 
 if __name__ == "__main__":
+    import signal as _signal
+    _signal.signal(_signal.SIGINT, _handle_signal)
+    _signal.signal(_signal.SIGTERM, _handle_signal)
     main()
