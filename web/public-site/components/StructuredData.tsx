@@ -19,7 +19,7 @@ export function BreadcrumbSchema({
       '@type': 'ListItem',
       position: index + 1,
       name: item.label,
-      item: `https://glad-labs.com${item.url}`,
+      item: `https://www.gladlabs.io${item.url}`,
     })),
   };
 
@@ -72,8 +72,8 @@ export function OrganizationSchema() {
     name: 'Glad Labs',
     description:
       'AI and digital innovation research organization focused on autonomous intelligence',
-    url: 'https://glad-labs.com',
-    logo: 'https://glad-labs.com/og-image.jpg',
+    url: 'https://www.gladlabs.io',
+    logo: 'https://www.gladlabs.io/og-image.jpg',
     sameAs: [
       'https://twitter.com/GladLabsAI',
       'https://linkedin.com/company/glad-labs',
@@ -130,7 +130,7 @@ export function BlogPostingSchema({
       name: 'Glad Labs',
       logo: {
         '@type': 'ImageObject',
-        url: 'https://glad-labs.com/og-image.jpg',
+        url: 'https://www.gladlabs.io/og-image.jpg',
         width: 1200,
         height: 630,
       },
@@ -175,7 +175,7 @@ export function NewsArticleSchema({
       name: 'Glad Labs',
       logo: {
         '@type': 'ImageObject',
-        url: 'https://glad-labs.com/og-image.jpg',
+        url: 'https://www.gladlabs.io/og-image.jpg',
         width: 1200,
         height: 630,
       },

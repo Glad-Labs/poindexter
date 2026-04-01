@@ -81,7 +81,7 @@ describe('BreadcrumbSchema', () => {
     );
     const schema = parseSchema(container);
     expect(schema.itemListElement[0].item).toContain('/blog');
-    expect(schema.itemListElement[0].item).toContain('glad-labs.com');
+    expect(schema.itemListElement[0].item).toContain('www.gladlabs.io');
   });
 
   test('item names match labels', () => {
@@ -173,9 +173,9 @@ describe('OrganizationSchema', () => {
     expect(parseSchema(container).name).toBe('Glad Labs');
   });
 
-  test('url is https://glad-labs.com', () => {
+  test('url is https://www.gladlabs.io', () => {
     const { container } = render(<OrganizationSchema />);
-    expect(parseSchema(container).url).toBe('https://glad-labs.com');
+    expect(parseSchema(container).url).toBe('https://www.gladlabs.io');
   });
 
   test('sameAs is an array with social profiles', () => {
@@ -201,7 +201,7 @@ describe('BlogPostingSchema', () => {
   const props = {
     headline: 'AI in 2026',
     description: 'A look at AI trends.',
-    image: 'https://glad-labs.com/ai.jpg',
+    image: 'https://www.gladlabs.io/ai.jpg',
     datePublished: '2026-03-01',
     dateModified: '2026-03-05',
     author: 'Test Author',
@@ -285,7 +285,7 @@ describe('NewsArticleSchema', () => {
   const props = {
     headline: 'Breaking AI News',
     description: 'Latest developments.',
-    image: 'https://glad-labs.com/news.jpg',
+    image: 'https://www.gladlabs.io/news.jpg',
     datePublished: '2026-03-10',
   };
 

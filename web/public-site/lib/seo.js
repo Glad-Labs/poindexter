@@ -41,19 +41,26 @@ export function buildSEOTitle(
 /**
  * Generate canonical URL to prevent duplicate content issues
  */
-export function generateCanonicalURL(slug, baseURL = 'https://glad-labs.com') {
+export function generateCanonicalURL(
+  slug,
+  baseURL = 'https://www.gladlabs.io'
+) {
   if (!slug) return baseURL;
 
   // Ensure slug doesn't have leading/trailing slashes
   const cleanSlug = slug.replace(/^\/+|\/+$/g, '');
 
-  return `${baseURL}/${cleanSlug}`;
+  // Add /posts/ prefix if the slug is a bare post slug (no path prefix)
+  const hasPathPrefix = cleanSlug.includes('/');
+  const path = hasPathPrefix ? cleanSlug : `posts/${cleanSlug}`;
+
+  return `${baseURL}/${path}`;
 }
 
 /**
  * Generate Open Graph meta tags object
  */
-export function generateOGTags(post, baseURL = 'https://glad-labs.com') {
+export function generateOGTags(post, baseURL = 'https://www.gladlabs.io') {
   if (!post) return {};
 
   const { title, excerpt, slug, coverImage } = post;
@@ -79,7 +86,7 @@ export function generateOGTags(post, baseURL = 'https://glad-labs.com') {
 export function generateTwitterTags(
   post,
   twitterHandle = '@GladLabsAI',
-  baseURL = 'https://glad-labs.com'
+  baseURL = 'https://www.gladlabs.io'
 ) {
   if (!post) return {};
 
@@ -130,7 +137,7 @@ export function generateRobotsTag(options = {}) {
 export function generateHrefLangTags(
   slug,
   languages = ['en'],
-  baseURL = 'https://glad-labs.com'
+  baseURL = 'https://www.gladlabs.io'
 ) {
   return languages.map((lang) => ({
     rel: 'alternate',
@@ -234,7 +241,7 @@ export function generateDNSPrefetchLink(url) {
  */
 export function buildPostSEO(post, options = {}) {
   const {
-    baseURL = 'https://glad-labs.com',
+    baseURL = 'https://www.gladlabs.io',
     siteName = 'Glad Labs',
     twitterHandle = '@GladLabsAI',
   } = options;

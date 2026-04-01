@@ -327,6 +327,9 @@ const nextConfig = {
   // Trailing slashes (set to false for clean URLs)
   trailingSlash: false,
 
+  // Hide X-Powered-By header for security
+  poweredByHeader: false,
+
   // React strict mode enabled — catches data mutation bugs and unsafe lifecycle patterns.
   // Double-render warnings should be fixed, not suppressed globally.
   reactStrictMode: true,

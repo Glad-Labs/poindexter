@@ -130,7 +130,7 @@ export default function NotFound() {
               </Link>
               <span className="text-gray-600">•</span>
               <a
-                href="https://www.glad-labs.com"
+                href="https://www.gladlabs.io"
                 className="text-cyan-400 hover:text-cyan-300 underline"
               >
                 Glad Labs Main Site
@@ -146,7 +146,7 @@ export default function NotFound() {
           <p>
             If you believe this is an error, please{' '}
             <a
-              href="mailto:hello@glad-labs.com"
+              href="mailto:hello@gladlabs.io"
               className="text-cyan-400 hover:text-cyan-300"
             >
               contact us

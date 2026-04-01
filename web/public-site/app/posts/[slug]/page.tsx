@@ -24,7 +24,7 @@ const API_BASE =
   process.env.NEXT_PUBLIC_FASTAPI_URL ||
   'http://localhost:8000';
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://glad-labs.com';
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.gladlabs.io';
 
 // #945: Bounded generateStaticParams — pre-generate recent post pages at build time
 // for faster first-hit latency and better SEO indexing. Long-tail slugs still
@@ -133,8 +133,12 @@ export async function generateMetadata({
     title: buildSEOTitle(title),
     description: buildMetaDescription(description),
     keywords: post.seo_keywords
-      ? post.seo_keywords.split(',').map((k) => k.trim())
-      : [],
+      ? String(post.seo_keywords)
+          .split(',')
+          .map((k) => k.trim())
+          .filter((k) => k.length > 0)
+          .join(', ')
+      : undefined,
     alternates: {
       canonical: canonicalUrl,
     },
@@ -177,11 +181,30 @@ export default async function PostPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const post = await getPost(slug);
+
+  // Fetch main post and related posts in parallel to avoid waterfall
+  const [post, relatedPostsRaw] = await Promise.all([
+    getPost(slug),
+    fetch(`${API_BASE}/api/posts?offset=0&limit=4&published_only=true`, {
+      next: { revalidate: 3600 },
+    })
+      .then(async (relRes) => {
+        if (!relRes.ok) return [];
+        const relData = await relRes.json();
+        return relData.posts || relData.data || [];
+      })
+      .catch(() => [] as Post[]),
+  ]);
 
   if (!post) {
     notFound();
   }
+
+  const relatedPosts: Post[] = (
+    Array.isArray(relatedPostsRaw) ? relatedPostsRaw : []
+  )
+    .filter((p: Post) => p.slug !== post.slug)
+    .slice(0, 3);
 
   const imageUrl = post.cover_image_url || post.featured_image_url;
   const publishDate = post.published_at || post.created_at;
@@ -232,22 +255,6 @@ export default async function PostPage({
       return `<h${level}${attrs} id="${id}">${text}</h${level}>`;
     }
   );
-
-  // Fetch related posts by category
-  let relatedPosts: Post[] = [];
-  try {
-    const relRes = await fetch(
-      `${API_BASE}/api/posts?offset=0&limit=4&published_only=true`,
-      { next: { revalidate: 3600 } }
-    );
-    if (relRes.ok) {
-      const relData = await relRes.json();
-      const allPosts = relData.posts || relData.data || [];
-      relatedPosts = allPosts
-        .filter((p: Post) => p.slug !== post.slug)
-        .slice(0, 3);
-    }
-  } catch {}
 
   const shareUrl = `${SITE_URL}/posts/${post.slug}`;
   const shareTitle = encodeURIComponent(post.title);

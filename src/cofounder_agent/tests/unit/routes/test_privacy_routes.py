@@ -13,13 +13,20 @@ All validation is inline.  Tests cover happy paths and error paths per Issue #60
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from routes.privacy_routes import router
+from utils.rate_limiter import limiter
 
 
 def _build_app() -> FastAPI:
     app = FastAPI()
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.include_router(router)
+    # Reset rate limiter storage so tests don't interfere with each other
+    limiter.reset()
     return app
 
 

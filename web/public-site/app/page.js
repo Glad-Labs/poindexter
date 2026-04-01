@@ -7,11 +7,23 @@ export const metadata = {
   title: 'Glad Labs - AI & Technology Insights',
   description:
     'Deep dives into AI, technology, and digital transformation. Explore our latest insights and expert analysis.',
+  alternates: {
+    canonical: 'https://www.gladlabs.io/',
+  },
   openGraph: {
     title: 'Glad Labs - AI & Technology Insights',
     description: 'Deep dives into AI, technology, and digital transformation',
     type: 'website',
     locale: 'en_US',
+    url: 'https://www.gladlabs.io/',
+    images: [
+      {
+        url: '/og-image.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'Glad Labs - AI & Technology Insights',
+      },
+    ],
   },
 };
 
@@ -42,9 +54,9 @@ async function getPosts() {
 
     try {
       const response = await fetch(url, {
-        // ISR: Revalidate every 5 minutes (300 seconds)
+        // ISR: Revalidate every 15 minutes (900 seconds)
         // On-demand revalidation via publish webhook triggers instant updates
-        next: { revalidate: 300 },
+        next: { revalidate: 900 },
         headers: {
           'Content-Type': 'application/json',
         },

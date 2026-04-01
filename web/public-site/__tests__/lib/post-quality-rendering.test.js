@@ -141,23 +141,23 @@ describe('generateCanonicalURL', () => {
   it('generates proper canonical URL from slug', () => {
     const url = generateCanonicalURL(FULL_POST.slug);
     expect(url).toBe(
-      'https://glad-labs.com/ai-powered-diagnostics-transform-healthcare'
+      'https://www.gladlabs.io/posts/ai-powered-diagnostics-transform-healthcare'
     );
   });
 
   it('strips leading/trailing slashes from slug', () => {
     const url = generateCanonicalURL('/my-post/');
-    expect(url).toBe('https://glad-labs.com/my-post');
+    expect(url).toBe('https://www.gladlabs.io/posts/my-post');
   });
 
   it('returns base URL for null slug', () => {
     const url = generateCanonicalURL(null);
-    expect(url).toBe('https://glad-labs.com');
+    expect(url).toBe('https://www.gladlabs.io');
   });
 
   it('supports custom base URL', () => {
     const url = generateCanonicalURL('my-post', 'https://custom-domain.com');
-    expect(url).toBe('https://custom-domain.com/my-post');
+    expect(url).toBe('https://custom-domain.com/posts/my-post');
   });
 });
 

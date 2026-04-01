@@ -96,7 +96,7 @@ describe('SEO Utility (lib/seo.js)', () => {
 
     it('should return base URL for empty slug', () => {
       const canonical = generateCanonicalURL('');
-      expect(canonical).toBe('https://glad-labs.com');
+      expect(canonical).toBe('https://www.gladlabs.io');
     });
   });
 

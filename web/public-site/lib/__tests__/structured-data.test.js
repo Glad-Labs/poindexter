@@ -24,7 +24,7 @@ jest.mock('../logger', () => ({
 // Mock api-fastapi to avoid real URL construction depending on env
 jest.mock('../api-fastapi', () => ({
   getImageURL: jest.fn((path) =>
-    path ? `https://api.glad-labs.com${path}` : null
+    path ? `https://api.www.gladlabs.io${path}` : null
   ),
 }));
 
@@ -41,7 +41,7 @@ import {
   validateSchema,
 } from '../structured-data';
 
-const SITE_URL = 'https://glad-labs.com';
+const SITE_URL = 'https://www.gladlabs.io';
 
 const SAMPLE_POST = {
   title: 'AI Trends in 2026',

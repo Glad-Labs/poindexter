@@ -63,7 +63,7 @@ jest.mock('@/lib/seo', () => ({
   buildMetaDescription: jest.fn((d) => d),
   buildSEOTitle: jest.fn((t) => t),
   generateCanonicalURL: jest.fn(
-    (slug) => `https://glad-labs.com/posts/${slug}`
+    (slug) => `https://www.gladlabs.io/posts/${slug}`
   ),
 }));
 

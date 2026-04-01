@@ -9,7 +9,7 @@ import { getImageURL } from './api-fastapi';
  */
 export function generateBlogPostingSchema(
   post,
-  siteUrl = 'https://glad-labs.com'
+  siteUrl = 'https://www.gladlabs.io'
 ) {
   if (!post) return null;
 
@@ -73,7 +73,7 @@ export function generateBlogPostingSchema(
  */
 export function generateNewsArticleSchema(
   post,
-  siteUrl = 'https://glad-labs.com'
+  siteUrl = 'https://www.gladlabs.io'
 ) {
   if (!post) return null;
 
@@ -108,7 +108,10 @@ export function generateNewsArticleSchema(
 /**
  * Generate JSON-LD for Article (generic, more flexible)
  */
-export function generateArticleSchema(post, siteUrl = 'https://glad-labs.com') {
+export function generateArticleSchema(
+  post,
+  siteUrl = 'https://www.gladlabs.io'
+) {
   if (!post) return null;
 
   const { title, excerpt, publishedAt, date, coverImage } = post;
@@ -139,7 +142,7 @@ export function generateArticleSchema(post, siteUrl = 'https://glad-labs.com') {
  */
 export function generateBreadcrumbSchema(
   items = [],
-  siteUrl = 'https://glad-labs.com'
+  siteUrl = 'https://www.gladlabs.io'
 ) {
   if (!Array.isArray(items) || items.length === 0) return null;
 
@@ -172,14 +175,14 @@ export function generateBreadcrumbSchema(
  * Usually included on homepage
  */
 export function generateOrganizationSchema(
-  siteUrl = 'https://glad-labs.com',
+  siteUrl = 'https://www.gladlabs.io',
   options = {}
 ) {
   const {
     name = 'Glad Labs',
     logo = `${siteUrl}/logo.png`,
     description = 'AI-powered content and business intelligence platform',
-    email = 'info@glad-labs.com',
+    email = 'info@gladlabs.io',
     phone = '',
     sameAs = [],
   } = options;
@@ -201,7 +204,7 @@ export function generateOrganizationSchema(
  * Generate JSON-LD WebSite schema with search action
  * Enables sitelinks search box in SERPs
  */
-export function generateWebsiteSchema(siteUrl = 'https://glad-labs.com') {
+export function generateWebsiteSchema(siteUrl = 'https://www.gladlabs.io') {
   return {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
