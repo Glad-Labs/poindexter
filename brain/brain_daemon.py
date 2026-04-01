@@ -24,6 +24,7 @@ import asyncio
 import json
 import logging
 import os
+import signal
 import subprocess
 import sys
 import urllib.error
@@ -49,17 +50,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("brain")
 
-# Read DB URL from OpenClaw workspace .env (standalone — no settings service)
+# Read DB URL from environment (set by Railway or local .env)
 DB_URL = os.getenv("DATABASE_URL", "")
-if not DB_URL:
-    env_path = os.path.join(os.path.expanduser("~"), ".openclaw", "workspace", ".env")
-    if os.path.exists(env_path):
-        for line in open(env_path):
-            # We need the public URL, not the internal Railway one
-            pass
-    # Fallback: hardcode the public URL structure
-    # The actual password comes from Railway — we read it at startup
-    pass
 
 # Telegram for alerts (direct bot API, no OpenClaw dependency)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
@@ -431,11 +423,26 @@ async def main():
     global TELEGRAM_BOT_TOKEN
     env_path = os.path.join(os.path.expanduser("~"), ".openclaw", "workspace", ".env")
     if os.path.exists(env_path) and not TELEGRAM_BOT_TOKEN:
-        for line in open(env_path):
-            if line.startswith("TELEGRAM_BOT_TOKEN="):
-                TELEGRAM_BOT_TOKEN = line.split("=", 1)[1].strip()
+        with open(env_path) as f:
+            for line in f:
+                if line.startswith("TELEGRAM_BOT_TOKEN="):
+                    TELEGRAM_BOT_TOKEN = line.split("=", 1)[1].strip()
 
-    while True:
+    shutdown = asyncio.Event()
+
+    def _signal_handler():
+        logger.info("[BRAIN] Shutdown signal received")
+        shutdown.set()
+
+    try:
+        loop = asyncio.get_event_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, _signal_handler)
+    except (NotImplementedError, AttributeError):
+        # Windows doesn't support add_signal_handler — use KeyboardInterrupt instead
+        pass
+
+    while not shutdown.is_set():
         try:
             await run_cycle(pool)
         except Exception as e:
@@ -444,10 +451,18 @@ async def main():
         if one_shot:
             break
 
-        await asyncio.sleep(CYCLE_SECONDS)
+        try:
+            await asyncio.wait_for(shutdown.wait(), timeout=CYCLE_SECONDS)
+        except asyncio.TimeoutError:
+            pass  # Normal — timeout means no shutdown signal, continue loop
 
+    logger.info("[BRAIN] Shutting down gracefully")
     await pool.close()
+    logger.info("[BRAIN] Pool closed, exiting")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logging.getLogger("brain").info("[BRAIN] Interrupted, exiting")
