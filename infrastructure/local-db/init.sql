@@ -32,5 +32,23 @@ CREATE INDEX IF NOT EXISTS idx_embeddings_hnsw ON embeddings
 CREATE INDEX IF NOT EXISTS idx_embeddings_source ON embeddings(source_table, source_id);
 CREATE INDEX IF NOT EXISTS idx_embeddings_model ON embeddings(embedding_model);
 
+-- =============================================
+-- Audit log table — pipeline event tracking
+-- =============================================
+CREATE TABLE IF NOT EXISTS audit_log (
+    id BIGSERIAL PRIMARY KEY,
+    timestamp TIMESTAMPTZ DEFAULT NOW(),
+    event_type VARCHAR(50) NOT NULL,
+    source VARCHAR(50) NOT NULL,
+    task_id VARCHAR(255),
+    details JSONB DEFAULT '{}'::jsonb,
+    severity VARCHAR(10) DEFAULT 'info'
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON audit_log(timestamp);
+CREATE INDEX IF NOT EXISTS idx_audit_log_event_type ON audit_log(event_type);
+CREATE INDEX IF NOT EXISTS idx_audit_log_task_id ON audit_log(task_id);
+CREATE INDEX IF NOT EXISTS idx_audit_log_severity ON audit_log(severity);
+
 -- Log successful initialization
-DO $$ BEGIN RAISE NOTICE 'pgvector + embeddings table initialized successfully'; END $$;
+DO $$ BEGIN RAISE NOTICE 'pgvector + embeddings + audit_log tables initialized successfully'; END $$;
