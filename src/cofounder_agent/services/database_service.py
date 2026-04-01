@@ -1,18 +1,21 @@
 """
 PostgreSQL Database Service Coordinator
 
-Orchestrates access to 5 specialized database modules:
+Orchestrates access to 6 specialized database modules:
 - UsersDatabase: User and OAuth operations
 - TasksDatabase: Task management and filtering
 - ContentDatabase: Posts, quality evaluations, metrics
 - AdminDatabase: Logging, financial tracking, settings, health
 - WritingStyleDatabase: Writing samples for RAG style matching
+- EmbeddingsDatabase: Vector embeddings for similarity search (pgvector)
 
-This maintains 100% backward compatibility while providing cleaner
-architecture and domain-specific separation of concerns.
+Supports dual database connections:
+- Cloud pool (self.pool): ContentDatabase, UsersDatabase, AdminDatabase
+- Local pool (self.local_pool): TasksDatabase, WritingStyleDatabase, EmbeddingsDatabase
+
+When LOCAL_DATABASE_URL is not set, self.local_pool = self.pool (backward compatible).
 
 All existing methods are delegated to appropriate modules.
-Connection pool is shared across all modules.
 """
 
 import logging
@@ -23,6 +26,7 @@ import asyncpg
 
 from .admin_db import AdminDatabase
 from .content_db import ContentDatabase
+from .embeddings_db import EmbeddingsDatabase
 from .tasks_db import TasksDatabase
 from .users_db import UsersDatabase
 from .writing_style_db import WritingStyleDatabase
@@ -34,24 +38,32 @@ class DatabaseService:
     """
     PostgreSQL database service coordinator.
 
-    Delegates to 5 specialized modules:
-    - self.users: User/OAuth operations
-    - self.tasks: Task management
-    - self.content: Posts/quality/metrics
-    - self.admin: Logging/financial/settings
-    - self.writing_style: Writing samples for style matching
+    Delegates to 6 specialized modules:
+    - self.users: User/OAuth operations (cloud pool)
+    - self.tasks: Task management (local pool)
+    - self.content: Posts/quality/metrics (cloud pool)
+    - self.admin: Logging/financial/settings (cloud pool)
+    - self.writing_style: Writing samples for style matching (local pool)
+    - self.embeddings: Vector embeddings for similarity search (local pool)
 
-    Maintains 100% backward compatibility with original DatabaseService.
-    All existing method calls still work via delegation.
+    Supports dual database connections via LOCAL_DATABASE_URL.
+    When LOCAL_DATABASE_URL is not set, local_pool = pool (backward compatible).
     """
 
-    def __init__(self, database_url: Optional[str] = None):
+    def __init__(
+        self,
+        database_url: Optional[str] = None,
+        local_database_url: Optional[str] = None,
+    ):
         """
         Initialize database service coordinator with asyncpg.
 
         Args:
-            database_url: PostgreSQL connection URL
+            database_url: PostgreSQL connection URL (cloud/primary)
                          Required: DATABASE_URL env var or passed explicitly
+            local_database_url: PostgreSQL connection URL (local brain DB)
+                               Optional: LOCAL_DATABASE_URL env var or passed explicitly
+                               When not set, local_pool = pool (backward compatible)
         """
         if database_url:
             self.database_url = database_url
@@ -65,9 +77,17 @@ class DatabaseService:
                 )
             self.database_url = database_url_env
 
+        # Local database URL (optional — falls back to primary pool when unset)
+        self.local_database_url = local_database_url or os.getenv("LOCAL_DATABASE_URL") or None
+
         logger.info(f"DatabaseService initialized with PostgreSQL: {self.database_url[:50]}...")
+        if self.local_database_url:
+            logger.info(
+                f"DatabaseService local pool configured: {self.local_database_url[:50]}..."
+            )
 
         self.pool = None
+        self.local_pool = None
 
         # Delegate modules will be initialized after pool is created
         self.users: Optional[UsersDatabase] = None
@@ -75,9 +95,10 @@ class DatabaseService:
         self.content: Optional[ContentDatabase] = None
         self.admin: Optional[AdminDatabase] = None
         self.writing_style: Optional[WritingStyleDatabase] = None
+        self.embeddings: Optional[EmbeddingsDatabase] = None
 
     async def initialize(self) -> None:
-        """Initialize connection pool and all delegate modules."""
+        """Initialize connection pool(s) and all delegate modules."""
         try:
             # PostgreSQL requires connection pooling
             is_dev = os.getenv("ENVIRONMENT", "production").lower() in (
@@ -99,22 +120,48 @@ class DatabaseService:
                 f"✅ Database pool initialized (size: {min_size}-{max_size}, query timeout: 30s)"
             )
 
-            # Initialize all delegate modules
+            # Create local pool if LOCAL_DATABASE_URL is configured, otherwise reuse primary
+            if self.local_database_url:
+                local_min = int(os.getenv("LOCAL_DATABASE_POOL_MIN_SIZE", "3" if is_dev else "5"))
+                local_max = int(os.getenv("LOCAL_DATABASE_POOL_MAX_SIZE", "10" if is_dev else "20"))
+                self.local_pool = await asyncpg.create_pool(
+                    self.local_database_url,
+                    min_size=local_min,
+                    max_size=local_max,
+                    timeout=30,
+                    command_timeout=30,
+                )
+                logger.info(
+                    f"✅ Local database pool initialized (size: {local_min}-{local_max})"
+                )
+            else:
+                self.local_pool = self.pool
+                logger.info("ℹ️  No LOCAL_DATABASE_URL — local_pool = pool (single-pool mode)")
+
+            # Initialize delegate modules routed to appropriate pools
+            # Cloud pool: users, content, admin
             self.users = UsersDatabase(self.pool)
-            self.tasks = TasksDatabase(self.pool)
             self.content = ContentDatabase(self.pool)
             self.admin = AdminDatabase(self.pool)
-            self.writing_style = WritingStyleDatabase(self.pool)
+
+            # Local pool: tasks, writing_style, embeddings
+            self.tasks = TasksDatabase(self.local_pool)
+            self.writing_style = WritingStyleDatabase(self.local_pool)
+            self.embeddings = EmbeddingsDatabase(self.local_pool)
 
             logger.info(
-                "✅ All database modules initialized (users, tasks, content, admin, writing_style)"
+                "✅ All database modules initialized "
+                "(users, tasks, content, admin, writing_style, embeddings)"
             )
         except Exception as e:
             logger.error(f"❌ Failed to initialize database: {e}", exc_info=True)
             raise
 
     async def close(self) -> None:
-        """Close connection pool."""
+        """Close all connection pools."""
+        if self.local_pool and self.local_pool is not self.pool:
+            await self.local_pool.close()
+            logger.info("Local database pool closed")
         if self.pool:
             await self.pool.close()
             logger.info("Database pool closed")
@@ -350,3 +397,41 @@ class DatabaseService:
     async def setting_exists(self, key: str) -> bool:
         """Delegate to admin module."""
         return await self.admin.setting_exists(key)
+
+    # EMBEDDING OPERATIONS
+    async def store_embedding(
+        self,
+        source_type: str,
+        source_id: str,
+        content_hash: str,
+        embedding: list,
+        metadata: Optional[Dict] = None,
+    ) -> str:
+        """Delegate to embeddings module."""
+        return await self.embeddings.store_embedding(
+            source_type, source_id, content_hash, embedding, metadata
+        )
+
+    async def search_similar(
+        self,
+        embedding: list,
+        limit: int = 10,
+        source_type: Optional[str] = None,
+        min_similarity: float = 0.0,
+    ) -> List[Dict]:
+        """Delegate to embeddings module."""
+        return await self.embeddings.search_similar(embedding, limit, source_type, min_similarity)
+
+    async def get_embedding(self, source_type: str, source_id: str) -> Optional[Dict]:
+        """Delegate to embeddings module."""
+        return await self.embeddings.get_embedding(source_type, source_id)
+
+    async def delete_embeddings(self, source_type: str, source_id: Optional[str] = None) -> int:
+        """Delegate to embeddings module."""
+        return await self.embeddings.delete_embeddings(source_type, source_id)
+
+    async def needs_reembedding(
+        self, source_type: str, source_id: str, content_hash: str
+    ) -> bool:
+        """Delegate to embeddings module."""
+        return await self.embeddings.needs_reembedding(source_type, source_id, content_hash)

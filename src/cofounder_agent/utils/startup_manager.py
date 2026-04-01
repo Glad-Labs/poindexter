@@ -166,9 +166,13 @@ class StartupManager:
         logger.info("  Connecting to PostgreSQL (REQUIRED)...")
 
         try:
+            from config import get_config
             from services.database_service import DatabaseService
 
-            self.database_service = DatabaseService()
+            config = get_config()
+            self.database_service = DatabaseService(
+                local_database_url=config.local_database_url,
+            )
             await self.database_service.initialize()
             logger.info("   PostgreSQL connected (pool + 5 delegate modules ready)")
 
