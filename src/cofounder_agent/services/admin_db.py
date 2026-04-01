@@ -543,6 +543,8 @@ class AdminDatabase(DatabaseServiceMixin):
     @log_query_performance(operation="get_financial_summary", category="financial_retrieval")
     async def get_financial_summary(self, days: int = 30) -> Dict[str, Any]:
         """Get financial summary for the specified period."""
+        # Use parameterized query instead of string formatting to prevent SQL injection.
+        # Even though `days` is typed as int, callers may pass unsanitized input.
         sql = """
             SELECT
                 COALESCE(SUM(amount), 0) as total_amount,
@@ -550,11 +552,11 @@ class AdminDatabase(DatabaseServiceMixin):
                 COALESCE(SUM(CASE WHEN entry_type = 'revenue' THEN amount ELSE 0 END), 0) as total_revenue,
                 COALESCE(SUM(CASE WHEN entry_type = 'expense' THEN amount ELSE 0 END), 0) as total_expenses
             FROM financial_entries
-            WHERE created_at >= NOW() - INTERVAL '%s days'
-        """ % days  # noqa: S608 — days is always an integer from the method signature
+            WHERE created_at >= NOW() - make_interval(days => $1)
+        """
         try:
             async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(sql)
+                row = await conn.fetchrow(sql, int(days))
                 return dict(row) if row else {"total_amount": 0, "entry_count": 0}
         except Exception:
             logger.error("[get_financial_summary] Failed to get financial summary", exc_info=True)
