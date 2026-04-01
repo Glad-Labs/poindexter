@@ -116,44 +116,44 @@ class TestDocumentAccessTool:
     def test_read_research_file_returns_content_on_success(self):
         from agents.content_agent.utils.tools import DocumentAccessTool
 
-        tool = DocumentAccessTool()
-        tool.run = MagicMock(return_value="file contents here")
-        result = tool.read_research_file("/path/to/doc.md")
-        assert result == "file contents here"
+        with patch.object(DocumentAccessTool, "run", return_value="file contents here"):
+            tool = DocumentAccessTool()
+            result = tool.read_research_file("/path/to/doc.md")
+            assert result == "file contents here"
 
     def test_read_research_file_returns_none_on_file_not_found(self):
         from agents.content_agent.utils.tools import DocumentAccessTool
 
-        tool = DocumentAccessTool()
-        tool.run = MagicMock(side_effect=FileNotFoundError("no such file"))
-        result = tool.read_research_file("/missing/file.txt")
-        assert result is None
+        with patch.object(DocumentAccessTool, "run", side_effect=FileNotFoundError("no such file")):
+            tool = DocumentAccessTool()
+            result = tool.read_research_file("/missing/file.txt")
+            assert result is None
 
     def test_read_research_file_returns_none_on_generic_exception(self):
         from agents.content_agent.utils.tools import DocumentAccessTool
 
-        tool = DocumentAccessTool()
-        tool.run = MagicMock(side_effect=OSError("permission denied"))
-        result = tool.read_research_file("/restricted/file.txt")
-        assert result is None
+        with patch.object(DocumentAccessTool, "run", side_effect=OSError("permission denied")):
+            tool = DocumentAccessTool()
+            result = tool.read_research_file("/restricted/file.txt")
+            assert result is None
 
     def test_read_research_file_logs_error_on_file_not_found(self):
         from agents.content_agent.utils.tools import DocumentAccessTool
 
-        tool = DocumentAccessTool()
-        tool.run = MagicMock(side_effect=FileNotFoundError("no file"))
-        with patch("agents.content_agent.utils.tools.logger") as mock_logger:
-            tool.read_research_file("/missing.txt")
-            mock_logger.error.assert_called()
+        with patch.object(DocumentAccessTool, "run", side_effect=FileNotFoundError("no file")):
+            tool = DocumentAccessTool()
+            with patch("agents.content_agent.utils.tools.logger") as mock_logger:
+                tool.read_research_file("/missing.txt")
+                mock_logger.error.assert_called()
 
     def test_read_research_file_logs_error_on_generic_exception(self):
         from agents.content_agent.utils.tools import DocumentAccessTool
 
-        tool = DocumentAccessTool()
-        tool.run = MagicMock(side_effect=ValueError("parse error"))
-        with patch("agents.content_agent.utils.tools.logger") as mock_logger:
-            tool.read_research_file("/bad.txt")
-            mock_logger.error.assert_called()
+        with patch.object(DocumentAccessTool, "run", side_effect=ValueError("parse error")):
+            tool = DocumentAccessTool()
+            with patch("agents.content_agent.utils.tools.logger") as mock_logger:
+                tool.read_research_file("/bad.txt")
+                mock_logger.error.assert_called()
 
 
 # ---------------------------------------------------------------------------
@@ -209,27 +209,27 @@ class TestDataProcessingTool:
     def test_process_data_returns_result_on_success(self):
         from agents.content_agent.utils.tools import DataProcessingTool
 
-        tool = DataProcessingTool()
-        tool.run = MagicMock(return_value="42")
-        result = tool.process_data("x = 6 * 7; print(x)")
-        assert result == "42"
+        with patch.object(DataProcessingTool, "run", return_value="42"):
+            tool = DataProcessingTool()
+            result = tool.process_data("x = 6 * 7; print(x)")
+            assert result == "42"
 
     def test_process_data_returns_none_on_exception(self):
         from agents.content_agent.utils.tools import DataProcessingTool
 
-        tool = DataProcessingTool()
-        tool.run = MagicMock(side_effect=RuntimeError("execution error"))
-        result = tool.process_data("raise RuntimeError()")
-        assert result is None
+        with patch.object(DataProcessingTool, "run", side_effect=RuntimeError("execution error")):
+            tool = DataProcessingTool()
+            result = tool.process_data("raise RuntimeError()")
+            assert result is None
 
     def test_process_data_logs_error_on_exception(self):
         from agents.content_agent.utils.tools import DataProcessingTool
 
-        tool = DataProcessingTool()
-        tool.run = MagicMock(side_effect=RuntimeError("oops"))
-        with patch("agents.content_agent.utils.tools.logger") as mock_logger:
-            tool.process_data("bad code")
-            mock_logger.error.assert_called()
+        with patch.object(DataProcessingTool, "run", side_effect=RuntimeError("oops")):
+            tool = DataProcessingTool()
+            with patch("agents.content_agent.utils.tools.logger") as mock_logger:
+                tool.process_data("bad code")
+                mock_logger.error.assert_called()
 
 
 # ---------------------------------------------------------------------------
