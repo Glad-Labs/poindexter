@@ -1,25 +1,30 @@
 """
-Discord Voice Bot — Push-to-talk communication with the system.
+Discord Voice Bot — Full voice conversation with the system.
 
-Sits in a Discord voice channel, listens when you speak (PTT),
-transcribes via Whisper on the 5090, processes the request, and
-responds via TTS in the voice channel + text in a paired channel.
+Sits in a Discord voice channel, records when you speak,
+transcribes via Whisper on the 5090, routes through Ollama,
+and responds via Sherpa TTS in the voice channel.
+
+Flow: Voice → Whisper STT → Ollama → Sherpa TTS → Voice
 
 Usage:
     python scripts/discord_voice_bot.py          # Run the bot
     pythonw scripts/discord_voice_bot.py         # Run windowless
 
 Requires:
-    pip install "discord.py[voice]" PyNaCl openai-whisper
+    pip install py-cord[voice] PyNaCl openai-whisper httpx
     ffmpeg in PATH
 """
 
 import asyncio
+import io
 import logging
 import os
+import struct
 import sys
 import tempfile
 import time
+import wave
 
 # pythonw.exe compatibility
 if sys.stdout is None:
@@ -41,7 +46,7 @@ logger.addHandler(_fh)
 if sys.stdout is not None and getattr(sys.stdout, "name", "") != os.devnull:
     logger.addHandler(logging.StreamHandler(sys.stdout))
 
-# Load config — uses dedicated voice bot token (separate from OpenClaw bot)
+# Load config
 DISCORD_TOKEN = os.getenv("DISCORD_VOICE_BOT_TOKEN", "")
 if not DISCORD_TOKEN:
     _env_path = os.path.join(os.path.expanduser("~"), ".openclaw", "workspace", ".env")
@@ -52,49 +57,88 @@ if not DISCORD_TOKEN:
             elif _line.startswith("DISCORD_BOT_TOKEN=") and not DISCORD_TOKEN:
                 DISCORD_TOKEN = _line.split("=", 1)[1].strip()
 
-# Whisper model — "base" is fast on GPU, "medium" for better accuracy
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base")
-
-# TTS config
-TTS_ENGINE = os.getenv("TTS_ENGINE", "sherpa")  # "sherpa" (local) or "elevenlabs" (cloud)
+TTS_ENGINE = os.getenv("TTS_ENGINE", "sherpa")
 SHERPA_MODEL = os.path.join(
     os.path.expanduser("~"), ".openclaw", "tools", "sherpa-onnx-tts", "models"
 )
-
-# Voice channel to auto-join (set via command or env)
-AUTO_JOIN_CHANNEL = os.getenv("DISCORD_VOICE_CHANNEL_ID", "")
-
-# API for processing requests
-API_URL = "https://cofounder-production.up.railway.app"
-API_TOKEN = os.getenv("GLADLABS_KEY", "")
-if not API_TOKEN:
-    _env_path = os.path.join(os.path.expanduser("~"), ".openclaw", "workspace", ".env")
-    if os.path.exists(_env_path):
-        for _line in open(_env_path):
-            if _line.startswith("GLADLABS_KEY="):
-                API_TOKEN = _line.split("=", 1)[1].strip()
+OLLAMA_MODEL = os.getenv("VOICE_OLLAMA_MODEL", "qwen3.5:latest")
 
 
-# Note: discord.py v2.x doesn't have built-in voice recording (sinks).
-# We use a manual approach: bot joins voice, user speaks, audio captured
-# via the receive callback. For full recording, py-cord or a custom
-# voice receive handler is needed. For now, we use text commands + TTS.
+# ---------- Voice Recording Sink (py-cord) ----------
 
+class WhisperSink(discord.sinks.WaveSink):
+    """Records voice from Discord, saves per-user WAV files."""
+    pass
+
+
+def _merge_audio_data(sink: WhisperSink) -> str | None:
+    """Merge all recorded user audio into a single WAV file for Whisper."""
+    out_path = os.path.join(tempfile.gettempdir(), f"voice_{int(time.time())}.wav")
+    try:
+        all_frames = b""
+        for user_id, audio in sink.audio_data.items():
+            audio.file.seek(0)
+            all_frames += audio.file.read()
+
+        if not all_frames or len(all_frames) < 1000:
+            return None
+
+        with wave.open(out_path, "wb") as wf:
+            wf.setnchannels(2)
+            wf.setsampwidth(2)
+            wf.setframerate(48000)
+            wf.writeframes(all_frames)
+
+        logger.info("Merged audio: %d bytes -> %s", len(all_frames), out_path)
+        return out_path
+    except Exception as e:
+        logger.error("Audio merge failed: %s", e)
+        return None
+
+
+# ---------- Ollama Client ----------
+
+async def _ask_ollama(question: str, model: str = None) -> str:
+    """Send a question to local Ollama and return the response."""
+    model = model or OLLAMA_MODEL
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                "http://127.0.0.1:11434/api/generate",
+                json={
+                    "model": model,
+                    "prompt": question,
+                    "system": "You are Poindexter, a helpful voice assistant for Glad Labs. Keep responses concise (2-3 sentences) since they will be spoken aloud.",
+                    "stream": False,
+                    "options": {"num_predict": 200, "temperature": 0.7},
+                },
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get("response", "").strip() or "[Empty response]"
+            return f"[Ollama returned HTTP {resp.status_code}]"
+    except Exception as e:
+        logger.error("Ollama request failed: %s", e)
+        return f"Sorry, I couldn't process that. Ollama error."
+
+
+# ---------- Bot ----------
 
 class VoiceBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
         intents.message_content = True
         intents.voice_states = True
-        # Use ? prefix to avoid conflicts with OpenClaw bot (which uses !)
         super().__init__(command_prefix="?", intents=intents)
         self.whisper_model = None
-        self.recording = False
         self.text_channel = None
+        self.listening = False
+        self._connections = {}
 
     async def on_ready(self):
         logger.info("Discord voice bot online as %s", self.user)
-        # Load Whisper model on startup
         await self._load_whisper()
 
     async def _load_whisper(self):
@@ -121,7 +165,7 @@ class VoiceBot(commands.Bot):
             return text
         except Exception as e:
             logger.error("Transcription failed: %s", e)
-            return f"[Transcription error: {e}]"
+            return ""
 
     async def generate_tts(self, text: str) -> str | None:
         """Generate TTS audio file from text. Returns file path."""
@@ -142,22 +186,23 @@ class VoiceBot(commands.Bot):
             )
 
             if not os.path.exists(sherpa_bin):
-                logger.warning("Sherpa binary not found at %s", sherpa_bin)
-                return None
+                logger.warning("Sherpa binary not found at %s, trying pyttsx3", sherpa_bin)
+                return await self._tts_pyttsx3(text)
 
             model_path = os.path.join(SHERPA_MODEL, "en_US-lessac-high.onnx")
             tokens_path = os.path.join(SHERPA_MODEL, "tokens.txt")
             data_dir = os.path.join(SHERPA_MODEL, "espeak-ng-data")
 
-            result = subprocess.run(
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, lambda: subprocess.run(
                 [sherpa_bin,
                  f"--vits-model={model_path}",
                  f"--vits-tokens={tokens_path}",
                  f"--vits-data-dir={data_dir}",
                  f"--output-filename={out_path}",
-                 text[:500]],  # Limit text length
+                 text[:500]],
                 capture_output=True, text=True, timeout=30
-            )
+            ))
 
             if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
                 logger.info("TTS generated: %s (%d bytes)", out_path, os.path.getsize(out_path))
@@ -165,6 +210,27 @@ class VoiceBot(commands.Bot):
             return None
         except Exception as e:
             logger.error("Sherpa TTS failed: %s", e)
+            return None
+
+    async def _tts_pyttsx3(self, text: str) -> str | None:
+        """Fallback TTS via pyttsx3 (system voices)."""
+        try:
+            import pyttsx3
+            out_path = os.path.join(tempfile.gettempdir(), f"tts_{int(time.time())}.wav")
+            loop = asyncio.get_event_loop()
+
+            def _generate():
+                engine = pyttsx3.init()
+                engine.save_to_file(text[:500], out_path)
+                engine.runAndWait()
+
+            await loop.run_in_executor(None, _generate)
+
+            if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+                return out_path
+            return None
+        except Exception as e:
+            logger.error("pyttsx3 TTS failed: %s", e)
             return None
 
     async def _tts_elevenlabs(self, text: str) -> str | None:
@@ -196,29 +262,54 @@ class VoiceBot(commands.Bot):
 bot = VoiceBot()
 
 
-async def _ask_ollama(question: str, model: str = "qwen3.5:latest") -> str:
-    """Send a question to local Ollama and return the response."""
-    import json
-    try:
-        import httpx
-        async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.post(
-                "http://127.0.0.1:11434/api/generate",
-                json={
-                    "model": model,
-                    "prompt": question,
-                    "stream": False,
-                    "options": {"num_predict": 300, "temperature": 0.7},
-                },
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                return data.get("response", "").strip() or "[Empty response from Ollama]"
-            return f"[Ollama returned HTTP {resp.status_code}]"
-    except Exception as e:
-        logger.error("Ollama request failed: %s", e)
-        return f"[Ollama error: {e}]"
+# ---------- Recording callback ----------
 
+async def _on_recording_done(sink: WhisperSink, channel: discord.TextChannel, vc):
+    """Called when recording stops. Processes audio through the full pipeline."""
+    audio_path = _merge_audio_data(sink)
+    if not audio_path:
+        await channel.send("*No audio captured.*")
+        return
+
+    await channel.send("*Transcribing...*")
+    text = await bot.transcribe_audio(audio_path)
+
+    if not text or text.startswith("["):
+        await channel.send(f"*Could not transcribe audio.* {text}")
+        # Clean up
+        try:
+            os.remove(audio_path)
+        except OSError:
+            pass
+        return
+
+    await channel.send(f"**You said:** {text}")
+    logger.info("Voice input: %s", text[:100])
+
+    # Route through Ollama
+    await channel.send("*Thinking...*")
+    response = await _ask_ollama(text)
+    await channel.send(f"**Poindexter:** {response}")
+    logger.info("Response: %s", response[:100])
+
+    # TTS response in voice channel
+    if vc and vc.is_connected():
+        tts_path = await bot.generate_tts(response[:300])
+        if tts_path:
+            source = discord.FFmpegPCMAudio(tts_path)
+            if vc.is_playing():
+                vc.stop()
+            vc.play(source, after=lambda e: logger.info("TTS playback done"))
+
+    # Clean up temp files
+    for path in [audio_path]:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
+# ---------- Commands ----------
 
 @bot.command(name="join")
 async def join(ctx):
@@ -234,7 +325,7 @@ async def join(ctx):
         await channel.connect()
 
     bot.text_channel = ctx.channel
-    await ctx.send(f"Joined **{channel.name}**. Use `!listen` to start, `!stop` to end.")
+    await ctx.send(f"Joined **{channel.name}**. Commands: `?listen` / `?stop` / `?ask` / `?say` / `?leave`")
     logger.info("Joined voice channel: %s", channel.name)
 
 
@@ -242,6 +333,9 @@ async def join(ctx):
 async def leave(ctx):
     """Leave the voice channel."""
     if ctx.voice_client:
+        if bot.listening:
+            ctx.voice_client.stop_recording()
+            bot.listening = False
         await ctx.voice_client.disconnect()
         await ctx.send("Left voice channel.")
         logger.info("Left voice channel")
@@ -249,12 +343,58 @@ async def leave(ctx):
         await ctx.send("Not in a voice channel.")
 
 
+@bot.command(name="listen")
+async def listen(ctx, duration: int = 10):
+    """Start listening for voice input. Stops after duration (default 10s)."""
+    vc = ctx.voice_client
+    if not vc or not vc.is_connected():
+        await ctx.send("Not in a voice channel. Use `?join` first.")
+        return
+
+    if bot.listening:
+        await ctx.send("Already listening. Use `?stop` to finish.")
+        return
+
+    bot.listening = True
+    bot.text_channel = ctx.channel
+    sink = WhisperSink()
+
+    vc.start_recording(
+        sink,
+        lambda s, *args: asyncio.ensure_future(_on_recording_done(s, ctx.channel, vc)),
+        ctx.channel,
+    )
+
+    await ctx.send(f"🎙️ Listening for {duration}s... Speak now! (or `?stop` to finish early)")
+    logger.info("Recording started (%ds)", duration)
+
+    # Auto-stop after duration
+    await asyncio.sleep(duration)
+    if bot.listening:
+        vc.stop_recording()
+        bot.listening = False
+
+
+@bot.command(name="stop")
+async def stop(ctx):
+    """Stop listening and process the recorded audio."""
+    vc = ctx.voice_client
+    if not vc or not bot.listening:
+        await ctx.send("Not currently listening.")
+        return
+
+    bot.listening = False
+    vc.stop_recording()
+    await ctx.send("⏹️ Recording stopped. Processing...")
+    logger.info("Recording stopped manually")
+
+
 @bot.command(name="say")
 async def say(ctx, *, text: str):
     """Text-to-speech: type a message, bot speaks it in voice channel."""
     vc = ctx.voice_client
     if not vc or not vc.is_connected():
-        await ctx.send("Not in a voice channel. Use `!join` first.")
+        await ctx.send("Not in a voice channel. Use `?join` first.")
         return
 
     tts_path = await bot.generate_tts(text)
@@ -263,7 +403,7 @@ async def say(ctx, *, text: str):
         if vc.is_playing():
             vc.stop()
         vc.play(source)
-        await ctx.send(f"Speaking: {text[:100]}")
+        await ctx.send(f"🔊 Speaking: {text[:100]}")
         logger.info("TTS playing: %s", text[:60])
     else:
         await ctx.send("TTS generation failed.")
@@ -276,15 +416,13 @@ async def ask(ctx, *, question: str):
     await ctx.send(f"Processing: *{question[:100]}*...")
     logger.info("Question: %s", question[:60])
 
-    # Route through local Ollama
     response = await _ask_ollama(question)
-
     await ctx.send(f"**Poindexter:** {response}")
 
     # TTS if in voice channel
     vc = ctx.voice_client
     if vc and vc.is_connected():
-        tts_path = await bot.generate_tts(response[:200])
+        tts_path = await bot.generate_tts(response[:300])
         if tts_path:
             source = discord.FFmpegPCMAudio(tts_path)
             if vc.is_playing():
@@ -295,17 +433,18 @@ async def ask(ctx, *, question: str):
 @bot.command(name="status")
 async def status(ctx):
     """Show system status."""
-    import urllib.request
     import json
+    import urllib.request
 
     lines = ["**System Status:**"]
 
-    # Check worker
+    # Check Ollama
     try:
-        resp = json.loads(urllib.request.urlopen("http://127.0.0.1:8001/health", timeout=3).read())
-        lines.append(f"Worker: {resp.get('status', '?')}")
+        resp = json.loads(urllib.request.urlopen("http://127.0.0.1:11434/api/tags", timeout=3).read())
+        model_names = [m["name"] for m in resp.get("models", [])]
+        lines.append(f"Ollama: {len(model_names)} models loaded")
     except Exception:
-        lines.append("Worker: offline")
+        lines.append("Ollama: offline")
 
     # Check GPU
     try:
@@ -321,10 +460,10 @@ async def status(ctx):
     except Exception:
         pass
 
-    # Whisper status
     lines.append(f"Whisper: {'loaded' if bot.whisper_model else 'not loaded'} ({WHISPER_MODEL})")
     lines.append(f"TTS: {TTS_ENGINE}")
-    lines.append(f"Recording: {bot.recording}")
+    lines.append(f"Listening: {bot.listening}")
+    lines.append(f"Voice model: {OLLAMA_MODEL}")
 
     await ctx.send("\n".join(lines))
 
@@ -334,5 +473,5 @@ if __name__ == "__main__":
         logger.error("No DISCORD_BOT_TOKEN found")
         sys.exit(1)
 
-    logger.info("Starting Discord voice bot...")
+    logger.info("Starting Discord voice bot (py-cord + Whisper + Ollama + Sherpa TTS)...")
     bot.run(DISCORD_TOKEN, log_handler=None)
