@@ -21,6 +21,7 @@ For local development, set SENTRY_ENABLED=false to disable reporting.
 """
 
 import logging
+from services.logger_config import get_logger
 import os
 from typing import Optional
 
@@ -53,7 +54,7 @@ except ImportError:
         "Sentry SDK not installed. Error tracking disabled. Install with: pip install sentry-sdk[fastapi]"
     )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class SentryIntegration:

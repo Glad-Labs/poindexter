@@ -31,7 +31,7 @@ Architecture:
 
 import asyncio
 import json
-import logging
+from services.logger_config import get_logger
 import re
 import uuid
 from datetime import datetime, timezone
@@ -40,7 +40,7 @@ from typing import Any, Dict, Optional
 from services.orchestrator_types import ExecutionResult, ExecutionStatus, Request, RequestType
 from services.websocket_event_broadcaster import emit_task_progress
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Per-stage timeout budgets (seconds) for asyncio.wait_for in content pipeline.
 # Tune these based on observed P99 latencies per LLM provider.

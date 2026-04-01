@@ -11,7 +11,7 @@ Endpoints:
 - GET /api/workflows/available-phases - List available phases for building
 """
 
-import logging
+from services.logger_config import get_logger
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -26,7 +26,7 @@ from schemas.custom_workflow_schemas import (
 )
 from services.custom_workflows_service import CustomWorkflowsService
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter(
     prefix="/api/workflows",

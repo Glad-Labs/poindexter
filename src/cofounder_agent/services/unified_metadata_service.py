@@ -15,7 +15,7 @@ Single source of truth for all metadata operations with:
 - Featured image prompt generation
 """
 
-import logging
+from services.logger_config import get_logger
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -25,7 +25,7 @@ from .model_consolidation_service import get_model_consolidation_service
 from .prompt_manager import get_prompt_manager
 from .provider_checker import ProviderChecker
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Legacy provider checks are kept for backward compatibility during migration
 # but new code should use unified model_router and prompt_manager

@@ -11,11 +11,11 @@ Usage:
     content = add_affiliate_links(content)
 """
 
-import logging
+from services.logger_config import get_logger
 import re
 from typing import Dict, Tuple
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Default affiliate links — ONLY real referral/affiliate links go here.
 # If a company doesn't have a referral program, it has NO entry.

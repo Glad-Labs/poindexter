@@ -40,11 +40,11 @@ _fix_sys_path_for_venv()
 import asyncio
 import hashlib
 import json
-import logging
+from services.logger_config import get_logger
 import os
 import time
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 import aiofiles
 import httpx

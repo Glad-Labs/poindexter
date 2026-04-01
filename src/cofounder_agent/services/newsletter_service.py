@@ -12,11 +12,11 @@ Usage:
     digest = await generate_weekly_digest(pool)
 """
 
-import logging
+from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import List, Optional
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 async def get_subscriber_count(pool) -> int:

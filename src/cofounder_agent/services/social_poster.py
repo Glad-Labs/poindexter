@@ -19,7 +19,7 @@ Usage from task_executor or any post-publish hook:
     )
 """
 
-import logging
+from services.logger_config import get_logger
 import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -29,7 +29,7 @@ import httpx
 
 from .ollama_client import OllamaClient
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants

@@ -14,7 +14,7 @@ Production-ready for full blog automation!
 
 import asyncio
 import json
-import logging
+from services.logger_config import get_logger
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
@@ -54,7 +54,7 @@ _DISCORD_OPS_CHANNEL = "1487683559065125055"
 
 async def _notify_openclaw(message: str) -> None:
     """Send pipeline notifications to Telegram (direct) and Discord (via OpenClaw)."""
-    _logger = logging.getLogger(__name__)
+    _logger = get_logger(__name__)
     try:
         async with _httpx.AsyncClient(timeout=10) as client:
             _logger.info(f"[NOTIFY] {message[:80]}")
@@ -79,7 +79,7 @@ async def _notify_openclaw(message: str) -> None:
 # Import WebSocket progress emission (re-exported so tests can patch at this module)
 from .websocket_event_broadcaster import emit_notification, emit_task_progress  # noqa: F401
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Tasks stuck in "processing" for longer than this are considered stale and reset to "pending"
 STALE_TASK_TIMEOUT_MINUTES: int = 60

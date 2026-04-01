@@ -9,7 +9,7 @@ Provides:
 """
 
 import json
-import logging
+from services.logger_config import get_logger
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -20,7 +20,7 @@ from services.workflow_executor import WorkflowExecutor
 from services.workflow_validator import WorkflowValidator
 from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class CustomWorkflowsService:

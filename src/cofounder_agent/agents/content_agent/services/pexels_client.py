@@ -1,6 +1,6 @@
-import logging
+from services.logger_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 import aiofiles
 import httpx

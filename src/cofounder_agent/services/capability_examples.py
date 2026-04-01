@@ -11,10 +11,10 @@ Capabilities are automatically discovered and registered via the introspection l
 """
 
 import asyncio
-import logging
+from services.logger_config import get_logger
 from typing import Any, Dict, Optional
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 from services.capability_registry import (
     Capability,

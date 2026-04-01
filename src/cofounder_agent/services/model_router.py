@@ -22,11 +22,11 @@ import os
 from enum import Enum
 from typing import Any, Dict, Optional, Tuple
 
-import structlog
+from services.logger_config import get_logger
 
 from .model_constants import MODEL_COSTS
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class ModelProvider(str, Enum):

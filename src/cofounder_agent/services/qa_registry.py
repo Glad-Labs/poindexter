@@ -14,11 +14,11 @@ Usage:
     result = await registry.run_workflow("blog_content", content=text, title=title)
 """
 
-import logging
+from services.logger_config import get_logger
 from dataclasses import dataclass, field
 from typing import Any, Callable, Coroutine, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass

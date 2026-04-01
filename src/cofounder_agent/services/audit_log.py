@@ -17,13 +17,13 @@ Usage:
 """
 
 import asyncio
-import logging
+from services.logger_config import get_logger
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from asyncpg import Pool
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Global singleton — set once via init_global_audit_logger()

@@ -15,12 +15,12 @@ Usage:
         # Reject — content has quality issues
 """
 
-import logging
+from services.logger_config import get_logger
 import re
 from dataclasses import dataclass, field
 from typing import List
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # ============================================================================
 # GLAD LABS FACTS — ground truth for fact-checking

@@ -19,14 +19,14 @@ Usage:
         # Safe to publish
 """
 
-import logging
+from services.logger_config import get_logger
 from dataclasses import dataclass, field
 from typing import List, Optional
 
 from services.content_validator import validate_content, ValidationResult
 from services.model_router import get_model_router
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass

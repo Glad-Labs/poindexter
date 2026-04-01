@@ -4,7 +4,7 @@ Metrics Service for Glad Labs AI Co-Founder
 This module provides centralized metrics collection and reporting.
 """
 
-import logging
+from services.logger_config import get_logger
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -14,7 +14,7 @@ from config import get_config
 
 # Get configuration
 config = get_config()
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class TaskMetrics:

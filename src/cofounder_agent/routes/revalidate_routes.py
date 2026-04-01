@@ -9,7 +9,7 @@ Endpoints:
 - POST /api/revalidate-cache - Revalidate paths on public site (requires auth token)
 """
 
-import logging
+from services.logger_config import get_logger
 import os
 from typing import Any, Dict, Optional
 
@@ -19,7 +19,7 @@ from pydantic import BaseModel
 
 from middleware.api_token_auth import verify_api_token
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api", tags=["cache"])
 

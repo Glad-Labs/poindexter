@@ -17,13 +17,13 @@ Usage:
 """
 
 import json
-import logging
+from services.logger_config import get_logger
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Coroutine, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass

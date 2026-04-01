@@ -21,11 +21,11 @@ Usage:
     topics = await engine.suggest_topics_from_performance()
 """
 
-import logging
+from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import List, Optional
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class RevenueEngine:

@@ -17,7 +17,7 @@ Routes:
 """
 
 import hashlib
-import logging
+from services.logger_config import get_logger
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
@@ -45,7 +45,7 @@ from schemas.auth_schemas import GitHubCallbackRequest, LogoutResponse, UserProf
 from services.jwt_blocklist_service import jwt_blocklist
 from services.token_validator import AuthConfig, JWTTokenValidator
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 

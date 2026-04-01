@@ -4,7 +4,7 @@ Newsletter & Email Campaign Routes
 Endpoints for managing email campaign subscriptions and newsletter signups.
 """
 
-import logging
+from services.logger_config import get_logger
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -14,7 +14,7 @@ from middleware.api_token_auth import verify_api_token
 from utils.rate_limiter import limiter
 from utils.route_utils import get_database_dependency
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/newsletter", tags=["newsletter"])
 

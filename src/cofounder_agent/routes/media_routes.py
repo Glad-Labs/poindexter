@@ -11,7 +11,7 @@ Cost:
 - Much cheaper than DALL-E ($0.02/image)
 """
 
-import logging
+from services.logger_config import get_logger
 import os
 import time
 from datetime import datetime
@@ -34,7 +34,7 @@ except ImportError:
 
 from services.image_service import FeaturedImageMetadata, ImageModel, ImageService
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 media_router = APIRouter(prefix="/api/media", tags=["Media"])
 
 

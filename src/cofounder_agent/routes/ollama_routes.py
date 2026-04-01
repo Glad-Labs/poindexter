@@ -7,7 +7,7 @@ Provides endpoints for:
 - Getting Ollama system status
 """
 
-import logging
+from services.logger_config import get_logger
 import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
@@ -20,7 +20,7 @@ from slowapi.util import get_remote_address
 from middleware.api_token_auth import verify_api_token
 from schemas.ollama_schemas import OllamaHealthResponse, OllamaWarmupResponse
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/ollama", tags=["ollama"])
 

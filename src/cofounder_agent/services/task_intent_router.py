@@ -9,14 +9,14 @@ Connects NLPIntentRecognizer to task creation, handling:
 - Workflow routing (direct execution vs form confirmation)
 """
 
-import logging
+from services.logger_config import get_logger
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from .nlp_intent_recognizer import NLPIntentRecognizer
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass

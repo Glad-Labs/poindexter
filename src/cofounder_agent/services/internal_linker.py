@@ -9,11 +9,11 @@ Usage:
     content = await add_internal_links(pool, content, current_post_slug)
 """
 
-import logging
+from services.logger_config import get_logger
 import re
 from typing import List, Tuple
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 async def get_published_posts(pool) -> List[dict]:

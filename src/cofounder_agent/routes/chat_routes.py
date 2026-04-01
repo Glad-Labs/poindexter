@@ -8,7 +8,7 @@ Provides endpoints for:
 - Smart fallback to multiple AI providers
 """
 
-import logging
+from services.logger_config import get_logger
 import os
 from datetime import datetime, timezone
 from typing import Any, Dict
@@ -23,7 +23,7 @@ from services.ollama_client import OllamaClient
 from services.usage_tracker import get_usage_tracker
 from utils.rate_limiter import limiter
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Initialize services
 ollama_client = OllamaClient()
