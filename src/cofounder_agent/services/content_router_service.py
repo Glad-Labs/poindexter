@@ -18,6 +18,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from .ai_content_generator import get_content_generator
+from .audit_log import audit_log_bg
 from .database_service import DatabaseService
 from .image_service import get_image_service
 from .prompt_manager import get_prompt_manager
@@ -156,6 +157,10 @@ class ContentTaskStore:
             logger.info(f"   Task ID: {task_id}")
             logger.info("   Status: pending")
             logger.debug("   🎯 Ready for processing")
+            audit_log_bg("task_created", "content_router", {
+                "topic": topic[:100], "style": style, "tone": tone,
+                "target_length": target_length, "request_type": request_type,
+            }, task_id=task_id)
             return task_id
 
         except Exception as e:
@@ -1200,14 +1205,21 @@ async def process_content_generation_task(
 
         # Stage 1: Verify task record
         await _stage_verify_task(database_service, task_id, result)
+        audit_log_bg("task_started", "content_router", {"topic": topic[:100]}, task_id=task_id)
 
         # Stage 2: Generate blog content
         content_text, model_used, metrics, title = await _stage_generate_content(
             database_service, task_id, topic, style, tone, target_length, tags, models_by_phase, result
         )
+        audit_log_bg("generation_complete", "content_router", {
+            "model": model_used, "word_count": len(content_text.split()) if content_text else 0,
+        }, task_id=task_id)
 
         # Stage 2B: Quality evaluation
         quality_result = await _stage_quality_evaluation(topic, tags, content_text, quality_service, result)
+        audit_log_bg("qa_passed" if quality_result.overall_score >= 50 else "qa_failed", "content_router", {
+            "score": quality_result.overall_score, "stage": "early_eval",
+        }, task_id=task_id)
 
         # Stage 2C: Replace inline image placeholders
         content_text = await _stage_replace_inline_images(
@@ -1243,6 +1255,12 @@ async def process_content_generation_task(
                 _qa_result.cost_log["task_id"] = task_id
                 await database_service.log_cost(_qa_result.cost_log)
                 logger.info("💰 QA cost logged: $%.4f (%s/%s)", _qa_result.cost_log["cost_usd"], _qa_result.cost_log["provider"], _qa_result.cost_log["model"])
+                audit_log_bg("cost_logged", "content_router", {
+                    "cost_usd": _qa_result.cost_log.get("cost_usd"),
+                    "provider": _qa_result.cost_log.get("provider"),
+                    "model": _qa_result.cost_log.get("model"),
+                    "phase": "multi_model_qa",
+                }, task_id=task_id)
             except Exception as e:
                 logger.warning("QA cost logging failed (non-critical): %s", e)
 
@@ -1251,6 +1269,10 @@ async def process_content_generation_task(
                 "[MULTI_QA] Content rejected for task %s:\n%s",
                 task_id[:8], _qa_result.summary,
             )
+            audit_log_bg("qa_failed", "content_router", {
+                "score": _qa_result.final_score, "stage": "multi_model_qa",
+                "summary": _qa_result.summary[:300],
+            }, task_id=task_id, severity="warning")
             result["status"] = "rejected"
             await database_service.update_task(task_id, {
                 "status": "rejected",
@@ -1258,6 +1280,9 @@ async def process_content_generation_task(
                     + (_qa_result.reviews[-1].feedback[:200] if _qa_result.reviews else "No feedback"),
             })
             return result
+        audit_log_bg("qa_passed", "content_router", {
+            "score": _qa_result.final_score, "stage": "multi_model_qa",
+        }, task_id=task_id)
         logger.info("[MULTI_QA] Content approved for task %s: %s", task_id[:8], _qa_result.summary.split("\\n")[0])
 
         # Stage 4: Generate SEO metadata
@@ -1279,6 +1304,12 @@ async def process_content_generation_task(
             category, target_audience, result
         )
 
+        audit_log_bg("pipeline_complete", "content_router", {
+            "quality_score": quality_result.overall_score,
+            "qa_final_score": result.get("qa_final_score"),
+            "status": result["status"],
+        }, task_id=task_id)
+
         logger.info(f"{'='*80}")
         logger.info("✅ COMPLETE CONTENT GENERATION PIPELINE FINISHED")
         logger.info(f"{'='*80}")
@@ -1297,6 +1328,9 @@ async def process_content_generation_task(
     except Exception as e:
         logger.error(f"❌ [BG-TASK] Pipeline error for task {task_id[:8]}...: {e}", exc_info=True)
         logger.error("[BG-TASK] Detailed traceback:", exc_info=True)
+        audit_log_bg("error", "content_router", {
+            "error": str(e)[:500], "stages_completed": list(result.get("stages", {}).keys()),
+        }, task_id=task_id, severity="error")
 
         # Update content_task with failure status
         # 🔑 CRITICAL: Preserve all partially-generated data (content, image, metadata)

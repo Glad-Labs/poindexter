@@ -25,6 +25,7 @@ from typing import Dict, List, Optional
 import asyncpg
 
 from .admin_db import AdminDatabase
+from .audit_log import AuditLogger, init_global_audit_logger
 from .content_db import ContentDatabase
 from .embeddings_db import EmbeddingsDatabase
 from .tasks_db import TasksDatabase
@@ -96,6 +97,7 @@ class DatabaseService:
         self.admin: Optional[AdminDatabase] = None
         self.writing_style: Optional[WritingStyleDatabase] = None
         self.embeddings: Optional[EmbeddingsDatabase] = None
+        self.audit: Optional[AuditLogger] = None
 
     async def initialize(self) -> None:
         """Initialize connection pool(s) and all delegate modules."""
@@ -144,14 +146,15 @@ class DatabaseService:
             self.content = ContentDatabase(self.pool)
             self.admin = AdminDatabase(self.pool)
 
-            # Local pool: tasks, writing_style, embeddings
+            # Local pool: tasks, writing_style, embeddings, audit
             self.tasks = TasksDatabase(self.local_pool)
             self.writing_style = WritingStyleDatabase(self.local_pool)
             self.embeddings = EmbeddingsDatabase(self.local_pool)
+            self.audit = init_global_audit_logger(self.local_pool)
 
             logger.info(
                 "✅ All database modules initialized "
-                "(users, tasks, content, admin, writing_style, embeddings)"
+                "(users, tasks, content, admin, writing_style, embeddings, audit)"
             )
         except Exception as e:
             logger.error(f"❌ Failed to initialize database: {e}", exc_info=True)
