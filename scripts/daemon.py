@@ -358,7 +358,7 @@ def main():
             try:
                 run_opportunistic_task()
             except Exception as e:
-                logger.debug("Opportunistic task error: %s", e)
+                logger.warning("Opportunistic task error: %s", e)
             last_opportunistic = now
 
         if one_shot:
