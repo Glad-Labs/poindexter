@@ -45,10 +45,6 @@ from .webhook_delivery_service import emit_webhook_event
 import os as _os
 import httpx as _httpx
 
-OPENCLAW_GATEWAY_URL = _os.getenv("OPENCLAW_GATEWAY_URL", "http://localhost:18789")
-OPENCLAW_HOOKS_TOKEN = _os.getenv("OPENCLAW_HOOKS_TOKEN", "hooks-gladlabs")
-
-
 _OPENCLAW_URL = _os.getenv("OPENCLAW_GATEWAY_URL", "http://localhost:18789")
 _OPENCLAW_TOKEN = _os.getenv("OPENCLAW_HOOKS_TOKEN", "hooks-gladlabs")
 from services.telegram_config import TELEGRAM_BOT_TOKEN as _TELEGRAM_BOT_TOKEN  # noqa: E402
@@ -463,8 +459,8 @@ class TaskExecutor:
                         )
                         if slug_row:
                             slug = slug_row["slug"]
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning("[TASK_SINGLE] Failed to fetch slug for task %s: %s", task_id, e)
                     link = f"https://gladlabs.io/posts/{slug}" if slug else "https://gladlabs.io"
                     await _notify_openclaw(
                         f"Published: \"{topic}\" (score: {quality_score:.0f})\n{link}"
@@ -1595,7 +1591,7 @@ The key to success with {topic} is staying informed, adapting to changes, and co
                     task_id[:8], retry_count + 1, MAX_TASK_RETRIES, topic[:40],
                 )
         except Exception:
-            logger.debug("[AUTO_RETRY] Auto-retry sweep failed", exc_info=True)
+            logger.warning("[AUTO_RETRY] Auto-retry sweep failed", exc_info=True)
 
     def get_stats(self) -> Dict[str, Any]:
         """Get executor statistics"""
@@ -1627,7 +1623,8 @@ The key to success with {topic} is staying informed, adapting to changes, and co
         try:
             value = await self.database_service.get_setting_value("auto_publish_threshold", default=0.0)
             return float(value) if value else 0.0
-        except Exception:
+        except Exception as e:
+            logger.warning("[AUTO_PUBLISH] Failed to read auto_publish_threshold: %s", e)
             return 0.0
 
     async def _auto_publish_task(self, task_id: str, quality_score: float):

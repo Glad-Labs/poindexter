@@ -549,7 +549,7 @@ async def _stage_generate_content(
         if research_context:
             logger.info("📚 Research context built: %d chars", len(research_context))
     except Exception as e:
-        logger.debug("Research context skipped: %s", e)
+        logger.warning("Research context skipped: %s", e)
 
     content_text, model_used, metrics = await content_generator.generate_blog_post(
         topic=topic,
@@ -610,7 +610,7 @@ async def _stage_generate_content(
             await database_service.log_cost(cost_log)
             logger.info("💰 Cost logged: $%.4f (%s/%s)", cost_log["cost_usd"], cost_log["provider"], cost_log["model"])
         except Exception as e:
-            logger.debug("Cost logging failed (non-critical): %s", e)
+            logger.warning("Cost logging failed (non-critical): %s", e)
 
     return content_text, model_used, metrics, title
 
@@ -969,7 +969,7 @@ async def _stage_capture_training_data(
             }
         )
     except Exception as _td_err:
-        logger.debug("Training data insert skipped (likely re-processed task): %s", _td_err)
+        logger.warning("Training data insert skipped (likely re-processed task): %s", _td_err)
 
     result["stages"]["6_training_data_captured"] = True
     logger.info("✅ Training data captured for learning pipeline\n")
@@ -1165,7 +1165,7 @@ async def process_content_generation_task(
                 await database_service.log_cost(_qa_result.cost_log)
                 logger.info("💰 QA cost logged: $%.4f (%s/%s)", _qa_result.cost_log["cost_usd"], _qa_result.cost_log["provider"], _qa_result.cost_log["model"])
             except Exception as e:
-                logger.debug("QA cost logging failed (non-critical): %s", e)
+                logger.warning("QA cost logging failed (non-critical): %s", e)
 
         if not _qa_result.approved:
             logger.warning(

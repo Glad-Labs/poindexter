@@ -143,7 +143,8 @@ class BigBrain:
                 AND (expires_at IS NULL OR expires_at > NOW())
             """, entity, attribute)
             return row["value"] if row else None
-        except Exception:
+        except Exception as e:
+            logger.warning("[BRAIN] Failed to recall fact %s.%s: %s", entity, attribute, e)
             return None
 
     async def search(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
@@ -343,8 +344,8 @@ class BigBrain:
                 INSERT INTO brain_decisions (decision, reasoning, context, confidence)
                 VALUES ($1, $2, $3::jsonb, $4)
             """, decision, reasoning, json.dumps(context), confidence)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("[BRAIN] Failed to record decision: %s", e)
 
     # ========================================================================
     # STATS — what does the brain know?
@@ -367,7 +368,8 @@ class BigBrain:
                 "queue_total": queue["total"] if queue else 0,
                 "decisions_logged": decisions["count"] if decisions else 0,
             }
-        except Exception:
+        except Exception as e:
+            logger.warning("[BRAIN] Stats query failed: %s", e)
             return {}
 
     # ========================================================================

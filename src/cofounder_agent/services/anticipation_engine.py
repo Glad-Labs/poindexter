@@ -148,7 +148,7 @@ class AnticipationEngine:
                     severity="action_needed",
                 ))
         except Exception as e:
-            logger.debug("[ANTICIPATION] Content gap check failed: %s", e)
+            logger.warning("[ANTICIPATION] Content gap check failed: %s", e)
 
         return observations
 
@@ -180,7 +180,7 @@ class AnticipationEngine:
                         severity="action_needed",
                     ))
         except Exception as e:
-            logger.debug("[ANTICIPATION] Quality trend check failed: %s", e)
+            logger.warning("[ANTICIPATION] Quality trend check failed: %s", e)
 
         return observations
 
@@ -205,7 +205,7 @@ class AnticipationEngine:
                     severity="action_needed" if today > daily_limit * 0.9 else "warning",
                 ))
         except Exception as e:
-            logger.debug("[ANTICIPATION] Cost trend check failed: %s", e)
+            logger.warning("[ANTICIPATION] Cost trend check failed: %s", e)
 
         return observations
 
@@ -229,7 +229,7 @@ class AnticipationEngine:
                     severity="info",
                 ))
         except Exception as e:
-            logger.debug("[ANTICIPATION] Stale content check failed: %s", e)
+            logger.warning("[ANTICIPATION] Stale content check failed: %s", e)
 
         return observations
 

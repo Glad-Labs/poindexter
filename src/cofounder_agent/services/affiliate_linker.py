@@ -94,7 +94,7 @@ async def load_affiliates_from_db(pool) -> Dict[str, Tuple[str, str]]:
             logger.info("[AFFILIATE] Loaded %d affiliates from DB", len(affiliates))
             return affiliates
     except Exception as e:
-        logger.debug("[AFFILIATE] DB not available, using defaults: %s", e)
+        logger.warning("[AFFILIATE] DB not available, using defaults: %s", e)
     return DEFAULT_AFFILIATES
 
 
