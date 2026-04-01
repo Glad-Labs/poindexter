@@ -112,7 +112,7 @@ async def _ask_ollama(question: str, model: str = None) -> str:
                     "prompt": question,
                     "system": "You are Poindexter, a helpful voice assistant for Glad Labs. Keep responses concise (2-3 sentences) since they will be spoken aloud.",
                     "stream": False,
-                    "options": {"num_predict": 200, "temperature": 0.7},
+                    "options": {"num_predict": 1000, "temperature": 0.7},
                 },
             )
             if resp.status_code == 200:
@@ -319,8 +319,8 @@ async def join(ctx):
         return
 
     channel = ctx.author.voice.channel
-    if ctx.voice_client:
-        await ctx.voice_client.move_to(channel)
+    if ctx.guild.voice_client:
+        await ctx.guild.voice_client.move_to(channel)
     else:
         await channel.connect()
 
@@ -332,11 +332,11 @@ async def join(ctx):
 @bot.command(name="leave")
 async def leave(ctx):
     """Leave the voice channel."""
-    if ctx.voice_client:
+    if ctx.guild.voice_client:
         if bot.listening:
-            ctx.voice_client.stop_recording()
+            ctx.guild.voice_client.stop_recording()
             bot.listening = False
-        await ctx.voice_client.disconnect()
+        await ctx.guild.voice_client.disconnect()
         await ctx.send("Left voice channel.")
         logger.info("Left voice channel")
     else:
@@ -346,7 +346,7 @@ async def leave(ctx):
 @bot.command(name="listen")
 async def listen(ctx, duration: int = 10):
     """Start listening for voice input. Stops after duration (default 10s)."""
-    vc = ctx.voice_client
+    vc = ctx.guild.voice_client if ctx.guild else ctx.guild.voice_client
     if not vc or not vc.is_connected():
         await ctx.send("Not in a voice channel. Use `?join` first.")
         return
@@ -378,7 +378,7 @@ async def listen(ctx, duration: int = 10):
 @bot.command(name="stop")
 async def stop(ctx):
     """Stop listening and process the recorded audio."""
-    vc = ctx.voice_client
+    vc = ctx.guild.voice_client
     if not vc or not bot.listening:
         await ctx.send("Not currently listening.")
         return
@@ -392,7 +392,7 @@ async def stop(ctx):
 @bot.command(name="say")
 async def say(ctx, *, text: str):
     """Text-to-speech: type a message, bot speaks it in voice channel."""
-    vc = ctx.voice_client
+    vc = ctx.guild.voice_client
     if not vc or not vc.is_connected():
         await ctx.send("Not in a voice channel. Use `?join` first.")
         return
@@ -420,7 +420,7 @@ async def ask(ctx, *, question: str):
     await ctx.send(f"**Poindexter:** {response}")
 
     # TTS if in voice channel
-    vc = ctx.voice_client
+    vc = ctx.guild.voice_client
     if vc and vc.is_connected():
         tts_path = await bot.generate_tts(response[:300])
         if tts_path:
@@ -474,4 +474,4 @@ if __name__ == "__main__":
         sys.exit(1)
 
     logger.info("Starting Discord voice bot (py-cord + Whisper + Ollama + Sherpa TTS)...")
-    bot.run(DISCORD_TOKEN, log_handler=None)
+    bot.run(DISCORD_TOKEN)

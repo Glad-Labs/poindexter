@@ -204,11 +204,14 @@ class MultiModelQA:
 
             # Use gemma3:27b for QA — good at structured output
             ollama_model = model_override or "gemma3:27b"
+            # Thinking models (qwen3.5, glm-4.7) need more tokens for internal reasoning
+            is_thinking_model = any(t in ollama_model.lower() for t in ("qwen3.5", "glm-4.7", "qwen3:30b"))
+            max_tok = 1500 if is_thinking_model else 300
             result = await client.generate(
                 prompt=prompt,
                 model=ollama_model,
                 temperature=0.3,
-                max_tokens=300,
+                max_tokens=max_tok,
             )
             await client.close()
 
