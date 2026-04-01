@@ -50,5 +50,19 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_event_type ON audit_log(event_type);
 CREATE INDEX IF NOT EXISTS idx_audit_log_task_id ON audit_log(task_id);
 CREATE INDEX IF NOT EXISTS idx_audit_log_severity ON audit_log(severity);
 
+-- =============================================
+-- System devices — Tailscale network inventory
+-- =============================================
+CREATE TABLE IF NOT EXISTS system_devices (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    tailscale_ip VARCHAR(45) NOT NULL,
+    device_type VARCHAR(50),
+    os VARCHAR(50),
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Log successful initialization
-DO $$ BEGIN RAISE NOTICE 'pgvector + embeddings + audit_log tables initialized successfully'; END $$;
+DO $$ BEGIN RAISE NOTICE 'pgvector + embeddings + audit_log + system_devices initialized'; END $$;
