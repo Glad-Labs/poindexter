@@ -138,7 +138,7 @@ class VoiceBot(commands.Bot):
             sherpa_bin = os.path.join(
                 os.path.expanduser("~"), ".openclaw", "tools",
                 "sherpa-onnx-tts", "runtime", "sherpa-onnx-v1.12.23-win-x64-shared",
-                "sherpa-onnx-offline-tts.exe"
+                "bin", "sherpa-onnx-offline-tts.exe"
             )
 
             if not os.path.exists(sherpa_bin):
@@ -194,6 +194,30 @@ class VoiceBot(commands.Bot):
 
 
 bot = VoiceBot()
+
+
+async def _ask_ollama(question: str, model: str = "qwen3.5:latest") -> str:
+    """Send a question to local Ollama and return the response."""
+    import json
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                "http://127.0.0.1:11434/api/generate",
+                json={
+                    "model": model,
+                    "prompt": question,
+                    "stream": False,
+                    "options": {"num_predict": 300, "temperature": 0.7},
+                },
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get("response", "").strip() or "[Empty response from Ollama]"
+            return f"[Ollama returned HTTP {resp.status_code}]"
+    except Exception as e:
+        logger.error("Ollama request failed: %s", e)
+        return f"[Ollama error: {e}]"
 
 
 @bot.command(name="join")
@@ -252,8 +276,8 @@ async def ask(ctx, *, question: str):
     await ctx.send(f"Processing: *{question[:100]}*...")
     logger.info("Question: %s", question[:60])
 
-    # For now, echo back + system info. Future: route to Claude/Ollama
-    response = f"Received your question: {question}. Full AI response routing coming soon."
+    # Route through local Ollama
+    response = await _ask_ollama(question)
 
     await ctx.send(f"**Poindexter:** {response}")
 
