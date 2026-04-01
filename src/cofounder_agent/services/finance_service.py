@@ -77,8 +77,8 @@ class FinanceService:
                     "WHERE created_at >= date_trunc('month', NOW())"
                 )
                 costs["cloud_api_monthly"] = round(float(row["total"]), 2) if row else 0.0
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("[FINANCE] Failed to query cloud API costs: %s", e)
 
         # Railway estimated (from plan)
         costs["railway_monthly"] = 5.0  # Hobby plan estimate
@@ -102,8 +102,8 @@ class FinanceService:
                     "AND published_at >= date_trunc('month', NOW())"
                 )
                 post_count = int(row["count"]) if row else 0
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("[FINANCE] Failed to query post count: %s", e)
 
         report = [
             f"=== Monthly P&L — {datetime.now(timezone.utc).strftime('%B %Y')} ===",

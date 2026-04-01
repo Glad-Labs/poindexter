@@ -26,7 +26,8 @@ async def get_subscriber_count(pool) -> int:
             "SELECT COUNT(*) as count FROM newsletter_subscribers WHERE is_active = true"
         )
         return int(row["count"]) if row else 0
-    except Exception:
+    except Exception as e:
+        logger.warning("[NEWSLETTER] Failed to query subscriber count: %s", e)
         return 0
 
 

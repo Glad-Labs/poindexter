@@ -67,7 +67,8 @@ class CostGuard:
                 "WHERE created_at >= date_trunc('day', NOW())"
             )
             return float(row["total"]) if row else 0.0
-        except Exception:
+        except Exception as e:
+            logger.warning("[COST_GUARD] Failed to query daily spend: %s", e)
             return 0.0
 
     async def get_monthly_spend(self) -> float:
@@ -81,7 +82,8 @@ class CostGuard:
                 "WHERE created_at >= date_trunc('month', NOW())"
             )
             return float(row["total"]) if row else 0.0
-        except Exception:
+        except Exception as e:
+            logger.warning("[COST_GUARD] Failed to query monthly spend: %s", e)
             return 0.0
 
     async def check_budget(self, provider: str) -> Tuple[bool, str]:
