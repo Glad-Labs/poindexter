@@ -10,6 +10,7 @@ Standalone: only depends on asyncpg + urllib (no FastAPI imports).
 
 import json
 import logging
+import os
 import time
 import urllib.error
 import urllib.request
@@ -18,6 +19,9 @@ logger = logging.getLogger("brain.probes")
 
 API_URL = "https://cofounder-production.up.railway.app"
 LOCAL_OLLAMA = "http://localhost:11434"
+
+# Detect Railway environment (no local Ollama available)
+IS_RAILWAY = bool(os.getenv("RAILWAY_SERVICE_ID"))
 
 # Probe schedules (seconds between runs)
 PROBE_SCHEDULES = {
@@ -80,6 +84,8 @@ async def probe_db_ping(pool) -> dict:
 
 async def probe_ollama_models(_pool) -> dict:
     """Probe: List Ollama models — verify expected models are loaded."""
+    if IS_RAILWAY:
+        return {"ok": True, "detail": "skipped on Railway (no local Ollama)", "models": []}
     ok, result = _http_json(f"{LOCAL_OLLAMA}/api/tags", timeout=5)
     if not ok:
         return {"ok": False, "detail": f"Ollama unreachable: {result.get('error', 'unknown')}", "models": []}
@@ -122,6 +128,8 @@ async def probe_quality_score(pool) -> dict:
 
 async def probe_content_gen(_pool) -> dict:
     """Probe: Check Ollama can generate text — 1-sentence test."""
+    if IS_RAILWAY:
+        return {"ok": True, "detail": "skipped on Railway (no local Ollama)"}
     ok, result = _http_json(
         f"{LOCAL_OLLAMA}/api/generate",
         method="POST",
