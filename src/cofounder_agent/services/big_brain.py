@@ -147,6 +147,79 @@ class BigBrain:
             logger.warning("[BRAIN] Failed to recall fact %s.%s: %s", entity, attribute, e)
             return None
 
+    async def semantic_search(
+        self, query: str, limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """Search knowledge using pgvector semantic similarity.
+
+        Embeds the query via Ollama and searches the embeddings table for
+        brain_knowledge entries. Falls back to the existing ILIKE-based
+        search() if Ollama or pgvector is unavailable.
+
+        Args:
+            query: Natural language search query.
+            limit: Maximum number of results.
+
+        Returns:
+            List of dicts with entity, attribute, value, confidence,
+            similarity (float, 0-1).
+        """
+        if not self.pool:
+            return []
+
+        try:
+            from .ollama_client import OllamaClient
+            from .embeddings_db import EmbeddingsDatabase
+
+            ollama = OllamaClient()
+            query_embedding = await ollama.embed(query)
+            await ollama.close()
+
+            embeddings_db = EmbeddingsDatabase(self.pool)
+            similar = await embeddings_db.search_similar(
+                embedding=query_embedding,
+                limit=limit,
+                source_type="brain_knowledge",
+                min_similarity=0.3,
+            )
+
+            if not similar:
+                logger.info("[BRAIN] Semantic search found no results, falling back to ILIKE")
+                return await self.search(query, limit)
+
+            # Enrich results with full knowledge triple from brain_knowledge
+            results = []
+            for match in similar:
+                source_id = match.get("source_id", "")
+                # source_id format is "entity::attribute"
+                parts = source_id.split("::", 1)
+                if len(parts) == 2:
+                    entity, attribute = parts
+                    try:
+                        row = await self.pool.fetchrow(
+                            """
+                            SELECT entity, attribute, value, confidence, updated_at
+                            FROM brain_knowledge
+                            WHERE entity = $1 AND attribute = $2
+                            AND (expires_at IS NULL OR expires_at > NOW())
+                            """,
+                            entity,
+                            attribute,
+                        )
+                        if row:
+                            result = dict(row)
+                            result["similarity"] = match.get("similarity", 0)
+                            results.append(result)
+                    except Exception:
+                        pass
+
+            logger.info("[BRAIN] Semantic search returned %d results", len(results))
+            return results if results else await self.search(query, limit)
+
+        except Exception as e:
+            logger.warning("[BRAIN] Semantic search unavailable (%s), falling back to ILIKE", e)
+            return await self.search(query, limit)
+
     async def search(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
         """Search knowledge by value content."""
         if not self.pool:

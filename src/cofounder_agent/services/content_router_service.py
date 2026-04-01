@@ -525,6 +525,76 @@ async def _build_writing_style_context(
         return None
 
 
+async def _build_rag_context(
+    database_service: Optional[DatabaseService], topic: str
+) -> Optional[str]:
+    """Embed the topic and search pgvector for similar published posts.
+
+    Returns a formatted context string for injection into the generation prompt,
+    or None if RAG is unavailable or finds no results.
+
+    This is non-blocking: if Ollama or pgvector is unavailable, returns None
+    so the pipeline continues without RAG.
+    """
+    if not database_service or not getattr(database_service, "embeddings", None):
+        return None
+
+    try:
+        from .ollama_client import OllamaClient
+
+        ollama = OllamaClient()
+        topic_embedding = await ollama.embed(topic)
+        await ollama.close()
+
+        similar_posts = await database_service.embeddings.search_similar(
+            embedding=topic_embedding,
+            limit=5,
+            source_type="post",
+            min_similarity=0.3,
+        )
+
+        if not similar_posts:
+            return None
+
+        # Look up post details (title, excerpt, slug) for each match
+        lines = [
+            "RELATED POSTS WE'VE PUBLISHED (reference for internal linking, avoid repeating same angles):"
+        ]
+        pool = database_service.pool if database_service else None
+        for i, match in enumerate(similar_posts, 1):
+            post_id = match.get("source_id", "")
+            similarity = match.get("similarity", 0)
+            metadata = match.get("metadata") or {}
+            title = metadata.get("title", "Untitled")
+
+            # Try to fetch slug and excerpt from the posts table
+            slug = ""
+            excerpt = ""
+            if pool:
+                try:
+                    row = await pool.fetchrow(
+                        "SELECT slug, excerpt FROM posts WHERE id::text = $1 LIMIT 1",
+                        post_id,
+                    )
+                    if row:
+                        slug = row.get("slug", "")
+                        excerpt = row.get("excerpt", "") or ""
+                except Exception:
+                    pass  # Non-critical — use metadata title only
+
+            excerpt_short = (excerpt[:120] + "...") if len(excerpt) > 120 else excerpt
+            url = f"/posts/{slug}" if slug else f"(post id: {post_id})"
+            lines.append(
+                f"{i}. [{title}] -- {excerpt_short} ({url}) [similarity: {similarity:.2f}]"
+            )
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        logger.debug("RAG context build failed (non-fatal): %s", e)
+        return None
+
+
 async def _stage_generate_content(
     database_service, task_id, topic, style, tone, target_length, tags, models_by_phase, result
 ):
@@ -550,6 +620,15 @@ async def _stage_generate_content(
             logger.info("📚 Research context built: %d chars", len(research_context))
     except Exception as e:
         logger.warning("Research context skipped: %s", e)
+
+    # RAG: Embed the topic and find similar published posts via pgvector
+    try:
+        rag_context = await _build_rag_context(database_service, topic)
+        if rag_context:
+            research_context = f"{research_context}\n\n{rag_context}" if research_context else rag_context
+            logger.info("🔍 RAG context injected: %d chars", len(rag_context))
+    except Exception as e:
+        logger.warning("RAG context skipped (non-fatal): %s", e)
 
     content_text, model_used, metrics = await content_generator.generate_blog_post(
         topic=topic,

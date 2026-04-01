@@ -37,6 +37,30 @@ logger = get_logger(__name__)
 publishing_router = APIRouter(tags=["Task Publishing"])
 
 
+async def _embed_published_post(db_service: DatabaseService, post_dict: dict) -> None:
+    """Embed a newly published post into pgvector as a background task.
+
+    Non-blocking: if Ollama or pgvector is unavailable, logs a warning
+    and returns silently so the publish flow is never interrupted.
+    """
+    try:
+        from services.ollama_client import OllamaClient
+        from services.embedding_service import EmbeddingService
+
+        embeddings_db = getattr(db_service, "embeddings", None)
+        if not embeddings_db:
+            logger.debug("[RAG] Skipping post embedding: embeddings DB not available")
+            return
+
+        ollama = OllamaClient()
+        embedding_svc = EmbeddingService(ollama_client=ollama, embeddings_db=embeddings_db)
+        await embedding_svc.embed_post(post_dict)
+        await ollama.close()
+        logger.info("[RAG] Embedded published post for future RAG: %s", post_dict.get("title", "")[:60])
+    except Exception as e:
+        logger.warning("[RAG] Failed to embed published post (non-fatal): %s", e)
+
+
 # ============================================================================
 # CONTENT CLEANING UTILITIES
 # ============================================================================
