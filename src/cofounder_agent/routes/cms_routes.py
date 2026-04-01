@@ -456,10 +456,14 @@ async def update_post(
         elif filtered.get("status") == "published" and "published_at" not in filtered:
             filtered["published_at"] = datetime.now(timezone.utc)
 
-        # Build parameterized SET clause
+        # Build parameterized SET clause using ParameterizedQueryBuilder
+        # to validate column identifiers and prevent SQL injection
+        from utils.sql_safety import ParameterizedQueryBuilder, SQLIdentifierValidator, SQLOperator
+
         set_parts = []
         params = []
         for i, (col, val) in enumerate(filtered.items(), 1):
+            col = SQLIdentifierValidator.safe_identifier(col, "column")
             set_parts.append(f"{col} = ${i}")
             params.append(val)
         params.append(post_id)
