@@ -184,11 +184,12 @@ class TestGetAvailableProviders:
 
 @pytest.mark.unit
 class TestGetPreferredProvider:
-    def test_gemini_preferred_when_available(self, monkeypatch):
+    def test_ollama_preferred_when_available(self, monkeypatch):
         monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
         monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
         monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-key")
-        assert ProviderChecker.get_preferred_provider() == "gemini"
+        # Ollama is always available and now has highest priority (local, free)
+        assert ProviderChecker.get_preferred_provider() == "ollama"
 
     def test_ollama_when_no_cloud_providers(self, monkeypatch):
         for key in (

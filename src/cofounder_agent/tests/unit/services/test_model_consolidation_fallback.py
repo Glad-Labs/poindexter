@@ -128,7 +128,7 @@ class TestFallbackChain:
 
     async def test_generate_raises_walks_chain(self, service):
         """When first available adapter raises, the next provider is tried."""
-        google_response = _make_response(ProviderType.GOOGLE, "hello from google")
+        anthropic_response = _make_response(ProviderType.ANTHROPIC, "hello from anthropic")
 
         service.adapters[ProviderType.OLLAMA] = _failing_adapter(
             ConnectionError("Ollama not running")
@@ -136,14 +136,15 @@ class TestFallbackChain:
         service.adapters[ProviderType.HUGGINGFACE] = _failing_adapter(
             RuntimeError("HF quota exceeded")
         )
-        service.adapters[ProviderType.GOOGLE] = _available_adapter(google_response)
+        service.adapters[ProviderType.ANTHROPIC] = _available_adapter(anthropic_response)
 
-        for p in [ProviderType.ANTHROPIC, ProviderType.OPENAI]:
+        # Google removed from fallback chain; only OpenAI remains after Anthropic
+        for p in [ProviderType.OPENAI]:
             service.adapters[p] = _unavailable_adapter()
 
         result = await service.generate("test prompt")
 
-        assert result.text == "hello from google"
+        assert result.text == "hello from anthropic"
 
     async def test_all_providers_fail_raises_service_error(self, service):
         """When every provider either fails or is unavailable, ServiceError is raised."""
