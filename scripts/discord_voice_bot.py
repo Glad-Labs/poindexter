@@ -45,13 +45,15 @@ logger.addHandler(_fh)
 if sys.stdout is not None and getattr(sys.stdout, "name", "") != os.devnull:
     logger.addHandler(logging.StreamHandler(sys.stdout))
 
-# Load config
-DISCORD_TOKEN = os.getenv("DISCORD_BOT_TOKEN", "")
+# Load config — uses dedicated voice bot token (separate from OpenClaw bot)
+DISCORD_TOKEN = os.getenv("DISCORD_VOICE_BOT_TOKEN", "")
 if not DISCORD_TOKEN:
     _env_path = os.path.join(os.path.expanduser("~"), ".openclaw", "workspace", ".env")
     if os.path.exists(_env_path):
         for _line in open(_env_path):
-            if _line.startswith("DISCORD_BOT_TOKEN="):
+            if _line.startswith("DISCORD_VOICE_BOT_TOKEN="):
+                DISCORD_TOKEN = _line.split("=", 1)[1].strip()
+            elif _line.startswith("DISCORD_BOT_TOKEN=") and not DISCORD_TOKEN:
                 DISCORD_TOKEN = _line.split("=", 1)[1].strip()
 
 # Whisper model — "base" is fast on GPU, "medium" for better accuracy
@@ -88,7 +90,8 @@ class VoiceBot(commands.Bot):
         intents = discord.Intents.default()
         intents.message_content = True
         intents.voice_states = True
-        super().__init__(command_prefix="!", intents=intents)
+        # Use ? prefix to avoid conflicts with OpenClaw bot (which uses !)
+        super().__init__(command_prefix="?", intents=intents)
         self.whisper_model = None
         self.recording = False
         self.text_channel = None
