@@ -211,7 +211,10 @@ class BigBrain:
                             result["similarity"] = match.get("similarity", 0)
                             results.append(result)
                     except Exception:
-                        pass
+                        logger.debug(
+                            "[BRAIN] Failed to fetch knowledge triple for %s::%s",
+                            entity, attribute, exc_info=True,
+                        )
 
             logger.info("[BRAIN] Semantic search returned %d results", len(results))
             return results if results else await self.search(query, limit)

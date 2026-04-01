@@ -178,6 +178,7 @@ class EmbeddingService:
                     skipped += 1
                     continue
             except Exception:
+                logger.debug("[EMBED] needs_reembedding check failed for post %s", post_id, exc_info=True)
                 skipped += 1
                 continue
 

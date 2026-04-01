@@ -127,25 +127,22 @@ async def generate_weekly_digest(pool) -> dict:
 
 async def send_digest_to_telegram(pool, bot_token: str, chat_id: str) -> bool:
     """Send the weekly digest as a Telegram message (for testing/preview)."""
-    import urllib.request
-    import json
+    import httpx
 
     digest = await generate_weekly_digest(pool)
     if digest["post_count"] == 0:
         return False
 
     try:
-        payload = json.dumps({
-            "chat_id": chat_id,
-            "text": digest["text"],
-            "parse_mode": "HTML",
-        }).encode()
-        req = urllib.request.Request(
-            f"https://api.telegram.org/bot{bot_token}/sendMessage",
-            data=payload,
-            headers={"Content-Type": "application/json"},
-        )
-        urllib.request.urlopen(req, timeout=10)
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.post(
+                f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                json={
+                    "chat_id": chat_id,
+                    "text": digest["text"],
+                    "parse_mode": "HTML",
+                },
+            )
         return True
     except Exception as e:
         logger.warning("[NEWSLETTER] Failed to send digest to Telegram: %s", e)

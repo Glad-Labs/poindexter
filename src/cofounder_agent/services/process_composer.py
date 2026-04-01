@@ -361,7 +361,7 @@ class ProcessComposer:
 
 async def step_create_task(intent: str = "", **kwargs) -> dict:
     """Create a content task from intent."""
-    import urllib.request
+    import httpx
     API_URL = "https://cofounder-production.up.railway.app"
     API_TOKEN = kwargs.get("api_token", "")
 
@@ -372,52 +372,57 @@ async def step_create_task(intent: str = "", **kwargs) -> dict:
             topic = topic[len(prefix):]
             break
 
-    payload = json.dumps({
+    payload = {
         "task_name": f"Blog post: {topic}",
         "topic": topic,
         "category": "technology",
         "target_audience": "developers and founders",
-    }).encode()
+    }
 
-    req = urllib.request.Request(
-        f"{API_URL}/api/tasks",
-        data=payload,
-        headers={"Authorization": f"Bearer {API_TOKEN}", "Content-Type": "application/json"},
-    )
-    resp = urllib.request.urlopen(req, timeout=10)
-    data = json.loads(resp.read())
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.post(
+            f"{API_URL}/api/tasks",
+            json=payload,
+            headers={"Authorization": f"Bearer {API_TOKEN}"},
+        )
+        data = resp.json()
     return {"task_id": data.get("task_id"), "topic": topic, "status": "pending"}
 
 
 async def step_probe_site(**kwargs) -> dict:
     """Check if gladlabs.io is responding."""
-    import urllib.request
+    import httpx
     try:
-        req = urllib.request.Request("https://gladlabs.io")
-        resp = urllib.request.urlopen(req, timeout=10)
-        return {"site_status": resp.status, "site_healthy": resp.status == 200}
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get("https://gladlabs.io")
+            return {"site_status": resp.status_code, "site_healthy": resp.status_code == 200}
     except Exception as e:
         return {"site_status": 0, "site_healthy": False, "site_error": str(e)[:100]}
 
 
 async def step_probe_api(**kwargs) -> dict:
     """Check if the backend API is healthy."""
-    import urllib.request
+    import httpx
     try:
-        resp = urllib.request.urlopen("https://cofounder-production.up.railway.app/api/health", timeout=10)
-        data = json.loads(resp.read())
-        return {"api_status": data.get("status"), "api_healthy": data.get("status") in ("healthy", "degraded")}
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get("https://cofounder-production.up.railway.app/api/health")
+            data = resp.json()
+            return {"api_status": data.get("status"), "api_healthy": data.get("status") in ("healthy", "degraded")}
     except Exception as e:
         return {"api_status": "unreachable", "api_healthy": False, "api_error": str(e)[:100]}
 
 
 async def step_check_budget(**kwargs) -> dict:
     """Check current spending status."""
-    import urllib.request
+    import httpx
     try:
-        resp = urllib.request.urlopen("https://cofounder-production.up.railway.app/api/metrics/costs/budget", timeout=10)
-        return {"budget": json.loads(resp.read())}
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                "https://cofounder-production.up.railway.app/api/metrics/costs/budget",
+            )
+            return {"budget": resp.json()}
     except Exception:
+        logger.warning("[BUDGET] Failed to fetch budget status", exc_info=True)
         return {"budget": {"error": "Could not fetch budget"}}
 
 
