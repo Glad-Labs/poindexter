@@ -26,7 +26,7 @@
       "gridPos": { "h": 12, "w": 16, "x": 0, "y": 0 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -69,7 +69,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "gladlabs-postgres"
+            "uid": "local-brain-db"
           },
           "rawSql": "SELECT date_trunc('day', created_at) as time, AVG(quality_score) as avg_quality FROM content_tasks WHERE quality_score IS NOT NULL AND $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
           "format": "time_series",
@@ -84,7 +84,7 @@
       "gridPos": { "h": 12, "w": 8, "x": 16, "y": 0 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -120,7 +120,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "gladlabs-postgres"
+            "uid": "local-brain-db"
           },
           "rawSql": "SELECT ROUND(COUNT(*) FILTER (WHERE quality_score >= 7.0) * 100.0 / NULLIF(COUNT(*), 0), 1) as pass_rate FROM content_tasks WHERE quality_score IS NOT NULL AND created_at > NOW() - INTERVAL '7 days'",
           "format": "table",
@@ -135,7 +135,7 @@
       "gridPos": { "h": 10, "w": 24, "x": 0, "y": 12 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -169,7 +169,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "gladlabs-postgres"
+            "uid": "local-brain-db"
           },
           "rawSql": "SELECT quality_score FROM content_tasks WHERE quality_score IS NOT NULL AND created_at > NOW() - INTERVAL '30 days'",
           "format": "table",

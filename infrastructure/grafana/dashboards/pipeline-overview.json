@@ -26,7 +26,7 @@
       "gridPos": { "h": 10, "w": 8, "x": 0, "y": 0 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -93,7 +93,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "gladlabs-postgres"
+            "uid": "local-brain-db"
           },
           "rawSql": "SELECT status, COUNT(*) as count FROM content_tasks GROUP BY status",
           "format": "table",
@@ -108,7 +108,7 @@
       "gridPos": { "h": 10, "w": 16, "x": 8, "y": 0 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -139,7 +139,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "gladlabs-postgres"
+            "uid": "local-brain-db"
           },
           "rawSql": "SELECT date_trunc('day', created_at) as time, COUNT(*) as tasks_created FROM content_tasks WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
           "format": "time_series",
@@ -154,7 +154,7 @@
       "gridPos": { "h": 6, "w": 6, "x": 0, "y": 10 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -191,7 +191,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "gladlabs-postgres"
+            "uid": "local-brain-db"
           },
           "rawSql": "SELECT ROUND(COUNT(*) FILTER (WHERE status = 'completed') * 100.0 / NULLIF(COUNT(*), 0), 1) as success_rate FROM content_tasks WHERE created_at > NOW() - INTERVAL '7 days'",
           "format": "table",
@@ -206,7 +206,7 @@
       "gridPos": { "h": 6, "w": 10, "x": 6, "y": 10 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -237,7 +237,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "gladlabs-postgres"
+            "uid": "local-brain-db"
           },
           "rawSql": "SELECT stage, COUNT(*) as count FROM content_tasks WHERE status = 'in_progress' GROUP BY stage",
           "format": "table",
@@ -252,7 +252,7 @@
       "gridPos": { "h": 6, "w": 8, "x": 16, "y": 10 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "gladlabs-postgres"
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -288,7 +288,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "gladlabs-postgres"
+            "uid": "local-brain-db"
           },
           "rawSql": "SELECT ROUND(AVG(EXTRACT(EPOCH FROM (updated_at - created_at)) / 60), 1) as avg_minutes FROM content_tasks WHERE status = 'completed' AND created_at > NOW() - INTERVAL '7 days'",
           "format": "table",
