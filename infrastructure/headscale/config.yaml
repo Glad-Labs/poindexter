@@ -33,6 +33,10 @@ dns:
       - 1.1.1.1
       - 8.8.8.8
 
+# Noise protocol key (required for Tailscale v2)
+noise:
+  private_key_path: /var/lib/headscale/noise_private.key
+
 # Disable TLS for local use (behind your own network)
 tls_cert_path: ""
 tls_key_path: ""
