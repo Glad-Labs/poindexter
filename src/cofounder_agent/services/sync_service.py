@@ -1,0 +1,518 @@
+"""
+Database Sync Service for Split Architecture
+
+Handles bidirectional sync between local brain DB and cloud (Railway) DB:
+
+  PUSH (local -> cloud): Published posts, categories, tags, post_tags
+  PULL (cloud -> local): page_views (web_analytics), newsletter subscriber counts
+
+Cloud DB (Railway):  Public site data only
+Local DB:            Full operational data + pulled metrics for Grafana
+
+All operations use upsert (INSERT ON CONFLICT UPDATE) for idempotency.
+Graceful failure: if either DB is unreachable, log and skip.
+"""
+
+import asyncio
+import logging
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+import asyncpg
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Connection string defaults (overridable via constructor or env)
+# ---------------------------------------------------------------------------
+CLOUD_DATABASE_URL = (
+    "postgresql://postgres:***REMOVED***"
+    "@hopper.proxy.rlwy.net:32382/railway"
+)
+LOCAL_DATABASE_URL = (
+    "postgresql://gladlabs:gladlabs-brain-local@localhost:5433/gladlabs_brain"
+)
+
+
+class SyncService:
+    """
+    Async service for syncing data between local and cloud PostgreSQL databases.
+
+    Usage from FastAPI:
+        sync = SyncService()
+        await sync.connect()
+        await sync.push_post(post_id)
+        await sync.close()
+
+    Usage standalone:
+        async with SyncService() as sync:
+            await sync.push_all_posts()
+    """
+
+    def __init__(
+        self,
+        cloud_url: Optional[str] = None,
+        local_url: Optional[str] = None,
+    ):
+        import os
+
+        self.cloud_url = cloud_url or os.getenv("CLOUD_DATABASE_URL", CLOUD_DATABASE_URL)
+        self.local_url = local_url or os.getenv("LOCAL_DATABASE_URL", LOCAL_DATABASE_URL)
+        self._cloud_pool: Optional[asyncpg.Pool] = None
+        self._local_pool: Optional[asyncpg.Pool] = None
+
+    # ------------------------------------------------------------------
+    # Context manager
+    # ------------------------------------------------------------------
+
+    async def __aenter__(self) -> "SyncService":
+        await self.connect()
+        return self
+
+    async def __aexit__(self, *exc: Any) -> None:
+        await self.close()
+
+    # ------------------------------------------------------------------
+    # Connection management
+    # ------------------------------------------------------------------
+
+    async def connect(self) -> None:
+        """Open connection pools to both databases."""
+        try:
+            self._cloud_pool = await asyncpg.create_pool(
+                self.cloud_url, min_size=2, max_size=5, timeout=15, command_timeout=30,
+            )
+            logger.info("Connected to cloud DB (Railway)")
+        except Exception as exc:
+            logger.error("Failed to connect to cloud DB: %s", exc)
+            self._cloud_pool = None
+
+        try:
+            self._local_pool = await asyncpg.create_pool(
+                self.local_url, min_size=2, max_size=5, timeout=15, command_timeout=30,
+            )
+            logger.info("Connected to local DB")
+        except Exception as exc:
+            logger.error("Failed to connect to local DB: %s", exc)
+            self._local_pool = None
+
+    async def close(self) -> None:
+        """Close both connection pools gracefully."""
+        for label, pool in [("cloud", self._cloud_pool), ("local", self._local_pool)]:
+            if pool:
+                try:
+                    await pool.close()
+                    logger.info("Closed %s DB pool", label)
+                except Exception as exc:
+                    logger.warning("Error closing %s pool: %s", label, exc)
+        self._cloud_pool = None
+        self._local_pool = None
+
+    def _require_pools(self) -> bool:
+        """Return True if both pools are live; log and return False otherwise."""
+        if not self._cloud_pool:
+            logger.error("Cloud DB pool is not connected -- skipping sync operation")
+            return False
+        if not self._local_pool:
+            logger.error("Local DB pool is not connected -- skipping sync operation")
+            return False
+        return True
+
+    # ======================================================================
+    # PUSH: local -> cloud
+    # ======================================================================
+
+    async def push_post(self, post_id: str) -> bool:
+        """
+        Read a single published post from local DB and upsert it to cloud DB.
+
+        Syncs the post row, its category, all associated tags, and post_tags
+        junction entries.  Returns True on success, False on failure/skip.
+        """
+        if not self._require_pools():
+            return False
+
+        try:
+            async with self._local_pool.acquire() as local:
+                # Fetch the post
+                post = await local.fetchrow(
+                    "SELECT * FROM posts WHERE id = $1", post_id,
+                )
+                if not post:
+                    logger.warning("Post %s not found in local DB", post_id)
+                    return False
+
+                # Fetch category if present
+                category = None
+                if post["category_id"]:
+                    category = await local.fetchrow(
+                        "SELECT * FROM categories WHERE id = $1", post["category_id"],
+                    )
+
+                # Fetch tags via post_tags junction
+                tag_rows = await local.fetch(
+                    """
+                    SELECT t.* FROM tags t
+                    JOIN post_tags pt ON pt.tag_id = t.id
+                    WHERE pt.post_id = $1
+                    """,
+                    post_id,
+                )
+
+                # Fetch post_tags entries
+                post_tag_rows = await local.fetch(
+                    "SELECT * FROM post_tags WHERE post_id = $1", post_id,
+                )
+
+            # Upsert to cloud
+            async with self._cloud_pool.acquire() as cloud:
+                async with cloud.transaction():
+                    # 1. Category
+                    if category:
+                        await self._upsert_category(cloud, category)
+
+                    # 2. Tags
+                    for tag in tag_rows:
+                        await self._upsert_tag(cloud, tag)
+
+                    # 3. Post
+                    await self._upsert_post(cloud, post)
+
+                    # 4. Post-tag associations
+                    for pt in post_tag_rows:
+                        await self._upsert_post_tag(cloud, pt)
+
+            logger.info("Pushed post %s to cloud DB", post_id)
+            return True
+
+        except Exception as exc:
+            logger.error("Failed to push post %s: %s", post_id, exc, exc_info=True)
+            return False
+
+    async def push_all_posts(self) -> Dict[str, int]:
+        """
+        Push all published posts from local DB to cloud DB.
+
+        Returns dict with counts: {"pushed": N, "skipped": M, "failed": F}
+        """
+        if not self._require_pools():
+            return {"pushed": 0, "skipped": 0, "failed": 0}
+
+        stats = {"pushed": 0, "skipped": 0, "failed": 0}
+
+        try:
+            async with self._local_pool.acquire() as local:
+                rows = await local.fetch(
+                    "SELECT id FROM posts WHERE status = 'published' ORDER BY published_at",
+                )
+
+            logger.info("Found %d published posts to sync", len(rows))
+
+            for row in rows:
+                pid = str(row["id"])
+                ok = await self.push_post(pid)
+                if ok:
+                    stats["pushed"] += 1
+                else:
+                    stats["failed"] += 1
+
+        except Exception as exc:
+            logger.error("push_all_posts failed: %s", exc, exc_info=True)
+
+        logger.info(
+            "Push complete: %d pushed, %d failed",
+            stats["pushed"], stats["failed"],
+        )
+        return stats
+
+    # ------------------------------------------------------------------
+    # Upsert helpers (cloud writes)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    async def _upsert_category(conn: asyncpg.Connection, cat: asyncpg.Record) -> None:
+        await conn.execute(
+            """
+            INSERT INTO categories (id, name, slug, description, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (id) DO UPDATE SET
+                name        = EXCLUDED.name,
+                slug        = EXCLUDED.slug,
+                description = EXCLUDED.description,
+                updated_at  = EXCLUDED.updated_at
+            """,
+            cat["id"], cat["name"], cat["slug"],
+            cat.get("description"), cat["created_at"], cat["updated_at"],
+        )
+
+    @staticmethod
+    async def _upsert_tag(conn: asyncpg.Connection, tag: asyncpg.Record) -> None:
+        await conn.execute(
+            """
+            INSERT INTO tags (id, name, slug, description, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (id) DO UPDATE SET
+                name        = EXCLUDED.name,
+                slug        = EXCLUDED.slug,
+                description = EXCLUDED.description,
+                updated_at  = EXCLUDED.updated_at
+            """,
+            tag["id"], tag["name"], tag["slug"],
+            tag.get("description"), tag["created_at"], tag["updated_at"],
+        )
+
+    @staticmethod
+    async def _upsert_post(conn: asyncpg.Connection, post: asyncpg.Record) -> None:
+        await conn.execute(
+            """
+            INSERT INTO posts (
+                id, title, slug, content, excerpt,
+                featured_image_url, cover_image_url,
+                author_id, category_id, tag_ids, status,
+                seo_title, seo_description, seo_keywords,
+                created_by, updated_by,
+                created_at, updated_at, published_at
+            )
+            VALUES (
+                $1, $2, $3, $4, $5,
+                $6, $7,
+                $8, $9, $10, $11,
+                $12, $13, $14,
+                $15, $16,
+                $17, $18, $19
+            )
+            ON CONFLICT (id) DO UPDATE SET
+                title              = EXCLUDED.title,
+                slug               = EXCLUDED.slug,
+                content            = EXCLUDED.content,
+                excerpt            = EXCLUDED.excerpt,
+                featured_image_url = EXCLUDED.featured_image_url,
+                cover_image_url    = EXCLUDED.cover_image_url,
+                author_id          = EXCLUDED.author_id,
+                category_id        = EXCLUDED.category_id,
+                tag_ids            = EXCLUDED.tag_ids,
+                status             = EXCLUDED.status,
+                seo_title          = EXCLUDED.seo_title,
+                seo_description    = EXCLUDED.seo_description,
+                seo_keywords       = EXCLUDED.seo_keywords,
+                updated_by         = EXCLUDED.updated_by,
+                updated_at         = EXCLUDED.updated_at,
+                published_at       = EXCLUDED.published_at
+            """,
+            post["id"], post["title"], post["slug"], post["content"], post.get("excerpt"),
+            post.get("featured_image_url"), post.get("cover_image_url"),
+            post.get("author_id"), post.get("category_id"), post.get("tag_ids", []),
+            post.get("status", "draft"),
+            post.get("seo_title"), post.get("seo_description"), post.get("seo_keywords"),
+            post.get("created_by"), post.get("updated_by"),
+            post["created_at"], post["updated_at"], post.get("published_at"),
+        )
+
+    @staticmethod
+    async def _upsert_post_tag(conn: asyncpg.Connection, pt: asyncpg.Record) -> None:
+        await conn.execute(
+            """
+            INSERT INTO post_tags (post_id, tag_id)
+            VALUES ($1, $2)
+            ON CONFLICT (post_id, tag_id) DO NOTHING
+            """,
+            pt["post_id"], pt["tag_id"],
+        )
+
+    # ======================================================================
+    # PULL: cloud -> local  (metrics for Grafana)
+    # ======================================================================
+
+    async def pull_metrics(self) -> Dict[str, Any]:
+        """
+        Pull analytics and subscriber metrics from cloud DB into local DB
+        so Grafana dashboards can query them locally.
+
+        Syncs:
+          - web_analytics rows (page_views, sessions, etc.)
+          - newsletter_subscribers aggregate counts
+
+        Returns dict summarising what was pulled.
+        """
+        if not self._require_pools():
+            return {"status": "skipped", "reason": "pools not connected"}
+
+        result: Dict[str, Any] = {}
+
+        try:
+            result["web_analytics"] = await self._pull_web_analytics()
+        except Exception as exc:
+            logger.error("Failed to pull web_analytics: %s", exc, exc_info=True)
+            result["web_analytics"] = {"error": str(exc)}
+
+        try:
+            result["newsletter"] = await self._pull_newsletter_stats()
+        except Exception as exc:
+            logger.error("Failed to pull newsletter stats: %s", exc, exc_info=True)
+            result["newsletter"] = {"error": str(exc)}
+
+        logger.info("Pull metrics complete: %s", result)
+        return result
+
+    async def _pull_web_analytics(self) -> Dict[str, Any]:
+        """Pull web_analytics rows from cloud that are newer than local max."""
+        async with self._local_pool.acquire() as local:
+            row = await local.fetchrow(
+                "SELECT MAX(tracked_at) AS max_ts FROM web_analytics",
+            )
+            last_ts = row["max_ts"] if row else None
+
+        async with self._cloud_pool.acquire() as cloud:
+            if last_ts:
+                rows = await cloud.fetch(
+                    "SELECT * FROM web_analytics WHERE tracked_at > $1 ORDER BY tracked_at",
+                    last_ts,
+                )
+            else:
+                rows = await cloud.fetch(
+                    "SELECT * FROM web_analytics ORDER BY tracked_at",
+                )
+
+        if not rows:
+            return {"rows_pulled": 0}
+
+        async with self._local_pool.acquire() as local:
+            async with local.transaction():
+                for r in rows:
+                    await local.execute(
+                        """
+                        INSERT INTO web_analytics (
+                            id, page_id, sessions, users, page_views,
+                            bounce_rate, avg_session_duration, conversion_rate,
+                            tracked_date, tracked_at
+                        )
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                        ON CONFLICT (id) DO UPDATE SET
+                            page_views           = EXCLUDED.page_views,
+                            sessions             = EXCLUDED.sessions,
+                            users                = EXCLUDED.users,
+                            bounce_rate          = EXCLUDED.bounce_rate,
+                            avg_session_duration = EXCLUDED.avg_session_duration,
+                            conversion_rate      = EXCLUDED.conversion_rate,
+                            tracked_date         = EXCLUDED.tracked_date,
+                            tracked_at           = EXCLUDED.tracked_at
+                        """,
+                        r["id"], r.get("page_id"),
+                        r.get("sessions", 0), r.get("users", 0), r.get("page_views", 0),
+                        r.get("bounce_rate"), r.get("avg_session_duration"),
+                        r.get("conversion_rate"),
+                        r.get("tracked_date"), r["tracked_at"],
+                    )
+
+        return {"rows_pulled": len(rows)}
+
+    async def _pull_newsletter_stats(self) -> Dict[str, Any]:
+        """
+        Pull aggregate newsletter stats from cloud and store as a
+        metrics snapshot in local sync_metrics table for Grafana.
+        """
+        async with self._cloud_pool.acquire() as cloud:
+            stats = await cloud.fetchrow(
+                """
+                SELECT
+                    COUNT(*)                                                AS total,
+                    COUNT(*) FILTER (WHERE verified = true)                 AS verified,
+                    COUNT(*) FILTER (WHERE unsubscribed_at IS NOT NULL)     AS unsubscribed,
+                    MAX(subscribed_at)                                      AS latest_signup
+                FROM newsletter_subscribers
+                """,
+            )
+
+        snapshot = {
+            "total": stats["total"],
+            "verified": stats["verified"],
+            "unsubscribed": stats["unsubscribed"],
+            "latest_signup": str(stats["latest_signup"]) if stats["latest_signup"] else None,
+        }
+
+        # Store snapshot in a local sync_metrics table (created if missing)
+        async with self._local_pool.acquire() as local:
+            await local.execute(
+                """
+                CREATE TABLE IF NOT EXISTS sync_metrics (
+                    id SERIAL PRIMARY KEY,
+                    metric_name VARCHAR(100) NOT NULL,
+                    metric_value JSONB NOT NULL,
+                    synced_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                )
+                """,
+            )
+            import json
+
+            await local.execute(
+                """
+                INSERT INTO sync_metrics (metric_name, metric_value)
+                VALUES ('newsletter_subscribers', $1::jsonb)
+                """,
+                json.dumps(snapshot),
+            )
+
+        return snapshot
+
+    # ======================================================================
+    # STATUS
+    # ======================================================================
+
+    async def get_status(self) -> Dict[str, Any]:
+        """
+        Return a status summary comparing local and cloud data.
+
+        Includes row counts, latest timestamps, and connection health.
+        """
+        status: Dict[str, Any] = {
+            "cloud_connected": self._cloud_pool is not None,
+            "local_connected": self._local_pool is not None,
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        if self._cloud_pool:
+            try:
+                async with self._cloud_pool.acquire() as cloud:
+                    row = await cloud.fetchrow(
+                        """
+                        SELECT
+                            (SELECT COUNT(*) FROM posts)       AS posts,
+                            (SELECT COUNT(*) FROM categories)  AS categories,
+                            (SELECT COUNT(*) FROM tags)        AS tags
+                        """,
+                    )
+                    status["cloud"] = dict(row) if row else {}
+            except Exception as exc:
+                status["cloud"] = {"error": str(exc)}
+
+        if self._local_pool:
+            try:
+                async with self._local_pool.acquire() as local:
+                    row = await local.fetchrow(
+                        """
+                        SELECT
+                            (SELECT COUNT(*) FROM posts)                             AS posts_total,
+                            (SELECT COUNT(*) FROM posts WHERE status = 'published')  AS posts_published,
+                            (SELECT COUNT(*) FROM categories)                        AS categories,
+                            (SELECT COUNT(*) FROM tags)                              AS tags
+                        """,
+                    )
+                    status["local"] = dict(row) if row else {}
+
+                    # Latest sync_metrics entry
+                    sync_row = await local.fetchrow(
+                        """
+                        SELECT metric_name, metric_value, synced_at
+                        FROM sync_metrics
+                        ORDER BY synced_at DESC LIMIT 1
+                        """,
+                    )
+                    if sync_row:
+                        status["last_metric_sync"] = {
+                            "metric": sync_row["metric_name"],
+                            "synced_at": str(sync_row["synced_at"]),
+                        }
+            except Exception as exc:
+                status["local"] = {"error": str(exc)}
+
+        return status
