@@ -9,12 +9,12 @@ interface ViewTrackerProps {
 export function ViewTracker({ slug }: ViewTrackerProps) {
   useEffect(() => {
     // Fire once on mount — track this page view
+    // Production API URL hardcoded — no env var dependency.
+    // This is a known, stable endpoint that won't change.
     const apiBase =
       process.env.NEXT_PUBLIC_API_BASE_URL ||
       process.env.NEXT_PUBLIC_FASTAPI_URL ||
-      '';
-
-    if (!apiBase) return;
+      'https://cofounder-production.up.railway.app';
 
     const payload = {
       path: window.location.pathname,
