@@ -40,7 +40,7 @@ router = APIRouter(
 
 
 @router.post("/templates", response_model=Dict[str, Any], name="List Workflow Templates")
-async def list_workflow_templates():
+async def list_workflow_templates() -> Dict[str, Any]:
     """
     Get available workflow templates/pipelines.
 

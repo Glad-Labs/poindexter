@@ -6,7 +6,7 @@ Using pure asyncpg for non-blocking database access.
 """
 
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
@@ -543,7 +543,7 @@ async def list_categories(
 
 @router.get("/api/categories/{slug}")
 @limiter.limit("60/minute")
-async def get_category_by_slug(request: Request, slug: str):
+async def get_category_by_slug(request: Request, slug: str) -> Dict[str, Any]:
     """
     Get a single category by slug (ASYNC).
     Returns: {data: {...}}
@@ -625,7 +625,7 @@ async def list_tags(
 
 @router.get("/api/cms/status")
 @limiter.limit("30/minute")
-async def cms_status(request: Request):
+async def cms_status(request: Request) -> Dict[str, Any]:
     """
     Check CMS database status and table existence (ASYNC).
     Public endpoint — no authentication required.
@@ -684,7 +684,7 @@ async def cms_status(request: Request):
 
 @router.post("/api/track/view")
 @limiter.limit("120/minute")
-async def track_page_view(request: Request):
+async def track_page_view(request: Request) -> JSONResponse:
     """Track a page view. Called by the frontend beacon. No auth required.
 
     Body: {"path": "/posts/slug-here", "slug": "slug-here", "referrer": "..."}

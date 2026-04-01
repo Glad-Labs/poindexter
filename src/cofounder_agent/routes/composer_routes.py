@@ -8,7 +8,7 @@ GET  /api/compose/steps — List available building blocks
 """
 
 from services.logger_config import get_logger
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
@@ -40,7 +40,7 @@ def _get_composer(request: Request):
 
 
 @router.post("/plan")
-async def create_plan(req: ComposeRequest, request: Request):
+async def create_plan(req: ComposeRequest, request: Request) -> Dict[str, Any]:
     """Create an execution plan from intent — returns plan for review."""
     composer = _get_composer(request)
     plan = await composer.plan(req.intent, req.context)
@@ -57,7 +57,7 @@ async def create_plan(req: ComposeRequest, request: Request):
 
 
 @router.post("/approve/{plan_id}")
-async def approve_plan(plan_id: str, req: ApproveRequest, request: Request):
+async def approve_plan(plan_id: str, req: ApproveRequest, request: Request) -> Dict[str, Any]:
     """Approve or reject a pending plan, then execute if approved."""
     plan = _pending_plans.get(plan_id)
     if not plan:
@@ -85,7 +85,7 @@ async def approve_plan(plan_id: str, req: ApproveRequest, request: Request):
 
 
 @router.post("/execute")
-async def execute_immediately(req: ComposeRequest, request: Request):
+async def execute_immediately(req: ComposeRequest, request: Request) -> Dict[str, Any]:
     """Execute a process immediately — skip approval (for trusted/automated use)."""
     composer = _get_composer(request)
     result = await composer.execute(req.intent, req.context)
@@ -102,7 +102,7 @@ async def execute_immediately(req: ComposeRequest, request: Request):
 
 
 @router.get("/steps")
-async def list_steps(request: Request):
+async def list_steps(request: Request) -> Dict[str, Any]:
     """List all available building block steps."""
     composer = _get_composer(request)
     return {"steps": composer.list_steps(), "processes": composer.list_processes()}
