@@ -228,6 +228,14 @@ class DatabaseService:
         """Delegate to tasks module."""
         return await self.tasks.get_drafts(limit, offset)
 
+    async def sweep_stale_tasks(
+        self, timeout_minutes: int = 60, max_retries: int = 3
+    ) -> Dict:
+        """Delegate to tasks module — reset stuck in_progress tasks."""
+        return await self.tasks.sweep_stale_tasks(
+            stale_threshold_minutes=timeout_minutes, max_retries=max_retries
+        )
+
     # CONTENT OPERATIONS
     async def create_post(self, post_data: dict) -> Dict:
         """Delegate to content module."""
