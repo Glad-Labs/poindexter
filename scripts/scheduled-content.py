@@ -17,7 +17,7 @@ import urllib.request
 # Ensure scripts/ is on sys.path so `from lib.…` works
 sys.path.insert(0, os.path.dirname(__file__))
 from lib.config import load_api_token  # noqa: E402
-from lib.topic_dedup import fetch_existing_topics, is_too_similar  # noqa: E402
+from lib.topic_dedup import fetch_existing_topics, is_too_similar, is_topic_duplicate_semantic  # noqa: E402
 
 # Production API
 API_URL = "https://cofounder-production.up.railway.app"
@@ -119,6 +119,10 @@ def main():
 
         # Skip if too similar to existing tasks or published posts
         if is_too_similar(topic, existing):
+            continue
+        # Semantic check against published post embeddings in pgvector
+        if is_topic_duplicate_semantic(topic):
+            print(f"  [SEMANTIC DUP] {topic}")
             continue
 
         if args.dry_run:

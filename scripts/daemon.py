@@ -26,7 +26,7 @@ from datetime import datetime
 # Ensure scripts/ is on sys.path so `from lib.…` works
 sys.path.insert(0, os.path.dirname(__file__))
 from lib.config import load_api_token  # noqa: E402
-from lib.topic_dedup import fetch_existing_topics, is_too_similar  # noqa: E402
+from lib.topic_dedup import fetch_existing_topics, is_too_similar, is_topic_duplicate_semantic  # noqa: E402
 
 # pythonw.exe sets stdout/stderr to None — redirect to devnull before any imports
 # that might trigger warnings (e.g., pydantic) writing to stderr
@@ -191,6 +191,10 @@ def generate_content(count=3):
             domain=random.choice(DOMAINS), num=random.choice(NUMS),
         )
         if is_too_similar(topic, existing):
+            continue
+        # Semantic check against published post embeddings in pgvector
+        if is_topic_duplicate_semantic(topic):
+            logger.info("Skipped (semantic duplicate): %s", topic[:60])
             continue
         try:
             payload = json.dumps({"task_name": f"Blog post: {topic}", "topic": topic,
