@@ -18,8 +18,8 @@ CRITICAL_PACKAGES = {
     "Docker.DockerDesktop",
 }
 
-# Telegram config
-TELEGRAM_CHAT_ID = "5318613610"
+# Telegram config — canonical env var, fallback matches services/telegram_config.py
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "5318613610")
 
 
 def get_telegram_token():

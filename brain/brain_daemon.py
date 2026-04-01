@@ -61,6 +61,7 @@ if not DB_URL:
 
 # Telegram for alerts (direct bot API, no OpenClaw dependency)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+# Canonical env var; fallback matches services/telegram_config.py
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "5318613610")
 
 # Detect if running on Railway (cloud) or locally
