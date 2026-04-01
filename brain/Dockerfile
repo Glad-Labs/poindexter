@@ -4,6 +4,6 @@ WORKDIR /app
 
 RUN pip install --no-cache-dir asyncpg
 
-COPY brain_daemon.py .
+COPY brain_daemon.py health_probes.py ./
 
 CMD ["python", "brain_daemon.py"]
