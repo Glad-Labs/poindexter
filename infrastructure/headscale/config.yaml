@@ -1,0 +1,45 @@
+# Headscale — self-hosted Tailscale control server
+# Docs: https://headscale.net/
+
+server_url: http://localhost:8080
+listen_addr: 0.0.0.0:8080
+metrics_listen_addr: 0.0.0.0:9090
+
+# Database — use SQLite for simplicity (single user)
+database:
+  type: sqlite
+  sqlite:
+    path: /var/lib/headscale/db.sqlite
+
+# IP prefixes for the mesh network
+prefixes:
+  v4: 100.64.0.0/10
+  v6: fd7a:115c:a1e0::/48
+
+# DERP (relay) servers — use Tailscale's public DERP servers
+# Your devices connect directly when possible, DERP is fallback
+derp:
+  server:
+    enabled: false
+  urls:
+    - https://controlplane.tailscale.com/derpmap/default
+
+# DNS configuration
+dns:
+  magic_dns: true
+  base_domain: gladlabs.local
+  nameservers:
+    global:
+      - 1.1.1.1
+      - 8.8.8.8
+
+# Disable TLS for local use (behind your own network)
+tls_cert_path: ""
+tls_key_path: ""
+
+# Node registration
+# After starting, create a user and pre-auth key:
+#   docker exec gladlabs-headscale headscale users create matt
+#   docker exec gladlabs-headscale headscale preauthkeys create --user matt --reusable --expiration 365d
+# Then on each device:
+#   tailscale up --login-server http://YOUR_PC_IP:8080 --authkey KEY
