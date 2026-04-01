@@ -2,6 +2,7 @@ apiVersion: 1
 
 datasources:
   - name: Local Brain DB
+    uid: local-brain-db
     type: postgres
     access: proxy
     url: postgres-local:5432
