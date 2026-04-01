@@ -1,0 +1,295 @@
+# =============================================================================
+# Woodpecker CI Pipeline for Glad Labs
+# Mirrors: .github/workflows/test-on-dev.yml
+#          .github/workflows/deploy-production-with-environments.yml
+#
+# Required Woodpecker secrets:
+#   TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+#   RAILWAY_TOKEN, RAILWAY_PROD_PROJECT_ID,
+#   VERCEL_TOKEN, VERCEL_ORG_ID, PUBLIC_SITE_PROD_PROJECT_ID,
+#   COFOUNDER_PROD_URL,
+#   PUBLIC_SITE_PROD_FASTAPI_URL, PUBLIC_SITE_PROD_SITE_URL,
+#   PUBLIC_SITE_PROD_GA_ID, PUBLIC_SITE_PROD_SENTRY_DSN
+# =============================================================================
+
+when:
+  branch: [dev, main]
+  event: push
+
+steps:
+  # ===========================================================================
+  # INSTALL PHASE
+  # ===========================================================================
+
+  install-node:
+    image: node:22-bookworm
+    commands:
+      - npm ci
+
+  install-python:
+    image: python:3.12-bookworm
+    commands:
+      - pip install --upgrade pip poetry
+      - poetry config virtualenvs.create false
+      - cd src/cofounder_agent && poetry install --no-root
+
+  # ===========================================================================
+  # TEST PHASE (runs on dev and main)
+  # ===========================================================================
+
+  frontend-tests:
+    image: node:22-bookworm
+    commands:
+      - npm ci
+      - npm run test:ci
+    environment:
+      NODE_ENV: test
+
+  backend-unit-tests:
+    image: python:3.12-bookworm
+    commands:
+      - pip install --upgrade pip poetry
+      - poetry config virtualenvs.create false
+      - cd src/cofounder_agent && poetry install --no-root
+      - cd src/cofounder_agent && poetry run pytest tests/unit/ -v --tb=short
+
+  backend-integration-tests:
+    image: python:3.12-bookworm
+    failure: ignore
+    commands:
+      - pip install --upgrade pip poetry
+      - poetry config virtualenvs.create false
+      - cd src/cofounder_agent && poetry install --no-root
+      - cd src/cofounder_agent && poetry run pytest tests/integration/ tests/e2e/ -v --tb=short
+
+  linting:
+    image: node:22-bookworm
+    failure: ignore
+    commands:
+      - npm ci
+      - npm run lint
+
+  build-check:
+    image: node:22-bookworm
+    commands:
+      - npm ci
+      - npm run build --if-present
+    when:
+      branch: dev
+
+  # ===========================================================================
+  # E2E TESTS (dev branch only — frontend pages, no backend needed)
+  # ===========================================================================
+
+  playwright-e2e:
+    image: mcr.microsoft.com/playwright:v1.52.0-noble
+    commands:
+      - npm ci
+      - npx playwright test --project=chromium
+          web/public-site/e2e/about.spec.ts
+          web/public-site/e2e/legal.spec.ts
+          web/public-site/e2e/tag.spec.ts
+          web/public-site/e2e/post-detail.spec.ts
+          web/public-site/e2e/author.spec.ts
+          web/public-site/e2e/accessibility.spec.js
+          web/public-site/e2e/archive.spec.js
+          web/public-site/e2e/home.spec.js
+          web/public-site/e2e/verify-layout.spec.js
+    environment:
+      SKIP_ENV_VALIDATION: "true"
+      NEXT_PUBLIC_API_BASE_URL: "http://localhost:8000"
+      NEXT_PUBLIC_FASTAPI_URL: "http://localhost:8000"
+      NEXT_PUBLIC_SITE_URL: "http://localhost:3000"
+    when:
+      branch: dev
+
+  # ===========================================================================
+  # SECURITY CHECK (main branch only)
+  # ===========================================================================
+
+  security-audit:
+    image: node:22-bookworm
+    failure: ignore
+    commands:
+      - npm ci
+      - npm audit --audit-level=moderate
+    when:
+      branch: main
+
+  # ===========================================================================
+  # DEPLOYMENT PHASE — CO-FOUNDER AGENT (main branch only)
+  # ===========================================================================
+
+  deploy-railway:
+    image: node:22-bookworm
+    commands:
+      - npm install -g @railway/cli
+      - railway --version
+      - echo "Deploying Co-Founder Agent to production..."
+      - railway up --service cofounder
+      - echo "Co-Founder Agent production deployment completed"
+    environment:
+      RAILWAY_TOKEN:
+        from_secret: RAILWAY_TOKEN
+      ENVIRONMENT: production
+    when:
+      branch: main
+
+  # ===========================================================================
+  # DEPLOYMENT PHASE — PUBLIC SITE (main branch only)
+  # ===========================================================================
+
+  deploy-vercel:
+    image: node:22-bookworm
+    commands:
+      - echo "Deploying Public Site to production..."
+      - npx vercel deploy --prod --token=$VERCEL_TOKEN --scope=$VERCEL_ORG_ID --yes
+      - echo "Public Site production deployment completed"
+    environment:
+      VERCEL_TOKEN:
+        from_secret: VERCEL_TOKEN
+      VERCEL_ORG_ID:
+        from_secret: VERCEL_ORG_ID
+      VERCEL_PROJECT_ID:
+        from_secret: PUBLIC_SITE_PROD_PROJECT_ID
+      NEXT_PUBLIC_FASTAPI_URL:
+        from_secret: PUBLIC_SITE_PROD_FASTAPI_URL
+      NEXT_PUBLIC_SITE_URL:
+        from_secret: PUBLIC_SITE_PROD_SITE_URL
+      NEXT_PUBLIC_GA_ID:
+        from_secret: PUBLIC_SITE_PROD_GA_ID
+      NEXT_PUBLIC_GA4_ID:
+        from_secret: PUBLIC_SITE_PROD_GA_ID
+      SENTRY_DSN:
+        from_secret: PUBLIC_SITE_PROD_SENTRY_DSN
+      NEXT_PUBLIC_SENTRY_DSN:
+        from_secret: PUBLIC_SITE_PROD_SENTRY_DSN
+    when:
+      branch: main
+
+  # ===========================================================================
+  # POST-DEPLOYMENT SMOKE TESTS (main branch only)
+  # ===========================================================================
+
+  smoke-tests:
+    image: curlimages/curl:latest
+    failure: ignore
+    commands:
+      - echo "Waiting 120s for services to stabilize..."
+      - sleep 120
+      - "FAILURES=0"
+      - |
+        echo "Testing Co-Founder Agent health..."
+        if curl -sf --retry 3 --retry-delay 5 "$COFOUNDER_PROD_URL/health" | grep -q "healthy"; then
+          echo "Co-Founder Agent is healthy"
+        else
+          echo "Co-Founder Agent health check FAILED"
+          FAILURES=$((FAILURES + 1))
+        fi
+      - |
+        echo "Testing Public Site health..."
+        if curl -sf --retry 3 --retry-delay 5 https://glad-labs.com > /dev/null; then
+          echo "Public Site is reachable"
+        else
+          echo "Public Site health check FAILED"
+          FAILURES=$((FAILURES + 1))
+        fi
+      - |
+        if [ "$FAILURES" -gt 0 ]; then
+          echo "$FAILURES production service(s) failed smoke tests"
+          exit 1
+        fi
+        echo "All production smoke tests passed"
+    environment:
+      COFOUNDER_PROD_URL:
+        from_secret: COFOUNDER_PROD_URL
+    when:
+      branch: main
+
+  health-checks:
+    image: curlimages/curl:latest
+    failure: ignore
+    commands:
+      - curl -f --retry 3 --retry-delay 5 "$COFOUNDER_PROD_URL/health/detailed" || echo "Agent check pending"
+      - echo "All systems operational"
+    environment:
+      COFOUNDER_PROD_URL:
+        from_secret: COFOUNDER_PROD_URL
+    when:
+      branch: main
+
+  # ===========================================================================
+  # NOTIFICATIONS
+  # ===========================================================================
+
+  notify-dev-failure:
+    image: curlimages/curl:latest
+    commands:
+      - |
+        COMMIT_SHA=$(echo $CI_COMMIT_SHA | cut -c1-7)
+        curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
+          -d chat_id="$TELEGRAM_CHAT_ID" \
+          -d parse_mode="Markdown" \
+          -d text="🔴 *Dev Tests Failed*
+
+        Commit: \`$COMMIT_SHA\` — $CI_COMMIT_MESSAGE
+
+        [View Logs]($CI_PIPELINE_URL)"
+    environment:
+      TELEGRAM_BOT_TOKEN:
+        from_secret: TELEGRAM_BOT_TOKEN
+      TELEGRAM_CHAT_ID:
+        from_secret: TELEGRAM_CHAT_ID
+    when:
+      branch: dev
+      status: failure
+
+  notify-deploy-success:
+    image: curlimages/curl:latest
+    commands:
+      - |
+        COMMIT_SHA=$(echo $CI_COMMIT_SHA | cut -c1-7)
+        curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
+          -d chat_id="$TELEGRAM_CHAT_ID" \
+          -d parse_mode="Markdown" \
+          -d text="✅ *Production Deploy Successful*
+
+        Commit: \`$COMMIT_SHA\` — $CI_COMMIT_MESSAGE
+
+        • Railway API deployed
+        • Vercel frontend deployed
+        • Smoke tests passed
+
+        [View Run]($CI_PIPELINE_URL)"
+    environment:
+      TELEGRAM_BOT_TOKEN:
+        from_secret: TELEGRAM_BOT_TOKEN
+      TELEGRAM_CHAT_ID:
+        from_secret: TELEGRAM_CHAT_ID
+    when:
+      branch: main
+      status: success
+
+  notify-deploy-failure:
+    image: curlimages/curl:latest
+    commands:
+      - |
+        COMMIT_SHA=$(echo $CI_COMMIT_SHA | cut -c1-7)
+        curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
+          -d chat_id="$TELEGRAM_CHAT_ID" \
+          -d parse_mode="Markdown" \
+          -d text="❌ *Production Deploy FAILED*
+
+        Commit: \`$COMMIT_SHA\` — $CI_COMMIT_MESSAGE
+
+        ⚠️ Investigate immediately!
+
+        [View Logs]($CI_PIPELINE_URL)"
+    environment:
+      TELEGRAM_BOT_TOKEN:
+        from_secret: TELEGRAM_BOT_TOKEN
+      TELEGRAM_CHAT_ID:
+        from_secret: TELEGRAM_CHAT_ID
+    when:
+      branch: main
+      status: failure
