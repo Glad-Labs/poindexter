@@ -1,0 +1,217 @@
+# Grafana Alert Rules — Brain DB health monitoring
+# These fire against the local-brain-db PostgreSQL datasource and notify via Telegram.
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: brain-db-health
+    folder: Glad Labs Alerts
+    interval: 1m
+    rules:
+      # 1. HIGH ERROR RATE — more than 5 errors in audit_log in the last hour
+      - uid: brain-high-error-rate
+        title: High Error Rate
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+          team: glad-labs
+        annotations:
+          summary: "High error rate detected in audit_log"
+          description: "More than 5 errors logged in the last hour (current: {{ $values.B.Value }}). Investigate recent failures in the brain pipeline."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            model:
+              rawSql: "SELECT count(*) as error_count FROM audit_log WHERE severity = 'error' AND timestamp > NOW() - INTERVAL '1 hour'"
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 5
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+
+      # 2. STALE TASKS — tasks stuck in_progress for > 2 hours
+      - uid: brain-stale-tasks
+        title: Stale Tasks
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          team: glad-labs
+        annotations:
+          summary: "Tasks stuck in_progress for over 2 hours"
+          description: "{{ $values.B.Value }} task(s) have been in_progress without updates for more than 2 hours. This likely indicates a hung worker or lost connection."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 7200
+              to: 0
+            model:
+              rawSql: "SELECT count(*) as stuck_count FROM content_tasks WHERE status = 'in_progress' AND updated_at < NOW() - INTERVAL '2 hours'"
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+
+      # 3. EMBEDDING SYNC LAG — newest embedding is > 6 hours old
+      - uid: brain-embedding-sync-lag
+        title: Embedding Sync Lag
+        condition: C
+        for: 0s
+        noDataState: Alerting
+        execErrState: Error
+        labels:
+          severity: warning
+          team: glad-labs
+        annotations:
+          summary: "Embedding sync is lagging - newest embedding is over 6 hours old"
+          description: "The most recent embedding is {{ $values.B.Value }} hours old. Auto-embed may be stuck or the pipeline is not generating new content."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 21600
+              to: 0
+            model:
+              rawSql: "SELECT EXTRACT(EPOCH FROM NOW() - MAX(created_at))/3600 as hours_since FROM embeddings"
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 6
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+
+      # 4. DB SIZE WARNING — database exceeds 1 GB
+      - uid: brain-db-size-warning
+        title: DB Size Warning
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          team: glad-labs
+        annotations:
+          summary: "Brain database exceeds 1 GB"
+          description: "gladlabs_brain database size is {{ $values.B.Value }} GB. Consider archiving old data or increasing storage allocation."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              rawSql: "SELECT pg_database_size('gladlabs_brain') / (1024*1024*1024.0) as size_gb"
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 1
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
