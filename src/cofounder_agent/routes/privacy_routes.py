@@ -22,8 +22,10 @@ import re
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
+
+from utils.rate_limiter import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +54,8 @@ def validate_email(email: str) -> bool:
 
 
 @router.post("/data-requests", response_model=Dict)
-async def submit_data_request(request_data: DataSubjectRequest) -> Dict:
+@limiter.limit("5/minute")
+async def submit_data_request(request: Request, request_data: DataSubjectRequest) -> Dict:
     """
     Submit a GDPR data subject request.
 

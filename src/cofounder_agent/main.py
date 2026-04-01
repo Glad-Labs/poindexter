@@ -282,6 +282,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
 
 
 _deployment_mode = os.getenv("DEPLOYMENT_MODE", "coordinator")
+_is_production = config.environment == "production"
 
 app = FastAPI(
     title=f"Glad Labs AI Co-Founder ({_deployment_mode})",
@@ -317,9 +318,9 @@ Admin panel at `/admin`.
         "url": "https://gladlabs.io",
     },
     license_info={"name": "AGPL-3.0", "url": "https://www.gnu.org/licenses/agpl-3.0.html"},
-    openapi_url="/api/openapi.json",
-    docs_url="/api/docs",
-    redoc_url="/api/redoc",
+    openapi_url=None if _is_production else "/api/openapi.json",
+    docs_url=None if _is_production else "/api/docs",
+    redoc_url=None if _is_production else "/api/redoc",
     swagger_ui_parameters={"defaultModelsExpandDepth": 1},
 )
 
