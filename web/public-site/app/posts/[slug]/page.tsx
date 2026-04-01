@@ -196,6 +196,26 @@ export default async function PostPage({
   const wordCount = post.content.split(/\s+/).length;
   const readingTime = Math.max(1, Math.round(wordCount / 238));
 
+  // Decode HTML entities in text (e.g., &rsquo; → ', &mdash; → —)
+  function decodeEntities(str: string): string {
+    return str
+      .replace(/&rsquo;/g, "'")
+      .replace(/&lsquo;/g, "'")
+      .replace(/&rdquo;/g, '"')
+      .replace(/&ldquo;/g, '"')
+      .replace(/&mdash;/g, '-')
+      .replace(/&ndash;/g, '-')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&hellip;/g, '...')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&#(\d+);/g, (_m, code) => String.fromCharCode(parseInt(code)))
+      .replace(/&#x([0-9a-f]+);/gi, (_m, code) =>
+        String.fromCharCode(parseInt(code, 16))
+      );
+  }
+
   // Extract headings for table of contents
   const headingRegex = /<h([23])[^>]*(?:id="([^"]*)")?[^>]*>(.*?)<\/h\1>/gi;
   const tocEntries: { level: number; text: string; id: string }[] = [];
@@ -203,7 +223,7 @@ export default async function PostPage({
   const contentWithIds = post.content.replace(
     /<h([23])([^>]*)>(.*?)<\/h\1>/gi,
     (_m: string, level: string, attrs: string, text: string) => {
-      const plainText = text.replace(/<[^>]+>/g, '').trim();
+      const plainText = decodeEntities(text.replace(/<[^>]+>/g, '')).trim();
       const id = plainText
         .toLowerCase()
         .replace(/[^\w]+/g, '-')
