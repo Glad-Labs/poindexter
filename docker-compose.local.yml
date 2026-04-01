@@ -94,7 +94,7 @@ services:
   # Woodpecker CI — pipelines (replaces GitHub Actions)
   # ===========================================
   woodpecker-server:
-    image: woodpeckerci/woodpecker-server:latest
+    image: woodpeckerci/woodpecker-server:v3
     container_name: gladlabs-woodpecker
     restart: unless-stopped
     ports:
@@ -114,7 +114,7 @@ services:
       - gitea
 
   woodpecker-agent:
-    image: woodpeckerci/woodpecker-agent:latest
+    image: woodpeckerci/woodpecker-agent:v3
     container_name: gladlabs-woodpecker-agent
     restart: unless-stopped
     environment:
