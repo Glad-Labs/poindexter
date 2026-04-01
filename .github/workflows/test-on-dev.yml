@@ -99,3 +99,18 @@ jobs:
 
       - name: ✅ Testing complete for dev
         run: echo "Dev branch testing complete - ready for staging deployment"
+
+      - name: 📢 Telegram — Tests Failed
+        if: failure()
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=format:'%s')
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d parse_mode="Markdown" \
+            -d text="🔴 *Dev Tests Failed*
+
+          Commit: \`${COMMIT_SHA}\` — ${COMMIT_MSG}
+
+          [View Logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+        continue-on-error: true

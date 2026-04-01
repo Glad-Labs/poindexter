@@ -214,28 +214,41 @@ jobs:
       # NOTIFICATIONS
       # ============================================
 
-      - name: 📢 Success Notification
+      - name: 📢 Telegram — Deploy Success
         if: success()
         run: |
-          echo "✅ Production deployment completed successfully"
-          echo "📋 Deployment Summary:"
-          echo "  ✅ Co-Founder Agent deployed to Railway"
-          echo "  ✅ Public Site deployed to Vercel"
-          echo "🔗 Production Links:"
-          echo "  - Public Site: https://glad-labs.com"
-          echo "  - Co-Founder Agent API: ${{ secrets.COFOUNDER_PROD_URL }}/docs"
+          COMMIT_MSG=$(git log -1 --pretty=format:'%s')
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d parse_mode="Markdown" \
+            -d text="✅ *Production Deploy Successful*
 
-      - name: 📢 Failure Notification
+          Commit: \`${COMMIT_SHA}\` — ${COMMIT_MSG}
+
+          • Railway API deployed
+          • Vercel frontend deployed
+          • Smoke tests passed
+
+          [View Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+        continue-on-error: true
+
+      - name: 📢 Telegram — Deploy Failed
         if: failure()
         run: |
-          echo "❌ Production deployment failed — IMMEDIATE ACTION REQUIRED"
-          echo "📋 Troubleshooting Steps:"
-          echo "  1. Check GitHub Actions logs for error details"
-          echo "  2. Verify all secrets are correctly configured"
-          echo "  3. Check Railway and Vercel dashboards"
-          echo "  4. Review recent code changes for breaking issues"
-          echo "  5. Consider rolling back to previous stable version"
-          exit 1
+          COMMIT_MSG=$(git log -1 --pretty=format:'%s')
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d parse_mode="Markdown" \
+            -d text="❌ *Production Deploy FAILED*
+
+          Commit: \`${COMMIT_SHA}\` — ${COMMIT_MSG}
+
+          ⚠️ Investigate immediately!
+
+          [View Logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+        continue-on-error: true
 
   # ============================================
   # CREATE RELEASE TAG ON MAIN
