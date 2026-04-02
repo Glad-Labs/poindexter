@@ -195,7 +195,7 @@
             "type": "grafana-postgresql-datasource",
             "uid": "railway-prod-db"
           },
-          "rawSql": "SELECT date_trunc('day', created_at) as time, COUNT(*) as tasks_created FROM content_tasks WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
+          "rawSql": "SELECT date_trunc('day', created_at) as time, COUNT(*) as tasks_created FROM content_tasks WHERE created_at BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz GROUP BY 1 ORDER BY 1",
           "format": "time_series",
           "editorMode": "code"
         }

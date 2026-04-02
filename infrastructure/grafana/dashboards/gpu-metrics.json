@@ -543,7 +543,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT timestamp AS time, utilization, temperature FROM gpu_metrics WHERE $__timeFilter(timestamp) ORDER BY timestamp",
+          "rawSql": "SELECT timestamp AS time, utilization, temperature FROM gpu_metrics WHERE timestamp BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz ORDER BY timestamp",
           "refId": "A"
         }
       ],
@@ -631,7 +631,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT timestamp AS time, power_draw, memory_used FROM gpu_metrics WHERE $__timeFilter(timestamp) ORDER BY timestamp",
+          "rawSql": "SELECT timestamp AS time, power_draw, memory_used FROM gpu_metrics WHERE timestamp BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz ORDER BY timestamp",
           "refId": "A"
         }
       ],
@@ -739,7 +739,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT timestamp AS time, fan_speed, clock_graphics, clock_memory FROM gpu_metrics WHERE $__timeFilter(timestamp) ORDER BY timestamp",
+          "rawSql": "SELECT timestamp AS time, fan_speed, clock_graphics, clock_memory FROM gpu_metrics WHERE timestamp BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz ORDER BY timestamp",
           "refId": "A"
         }
       ],
@@ -795,7 +795,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT timestamp AS time, memory_used FROM gpu_metrics WHERE $__timeFilter(timestamp) ORDER BY timestamp",
+          "rawSql": "SELECT timestamp AS time, memory_used FROM gpu_metrics WHERE timestamp BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz ORDER BY timestamp",
           "refId": "A"
         }
       ],

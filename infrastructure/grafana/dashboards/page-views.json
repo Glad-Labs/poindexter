@@ -35,7 +35,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT COUNT(*) AS \"Total Views\" FROM page_views WHERE $__timeFilter(created_at)",
+          "rawSql": "SELECT COUNT(*) AS \"Total Views\" FROM page_views WHERE created_at BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz",
           "format": "table",
           "refId": "A"
         }
@@ -87,7 +87,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT COUNT(DISTINCT slug) AS \"Unique Posts\" FROM page_views WHERE slug IS NOT NULL AND $__timeFilter(created_at)",
+          "rawSql": "SELECT COUNT(DISTINCT slug) AS \"Unique Posts\" FROM page_views WHERE slug IS NOT NULL AND created_at BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz",
           "format": "table",
           "refId": "A"
         }
@@ -235,7 +235,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT date_trunc('day', created_at) AS time, COUNT(*) AS \"Views\" FROM page_views WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
+          "rawSql": "SELECT date_trunc('day', created_at) AS time, COUNT(*) AS \"Views\" FROM page_views WHERE created_at BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz GROUP BY 1 ORDER BY 1",
           "format": "time_series",
           "refId": "A"
         }
@@ -281,7 +281,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT date_trunc('hour', created_at) AS time, COUNT(*) AS \"Views\" FROM page_views WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
+          "rawSql": "SELECT date_trunc('hour', created_at) AS time, COUNT(*) AS \"Views\" FROM page_views WHERE created_at BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz GROUP BY 1 ORDER BY 1",
           "format": "time_series",
           "refId": "A"
         }
@@ -325,7 +325,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT to_char(created_at, 'Dy') AS \"Day\", COUNT(*) AS \"Views\" FROM page_views WHERE $__timeFilter(created_at) GROUP BY EXTRACT(DOW FROM created_at), to_char(created_at, 'Dy') ORDER BY EXTRACT(DOW FROM created_at)",
+          "rawSql": "SELECT to_char(created_at, 'Dy') AS \"Day\", COUNT(*) AS \"Views\" FROM page_views WHERE created_at BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz GROUP BY EXTRACT(DOW FROM created_at), to_char(created_at, 'Dy') ORDER BY EXTRACT(DOW FROM created_at)",
           "format": "table",
           "refId": "A"
         }
@@ -361,7 +361,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT p.title AS \"Post\", p.view_count AS \"Total Views\", COUNT(pv.id) AS \"Period Views\", COALESCE(c.name, 'uncategorized') AS \"Category\" FROM posts p LEFT JOIN page_views pv ON pv.slug = p.slug AND $__timeFilter(pv.created_at) LEFT JOIN categories c ON p.category_id = c.id WHERE p.status = 'published' GROUP BY p.title, p.view_count, c.name ORDER BY p.view_count DESC NULLS LAST LIMIT 20",
+          "rawSql": "SELECT p.title AS \"Post\", p.view_count AS \"Total Views\", COUNT(pv.id) AS \"Period Views\", COALESCE(c.name, 'uncategorized') AS \"Category\" FROM posts p LEFT JOIN page_views pv ON pv.slug = p.slug AND pv.created_at BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz LEFT JOIN categories c ON p.category_id = c.id WHERE p.status = 'published' GROUP BY p.title, p.view_count, c.name ORDER BY p.view_count DESC NULLS LAST LIMIT 20",
           "format": "table",
           "refId": "A"
         }
@@ -421,7 +421,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT CASE WHEN referrer = '' OR referrer IS NULL THEN '(direct)' ELSE REGEXP_REPLACE(referrer, '^https?://(www\\.)?', '') END AS \"Referrer\", COUNT(*) AS \"Views\" FROM page_views WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 2 DESC LIMIT 20",
+          "rawSql": "SELECT CASE WHEN referrer = '' OR referrer IS NULL THEN '(direct)' ELSE REGEXP_REPLACE(referrer, '^https?://(www\\.)?', '') END AS \"Referrer\", COUNT(*) AS \"Views\" FROM page_views WHERE created_at BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz GROUP BY 1 ORDER BY 2 DESC LIMIT 20",
           "format": "table",
           "refId": "A"
         }
@@ -469,7 +469,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT date_trunc('day', created_at) AS time, COUNT(*) AS \"Page Views\" FROM page_views WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
+          "rawSql": "SELECT date_trunc('day', created_at) AS time, COUNT(*) AS \"Page Views\" FROM page_views WHERE created_at BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz GROUP BY 1 ORDER BY 1",
           "format": "time_series",
           "refId": "A"
         },
