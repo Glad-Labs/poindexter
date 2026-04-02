@@ -67,9 +67,9 @@ class TestRouteManifestStructure:
         status_keys = [entry[2] for entry in _ROUTE_MANIFEST]
         assert status_keys[0] == "task_router"
 
-    def test_coordinator_manifest_has_8_active_routes(self):
-        """Coordinator manifest should have exactly 8 route entries."""
-        assert len(_COORDINATOR_ROUTES) == 8
+    def test_coordinator_manifest_has_expected_routes(self):
+        """Coordinator manifest should have 11 route entries."""
+        assert len(_COORDINATOR_ROUTES) == 11
 
     def test_manifest_alias_equals_coordinator(self):
         """_ROUTE_MANIFEST should be an alias for _COORDINATOR_ROUTES."""
