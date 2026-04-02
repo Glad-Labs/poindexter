@@ -54,6 +54,9 @@ _COORDINATOR_ROUTES = [
     ("routes.settings_routes", "router", "settings_router", "user settings"),
     ("routes.revalidate_routes", "router", "revalidate_router", "secure cache invalidation"),
     ("routes.composer_routes", "router", "composer_router", "process composer (intent-to-workflow)"),
+    ("routes.newsletter_routes", "router", "newsletter_router", "email campaigns"),
+    ("routes.privacy_routes", "router", "privacy_router", "GDPR data subject requests"),
+    ("routes.approval_routes", "router", "approval_router", "task approval workflow"),
 ]
 
 # Routes for worker mode (local PC — heavy compute)
@@ -72,7 +75,6 @@ _ROUTE_MANIFEST = _COORDINATOR_ROUTES
 # To re-enable, move entries back to _ROUTE_MANIFEST
 _DISABLED_ROUTES = [
     ("routes.auth_unified", "router", "auth_router", "auth"),
-    ("routes.approval_routes", "router", "approval_router", "task approval workflow"),
     ("routes.writing_style_routes", "router", "writing_style_router", "RAG style matching"),
     ("routes.media_routes", "media_router", "media_router", "image generation & search"),
     ("routes.command_queue_routes", "router", "command_queue_router", "command queue"),
@@ -82,8 +84,6 @@ _DISABLED_ROUTES = [
     ("routes.analytics_routes", "analytics_router", "analytics_router", "KPI dashboard"),
     ("routes.profiling_routes", "router", "profiling_router", "performance profiling"),
     ("routes.agents_routes", "router", "agents_router", "agent management"),
-    ("routes.privacy_routes", "router", "privacy_router", "GDPR data subject requests"),
-    ("routes.newsletter_routes", "router", "newsletter_router", "email campaigns"),
     ("routes.service_registry_routes", "router", "service_registry_router", "service discovery"),
     ("routes.agent_registry_routes", "router", "agent_registry_router", "agent discovery"),
     ("routes.workflow_routes", "router", "workflow_router", "workflow orchestration"),
