@@ -29,6 +29,24 @@ from .webhook_delivery_service import emit_webhook_event
 logger = get_logger(__name__)
 
 
+async def _is_stage_enabled(pool, stage_key: str) -> bool:
+    """Check if a pipeline stage is enabled in the database.
+
+    Returns True if the stage is enabled or if the table doesn't exist (backwards compatible).
+    """
+    if pool is None:
+        return True  # No DB = run everything (local dev)
+    try:
+        row = await pool.fetchrow(
+            "SELECT enabled FROM pipeline_stages WHERE key = $1", stage_key
+        )
+        if row is None:
+            return True  # Stage not in DB = run it (backwards compatible)
+        return row["enabled"]
+    except Exception:
+        return True  # Table doesn't exist = run everything
+
+
 # ============================================================================
 # TEXT NORMALIZATION — replace Unicode smart quotes / dashes with ASCII
 # ============================================================================
@@ -1237,8 +1255,14 @@ async def process_content_generation_task(
             "score": quality_result.overall_score, "stage": "early_eval",
         }, task_id=task_id)
 
-        # Stage 2B.1: URL validation (non-blocking — warnings only)
+        # Stage 2B.1: URL validation (non-blocking — gate-checked via pipeline_stages)
+        _pool = database_service.pool if database_service else None
+        _url_validation_enabled = await _is_stage_enabled(_pool, "url_validation")
         try:
+            if not _url_validation_enabled:
+                logger.info("URL validation skipped (disabled in pipeline_stages)")
+                result["url_validation"] = {"skipped": True}
+                raise Exception("stage_disabled")
             from services.url_validator import get_url_validator
             _url_validator = get_url_validator()
             _extracted_urls = _url_validator.extract_urls(content_text)
@@ -1270,64 +1294,69 @@ async def process_content_generation_task(
             database_service, task_id, topic, content_text, image_service, result
         )
 
-        # Stage 3: Source featured image
-        featured_image = await _stage_source_featured_image(
-            topic, tags, generate_featured_image, image_service, result
-        )
-
-        # Stage 3.5 + 3.7: Multi-Model QA (programmatic validator + cloud critic)
-        # Replaces separate programmatic validation and ad-hoc cross-model review
-        # with unified MultiModelQA: deterministic hallucination checks (40% weight)
-        # + adversarial cloud model review (60% weight). Approval requires all
-        # reviewers to pass AND weighted score >= 70.
-        from services.multi_model_qa import MultiModelQA
-        _qa = MultiModelQA(pool=database_service.pool)
-        _qa_result = await _qa.review(
-            title=_normalize_text(result.get("seo_title", topic)),
-            content=_normalize_text(content_text),
-            topic=topic,
-        )
-        result["qa_final_score"] = _qa_result.final_score
-        result["qa_reviews"] = [
-            {"reviewer": r.reviewer, "score": r.score, "approved": r.approved,
-             "feedback": r.feedback, "provider": r.provider}
-            for r in _qa_result.reviews
-        ]
-        # Log QA review cost to database
-        if _qa_result.cost_log and database_service:
-            try:
-                _qa_result.cost_log["task_id"] = task_id
-                await database_service.log_cost(_qa_result.cost_log)
-                logger.info("💰 QA cost logged: $%.4f (%s/%s)", _qa_result.cost_log["cost_usd"], _qa_result.cost_log["provider"], _qa_result.cost_log["model"])
-                audit_log_bg("cost_logged", "content_router", {
-                    "cost_usd": _qa_result.cost_log.get("cost_usd"),
-                    "provider": _qa_result.cost_log.get("provider"),
-                    "model": _qa_result.cost_log.get("model"),
-                    "phase": "multi_model_qa",
-                }, task_id=task_id)
-            except Exception as e:
-                logger.warning("QA cost logging failed (non-critical): %s", e)
-
-        if not _qa_result.approved:
-            logger.warning(
-                "[MULTI_QA] Content rejected for task %s:\n%s",
-                task_id[:8], _qa_result.summary,
+        # Stage 3: Source featured image (gate-checked)
+        if await _is_stage_enabled(_pool, "featured_image"):
+            featured_image = await _stage_source_featured_image(
+                topic, tags, generate_featured_image, image_service, result
             )
-            audit_log_bg("qa_failed", "content_router", {
+        else:
+            featured_image = None
+            logger.info("Featured image skipped (disabled in pipeline_stages)")
+
+        # Stage 3.5 + 3.7: Multi-Model QA (gate-checked)
+        if not await _is_stage_enabled(_pool, "cross_model_qa"):
+            logger.info("Cross-model QA skipped (disabled in pipeline_stages)")
+            result["qa_final_score"] = quality_result.overall_score
+            result["qa_reviews"] = []
+        else:
+            from services.multi_model_qa import MultiModelQA
+            _qa = MultiModelQA(pool=database_service.pool)
+            _qa_result = await _qa.review(
+                title=_normalize_text(result.get("seo_title", topic)),
+                content=_normalize_text(content_text),
+                topic=topic,
+            )
+            result["qa_final_score"] = _qa_result.final_score
+            result["qa_reviews"] = [
+                {"reviewer": r.reviewer, "score": r.score, "approved": r.approved,
+                 "feedback": r.feedback, "provider": r.provider}
+                for r in _qa_result.reviews
+            ]
+            # Log QA review cost to database
+            if _qa_result.cost_log and database_service:
+                try:
+                    _qa_result.cost_log["task_id"] = task_id
+                    await database_service.log_cost(_qa_result.cost_log)
+                    logger.info("QA cost logged: $%.4f (%s/%s)", _qa_result.cost_log["cost_usd"], _qa_result.cost_log["provider"], _qa_result.cost_log["model"])
+                    audit_log_bg("cost_logged", "content_router", {
+                        "cost_usd": _qa_result.cost_log.get("cost_usd"),
+                        "provider": _qa_result.cost_log.get("provider"),
+                        "model": _qa_result.cost_log.get("model"),
+                        "phase": "multi_model_qa",
+                    }, task_id=task_id)
+                except Exception as e:
+                    logger.warning("QA cost logging failed (non-critical): %s", e)
+
+            if not _qa_result.approved:
+                logger.warning(
+                    "[MULTI_QA] Content rejected for task %s:\n%s",
+                    task_id[:8], _qa_result.summary,
+                )
+                audit_log_bg("qa_failed", "content_router", {
+                    "score": _qa_result.final_score, "stage": "multi_model_qa",
+                    "summary": _qa_result.summary[:300],
+                }, task_id=task_id, severity="warning")
+                result["status"] = "rejected"
+                await database_service.update_task(task_id, {
+                    "status": "rejected",
+                    "error_message": f"Multi-model QA rejected (score: {_qa_result.final_score:.0f}): "
+                        + (_qa_result.reviews[-1].feedback[:200] if _qa_result.reviews else "No feedback"),
+                })
+                return result
+            audit_log_bg("qa_passed", "content_router", {
                 "score": _qa_result.final_score, "stage": "multi_model_qa",
-                "summary": _qa_result.summary[:300],
-            }, task_id=task_id, severity="warning")
-            result["status"] = "rejected"
-            await database_service.update_task(task_id, {
-                "status": "rejected",
-                "error_message": f"Multi-model QA rejected (score: {_qa_result.final_score:.0f}): "
-                    + (_qa_result.reviews[-1].feedback[:200] if _qa_result.reviews else "No feedback"),
-            })
-            return result
-        audit_log_bg("qa_passed", "content_router", {
-            "score": _qa_result.final_score, "stage": "multi_model_qa",
-        }, task_id=task_id)
-        logger.info("[MULTI_QA] Content approved for task %s: %s", task_id[:8], _qa_result.summary.split("\\n")[0])
+            }, task_id=task_id)
+            logger.info("[MULTI_QA] Content approved for task %s: %s", task_id[:8], _qa_result.summary.split("\\n")[0])
 
         # Stage 4: Generate SEO metadata
         content_generator = get_content_generator()

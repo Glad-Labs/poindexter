@@ -7,6 +7,8 @@ Connects Claude desktop app directly to the Glad Labs platform:
 - Cost management (budget status)
 - Settings management (read/write app_settings)
 - System status (worker, OpenClaw, GPU)
+- Semantic memory (pgvector search across all embeddings)
+- Audit log (pipeline event history)
 
 Usage:
     python mcp-server/server.py
@@ -20,6 +22,9 @@ import subprocess
 import urllib.request
 from typing import Any
 
+import asyncpg
+import httpx
+
 from mcp.server.fastmcp import FastMCP
 
 logging.basicConfig(level=logging.INFO)
@@ -27,10 +32,54 @@ logger = logging.getLogger("gladlabs-mcp")
 
 API_URL = os.getenv("GLADLABS_API_URL", "https://cofounder-production.up.railway.app")
 API_TOKEN = os.getenv("GLADLABS_API_TOKEN", "REDACTED_API_TOKEN")
+LOCAL_DB_DSN = os.getenv(
+    "LOCAL_DATABASE_URL",
+    "postgresql://gladlabs:gladlabs-brain-local@localhost:5433/gladlabs_brain",
+)
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
+EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
+
+# Lazy-initialized connection pool and HTTP client
+_pool: asyncpg.Pool | None = None
+_http: httpx.AsyncClient | None = None
+
+
+async def _get_pool() -> asyncpg.Pool:
+    """Get or create the local pgvector connection pool."""
+    global _pool
+    if _pool is None:
+        _pool = await asyncpg.create_pool(LOCAL_DB_DSN, min_size=1, max_size=3)
+    return _pool
+
+
+async def _get_http() -> httpx.AsyncClient:
+    """Get or create the async HTTP client."""
+    global _http
+    if _http is None:
+        _http = httpx.AsyncClient(timeout=30.0)
+    return _http
+
+
+async def _embed_text(text: str) -> list[float]:
+    """Embed text via Ollama nomic-embed-text. Returns 768-dim vector."""
+    client = await _get_http()
+    resp = await client.post(
+        f"{OLLAMA_URL}/api/embed",
+        json={"model": EMBED_MODEL, "input": text},
+    )
+    resp.raise_for_status()
+    embeddings = resp.json().get("embeddings", [])
+    if not embeddings:
+        raise RuntimeError("Ollama returned no embeddings")
+    return embeddings[0]
+
 
 mcp = FastMCP("Glad Labs", instructions="""
 Glad Labs MCP server — your direct interface to the AI content pipeline.
 Use these tools to manage content, monitor the system, and control operations.
+
+SEMANTIC MEMORY: Use search_memory to recall prior decisions, context, and knowledge.
+Search before asking the user — the answer may already be in memory.
 """)
 
 
@@ -233,6 +282,267 @@ def compose_execute(intent: str) -> str:
     if "error" in result:
         return f"Error: {result['error']}"
     return result.get("summary", json.dumps(result, indent=2))
+
+
+# ============================================================================
+# SEMANTIC MEMORY TOOLS (pgvector)
+# ============================================================================
+
+@mcp.tool()
+async def search_memory(query: str, top_k: int = 8, source_filter: str = "") -> str:
+    """Search semantic memory (pgvector) using natural language.
+
+    Searches across ALL embedded content: memory files, blog posts, Gitea issues, audit logs.
+    Use this to recall prior decisions, find related content, or check what the system knows.
+
+    Args:
+        query: Natural language search query (e.g. "cost tracking decisions", "ollama configuration")
+        top_k: Number of results to return (default 8)
+        source_filter: Optional filter by source_table (e.g. "memory", "post", "issue", "audit")
+    """
+    try:
+        embedding = await _embed_text(query)
+        pool = await _get_pool()
+
+        vector_str = "[" + ",".join(str(v) for v in embedding) + "]"
+
+        if source_filter:
+            rows = await pool.fetch(
+                """
+                SELECT source_table, source_id, text_preview, metadata,
+                       1 - (embedding <=> $1::vector) as similarity
+                FROM embeddings
+                WHERE source_table = $2
+                ORDER BY embedding <=> $1::vector
+                LIMIT $3
+                """,
+                vector_str, source_filter, top_k,
+            )
+        else:
+            rows = await pool.fetch(
+                """
+                SELECT source_table, source_id, text_preview, metadata,
+                       1 - (embedding <=> $1::vector) as similarity
+                FROM embeddings
+                ORDER BY embedding <=> $1::vector
+                LIMIT $2
+                """,
+                vector_str, top_k,
+            )
+
+        if not rows:
+            return f'No results for "{query}". The embedding database may be empty or Ollama may have generated an incompatible vector.'
+
+        lines = [f'Memory search: "{query}" ({len(rows)} results)\n']
+        for i, row in enumerate(rows, 1):
+            sim = float(row["similarity"])
+            meta = json.loads(row["metadata"]) if row["metadata"] else {}
+            source = row["source_table"]
+            sid = row["source_id"]
+            preview = (row["text_preview"] or "")[:200].replace("\n", " ")
+            origin = meta.get("origin", source)
+            mtype = meta.get("type", meta.get("state", ""))
+
+            lines.append(
+                f"{i}. [{sim:.4f}] [{source}] {sid}"
+                + (f" (origin={origin}, type={mtype})" if mtype else f" (origin={origin})")
+                + f"\n   {preview}"
+            )
+        return "\n".join(lines)
+
+    except Exception as e:
+        return f"Memory search failed: {e}"
+
+
+@mcp.tool()
+async def recall_decision(topic: str) -> str:
+    """Search memory specifically for past decisions, feedback, and project context.
+
+    Filters to memory-type embeddings only (Claude Code memory, OpenClaw memory, shared context).
+    Best for: "why did we choose X", "what was decided about Y", "user preferences for Z".
+    """
+    return await search_memory(topic, top_k=5, source_filter="memory")
+
+
+@mcp.tool()
+async def find_similar_posts(topic: str, top_k: int = 5) -> str:
+    """Find published blog posts similar to a topic. Use before creating new content to avoid duplicates."""
+    return await search_memory(topic, top_k=top_k, source_filter="post")
+
+
+@mcp.tool()
+async def memory_stats() -> str:
+    """Get statistics about the semantic memory database — embedding counts by source type."""
+    try:
+        pool = await _get_pool()
+        rows = await pool.fetch("""
+            SELECT source_table, COUNT(*) as count,
+                   MIN(created_at) as oldest,
+                   MAX(updated_at) as newest
+            FROM embeddings
+            GROUP BY source_table
+            ORDER BY count DESC
+        """)
+        if not rows:
+            return "No embeddings in database."
+
+        total = sum(row["count"] for row in rows)
+        lines = [f"Semantic Memory: {total} embeddings\n"]
+        for row in rows:
+            lines.append(
+                f"  {row['source_table']:15s} {row['count']:5d} vectors"
+                f"  (oldest: {row['oldest'].strftime('%Y-%m-%d') if row['oldest'] else '?'}"
+                f", newest: {row['newest'].strftime('%Y-%m-%d') if row['newest'] else '?'})"
+            )
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Failed to get memory stats: {e}"
+
+
+# ============================================================================
+# AUDIT LOG TOOLS
+# ============================================================================
+
+@mcp.tool()
+async def get_audit_log(event_type: str = "", severity: str = "", limit: int = 20) -> str:
+    """Query the pipeline audit log for recent events.
+
+    Args:
+        event_type: Filter by event type (e.g. "pipeline_start", "qa_review", "publish", "error")
+        severity: Filter by severity (e.g. "info", "warning", "error", "critical")
+        limit: Number of events to return (default 20, max 100)
+    """
+    try:
+        pool = await _get_pool()
+        limit = min(limit, 100)
+
+        conditions = []
+        params: list[Any] = []
+        idx = 1
+
+        if event_type:
+            conditions.append(f"event_type = ${idx}")
+            params.append(event_type)
+            idx += 1
+        if severity:
+            conditions.append(f"severity = ${idx}")
+            params.append(severity)
+            idx += 1
+
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        params.append(limit)
+
+        rows = await pool.fetch(
+            f"""
+            SELECT timestamp, event_type, source, task_id, severity, details
+            FROM audit_log
+            {where}
+            ORDER BY timestamp DESC
+            LIMIT ${idx}
+            """,
+            *params,
+        )
+
+        if not rows:
+            return "No audit log entries found."
+
+        lines = [f"Audit log ({len(rows)} entries):\n"]
+        for row in rows:
+            ts = row["timestamp"].strftime("%m-%d %H:%M") if row["timestamp"] else "?"
+            details = json.loads(row["details"]) if isinstance(row["details"], str) else (row["details"] or {})
+            detail_str = json.dumps(details)[:120] if details else ""
+            lines.append(
+                f"  [{ts}] {row['severity']:8s} {row['event_type']:25s} "
+                f"src={row['source'] or '?'} task={row['task_id'] or '-'}"
+                + (f"\n           {detail_str}" if detail_str else "")
+            )
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Audit log query failed: {e}"
+
+
+@mcp.tool()
+async def get_audit_summary(hours: int = 24) -> str:
+    """Get a summary of audit log activity over the last N hours."""
+    try:
+        pool = await _get_pool()
+        rows = await pool.fetch("""
+            SELECT event_type, severity, COUNT(*) as count
+            FROM audit_log
+            WHERE timestamp > NOW() - $1 * INTERVAL '1 hour'
+            GROUP BY event_type, severity
+            ORDER BY count DESC
+        """, hours)
+
+        if not rows:
+            return f"No audit activity in the last {hours} hours."
+
+        total = sum(row["count"] for row in rows)
+        lines = [f"Audit summary (last {hours}h): {total} events\n"]
+        for row in rows:
+            lines.append(f"  {row['event_type']:30s} {row['severity']:8s} x{row['count']}")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Audit summary failed: {e}"
+
+
+# ============================================================================
+# BRAIN KNOWLEDGE TOOLS
+# ============================================================================
+
+@mcp.tool()
+async def get_brain_knowledge(entity: str = "", attribute: str = "", limit: int = 20) -> str:
+    """Query the brain's knowledge base (health probes, system state, learned facts).
+
+    Args:
+        entity: Filter by entity (e.g. "probe.db_ping", "probe.ollama_models")
+        attribute: Filter by attribute (e.g. "health_status")
+        limit: Max results
+    """
+    try:
+        pool = await _get_pool()
+        conditions = []
+        params: list[Any] = []
+        idx = 1
+
+        if entity:
+            conditions.append(f"entity LIKE ${idx}")
+            params.append(f"%{entity}%")
+            idx += 1
+        if attribute:
+            conditions.append(f"attribute = ${idx}")
+            params.append(attribute)
+            idx += 1
+
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        params.append(min(limit, 100))
+
+        rows = await pool.fetch(
+            f"""
+            SELECT entity, attribute, value, confidence, source, tags, updated_at
+            FROM brain_knowledge
+            {where}
+            ORDER BY updated_at DESC
+            LIMIT ${idx}
+            """,
+            *params,
+        )
+
+        if not rows:
+            return "No brain knowledge entries found."
+
+        lines = [f"Brain knowledge ({len(rows)} entries):\n"]
+        for row in rows:
+            ts = row["updated_at"].strftime("%m-%d %H:%M") if row["updated_at"] else "?"
+            val = str(row["value"])[:150] if row["value"] else ""
+            lines.append(
+                f"  [{ts}] {row['entity']}::{row['attribute']} "
+                f"(confidence={row['confidence']:.1f})\n"
+                f"    {val}"
+            )
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Brain knowledge query failed: {e}"
 
 
 if __name__ == "__main__":

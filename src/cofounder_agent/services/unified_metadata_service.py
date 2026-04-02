@@ -16,6 +16,7 @@ Single source of truth for all metadata operations with:
 """
 
 from services.logger_config import get_logger
+import os
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -850,7 +851,7 @@ class UnifiedMetadataService:
             "@type": "BlogPosting",
             "headline": metadata.title,
             "description": metadata.excerpt,
-            "author": {"@type": "Organization", "name": "Glad Labs"},
+            "author": {"@type": "Organization", "name": os.getenv("SITE_NAME", "AI Content Pipeline")},
             "datePublished": datetime.now().isoformat(),
             "keywords": ",".join(metadata.seo_keywords),
             "image": metadata.featured_image_url,

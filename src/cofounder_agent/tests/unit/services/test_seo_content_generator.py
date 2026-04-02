@@ -297,9 +297,9 @@ class TestGenerateJsonLdSchema:
         )
         assert schema["headline"] == "My Post"
 
-    def test_author_is_glad_labs(self):
+    def test_author_is_set(self):
         schema = self.gen.generate_json_ld_schema({"title": "X", "excerpt": "", "keywords": []})
-        assert schema["author"]["name"] == "Glad Labs"
+        assert schema["author"]["name"]  # Non-empty author name from SITE_NAME env
 
     def test_keywords_joined(self):
         schema = self.gen.generate_json_ld_schema(

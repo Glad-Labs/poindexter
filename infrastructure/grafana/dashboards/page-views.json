@@ -23,10 +23,15 @@
       "id": 1,
       "title": "Total Views (period)",
       "type": "stat",
-      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "targets": [
         {
@@ -40,16 +45,27 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 50 },
-              { "color": "green", "value": 200 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "green",
+                "value": 200
+              }
             ]
           }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
         "colorMode": "background",
         "graphMode": "none",
         "textMode": "auto"
@@ -59,10 +75,15 @@
       "id": 2,
       "title": "Unique Posts Viewed",
       "type": "stat",
-      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "targets": [
         {
@@ -76,15 +97,23 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": null },
-              { "color": "green", "value": 10 }
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 10
+              }
             ]
           }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
         "colorMode": "background",
         "graphMode": "none",
         "textMode": "auto"
@@ -94,10 +123,15 @@
       "id": 3,
       "title": "Views Today",
       "type": "stat",
-      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "targets": [
         {
@@ -111,16 +145,27 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 10 },
-              { "color": "green", "value": 50 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 10
+              },
+              {
+                "color": "green",
+                "value": 50
+              }
             ]
           }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
         "colorMode": "background",
         "graphMode": "none",
         "textMode": "auto"
@@ -130,10 +175,15 @@
       "id": 4,
       "title": "Published Posts",
       "type": "stat",
-      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "targets": [
         {
@@ -147,15 +197,23 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": null },
-              { "color": "green", "value": 50 }
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 50
+              }
             ]
           }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
         "colorMode": "background",
         "graphMode": "none",
         "textMode": "auto"
@@ -165,10 +223,15 @@
       "id": 5,
       "title": "Daily Page Views",
       "type": "timeseries",
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 5 },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "targets": [
         {
@@ -179,7 +242,9 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 30,
@@ -191,18 +256,28 @@
         "overrides": []
       },
       "options": {
-        "tooltip": { "mode": "single" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "single"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       }
     },
     {
       "id": 6,
       "title": "Hourly Traffic Pattern",
       "type": "timeseries",
-      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 15 },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 15
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "targets": [
         {
@@ -213,7 +288,10 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "color": { "fixedColor": "blue", "mode": "fixed" },
+          "color": {
+            "fixedColor": "blue",
+            "mode": "fixed"
+          },
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 15,
@@ -223,18 +301,27 @@
         "overrides": []
       },
       "options": {
-        "tooltip": { "mode": "single" },
-        "legend": { "displayMode": "hidden" }
+        "tooltip": {
+          "mode": "single"
+        },
+        "legend": {
+          "displayMode": "hidden"
+        }
       }
     },
     {
       "id": 7,
       "title": "Views by Day of Week",
       "type": "barchart",
-      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 15 },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 15
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "targets": [
         {
@@ -245,7 +332,9 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" }
+          "color": {
+            "mode": "palette-classic"
+          }
         },
         "overrides": []
       },
@@ -260,10 +349,15 @@
       "id": 8,
       "title": "Top Posts (by views)",
       "type": "table",
-      "gridPos": { "h": 12, "w": 12, "x": 0, "y": 25 },
+      "gridPos": {
+        "h": 12,
+        "w": 12,
+        "x": 0,
+        "y": 25
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "targets": [
         {
@@ -276,28 +370,54 @@
         "defaults": {},
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Post" },
-            "properties": [{ "id": "custom.width", "value": 400 }]
+            "matcher": {
+              "id": "byName",
+              "options": "Post"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 400
+              }
+            ]
           },
           {
-            "matcher": { "id": "byName", "options": "Total Views" },
-            "properties": [{ "id": "custom.width", "value": 120 }]
+            "matcher": {
+              "id": "byName",
+              "options": "Total Views"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
           }
         ]
       },
       "options": {
         "showHeader": true,
-        "sortBy": [{ "displayName": "Total Views", "desc": true }]
+        "sortBy": [
+          {
+            "displayName": "Total Views",
+            "desc": true
+          }
+        ]
       }
     },
     {
       "id": 9,
       "title": "Top Referrers",
       "type": "table",
-      "gridPos": { "h": 12, "w": 12, "x": 12, "y": 25 },
+      "gridPos": {
+        "h": 12,
+        "w": 12,
+        "x": 12,
+        "y": 25
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "targets": [
         {
@@ -310,24 +430,42 @@
         "defaults": {},
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Referrer" },
-            "properties": [{ "id": "custom.width", "value": 400 }]
+            "matcher": {
+              "id": "byName",
+              "options": "Referrer"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 400
+              }
+            ]
           }
         ]
       },
       "options": {
         "showHeader": true,
-        "sortBy": [{ "displayName": "Views", "desc": true }]
+        "sortBy": [
+          {
+            "displayName": "Views",
+            "desc": true
+          }
+        ]
       }
     },
     {
       "id": 10,
       "title": "New Posts vs Views (correlation)",
       "type": "timeseries",
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 37 },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 37
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "targets": [
         {
@@ -351,39 +489,64 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Page Views" },
+            "matcher": {
+              "id": "byName",
+              "options": "Page Views"
+            },
             "properties": [
               {
                 "id": "color",
-                "value": { "fixedColor": "blue", "mode": "fixed" }
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
               }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "Posts Published" },
+            "matcher": {
+              "id": "byName",
+              "options": "Posts Published"
+            },
             "properties": [
               {
                 "id": "color",
-                "value": { "fixedColor": "green", "mode": "fixed" }
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
               },
-              { "id": "custom.axisPlacement", "value": "right" }
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
             ]
           }
         ]
       },
       "options": {
-        "tooltip": { "mode": "multi" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       }
     },
     {
       "id": 11,
       "title": "Category Performance",
       "type": "piechart",
-      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 47 },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 47
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "targets": [
         {
@@ -394,12 +557,16 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" }
+          "color": {
+            "mode": "palette-classic"
+          }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
         "pieType": "donut",
         "legend": {
           "displayMode": "table",
@@ -412,10 +579,15 @@
       "id": 12,
       "title": "Revenue Potential (views vs monetization)",
       "type": "stat",
-      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 47 },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 47
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "targets": [
         {
@@ -433,13 +605,20 @@
         "defaults": {
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "blue", "value": null }]
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
           }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
         "colorMode": "background",
         "textMode": "auto"
       }

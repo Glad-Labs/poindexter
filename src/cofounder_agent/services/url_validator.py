@@ -13,6 +13,7 @@ Usage:
     results = await validator.validate_urls(urls)
 """
 
+import os as _os
 import re
 import time
 from typing import Dict, List, Optional, Tuple
@@ -30,7 +31,8 @@ _CacheEntry = Tuple[bool, Optional[int], float]
 _CACHE_TTL = 7 * 24 * 60 * 60
 
 # Internal domains to skip (no point validating our own URLs during generation)
-_SKIP_DOMAINS = {"gladlabs.io", "www.gladlabs.io"}
+_site_domain = _os.getenv("SITE_DOMAIN", "localhost:3000").split(":")[0]
+_SKIP_DOMAINS = {_site_domain, f"www.{_site_domain}"}
 
 # Regex for extracting URLs from markdown / HTML content
 # Matches http(s):// URLs in markdown links, raw URLs, and href attributes
@@ -110,7 +112,7 @@ class URLValidator:
             async with httpx.AsyncClient(
                 timeout=self._timeout,
                 follow_redirects=True,
-                headers={"User-Agent": "GladLabs-LinkChecker/1.0"},
+                headers={"User-Agent": f"{_os.getenv('SITE_NAME', 'ContentPipeline')}-LinkChecker/1.0"},
             ) as client:
                 resp = await client.head(url)
                 status_code = resp.status_code

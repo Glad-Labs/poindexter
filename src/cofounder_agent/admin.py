@@ -362,7 +362,7 @@ def setup_admin(app):
     admin = Admin(
         app,
         engine,
-        title="Glad Labs Admin",
+        title=f"{os.getenv('SITE_NAME', 'Content Pipeline')} Admin",
         base_url="/admin",
     )
 

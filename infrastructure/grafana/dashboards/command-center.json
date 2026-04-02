@@ -6,7 +6,7 @@
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -37,9 +37,7 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -62,7 +60,7 @@
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -97,9 +95,7 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -122,7 +118,7 @@
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -157,9 +153,7 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -182,7 +176,7 @@
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -217,9 +211,7 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -242,7 +234,7 @@
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -277,9 +269,7 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -302,7 +292,7 @@
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -338,9 +328,7 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -383,7 +371,7 @@
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -406,9 +394,7 @@
         },
         "pieType": "donut",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"]
         }
       },
       "targets": [
@@ -424,7 +410,7 @@
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -501,7 +487,7 @@
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -535,7 +521,7 @@
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {},
@@ -601,7 +587,7 @@
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -643,7 +629,7 @@
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {},
@@ -673,30 +659,14 @@
   ],
   "refresh": "1m",
   "schemaVersion": 39,
-  "tags": [
-    "glad-labs",
-    "command-center",
-    "master"
-  ],
+  "tags": ["glad-labs", "command-center", "master"],
   "time": {
     "from": "now-24h",
     "to": "now"
   },
   "timepicker": {
-    "refresh_intervals": [
-      "30s",
-      "1m",
-      "5m",
-      "15m"
-    ],
-    "time_options": [
-      "1h",
-      "6h",
-      "12h",
-      "24h",
-      "7d",
-      "30d"
-    ]
+    "refresh_intervals": ["30s", "1m", "5m", "15m"],
+    "time_options": ["1h", "6h", "12h", "24h", "7d", "30d"]
   },
   "timezone": "browser",
   "title": "Glad Labs Command Center",

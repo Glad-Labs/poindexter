@@ -81,11 +81,10 @@ from .websocket_event_broadcaster import emit_notification, emit_task_progress  
 
 logger = get_logger(__name__)
 
-# Tasks stuck in "processing" for longer than this are considered stale and reset to "pending"
+# Defaults — overridden at runtime by app_settings if available
+# (keys: stale_task_timeout_minutes, max_task_retries, task_sweep_interval_seconds)
 STALE_TASK_TIMEOUT_MINUTES: int = 60
-# Maximum number of automatic retry attempts before a task is marked as failed
 MAX_TASK_RETRIES: int = 3
-# How often (seconds) to run the stale-task sweep within the process loop
 SWEEP_INTERVAL_SECONDS: int = 300
 
 
@@ -461,12 +460,14 @@ class TaskExecutor:
                             slug = slug_row["slug"]
                     except Exception as e:
                         logger.warning("[TASK_SINGLE] Failed to fetch slug for task %s: %s", task_id, e)
-                    link = f"https://gladlabs.io/posts/{slug}" if slug else "https://gladlabs.io"
+                    _site_url = _os.getenv("SITE_URL", "https://localhost:3000")
+                    link = f"{_site_url}/posts/{slug}" if slug else _site_url
                     await _notify_openclaw(
                         f"Published: \"{topic}\" (score: {quality_score:.0f})\n{link}"
                     )
                 else:
-                    api_link = f"https://cofounder-production.up.railway.app/api/tasks/{task_id}"
+                    _api_base = _os.getenv("API_BASE_URL", "https://localhost:8000")
+                    api_link = f"{_api_base}/api/tasks/{task_id}"
                     await _notify_openclaw(
                         f"Ready for review: \"{topic}\" (score: {quality_score:.0f})\n"
                         f"Preview: {api_link}\n"
@@ -1512,19 +1513,35 @@ The key to success with {topic} is staying informed, adapting to changes, and co
             # Emergency minimal content
             return f"# {topic}\n\nContent generation service temporarily unavailable. Please try again later.\n\nError: {str(e)[:100]}"
 
+    async def _get_setting(self, key: str, default: str) -> str:
+        """Read a setting from app_settings, falling back to default."""
+        if not self.database_service or not self.database_service.pool:
+            return default
+        try:
+            row = await self.database_service.pool.fetchrow(
+                "SELECT value FROM app_settings WHERE key = $1", key
+            )
+            if row and "value" in row:
+                return row["value"]
+            return default
+        except Exception:
+            return default
+
     async def _sweep_stale_tasks(self) -> None:
         """Reset tasks stuck in processing state back to pending."""
         if not self.database_service:
             return
         try:
+            timeout = int(await self._get_setting("stale_task_timeout_minutes", str(STALE_TASK_TIMEOUT_MINUTES)))
+            max_retries = int(await self._get_setting("max_task_retries", str(MAX_TASK_RETRIES)))
             result = await self.database_service.sweep_stale_tasks(
-                timeout_minutes=STALE_TASK_TIMEOUT_MINUTES,
-                max_retries=MAX_TASK_RETRIES,
+                timeout_minutes=timeout,
+                max_retries=max_retries,
             )
             if result and result.get("total_stale", 0) > 0:
                 logger.warning(
                     f"[_sweep_stale_tasks] Reset {result['reset']} stale tasks "
-                    f"(timeout: {STALE_TASK_TIMEOUT_MINUTES}m)"
+                    f"(timeout: {timeout}m)"
                 )
         except Exception:
             logger.error("[_sweep_stale_tasks] Failed to sweep stale tasks", exc_info=True)
@@ -1543,8 +1560,9 @@ The key to success with {topic} is staying informed, adapting to changes, and co
         if not self.database_service or not self.database_service.pool:
             return
         try:
-            # Find failed/rejected tasks with retry_count < MAX_TASK_RETRIES
+            # Find failed/rejected tasks with retry_count < max_retries
             # Only retry tasks from the last 24 hours to avoid re-processing ancient failures
+            max_retries = int(await self._get_setting("max_task_retries", str(MAX_TASK_RETRIES)))
             rows = await self.database_service.pool.fetch("""
                 SELECT task_id, status, topic, task_metadata,
                        COALESCE((task_metadata::jsonb->>'retry_count')::int, 0) as retry_count
@@ -1553,7 +1571,7 @@ The key to success with {topic} is staying informed, adapting to changes, and co
                 AND created_at > NOW() - INTERVAL '24 hours'
                 AND COALESCE((task_metadata::jsonb->>'retry_count')::int, 0) < $1
                 LIMIT 3
-            """, MAX_TASK_RETRIES)
+            """, max_retries)
 
             for row in rows:
                 task_id = row["task_id"]

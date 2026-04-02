@@ -12,6 +12,7 @@ Integrates all missing features from the original content agent:
 """
 
 import re
+import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -184,7 +185,7 @@ class ContentMetadataGenerator:
             "@type": "BlogPosting",
             "headline": blog_post.get("title"),
             "description": blog_post.get("excerpt"),
-            "author": {"@type": "Organization", "name": "Glad Labs"},
+            "author": {"@type": "Organization", "name": os.getenv("SITE_NAME", "AI Content Pipeline")},
             "datePublished": datetime.now().isoformat(),
             "keywords": ",".join(blog_post.get("keywords", [])),
             "image": blog_post.get("featured_image_url"),

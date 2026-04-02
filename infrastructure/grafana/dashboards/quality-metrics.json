@@ -23,14 +23,22 @@
       "id": 1,
       "title": "Average Quality Score (Daily)",
       "type": "timeseries",
-      "gridPos": { "h": 12, "w": 16, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 12,
+        "w": 16,
+        "x": 0,
+        "y": 0
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "fixedColor": "semi-dark-blue", "mode": "fixed" },
+          "color": {
+            "fixedColor": "semi-dark-blue",
+            "mode": "fixed"
+          },
           "custom": {
             "axisBorderShow": false,
             "axisCenteredZero": false,
@@ -42,15 +50,29 @@
             "lineWidth": 2,
             "pointSize": 6,
             "showPoints": "always",
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "line+area" }
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "line+area"
+            }
           },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "transparent", "value": null },
-              { "color": "rgba(255, 0, 0, 0.05)", "value": 0 },
-              { "color": "transparent", "value": 7 }
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "rgba(255, 0, 0, 0.05)",
+                "value": 0
+              },
+              {
+                "color": "transparent",
+                "value": 7
+              }
             ]
           },
           "unit": "short",
@@ -61,15 +83,21 @@
         "overrides": []
       },
       "options": {
-        "tooltip": { "mode": "single", "sort": "none" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "targets": [
         {
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
+            "uid": "railway-prod-db"
           },
           "rawSql": "SELECT date_trunc('day', created_at) as time, AVG(quality_score) as avg_quality FROM content_tasks WHERE quality_score IS NOT NULL AND $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
           "format": "time_series",
@@ -81,21 +109,40 @@
       "id": 2,
       "title": "Quality Pass Rate (7d)",
       "type": "gauge",
-      "gridPos": { "h": 12, "w": 8, "x": 16, "y": 0 },
+      "gridPos": {
+        "h": 12,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "orange", "value": 50 },
-              { "color": "yellow", "value": 70 },
-              { "color": "green", "value": 85 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 50
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "green",
+                "value": 85
+              }
             ]
           },
           "unit": "percent",
@@ -120,7 +167,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
+            "uid": "railway-prod-db"
           },
           "rawSql": "SELECT ROUND(COUNT(*) FILTER (WHERE quality_score >= 7.0) * 100.0 / NULLIF(COUNT(*), 0), 1) as pass_rate FROM content_tasks WHERE quality_score IS NOT NULL AND created_at > NOW() - INTERVAL '7 days'",
           "format": "table",
@@ -132,22 +179,44 @@
       "id": 3,
       "title": "Quality Score Distribution (30d)",
       "type": "histogram",
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 12 },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 12
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "orange", "value": 4 },
-              { "color": "yellow", "value": 6 },
-              { "color": "green", "value": 7 },
-              { "color": "dark-green", "value": 9 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 4
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "green",
+                "value": 7
+              },
+              {
+                "color": "dark-green",
+                "value": 9
+              }
             ]
           },
           "unit": "short",
@@ -161,15 +230,21 @@
         "combine": false,
         "fillOpacity": 80,
         "gradientMode": "scheme",
-        "tooltip": { "mode": "single", "sort": "none" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "targets": [
         {
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
+            "uid": "railway-prod-db"
           },
           "rawSql": "SELECT quality_score FROM content_tasks WHERE quality_score IS NOT NULL AND created_at > NOW() - INTERVAL '30 days'",
           "format": "table",

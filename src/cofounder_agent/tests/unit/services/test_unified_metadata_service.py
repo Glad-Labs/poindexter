@@ -172,11 +172,11 @@ class TestGenerateJsonLdSchema:
         schema = svc.generate_json_ld_schema(meta)
         assert schema["headline"] == "Test Post"
 
-    def test_author_is_glad_labs(self):
+    def test_author_is_set(self):
         svc = make_service()
         meta = UnifiedMetadata()
         schema = svc.generate_json_ld_schema(meta)
-        assert schema["author"]["name"] == "Glad Labs"
+        assert schema["author"]["name"]  # Non-empty, from SITE_NAME env
 
     def test_keywords_joined(self):
         svc = make_service()

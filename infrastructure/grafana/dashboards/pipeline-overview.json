@@ -23,52 +23,87 @@
       "id": 1,
       "title": "Tasks by Status",
       "type": "piechart",
-      "gridPos": { "h": 10, "w": 8, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
-            "hideFrom": { "legend": false, "tooltip": false, "viz": false }
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
           }
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "completed" },
+            "matcher": {
+              "id": "byName",
+              "options": "completed"
+            },
             "properties": [
               {
                 "id": "color",
-                "value": { "fixedColor": "green", "mode": "fixed" }
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
               }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "failed" },
+            "matcher": {
+              "id": "byName",
+              "options": "failed"
+            },
             "properties": [
               {
                 "id": "color",
-                "value": { "fixedColor": "red", "mode": "fixed" }
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
               }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "in_progress" },
+            "matcher": {
+              "id": "byName",
+              "options": "in_progress"
+            },
             "properties": [
               {
                 "id": "color",
-                "value": { "fixedColor": "blue", "mode": "fixed" }
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
               }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "pending" },
+            "matcher": {
+              "id": "byName",
+              "options": "pending"
+            },
             "properties": [
               {
                 "id": "color",
-                "value": { "fixedColor": "yellow", "mode": "fixed" }
+                "value": {
+                  "fixedColor": "yellow",
+                  "mode": "fixed"
+                }
               }
             ]
           }
@@ -81,7 +116,10 @@
           "values": false
         },
         "pieType": "donut",
-        "tooltip": { "mode": "single", "sort": "none" },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
         "legend": {
           "displayMode": "table",
           "placement": "right",
@@ -93,7 +131,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
+            "uid": "railway-prod-db"
           },
           "rawSql": "SELECT status, COUNT(*) as count FROM content_tasks GROUP BY status",
           "format": "table",
@@ -105,14 +143,21 @@
       "id": 2,
       "title": "Tasks Created per Day",
       "type": "timeseries",
-      "gridPos": { "h": 10, "w": 16, "x": 8, "y": 0 },
+      "gridPos": {
+        "h": 10,
+        "w": 16,
+        "x": 8,
+        "y": 0
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "axisBorderShow": false,
             "axisCenteredZero": false,
@@ -123,7 +168,10 @@
             "lineWidth": 1,
             "pointSize": 5,
             "showPoints": "auto",
-            "stacking": { "group": "A", "mode": "none" }
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
           },
           "unit": "short",
           "min": 0
@@ -131,15 +179,21 @@
         "overrides": []
       },
       "options": {
-        "tooltip": { "mode": "single", "sort": "none" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "targets": [
         {
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
+            "uid": "railway-prod-db"
           },
           "rawSql": "SELECT date_trunc('day', created_at) as time, COUNT(*) as tasks_created FROM content_tasks WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
           "format": "time_series",
@@ -151,21 +205,40 @@
       "id": 3,
       "title": "Task Success Rate (7d)",
       "type": "stat",
-      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 10 },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 10
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "orange", "value": 60 },
-              { "color": "yellow", "value": 80 },
-              { "color": "green", "value": 90 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 60
+              },
+              {
+                "color": "yellow",
+                "value": 80
+              },
+              {
+                "color": "green",
+                "value": 90
+              }
             ]
           },
           "unit": "percent",
@@ -191,7 +264,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
+            "uid": "railway-prod-db"
           },
           "rawSql": "SELECT ROUND(COUNT(*) FILTER (WHERE status = 'completed') * 100.0 / NULLIF(COUNT(*), 0), 1) as success_rate FROM content_tasks WHERE created_at > NOW() - INTERVAL '7 days'",
           "format": "table",
@@ -203,14 +276,21 @@
       "id": 4,
       "title": "Pipeline Stage Distribution",
       "type": "barchart",
-      "gridPos": { "h": 6, "w": 10, "x": 6, "y": 10 },
+      "gridPos": {
+        "h": 6,
+        "w": 10,
+        "x": 6,
+        "y": 10
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "axisBorderShow": false,
             "axisCenteredZero": false,
@@ -228,8 +308,14 @@
         "orientation": "horizontal",
         "showValue": "always",
         "stacking": "none",
-        "tooltip": { "mode": "single", "sort": "none" },
-        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
         "xTickLabelRotation": 0
       },
       "targets": [
@@ -237,7 +323,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
+            "uid": "railway-prod-db"
           },
           "rawSql": "SELECT stage, COUNT(*) as count FROM content_tasks WHERE status = 'in_progress' GROUP BY stage",
           "format": "table",
@@ -249,21 +335,40 @@
       "id": 5,
       "title": "Avg Time to Completion (7d)",
       "type": "stat",
-      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 10 },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 10
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 10 },
-              { "color": "orange", "value": 30 },
-              { "color": "red", "value": 60 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 10
+              },
+              {
+                "color": "orange",
+                "value": 30
+              },
+              {
+                "color": "red",
+                "value": 60
+              }
             ]
           },
           "unit": "m",
@@ -288,7 +393,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
+            "uid": "railway-prod-db"
           },
           "rawSql": "SELECT ROUND(AVG(EXTRACT(EPOCH FROM (updated_at - created_at)) / 60), 1) as avg_minutes FROM content_tasks WHERE status = 'completed' AND created_at > NOW() - INTERVAL '7 days'",
           "format": "table",

@@ -97,6 +97,7 @@ class UnifiedPromptManager:
     def __init__(self):
         self.prompts: Dict[str, Dict[str, Any]] = {}
         self.metadata: Dict[str, PromptMetadata] = {}
+        self._db_overrides: Dict[str, str] = {}  # DB prompt overrides (loaded async)
         self._initialize_prompts()
 
     def _initialize_prompts(self):
@@ -164,9 +165,33 @@ class UnifiedPromptManager:
         )
         logger.debug(f"Registered prompt: {key} ({category.value})")
 
+    async def load_from_db(self, pool) -> int:
+        """Load prompt overrides from the prompt_templates database table.
+
+        Call this once at app startup (after DB pool is ready).
+        DB prompts take priority over YAML prompts — enabling runtime editing.
+
+        Returns number of prompts loaded from DB.
+        """
+        if pool is None:
+            return 0
+        try:
+            rows = await pool.fetch(
+                "SELECT key, template FROM prompt_templates WHERE is_active = true"
+            )
+            for row in rows:
+                self._db_overrides[row["key"]] = row["template"]
+            logger.info(f"Loaded {len(rows)} prompt templates from database")
+            return len(rows)
+        except Exception as e:
+            logger.warning(f"Could not load prompts from DB (using YAML fallback): {e}")
+            return 0
+
     def get_prompt(self, key: str, **kwargs) -> str:
         """
         Get a prompt by key and format with provided kwargs.
+
+        Priority: DB override > YAML file > KeyError
 
         Args:
             key: Prompt key (e.g., "blog_generation.initial_draft")
@@ -178,11 +203,16 @@ class UnifiedPromptManager:
         Raises:
             KeyError: If prompt key not found
         """
-        if key not in self.prompts:
-            available = ", ".join(self.prompts.keys())
-            raise KeyError(f"Prompt '{key}' not found. Available: {available}")
+        # DB overrides take priority (editable at runtime, no redeploy)
+        template = self._db_overrides.get(key)
 
-        template = self.prompts[key]["template"]
+        # Fall back to YAML-loaded prompts
+        if template is None:
+            if key not in self.prompts:
+                available = ", ".join(self.prompts.keys())
+                raise KeyError(f"Prompt '{key}' not found. Available: {available}")
+            template = self.prompts[key]["template"]
+
         try:
             return template.format(**kwargs)
         except KeyError as e:

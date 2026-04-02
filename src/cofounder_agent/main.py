@@ -284,14 +284,16 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
 _deployment_mode = os.getenv("DEPLOYMENT_MODE", "coordinator")
 _is_production = config.environment == "production"
 
+_site_name = os.getenv("SITE_NAME", "AI Content Pipeline")
+
 app = FastAPI(
-    title=f"Glad Labs AI Co-Founder ({_deployment_mode})",
+    title=f"{_site_name} ({_deployment_mode})",
     description=f"""
-## Comprehensive AI-powered business co-founder system
+## AI-powered content pipeline and business co-founder
 
 **Deployment mode: `{_deployment_mode}`** — {"always-on lightweight coordinator (Railway)" if _deployment_mode == "coordinator" else "heavy-compute worker (local PC)"}
 
-The Glad Labs AI Co-Founder provides autonomous agents and intelligent orchestration
+This system provides autonomous agents and intelligent orchestration
 for complete business operations including:
 - **Task Planning & Execution**: Intelligent task decomposition and multi-agent execution
 - **Content Generation**: AI-powered content creation with quality evaluation and multi-channel publishing
@@ -313,9 +315,9 @@ Admin panel at `/admin`.
     version=config.app_version,
     lifespan=lifespan,
     contact={
-        "name": "Glad Labs Support",
-        "email": "support@gladlabs.io",
-        "url": "https://gladlabs.io",
+        "name": f"{_site_name} Support",
+        "email": os.getenv("SUPPORT_EMAIL", "support@example.com"),
+        "url": os.getenv("SITE_URL", "https://localhost:3000"),
     },
     license_info={"name": "AGPL-3.0", "url": "https://www.gnu.org/licenses/agpl-3.0.html"},
     openapi_url=None if _is_production else "/api/openapi.json",
