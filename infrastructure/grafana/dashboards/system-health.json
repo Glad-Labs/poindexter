@@ -8,7 +8,7 @@
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
   "time": {
-    "from": "now-1h",
+    "from": "now-7d",
     "to": "now"
   },
   "timepicker": {

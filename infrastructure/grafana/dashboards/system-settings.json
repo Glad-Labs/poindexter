@@ -1,14 +1,24 @@
 {
-  "annotations": { "list": [] },
-  "description": "All configurable system settings from app_settings — the control plane",
+  "annotations": {
+    "list": []
+  },
+  "description": "All configurable system settings from app_settings \u00e2\u20ac\u201d the control plane",
   "editable": true,
   "panels": [
     {
-      "datasource": { "type": "datasource", "uid": "-- Dashboard --" },
-      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Dashboard --"
+      },
+      "gridPos": {
+        "h": 2,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "id": 100,
       "options": {
-        "content": "# System Settings — Control Plane",
+        "content": "# System Settings \u00e2\u20ac\u201d Control Plane",
         "mode": "markdown"
       },
       "title": "",
@@ -21,13 +31,27 @@
         "uid": "railway-prod-db"
       },
       "fieldConfig": {
-        "defaults": { "custom": { "align": "auto", "displayMode": "auto" } }
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
+        }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 2 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 2
+      },
       "id": 1,
       "options": {
         "showHeader": true,
-        "sortBy": [{ "displayName": "key" }],
+        "sortBy": [
+          {
+            "displayName": "key"
+          }
+        ],
         "cellHeight": "sm"
       },
       "targets": [
@@ -51,13 +75,27 @@
         "uid": "railway-prod-db"
       },
       "fieldConfig": {
-        "defaults": { "custom": { "align": "auto", "displayMode": "auto" } }
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
+        }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 2 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 2
+      },
       "id": 2,
       "options": {
         "showHeader": true,
-        "sortBy": [{ "displayName": "key" }],
+        "sortBy": [
+          {
+            "displayName": "key"
+          }
+        ],
         "cellHeight": "sm"
       },
       "targets": [
@@ -81,13 +119,27 @@
         "uid": "railway-prod-db"
       },
       "fieldConfig": {
-        "defaults": { "custom": { "align": "auto", "displayMode": "auto" } }
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
+        }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 10 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 10
+      },
       "id": 3,
       "options": {
         "showHeader": true,
-        "sortBy": [{ "displayName": "key" }],
+        "sortBy": [
+          {
+            "displayName": "key"
+          }
+        ],
         "cellHeight": "sm"
       },
       "targets": [
@@ -111,13 +163,27 @@
         "uid": "railway-prod-db"
       },
       "fieldConfig": {
-        "defaults": { "custom": { "align": "auto", "displayMode": "auto" } }
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
+        }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 10 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 10
+      },
       "id": 4,
       "options": {
         "showHeader": true,
-        "sortBy": [{ "displayName": "key" }],
+        "sortBy": [
+          {
+            "displayName": "key"
+          }
+        ],
         "cellHeight": "sm"
       },
       "targets": [
@@ -141,13 +207,27 @@
         "uid": "railway-prod-db"
       },
       "fieldConfig": {
-        "defaults": { "custom": { "align": "auto", "displayMode": "auto" } }
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
+        }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 10 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 10
+      },
       "id": 5,
       "options": {
         "showHeader": true,
-        "sortBy": [{ "displayName": "key" }],
+        "sortBy": [
+          {
+            "displayName": "key"
+          }
+        ],
         "cellHeight": "sm"
       },
       "targets": [
@@ -171,13 +251,27 @@
         "uid": "railway-prod-db"
       },
       "fieldConfig": {
-        "defaults": { "custom": { "align": "auto", "displayMode": "auto" } }
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
+        }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 18
+      },
       "id": 6,
       "options": {
         "showHeader": true,
-        "sortBy": [{ "displayName": "key" }],
+        "sortBy": [
+          {
+            "displayName": "key"
+          }
+        ],
         "cellHeight": "sm"
       },
       "targets": [
@@ -201,13 +295,27 @@
         "uid": "railway-prod-db"
       },
       "fieldConfig": {
-        "defaults": { "custom": { "align": "auto", "displayMode": "auto" } }
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
+        }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 18 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 18
+      },
       "id": 7,
       "options": {
         "showHeader": true,
-        "sortBy": [{ "displayName": "category" }],
+        "sortBy": [
+          {
+            "displayName": "category"
+          }
+        ],
         "cellHeight": "sm"
       },
       "targets": [
@@ -232,14 +340,26 @@
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "green", "value": null }]
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
           }
         }
       },
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 26 },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 26
+      },
       "id": 10,
       "options": {
         "reduceOptions": {
@@ -247,7 +367,9 @@
           "fields": "",
           "values": false
         },
-        "text": { "valueSize": 40 }
+        "text": {
+          "valueSize": 40
+        }
       },
       "targets": [
         {
@@ -271,14 +393,26 @@
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "green", "value": null }]
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
           }
         }
       },
-      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 26 },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 26
+      },
       "id": 11,
       "options": {
         "reduceOptions": {
@@ -286,7 +420,9 @@
           "fields": "",
           "values": false
         },
-        "text": { "valueSize": 40 }
+        "text": {
+          "valueSize": 40
+        }
       },
       "targets": [
         {
@@ -310,14 +446,26 @@
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "orange", "value": null }]
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
           }
         }
       },
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 26 },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 26
+      },
       "id": 12,
       "options": {
         "reduceOptions": {
@@ -325,7 +473,9 @@
           "fields": "",
           "values": false
         },
-        "text": { "valueSize": 40 }
+        "text": {
+          "valueSize": 40
+        }
       },
       "targets": [
         {
@@ -349,14 +499,26 @@
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "blue", "value": null }]
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
           }
         }
       },
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 26 },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 26
+      },
       "id": 13,
       "options": {
         "reduceOptions": {
@@ -364,7 +526,9 @@
           "fields": "",
           "values": false
         },
-        "text": { "valueSize": 40 }
+        "text": {
+          "valueSize": 40
+        }
       },
       "targets": [
         {
@@ -382,10 +546,21 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "datasource", "uid": "-- Dashboard --" },
-      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 30 },
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Dashboard --"
+      },
+      "gridPos": {
+        "h": 2,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
       "id": 200,
-      "options": { "content": "# Prompt Templates", "mode": "markdown" },
+      "options": {
+        "content": "# Prompt Templates",
+        "mode": "markdown"
+      },
       "title": "",
       "transparent": true,
       "type": "text"
@@ -396,13 +571,27 @@
         "uid": "railway-prod-db"
       },
       "fieldConfig": {
-        "defaults": { "custom": { "align": "auto", "displayMode": "auto" } }
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
+        }
       },
-      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 32 },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
       "id": 20,
       "options": {
         "showHeader": true,
-        "sortBy": [{ "displayName": "category" }],
+        "sortBy": [
+          {
+            "displayName": "category"
+          }
+        ],
         "cellHeight": "sm"
       },
       "targets": [
@@ -427,14 +616,26 @@
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "purple", "value": null }]
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
           }
         }
       },
-      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 44 },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 44
+      },
       "id": 21,
       "options": {
         "reduceOptions": {
@@ -442,7 +643,9 @@
           "fields": "",
           "values": false
         },
-        "text": { "valueSize": 40 }
+        "text": {
+          "valueSize": 40
+        }
       },
       "targets": [
         {
@@ -466,14 +669,26 @@
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "purple", "value": null }]
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
           }
         }
       },
-      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 44 },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 44
+      },
       "id": 22,
       "options": {
         "reduceOptions": {
@@ -481,7 +696,9 @@
           "fields": "",
           "values": false
         },
-        "text": { "valueSize": 40 }
+        "text": {
+          "valueSize": 40
+        }
       },
       "targets": [
         {
@@ -505,14 +722,26 @@
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "purple", "value": null }]
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
           }
         }
       },
-      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 44 },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 44
+      },
       "id": 23,
       "options": {
         "reduceOptions": {
@@ -520,7 +749,9 @@
           "fields": "",
           "values": false
         },
-        "text": { "valueSize": 40 }
+        "text": {
+          "valueSize": 40
+        }
       },
       "targets": [
         {
@@ -538,11 +769,19 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "datasource", "uid": "-- Dashboard --" },
-      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 48 },
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Dashboard --"
+      },
+      "gridPos": {
+        "h": 2,
+        "w": 24,
+        "x": 0,
+        "y": 48
+      },
       "id": 300,
       "options": {
-        "content": "# Pipeline Stages — Toggle & A/B Test",
+        "content": "# Pipeline Stages \u00e2\u20ac\u201d Toggle & A/B Test",
         "mode": "markdown"
       },
       "title": "",
@@ -555,13 +794,27 @@
         "uid": "railway-prod-db"
       },
       "fieldConfig": {
-        "defaults": { "custom": { "align": "auto", "displayMode": "auto" } }
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
+        }
       },
-      "gridPos": { "h": 12, "w": 16, "x": 0, "y": 50 },
+      "gridPos": {
+        "h": 12,
+        "w": 16,
+        "x": 0,
+        "y": 50
+      },
       "id": 30,
       "options": {
         "showHeader": true,
-        "sortBy": [{ "displayName": "stage_order" }],
+        "sortBy": [
+          {
+            "displayName": "stage_order"
+          }
+        ],
         "cellHeight": "sm"
       },
       "targets": [
@@ -585,11 +838,24 @@
         "uid": "railway-prod-db"
       },
       "fieldConfig": {
-        "defaults": { "custom": { "align": "auto", "displayMode": "auto" } }
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
+        }
       },
-      "gridPos": { "h": 12, "w": 8, "x": 16, "y": 50 },
+      "gridPos": {
+        "h": 12,
+        "w": 8,
+        "x": 16,
+        "y": 50
+      },
       "id": 31,
-      "options": { "showHeader": true, "cellHeight": "sm" },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
       "targets": [
         {
           "datasource": {
@@ -609,7 +875,10 @@
   "refresh": "30s",
   "schemaVersion": 39,
   "tags": ["glad-labs", "settings", "control-plane"],
-  "time": { "from": "now-1h", "to": "now" },
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
   "timezone": "browser",
   "title": "System Settings",
   "uid": "system-settings"
