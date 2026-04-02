@@ -203,7 +203,7 @@ async def send_digest_emails(pool, digest: Optional[dict] = None) -> dict:
     for sub in subscribers:
         try:
             resend.Emails.send({
-                "from": _get('newsletter_from_email', 'newsletter@example.com'),
+                "from": _get('newsletter_from_email', ''),
                 "to": sub["email"],
                 "subject": digest["subject"],
                 "html": digest["html"],
