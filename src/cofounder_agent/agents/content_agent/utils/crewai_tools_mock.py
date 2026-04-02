@@ -20,12 +20,17 @@ class BaseTool:
         self.name = name
         self.description = description
 
-    def __call__(self, *args, **kwargs):
+    def run(self, *args, **kwargs):
+        """Mock run method — matches crewai_tools BaseTool interface."""
         logger.warning(
-            "[MOCK] %s called — returning placeholder. " "Install crewai-tools for real results.",
+            "[MOCK] %s.run() called — returning placeholder. "
+            "Install crewai-tools for real results.",
             self.name,
         )
         return f"[MOCK] Tool '{self.name}' is not available (crewai_tools not installed)"
+
+    def __call__(self, *args, **kwargs):
+        return self.run(*args, **kwargs)
 
 
 class SerperDevTool(BaseTool):
