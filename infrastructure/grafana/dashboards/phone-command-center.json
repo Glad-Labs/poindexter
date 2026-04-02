@@ -169,14 +169,19 @@
         "y": 0
       },
       "datasource": {
-        "type": "prometheus",
-        "uid": "gpu-prometheus"
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
       },
       "targets": [
         {
-          "expr": "nvidia_gpu_temperature_celsius{gpu=\"0\"}",
-          "refId": "A",
-          "legendFormat": "GPU"
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT temperature || ' C' as \"GPU Temp\" FROM gpu_metrics ORDER BY timestamp DESC LIMIT 1",
+          "refId": "A"
         }
       ],
       "fieldConfig": {
@@ -512,12 +517,17 @@
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "targets": [
         {
-          "rawSql": "SELECT CASE WHEN MAX(created_at) >= NOW() - INTERVAL '10 minutes' THEN 'ACTIVE' WHEN MAX(created_at) >= NOW() - INTERVAL '1 hour' THEN 'IDLE' ELSE 'STALE' END AS \"Status\" FROM cost_logs WHERE provider = 'ollama'",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
           "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT CASE WHEN MAX(timestamp) >= NOW() - INTERVAL '10 minutes' THEN 'ACTIVE' WHEN MAX(timestamp) >= NOW() - INTERVAL '1 hour' THEN 'IDLE' ELSE 'STALE' END AS \"Status\" FROM gpu_metrics WHERE utilization > 10",
           "refId": "A"
         }
       ],
