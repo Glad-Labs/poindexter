@@ -38,6 +38,14 @@ MAX_CHARS = 6000  # nomic-embed-text has 8192 token context; ~6k chars stays saf
 # Source tables
 MEMORY_SOURCE = "memory"
 POSTS_SOURCE = "posts"
+ISSUES_SOURCE = "issues"
+AUDIT_SOURCE = "audit"
+
+# Gitea API
+GITEA_URL = "http://localhost:3001"
+GITEA_USER = "gladlabs"
+GITEA_PASS = "***REMOVED***"
+GITEA_REPO = "gladlabs/glad-labs-codebase"
 
 # Memory directories: (path, origin label)
 MEMORY_DIRS: List[Tuple[Path, str]] = [
@@ -343,6 +351,147 @@ async def sync_published_posts(
 
 
 # ---------------------------------------------------------------------------
+# Phase 3: Gitea issues
+# ---------------------------------------------------------------------------
+
+
+async def sync_gitea_issues(
+    local_conn: asyncpg.Connection, http: httpx.AsyncClient
+) -> Dict[str, int]:
+    """Embed new/changed Gitea issues."""
+    stats = {"embedded": 0, "skipped": 0, "failed": 0}
+    page = 1
+    all_issues = []
+
+    while True:
+        try:
+            resp = await http.get(
+                f"{GITEA_URL}/api/v1/repos/{GITEA_REPO}/issues",
+                params={"state": "all", "limit": 50, "page": page},
+                auth=(GITEA_USER, GITEA_PASS),
+                timeout=15,
+            )
+            if resp.status_code != 200:
+                logger.warning(f"Gitea API returned {resp.status_code}")
+                break
+            batch = resp.json()
+            if not batch:
+                break
+            all_issues.extend(batch)
+            page += 1
+            if len(batch) < 50:
+                break
+        except Exception as e:
+            logger.warning(f"Gitea API error: {e}")
+            break
+
+    logger.info(f"  Found {len(all_issues)} Gitea issues")
+
+    for issue in all_issues:
+        try:
+            num = issue["number"]
+            title = issue.get("title", "")
+            body = (issue.get("body") or "")[:3000]
+            state = issue.get("state", "")
+            labels = ", ".join(l["name"] for l in issue.get("labels", []))
+
+            text = f"Issue #{num}: {title}\nState: {state}\nLabels: {labels}\n\n{body}"
+            content_hash = hashlib.sha256(text.encode()).hexdigest()
+            source_id = str(num)
+
+            existing = await local_conn.fetchval(
+                "SELECT content_hash FROM embeddings WHERE source_table = $1 AND source_id = $2 AND embedding_model = $3",
+                ISSUES_SOURCE, source_id, EMBED_MODEL,
+            )
+            if existing == content_hash:
+                stats["skipped"] += 1
+                continue
+
+            emb = await embed_text(http, text[:MAX_CHARS])
+
+            await local_conn.execute(
+                """INSERT INTO embeddings (source_table, source_id, content_hash, chunk_index,
+                   text_preview, embedding_model, embedding, metadata)
+                   VALUES ($1, $2, $3, 0, $4, $5, $6::vector, $7::jsonb)
+                   ON CONFLICT (source_table, source_id, chunk_index, embedding_model)
+                   DO UPDATE SET content_hash = $3, embedding = $6::vector,
+                   text_preview = $4, metadata = $7::jsonb, updated_at = NOW()""",
+                ISSUES_SOURCE, source_id, content_hash, text[:500], EMBED_MODEL,
+                json.dumps(emb), json.dumps({"title": title, "state": state, "labels": labels}),
+            )
+            stats["embedded"] += 1
+        except Exception as e:
+            stats["failed"] += 1
+            logger.error(f"  [issue] FAIL #{issue.get('number', '?')}: {e}")
+
+    return stats
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Audit log entries (significant events only)
+# ---------------------------------------------------------------------------
+
+
+async def sync_audit_entries(
+    local_conn: asyncpg.Connection, http: httpx.AsyncClient
+) -> Dict[str, int]:
+    """Embed recent audit log entries (errors + significant events)."""
+    stats = {"embedded": 0, "skipped": 0, "failed": 0}
+
+    rows = await local_conn.fetch(
+        """SELECT id, event_type, source, task_id, details, severity, timestamp
+           FROM audit_log
+           WHERE severity IN ('error', 'warning')
+           ORDER BY timestamp DESC LIMIT 200"""
+    )
+    logger.info(f"  Found {len(rows)} audit entries to check")
+
+    for row in rows:
+        try:
+            audit_id = str(row["id"])
+            details = json.loads(row["details"]) if row["details"] else {}
+            text = (
+                f"Audit: {row['event_type']} [{row['severity']}]\n"
+                f"Source: {row['source']}\n"
+                f"Task: {row['task_id'] or 'N/A'}\n"
+                f"Time: {row['timestamp']}\n"
+                f"Details: {json.dumps(details)[:2000]}"
+            )
+            content_hash = hashlib.sha256(text.encode()).hexdigest()
+
+            existing = await local_conn.fetchval(
+                "SELECT content_hash FROM embeddings WHERE source_table = $1 AND source_id = $2 AND embedding_model = $3",
+                AUDIT_SOURCE, audit_id, EMBED_MODEL,
+            )
+            if existing == content_hash:
+                stats["skipped"] += 1
+                continue
+
+            emb = await embed_text(http, text[:MAX_CHARS])
+
+            await local_conn.execute(
+                """INSERT INTO embeddings (source_table, source_id, content_hash, chunk_index,
+                   text_preview, embedding_model, embedding, metadata)
+                   VALUES ($1, $2, $3, 0, $4, $5, $6::vector, $7::jsonb)
+                   ON CONFLICT (source_table, source_id, chunk_index, embedding_model)
+                   DO UPDATE SET content_hash = $3, embedding = $6::vector,
+                   text_preview = $4, metadata = $7::jsonb, updated_at = NOW()""",
+                AUDIT_SOURCE, audit_id, content_hash, text[:500], EMBED_MODEL,
+                json.dumps(emb), json.dumps({
+                    "event_type": row["event_type"],
+                    "severity": row["severity"],
+                    "source": row["source"],
+                }),
+            )
+            stats["embedded"] += 1
+        except Exception as e:
+            stats["failed"] += 1
+            logger.error(f"  [audit] FAIL #{row.get('id', '?')}: {e}")
+
+    return stats
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -382,12 +531,31 @@ async def main() -> None:
             logger.error(f"Cloud DB connection failed: {e}")
             post_stats = {"embedded": 0, "skipped": 0, "failed": 0}
 
+        # Phase 3: Gitea issues
+        logger.info("--- Phase 3: Gitea issues ---")
+        try:
+            issue_stats = await sync_gitea_issues(local_conn, http)
+        except Exception as e:
+            logger.error(f"Gitea issues sync failed: {e}")
+            issue_stats = {"embedded": 0, "skipped": 0, "failed": 0}
+
+        # Phase 4: Audit log entries
+        logger.info("--- Phase 4: Audit log ---")
+        try:
+            audit_stats = await sync_audit_entries(local_conn, http)
+        except Exception as e:
+            logger.error(f"Audit log sync failed: {e}")
+            audit_stats = {"embedded": 0, "skipped": 0, "failed": 0}
+
         # Summary
+        total_embedded = mem_stats["embedded"] + post_stats["embedded"] + issue_stats["embedded"] + audit_stats["embedded"]
         elapsed = (datetime.now(timezone.utc) - start).total_seconds()
         logger.info("--- Summary ---")
         logger.info(f"  Memory: {mem_stats['embedded']} embedded, {mem_stats['skipped']} skipped, {mem_stats['failed']} failed")
         logger.info(f"  Posts:  {post_stats['embedded']} embedded, {post_stats['skipped']} skipped, {post_stats['failed']} failed")
-        logger.info(f"  Total embedded: {mem_stats['embedded'] + post_stats['embedded']}")
+        logger.info(f"  Issues: {issue_stats['embedded']} embedded, {issue_stats['skipped']} skipped, {issue_stats['failed']} failed")
+        logger.info(f"  Audit:  {audit_stats['embedded']} embedded, {audit_stats['skipped']} skipped, {audit_stats['failed']} failed")
+        logger.info(f"  Total embedded: {total_embedded}")
         logger.info(f"  Elapsed: {elapsed:.1f}s")
         logger.info("Auto-Embed run complete.\n")
 
