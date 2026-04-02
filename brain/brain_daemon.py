@@ -250,9 +250,44 @@ async def monitor_services(pool) -> list:
                 restart_service(name)
                 logger.info("[BRAIN] Auto-restarted %s", name)
 
-            # Alert on critical failures
+            # Auto-triage: check alert_actions table before escalating
             if config["critical"]:
-                send_telegram(f"ALERT: {name} is DOWN — {detail}")
+                try:
+                    pattern = f"{name}_down" if name != "api" else "api_down"
+                    action = await pool.fetchrow(
+                        "SELECT id, action_type, cooldown_minutes, last_triggered_at, consecutive_failures, escalate_after_failures "
+                        "FROM alert_actions WHERE pattern = $1 AND enabled = true", pattern
+                    )
+                    if action:
+                        # Check cooldown
+                        in_cooldown = False
+                        if action["last_triggered_at"]:
+                            elapsed = (datetime.now(timezone.utc) - action["last_triggered_at"]).total_seconds() / 60
+                            in_cooldown = elapsed < action["cooldown_minutes"]
+
+                        if not in_cooldown:
+                            await pool.execute(
+                                "UPDATE alert_actions SET last_triggered_at = NOW(), total_triggers = total_triggers + 1, "
+                                "consecutive_failures = consecutive_failures + 1 WHERE id = $1", action["id"]
+                            )
+                            await pool.execute(
+                                "INSERT INTO alert_log (alert_action_id, pattern, trigger_detail, action_taken, result) "
+                                "VALUES ($1, $2, $3, $4, 'logged')",
+                                action["id"], pattern, f"{name}: {detail}"[:500], action["action_type"]
+                            )
+                            failures = (action["consecutive_failures"] or 0) + 1
+                            if failures >= action["escalate_after_failures"] and action["escalate_after_failures"] > 0:
+                                send_telegram(f"🚨 {name} DOWN ({failures}x): {detail}")
+                            else:
+                                logger.info("[BRAIN] Alert '%s' logged (failure %d/%d before escalation)",
+                                            pattern, failures, action["escalate_after_failures"])
+                        else:
+                            logger.debug("[BRAIN] Alert '%s' in cooldown", pattern)
+                    else:
+                        send_telegram(f"ALERT: {name} is DOWN — {detail}")
+                except Exception as alert_err:
+                    logger.warning("[BRAIN] Alert triage failed: %s — falling back to Telegram", alert_err)
+                    send_telegram(f"ALERT: {name} is DOWN — {detail}")
         else:
             logger.debug("[BRAIN] Service %s: OK", name)
 
