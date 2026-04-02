@@ -438,6 +438,9 @@ class TestGetAgent:
 
     def test_import_error_returns_none(self):
         executor, _, _ = _make_executor()
+        # Clear class-level cache so importlib.import_module is actually called
+        cache_key = "agents.blog_content_generator_agent"
+        WorkflowExecutor._agent_module_cache.pop(cache_key, None)
         with patch("importlib.import_module", side_effect=ImportError("no module")):
             result = executor._get_agent("blog_content_generator_agent")
         assert result is None
@@ -448,6 +451,9 @@ class TestGetAgent:
         mock_module = MagicMock()
         mock_module.get_blog_quality_agent = MagicMock(return_value=mock_agent)
 
+        # Clear class-level cache so importlib.import_module is actually called
+        cache_key = "agents.blog_quality_agent"
+        WorkflowExecutor._agent_module_cache.pop(cache_key, None)
         with patch("importlib.import_module", return_value=mock_module):
             result = executor._get_agent("blog_quality_agent")
 
