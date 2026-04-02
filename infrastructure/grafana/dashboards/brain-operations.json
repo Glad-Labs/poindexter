@@ -35,8 +35,8 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 4,
-        "w": 12,
+        "h": 2,
+        "w": 4,
         "x": 0,
         "y": 0
       },
@@ -47,13 +47,15 @@
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
-          ]
+          ],
+          "fields": "",
+          "values": false
         },
         "text": {
           "titleSize": 14,
           "valueSize": 48
         },
-        "textMode": "value"
+        "textMode": "value_and_name"
       },
       "targets": [
         {
@@ -93,9 +95,9 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 4,
-        "w": 12,
-        "x": 12,
+        "h": 2,
+        "w": 4,
+        "x": 4,
         "y": 0
       },
       "id": 8,
@@ -105,13 +107,15 @@
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
-          ]
+          ],
+          "fields": "",
+          "values": false
         },
         "text": {
           "titleSize": 14,
           "valueSize": 48
         },
-        "textMode": "value"
+        "textMode": "value_and_name"
       },
       "targets": [
         {
@@ -155,8 +159,8 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 4,
-        "w": 12,
+        "h": 2,
+        "w": 4,
         "x": 0,
         "y": 4
       },
@@ -167,13 +171,15 @@
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
-          ]
+          ],
+          "fields": "",
+          "values": false
         },
         "text": {
           "titleSize": 14,
           "valueSize": 48
         },
-        "textMode": "value"
+        "textMode": "value_and_name"
       },
       "targets": [
         {
@@ -213,9 +219,9 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 4,
-        "w": 12,
-        "x": 12,
+        "h": 2,
+        "w": 4,
+        "x": 4,
         "y": 4
       },
       "id": 14,
@@ -225,13 +231,15 @@
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
-          ]
+          ],
+          "fields": "",
+          "values": false
         },
         "text": {
           "titleSize": 14,
           "valueSize": 48
         },
-        "textMode": "value"
+        "textMode": "value_and_name"
       },
       "targets": [
         {
@@ -257,20 +265,15 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 8,
-        "w": 24,
+        "h": 3,
+        "w": 6,
         "x": 0,
         "y": 8
       },
       "id": 2,
       "options": {
         "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "values": [
-            "value",
-            "percent"
-          ]
+          "displayMode": "hidden"
         },
         "pieType": "donut",
         "reduceOptions": {
@@ -323,16 +326,15 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 10,
-        "w": 24,
+        "h": 3,
+        "w": 12,
         "x": 0,
         "y": 16
       },
       "id": 5,
       "options": {
         "legend": {
-          "displayMode": "list",
-          "placement": "right"
+          "displayMode": "hidden"
         },
         "tooltip": {
           "mode": "multi",
@@ -428,20 +430,15 @@
         ]
       },
       "gridPos": {
-        "h": 8,
-        "w": 24,
+        "h": 3,
+        "w": 6,
         "x": 0,
         "y": 26
       },
       "id": 9,
       "options": {
         "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "values": [
-            "value",
-            "percent"
-          ]
+          "displayMode": "hidden"
         },
         "pieType": "donut",
         "reduceOptions": {
@@ -493,8 +490,8 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 10,
-        "w": 24,
+        "h": 3,
+        "w": 12,
         "x": 0,
         "y": 34
       },
@@ -551,16 +548,15 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 10,
-        "w": 24,
+        "h": 3,
+        "w": 12,
         "x": 0,
         "y": 44
       },
       "id": 13,
       "options": {
         "legend": {
-          "displayMode": "list",
-          "placement": "right"
+          "displayMode": "hidden"
         },
         "tooltip": {
           "mode": "multi",
@@ -610,8 +606,8 @@
         ]
       },
       "gridPos": {
-        "h": 8,
-        "w": 24,
+        "h": 3,
+        "w": 12,
         "x": 0,
         "y": 54
       },
