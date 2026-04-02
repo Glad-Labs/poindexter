@@ -18,6 +18,19 @@
     - Avoid clickbait while remaining compelling
     - Professional tone
 
+    ⚠️ TITLE DIVERSITY — CRITICAL:
+    - Do NOT start with "The" — at least 50% of titles should use other patterns
+    - Do NOT use these overused patterns: "The Hidden Cost of...", "The Silent...", "The Developer's Guide to...", "The Invisible..."
+    - VARY the structure. Rotate between these styles:
+      • Question: "Why Does X Still Matter in 2026?"
+      • How-to: "How to Build X Without Y"
+      • Contrarian: "Stop Doing X: A Better Approach to Y"
+      • Number: "5 Patterns That Changed How We Think About X"
+      • Direct: "X Is Broken. Here's the Fix."
+      • Tutorial: "Building X from Scratch with Y"
+      • Comparison: "X vs Y: What Actually Matters"
+    - Each title should feel FRESH and DIFFERENT from everything before it
+
     Generate ONLY the title, nothing else. No quotes, no explanation.
 
 - key: seo.generate_meta_description

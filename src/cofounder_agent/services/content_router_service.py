@@ -324,7 +324,7 @@ class ContentGenerationService:
 
 
 async def _generate_canonical_title(
-    topic: str, primary_keyword: str, content_excerpt: str
+    topic: str, primary_keyword: str, content_excerpt: str, existing_titles: str = ""
 ) -> Optional[str]:
     """
     Generate a canonical, SEO-optimized title for blog content using unified prompt manager.
@@ -350,6 +350,10 @@ async def _generate_canonical_title(
             content=content_excerpt,
             primary_keyword=primary_keyword or topic,
         )
+
+        # Inject existing titles to avoid repetition
+        if existing_titles:
+            prompt += f"\n\n⚠️ AVOID SIMILARITY to these recent titles:\n{existing_titles}\n\nYour title must be DISTINCTLY DIFFERENT in structure and wording."
 
         # Use model consolidation service for intelligent provider fallback
         result = await service.generate(
@@ -653,9 +657,21 @@ async def _stage_generate_content(
         raise ValueError("Content generation failed: no content produced")
 
     # Generate canonical title based on topic and content
+    # Inject recent titles so the LLM avoids repetition
     logger.info("📌 Generating title from content...")
     primary_keyword = tags[0] if tags else topic
-    title = await _generate_canonical_title(topic, primary_keyword, content_text[:500])
+    existing_titles = ""
+    try:
+        if database_service and hasattr(database_service, 'pool') and database_service.pool:
+            async with database_service.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT title FROM content_tasks WHERE status = 'published' ORDER BY created_at DESC LIMIT 20"
+                )
+                if rows:
+                    existing_titles = "\n".join(f"- {r['title']}" for r in rows if r['title'])
+    except Exception:
+        pass  # Non-critical — proceed without diversity check
+    title = await _generate_canonical_title(topic, primary_keyword, content_text[:500], existing_titles=existing_titles)
     if not title:
         title = topic  # Fallback to topic if title generation fails
     logger.info(f"✅ Title generated: {title}")
