@@ -891,18 +891,20 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
         logger.info("⏭️  Image search skipped (disabled)\n")
         return featured_image
 
-    # Strategy 1: Try SDXL generation for a unique image
+    # Strategy 1: Try SDXL generation with category-specific style from DB
     if image_service.sdxl_available or not image_service.sdxl_initialized:
         try:
             import os
             import tempfile
-            sdxl_prompt = (
-                f"Cyberpunk tech aesthetic blog header about {topic}. "
-                f"Dark matte black background, cyan and teal neon accents, "
-                f"chrome metallic details, subtle purple highlights. "
-                f"Clean but raw, polished but technical. No text overlay. "
-                f"Professional digital art, 16:9 aspect ratio."
-            )
+            from services.site_config import site_config
+
+            # Get category-specific style from app_settings
+            category = result.get("category", "technology")
+            style_key = f"image_style_{category}" if category else "image_style_default"
+            style_prompt = site_config.get(style_key) or site_config.get("image_style_default", "professional digital art, abstract technology concept, blue color scheme, no people, no text")
+            negative = site_config.get("image_negative_prompt", "text, words, letters, face, person, blurry")
+
+            sdxl_prompt = f"{style_prompt}, blog header about {topic}"
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False, dir=os.path.join(
                 os.path.expanduser("~"), "Downloads", "glad-labs-generated-images"
             )) as tmp:
@@ -912,10 +914,30 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
             success = await image_service.generate_image(
                 prompt=sdxl_prompt,
                 output_path=output_path,
+                negative_prompt=negative,
                 high_quality=True,
             )
             if success and os.path.exists(output_path):
-                # Create a featured_image-like object for the pipeline
+                # Upload to Cloudinary for CDN hosting
+                image_url = output_path  # Fallback to local path
+                try:
+                    import cloudinary
+                    import cloudinary.uploader
+                    cloudinary.config(
+                        cloud_name=site_config.get("cloudinary_cloud_name"),
+                        api_key=site_config.get("cloudinary_api_key"),
+                        api_secret=site_config.get("cloudinary_api_secret"),
+                    )
+                    upload_result = cloudinary.uploader.upload(
+                        output_path, folder="generated/", resource_type="image",
+                        tags=["featured", category or "default"],
+                    )
+                    image_url = upload_result.get("secure_url", output_path)
+                    logger.info("Uploaded to Cloudinary: %s", image_url[:80])
+                    os.remove(output_path)  # Clean up local file
+                except Exception as upload_err:
+                    logger.warning("Cloudinary upload failed (using local): %s", upload_err)
+
                 from dataclasses import dataclass
 
                 @dataclass
@@ -925,16 +947,16 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
                     source: str
 
                 featured_image = GeneratedImage(
-                    url=output_path,  # Local path for now
-                    photographer="SDXL (generated)",
-                    source="sdxl_local",
+                    url=image_url,
+                    photographer="AI Generated (SDXL)",
+                    source="sdxl_cloudinary" if "cloudinary" in image_url else "sdxl_local",
                 )
-                result["featured_image_url"] = output_path
-                result["featured_image_photographer"] = "SDXL (generated)"
-                result["featured_image_source"] = "sdxl_local"
+                result["featured_image_url"] = image_url
+                result["featured_image_photographer"] = "AI Generated (SDXL)"
+                result["featured_image_source"] = featured_image.source
                 result["stages"]["3_featured_image_found"] = True
                 result["stages"]["3_image_source"] = "sdxl"
-                logger.info("✅ Featured image generated via SDXL\n")
+                logger.info("Featured image generated via SDXL + Cloudinary\n")
                 return featured_image
         except Exception as e:
             logger.info("SDXL generation skipped (%s), falling back to Pexels", e)
