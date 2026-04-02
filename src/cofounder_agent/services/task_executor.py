@@ -273,8 +273,16 @@ class TaskExecutor:
                             self.task_count += 1
                 else:
                     logger.debug(
-                        f"⏳ [TASK_EXEC_LOOP] No pending tasks - sleeping for {self.poll_interval}s"
+                        f"⏳ [TASK_EXEC_LOOP] No pending tasks - running idle work"
                     )
+                    # Run background maintenance when pipeline is idle
+                    try:
+                        from services.idle_worker import IdleWorker
+                        if self.database_service and self.database_service.pool:
+                            idle = IdleWorker(self.database_service.pool)
+                            await idle.run_cycle()
+                    except Exception as idle_err:
+                        logger.debug("[TASK_EXEC_LOOP] Idle worker error (non-critical): %s", idle_err)
 
                 # Sleep before next poll
                 await asyncio.sleep(self.poll_interval)
