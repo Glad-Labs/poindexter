@@ -218,10 +218,12 @@ class TestEstimateCost:
         expected = TOKEN_COSTS_PER_1K["anthropic"]["input"] + TOKEN_COSTS_PER_1K["anthropic"]["output"]
         assert abs(cost - expected) < 1e-8
 
-    async def test_estimate_ollama_is_free(self):
+    async def test_estimate_ollama_electricity_cost(self):
         guard = CostGuard()
         cost = await guard.estimate_cost("ollama", input_tokens=10000, output_tokens=10000)
-        assert cost == 0.0
+        # Ollama costs electricity: ~$0.000256/1K tokens
+        assert cost > 0  # Not free!
+        assert cost < 0.01  # But very cheap
 
     async def test_estimate_unknown_provider_falls_back(self):
         guard = CostGuard()
