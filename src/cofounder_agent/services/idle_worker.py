@@ -79,6 +79,11 @@ class IdleWorker:
             results["embedding_refresh"] = await self._refresh_stale_embeddings()
             self._mark_run("embedding_refresh")
 
+        # 6. Topic discovery — find and queue fresh content topics (every 8 hours)
+        if self._is_due("topic_discovery", 480):
+            results["topic_discovery"] = await self._discover_and_queue_topics()
+            self._mark_run("topic_discovery")
+
         if results:
             logger.info("[IDLE] Completed %d background tasks: %s",
                         len(results), ", ".join(results.keys()))
@@ -268,4 +273,26 @@ class IdleWorker:
             return {"note": "embedding refresh deferred to auto-embed cron"}
 
         except Exception as e:
+            return {"error": str(e)}
+
+    async def _discover_and_queue_topics(self) -> dict:
+        """Discover trending topics and queue them as content tasks."""
+        try:
+            from services.topic_discovery import TopicDiscovery
+            discovery = TopicDiscovery(self.pool)
+            topics = await discovery.discover(max_topics=5)
+
+            if not topics:
+                return {"discovered": 0, "queued": 0, "note": "no fresh topics found"}
+
+            queued = await discovery.queue_topics(topics)
+            logger.info("[IDLE] Topic discovery: %d discovered, %d queued", len(topics), queued)
+            return {
+                "discovered": len(topics),
+                "queued": queued,
+                "topics": [t.title[:50] for t in topics],
+            }
+
+        except Exception as e:
+            logger.warning("[IDLE] Topic discovery failed: %s", e)
             return {"error": str(e)}
