@@ -5651,4 +5651,4 @@ ml = ["accelerate", "torch", "transformers"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<3.14"
-content-hash = "9a74ea44e04d81fba363a8a37a8796346edccf4f6ba1db4f1c0db12e19dbdb2a"
+content-hash = "a9cfd6409affd542d1917e972850f7737bf67c1d8fffd72658d01dc6b5e237b8"
