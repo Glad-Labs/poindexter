@@ -1,39 +1,39 @@
 ---
 name: System Status
-last_updated: 2026-04-02T17:39:12Z
+last_updated: 2026-04-02T23:04:24Z
 updated_by: sync-shared-context
 category: state
 ---
 
 # System Status (auto-generated)
 
-**Last sync:** 2026-04-02T17:39:12Z
+**Last sync:** 2026-04-02T23:04:24Z
 
 ## Content
 
-- Published posts: 77
+- Published posts: 141
 - Drafts: 11
-- Pending/approved tasks: 7
-- Failed tasks: 11
+- Pending/approved tasks: 0
+- Failed tasks: 15
 - Newsletter subscribers: 1
 - Affiliate links: 11
 
 ## Categories
 
-- Technology: 72 posts
-- Business: 4 posts
-- Engineering: 0 posts
-- Security: 0 posts
-- Insights: 0 posts
-- Startup: 0 posts
+- Technology: 112 posts
+- Business: 11 posts
+- Startup: 5 posts
+- Engineering: 4 posts
+- Security: 3 posts
+- Insights: 2 posts
 
 ## Configuration
 
-- App settings: 103 keys
+- App settings: 128 keys
 - Prompt templates: 27 active
-- Pipeline stages: 14 enabled
-- Embeddings: 971 vectors
-- Weekly API cost: $0.0000
+- Pipeline stages: 16 enabled
+- Embeddings: 1038 vectors
+- Weekly API cost: $0.0423
 
 ## Identity
 
@@ -56,22 +56,24 @@ category: state
 
 ## Pipeline Stages
 
-| #   | Stage                    | Enabled |
-| --- | ------------------------ | ------- |
-| 10  | Research & Context       | yes     |
-| 20  | Content Drafting         | yes     |
-| 30  | Programmatic Validator   | yes     |
-| 40  | Cross-Model QA Review    | yes     |
-| 50  | URL Validation           | yes     |
-| 60  | SEO Title Generation     | yes     |
-| 70  | SEO Metadata             | yes     |
-| 75  | Category Matching        | yes     |
-| 80  | Internal Linking         | yes     |
-| 85  | Affiliate Link Injection | yes     |
-| 90  | Featured Image           | yes     |
-| 100 | Social Post Generation   | yes     |
-| 110 | Training Data Capture    | yes     |
-| 120 | Publish Decision         | yes     |
+| #   | Stage                                  | Enabled |
+| --- | -------------------------------------- | ------- |
+| 10  | Research & Context                     | yes     |
+| 20  | Content Drafting                       | yes     |
+| 30  | Programmatic Validator                 | yes     |
+| 40  | Cross-Model QA Review                  | yes     |
+| 45  | Cross-Model Fact Check                 | yes     |
+| 47  | Writer Revision (from critic feedback) | yes     |
+| 50  | URL Validation                         | yes     |
+| 60  | SEO Title Generation                   | yes     |
+| 70  | SEO Metadata                           | yes     |
+| 75  | Category Matching                      | yes     |
+| 80  | Internal Linking                       | yes     |
+| 85  | Affiliate Link Injection               | yes     |
+| 90  | Featured Image                         | yes     |
+| 100 | Social Post Generation                 | yes     |
+| 110 | Training Data Capture                  | yes     |
+| 120 | Publish Decision                       | yes     |
 
 ## Active Experiments
 
@@ -79,13 +81,13 @@ category: state
 
 ## Recent Tasks (24h)
 
-- [awaiting_approval] Observability Beyond Logs: How Modern Teams Debug Production (score: 71)
-- [published] The GraphQL vs REST Debate Is Over: Here's What Won (score: 75)
-- [published] TypeScript on the Server: Why Bun and Deno Are Eating Node's (score: 75)
-- [failed] Remote Work Infrastructure: What Top Engineering Teams Actua (score: 68)
-- [approved] The Developer Tools Landscape in 2026: What Actually Changed (score: 71)
-- [approved] Database Migrations Without Downtime: A Battle-Tested Playbo (score: 71)
-- [approved] The Monorepo Decision: When One Repo Rules Them All (score: 74)
-- [approved] Your Docker Containers Are Leaking Secrets: A Practical Audi (score: 73)
-- [approved] API Security for Solo Developers: The 10 Mistakes That Will (score: 70)
-- [published] Why Most Technical Founders Fail at Content Marketing (And H (score: 75)
+- [failed] How Terraform Is Reshaping DevOps in 2026 (score: 73)
+- [published] Building Production-Ready FastAPI Applications (score: 75)
+- [published] The Business Case for Prompt Engineering in Solo Founders (score: 76)
+- [failed] Why the Best Engineers Are Becoming Product Thinkers (score: 75)
+- [published] The State of Developer Productivity Tools in 2026 (score: 71)
+- [published] Technical Debt Is Not a Metaphor: How to Measure and Pay It (score: 74)
+- [published] Git Workflows That Actually Scale: Beyond GitFlow (score: 70)
+- [failed] The OWASP Top 10 in Plain English: What Actually Gets You Ha (score: 69)
+- [published] Zero Trust for Solo Developers: Practical Security Without a (score: 71)
+- [published] How to Validate a SaaS Idea in a Weekend Without Writing Cod (score: 76)

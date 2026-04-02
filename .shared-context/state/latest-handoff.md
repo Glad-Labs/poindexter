@@ -1,126 +1,76 @@
 ---
-name: Session 48 handoff — April 1 2026
-description: HN launch hardening, Gemini removal, cost tracking fixes, voice bot, architecture discussion
+name: Session 49 handoff — April 2 2026
+description: Autonomous pipeline loop, DB-first config, MCP servers, permissions, topic discovery, SDXL images
 type: project
 ---
 
-## What was built (April 1, 2026 — overnight session)
+# Session 49 Handoff — April 2, 2026
 
-### Cost Tracking Fixes (3 gaps closed)
+## Summary
 
-- cost_guard.py: Gemini pricing updated from $0/$0 to actual Flash rates
-- ai_content_generator.py: Added missing cost logging to \_try_gemini_user_selected
-- multi_model_qa.py: QA review costs now written to cost_logs table (was console-only)
-- content_router_service.py: Logs QA review costs to database
+29 commits across 8 hours. Built the autonomous content pipeline loop, parameterized the entire codebase for forkability, and hardened the system.
 
-### QA Review Switched to Local Ollama
+## Key Achievements
 
-- Primary reviewer: gemma3:27b (free, local)
-- Gemini Flash as fallback only
-- Weight updated from 0.3 to 0.6 in score aggregation
+### Autonomous Pipeline Loop
 
-### Training Data Upsert Fix
+- Topic Discovery: scrapes HN, Dev.to, DuckDuckGo for trending topics
+- Web Research: free DuckDuckGo search replaces Serper ($0 API cost)
+- Content Generation: Ollama qwen3.5:35b with web research context
+- Multi-Model QA: programmatic validator + Ollama cross-review
+- SDXL Images: 6 category-specific styles + Cloudinary CDN upload
+- Auto-Publish: approve = publish (fixed stuck-tasks bug)
+- Idle Worker: quality audits, link checks, topic gaps, threshold tuning, topic discovery
 
-- content_db.py: INSERT changed to ON CONFLICT DO UPDATE for orchestrator_training_data
-- Fixes UniqueViolationError on retried tasks (70 of 13 recent failures)
+### DB-First Configuration (117 settings)
 
-### Gemini Completely Removed from Pipeline
+- site_config.py: global DB-backed config, only DATABASE_URL as env var
+- 27 prompt templates in DB (YAML fallback)
+- 14 toggleable pipeline stages with A/B testing
+- 48 agent permissions across 7 agents
+- 9 alert auto-triage patterns
+- Emergency-only cloud API mode (daily limits + Telegram alerts)
 
-- GOOGLE_API_KEY disabled in .env.local
-- provider_checker.py: Ollama is now #1 priority (was Gemini)
-- model_consolidation_service.py: Google removed from fallback chain
-- All LLM work routes through Ollama ($0 cost)
+### Infrastructure
 
-### HN Launch Hardening — SEO (CRITICAL)
+- 8 MCP servers: gladlabs (19 tools), forgejo (103), grafana, railway, docker, ollama, Gmail, Calendar
+- 12 Grafana dashboards (fixed datasources, time filters, queries)
+- Grafana Cloud alerts killed, API keys cleared
+- 44 Gitea issues (7 closed, 10 created)
 
-- Fixed canonical URLs on ALL 72 blog posts (was pointing to glad-labs.com instead of www.gladlabs.io)
-- Fixed missing /posts/ path prefix in canonical URLs
-- Fixed keywords meta tag character-split bug (Next.js needs array, not string)
-- Added og:image, og:url, canonical to homepage
-- Fixed JSON-LD structured data wrong domain (glad-labs.com → www.gladlabs.io)
-- Fixed 404/error page email/link references
-- Cleaned up 14 corrupted seo_keywords entries in database
+### Content
 
-### HN Launch Hardening — Security
+- 140 published posts (was 67 at session start)
+- 6 categories: Technology(110), Business(11), Startup(5), Engineering(4), Security(3), Insights(2)
+- 70 broken external URLs removed, 29 broken internal links removed
 
-- Rate limited GDPR data-requests endpoint (5/min)
-- Disabled API docs in production (/api/docs, /api/redoc return 404)
-- Removed X-Powered-By: Next.js header
-- Revalidate endpoint fails-secure when REVALIDATE_SECRET is unset
-- Error page sanitized — no longer shows raw error.message
+## Numbers
 
-### HN Launch Hardening — Performance
+- Posts: 140 published
+- Settings: 117 keys
+- Prompts: 27 in DB
+- Stages: 14 pipeline
+- Permissions: 48 rules
+- Alerts: 9 patterns
+- Embeddings: 1,037
+- MCP: 8 servers
+- Tests: 5,569 passing
+- Cloud cost: $0.04 electricity
 
-- Homepage ISR revalidation increased from 5min to 15min
-- Related posts fetch parallelized (eliminated waterfall)
-- RATE_LIMIT_PER_MINUTE set to 1000 on Railway
-- ALLOWED_ORIGINS set on Railway
+## Blockers
 
-### Discord Voice Bot (Full Pipeline)
+- Social posting: needs X/LinkedIn API keys
+- Newsletter: needs Resend domain verification (DNS)
+- E2E tests: 4 flaky (author + tag pages)
+- Woodpecker: untested end-to-end
+- Gitea password: in git history, needs rotation
 
-- Rewrote discord_voice_bot.py with py-cord for voice recording
-- Full flow: Voice → Whisper STT (CUDA) → Ollama → Sherpa TTS → Voice
-- Commands: ?join, ?listen, ?stop, ?ask, ?say, ?status, ?leave
-- Tested: Sherpa TTS works (0.52x RTF), Whisper transcribes perfectly
-- Issue: OpenClaw gateway and voice bot fight for same Discord bot token
-- Needs: separate Discord bot application or integrate voice into OpenClaw
+## Design Principles
 
-### Thinking Model Token Budget Fix
-
-- Thinking models (qwen3.5, glm-4.7) return empty responses with low token limits
-- QA review: detects thinking models and increases max_tokens to 1500
-- Voice bot: num_predict increased to 1000
-
-### Dependency Security Audit
-
-- Upgraded: pyjwt, pypdf, python-multipart, requests, urllib3, werkzeug
-- Frontend (npm): 0 vulnerabilities
-- Remaining: transitive deps from langchain/embedchain (can't upgrade without breaking compat)
-
-### Test Fixes
-
-- Cleaned up stale worktree directories (was causing vitest duplicate test files)
-- Fixed 8 test failures in test_content_agent_tools.py (Pydantic mock incompatibility)
-- Fixed writing_style_routes tests (were passing intermittently)
-- Provider checker and model consolidation tests need updating for Gemini removal
-
-### Architecture Discussion
-
-- Evaluated OpenClaw (framework) vs Claude Code for autonomous business ops
-- Matt leaning toward Claude Code + MCP + Ollama hybrid
-- OpenClaw for autonomous 24/7 workflows, Claude Code for interactive dev
-- OpenClaw already has 16 skills, Telegram/Discord/WhatsApp channels, voice plugins
-- Decision pending — may migrate cortex business logic into OpenClaw skills
-
-## Issues Closed This Session
-
-- #1465 Brain service health probes (implemented + merged)
-
-## Commits (10+ on dev, deployed to main)
-
-- `7eb3fe15` fix: cost tracking gaps + QA moved to local Ollama + training data upsert
-- `0da20a4c` fix: HN launch hardening — SEO, security, performance
-- `20409ca1` fix: keywords meta tag returns array for proper Next.js rendering
-- `b1aff4f3` security: harden revalidate endpoint + sanitize error messages
-- `72d673d3` fix: remove Gemini from provider chain — Ollama-first everywhere
-- `bfa9b6da` feat: full voice conversation — STT → Ollama → TTS in Discord
-- `7d3d4d64` fix: patch Pydantic tool mocks at class level instead of instance
-- `b14cc4b2` fix: handle thinking models (qwen3.5, glm-4.7) token budget
-
-## System State
-
-- Worker: running locally with Ollama
-- Daemon: running (pythonw)
-- OpenClaw: gateway running on port 18789
-- Ollama: 12 models, gemma3:27b for QA, qwen3.5:35b/glm-4.7 for content
-- Site: deployed to production (Vercel + Railway)
-- Railway: RATE_LIMIT_PER_MINUTE=1000, ALLOWED_ORIGINS set
-
-## Pending / Next Session
-
-- HN LAUNCH: Thursday April 2nd at 10am ET
-- Voice bot: resolve Discord token conflict (need separate bot app or OpenClaw integration)
-- Test failures: approval_workflow tests need rewrite (auth model changed), provider/consolidation tests need Gemini references removed
-- Content pipeline: verify end-to-end with Ollama (thinking model empty response risk)
-- Twitter/X: @\_gladlabs handle — need to set up and start posting
-- Architecture migration: start moving cortex business logic into OpenClaw skills
+1. DB-first config — app_settings is the control plane
+2. Data-driven tuning — no auto-modification of code/prompts
+3. Alert auto-triage — resolve before escalating
+4. Agent permissions — no self-modification of prompts
+5. Visual verification — check from user's perspective
+6. Prebuilt MCP servers where available
+7. Pipeline as product — forkable, plug-and-play
