@@ -193,14 +193,24 @@ ON CONFLICT (key) DO NOTHING;
 " 2>/dev/null && ok "Default settings seeded" || warn "Settings seed skipped (table may not exist yet — will be created on first backend start)"
 
 # ============================================================
-# 7. Pull Ollama models
+# 7. Detect hardware and recommend models
+# ============================================================
+info "Detecting hardware..."
+if command -v python3 >/dev/null 2>&1; then
+    python3 scripts/detect-hardware.py 2>/dev/null || python scripts/detect-hardware.py 2>/dev/null
+elif command -v python >/dev/null 2>&1; then
+    python scripts/detect-hardware.py 2>/dev/null
+fi
+
+# ============================================================
+# 8. Pull Ollama models (based on hardware detection)
 # ============================================================
 if command -v ollama >/dev/null 2>&1; then
     info "Pulling Ollama models (this may take a while)..."
     ollama pull nomic-embed-text 2>/dev/null && ok "nomic-embed-text (embeddings)" || warn "Failed to pull nomic-embed-text"
     ollama pull qwen3:8b 2>/dev/null && ok "qwen3:8b (fast tasks)" || warn "Failed to pull qwen3:8b"
-    info "For content generation, also pull: ollama pull qwen3.5:35b"
-    info "For QA review, also pull: ollama pull glm-4.7-5090"
+    info "For larger models, run: python scripts/detect-hardware.py --write-db"
+    info "This will auto-select the best models for your GPU and save to the database."
 else
     warn "Ollama not installed — skip model pulls. Install from https://ollama.com"
 fi
