@@ -75,6 +75,7 @@ cryptography = ">=46.0.5"  # CVE GHSA-r6ph-v2qm-q3c2 fix — minimum safe versio
 sqladmin = "^0.23.0"
 email-validator = "^2.3.0"
 resend = "^2.27.0"
+peft = "^0.18.1"
 
 [tool.poetry.extras]
 ml = ["torch", "transformers", "accelerate"]
