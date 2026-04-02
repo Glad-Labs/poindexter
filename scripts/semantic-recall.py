@@ -58,15 +58,13 @@ async def search_similar(
 
     rows = await conn.fetch(
         """
-        SELECT source_id, content_hash, text_preview, metadata,
+        SELECT source_table, source_id, content_hash, text_preview, metadata,
                1 - (embedding <=> $1::vector) as similarity
         FROM embeddings
-        WHERE source_table = $2
         ORDER BY embedding <=> $1::vector
-        LIMIT $3
+        LIMIT $2
         """,
         vector_str,
-        SOURCE_TABLE,
         top_k,
     )
 
@@ -74,6 +72,7 @@ async def search_similar(
     for row in rows:
         meta = json.loads(row["metadata"]) if row["metadata"] else {}
         results.append({
+            "source_table": row["source_table"],
             "source_id": row["source_id"],
             "similarity": float(row["similarity"]),
             "text_preview": row["text_preview"] or "",
@@ -97,12 +96,13 @@ def format_results(results: List[Dict[str, Any]], query: str) -> str:
         meta = r["metadata"]
         sim = r["similarity"]
         source = r["source_id"]
-        origin = meta.get("origin", "?")
-        ftype = meta.get("type", "?")
+        source_table = r.get("source_table", "?")
+        origin = meta.get("origin", source_table)
+        ftype = meta.get("type", meta.get("state", "?"))
         preview = r["text_preview"][:120].replace("\n", " ")
 
         lines.append(
-            f"\n{i}. [{sim:.4f}] {source}\n"
+            f"\n{i}. [{sim:.4f}] [{source_table}] {source}\n"
             f"   origin={origin}  type={ftype}\n"
             f"   {preview}..."
         )
