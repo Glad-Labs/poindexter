@@ -870,6 +870,148 @@
       ],
       "title": "A/B Experiments",
       "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Dashboard --"
+      },
+      "gridPos": {
+        "h": 2,
+        "w": 24,
+        "x": 0,
+        "y": 62
+      },
+      "id": 400,
+      "options": {
+        "content": "# Agent Permissions",
+        "mode": "markdown"
+      },
+      "title": "",
+      "transparent": true,
+      "type": "text"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 16,
+        "x": 0,
+        "y": 64
+      },
+      "id": 40,
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "agent_name"
+          }
+        ],
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT agent_name, resource, action, CASE WHEN allowed AND NOT requires_approval THEN 'ALLOWED' WHEN requires_approval THEN 'APPROVAL' ELSE 'DENIED' END as access FROM agent_permissions ORDER BY agent_name, resource, action",
+          "refId": "A"
+        }
+      ],
+      "title": "Permission Matrix (48 rules)",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 16,
+        "y": 64
+      },
+      "id": 41,
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT name, agent_type, trust_level, is_active FROM system_agents ORDER BY trust_level DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "System Agents",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
+        }
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 74
+      },
+      "id": 42,
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT id, agent_name, resource, action, reason, status, created_at::date FROM approval_queue ORDER BY created_at DESC LIMIT 20",
+          "refId": "A"
+        }
+      ],
+      "title": "Approval Queue",
+      "type": "table"
     }
   ],
   "refresh": "30s",
