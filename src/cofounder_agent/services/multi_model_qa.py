@@ -172,17 +172,17 @@ class MultiModelQA:
     ):
         """Review content using local Ollama first, falling back to Gemini Flash.
 
-        Strategy: Try Ollama (free, local) first. If Ollama is unavailable or fails,
-        fall back to Gemini Flash as a paid backup.
+        Strategy: Ollama only. No cloud API fallback.
+        If Ollama is unavailable, skip the cross-model review entirely.
         """
-        # Try Ollama first (free, fast, local)
+        # Ollama only — no cloud API costs
         ollama_result = await self._review_with_ollama(title, content, topic, model_override)
         if ollama_result is not None:
             return ollama_result
 
-        # Fall back to Gemini if Ollama is unavailable
-        logger.info("[MULTI_QA] Ollama unavailable, falling back to Gemini")
-        return await self._review_with_gemini(title, content, topic, model_override)
+        # No fallback — skip review if Ollama unavailable (e.g., on Railway coordinator)
+        logger.info("[MULTI_QA] Ollama unavailable, skipping cross-model review (no cloud fallback)")
+        return None
 
     async def _review_with_ollama(
         self, title: str, content: str, topic: str, model_override: Optional[str] = None,
