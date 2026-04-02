@@ -649,7 +649,7 @@
       "targets": [
         {
           "format": "table",
-          "rawSql": "SELECT COALESCE(LEFT(title, 35), LEFT(topic, 35)) AS \"Post\", quality_score AS \"Q\", to_char(published_at, 'Mon DD') AS \"Date\" FROM content_tasks WHERE publish_status = 'published' AND published_at IS NOT NULL ORDER BY published_at DESC LIMIT 8",
+          "rawSql": "SELECT COALESCE(LEFT(title, 35), LEFT(topic, 35)) AS \"Post\", quality_score AS \"Q\", to_char(published_at, 'Mon DD') AS \"Date\" FROM content_tasks WHERE status = 'published' AND published_at IS NOT NULL ORDER BY published_at DESC LIMIT 8",
           "refId": "A"
         }
       ],

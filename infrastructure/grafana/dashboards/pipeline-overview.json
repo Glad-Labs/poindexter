@@ -325,7 +325,7 @@
             "type": "grafana-postgresql-datasource",
             "uid": "railway-prod-db"
           },
-          "rawSql": "SELECT stage, COUNT(*) as count FROM content_tasks WHERE status = 'in_progress' GROUP BY stage",
+          "rawSql": "SELECT status, COUNT(*) as count FROM content_tasks GROUP BY status ORDER BY count DESC",
           "format": "table",
           "editorMode": "code"
         }
@@ -395,7 +395,7 @@
             "type": "grafana-postgresql-datasource",
             "uid": "railway-prod-db"
           },
-          "rawSql": "SELECT ROUND(AVG(EXTRACT(EPOCH FROM (updated_at - created_at)) / 60), 1) as avg_minutes FROM content_tasks WHERE status = 'completed' AND created_at > NOW() - INTERVAL '7 days'",
+          "rawSql": "SELECT ROUND(AVG(EXTRACT(EPOCH FROM (updated_at - created_at)) / 60), 1) as avg_minutes FROM content_tasks WHERE status = 'published' AND created_at > NOW() - INTERVAL '7 days'",
           "format": "table",
           "editorMode": "code"
         }
