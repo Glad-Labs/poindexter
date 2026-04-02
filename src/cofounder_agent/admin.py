@@ -15,6 +15,7 @@ mapped to the existing asyncpg-managed tables.
 
 import os
 
+from services.site_config import site_config
 from sqladmin import Admin, ModelView
 from sqlalchemy import (
     Boolean,
@@ -362,7 +363,7 @@ def setup_admin(app):
     admin = Admin(
         app,
         engine,
-        title=f"{os.getenv('SITE_NAME', 'Content Pipeline')} Admin",
+        title=f"{site_config.get('site_name', 'Content Pipeline')} Admin",
         base_url="/admin",
     )
 

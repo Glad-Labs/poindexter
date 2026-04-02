@@ -468,13 +468,15 @@ class TaskExecutor:
                             slug = slug_row["slug"]
                     except Exception as e:
                         logger.warning("[TASK_SINGLE] Failed to fetch slug for task %s: %s", task_id, e)
-                    _site_url = _os.getenv("SITE_URL", "https://localhost:3000")
+                    from services.site_config import site_config as _sc
+                    _site_url = _sc.get("site_url", "https://localhost:3000")
                     link = f"{_site_url}/posts/{slug}" if slug else _site_url
                     await _notify_openclaw(
                         f"Published: \"{topic}\" (score: {quality_score:.0f})\n{link}"
                     )
                 else:
-                    _api_base = _os.getenv("API_BASE_URL", "https://localhost:8000")
+                    from services.site_config import site_config as _sc2
+                    _api_base = _sc2.get("api_base_url", "https://localhost:8000")
                     api_link = f"{_api_base}/api/tasks/{task_id}"
                     await _notify_openclaw(
                         f"Ready for review: \"{topic}\" (score: {quality_score:.0f})\n"

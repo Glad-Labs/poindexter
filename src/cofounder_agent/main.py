@@ -303,7 +303,8 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
 _deployment_mode = os.getenv("DEPLOYMENT_MODE", "coordinator")
 _is_production = config.environment == "production"
 
-_site_name = os.getenv("SITE_NAME", "AI Content Pipeline")
+from services.site_config import site_config as _site_cfg
+_site_name = _site_cfg.get("site_name", "AI Content Pipeline")
 
 app = FastAPI(
     title=f"{_site_name} ({_deployment_mode})",
@@ -335,8 +336,8 @@ Admin panel at `/admin`.
     lifespan=lifespan,
     contact={
         "name": f"{_site_name} Support",
-        "email": os.getenv("SUPPORT_EMAIL", "support@example.com"),
-        "url": os.getenv("SITE_URL", "https://localhost:3000"),
+        "email": _site_cfg.get("support_email", "support@example.com"),
+        "url": _site_cfg.get("site_url", "https://localhost:3000"),
     },
     license_info={"name": "AGPL-3.0", "url": "https://www.gnu.org/licenses/agpl-3.0.html"},
     openapi_url=None if _is_production else "/api/openapi.json",
