@@ -1237,6 +1237,34 @@ async def process_content_generation_task(
             "score": quality_result.overall_score, "stage": "early_eval",
         }, task_id=task_id)
 
+        # Stage 2B.1: URL validation (non-blocking — warnings only)
+        try:
+            from services.url_validator import get_url_validator
+            _url_validator = get_url_validator()
+            _extracted_urls = _url_validator.extract_urls(content_text)
+            if _extracted_urls:
+                _url_results = await _url_validator.validate_urls(_extracted_urls)
+                _broken = {u: s for u, s in _url_results.items() if s == "invalid"}
+                result["url_validation"] = {
+                    "total_urls": len(_extracted_urls),
+                    "valid": sum(1 for v in _url_results.values() if v == "valid"),
+                    "invalid": len(_broken),
+                    "broken_urls": list(_broken.keys()),
+                }
+                if _broken:
+                    logger.warning(
+                        "URL validation: %d/%d broken links in task %s: %s",
+                        len(_broken), len(_extracted_urls), task_id[:8],
+                        ", ".join(list(_broken.keys())[:5]),
+                    )
+                else:
+                    logger.info("URL validation: all %d links valid for task %s", len(_extracted_urls), task_id[:8])
+            else:
+                result["url_validation"] = {"total_urls": 0, "valid": 0, "invalid": 0, "broken_urls": []}
+        except Exception as _url_err:
+            logger.warning("URL validation failed (non-critical): %s", _url_err)
+            result["url_validation"] = {"error": str(_url_err)}
+
         # Stage 2C: Replace inline image placeholders
         content_text = await _stage_replace_inline_images(
             database_service, task_id, topic, content_text, image_service, result
