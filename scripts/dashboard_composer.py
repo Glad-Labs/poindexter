@@ -50,7 +50,7 @@ if not DATABASE_URL:
             if _line.startswith("DATABASE_URL="):
                 DATABASE_URL = _line.split("=", 1)[1].strip()
 
-GRAFANA_URL = "https://gladlabs.grafana.net"
+GRAFANA_URL = "http://localhost:3000"
 CYCLE_INTERVAL = 900  # 15 minutes
 
 

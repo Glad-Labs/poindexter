@@ -90,10 +90,7 @@ EXTERNAL_SERVICES = {
         "url": "https://railway.instatus.com/summary.json",
         "type": "instatus",  # Instatus format
     },
-    "grafana_cloud": {
-        "url": "https://status.grafana.com/api/v2/status.json",
-        "type": "statuspage",
-    },
+    # grafana_cloud removed — using local Grafana now (localhost:3000)
     "anthropic": {
         "url": "https://status.anthropic.com/api/v2/status.json",
         "type": "statuspage",

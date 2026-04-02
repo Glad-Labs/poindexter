@@ -3,7 +3,7 @@ import json
 import urllib.request
 import sys
 
-URL = "https://gladlabs.grafana.net"
+URL = "http://localhost:3000"
 TOKEN = sys.argv[1] if len(sys.argv) > 1 else ""
 
 DS_PG = {"uid": "gladlabs-postgres"}
