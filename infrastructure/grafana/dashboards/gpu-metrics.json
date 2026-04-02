@@ -9,6 +9,26 @@
   "panels": [
     {
       "datasource": {
+        "type": "datasource",
+        "uid": "-- Dashboard --"
+      },
+      "gridPos": {
+        "h": 2,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 100,
+      "options": {
+        "content": "# GPU — RTX 5090",
+        "mode": "markdown"
+      },
+      "title": "",
+      "transparent": true,
+      "type": "text"
+    },
+    {
+      "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
@@ -41,10 +61,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 3,
-        "w": 4,
+        "h": 6,
+        "w": 8,
         "x": 0,
-        "y": 0
+        "y": 2
       },
       "id": 1,
       "options": {
@@ -112,10 +132,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 3,
-        "w": 4,
-        "x": 4,
-        "y": 0
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 2
       },
       "id": 2,
       "options": {
@@ -183,10 +203,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 3,
-        "w": 4,
-        "x": 0,
-        "y": 6
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 2
       },
       "id": 3,
       "options": {
@@ -254,10 +274,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 3,
-        "w": 4,
-        "x": 4,
-        "y": 6
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 8
       },
       "id": 4,
       "options": {
@@ -325,10 +345,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 3,
-        "w": 4,
-        "x": 0,
-        "y": 12
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 8
       },
       "id": 5,
       "options": {
@@ -396,10 +416,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 3,
-        "w": 4,
-        "x": 4,
-        "y": 12
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 8
       },
       "id": 6,
       "options": {
@@ -432,6 +452,26 @@
       ],
       "title": "Clock",
       "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Dashboard --"
+      },
+      "gridPos": {
+        "h": 2,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "id": 101,
+      "options": {
+        "content": "# Time Series",
+        "mode": "markdown"
+      },
+      "title": "",
+      "transparent": true,
+      "type": "text"
     },
     {
       "datasource": {
@@ -492,10 +532,10 @@
         ]
       },
       "gridPos": {
-        "h": 3,
+        "h": 8,
         "w": 12,
         "x": 0,
-        "y": 18
+        "y": 16
       },
       "id": 10,
       "options": {
@@ -580,10 +620,10 @@
         ]
       },
       "gridPos": {
-        "h": 3,
+        "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 28
+        "x": 12,
+        "y": 16
       },
       "id": 11,
       "options": {
@@ -688,10 +728,10 @@
         ]
       },
       "gridPos": {
-        "h": 3,
+        "h": 8,
         "w": 12,
         "x": 0,
-        "y": 38
+        "y": 24
       },
       "id": 12,
       "options": {
@@ -744,10 +784,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 3,
+        "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 48
+        "x": 12,
+        "y": 24
       },
       "id": 13,
       "options": {
