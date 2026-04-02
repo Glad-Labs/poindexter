@@ -482,7 +482,7 @@
             "type": "grafana-postgresql-datasource",
             "uid": "local-brain-db"
           },
-          "rawSql": "SELECT cl.model, ROUND(AVG(qe.overall_score)::numeric, 1) AS avg_quality FROM quality_evaluations qe JOIN content_tasks ct ON qe.task_id = ct.id::text JOIN cost_logs cl ON cl.phase = ct.task_type AND cl.created_at BETWEEN ct.created_at - INTERVAL '1 hour' AND ct.created_at + INTERVAL '1 hour' WHERE $__timeFilter(qe.evaluation_timestamp) GROUP BY cl.model ORDER BY avg_quality DESC",
+          "rawSql": "SELECT cl.model, ROUND(AVG(qe.overall_score)::numeric, 1) AS avg_quality FROM quality_evaluations qe JOIN content_tasks ct ON qe.task_id = ct.task_id JOIN cost_logs cl ON cl.task_id = ct.task_id WHERE $__timeFilter(qe.evaluation_timestamp) GROUP BY cl.model ORDER BY avg_quality DESC",
           "format": "table",
           "editorMode": "code"
         }

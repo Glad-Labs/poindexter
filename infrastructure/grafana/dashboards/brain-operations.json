@@ -560,7 +560,7 @@
             "type": "grafana-postgresql-datasource",
             "uid": "local-brain-db"
           },
-          "rawSql": "SELECT ROUND(AVG(overall_score)::numeric, 1) as avg_quality FROM quality_evaluations WHERE created_at > NOW() - INTERVAL '7 days'",
+          "rawSql": "SELECT ROUND(AVG(overall_score)::numeric, 1) as avg_quality FROM quality_evaluations WHERE evaluation_timestamp > NOW() - INTERVAL '7 days'",
           "format": "table",
           "editorMode": "code"
         }
@@ -608,7 +608,7 @@
             "type": "grafana-postgresql-datasource",
             "uid": "local-brain-db"
           },
-          "rawSql": "SELECT date_trunc('day', created_at) as time, ROUND(AVG(overall_score)::numeric, 2) as avg_score FROM quality_evaluations WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
+          "rawSql": "SELECT date_trunc('day', evaluation_timestamp) as time, ROUND(AVG(overall_score)::numeric, 2) as avg_score FROM quality_evaluations WHERE $__timeFilter(evaluation_timestamp) GROUP BY 1 ORDER BY 1",
           "format": "time_series",
           "editorMode": "code"
         }
@@ -831,7 +831,7 @@
       },
       "options": {
         "showHeader": true,
-        "sortBy": [{ "displayName": "changed_at", "desc": true }],
+        "sortBy": [{ "displayName": "created_at", "desc": true }],
         "footer": { "show": false }
       },
       "targets": [
@@ -841,7 +841,7 @@
             "type": "grafana-postgresql-datasource",
             "uid": "local-brain-db"
           },
-          "rawSql": "SELECT task_id, old_status, new_status, changed_at FROM task_status_history ORDER BY changed_at DESC LIMIT 20",
+          "rawSql": "SELECT task_id, old_status, new_status, created_at FROM task_status_history ORDER BY created_at DESC LIMIT 20",
           "format": "table",
           "editorMode": "code"
         }

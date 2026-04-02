@@ -27,7 +27,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT COUNT(*) AS \"Posts\" FROM posts WHERE status = 'published'",
+          "rawSql": "SELECT COUNT(*) AS \"Posts\" FROM content_tasks WHERE status = 'completed' AND publish_status = 'published'",
           "format": "table",
           "refId": "A"
         }

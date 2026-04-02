@@ -26,7 +26,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT COUNT(*) AS \"Posts\" FROM posts WHERE status = 'published'",
+          "rawSql": "SELECT COUNT(*) AS \"Posts\" FROM content_tasks WHERE status = 'completed' AND publish_status = 'published'",
           "format": "table",
           "refId": "A"
         }
@@ -156,7 +156,7 @@
     },
     {
       "id": 5,
-      "title": "Page Views Today",
+      "title": "Page Views Today (N/A locally)",
       "type": "stat",
       "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
       "datasource": {
@@ -165,7 +165,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT COUNT(*) AS \"Views\" FROM page_views WHERE created_at >= CURRENT_DATE",
+          "rawSql": "SELECT 0 AS \"Views\" -- page_views table not in local DB (cloud-only)",
           "format": "table",
           "refId": "A"
         }
@@ -272,7 +272,7 @@
           "refId": "A"
         },
         {
-          "rawSql": "SELECT date_trunc('day', published_at) AS time, COUNT(*) AS \"Published\" FROM posts WHERE $__timeFilter(published_at) AND status = 'published' GROUP BY 1 ORDER BY 1",
+          "rawSql": "SELECT date_trunc('day', published_at) AS time, COUNT(*) AS \"Published\" FROM content_tasks WHERE $__timeFilter(published_at) AND publish_status = 'published' AND published_at IS NOT NULL GROUP BY 1 ORDER BY 1",
           "format": "time_series",
           "refId": "B"
         }
@@ -352,7 +352,7 @@
     },
     {
       "id": 22,
-      "title": "Page Views — Daily Trend",
+      "title": "Page Views — Daily Trend (N/A locally)",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 12 },
       "datasource": {
@@ -361,7 +361,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT date_trunc('day', created_at) AS time, COUNT(*) AS \"Views\" FROM page_views WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
+          "rawSql": "SELECT date_trunc('day', created_at) AS time, 0 AS \"Views\" FROM content_tasks WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1 -- page_views not in local DB",
           "format": "time_series",
           "refId": "A"
         }
@@ -438,7 +438,7 @@
 
     {
       "id": 40,
-      "title": "Top Posts by Views",
+      "title": "Published Content",
       "type": "table",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
       "datasource": {
@@ -447,7 +447,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT title AS \"Post\", view_count AS \"Views\", to_char(published_at, 'Mon DD') AS \"Published\" FROM posts WHERE status = 'published' ORDER BY COALESCE(view_count, 0) DESC LIMIT 15",
+          "rawSql": "SELECT COALESCE(title, topic) AS \"Post\", quality_score AS \"Quality\", to_char(published_at, 'Mon DD') AS \"Published\" FROM content_tasks WHERE publish_status = 'published' AND published_at IS NOT NULL ORDER BY published_at DESC LIMIT 15",
           "format": "table",
           "refId": "A"
         }
@@ -465,7 +465,7 @@
     },
     {
       "id": 41,
-      "title": "Top Referrers",
+      "title": "Audit Events (7d)",
       "type": "table",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
       "datasource": {
@@ -474,7 +474,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT CASE WHEN referrer = '' OR referrer IS NULL THEN '(direct)' ELSE REGEXP_REPLACE(referrer, '^https?://(www\\.)?', '') END AS \"Referrer\", COUNT(*) AS \"Views\" FROM page_views WHERE created_at >= NOW() - INTERVAL '7 days' GROUP BY 1 ORDER BY 2 DESC LIMIT 15",
+          "rawSql": "SELECT event_type AS \"Event Type\", COUNT(*) AS \"Count\" FROM audit_log WHERE \"timestamp\" >= NOW() - INTERVAL '7 days' GROUP BY 1 ORDER BY 2 DESC LIMIT 15",
           "format": "table",
           "refId": "A"
         }
@@ -493,7 +493,7 @@
 
     {
       "id": 50,
-      "title": "Affiliate Links",
+      "title": "Brain Knowledge (Recent)",
       "type": "table",
       "gridPos": { "h": 6, "w": 12, "x": 0, "y": 36 },
       "datasource": {
@@ -502,7 +502,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT keyword AS \"Keyword\", url AS \"URL\" FROM affiliate_links ORDER BY keyword",
+          "rawSql": "SELECT entity AS \"Entity\", attribute AS \"Attribute\", value AS \"Value\" FROM brain_knowledge ORDER BY updated_at DESC LIMIT 15",
           "format": "table",
           "refId": "A"
         }
@@ -512,7 +512,7 @@
     },
     {
       "id": 51,
-      "title": "Integration Keys Status",
+      "title": "System Credentials",
       "type": "table",
       "gridPos": { "h": 6, "w": 12, "x": 12, "y": 36 },
       "datasource": {
@@ -521,7 +521,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT key AS \"Setting\", category AS \"Category\", CASE WHEN is_secret THEN '***configured***' ELSE LEFT(value, 40) END AS \"Value\" FROM app_settings WHERE category = 'integration' ORDER BY key",
+          "rawSql": "SELECT service AS \"Service\", COALESCE(username, '-') AS \"Username\", COALESCE(notes, '-') AS \"Notes\" FROM system_credentials ORDER BY service",
           "format": "table",
           "refId": "A"
         }
