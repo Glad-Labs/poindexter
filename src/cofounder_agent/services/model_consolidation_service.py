@@ -188,7 +188,7 @@ class OllamaAdapter(ProviderAdapter):
                 provider=self.provider_type,
                 model=model,
                 tokens_used=tokens_used,
-                cost=0.0,  # Ollama is free!
+                cost=0.0,  # Ollama — electricity cost tracked separately via GPU metrics
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
