@@ -19,6 +19,49 @@ logger = logging.getLogger("brain.probes")
 
 API_URL = "https://cofounder-production.up.railway.app"
 LOCAL_OLLAMA = "http://localhost:11434"
+GITEA_URL = "http://localhost:3001"
+GITEA_USER = "gladlabs"
+GITEA_PASS = "***REMOVED***"
+GITEA_REPO = "gladlabs/glad-labs-codebase"
+
+# Track which probe issues we've already created (avoid duplicates)
+_created_issues: set = set()
+
+
+def _create_gitea_issue(probe_name: str, detail: str):
+    """Auto-create a Gitea issue when a probe fails 3x consecutively."""
+    if probe_name in _created_issues:
+        return  # Already created this session
+    try:
+        import base64
+        auth = base64.b64encode(f"{GITEA_USER}:{GITEA_PASS}".encode()).decode()
+        data = json.dumps({
+            "title": f"ops: Probe '{probe_name}' failing — {detail[:60]}",
+            "body": (
+                f"## Health Probe Failure\n\n"
+                f"**Probe:** `{probe_name}`\n"
+                f"**Error:** {detail}\n"
+                f"**Consecutive failures:** 3+\n"
+                f"**Auto-created by:** brain_daemon health probes\n\n"
+                f"This issue was automatically created when the probe failed 3 consecutive times."
+            ),
+            "labels": [],
+        }).encode()
+        req = urllib.request.Request(
+            f"{GITEA_URL}/api/v1/repos/{GITEA_REPO}/issues",
+            data=data,
+            headers={
+                "Authorization": f"Basic {auth}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        resp = urllib.request.urlopen(req, timeout=5)
+        if resp.status < 300:
+            _created_issues.add(probe_name)
+            logger.info("[PROBES] Created Gitea issue for probe '%s'", probe_name)
+    except Exception as e:
+        logger.debug("[PROBES] Could not create Gitea issue: %s", e)
 
 # Detect Railway environment (no local Ollama available)
 IS_RAILWAY = bool(os.getenv("RAILWAY_SERVICE_ID"))
@@ -277,10 +320,14 @@ async def run_health_probes(pool, send_telegram_fn=None):
             _failure_counts[name] = _failure_counts.get(name, 0) + 1
             logger.warning("[PROBES] %s FAILED (%d consecutive): %s",
                            name, _failure_counts[name], result.get("detail", ""))
-            if _failure_counts[name] == ALERT_AFTER_FAILURES and send_telegram_fn:
-                send_telegram_fn(
-                    f"🔴 Probe '{name}' failed {ALERT_AFTER_FAILURES}x: {result.get('detail', '')}"
-                )
+            if _failure_counts[name] == ALERT_AFTER_FAILURES:
+                detail = result.get('detail', 'unknown error')
+                if send_telegram_fn:
+                    send_telegram_fn(
+                        f"🔴 Probe '{name}' failed {ALERT_AFTER_FAILURES}x: {detail}"
+                    )
+                # Auto-create Gitea issue for tracking
+                _create_gitea_issue(name, detail)
 
     if results:
         passed = sum(1 for r in results.values() if r.get("ok"))
