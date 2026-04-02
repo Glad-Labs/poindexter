@@ -233,8 +233,30 @@ def get_setting(key: str) -> str:
 
 
 @mcp.tool()
-def set_setting(key: str, value: str) -> str:
-    """Update a configuration setting in the database."""
+async def set_setting(key: str, value: str) -> str:
+    """Update a configuration setting in the database.
+
+    Respects agent_permissions table — checks if mcp_server is allowed to write app_settings.
+    """
+    # Permission check
+    try:
+        pool = await _get_pool()
+        perm = await pool.fetchrow(
+            "SELECT allowed, requires_approval FROM agent_permissions "
+            "WHERE agent_name = 'mcp_server' AND resource = 'app_settings' AND action = 'write'",
+        )
+        if perm and not perm["allowed"]:
+            if perm["requires_approval"]:
+                await pool.execute(
+                    "INSERT INTO approval_queue (agent_name, resource, action, proposed_change, reason) "
+                    "VALUES ('mcp_server', 'app_settings', 'write', $1, 'MCP set_setting tool')",
+                    json.dumps({"key": key, "value": value}),
+                )
+                return f"Permission denied: change to {key} queued for approval"
+            return f"Permission denied: mcp_server cannot write to app_settings"
+    except Exception:
+        pass  # Permission check failed — fall through to API (which has its own auth)
+
     result = _api("PUT", f"/api/settings/{key}", {"value": value})
     if "error" in result:
         return f"Error: {result['error']}"
