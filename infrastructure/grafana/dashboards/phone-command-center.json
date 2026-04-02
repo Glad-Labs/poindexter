@@ -188,7 +188,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "dfht40ysx6o00f"
+        "uid": "gpu-prometheus"
       },
       "targets": [
         {

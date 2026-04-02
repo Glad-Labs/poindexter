@@ -1,320 +1,679 @@
 {
-  "uid": "command-center",
-  "title": "Glad Labs Command Center",
   "description": "Full observability - every process at a glance",
-  "tags": ["glad-labs", "command-center", "master"],
-  "timezone": "browser",
   "editable": true,
   "graphTooltip": 1,
-  "time": { "from": "now-24h", "to": "now" },
-  "timepicker": {
-    "refresh_intervals": ["30s", "1m", "5m", "15m"],
-    "time_options": ["1h", "6h", "12h", "24h", "7d", "30d"]
-  },
-  "refresh": "1m",
-  "schemaVersion": 39,
-  "version": 1,
   "panels": [
     {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 50
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
       "id": 1,
-      "title": "Published",
-      "type": "stat",
-      "gridPos": { "h": 2, "w": 4, "x": 0, "y": 0 },
-      "datasource": { "type": "grafana-postgresql-datasource", "uid": "local-brain-db" },
-      "targets": [{
-        "rawSql": "SELECT COUNT(*) AS \"Posts\" FROM content_tasks WHERE status = 'published'",
-        "format": "table", "refId": "A"
-      }],
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": { "mode": "absolute", "steps": [
-            { "color": "blue", "value": null },
-            { "color": "green", "value": 50 }
-          ]}
-        },
-        "overrides": []
-      },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
         "colorMode": "background",
-        "textMode": "value",
         "graphMode": "none",
-        "text": { "titleSize": 10, "valueSize": 28 }
-      }
-    },
-    {
-      "id": 2,
-      "title": "Awaiting",
-      "type": "stat",
-      "gridPos": { "h": 2, "w": 4, "x": 4, "y": 0 },
-      "datasource": { "type": "grafana-postgresql-datasource", "uid": "local-brain-db" },
-      "targets": [{
-        "rawSql": "SELECT COUNT(*) AS \"Awaiting\" FROM content_tasks WHERE status = 'awaiting_approval'",
-        "format": "table", "refId": "A"
-      }],
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": { "mode": "absolute", "steps": [
-            { "color": "green", "value": null },
-            { "color": "yellow", "value": 10 },
-            { "color": "red", "value": 50 }
-          ]}
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
         },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
-        "colorMode": "background",
-        "textMode": "value",
-        "graphMode": "none",
-        "text": { "titleSize": 10, "valueSize": 28 }
-      }
-    },
-    {
-      "id": 3,
-      "title": "Quality",
-      "type": "stat",
-      "gridPos": { "h": 2, "w": 4, "x": 8, "y": 0 },
-      "datasource": { "type": "grafana-postgresql-datasource", "uid": "local-brain-db" },
-      "targets": [{
-        "rawSql": "SELECT ROUND(AVG(quality_score)::numeric, 1) AS \"Avg Score\" FROM content_tasks WHERE quality_score IS NOT NULL AND created_at >= NOW() - INTERVAL '7 days'",
-        "format": "table", "refId": "A"
-      }],
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": { "mode": "absolute", "steps": [
-            { "color": "red", "value": null },
-            { "color": "yellow", "value": 65 },
-            { "color": "green", "value": 75 }
-          ]}
+        "text": {
+          "titleSize": 14,
+          "valueSize": 48
         },
-        "overrides": []
+        "textMode": "value"
       },
-      "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
-        "colorMode": "background",
-        "textMode": "value",
-        "graphMode": "none",
-        "text": { "titleSize": 10, "valueSize": 28 }
-      }
-    },
-    {
-      "id": 4,
-      "title": "Views",
-      "type": "stat",
-      "gridPos": { "h": 2, "w": 4, "x": 12, "y": 0 },
-      "datasource": { "type": "grafana-postgresql-datasource", "uid": "local-brain-db" },
-      "targets": [{
-        "rawSql": "SELECT 0 AS \"Views\" -- page_views table not in local DB (cloud-only)",
-        "format": "table", "refId": "A"
-      }],
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": { "mode": "absolute", "steps": [
-            { "color": "red", "value": null },
-            { "color": "yellow", "value": 10 },
-            { "color": "green", "value": 50 }
-          ]}
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
-        "colorMode": "background",
-        "textMode": "value",
-        "graphMode": "none",
-        "text": { "titleSize": 10, "valueSize": 28 }
-      }
-    },
-    {
-      "id": 5,
-      "title": "Errors 24h",
-      "type": "stat",
-      "gridPos": { "h": 2, "w": 4, "x": 16, "y": 0 },
-      "datasource": { "type": "grafana-postgresql-datasource", "uid": "local-brain-db" },
-      "targets": [{
-        "rawSql": "SELECT COUNT(*) AS \"Failed\" FROM content_tasks WHERE status IN ('failed', 'rejected') AND created_at >= NOW() - INTERVAL '24 hours'",
-        "format": "table", "refId": "A"
-      }],
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": { "mode": "absolute", "steps": [
-            { "color": "green", "value": null },
-            { "color": "yellow", "value": 3 },
-            { "color": "red", "value": 10 }
-          ]}
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
-        "colorMode": "background",
-        "textMode": "value",
-        "graphMode": "none",
-        "text": { "titleSize": 10, "valueSize": 28 }
-      }
-    },
-    {
-      "id": 6,
-      "title": "Spend $",
-      "type": "stat",
-      "gridPos": { "h": 2, "w": 4, "x": 20, "y": 0 },
-      "datasource": { "type": "grafana-postgresql-datasource", "uid": "local-brain-db" },
-      "targets": [{
-        "rawSql": "SELECT COALESCE(ROUND(SUM(cost_usd)::numeric, 4), 0) AS \"Spend\" FROM cost_logs WHERE created_at >= CURRENT_DATE",
-        "format": "table", "refId": "A"
-      }],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "currencyUSD",
-          "thresholds": { "mode": "absolute", "steps": [
-            { "color": "green", "value": null },
-            { "color": "yellow", "value": 2 },
-            { "color": "red", "value": 5 }
-          ]}
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
-        "colorMode": "background",
-        "textMode": "value",
-        "graphMode": "none",
-        "text": { "titleSize": 10, "valueSize": 28 }
-      }
-    },
-    {
-      "id": 10,
-      "title": "Pipeline",
-      "type": "piechart",
-      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 2 },
-      "datasource": { "type": "grafana-postgresql-datasource", "uid": "local-brain-db" },
-      "targets": [{
-        "rawSql": "SELECT status, COUNT(*) AS count FROM content_tasks GROUP BY status ORDER BY count DESC",
-        "format": "table", "refId": "A"
-      }],
-      "fieldConfig": {
-        "defaults": { "color": { "mode": "palette-classic" } },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
-        "pieType": "donut",
-        "legend": { "displayMode": "list", "placement": "right", "values": ["value", "percent"] }
-      }
-    },
-    {
-      "id": 11,
-      "title": "Content Trend",
-      "type": "timeseries",
-      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 2 },
-      "datasource": { "type": "grafana-postgresql-datasource", "uid": "local-brain-db" },
       "targets": [
         {
-          "rawSql": "SELECT date_trunc('day', created_at) AS time, COUNT(*) AS \"Created\" FROM content_tasks WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
-          "format": "time_series", "refId": "A"
-        },
-        {
-          "rawSql": "SELECT date_trunc('day', published_at) AS time, COUNT(*) AS \"Published\" FROM content_tasks WHERE $__timeFilter(published_at) AND publish_status = 'published' AND published_at IS NOT NULL GROUP BY 1 ORDER BY 1",
-          "format": "time_series", "refId": "B"
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS \"Posts\" FROM content_tasks WHERE status = 'published'",
+          "refId": "A"
         }
       ],
+      "title": "Published",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
       "fieldConfig": {
         "defaults": {
-          "custom": { "lineWidth": 1, "fillOpacity": 15, "pointSize": 1, "showPoints": "never" }
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 10
+              },
+              {
+                "color": "red",
+                "value": 50
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "text": {
+          "titleSize": 14,
+          "valueSize": 48
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS \"Awaiting\" FROM content_tasks WHERE status = 'awaiting_approval'",
+          "refId": "A"
+        }
+      ],
+      "title": "Awaiting",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 65
+              },
+              {
+                "color": "green",
+                "value": 75
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "id": 3,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "text": {
+          "titleSize": 14,
+          "valueSize": 48
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT ROUND(AVG(quality_score)::numeric, 1) AS \"Avg Score\" FROM content_tasks WHERE quality_score IS NOT NULL AND created_at >= NOW() - INTERVAL '7 days'",
+          "refId": "A"
+        }
+      ],
+      "title": "Quality",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 10
+              },
+              {
+                "color": "green",
+                "value": 50
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "id": 4,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "text": {
+          "titleSize": 14,
+          "valueSize": 48
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT 0 AS \"Views\"",
+          "refId": "A"
+        }
+      ],
+      "title": "Views",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 3
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "id": 5,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "text": {
+          "titleSize": 14,
+          "valueSize": 48
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS \"Failed\" FROM content_tasks WHERE status IN ('failed', 'rejected') AND created_at >= NOW() - INTERVAL '24 hours'",
+          "refId": "A"
+        }
+      ],
+      "title": "Errors 24h",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 2
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "id": 6,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "text": {
+          "titleSize": 14,
+          "valueSize": 48
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT COALESCE(ROUND(SUM(cost_usd)::numeric, 4), 0) AS \"Spend\" FROM cost_logs WHERE created_at >= CURRENT_DATE",
+          "refId": "A"
+        }
+      ],
+      "title": "Spend $",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 12
+      },
+      "id": 10,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "values": [
+            "value",
+            "percent"
+          ]
+        },
+        "pieType": "donut",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT status, COUNT(*) AS count FROM content_tasks GROUP BY status ORDER BY count DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Pipeline",
+      "type": "piechart"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 15,
+            "lineWidth": 1,
+            "pointSize": 1,
+            "showPoints": "never"
+          }
         },
         "overrides": [
-          { "matcher": { "id": "byName", "options": "Created" },
-            "properties": [{ "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }] },
-          { "matcher": { "id": "byName", "options": "Published" },
-            "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] }
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Created"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Published"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
         ]
       },
-      "options": {
-        "tooltip": { "mode": "multi" },
-        "legend": { "displayMode": "list", "placement": "right" }
-      }
-    },
-    {
-      "id": 20,
-      "title": "Quality Dist",
-      "type": "histogram",
-      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 2 },
-      "datasource": { "type": "grafana-postgresql-datasource", "uid": "local-brain-db" },
-      "targets": [{
-        "rawSql": "SELECT quality_score AS \"Score\" FROM content_tasks WHERE quality_score IS NOT NULL AND created_at >= NOW() - INTERVAL '7 days'",
-        "format": "table", "refId": "A"
-      }],
-      "fieldConfig": {
-        "defaults": { "color": { "mode": "palette-classic" } },
-        "overrides": []
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 22
       },
-      "options": { "bucketSize": 5, "combine": false }
-    },
-    {
-      "id": 21,
-      "title": "Quality by Model",
-      "type": "table",
-      "gridPos": { "h": 3, "w": 12, "x": 0, "y": 6 },
-      "datasource": { "type": "grafana-postgresql-datasource", "uid": "local-brain-db" },
-      "targets": [{
-        "rawSql": "SELECT model_used AS \"Model\", COUNT(*) AS \"Tasks\", ROUND(AVG(quality_score)::numeric, 1) AS \"Avg Score\", MIN(quality_score) AS \"Min\", MAX(quality_score) AS \"Max\" FROM content_tasks WHERE quality_score IS NOT NULL AND model_used IS NOT NULL AND created_at >= NOW() - INTERVAL '7 days' GROUP BY model_used ORDER BY AVG(quality_score) DESC",
-        "format": "table", "refId": "A"
-      }],
-      "fieldConfig": { "defaults": { "custom": { "cellOptions": { "type": "auto" }, "filterable": false } }, "overrides": [] },
+      "id": 11,
       "options": {
-        "showHeader": true,
-        "cellHeight": "sm",
-        "sortBy": [{ "displayName": "Avg Score", "desc": true }]
-      }
+        "legend": {
+          "displayMode": "list",
+          "placement": "right"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT date_trunc('day', created_at) AS time, COUNT(*) AS \"Created\" FROM content_tasks WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
+          "refId": "A"
+        },
+        {
+          "format": "time_series",
+          "rawSql": "SELECT date_trunc('day', published_at) AS time, COUNT(*) AS \"Published\" FROM content_tasks WHERE $__timeFilter(published_at) AND publish_status = 'published' AND published_at IS NOT NULL GROUP BY 1 ORDER BY 1",
+          "refId": "B"
+        }
+      ],
+      "title": "Content Trend",
+      "type": "timeseries"
     },
     {
-      "id": 30,
-      "title": "Brain Knowledge",
-      "type": "table",
-      "gridPos": { "h": 3, "w": 12, "x": 12, "y": 6 },
-      "datasource": { "type": "grafana-postgresql-datasource", "uid": "local-brain-db" },
-      "targets": [{
-        "rawSql": "SELECT entity AS \"Entity\", attribute AS \"Attr\", LEFT(value, 60) AS \"Value\", ROUND(confidence::numeric, 2) AS \"Conf\", to_char(updated_at, 'HH24:MI') AS \"Upd\" FROM brain_knowledge WHERE source = 'cerebellum' ORDER BY updated_at DESC LIMIT 8",
-        "format": "table", "refId": "A"
-      }],
-      "fieldConfig": { "defaults": { "custom": { "cellOptions": { "type": "auto" }, "filterable": false } }, "overrides": [] },
-      "options": { "showHeader": true, "cellHeight": "sm" }
-    },
-    {
-      "id": 31,
-      "title": "Cost by Provider",
-      "type": "timeseries",
-      "gridPos": { "h": 3, "w": 12, "x": 0, "y": 9 },
-      "datasource": { "type": "grafana-postgresql-datasource", "uid": "local-brain-db" },
-      "targets": [{
-        "rawSql": "SELECT date_trunc('day', created_at) AS time, provider AS metric, SUM(cost_usd) AS value FROM cost_logs WHERE $__timeFilter(created_at) GROUP BY 1, 2 ORDER BY 1",
-        "format": "time_series", "refId": "A"
-      }],
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
       "fieldConfig": {
         "defaults": {
-          "unit": "currencyUSD",
-          "custom": { "lineWidth": 1, "fillOpacity": 20, "pointSize": 1, "showPoints": "never" }
+          "color": {
+            "mode": "palette-classic"
+          }
         },
         "overrides": []
       },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
+      "id": 20,
       "options": {
-        "tooltip": { "mode": "multi" },
-        "legend": { "displayMode": "list", "placement": "right" }
-      }
+        "bucketSize": 5,
+        "combine": false
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT quality_score AS \"Score\" FROM content_tasks WHERE quality_score IS NOT NULL AND created_at >= NOW() - INTERVAL '7 days'",
+          "refId": "A"
+        }
+      ],
+      "title": "Quality Dist",
+      "type": "histogram"
     },
     {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 42
+      },
+      "id": 21,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Avg"
+          }
+        ]
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT model_used AS \"Model\", COUNT(*) AS \"Tasks\", ROUND(AVG(quality_score)::numeric, 1) AS \"Avg\", MIN(quality_score) AS \"Min\", MAX(quality_score) AS \"Max\" FROM content_tasks WHERE quality_score IS NOT NULL AND model_used IS NOT NULL AND created_at >= NOW() - INTERVAL '7 days' GROUP BY model_used ORDER BY AVG(quality_score) DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Quality by Model",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 50
+      },
+      "id": 30,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT entity AS \"Entity\", attribute AS \"Attr\", LEFT(value, 50) AS \"Value\", ROUND(confidence::numeric, 2) AS \"Conf\" FROM brain_knowledge WHERE source = 'cerebellum' ORDER BY updated_at DESC LIMIT 8",
+          "refId": "A"
+        }
+      ],
+      "title": "Brain Knowledge",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 1,
+            "pointSize": 1,
+            "showPoints": "never"
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 58
+      },
+      "id": 31,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "right"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT date_trunc('day', created_at) AS time, provider AS metric, SUM(cost_usd) AS value FROM cost_logs WHERE $__timeFilter(created_at) GROUP BY 1, 2 ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Cost by Provider",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 68
+      },
       "id": 40,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT COALESCE(LEFT(title, 35), LEFT(topic, 35)) AS \"Post\", quality_score AS \"Q\", to_char(published_at, 'Mon DD') AS \"Date\" FROM content_tasks WHERE publish_status = 'published' AND published_at IS NOT NULL ORDER BY published_at DESC LIMIT 8",
+          "refId": "A"
+        }
+      ],
       "title": "Recent Tasks",
-      "type": "table",
-      "gridPos": { "h": 3, "w": 12, "x": 12, "y": 9 },
-      "datasource": { "type": "grafana-postgresql-datasource", "uid": "local-brain-db" },
-      "targets": [{
-        "rawSql": "SELECT COALESCE(LEFT(title, 40), LEFT(topic, 40)) AS \"Post\", quality_score AS \"Q\", to_char(published_at, 'Mon DD') AS \"Date\" FROM content_tasks WHERE publish_status = 'published' AND published_at IS NOT NULL ORDER BY published_at DESC LIMIT 8",
-        "format": "table", "refId": "A"
-      }],
-      "fieldConfig": { "defaults": { "custom": { "cellOptions": { "type": "auto" }, "filterable": false } }, "overrides": [] },
-      "options": { "showHeader": true, "cellHeight": "sm" }
+      "type": "table"
     }
-  ]
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": [
+    "glad-labs",
+    "command-center",
+    "master"
+  ],
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "30s",
+      "1m",
+      "5m",
+      "15m"
+    ],
+    "time_options": [
+      "1h",
+      "6h",
+      "12h",
+      "24h",
+      "7d",
+      "30d"
+    ]
+  },
+  "timezone": "browser",
+  "title": "Glad Labs Command Center",
+  "uid": "command-center"
 }
