@@ -95,3 +95,4 @@ docs/archive/
 Modelfile*
 *.gguf
 .env.local.backup
+infrastructure/headscale/certs/key.pem
