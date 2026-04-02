@@ -1,8 +1,12 @@
 {
   "uid": "system-health",
   "title": "System Health",
-  "description": "Local infrastructure health — Postgres internals, table stats, and future GPU/Ollama metrics",
-  "tags": ["glad-labs", "infrastructure", "health"],
+  "description": "Local infrastructure health \u2014 Postgres internals, table stats, and future GPU/Ollama metrics",
+  "tags": [
+    "glad-labs",
+    "infrastructure",
+    "health"
+  ],
   "timezone": "browser",
   "editable": true,
   "fiscalYearStartMonth": 0,
@@ -12,8 +16,23 @@
     "to": "now"
   },
   "timepicker": {
-    "refresh_intervals": ["10s", "30s", "1m", "5m", "15m"],
-    "time_options": ["5m", "15m", "30m", "1h", "3h", "6h", "12h", "24h"]
+    "refresh_intervals": [
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m"
+    ],
+    "time_options": [
+      "5m",
+      "15m",
+      "30m",
+      "1h",
+      "3h",
+      "6h",
+      "12h",
+      "24h"
+    ]
   },
   "refresh": "30s",
   "schemaVersion": 39,
@@ -26,31 +45,55 @@
       "id": 100,
       "title": "--- POSTGRES DATABASE ---",
       "type": "text",
-      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 2,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "options": {
         "mode": "markdown",
-        "content": "## Postgres — gladlabs_brain"
+        "content": "## Postgres \u2014 gladlabs_brain"
       }
     },
     {
       "id": 1,
       "title": "Database Size",
       "type": "stat",
-      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 2 },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 2
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 536870912 },
-              { "color": "orange", "value": 1073741824 },
-              { "color": "red", "value": 5368709120 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 536870912
+              },
+              {
+                "color": "orange",
+                "value": 1073741824
+              },
+              {
+                "color": "red",
+                "value": 5368709120
+              }
             ]
           },
           "unit": "decbytes"
@@ -59,7 +102,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -86,21 +131,40 @@
       "id": 2,
       "title": "Active Connections",
       "type": "stat",
-      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 2 },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 2
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 20 },
-              { "color": "orange", "value": 50 },
-              { "color": "red", "value": 90 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 20
+              },
+              {
+                "color": "orange",
+                "value": 50
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
             ]
           },
           "unit": "short"
@@ -109,7 +173,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -136,43 +202,72 @@
       "id": 3,
       "title": "Connection States",
       "type": "piechart",
-      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 2 },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 12,
+        "y": 2
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
-            "hideFrom": { "legend": false, "tooltip": false, "viz": false }
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
           }
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "active" },
+            "matcher": {
+              "id": "byName",
+              "options": "active"
+            },
             "properties": [
               {
                 "id": "color",
-                "value": { "fixedColor": "green", "mode": "fixed" }
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
               }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "idle" },
+            "matcher": {
+              "id": "byName",
+              "options": "idle"
+            },
             "properties": [
               {
                 "id": "color",
-                "value": { "fixedColor": "blue", "mode": "fixed" }
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
               }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "idle in transaction" },
+            "matcher": {
+              "id": "byName",
+              "options": "idle in transaction"
+            },
             "properties": [
               {
                 "id": "color",
-                "value": { "fixedColor": "orange", "mode": "fixed" }
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
               }
             ]
           }
@@ -180,16 +275,24 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
         "pieType": "donut",
-        "tooltip": { "mode": "single", "sort": "none" },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
         "legend": {
           "displayMode": "table",
           "placement": "right",
-          "values": ["value", "percent"]
+          "values": [
+            "value",
+            "percent"
+          ]
         }
       },
       "targets": [
@@ -209,21 +312,40 @@
       "id": 4,
       "title": "Max Connection Age",
       "type": "stat",
-      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 2 },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 18,
+        "y": 2
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 3600 },
-              { "color": "orange", "value": 86400 },
-              { "color": "red", "value": 604800 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 3600
+              },
+              {
+                "color": "orange",
+                "value": 86400
+              },
+              {
+                "color": "red",
+                "value": 604800
+              }
             ]
           },
           "unit": "s",
@@ -233,7 +355,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -260,7 +384,12 @@
       "id": 200,
       "title": "--- TABLE STATISTICS ---",
       "type": "text",
-      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 8 },
+      "gridPos": {
+        "h": 2,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
       "options": {
         "mode": "markdown",
         "content": "## Table Statistics"
@@ -270,7 +399,12 @@
       "id": 5,
       "title": "Table Row Counts",
       "type": "table",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 10
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -285,23 +419,49 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "estimated_rows" },
+            "matcher": {
+              "id": "byName",
+              "options": "estimated_rows"
+            },
             "properties": [
-              { "id": "custom.displayMode", "value": "gradient-gauge" },
-              { "id": "min", "value": 0 },
-              { "id": "max", "value": 10000 },
-              { "id": "color", "value": { "mode": "continuous-blues" } }
+              {
+                "id": "custom.displayMode",
+                "value": "gradient-gauge"
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "max",
+                "value": 10000
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "continuous-blues"
+                }
+              }
             ]
           }
         ]
       },
       "options": {
         "showHeader": true,
-        "sortBy": [{ "displayName": "estimated_rows", "desc": true }],
+        "sortBy": [
+          {
+            "displayName": "estimated_rows",
+            "desc": true
+          }
+        ],
         "footer": {
           "show": true,
-          "reducer": ["sum"],
-          "fields": ["estimated_rows"]
+          "reducer": [
+            "sum"
+          ],
+          "fields": [
+            "estimated_rows"
+          ]
         }
       },
       "targets": [
@@ -321,21 +481,29 @@
       "id": 6,
       "title": "Table Sizes",
       "type": "barchart",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 10
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisLabel": "Size",
             "fillOpacity": 80,
             "gradientMode": "scheme",
-            "lineWidth": 1
+            "lineWidth": 1,
+            "axisFontSize": 14
           },
           "unit": "decbytes",
           "min": 0
@@ -346,9 +514,17 @@
         "orientation": "horizontal",
         "showValue": "always",
         "stacking": "none",
-        "tooltip": { "mode": "single", "sort": "none" },
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "xTickLabelRotation": 0
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "xTickLabelRotation": 0,
+        "xTickLabelMaxLength": 20,
+        "barWidth": 0.8
       },
       "targets": [
         {
@@ -367,7 +543,12 @@
       "id": 7,
       "title": "Index Usage",
       "type": "table",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 18
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -382,20 +563,44 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "idx_scan_pct" },
+            "matcher": {
+              "id": "byName",
+              "options": "idx_scan_pct"
+            },
             "properties": [
-              { "id": "unit", "value": "percent" },
-              { "id": "custom.displayMode", "value": "gradient-gauge" },
-              { "id": "min", "value": 0 },
-              { "id": "max", "value": 100 },
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "custom.displayMode",
+                "value": "gradient-gauge"
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "max",
+                "value": 100
+              },
               {
                 "id": "thresholds",
                 "value": {
                   "mode": "absolute",
                   "steps": [
-                    { "color": "red", "value": null },
-                    { "color": "orange", "value": 50 },
-                    { "color": "green", "value": 90 }
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 50
+                    },
+                    {
+                      "color": "green",
+                      "value": 90
+                    }
                   ]
                 }
               }
@@ -405,8 +610,15 @@
       },
       "options": {
         "showHeader": true,
-        "sortBy": [{ "displayName": "total_scans", "desc": true }],
-        "footer": { "show": false }
+        "sortBy": [
+          {
+            "displayName": "total_scans",
+            "desc": true
+          }
+        ],
+        "footer": {
+          "show": false
+        }
       },
       "targets": [
         {
@@ -425,7 +637,12 @@
       "id": 8,
       "title": "Active Queries",
       "type": "table",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 18 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 18
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -440,33 +657,66 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "query" },
-            "properties": [{ "id": "custom.width", "value": 500 }]
+            "matcher": {
+              "id": "byName",
+              "options": "query"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 500
+              }
+            ]
           },
           {
-            "matcher": { "id": "byName", "options": "duration_seconds" },
+            "matcher": {
+              "id": "byName",
+              "options": "duration_seconds"
+            },
             "properties": [
-              { "id": "unit", "value": "s" },
+              {
+                "id": "unit",
+                "value": "s"
+              },
               {
                 "id": "thresholds",
                 "value": {
                   "mode": "absolute",
                   "steps": [
-                    { "color": "green", "value": null },
-                    { "color": "yellow", "value": 5 },
-                    { "color": "red", "value": 30 }
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 5
+                    },
+                    {
+                      "color": "red",
+                      "value": 30
+                    }
                   ]
                 }
               },
-              { "id": "custom.displayMode", "value": "color-background" }
+              {
+                "id": "custom.displayMode",
+                "value": "color-background"
+              }
             ]
           }
         ]
       },
       "options": {
         "showHeader": true,
-        "sortBy": [{ "displayName": "duration_seconds", "desc": true }],
-        "footer": { "show": false }
+        "sortBy": [
+          {
+            "displayName": "duration_seconds",
+            "desc": true
+          }
+        ],
+        "footer": {
+          "show": false
+        }
       },
       "targets": [
         {
@@ -485,21 +735,40 @@
       "id": 9,
       "title": "Cache Hit Ratio",
       "type": "gauge",
-      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 26 },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 26
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "orange", "value": 80 },
-              { "color": "yellow", "value": 90 },
-              { "color": "green", "value": 99 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "yellow",
+                "value": 90
+              },
+              {
+                "color": "green",
+                "value": 99
+              }
             ]
           },
           "unit": "percent",
@@ -511,7 +780,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -536,32 +807,51 @@
       "id": 10,
       "title": "Transactions (Committed vs Rolled Back)",
       "type": "stat",
-      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 26 },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 26
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "unit": "short"
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "committed" },
+            "matcher": {
+              "id": "byName",
+              "options": "committed"
+            },
             "properties": [
               {
                 "id": "color",
-                "value": { "fixedColor": "green", "mode": "fixed" }
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
               }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "rolled_back" },
+            "matcher": {
+              "id": "byName",
+              "options": "rolled_back"
+            },
             "properties": [
               {
                 "id": "color",
-                "value": { "fixedColor": "red", "mode": "fixed" }
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
               }
             ]
           }
@@ -569,7 +859,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -596,21 +888,40 @@
       "id": 11,
       "title": "Dead Tuples (Vacuum Needed)",
       "type": "barchart",
-      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 26 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 16,
+        "y": 26
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 1000 },
-              { "color": "orange", "value": 10000 },
-              { "color": "red", "value": 100000 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1000
+              },
+              {
+                "color": "orange",
+                "value": 10000
+              },
+              {
+                "color": "red",
+                "value": 100000
+              }
             ]
           },
           "custom": {
@@ -619,7 +930,8 @@
             "axisLabel": "Dead Tuples",
             "fillOpacity": 80,
             "gradientMode": "scheme",
-            "lineWidth": 1
+            "lineWidth": 1,
+            "axisFontSize": 14
           },
           "unit": "short",
           "min": 0
@@ -630,9 +942,17 @@
         "orientation": "horizontal",
         "showValue": "always",
         "stacking": "none",
-        "tooltip": { "mode": "single", "sort": "none" },
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "xTickLabelRotation": 0
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "xTickLabelRotation": 0,
+        "xTickLabelMaxLength": 20,
+        "barWidth": 0.8
       },
       "targets": [
         {
@@ -651,17 +971,27 @@
       "id": 300,
       "title": "--- FUTURE: OLLAMA & GPU (after prometheus exporter) ---",
       "type": "text",
-      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 32 },
+      "gridPos": {
+        "h": 2,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
       "options": {
         "mode": "markdown",
-        "content": "## Ollama & GPU Metrics — *will light up once Prometheus exporter data flows in*\n\nPlanned panels: Ollama inference latency, model load times, GPU utilization, VRAM usage, GPU temperature"
+        "content": "## Ollama & GPU Metrics \u2014 *will light up once Prometheus exporter data flows in*\n\nPlanned panels: Ollama inference latency, model load times, GPU utilization, VRAM usage, GPU temperature"
       }
     },
     {
       "id": 12,
       "title": "Placeholder: Ollama Latency (p50/p95/p99)",
       "type": "text",
-      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 34 },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 34
+      },
       "options": {
         "mode": "markdown",
         "content": "Awaiting Prometheus datasource with Ollama metrics.\n\n- `ollama_request_duration_seconds` histogram\n- Buckets: p50, p95, p99"
@@ -671,7 +1001,12 @@
       "id": 13,
       "title": "Placeholder: GPU Utilization & VRAM",
       "type": "text",
-      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 34 },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 34
+      },
       "options": {
         "mode": "markdown",
         "content": "Awaiting `nvidia_smi_exporter` or `dcgm-exporter` metrics.\n\n- `nvidia_smi_gpu_utilization`\n- `nvidia_smi_memory_used` / `nvidia_smi_memory_total`\n- `nvidia_smi_temperature`"
@@ -681,7 +1016,12 @@
       "id": 14,
       "title": "Placeholder: Docker Container Status",
       "type": "text",
-      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 34 },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 34
+      },
       "options": {
         "mode": "markdown",
         "content": "Awaiting `cadvisor` or Docker metrics exporter.\n\n- Container CPU / Memory usage\n- Container restart counts\n- Network I/O per container"
