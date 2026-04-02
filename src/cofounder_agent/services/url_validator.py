@@ -15,6 +15,8 @@ Usage:
 
 import os as _os
 import re
+
+from services.site_config import site_config as _sc
 import time
 from typing import Dict, List, Optional, Tuple
 
@@ -31,7 +33,7 @@ _CacheEntry = Tuple[bool, Optional[int], float]
 _CACHE_TTL = 7 * 24 * 60 * 60
 
 # Internal domains to skip (no point validating our own URLs during generation)
-_site_domain = _os.getenv("SITE_DOMAIN", "localhost:3000").split(":")[0]
+_site_domain = _sc.get("site_domain", "localhost:3000").split(":")[0]
 _SKIP_DOMAINS = {_site_domain, f"www.{_site_domain}"}
 
 # Regex for extracting URLs from markdown / HTML content
@@ -112,7 +114,7 @@ class URLValidator:
             async with httpx.AsyncClient(
                 timeout=self._timeout,
                 follow_redirects=True,
-                headers={"User-Agent": f"{_os.getenv('SITE_NAME', 'ContentPipeline')}-LinkChecker/1.0"},
+                headers={"User-Agent": f"{_sc.get('site_name', 'ContentPipeline')}-LinkChecker/1.0"},
             ) as client:
                 resp = await client.head(url)
                 status_code = resp.status_code

@@ -35,7 +35,8 @@ logger = get_logger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-SITE_BASE_URL = os.getenv("SITE_BASE_URL", "https://localhost:3000")
+from services.site_config import site_config as _sc
+SITE_BASE_URL = _sc.get("site_url", "https://localhost:3000")
 
 # Notification targets (mirrors task_executor._notify_openclaw)
 from services.telegram_config import TELEGRAM_BOT_TOKEN as _TELEGRAM_BOT_TOKEN
