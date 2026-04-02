@@ -170,19 +170,73 @@ class MultiModelQA:
     async def _review_with_cloud_model(
         self, title: str, content: str, topic: str, model_override: Optional[str] = None,
     ):
-        """Review content using local Ollama first, falling back to Gemini Flash.
+        """Review content using local Ollama first. Cloud APIs are emergency-only.
 
-        Strategy: Ollama only. No cloud API fallback.
-        If Ollama is unavailable, skip the cross-model review entirely.
+        Priority:
+        1. Ollama (free, local) — always first
+        2. Skip — if Ollama unavailable and cloud_api_mode != emergency_only
+        3. Emergency cloud (Gemini/Anthropic) — only if mode allows AND daily limit not hit
         """
-        # Ollama only — no cloud API costs
+        # 1. Try Ollama first (free, local)
         ollama_result = await self._review_with_ollama(title, content, topic, model_override)
         if ollama_result is not None:
             return ollama_result
 
-        # No fallback — skip review if Ollama unavailable (e.g., on Railway coordinator)
-        logger.info("[MULTI_QA] Ollama unavailable, skipping cross-model review (no cloud fallback)")
-        return None
+        # 2. Check if emergency cloud is allowed
+        cloud_mode = "emergency_only"
+        daily_limit = 5
+        notify = True
+        if self.settings:
+            cloud_mode = await self.settings.get("cloud_api_mode") or "emergency_only"
+            daily_limit = int(await self.settings.get("cloud_api_daily_limit") or 5)
+            notify = (await self.settings.get("cloud_api_notify_on_use") or "true").lower() == "true"
+
+        if cloud_mode == "disabled":
+            logger.info("[MULTI_QA] Ollama unavailable, cloud APIs disabled — skipping review")
+            return None
+
+        if cloud_mode not in ("emergency_only", "fallback", "always"):
+            logger.info("[MULTI_QA] Ollama unavailable, unknown cloud mode '%s' — skipping", cloud_mode)
+            return None
+
+        # Check daily limit
+        if self.pool:
+            try:
+                row = await self.pool.fetchrow(
+                    "SELECT COUNT(*) as c FROM cost_logs WHERE provider != 'ollama' AND created_at >= date_trunc('day', NOW())"
+                )
+                today_calls = row["c"] if row else 0
+                if today_calls >= daily_limit:
+                    logger.warning("[MULTI_QA] Cloud API daily limit reached (%d/%d) — skipping", today_calls, daily_limit)
+                    return None
+            except Exception:
+                pass
+
+        # 3. Emergency cloud fallback
+        logger.warning("[MULTI_QA] Using EMERGENCY cloud API (Ollama unavailable)")
+        gemini_result = await self._review_with_gemini(title, content, topic, model_override)
+
+        # Notify via Telegram if configured
+        if notify and gemini_result:
+            try:
+                from services.site_config import site_config
+                import urllib.request
+                import json as _json
+                bot_token = site_config.get("telegram_bot_token")
+                chat_id = site_config.get("telegram_chat_id")
+                if bot_token and chat_id:
+                    provider = gemini_result[0].provider if gemini_result else "cloud"
+                    msg = f"⚠️ Emergency cloud API used: {provider} for QA review (Ollama was down)"
+                    data = _json.dumps({"chat_id": chat_id, "text": msg}).encode()
+                    req = urllib.request.Request(
+                        f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                        data=data, headers={"Content-Type": "application/json"}, method="POST"
+                    )
+                    urllib.request.urlopen(req, timeout=5)
+            except Exception:
+                pass
+
+        return gemini_result
 
     async def _review_with_ollama(
         self, title: str, content: str, topic: str, model_override: Optional[str] = None,
