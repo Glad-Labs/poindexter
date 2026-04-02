@@ -34,6 +34,36 @@ class IdleWorker:
         self.pool = pool
         self._last_run: dict[str, float] = {}
 
+    async def _create_gitea_issue(self, title: str, body: str) -> bool:
+        """Create a Gitea issue for tracking discovered problems."""
+        import base64
+        import httpx
+
+        gitea_url = site_config.get("gitea_url", "http://localhost:3001")
+        gitea_user = site_config.get("gitea_user", "gladlabs")
+        gitea_pass = site_config.get("gitea_password", "")
+        gitea_repo = site_config.get("gitea_repo", "gladlabs/glad-labs-codebase")
+
+        if not gitea_pass:
+            logger.debug("[IDLE] No Gitea password configured — skipping issue creation")
+            return False
+
+        try:
+            auth = base64.b64encode(f"{gitea_user}:{gitea_pass}".encode()).decode()
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.post(
+                    f"{gitea_url}/api/v1/repos/{gitea_repo}/issues",
+                    headers={"Authorization": f"Basic {auth}", "Content-Type": "application/json"},
+                    json={"title": title, "body": body},
+                )
+                if resp.status_code < 300:
+                    issue = resp.json()
+                    logger.info("[IDLE] Created Gitea issue #%d: %s", issue["number"], title[:50])
+                    return True
+        except Exception as e:
+            logger.debug("[IDLE] Gitea issue creation failed: %s", e)
+        return False
+
     def _is_due(self, task_name: str, interval_minutes: int) -> bool:
         """Check if a background task is due to run."""
         last = self._last_run.get(task_name, 0)
@@ -121,6 +151,14 @@ class IdleWorker:
                 if not has_headings:
                     issues.append(f"{row['title'][:40]}: no headings found")
 
+            # Create Gitea issues for problems found
+            if issues:
+                body = "## Quality Audit Findings\n\n" + "\n".join(f"- {i}" for i in issues)
+                await self._create_gitea_issue(
+                    f"quality: {len(issues)} issues in {len(rows)} audited posts",
+                    body,
+                )
+
             logger.info("[IDLE] Quality audit: checked %d posts, %d issues", len(rows), len(issues))
             return {"audited": len(rows), "issues": issues[:10]}
 
@@ -159,6 +197,15 @@ class IdleWorker:
                         except Exception:
                             broken.append({"post": row["title"][:40], "url": url, "status": "unreachable"})
                             checked += 1
+
+            if broken:
+                body = "## Broken Links Found\n\n" + "\n".join(
+                    f"- [{b['post']}] {b['url']} → {b['status']}" for b in broken[:10]
+                )
+                await self._create_gitea_issue(
+                    f"links: {len(broken)} broken URLs in published posts",
+                    body,
+                )
 
             logger.info("[IDLE] Link check: %d checked, %d broken", checked, len(broken))
             return {"checked": checked, "broken": len(broken), "details": broken[:5]}
@@ -199,6 +246,13 @@ class IdleWorker:
                 suggestions.append(f"Low coverage: {', '.join(low)}")
             if stale:
                 suggestions.append(f"Stale categories (no post in 14d): {', '.join(r['name'] for r in stale)}")
+
+            if suggestions:
+                body = "## Topic Gap Analysis\n\n" + "\n".join(f"- {s}" for s in suggestions)
+                await self._create_gitea_issue(
+                    f"content: topic gaps — {len(empty)} empty categories, {len(low)} low coverage",
+                    body,
+                )
 
             logger.info("[IDLE] Topic gaps: %d suggestions", len(suggestions))
             return {"empty_categories": empty, "low_coverage": low, "suggestions": suggestions}
