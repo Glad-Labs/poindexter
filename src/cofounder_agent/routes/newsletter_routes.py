@@ -15,6 +15,7 @@ from utils.rate_limiter import limiter
 from utils.route_utils import get_database_dependency
 
 logger = get_logger(__name__)
+logger.info("[NEWSLETTER] newsletter_routes module loaded successfully")
 
 router = APIRouter(prefix="/api/newsletter", tags=["newsletter"])
 
