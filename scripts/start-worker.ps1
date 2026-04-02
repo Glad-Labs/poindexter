@@ -72,6 +72,10 @@ try {
 # Set worker mode
 $env:DEPLOYMENT_MODE = "worker"
 $env:ENVIRONMENT = "production"
+
+# Local brain DB for tasks, embeddings, audit logging (pgvector)
+$env:LOCAL_DATABASE_URL = "postgresql://gladlabs:gladlabs-brain-local@localhost:5433/gladlabs_brain"
+Write-Host "Local brain DB: localhost:5433/gladlabs_brain" -ForegroundColor Cyan
 $env:PORT = $Port
 $env:OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 
