@@ -38,8 +38,8 @@
       "type": "gauge",
       "gridPos": { "h": 6, "w": 4, "x": 0, "y": 2 },
       "datasource": {
-        "type": "prometheus",
-        "uid": "dfht40ysx6o00f"
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -48,8 +48,8 @@
             "mode": "absolute",
             "steps": [
               { "color": "green", "value": null },
-              { "color": "yellow", "value": 70 },
-              { "color": "red", "value": 90 }
+              { "color": "yellow", "value": 50 },
+              { "color": "red", "value": 80 }
             ]
           },
           "min": 0,
@@ -72,11 +72,12 @@
         {
           "refId": "A",
           "datasource": {
-            "type": "prometheus",
-            "uid": "dfht40ysx6o00f"
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
           },
-          "expr": "nvidia_gpu_utilization_percent{gpu=\"0\"}",
-          "legendFormat": "GPU Util %"
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT utilization FROM gpu_metrics ORDER BY timestamp DESC LIMIT 1"
         }
       ]
     },
@@ -86,8 +87,8 @@
       "type": "gauge",
       "gridPos": { "h": 6, "w": 4, "x": 4, "y": 2 },
       "datasource": {
-        "type": "prometheus",
-        "uid": "dfht40ysx6o00f"
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -120,11 +121,12 @@
         {
           "refId": "A",
           "datasource": {
-            "type": "prometheus",
-            "uid": "dfht40ysx6o00f"
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
           },
-          "expr": "nvidia_gpu_temperature_celsius{gpu=\"0\"}",
-          "legendFormat": "Temp"
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT temperature FROM gpu_metrics ORDER BY timestamp DESC LIMIT 1"
         }
       ]
     },
@@ -134,8 +136,8 @@
       "type": "gauge",
       "gridPos": { "h": 6, "w": 4, "x": 8, "y": 2 },
       "datasource": {
-        "type": "prometheus",
-        "uid": "dfht40ysx6o00f"
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -168,11 +170,12 @@
         {
           "refId": "A",
           "datasource": {
-            "type": "prometheus",
-            "uid": "dfht40ysx6o00f"
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
           },
-          "expr": "nvidia_gpu_power_draw_watts{gpu=\"0\"}",
-          "legendFormat": "Power"
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT power_draw FROM gpu_metrics ORDER BY timestamp DESC LIMIT 1"
         }
       ]
     },
@@ -182,8 +185,8 @@
       "type": "bargauge",
       "gridPos": { "h": 6, "w": 4, "x": 12, "y": 2 },
       "datasource": {
-        "type": "prometheus",
-        "uid": "dfht40ysx6o00f"
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -219,20 +222,12 @@
         {
           "refId": "A",
           "datasource": {
-            "type": "prometheus",
-            "uid": "dfht40ysx6o00f"
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
           },
-          "expr": "nvidia_gpu_memory_used_mib{gpu=\"0\"}",
-          "legendFormat": "Used"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "dfht40ysx6o00f"
-          },
-          "expr": "nvidia_gpu_memory_total_mib{gpu=\"0\"}",
-          "legendFormat": "Total"
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT memory_used, memory_total FROM gpu_metrics ORDER BY timestamp DESC LIMIT 1"
         }
       ]
     },
@@ -242,8 +237,8 @@
       "type": "gauge",
       "gridPos": { "h": 6, "w": 4, "x": 16, "y": 2 },
       "datasource": {
-        "type": "prometheus",
-        "uid": "dfht40ysx6o00f"
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -276,11 +271,12 @@
         {
           "refId": "A",
           "datasource": {
-            "type": "prometheus",
-            "uid": "dfht40ysx6o00f"
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
           },
-          "expr": "nvidia_gpu_fan_speed_percent{gpu=\"0\"}",
-          "legendFormat": "Fan %"
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT fan_speed FROM gpu_metrics ORDER BY timestamp DESC LIMIT 1"
         }
       ]
     },
@@ -290,8 +286,8 @@
       "type": "gauge",
       "gridPos": { "h": 6, "w": 4, "x": 20, "y": 2 },
       "datasource": {
-        "type": "prometheus",
-        "uid": "dfht40ysx6o00f"
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -324,11 +320,12 @@
         {
           "refId": "A",
           "datasource": {
-            "type": "prometheus",
-            "uid": "dfht40ysx6o00f"
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
           },
-          "expr": "nvidia_gpu_clock_graphics_mhz{gpu=\"0\"}",
-          "legendFormat": "Graphics Clock"
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT clock_graphics FROM gpu_metrics ORDER BY timestamp DESC LIMIT 1"
         }
       ]
     },
@@ -344,12 +341,12 @@
     },
     {
       "id": 10,
-      "title": "GPU Utilization Over Time",
+      "title": "Utilization & Temperature Over Time",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
       "datasource": {
-        "type": "prometheus",
-        "uid": "dfht40ysx6o00f"
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -367,11 +364,25 @@
             "axisColorMode": "text",
             "scaleDistribution": { "type": "linear" }
           },
-          "unit": "percent",
           "min": 0,
           "max": 100
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "utilization" },
+            "properties": [
+              { "id": "unit", "value": "percent" },
+              { "id": "custom.axisPlacement", "value": "left" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "temperature" },
+            "properties": [
+              { "id": "unit", "value": "celsius" },
+              { "id": "custom.axisPlacement", "value": "right" }
+            ]
+          }
+        ]
       },
       "options": {
         "tooltip": { "mode": "multi", "sort": "none" },
@@ -381,89 +392,23 @@
         {
           "refId": "A",
           "datasource": {
-            "type": "prometheus",
-            "uid": "dfht40ysx6o00f"
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
           },
-          "expr": "nvidia_gpu_utilization_percent{gpu=\"0\"}",
-          "legendFormat": "GPU Util %"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "dfht40ysx6o00f"
-          },
-          "expr": "nvidia_gpu_memory_utilization_percent{gpu=\"0\"}",
-          "legendFormat": "VRAM Util %"
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT timestamp AS time, utilization, temperature FROM gpu_metrics WHERE $__timeFilter(timestamp) ORDER BY timestamp"
         }
       ]
     },
     {
       "id": 11,
-      "title": "Temperature Over Time",
+      "title": "Power Draw Over Time",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
       "datasource": {
-        "type": "prometheus",
-        "uid": "dfht40ysx6o00f"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "smooth",
-            "fillOpacity": 10,
-            "pointSize": 5,
-            "showPoints": "auto",
-            "lineWidth": 2,
-            "spanNulls": false,
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "scaleDistribution": { "type": "linear" },
-            "thresholdsStyle": {
-              "mode": "line"
-            }
-          },
-          "unit": "celsius",
-          "min": 0,
-          "max": 100,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 70 },
-              { "color": "red", "value": 85 }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "tooltip": { "mode": "multi", "sort": "none" },
-        "legend": { "displayMode": "list", "placement": "bottom", "calcs": [] }
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "dfht40ysx6o00f"
-          },
-          "expr": "nvidia_gpu_temperature_celsius{gpu=\"0\"}",
-          "legendFormat": "GPU Temp"
-        }
-      ]
-    },
-    {
-      "id": 12,
-      "title": "Power Draw Over Time",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "dfht40ysx6o00f"
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -494,31 +439,23 @@
         {
           "refId": "A",
           "datasource": {
-            "type": "prometheus",
-            "uid": "dfht40ysx6o00f"
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
           },
-          "expr": "nvidia_gpu_power_draw_watts{gpu=\"0\"}",
-          "legendFormat": "GPU Power"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "dfht40ysx6o00f"
-          },
-          "expr": "nvidia_gpu_power_limit_watts{gpu=\"0\"}",
-          "legendFormat": "Power Limit"
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT timestamp AS time, power_draw FROM gpu_metrics WHERE $__timeFilter(timestamp) ORDER BY timestamp"
         }
       ]
     },
     {
-      "id": 13,
+      "id": 12,
       "title": "VRAM Usage Over Time",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 18 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
       "datasource": {
-        "type": "prometheus",
-        "uid": "dfht40ysx6o00f"
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -549,31 +486,23 @@
         {
           "refId": "A",
           "datasource": {
-            "type": "prometheus",
-            "uid": "dfht40ysx6o00f"
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
           },
-          "expr": "nvidia_gpu_memory_used_mib{gpu=\"0\"}",
-          "legendFormat": "VRAM Used (MiB)"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "dfht40ysx6o00f"
-          },
-          "expr": "nvidia_gpu_memory_total_mib{gpu=\"0\"}",
-          "legendFormat": "VRAM Total (MiB)"
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT timestamp AS time, memory_used FROM gpu_metrics WHERE $__timeFilter(timestamp) ORDER BY timestamp"
         }
       ]
     },
     {
-      "id": 14,
+      "id": 13,
       "title": "Fan Speed & Clocks Over Time",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 26 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 18 },
       "datasource": {
-        "type": "prometheus",
-        "uid": "dfht40ysx6o00f"
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -595,7 +524,7 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Fan %" },
+            "matcher": { "id": "byName", "options": "fan_speed" },
             "properties": [
               { "id": "unit", "value": "percent" },
               { "id": "custom.axisPlacement", "value": "left" },
@@ -603,14 +532,14 @@
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "Graphics Clock" },
+            "matcher": { "id": "byName", "options": "clock_graphics" },
             "properties": [
               { "id": "unit", "value": "rotmhz" },
               { "id": "custom.axisPlacement", "value": "right" }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "Memory Clock" },
+            "matcher": { "id": "byName", "options": "clock_memory" },
             "properties": [
               { "id": "unit", "value": "rotmhz" },
               { "id": "custom.axisPlacement", "value": "right" }
@@ -626,29 +555,12 @@
         {
           "refId": "A",
           "datasource": {
-            "type": "prometheus",
-            "uid": "dfht40ysx6o00f"
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
           },
-          "expr": "nvidia_gpu_fan_speed_percent{gpu=\"0\"}",
-          "legendFormat": "Fan %"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "dfht40ysx6o00f"
-          },
-          "expr": "nvidia_gpu_clock_graphics_mhz{gpu=\"0\"}",
-          "legendFormat": "Graphics Clock"
-        },
-        {
-          "refId": "C",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "dfht40ysx6o00f"
-          },
-          "expr": "nvidia_gpu_clock_memory_mhz{gpu=\"0\"}",
-          "legendFormat": "Memory Clock"
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT timestamp AS time, fan_speed, clock_graphics, clock_memory FROM gpu_metrics WHERE $__timeFilter(timestamp) ORDER BY timestamp"
         }
       ]
     }
