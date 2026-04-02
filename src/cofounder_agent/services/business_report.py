@@ -30,6 +30,7 @@ import os
 from asyncpg import Pool
 
 from services.logger_config import get_logger
+from services.site_config import site_config
 
 logger = get_logger(__name__)
 
@@ -547,11 +548,11 @@ def format_discord_embed(report: BusinessReport) -> Dict[str, Any]:
         })
 
     embed = {
-        "title": f"{os.getenv('SITE_NAME', 'AI Pipeline')} Weekly Report",
+        "title": f"{site_config.get('site_name', 'AI Pipeline')} Weekly Report",
         "description": f"{start_str} - {end_str}",
         "color": 0x2ECC71,  # Green
         "fields": fields,
-        "footer": {"text": f"{os.getenv('SITE_NAME', 'AI Pipeline')} Content Engine"},
+        "footer": {"text": f"{site_config.get('site_name', 'AI Pipeline')} Content Engine"},
         "timestamp": report.period_end.isoformat(),
     }
 

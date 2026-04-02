@@ -362,8 +362,8 @@ class ProcessComposer:
 async def step_create_task(intent: str = "", **kwargs) -> dict:
     """Create a content task from intent."""
     import httpx
-    import os
-    API_URL = os.getenv("API_BASE_URL", "https://localhost:8000")
+    from services.site_config import site_config
+    API_URL = site_config.get("api_base_url", "http://localhost:8000")
     API_TOKEN = kwargs.get("api_token", "")
 
     # Extract topic from intent
@@ -393,8 +393,8 @@ async def step_create_task(intent: str = "", **kwargs) -> dict:
 async def step_probe_site(**kwargs) -> dict:
     """Check if the site is responding."""
     import httpx
-    import os
-    site_url = os.getenv("SITE_URL", "https://localhost:3000")
+    from services.site_config import site_config
+    site_url = site_config.get("site_url", "http://localhost:3000")
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(site_url)
@@ -406,8 +406,8 @@ async def step_probe_site(**kwargs) -> dict:
 async def step_probe_api(**kwargs) -> dict:
     """Check if the backend API is healthy."""
     import httpx
-    import os
-    api_url = os.getenv("API_BASE_URL", "https://localhost:8000")
+    from services.site_config import site_config
+    api_url = site_config.get("api_base_url", "http://localhost:8000")
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(f"{api_url}/api/health")
@@ -420,8 +420,8 @@ async def step_probe_api(**kwargs) -> dict:
 async def step_check_budget(**kwargs) -> dict:
     """Check current spending status."""
     import httpx
-    import os
-    api_url = os.getenv("API_BASE_URL", "https://localhost:8000")
+    from services.site_config import site_config
+    api_url = site_config.get("api_base_url", "http://localhost:8000")
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(

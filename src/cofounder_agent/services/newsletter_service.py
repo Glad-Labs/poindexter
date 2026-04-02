@@ -21,10 +21,14 @@ from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
-RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
-FROM_EMAIL = os.getenv("NEWSLETTER_FROM_EMAIL", "Newsletter <newsletter@example.com>")
-SITE_NAME = os.getenv("SITE_NAME", "My Content Site")
-SITE_DOMAIN = os.getenv("SITE_DOMAIN", "localhost:3000")
+from services.site_config import site_config
+
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")  # Loaded early; also checked from DB at send time
+
+
+def _get(key, default=""):
+    """Get config from DB (site_config) with env fallback."""
+    return site_config.get(key, default) if site_config.is_loaded else os.getenv(key.upper(), default)
 
 
 async def get_subscriber_count(pool) -> int:
@@ -83,18 +87,18 @@ async def generate_weekly_digest(pool) -> dict:
 
     if not posts:
         return {
-            "subject": f"{SITE_NAME} Weekly — {now.strftime('%B %d, %Y')}",
+            "subject": f"{_get('site_name', 'Newsletter')} Weekly — {now.strftime('%B %d, %Y')}",
             "text": "No new posts this week. Stay tuned!",
             "html": "<p>No new posts this week. Stay tuned!</p>",
             "post_count": 0,
             "subscriber_count": subscriber_count,
         }
 
-    subject = f"{SITE_NAME} Weekly: {posts[0]['title'][:50]} + {len(posts)-1} more"
+    subject = f"{_get('site_name', 'Newsletter')} Weekly: {posts[0]['title'][:50]} + {len(posts)-1} more"
 
     # Plain text version
     text_lines = [
-        f"{SITE_NAME} Weekly — {now.strftime('%B %d, %Y')}",
+        f"{_get('site_name', 'Newsletter')} Weekly — {now.strftime('%B %d, %Y')}",
         f"{len(posts)} new articles this week\n",
     ]
     for i, post in enumerate(posts, 1):
@@ -103,11 +107,11 @@ async def generate_weekly_digest(pool) -> dict:
         excerpt = (post.get("excerpt") or "")[:150]
         text_lines.append(f"{i}. {title}")
         text_lines.append(f"   {excerpt}")
-        text_lines.append(f"   Read: https://{SITE_DOMAIN}/posts/{slug}\n")
+        text_lines.append(f"   Read: https://{_get('site_domain', 'localhost:3000')}/posts/{slug}\n")
 
     text_lines.append("---")
-    text_lines.append("You received this because you subscribed at {SITE_DOMAIN}")
-    text_lines.append("Unsubscribe: https://{SITE_DOMAIN}/newsletter/unsubscribe")
+    text_lines.append("You received this because you subscribed at {_get('site_domain', 'localhost:3000')}")
+    text_lines.append("Unsubscribe: https://{_get('site_domain', 'localhost:3000')}/newsletter/unsubscribe")
     text = "\n".join(text_lines)
 
     # Simple HTML version
@@ -118,20 +122,20 @@ async def generate_weekly_digest(pool) -> dict:
         excerpt = (post.get("excerpt") or "")[:150]
         html_posts += f"""
         <div style="margin-bottom: 24px; padding: 16px; border-left: 3px solid #22d3ee;">
-            <h3 style="margin: 0 0 8px 0;"><a href="https://{SITE_DOMAIN}/posts/{slug}" style="color: #22d3ee; text-decoration: none;">{title}</a></h3>
+            <h3 style="margin: 0 0 8px 0;"><a href="https://{_get('site_domain', 'localhost:3000')}/posts/{slug}" style="color: #22d3ee; text-decoration: none;">{title}</a></h3>
             <p style="color: #94a3b8; margin: 0; font-size: 14px;">{excerpt}</p>
         </div>
         """
 
     html = f"""
     <div style="max-width: 600px; margin: 0 auto; font-family: -apple-system, sans-serif; color: #e2e8f0; background: #0f172a; padding: 32px;">
-        <h1 style="color: #22d3ee; font-size: 24px;">{SITE_NAME} Weekly</h1>
+        <h1 style="color: #22d3ee; font-size: 24px;">{_get('site_name', 'Newsletter')} Weekly</h1>
         <p style="color: #94a3b8;">{now.strftime('%B %d, %Y')} — {len(posts)} new articles</p>
         {html_posts}
         <hr style="border-color: #334155;">
         <p style="color: #64748b; font-size: 12px;">
-            You received this because you subscribed at {SITE_DOMAIN}<br>
-            <a href="https://{SITE_DOMAIN}/newsletter/unsubscribe" style="color: #64748b;">Unsubscribe</a>
+            You received this because you subscribed at {_get('site_domain', 'localhost:3000')}<br>
+            <a href="https://{_get('site_domain', 'localhost:3000')}/newsletter/unsubscribe" style="color: #64748b;">Unsubscribe</a>
         </p>
     </div>
     """
@@ -174,12 +178,13 @@ async def send_digest_emails(pool, digest: Optional[dict] = None) -> dict:
 
     Returns dict with sent count, failed count, and errors.
     """
-    if not RESEND_API_KEY:
+    api_key = _get("resend_api_key") or RESEND_API_KEY
+    if not api_key:
         logger.warning("[NEWSLETTER] RESEND_API_KEY not set — skipping email delivery")
         return {"sent": 0, "failed": 0, "error": "RESEND_API_KEY not configured"}
 
     import resend
-    resend.api_key = RESEND_API_KEY
+    resend.api_key = api_key
 
     if digest is None:
         digest = await generate_weekly_digest(pool)
@@ -198,7 +203,7 @@ async def send_digest_emails(pool, digest: Optional[dict] = None) -> dict:
     for sub in subscribers:
         try:
             resend.Emails.send({
-                "from": FROM_EMAIL,
+                "from": _get('newsletter_from_email', 'newsletter@example.com'),
                 "to": sub["email"],
                 "subject": digest["subject"],
                 "html": digest["html"],

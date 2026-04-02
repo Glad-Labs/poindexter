@@ -14,6 +14,8 @@ Integrates all missing features from the original content agent:
 import re
 import os
 import time
+
+from .site_config import site_config
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -185,7 +187,7 @@ class ContentMetadataGenerator:
             "@type": "BlogPosting",
             "headline": blog_post.get("title"),
             "description": blog_post.get("excerpt"),
-            "author": {"@type": "Organization", "name": os.getenv("SITE_NAME", "AI Content Pipeline")},
+            "author": {"@type": "Organization", "name": site_config.get("site_name", "AI Content Pipeline")},
             "datePublished": datetime.now().isoformat(),
             "keywords": ",".join(blog_post.get("keywords", [])),
             "image": blog_post.get("featured_image_url"),
