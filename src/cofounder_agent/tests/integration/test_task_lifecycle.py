@@ -19,7 +19,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from routes.auth_unified import get_current_user, get_current_user_optional
+from middleware.api_token_auth import verify_api_token
 from utils.route_utils import get_database_dependency
 
 # ---------------------------------------------------------------------------
@@ -84,7 +84,7 @@ AWAITING_APPROVAL_TASK = {
 BASE = "/api/tasks"  # router has prefix="/api/tasks" built in
 
 
-def _build_task_app(mock_db: AsyncMock, user=TEST_USER_A) -> FastAPI:
+def _build_task_app(mock_db: AsyncMock, user=TEST_USER_A, skip_auth=True) -> FastAPI:
     """Build minimal FastAPI app with task router and mocked deps."""
     from routes.task_routes import router
 
@@ -92,8 +92,9 @@ def _build_task_app(mock_db: AsyncMock, user=TEST_USER_A) -> FastAPI:
     # Router already has prefix="/api/tasks" — include without extra prefix
     app.include_router(router)
 
-    app.dependency_overrides[get_current_user] = lambda: user
-    app.dependency_overrides[get_current_user_optional] = lambda: user
+    if skip_auth:
+        # Override the API token auth to return a valid token string
+        app.dependency_overrides[verify_api_token] = lambda: "test-token"
     app.dependency_overrides[get_database_dependency] = lambda: mock_db
 
     return app
@@ -239,11 +240,11 @@ class TestTaskAuthEnforcement:
     """Verify that unauthenticated requests are rejected."""
 
     def test_unauthenticated_get_task_rejected(self):
-        """Without auth override, the route should return 401/403."""
+        """Without auth override, the route should return 401 (no Bearer token)."""
         from routes.task_routes import router
 
-        # Build app WITHOUT overriding get_current_user — the real one will
-        # look for a JWT token in the request and fail.
+        # Build app WITHOUT overriding verify_api_token — the real one will
+        # check for a Bearer token and fail.
         app = FastAPI()
         app.include_router(router)
 
@@ -262,7 +263,7 @@ class TestTaskAuthEnforcement:
 
     def test_authenticated_request_succeeds(self):
         db = _make_mock_db()
-        app = _build_task_app(db)
+        app = _build_task_app(db, skip_auth=True)
         client = TestClient(app, raise_server_exceptions=False)
 
         response = client.get(f"{BASE}/{TASK_ID}")
@@ -276,26 +277,24 @@ class TestTaskAuthEnforcement:
 
 @pytest.mark.integration
 class TestTaskOwnership:
-    """User B cannot access tasks belonging to User A."""
+    """Solo-operator mode: token-based auth bypasses per-user ownership checks."""
 
-    def test_user_b_cannot_access_user_a_task(self):
+    def test_solo_operator_can_access_any_task(self):
+        """In solo-operator mode (token auth), all tasks are accessible."""
         # DB returns a task owned by User A
         db = _make_mock_db(user_id=TEST_USER_A["id"])
 
-        # But we log in as User B
-        app = _build_task_app(db, user=TEST_USER_B)
+        # Auth is token-based (string) so ownership check is bypassed
+        app = _build_task_app(db, skip_auth=True)
         client = TestClient(app, raise_server_exceptions=False)
 
         response = client.get(f"{BASE}/{TASK_ID}")
-        # Should get 403 Forbidden (task belongs to User A, not User B)
-        assert response.status_code in (
-            403,
-            404,
-        ), f"Expected 403/404 for cross-user access, got {response.status_code}"
+        # Solo-operator mode: token string bypasses ownership check → 200
+        assert response.status_code == 200
 
     def test_owner_can_access_own_task(self):
         db = _make_mock_db(user_id=TEST_USER_A["id"])
-        app = _build_task_app(db, user=TEST_USER_A)
+        app = _build_task_app(db, skip_auth=True)
         client = TestClient(app, raise_server_exceptions=False)
 
         response = client.get(f"{BASE}/{TASK_ID}")
