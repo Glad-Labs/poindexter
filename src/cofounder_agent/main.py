@@ -123,6 +123,25 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             logger.warning(f"[LIFESPAN] Settings service failed (non-critical): {e}", exc_info=True)
             app.state.settings_service = None
 
+        # Load site config from DB (identity, settings — replaces env vars)
+        try:
+            from services.site_config import site_config
+            db_pool = services["database"].pool
+            loaded = await site_config.load(db_pool)
+            logger.info("[LIFESPAN] Site config loaded: %d settings from DB", loaded)
+        except Exception as e:
+            logger.warning("[LIFESPAN] Site config load failed (using env fallbacks): %s", e)
+
+        # Load prompt templates from DB (overrides YAML files)
+        try:
+            from services.prompt_manager import get_prompt_manager
+            pm = get_prompt_manager()
+            db_pool = services["database"].pool
+            loaded = await pm.load_from_db(db_pool)
+            logger.info("[LIFESPAN] Prompt templates loaded from DB: %d", loaded)
+        except Exception as e:
+            logger.warning("[LIFESPAN] Prompt DB load failed (using YAML fallback): %s", e)
+
         # Initialize quality service
         logger.info("[LIFESPAN] Initializing quality service. ..")
         quality_service = UnifiedQualityService()

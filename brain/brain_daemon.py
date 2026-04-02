@@ -61,11 +61,39 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 # Detect if running on Railway (cloud) or locally
 IS_RAILWAY = bool(os.getenv("RAILWAY_SERVICE_ID"))
 
-# Cloud-reachable services (always monitored)
+# Service URLs — loaded from DB at startup, these are just initial defaults
+# Updated by _load_config_from_db() before the first monitoring cycle
+_SITE_URL = "https://www.gladlabs.io"
+_API_BASE_URL = "https://cofounder-production.up.railway.app"
+
 SERVICES = {
-    "site": {"url": os.getenv("SITE_URL", "https://localhost:3000"), "type": "http", "critical": True},
-    "api": {"url": os.getenv("API_BASE_URL", "http://localhost:8000") + "/api/health", "type": "json_status", "critical": True},
+    "site": {"url": _SITE_URL, "type": "http", "critical": True},
+    "api": {"url": _API_BASE_URL + "/api/health", "type": "json_status", "critical": True},
 }
+
+
+async def _load_config_from_db(pool):
+    """Load identity config from app_settings (replaces env vars)."""
+    global _SITE_URL, _API_BASE_URL, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+    try:
+        rows = await pool.fetch(
+            "SELECT key, value FROM app_settings WHERE key IN "
+            "('site_url', 'api_base_url', 'telegram_bot_token', 'telegram_chat_id')"
+        )
+        config = {r["key"]: r["value"] for r in rows}
+        if config.get("site_url"):
+            _SITE_URL = config["site_url"]
+            SERVICES["site"]["url"] = _SITE_URL
+        if config.get("api_base_url"):
+            _API_BASE_URL = config["api_base_url"]
+            SERVICES["api"]["url"] = _API_BASE_URL + "/api/health"
+        if config.get("telegram_bot_token"):
+            TELEGRAM_BOT_TOKEN = config["telegram_bot_token"]
+        if config.get("telegram_chat_id"):
+            TELEGRAM_CHAT_ID = config["telegram_chat_id"]
+        logger.info("[BRAIN] Loaded %d config values from DB", len(config))
+    except Exception as e:
+        logger.warning("[BRAIN] Could not load config from DB: %s (using defaults)", e)
 
 # Local-only services (only monitored when running on Matt's PC)
 if not IS_RAILWAY:
@@ -416,7 +444,10 @@ async def main():
     pool = await asyncpg.create_pool(db_url, min_size=1, max_size=3)
     logger.info("[BRAIN] Connected. Starting brain daemon (once=%s)", one_shot)
 
-    # Load Telegram token from OpenClaw .env
+    # Load config from DB (site URLs, Telegram tokens, etc.)
+    await _load_config_from_db(pool)
+
+    # Fallback: load Telegram token from OpenClaw .env if not in DB
     global TELEGRAM_BOT_TOKEN
     env_path = os.path.join(os.path.expanduser("~"), ".openclaw", "workspace", ".env")
     if os.path.exists(env_path) and not TELEGRAM_BOT_TOKEN:
