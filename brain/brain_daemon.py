@@ -50,8 +50,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("brain")
 
-# Read DB URL from environment (set by Railway or local .env)
-DB_URL = os.getenv("DATABASE_URL", "")
+# Read DB URL — prefer local brain DB when available, fall back to Railway
+DB_URL = os.getenv("LOCAL_DATABASE_URL", "") or os.getenv("DATABASE_URL", "")
 
 # Telegram for alerts (direct bot API, no OpenClaw dependency)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
