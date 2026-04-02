@@ -41,8 +41,8 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 6,
-        "w": 12,
+        "h": 3,
+        "w": 4,
         "x": 0,
         "y": 0
       },
@@ -112,9 +112,9 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 6,
-        "w": 12,
-        "x": 12,
+        "h": 3,
+        "w": 4,
+        "x": 4,
         "y": 0
       },
       "id": 2,
@@ -183,8 +183,8 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 6,
-        "w": 12,
+        "h": 3,
+        "w": 4,
         "x": 0,
         "y": 6
       },
@@ -254,9 +254,9 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 6,
-        "w": 12,
-        "x": 12,
+        "h": 3,
+        "w": 4,
+        "x": 4,
         "y": 6
       },
       "id": 4,
@@ -325,8 +325,8 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 6,
-        "w": 12,
+        "h": 3,
+        "w": 4,
         "x": 0,
         "y": 12
       },
@@ -396,9 +396,9 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 6,
-        "w": 12,
-        "x": 12,
+        "h": 3,
+        "w": 4,
+        "x": 4,
         "y": 12
       },
       "id": 6,
@@ -492,19 +492,15 @@
         ]
       },
       "gridPos": {
-        "h": 10,
-        "w": 24,
+        "h": 3,
+        "w": 12,
         "x": 0,
         "y": 18
       },
       "id": 10,
       "options": {
         "legend": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "displayMode": "list",
-          "placement": "right"
+          "displayMode": "hidden"
         },
         "tooltip": {
           "mode": "multi",
@@ -584,19 +580,15 @@
         ]
       },
       "gridPos": {
-        "h": 10,
-        "w": 24,
+        "h": 3,
+        "w": 12,
         "x": 0,
         "y": 28
       },
       "id": 11,
       "options": {
         "legend": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "displayMode": "list",
-          "placement": "right"
+          "displayMode": "hidden"
         },
         "tooltip": {
           "mode": "multi",
@@ -696,19 +688,15 @@
         ]
       },
       "gridPos": {
-        "h": 10,
-        "w": 24,
+        "h": 3,
+        "w": 12,
         "x": 0,
         "y": 38
       },
       "id": 12,
       "options": {
         "legend": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "displayMode": "list",
-          "placement": "right"
+          "displayMode": "hidden"
         },
         "tooltip": {
           "mode": "multi",
@@ -756,19 +744,15 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 10,
-        "w": 24,
+        "h": 3,
+        "w": 12,
         "x": 0,
         "y": 48
       },
       "id": 13,
       "options": {
         "legend": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "displayMode": "list",
-          "placement": "right"
+          "displayMode": "hidden"
         },
         "tooltip": {
           "mode": "multi",
