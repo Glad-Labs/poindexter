@@ -361,7 +361,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT p.title AS \"Post\", p.view_count AS \"Total Views\", COUNT(pv.id) AS \"Period Views\", p.category AS \"Category\" FROM posts p LEFT JOIN page_views pv ON pv.slug = p.slug AND $__timeFilter(pv.created_at) WHERE p.status = 'published' GROUP BY p.title, p.view_count, p.category ORDER BY p.view_count DESC NULLS LAST LIMIT 20",
+          "rawSql": "SELECT p.title AS \"Post\", p.view_count AS \"Total Views\", COUNT(pv.id) AS \"Period Views\", COALESCE(c.name, 'uncategorized') AS \"Category\" FROM posts p LEFT JOIN page_views pv ON pv.slug = p.slug AND $__timeFilter(pv.created_at) LEFT JOIN categories c ON p.category_id = c.id WHERE p.status = 'published' GROUP BY p.title, p.view_count, c.name ORDER BY p.view_count DESC NULLS LAST LIMIT 20",
           "format": "table",
           "refId": "A"
         }
@@ -550,7 +550,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT COALESCE(p.category, 'uncategorized') AS \"Category\", SUM(COALESCE(p.view_count, 0)) AS \"Views\" FROM posts p WHERE p.status = 'published' GROUP BY 1 ORDER BY 2 DESC",
+          "rawSql": "SELECT COALESCE(c.name, 'uncategorized') AS \"Category\", COUNT(p.id) AS \"Posts\", SUM(COALESCE(p.view_count, 0)) AS \"Views\" FROM posts p LEFT JOIN categories c ON p.category_id = c.id WHERE p.status = 'published' GROUP BY 1 ORDER BY 3 DESC",
           "format": "table",
           "refId": "A"
         }
