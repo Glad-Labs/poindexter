@@ -454,18 +454,18 @@ class BigBrain:
 
     async def seed_initial_knowledge(self):
         """Seed the brain with foundational facts. Reads identity from app_settings when available."""
-        import os
-        company = os.getenv("COMPANY_NAME", "gladlabs")
-        domain = os.getenv("SITE_DOMAIN", "gladlabs.io")
-        founder = os.getenv("COMPANY_FOUNDER_NAME", "Matt")
+        from services.site_config import site_config as sc
+        company = sc.get("company_name", "my-company")
+        domain = sc.get("site_domain", "localhost")
+        founder = sc.get("company_founder_name", "Founder")
         facts = [
-            (company, "founded", os.getenv("COMPANY_FOUNDED_DATE", "2025-09-25"), "config"),
+            (company, "founded", sc.get("company_founded_date", "2025-01-01"), "config"),
             (company, "founder", founder, "config"),
             (company, "domain", domain, "config"),
             (company, "business_type", "AI-operated content business", "config"),
             (company, "revenue_model", "passive — AdSense, products, affiliates, SaaS", "config"),
             (company, "tech_stack", "FastAPI + Next.js + PostgreSQL + Ollama + Railway + Vercel", "config"),
-            (company, "gpu", os.getenv("GPU_MODEL", "NVIDIA GPU"), "config"),
+            (company, "gpu", sc.get("gpu_model", "GPU"), "config"),
             (company, "monthly_cost", "~$30", "config"),
             (company, "bank_balance", "$0", "config"),
             (founder.lower(), "role", "solo founder and operator", "conversation"),
