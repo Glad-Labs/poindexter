@@ -21,7 +21,8 @@ from services.logger_config import get_logger
 import os
 import re
 
-_PRIVACY_EMAIL = os.getenv("PRIVACY_EMAIL", "privacy@example.com")
+from services.site_config import site_config
+_PRIVACY_EMAIL = site_config.get("privacy_email", "privacy@example.com")
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 

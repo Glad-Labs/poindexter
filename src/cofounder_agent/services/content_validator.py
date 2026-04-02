@@ -27,21 +27,27 @@ logger = get_logger(__name__)
 # Override via environment variables for your own brand
 # ============================================================================
 
-import os as _os
+from services.site_config import site_config as _sc
 
-_COMPANY_NAME = _os.getenv("COMPANY_NAME", "Glad Labs")
 
-GLAD_LABS_FACTS = {
-    "company_name": _COMPANY_NAME,
-    "founded_date": _os.getenv("COMPANY_FOUNDED_DATE", "2025-09-25"),
-    "founded_year": int(_os.getenv("COMPANY_FOUNDED_YEAR", "2025")),
-    "age_months": int(_os.getenv("COMPANY_AGE_MONTHS", "6")),
-    "team_size": int(_os.getenv("COMPANY_TEAM_SIZE", "1")),
-    "founder_name": _os.getenv("COMPANY_FOUNDER_NAME", "Matt"),
-    "known_employees": set(),  # No employees — solo operation
-    "real_products": set(_os.getenv("COMPANY_PRODUCTS", "gladlabs.io,content pipeline,openclaw").split(",")),
-    "real_tech": {"fastapi", "next.js", "postgresql", "ollama", "railway", "vercel", "grafana"},
-}
+def _get_company_facts() -> dict:
+    """Load company facts from DB (site_config) with env fallback."""
+    return {
+        "company_name": _sc.get("company_name", "My Company"),
+        "founded_date": _sc.get("company_founded_date", "2025-01-01"),
+        "founded_year": _sc.get_int("company_founded_year", 2025),
+        "age_months": _sc.get_int("company_age_months", 12),
+        "team_size": _sc.get_int("company_team_size", 1),
+        "founder_name": _sc.get("company_founder_name", "Founder"),
+        "known_employees": set(),
+        "real_products": set(_sc.get("company_products", "").split(",")) if _sc.get("company_products") else set(),
+        "real_tech": {"fastapi", "next.js", "postgresql", "ollama", "railway", "vercel", "grafana"},
+    }
+
+
+# Lazy-loaded — uses DB values once site_config.load() has been called
+GLAD_LABS_FACTS = _get_company_facts()
+_COMPANY_NAME = GLAD_LABS_FACTS["company_name"]
 
 # People names that should NEVER appear (fabricated by LLMs)
 FAKE_NAME_PATTERNS = [
