@@ -1243,7 +1243,7 @@ async def process_content_generation_task(
     logger.info(f"   Image Search: {generate_featured_image}")
     logger.info(f"{'='*80}\n")
 
-    result = {"task_id": task_id, "topic": topic, "status": "pending", "stages": {}}
+    result = {"task_id": task_id, "topic": topic, "status": "pending", "stages": {}, "category": category or "technology"}
 
     try:
         # Initialize unified services
@@ -1495,47 +1495,47 @@ async def process_content_generation_task(
 
 
 async def _select_category_for_topic(
-    topic: str, database_service: DatabaseService
+    topic: str, database_service: DatabaseService, requested_category: Optional[str] = None
 ) -> Optional[str]:
     """
-    Select appropriate category based on topic keywords
+    Select appropriate category. Priority:
+    1. Requested category from task metadata (if it exists in DB)
+    2. Keyword matching against topic
+    3. Default to "technology"
 
     Returns category UUID
     """
+    # Priority 1: Use the requested category if valid
+    if requested_category:
+        try:
+            async with database_service.pool.acquire() as conn:
+                cat_id = await conn.fetchval(
+                    "SELECT id FROM categories WHERE slug = $1 OR name ILIKE $1", requested_category
+                )
+            if cat_id:
+                return cat_id
+        except Exception:
+            pass
+
     topic_lower = topic.lower()
 
     category_keywords = {
-        "technology": [
-            "ai",
-            "tech",
-            "software",
-            "cloud",
-            "machine learning",
-            "data",
-            "coding",
-            "python",
-            "javascript",
-        ],
-        "business": [
-            "business",
-            "strategy",
-            "management",
-            "entrepreneur",
-            "startup",
-            "growth",
-            "revenue",
-        ],
-        "marketing": ["marketing", "seo", "growth", "brand", "customer", "social", "campaign"],
-        "finance": ["finance", "investment", "cost", "budget", "roi", "money", "crypto"],
-        "entertainment": ["game", "entertainment", "media", "streaming", "music", "film"],
+        "technology": ["ai", "tech", "software", "cloud", "machine learning", "data", "coding", "python", "javascript", "docker", "kubernetes", "api", "database"],
+        "business": ["business", "strategy", "management", "entrepreneur", "growth", "revenue", "marketing", "saas"],
+        "startup": ["startup", "founder", "bootstrapper", "mvp", "launch", "validate", "solo founder", "side project"],
+        "security": ["security", "hack", "owasp", "zero trust", "vulnerability", "auth", "encryption", "secrets"],
+        "engineering": ["engineering", "architecture", "monorepo", "git", "technical debt", "migration", "ci/cd", "testing"],
+        "insights": ["trend", "landscape", "state of", "productivity", "remote work", "future of", "prediction"],
     }
 
-    # Find best matching category
+    # Priority 2: Keyword matching
     matched_category = "technology"  # Default
+    best_score = 0
     for category, keywords in category_keywords.items():
-        if any(kw in topic_lower for kw in keywords):
+        score = sum(1 for kw in keywords if kw in topic_lower)
+        if score > best_score:
+            best_score = score
             matched_category = category
-            break
 
     # Get category ID
     try:
