@@ -104,8 +104,8 @@ services:
       WOODPECKER_HOST: http://localhost:8280
       WOODPECKER_GITEA: "true"
       WOODPECKER_GITEA_URL: http://gitea:3000
-      WOODPECKER_GITEA_CLIENT: ""
-      WOODPECKER_GITEA_SECRET: ""
+      WOODPECKER_GITEA_CLIENT: "eef3b8c0-ea24-4b3c-a0b4-6cbf012a686e"
+      WOODPECKER_GITEA_SECRET: "gto_signfvx66wbeljyxi7qzh3engce5aqlzhywfbr7jpyfmg3jgktga"
       WOODPECKER_SECRET: ***REMOVED***
       WOODPECKER_ADMIN: gladlabs
     volumes:
@@ -119,7 +119,7 @@ services:
     restart: unless-stopped
     environment:
       WOODPECKER_SERVER: woodpecker-server:9000
-      WOODPECKER_SECRET: ***REMOVED***
+      WOODPECKER_AGENT_SECRET: ***REMOVED***
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
