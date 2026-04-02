@@ -163,7 +163,7 @@ async def approve_task(
     reviewer_id: Optional[str] = None,
     featured_image_url: Optional[str] = None,
     image_source: Optional[str] = None,
-    auto_publish: bool = False,
+    auto_publish: bool = True,
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
@@ -181,7 +181,7 @@ async def approve_task(
     - reviewer_id: Optional ID of reviewer
     - featured_image_url: Optional featured image URL for the task
     - image_source: Optional source of image (pexels, sdxl)
-    - auto_publish: Automatically publish after approval (default: false - publishing is manual)
+    - auto_publish: Automatically publish after approval (default: true - approve = publish)
 
     **Returns:**
     - Updated task with status 'approved' or 'rejected' (and 'published' if auto_publish=true)

@@ -219,10 +219,12 @@ class TestApproveTask:
         assert resp.status_code == 200
         data = resp.json()
         assert data["id"] == VALID_TASK_ID
-        mock_db.update_task_status.assert_called_once()
-        call_args = mock_db.update_task_status.call_args
-        assert call_args[0][0] == VALID_TASK_ID
-        assert call_args[0][1] == "approved"
+        # auto_publish=True by default, so update_task_status may be called multiple times
+        # (once for approved, once for published)
+        assert mock_db.update_task_status.call_count >= 1
+        first_call = mock_db.update_task_status.call_args_list[0]
+        assert first_call[0][0] == VALID_TASK_ID
+        assert first_call[0][1] == "approved"
 
     def test_reject_via_approved_false(self):
         mock_db = make_mock_db()
