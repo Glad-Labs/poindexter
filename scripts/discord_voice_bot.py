@@ -189,9 +189,16 @@ class VoiceBot(commands.Bot):
                 logger.warning("Sherpa binary not found at %s, trying pyttsx3", sherpa_bin)
                 return await self._tts_pyttsx3(text)
 
-            model_path = os.path.join(SHERPA_MODEL, "en_US-lessac-high.onnx")
-            tokens_path = os.path.join(SHERPA_MODEL, "tokens.txt")
-            data_dir = os.path.join(SHERPA_MODEL, "espeak-ng-data")
+            # British female voice (alba) — default. Fallback to US lessac.
+            alba_dir = os.path.join(SHERPA_MODEL, "alba")
+            if os.path.exists(alba_dir):
+                model_path = os.path.join(alba_dir, "en_GB-alba-medium.onnx")
+                tokens_path = os.path.join(alba_dir, "tokens.txt")
+                data_dir = os.path.join(alba_dir, "espeak-ng-data")
+            else:
+                model_path = os.path.join(SHERPA_MODEL, "en_US-lessac-high.onnx")
+                tokens_path = os.path.join(SHERPA_MODEL, "tokens.txt")
+                data_dir = os.path.join(SHERPA_MODEL, "espeak-ng-data")
 
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(None, lambda: subprocess.run(
