@@ -85,6 +85,8 @@ services:
       GITEA__server__ROOT_URL: http://localhost:3001
       GITEA__server__SSH_DOMAIN: localhost
       GITEA__server__SSH_PORT: 2222
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - gitea-data:/data
     depends_on:
