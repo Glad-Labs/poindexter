@@ -142,7 +142,7 @@ class ResearchService:
                 int_lines.append(f"- [{post['title']}](/posts/{post['slug']})")
             sections.append("\n".join(int_lines))
 
-        # 3. Try Serper web search for fresh sources
+        # 3. Free web search via DuckDuckGo (replaces Serper)
         web_results = await self._web_search(topic)
         if web_results:
             web_lines = ["RECENT WEB SOURCES (cite if relevant):"]
@@ -218,23 +218,12 @@ class ResearchService:
             return []
 
     async def _web_search(self, topic: str) -> List[Dict[str, str]]:
-        """Search the web for fresh sources (requires Serper API key)."""
-        api_key = os.getenv("SERPER_API_KEY")
-        if not api_key:
-            return []
-
+        """Search the web for fresh sources (free — DuckDuckGo, no API key)."""
         try:
-            from services.serper_client import SerperClient
-            client = SerperClient(api_key)
-            results = await client.search(topic, num=5)
-            return [
-                {
-                    "title": item.get("title", ""),
-                    "url": item.get("link", ""),
-                    "snippet": item.get("snippet", ""),
-                }
-                for item in results.get("organic", [])[:5]
-            ]
+            from services.web_research import WebResearcher
+            researcher = WebResearcher()
+            results = await researcher.search_simple(topic, num_results=5)
+            return results
         except Exception as e:
             logger.debug("[RESEARCH] Web search failed: %s", e)
             return []
