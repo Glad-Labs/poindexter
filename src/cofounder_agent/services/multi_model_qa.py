@@ -133,11 +133,18 @@ class MultiModelQA:
             cross_review, qa_cost_log = cross_result
             reviews.append(cross_review)
 
-        # 3. Aggregate scores
+        # 3. Aggregate scores — weights configurable via app_settings
+        validator_weight = 0.4
+        critic_weight = 0.6
+        approval_threshold = 70
+        if self.settings:
+            validator_weight = float(await self.settings.get("qa_validator_weight") or 0.4)
+            critic_weight = float(await self.settings.get("qa_critic_weight") or 0.6)
+            approval_threshold = float(await self.settings.get("qa_final_score_threshold") or 70)
+
         scored_reviews = [r for r in reviews if r.score > 0]
         if scored_reviews:
-            # Weighted: programmatic validator gets 40%, cloud reviewer gets 60%
-            weights = {"programmatic": 0.4, "anthropic": 0.6, "google": 0.6, "ollama": 0.6}
+            weights = {"programmatic": validator_weight, "anthropic": critic_weight, "google": critic_weight, "ollama": critic_weight}
             total_weight = sum(weights.get(r.provider, 0.5) for r in scored_reviews)
             final_score = sum(
                 r.score * weights.get(r.provider, 0.5) for r in scored_reviews
@@ -145,9 +152,9 @@ class MultiModelQA:
         else:
             final_score = validator_review.score
 
-        # Approve only if ALL reviewers pass and final score >= 70
+        # Approve only if ALL reviewers pass and final score >= threshold
         all_passed = all(r.approved for r in reviews)
-        approved = all_passed and final_score >= 70
+        approved = all_passed and final_score >= approval_threshold
 
         result = MultiModelResult(
             approved=approved,
@@ -202,16 +209,23 @@ class MultiModelQA:
                 content=content[:8000],
             )
 
-            # Use glm-4.7-5090 for QA — highest quality scores (96 in shootout)
-            # Fallback to gemma3:27b if GLM unavailable
-            ollama_model = model_override or "glm-4.7-5090:latest"
-            # Thinking models (qwen3.5, glm-4.7) need more tokens for internal reasoning
+            # Model and token limits configurable via app_settings
+            default_model = "glm-4.7-5090:latest"
+            thinking_max = 1500
+            standard_max = 300
+            temperature = 0.3
+            if self.settings:
+                default_model = await self.settings.get("pipeline_critic_model") or default_model
+                thinking_max = int(await self.settings.get("qa_thinking_model_max_tokens") or thinking_max)
+                standard_max = int(await self.settings.get("qa_standard_max_tokens") or standard_max)
+                temperature = float(await self.settings.get("qa_temperature") or temperature)
+            ollama_model = model_override or default_model
             is_thinking_model = any(t in ollama_model.lower() for t in ("qwen3.5", "glm-4.7", "qwen3:30b"))
-            max_tok = 1500 if is_thinking_model else 300
+            max_tok = thinking_max if is_thinking_model else standard_max
             result = await client.generate(
                 prompt=prompt,
                 model=ollama_model,
-                temperature=0.3,
+                temperature=temperature,
                 max_tokens=max_tok,
             )
             await client.close()

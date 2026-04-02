@@ -17,12 +17,12 @@ import urllib.request
 
 logger = logging.getLogger("brain.probes")
 
-API_URL = "https://cofounder-production.up.railway.app"
-LOCAL_OLLAMA = "http://localhost:11434"
-GITEA_URL = "http://localhost:3001"
-GITEA_USER = "gladlabs"
-GITEA_PASS = "***REMOVED***"
-GITEA_REPO = "gladlabs/glad-labs-codebase"
+API_URL = os.getenv("API_URL", "https://cofounder-production.up.railway.app")
+LOCAL_OLLAMA = os.getenv("OLLAMA_URL", "http://localhost:11434")
+GITEA_URL = os.getenv("GITEA_URL", "http://localhost:3001")
+GITEA_USER = os.getenv("GITEA_USER", "gladlabs")
+GITEA_PASS = os.getenv("GITEA_PASS", "")
+GITEA_REPO = os.getenv("GITEA_REPO", "gladlabs/glad-labs-codebase")
 
 # Track which probe issues we've already created (avoid duplicates)
 _created_issues: set = set()

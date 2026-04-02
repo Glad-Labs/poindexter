@@ -453,20 +453,23 @@ class BigBrain:
     # ========================================================================
 
     async def seed_initial_knowledge(self):
-        """Seed the brain with foundational facts about Glad Labs."""
+        """Seed the brain with foundational facts. Reads identity from app_settings when available."""
+        import os
+        company = os.getenv("COMPANY_NAME", "gladlabs")
+        domain = os.getenv("SITE_DOMAIN", "gladlabs.io")
+        founder = os.getenv("COMPANY_FOUNDER_NAME", "Matt")
         facts = [
-            ("gladlabs", "founded", "2025-09-25", "config"),
-            ("gladlabs", "founder", "Matt", "config"),
-            ("gladlabs", "domain", "gladlabs.io", "config"),
-            ("gladlabs", "business_type", "AI-operated content business", "config"),
-            ("gladlabs", "revenue_model", "passive — AdSense, products, affiliates, SaaS", "config"),
-            ("gladlabs", "tech_stack", "FastAPI + Next.js + PostgreSQL + Ollama + Railway + Vercel", "config"),
-            ("gladlabs", "gpu", "NVIDIA RTX 5090 (32GB VRAM)", "config"),
-            ("gladlabs", "monthly_cost", "~$30", "config"),
-            ("gladlabs", "bank_balance", "$362.75", "mercury"),
-            ("matt", "role", "solo founder and operator", "conversation"),
-            ("matt", "day_job", "geotechnical engineer", "conversation"),
-            ("matt", "goal", "replace 9-5 with AI business revenue", "conversation"),
+            (company, "founded", os.getenv("COMPANY_FOUNDED_DATE", "2025-09-25"), "config"),
+            (company, "founder", founder, "config"),
+            (company, "domain", domain, "config"),
+            (company, "business_type", "AI-operated content business", "config"),
+            (company, "revenue_model", "passive — AdSense, products, affiliates, SaaS", "config"),
+            (company, "tech_stack", "FastAPI + Next.js + PostgreSQL + Ollama + Railway + Vercel", "config"),
+            (company, "gpu", os.getenv("GPU_MODEL", "NVIDIA GPU"), "config"),
+            (company, "monthly_cost", "~$30", "config"),
+            (company, "bank_balance", "$0", "config"),
+            (founder.lower(), "role", "solo founder and operator", "conversation"),
+            (founder.lower(), "goal", "build a self-sustaining AI content business", "conversation"),
             ("matt", "preference_ui", "no UI — manage from phone via Telegram/Grafana", "conversation"),
             ("matt", "preference_env_vars", "minimize — store config in DB", "conversation"),
             ("matt", "preference_work_style", "autonomous — don't ask what's next, just work", "conversation"),

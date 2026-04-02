@@ -45,9 +45,7 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -70,7 +68,7 @@
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -105,9 +103,7 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -130,7 +126,7 @@
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -169,9 +165,7 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -229,9 +223,7 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -277,9 +269,7 @@
         },
         "pieType": "donut",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         }
@@ -358,7 +348,7 @@
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -442,9 +432,7 @@
         },
         "pieType": "donut",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         }
@@ -453,7 +441,7 @@
         {
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
+            "uid": "railway-prod-db"
           },
           "format": "table",
           "rawSql": "SELECT status, COUNT(*) as count FROM content_tasks GROUP BY status",
@@ -466,7 +454,7 @@
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -509,7 +497,7 @@
         {
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
+            "uid": "railway-prod-db"
           },
           "format": "time_series",
           "rawSql": "SELECT date_trunc('day', evaluation_timestamp) as time, ROUND(AVG(overall_score)::numeric, 2) as avg_score FROM quality_evaluations WHERE $__timeFilter(evaluation_timestamp) GROUP BY 1 ORDER BY 1",
@@ -522,7 +510,7 @@
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -567,7 +555,7 @@
         {
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
+            "uid": "railway-prod-db"
           },
           "format": "time_series",
           "rawSql": "SELECT date_trunc('day', created_at) as time, provider, SUM(cost_usd) as cost FROM cost_logs WHERE $__timeFilter(created_at) GROUP BY 1, 2 ORDER BY 1",
@@ -639,33 +627,14 @@
   ],
   "refresh": "5m",
   "schemaVersion": 39,
-  "tags": [
-    "glad-labs",
-    "brain",
-    "local"
-  ],
+  "tags": ["glad-labs", "brain", "local"],
   "time": {
     "from": "now-7d",
     "to": "now"
   },
   "timepicker": {
-    "refresh_intervals": [
-      "5m",
-      "15m",
-      "30m",
-      "1h"
-    ],
-    "time_options": [
-      "5m",
-      "15m",
-      "1h",
-      "6h",
-      "12h",
-      "24h",
-      "2d",
-      "7d",
-      "30d"
-    ]
+    "refresh_intervals": ["5m", "15m", "30m", "1h"],
+    "time_options": ["5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"]
   },
   "timezone": "browser",
   "title": "Brain Operations",

@@ -23,14 +23,22 @@
       "id": 1,
       "title": "Daily Spend",
       "type": "timeseries",
-      "gridPos": { "h": 10, "w": 16, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 10,
+        "w": 16,
+        "x": 0,
+        "y": 0
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "fixedColor": "orange", "mode": "fixed" },
+          "color": {
+            "fixedColor": "orange",
+            "mode": "fixed"
+          },
           "custom": {
             "axisBorderShow": false,
             "axisCenteredZero": false,
@@ -41,15 +49,29 @@
             "lineWidth": 1,
             "pointSize": 5,
             "showPoints": "auto",
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "line" }
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "line"
+            }
           },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "orange", "value": 4 },
-              { "color": "red", "value": 5 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 4
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
             ]
           },
           "unit": "currencyUSD",
@@ -58,15 +80,21 @@
         "overrides": []
       },
       "options": {
-        "tooltip": { "mode": "single", "sort": "none" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "targets": [
         {
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
+            "uid": "railway-prod-db"
           },
           "rawSql": "SELECT date_trunc('day', created_at) as time, SUM(cost_usd) as daily_cost FROM cost_logs WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
           "format": "time_series",
@@ -78,21 +106,40 @@
       "id": 2,
       "title": "Budget Gauge (Daily $5 Limit)",
       "type": "gauge",
-      "gridPos": { "h": 10, "w": 8, "x": 16, "y": 0 },
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 2.5 },
-              { "color": "orange", "value": 4 },
-              { "color": "red", "value": 5 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 2.5
+              },
+              {
+                "color": "orange",
+                "value": 4
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
             ]
           },
           "unit": "currencyUSD",
@@ -116,7 +163,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
+            "uid": "railway-prod-db"
           },
           "rawSql": "SELECT SUM(cost_usd) as today_spend FROM cost_logs WHERE created_at > date_trunc('day', NOW())",
           "format": "table",
@@ -128,52 +175,87 @@
       "id": 3,
       "title": "Cost by Provider (30d)",
       "type": "piechart",
-      "gridPos": { "h": 9, "w": 8, "x": 0, "y": 10 },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 0,
+        "y": 10
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
-            "hideFrom": { "legend": false, "tooltip": false, "viz": false }
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
           }
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "anthropic" },
+            "matcher": {
+              "id": "byName",
+              "options": "anthropic"
+            },
             "properties": [
               {
                 "id": "color",
-                "value": { "fixedColor": "super-light-orange", "mode": "fixed" }
+                "value": {
+                  "fixedColor": "super-light-orange",
+                  "mode": "fixed"
+                }
               }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "openai" },
+            "matcher": {
+              "id": "byName",
+              "options": "openai"
+            },
             "properties": [
               {
                 "id": "color",
-                "value": { "fixedColor": "semi-dark-green", "mode": "fixed" }
+                "value": {
+                  "fixedColor": "semi-dark-green",
+                  "mode": "fixed"
+                }
               }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "google" },
+            "matcher": {
+              "id": "byName",
+              "options": "google"
+            },
             "properties": [
               {
                 "id": "color",
-                "value": { "fixedColor": "blue", "mode": "fixed" }
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
               }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "ollama" },
+            "matcher": {
+              "id": "byName",
+              "options": "ollama"
+            },
             "properties": [
               {
                 "id": "color",
-                "value": { "fixedColor": "purple", "mode": "fixed" }
+                "value": {
+                  "fixedColor": "purple",
+                  "mode": "fixed"
+                }
               }
             ]
           }
@@ -186,7 +268,10 @@
           "values": false
         },
         "pieType": "donut",
-        "tooltip": { "mode": "single", "sort": "none" },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
         "legend": {
           "displayMode": "table",
           "placement": "right",
@@ -198,7 +283,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
+            "uid": "railway-prod-db"
           },
           "rawSql": "SELECT provider, SUM(cost_usd) as total FROM cost_logs WHERE created_at > NOW() - INTERVAL '30 days' GROUP BY provider",
           "format": "table",
@@ -210,14 +295,21 @@
       "id": 4,
       "title": "Cost by Phase (30d)",
       "type": "barchart",
-      "gridPos": { "h": 9, "w": 8, "x": 8, "y": 10 },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 8,
+        "y": 10
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "axisBorderShow": false,
             "axisCenteredZero": false,
@@ -235,8 +327,14 @@
         "orientation": "horizontal",
         "showValue": "always",
         "stacking": "none",
-        "tooltip": { "mode": "single", "sort": "none" },
-        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
         "xTickLabelRotation": 0
       },
       "targets": [
@@ -244,7 +342,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
+            "uid": "railway-prod-db"
           },
           "rawSql": "SELECT phase, SUM(cost_usd) as total FROM cost_logs WHERE created_at > NOW() - INTERVAL '30 days' GROUP BY phase ORDER BY total DESC",
           "format": "table",
@@ -256,21 +354,40 @@
       "id": 5,
       "title": "Cost per Post",
       "type": "stat",
-      "gridPos": { "h": 9, "w": 8, "x": 16, "y": 10 },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 10
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 0.5 },
-              { "color": "orange", "value": 1 },
-              { "color": "red", "value": 2 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.5
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 2
+              }
             ]
           },
           "unit": "currencyUSD",
@@ -295,7 +412,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
+            "uid": "railway-prod-db"
           },
           "rawSql": "SELECT ROUND(AVG(task_cost), 4) as avg_cost_per_post FROM (SELECT task_id, SUM(cost_usd) as task_cost FROM cost_logs GROUP BY task_id) sub",
           "format": "table",
@@ -307,14 +424,21 @@
       "id": 6,
       "title": "Token Usage by Model (7d)",
       "type": "barchart",
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 19 },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 19
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "axisBorderShow": false,
             "axisCenteredZero": false,
@@ -332,8 +456,14 @@
         "orientation": "horizontal",
         "showValue": "always",
         "stacking": "none",
-        "tooltip": { "mode": "single", "sort": "none" },
-        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
         "xTickLabelRotation": 0
       },
       "targets": [
@@ -341,7 +471,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
+            "uid": "railway-prod-db"
           },
           "rawSql": "SELECT model, SUM(total_tokens) as tokens FROM cost_logs WHERE created_at > NOW() - INTERVAL '7 days' GROUP BY model ORDER BY tokens DESC",
           "format": "table",

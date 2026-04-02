@@ -36,7 +36,7 @@ import asyncpg
 
 from health_probes import run_health_probes
 
-LOG_DIR = os.path.join(os.path.expanduser("~"), ".gladlabs")
+LOG_DIR = os.path.join(os.path.expanduser("~"), os.getenv("APP_LOG_DIR", ".content-pipeline"))
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIR, "brain.log")
 
@@ -56,15 +56,15 @@ DB_URL = os.getenv("LOCAL_DATABASE_URL", "") or os.getenv("DATABASE_URL", "")
 # Telegram for alerts (direct bot API, no OpenClaw dependency)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 # Canonical env var; fallback matches services/telegram_config.py
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "5318613610")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
 # Detect if running on Railway (cloud) or locally
 IS_RAILWAY = bool(os.getenv("RAILWAY_SERVICE_ID"))
 
 # Cloud-reachable services (always monitored)
 SERVICES = {
-    "site": {"url": "https://gladlabs.io", "type": "http", "critical": True},
-    "api": {"url": "https://cofounder-production.up.railway.app/api/health", "type": "json_status", "critical": True},
+    "site": {"url": os.getenv("SITE_URL", "https://localhost:3000"), "type": "http", "critical": True},
+    "api": {"url": os.getenv("API_BASE_URL", "http://localhost:8000") + "/api/health", "type": "json_status", "critical": True},
 }
 
 # Local-only services (only monitored when running on Matt's PC)

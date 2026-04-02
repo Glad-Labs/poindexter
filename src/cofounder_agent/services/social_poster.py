@@ -35,7 +35,7 @@ logger = get_logger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-SITE_BASE_URL = os.getenv("SITE_BASE_URL", "https://gladlabs.io")
+SITE_BASE_URL = os.getenv("SITE_BASE_URL", "https://localhost:3000")
 
 # Notification targets (mirrors task_executor._notify_openclaw)
 from services.telegram_config import TELEGRAM_BOT_TOKEN as _TELEGRAM_BOT_TOKEN

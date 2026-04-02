@@ -18,7 +18,10 @@ information about GDPR rights. In production, implement:
 """
 
 from services.logger_config import get_logger
+import os
 import re
+
+_PRIVACY_EMAIL = os.getenv("PRIVACY_EMAIL", "privacy@example.com")
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
@@ -115,13 +118,13 @@ async def submit_data_request(request: Request, request_data: DataSubjectRequest
                 "3. Process your request within 30 days",
                 "4. Provide proof of compliance",
             ],
-            "support_email": "privacy@gladlabs.ai",
+            "support_email": _PRIVACY_EMAIL,
         }
 
     except Exception as e:
         logger.error(f"❌ Error processing data request: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail="Failed to process request. Please email privacy@gladlabs.ai"
+            status_code=500, detail=f"Failed to process request. Please email {_PRIVACY_EMAIL}"
         ) from e
 
 
@@ -185,7 +188,7 @@ async def get_gdpr_rights() -> Dict:
             "withdraw_consent": {
                 "article": "7(3)",
                 "description": "Right to withdraw consent at any time",
-                "method": "Change cookie preferences or email privacy@gladlabs.ai",
+                "method": f"Change cookie preferences or email {_PRIVACY_EMAIL}",
             },
             "lodge_complaint": {
                 "article": 77,
@@ -194,7 +197,7 @@ async def get_gdpr_rights() -> Dict:
                 "note": "You do not need to file a complaint with us first",
             },
         },
-        "contact": "privacy@gladlabs.ai",
+        "contact": _PRIVACY_EMAIL,
         "response_deadline_days": 30,
         "response_deadline_extension_days": 60,
         "verification": {
@@ -217,7 +220,7 @@ async def get_data_processing_info() -> Dict:
                 "article": "6(1)(a)",
                 "description": "Explicit user consent",
                 "examples": ["Analytics cookies", "Advertising cookies"],
-                "how_to_withdraw": "Change cookie preferences or contact privacy@gladlabs.ai",
+                "how_to_withdraw": f"Change cookie preferences or contact {_PRIVACY_EMAIL}",
             },
             "contract": {
                 "article": "6(1)(b)",

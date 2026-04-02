@@ -23,17 +23,23 @@ from typing import List
 logger = get_logger(__name__)
 
 # ============================================================================
-# GLAD LABS FACTS — ground truth for fact-checking
+# COMPANY FACTS — ground truth for fact-checking (configurable)
+# Override via environment variables for your own brand
 # ============================================================================
 
+import os as _os
+
+_COMPANY_NAME = _os.getenv("COMPANY_NAME", "Glad Labs")
+
 GLAD_LABS_FACTS = {
-    "founded_date": "2025-09-25",
-    "founded_year": 2025,
-    "age_months": 6,  # As of March 2026
-    "team_size": 1,  # Solo founder
-    "founder_name": "Matt",
+    "company_name": _COMPANY_NAME,
+    "founded_date": _os.getenv("COMPANY_FOUNDED_DATE", "2025-09-25"),
+    "founded_year": int(_os.getenv("COMPANY_FOUNDED_YEAR", "2025")),
+    "age_months": int(_os.getenv("COMPANY_AGE_MONTHS", "6")),
+    "team_size": int(_os.getenv("COMPANY_TEAM_SIZE", "1")),
+    "founder_name": _os.getenv("COMPANY_FOUNDER_NAME", "Matt"),
     "known_employees": set(),  # No employees — solo operation
-    "real_products": {"gladlabs.io", "content pipeline", "openclaw"},
+    "real_products": set(_os.getenv("COMPANY_PRODUCTS", "gladlabs.io,content pipeline,openclaw").split(",")),
     "real_tech": {"fastapi", "next.js", "postgresql", "ollama", "railway", "vercel", "grafana"},
 }
 
@@ -41,7 +47,7 @@ GLAD_LABS_FACTS = {
 FAKE_NAME_PATTERNS = [
     r"\b(?:Sarah|John|Emily|David|Michael|Jennifer|James|Jessica|Robert|Lisa)\s+[A-Z][a-z]+(?:,\s*(?:CEO|CTO|VP|Director|Lead|Head|Chief|Manager|Founder|Co-founder))",
     r"\b(?:Dr\.|Prof\.)\s+[A-Z][a-z]+\s+[A-Z][a-z]+",
-    r"(?:CEO|CTO|VP|Director|Lead Architect|Head of|Chief)\s+(?:at|of)\s+(?:Glad Labs|GladLabs)",
+    rf"(?:CEO|CTO|VP|Director|Lead Architect|Head of|Chief)\s+(?:at|of)\s+(?:{re.escape(_COMPANY_NAME)})",
 ]
 
 # Fake statistic patterns
@@ -52,13 +58,14 @@ FAKE_STAT_PATTERNS = [
     r"(?:research|data|studies)\s+(?:shows?|suggests?|indicates?|reveals?|confirms?)\s+that\s+\d",
 ]
 
-# Impossible claims about Glad Labs
+# Impossible claims about the company (uses configurable company name)
+_CN = re.escape(_COMPANY_NAME)
 GLAD_LABS_IMPOSSIBLE = [
-    r"(?:Glad Labs|our|we)\s+(?:has|have)\s+(?:been|spent)\s+(?:\w+\s+)*(?:years?|decade)",
-    r"(?:Glad Labs|our)\s+(?:team|staff|employees|engineers|developers)\s+of\s+\d{2,}",
-    r"(?:Glad Labs|our)\s+(?:clients?|customers?|users?)\s+(?:include|such as|like)\s+[A-Z]",
-    r"(?:Glad Labs|we)\s+(?:processed|handled|served|generated)\s+(?:\d+\s*(?:million|billion|thousand))",
-    r"(?:Glad Labs|our)\s+(?:revenue|profit|valuation|funding)",
+    rf"(?:{_CN}|our|we)\s+(?:has|have)\s+(?:been|spent)\s+(?:\w+\s+)*(?:years?|decade)",
+    rf"(?:{_CN}|our)\s+(?:team|staff|employees|engineers|developers)\s+of\s+\d{{2,}}",
+    rf"(?:{_CN}|our)\s+(?:clients?|customers?|users?)\s+(?:include|such as|like)\s+[A-Z]",
+    rf"(?:{_CN}|we)\s+(?:processed|handled|served|generated)\s+(?:\d+\s*(?:million|billion|thousand))",
+    rf"(?:{_CN}|our)\s+(?:revenue|profit|valuation|funding)",
 ]
 
 # Fabricated quote patterns

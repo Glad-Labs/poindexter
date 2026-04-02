@@ -1,42 +1,68 @@
 ---
 name: Current Session State
-last_updated: 2026-04-02T06:20:00Z
+last_updated: 2026-04-02T13:55:00Z
 updated_by: claude-code
 category: state
 ---
 
 # Current Session
 
-**Active System:** claude-code (overnight mode — Matt sleeping)
-**Session:** session_48 (27+ hour marathon)
-**Started:** 2026-04-01T03:25:00Z
-**Last Update:** 2026-04-02T06:20:00Z
+**Active System:** claude-code
+**Session:** session_49 (continuation from session_48 context overflow)
+**Started:** 2026-04-02T13:20:00Z
+**Last Update:** 2026-04-02T13:55:00Z
 
-## Overnight Work (building while Matt sleeps)
+## Work Completed This Session
 
-- Pipeline cost audit script (measuring ALL token costs per pipeline step)
-- Model shootout script (comparing quality + cost across models)
-- URL validator service (catching broken links before publish)
-- Published links health check script
+### pgvector MCP Server
 
-## Session 48 Summary (91 commits)
+- Added 7 semantic memory tools to mcp-server/server.py (search_memory, recall_decision, find_similar_posts, memory_stats, get_audit_log, get_audit_summary, get_brain_knowledge)
+- 19 total tools in custom MCP server
+- Registered for both Claude Desktop and Claude Code CLI
 
-- Full self-hosted ops stack (pgvector, Grafana, Gitea, Woodpecker, Headscale)
-- 960 pgvector embeddings (posts, issues, memory, audit)
-- 11 Grafana dashboards + 4 alert rules → Telegram
-- 6231 tests, 0 failures
-- Gemini removed, Ollama electricity costs tracked
-- All static pages rewritten
-- Frontend audit: 0 critical issues
-- Newsletter endpoint fixed (was in _DISABLED_ROUTES)
-- Grafana Cloud removed, all local
-- GitHub → Gitea migration complete with auto-mirror
-- Title diversity system built
-- Hallucination prevention audited (6/10 risk, gaps identified)
-- British female voice (alba) configured for TTS
-- Shared context junction created for OpenClaw
+### Prebuilt MCP Servers Installed
+
+- grafana (official, 2.7K stars) — dashboard/alert management
+- railway (official) — deployment management
+- docker — container management
+- ollama — model management + inference
+- All 7 MCP servers connected and healthy
+
+### Content Quality
+
+- 11 duplicate posts unpublished (7 cloud-vs-local, 2 AI agents, 1 Docker, 1 prototype)
+- 67 published posts remain (was 78)
+- Sitemap auto-regenerates from published_only=true
+
+### Woodpecker CI/CD
+
+- 10 secrets wired into Woodpecker SQLite (Railway, Vercel, Telegram, env vars)
+- Full deployment pipeline ready for main branch pushes
+
+### Revenue Infrastructure
+
+- GA (G-NJMBCYNDWN) + AdSense (ca-pub-4578747062758519) confirmed live
+- 11 affiliate links active in DB
+- Resend email delivery added to newsletter_service.py
+- Social posting generates copy but needs X/LinkedIn API keys
+
+### Security
+
+- Gitea password removed from health_probes.py (was hardcoded, now env var)
+- 21 secrets consolidated into app_settings table
+- Secrets audit identified scattered .env files across PC
+
+### Tests
+
+- 5569 unit tests passing, 0 failures
+
+## Writer Model
+
+- qwen3.5:35b (already default for balanced/quality tiers)
+- QA critic: glm-4.7-5090:latest
 
 ## Blockers
 
-- Phone Headscale (needs HTTPS cert on Android)
-- Woodpecker agent needs Railway/Vercel secrets for full CI/CD
+- Social posting needs X Developer account + LinkedIn app from Matt
+- Newsletter email delivery needs RESEND_API_KEY from Matt
+- Gitea password in git history (recommend changing password)

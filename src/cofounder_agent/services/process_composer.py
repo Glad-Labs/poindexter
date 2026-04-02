@@ -362,7 +362,8 @@ class ProcessComposer:
 async def step_create_task(intent: str = "", **kwargs) -> dict:
     """Create a content task from intent."""
     import httpx
-    API_URL = "https://cofounder-production.up.railway.app"
+    import os
+    API_URL = os.getenv("API_BASE_URL", "https://localhost:8000")
     API_TOKEN = kwargs.get("api_token", "")
 
     # Extract topic from intent
@@ -390,11 +391,13 @@ async def step_create_task(intent: str = "", **kwargs) -> dict:
 
 
 async def step_probe_site(**kwargs) -> dict:
-    """Check if gladlabs.io is responding."""
+    """Check if the site is responding."""
     import httpx
+    import os
+    site_url = os.getenv("SITE_URL", "https://localhost:3000")
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get("https://gladlabs.io")
+            resp = await client.get(site_url)
             return {"site_status": resp.status_code, "site_healthy": resp.status_code == 200}
     except Exception as e:
         return {"site_status": 0, "site_healthy": False, "site_error": str(e)[:100]}
@@ -403,9 +406,11 @@ async def step_probe_site(**kwargs) -> dict:
 async def step_probe_api(**kwargs) -> dict:
     """Check if the backend API is healthy."""
     import httpx
+    import os
+    api_url = os.getenv("API_BASE_URL", "https://localhost:8000")
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get("https://cofounder-production.up.railway.app/api/health")
+            resp = await client.get(f"{api_url}/api/health")
             data = resp.json()
             return {"api_status": data.get("status"), "api_healthy": data.get("status") in ("healthy", "degraded")}
     except Exception as e:
@@ -415,10 +420,12 @@ async def step_probe_api(**kwargs) -> dict:
 async def step_check_budget(**kwargs) -> dict:
     """Check current spending status."""
     import httpx
+    import os
+    api_url = os.getenv("API_BASE_URL", "https://localhost:8000")
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
-                "https://cofounder-production.up.railway.app/api/metrics/costs/budget",
+                f"{api_url}/api/metrics/costs/budget",
             )
             return {"budget": resp.json()}
     except Exception:
@@ -444,7 +451,7 @@ def create_default_composer(settings_service=None, model_router=None) -> Process
     # Register steps
     composer.register_step("create_task", step_create_task, "Create a content task", "content",
                           requires=["intent"], produces=["task_id", "topic"])
-    composer.register_step("probe_site", step_probe_site, "Check gladlabs.io HTTP status", "monitoring",
+    composer.register_step("probe_site", step_probe_site, "Check site HTTP status", "monitoring",
                           produces=["site_status", "site_healthy"])
     composer.register_step("probe_api", step_probe_api, "Check backend API health", "monitoring",
                           produces=["api_status", "api_healthy"])

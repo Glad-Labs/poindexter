@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+import os
+
 from asyncpg import Pool
 
 from services.logger_config import get_logger
@@ -545,11 +547,11 @@ def format_discord_embed(report: BusinessReport) -> Dict[str, Any]:
         })
 
     embed = {
-        "title": "Glad Labs Weekly Report",
+        "title": f"{os.getenv('SITE_NAME', 'AI Pipeline')} Weekly Report",
         "description": f"{start_str} - {end_str}",
         "color": 0x2ECC71,  # Green
         "fields": fields,
-        "footer": {"text": "Glad Labs AI Pipeline"},
+        "footer": {"text": f"{os.getenv('SITE_NAME', 'AI Pipeline')} Content Engine"},
         "timestamp": report.period_end.isoformat(),
     }
 
