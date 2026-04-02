@@ -20,6 +20,7 @@ services:
     volumes:
       - headscale-data:/var/lib/headscale
       - ./infrastructure/headscale/config.yaml:/etc/headscale/config.yaml
+      - ./infrastructure/headscale/certs:/etc/headscale/certs
     healthcheck:
       test: ["CMD", "headscale", "health"]
       interval: 30s
