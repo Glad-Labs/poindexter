@@ -96,7 +96,7 @@
             "type": "grafana-postgresql-datasource",
             "uid": "railway-prod-db"
           },
-          "rawSql": "SELECT date_trunc('day', created_at) as time, SUM(cost_usd) as daily_cost FROM cost_logs WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
+          "rawSql": "SELECT date_trunc('day', created_at) as time, SUM(cost_usd) as daily_cost FROM cost_logs WHERE created_at BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz GROUP BY 1 ORDER BY 1",
           "format": "time_series",
           "editorMode": "code"
         }

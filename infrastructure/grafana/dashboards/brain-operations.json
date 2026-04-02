@@ -338,7 +338,7 @@
             "uid": "local-brain-db"
           },
           "format": "time_series",
-          "rawSql": "SELECT date_trunc('day', created_at) as time, COUNT(*) as new_embeddings FROM embeddings WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
+          "rawSql": "SELECT date_trunc('day', created_at) as time, COUNT(*) as new_embeddings FROM embeddings WHERE created_at BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz GROUP BY 1 ORDER BY 1",
           "refId": "A"
         }
       ],
@@ -500,7 +500,7 @@
             "uid": "railway-prod-db"
           },
           "format": "time_series",
-          "rawSql": "SELECT date_trunc('day', evaluation_timestamp) as time, ROUND(AVG(overall_score)::numeric, 2) as avg_score FROM quality_evaluations WHERE $__timeFilter(evaluation_timestamp) GROUP BY 1 ORDER BY 1",
+          "rawSql": "SELECT date_trunc('day', evaluation_timestamp) as time, ROUND(AVG(overall_score)::numeric, 2) as avg_score FROM quality_evaluations WHERE evaluation_timestamp BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz GROUP BY 1 ORDER BY 1",
           "refId": "A"
         }
       ],
@@ -558,7 +558,7 @@
             "uid": "railway-prod-db"
           },
           "format": "time_series",
-          "rawSql": "SELECT date_trunc('day', created_at) as time, provider, SUM(cost_usd) as cost FROM cost_logs WHERE $__timeFilter(created_at) GROUP BY 1, 2 ORDER BY 1",
+          "rawSql": "SELECT date_trunc('day', created_at) as time, provider, SUM(cost_usd) as cost FROM cost_logs WHERE created_at BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz GROUP BY 1, 2 ORDER BY 1",
           "refId": "A"
         }
       ],
