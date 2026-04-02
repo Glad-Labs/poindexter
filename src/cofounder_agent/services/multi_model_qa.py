@@ -202,8 +202,9 @@ class MultiModelQA:
                 content=content[:8000],
             )
 
-            # Use gemma3:27b for QA — good at structured output
-            ollama_model = model_override or "gemma3:27b"
+            # Use glm-4.7-5090 for QA — highest quality scores (96 in shootout)
+            # Fallback to gemma3:27b if GLM unavailable
+            ollama_model = model_override or "glm-4.7-5090:latest"
             # Thinking models (qwen3.5, glm-4.7) need more tokens for internal reasoning
             is_thinking_model = any(t in ollama_model.lower() for t in ("qwen3.5", "glm-4.7", "qwen3:30b"))
             max_tok = 1500 if is_thinking_model else 300
