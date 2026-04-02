@@ -470,7 +470,7 @@ class TaskExecutor:
                     await _notify_openclaw(
                         f"Ready for review: \"{topic}\" (score: {quality_score:.0f})\n"
                         f"Preview: {api_link}\n"
-                        f"Dashboard: https://gladlabs.grafana.net/d/ops-live"
+                        f"Dashboard: http://localhost:3000/d/command-center"
                     )
 
                 return

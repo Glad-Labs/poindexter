@@ -3,7 +3,7 @@ import json
 import urllib.request
 import sys
 
-GRAFANA_URL = "https://gladlabs.grafana.net"
+GRAFANA_URL = "http://localhost:3000"
 GRAFANA_TOKEN = sys.argv[1] if len(sys.argv) > 1 else ""
 
 if not GRAFANA_TOKEN:
