@@ -69,7 +69,11 @@ jobs:
 
       - name: 🏗️ Build check (all workspaces)
         run: npm run build --if-present
-        # No continue-on-error — build failures should block dev CI
+        env:
+          NEXT_PUBLIC_API_BASE_URL: "https://cofounder-production.up.railway.app"
+          NEXT_PUBLIC_FASTAPI_URL: "https://cofounder-production.up.railway.app"
+          NEXT_PUBLIC_SITE_URL: "https://www.gladlabs.io"
+          SKIP_ENV_VALIDATION: "true"
 
       # ============================================
       # E2E TESTS (frontend-only specs, no backend needed)
