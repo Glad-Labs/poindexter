@@ -237,15 +237,17 @@ class MultiModelQA:
                     logger.warning("[MULTI_QA] Ollama response was not valid JSON: %s", text[:200])
                     return None
 
+            total_tokens = result.get("prompt_tokens", 0) + result.get("tokens", 0)
+            electricity_cost = total_tokens / 1000 * 0.000256  # ~250W @ $0.147/kWh, ~40 tok/s
             cost_log = {
                 "provider": "ollama", "model": ollama_model,
                 "input_tokens": result.get("prompt_tokens", 0),
                 "output_tokens": result.get("tokens", 0),
-                "cost_usd": 0.0, "phase": "qa_review",
+                "cost_usd": round(electricity_cost, 6), "phase": "qa_review",
             }
             logger.info(
-                "[MULTI_QA] Ollama QA complete (free): model=%s, tokens=%d",
-                ollama_model, result.get("tokens", 0),
+                "[MULTI_QA] Ollama QA: model=%s, tokens=%d, electricity=$%.6f",
+                ollama_model, result.get("tokens", 0), electricity_cost,
             )
 
             review = ReviewerResult(
