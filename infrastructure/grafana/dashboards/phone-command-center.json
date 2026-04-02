@@ -180,7 +180,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT temperature || ' C' as \"GPU Temp\" FROM gpu_metrics ORDER BY timestamp DESC LIMIT 1",
+          "rawSql": "SELECT temperature FROM gpu_metrics ORDER BY timestamp DESC LIMIT 1",
           "refId": "A"
         }
       ],
