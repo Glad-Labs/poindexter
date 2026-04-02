@@ -1,15 +1,34 @@
 {
   "uid": "command-center",
   "title": "Glad Labs Command Center",
-  "description": "Full observability — every process at a glance",
-  "tags": ["glad-labs", "command-center", "master"],
+  "description": "Full observability \u00e2\u20ac\u201d every process at a glance",
+  "tags": [
+    "glad-labs",
+    "command-center",
+    "master"
+  ],
   "timezone": "browser",
   "editable": true,
   "graphTooltip": 1,
-  "time": { "from": "now-24h", "to": "now" },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
   "timepicker": {
-    "refresh_intervals": ["30s", "1m", "5m", "15m"],
-    "time_options": ["1h", "6h", "12h", "24h", "7d", "30d"]
+    "refresh_intervals": [
+      "30s",
+      "1m",
+      "5m",
+      "15m"
+    ],
+    "time_options": [
+      "1h",
+      "6h",
+      "12h",
+      "24h",
+      "7d",
+      "30d"
+    ]
   },
   "refresh": "1m",
   "schemaVersion": 39,
@@ -19,14 +38,19 @@
       "id": 1,
       "title": "Published Posts",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 0
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
       "targets": [
         {
-          "rawSql": "SELECT COUNT(*) AS \"Posts\" FROM content_tasks WHERE status = 'completed' AND publish_status = 'published'",
+          "rawSql": "SELECT COUNT(*) AS \"Posts\" FROM content_tasks WHERE status = 'published'",
           "format": "table",
           "refId": "A"
         }
@@ -36,15 +60,25 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": null },
-              { "color": "green", "value": 50 }
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 50
+              }
             ]
           }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "colorMode": "background",
         "textMode": "auto"
       }
@@ -53,7 +87,12 @@
       "id": 2,
       "title": "Awaiting Approval",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 0
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -70,16 +109,29 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 10 },
-              { "color": "red", "value": 50 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 10
+              },
+              {
+                "color": "red",
+                "value": 50
+              }
             ]
           }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "colorMode": "background",
         "textMode": "auto"
       }
@@ -88,7 +140,12 @@
       "id": 3,
       "title": "Failed Tasks (24h)",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 0
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -105,16 +162,29 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 3 },
-              { "color": "red", "value": 10 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 3
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
             ]
           }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "colorMode": "background",
         "textMode": "auto"
       }
@@ -123,7 +193,12 @@
       "id": 4,
       "title": "Avg Quality Score (7d)",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 0
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -140,16 +215,29 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 65 },
-              { "color": "green", "value": 75 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 65
+              },
+              {
+                "color": "green",
+                "value": 75
+              }
             ]
           }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "colorMode": "background",
         "textMode": "auto"
       }
@@ -158,7 +246,12 @@
       "id": 5,
       "title": "Page Views Today (N/A locally)",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 0
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -175,16 +268,29 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 10 },
-              { "color": "green", "value": 50 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 10
+              },
+              {
+                "color": "green",
+                "value": 50
+              }
             ]
           }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "colorMode": "background",
         "textMode": "auto"
       }
@@ -193,7 +299,12 @@
       "id": 6,
       "title": "Cloud Spend Today ($)",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 0
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -211,26 +322,43 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 2 },
-              { "color": "red", "value": 5 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 2
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
             ]
           }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "colorMode": "background",
         "textMode": "auto"
       }
     },
-
     {
       "id": 10,
-      "title": "Content Pipeline — Tasks by Status",
+      "title": "Content Pipeline \u00e2\u20ac\u201d Tasks by Status",
       "type": "piechart",
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 4 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 4
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -243,24 +371,40 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "color": { "mode": "palette-classic" } },
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "pieType": "donut",
         "legend": {
           "displayMode": "table",
           "placement": "right",
-          "values": ["value", "percent"]
+          "values": [
+            "value",
+            "percent"
+          ]
         }
       }
     },
     {
       "id": 11,
-      "title": "Content Production — Daily Tasks Created vs Published",
+      "title": "Content Production \u00e2\u20ac\u201d Daily Tasks Created vs Published",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 16, "x": 8, "y": 4 },
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 8,
+        "y": 4
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -278,39 +422,65 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "custom": { "lineWidth": 2, "fillOpacity": 20 } },
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 20
+          }
+        },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Created" },
+            "matcher": {
+              "id": "byName",
+              "options": "Created"
+            },
             "properties": [
               {
                 "id": "color",
-                "value": { "fixedColor": "blue", "mode": "fixed" }
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
               }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "Published" },
+            "matcher": {
+              "id": "byName",
+              "options": "Published"
+            },
             "properties": [
               {
                 "id": "color",
-                "value": { "fixedColor": "green", "mode": "fixed" }
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
               }
             ]
           }
         ]
       },
       "options": {
-        "tooltip": { "mode": "multi" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       }
     },
-
     {
       "id": 20,
       "title": "Quality Score Distribution",
       "type": "histogram",
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 12 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 12
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -323,16 +493,28 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "color": { "mode": "palette-classic" } },
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
         "overrides": []
       },
-      "options": { "bucketSize": 5, "combine": false }
+      "options": {
+        "bucketSize": 5,
+        "combine": false
+      }
     },
     {
       "id": 21,
       "title": "Quality by Model",
       "type": "table",
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 12 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 12
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -344,17 +526,30 @@
           "refId": "A"
         }
       ],
-      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
       "options": {
         "showHeader": true,
-        "sortBy": [{ "displayName": "Avg Score", "desc": true }]
+        "sortBy": [
+          {
+            "displayName": "Avg Score",
+            "desc": true
+          }
+        ]
       }
     },
     {
       "id": 22,
-      "title": "Page Views — Daily Trend (N/A locally)",
+      "title": "Page Views \u00e2\u20ac\u201d Daily Trend (N/A locally)",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 12 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 12
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -368,7 +563,10 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "color": { "fixedColor": "cyan", "mode": "fixed" },
+          "color": {
+            "fixedColor": "cyan",
+            "mode": "fixed"
+          },
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 30,
@@ -377,14 +575,22 @@
         },
         "overrides": []
       },
-      "options": { "legend": { "displayMode": "hidden" } }
+      "options": {
+        "legend": {
+          "displayMode": "hidden"
+        }
+      }
     },
-
     {
       "id": 30,
-      "title": "Brain Knowledge — Latest Observations",
+      "title": "Brain Knowledge \u00e2\u20ac\u201d Latest Observations",
       "type": "table",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 20
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -400,18 +606,33 @@
         "defaults": {},
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Entity" },
-            "properties": [{ "id": "custom.width", "value": 250 }]
+            "matcher": {
+              "id": "byName",
+              "options": "Entity"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 250
+              }
+            ]
           }
         ]
       },
-      "options": { "showHeader": true }
+      "options": {
+        "showHeader": true
+      }
     },
     {
       "id": 31,
       "title": "Cloud Spend by Provider",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 20
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -426,21 +647,33 @@
       "fieldConfig": {
         "defaults": {
           "unit": "currencyUSD",
-          "custom": { "lineWidth": 2, "fillOpacity": 30 }
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 30
+          }
         },
         "overrides": []
       },
       "options": {
-        "tooltip": { "mode": "multi" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "multi"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       }
     },
-
     {
       "id": 40,
       "title": "Published Content",
       "type": "table",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 28
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -456,18 +689,33 @@
         "defaults": {},
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Post" },
-            "properties": [{ "id": "custom.width", "value": 400 }]
+            "matcher": {
+              "id": "byName",
+              "options": "Post"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 400
+              }
+            ]
           }
         ]
       },
-      "options": { "showHeader": true }
+      "options": {
+        "showHeader": true
+      }
     },
     {
       "id": 41,
       "title": "Audit Events (7d)",
       "type": "table",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 28
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -483,19 +731,33 @@
         "defaults": {},
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Referrer" },
-            "properties": [{ "id": "custom.width", "value": 400 }]
+            "matcher": {
+              "id": "byName",
+              "options": "Referrer"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 400
+              }
+            ]
           }
         ]
       },
-      "options": { "showHeader": true }
+      "options": {
+        "showHeader": true
+      }
     },
-
     {
       "id": 50,
       "title": "Brain Knowledge (Recent)",
       "type": "table",
-      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 36 },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 36
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -507,14 +769,24 @@
           "refId": "A"
         }
       ],
-      "fieldConfig": { "defaults": {}, "overrides": [] },
-      "options": { "showHeader": true }
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
     },
     {
       "id": 51,
       "title": "System Credentials",
       "type": "table",
-      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 36 },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 36
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -526,8 +798,13 @@
           "refId": "A"
         }
       ],
-      "fieldConfig": { "defaults": {}, "overrides": [] },
-      "options": { "showHeader": true }
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
     }
   ]
 }

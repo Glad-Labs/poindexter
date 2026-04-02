@@ -2,32 +2,56 @@
   "uid": "phone-command-center",
   "title": "Phone Command Center",
   "description": "Mobile-optimized single-column dashboard for monitoring Glad Labs on the go",
-  "tags": ["glad-labs", "mobile", "command-center"],
+  "tags": [
+    "glad-labs",
+    "mobile",
+    "command-center"
+  ],
   "timezone": "browser",
   "editable": true,
   "graphTooltip": 1,
-  "time": { "from": "now-24h", "to": "now" },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
   "timepicker": {
-    "refresh_intervals": ["30s", "1m", "5m"],
-    "time_options": ["1h", "6h", "12h", "24h", "7d"]
+    "refresh_intervals": [
+      "30s",
+      "1m",
+      "5m"
+    ],
+    "time_options": [
+      "1h",
+      "6h",
+      "12h",
+      "24h",
+      "7d"
+    ]
   },
   "refresh": "1m",
   "schemaVersion": 39,
   "version": 1,
-  "annotations": { "list": [] },
+  "annotations": {
+    "list": []
+  },
   "panels": [
     {
       "id": 1,
       "title": "Published Posts",
       "type": "stat",
-      "gridPos": { "h": 3, "w": 6, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
       "targets": [
         {
-          "rawSql": "SELECT COUNT(*) AS \"Posts\" FROM content_tasks WHERE status = 'completed' AND publish_status = 'published'",
+          "rawSql": "SELECT COUNT(*) AS \"Posts\" FROM content_tasks WHERE status = 'published'",
           "format": "table",
           "refId": "A"
         }
@@ -37,15 +61,25 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": null },
-              { "color": "green", "value": 10 }
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 10
+              }
             ]
           }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "colorMode": "background",
         "textMode": "auto",
         "graphMode": "none"
@@ -55,7 +89,12 @@
       "id": 2,
       "title": "Today's Tasks",
       "type": "stat",
-      "gridPos": { "h": 3, "w": 6, "x": 6, "y": 0 },
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -71,33 +110,55 @@
         "defaults": {
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "green", "value": null }]
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
           }
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Fail" },
+            "matcher": {
+              "id": "byName",
+              "options": "Fail"
+            },
             "properties": [
               {
                 "id": "thresholds",
                 "value": {
                   "mode": "absolute",
                   "steps": [
-                    { "color": "green", "value": null },
-                    { "color": "red", "value": 1 }
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 1
+                    }
                   ]
                 }
               }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "Pend" },
+            "matcher": {
+              "id": "byName",
+              "options": "Pend"
+            },
             "properties": [
               {
                 "id": "thresholds",
                 "value": {
                   "mode": "absolute",
-                  "steps": [{ "color": "yellow", "value": null }]
+                  "steps": [
+                    {
+                      "color": "yellow",
+                      "value": null
+                    }
+                  ]
                 }
               }
             ]
@@ -105,7 +166,11 @@
         ]
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "colorMode": "background",
         "textMode": "auto",
         "graphMode": "none"
@@ -115,7 +180,12 @@
       "id": 3,
       "title": "GPU Temp",
       "type": "stat",
-      "gridPos": { "h": 3, "w": 6, "x": 12, "y": 0 },
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
       "datasource": {
         "type": "prometheus",
         "uid": "dfht40ysx6o00f"
@@ -133,17 +203,33 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 70 },
-              { "color": "orange", "value": 80 },
-              { "color": "red", "value": 90 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
             ]
           }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "colorMode": "background",
         "textMode": "auto",
         "graphMode": "area"
@@ -153,7 +239,12 @@
       "id": 4,
       "title": "Errors (1h)",
       "type": "stat",
-      "gridPos": { "h": 3, "w": 6, "x": 18, "y": 0 },
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -170,16 +261,29 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "orange", "value": 1 },
-              { "color": "red", "value": 5 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
             ]
           }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "colorMode": "background",
         "textMode": "auto",
         "graphMode": "none"
@@ -189,7 +293,12 @@
       "id": 10,
       "title": "Recent Tasks",
       "type": "table",
-      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 3 },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 3
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -205,13 +314,18 @@
         "defaults": {
           "custom": {
             "align": "left",
-            "cellOptions": { "type": "auto" },
+            "cellOptions": {
+              "type": "auto"
+            },
             "filterable": false
           }
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Status" },
+            "matcher": {
+              "id": "byName",
+              "options": "Status"
+            },
             "properties": [
               {
                 "id": "custom.cellOptions",
@@ -225,9 +339,18 @@
                   {
                     "type": "value",
                     "options": {
-                      "completed": { "text": "completed", "color": "green" },
-                      "failed": { "text": "failed", "color": "red" },
-                      "pending": { "text": "pending", "color": "yellow" }
+                      "completed": {
+                        "text": "completed",
+                        "color": "green"
+                      },
+                      "failed": {
+                        "text": "failed",
+                        "color": "red"
+                      },
+                      "pending": {
+                        "text": "pending",
+                        "color": "yellow"
+                      }
                     }
                   }
                 ]
@@ -239,14 +362,21 @@
       "options": {
         "showHeader": true,
         "cellHeight": "sm",
-        "footer": { "show": false }
+        "footer": {
+          "show": false
+        }
       }
     },
     {
       "id": 20,
       "title": "Today's Spend",
       "type": "stat",
-      "gridPos": { "h": 3, "w": 12, "x": 0, "y": 10 },
+      "gridPos": {
+        "h": 3,
+        "w": 12,
+        "x": 0,
+        "y": 10
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -264,16 +394,29 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "orange", "value": 4 },
-              { "color": "red", "value": 5 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 4
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
             ]
           }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "colorMode": "background",
         "textMode": "auto",
         "graphMode": "none"
@@ -283,7 +426,12 @@
       "id": 21,
       "title": "7-Day Spend",
       "type": "timeseries",
-      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 10 },
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 12,
+        "y": 10
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -298,7 +446,10 @@
       "fieldConfig": {
         "defaults": {
           "unit": "currencyUSD",
-          "color": { "fixedColor": "orange", "mode": "fixed" },
+          "color": {
+            "fixedColor": "orange",
+            "mode": "fixed"
+          },
           "custom": {
             "drawStyle": "line",
             "lineWidth": 2,
@@ -313,15 +464,24 @@
         "overrides": []
       },
       "options": {
-        "legend": { "showLegend": false },
-        "tooltip": { "mode": "single" }
+        "legend": {
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "single"
+        }
       }
     },
     {
       "id": 30,
       "title": "DB Connections",
       "type": "stat",
-      "gridPos": { "h": 3, "w": 8, "x": 0, "y": 15 },
+      "gridPos": {
+        "h": 3,
+        "w": 8,
+        "x": 0,
+        "y": 15
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -338,16 +498,29 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 20 },
-              { "color": "red", "value": 80 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 20
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
             ]
           }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "colorMode": "background",
         "textMode": "auto",
         "graphMode": "none"
@@ -357,7 +530,12 @@
       "id": 31,
       "title": "Ollama (Last Activity)",
       "type": "stat",
-      "gridPos": { "h": 3, "w": 8, "x": 8, "y": 15 },
+      "gridPos": {
+        "h": 3,
+        "w": 8,
+        "x": 8,
+        "y": 15
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -375,21 +553,39 @@
             {
               "type": "value",
               "options": {
-                "ACTIVE": { "text": "ACTIVE", "color": "green" },
-                "IDLE": { "text": "IDLE", "color": "yellow" },
-                "STALE": { "text": "STALE", "color": "red" }
+                "ACTIVE": {
+                  "text": "ACTIVE",
+                  "color": "green"
+                },
+                "IDLE": {
+                  "text": "IDLE",
+                  "color": "yellow"
+                },
+                "STALE": {
+                  "text": "STALE",
+                  "color": "red"
+                }
               }
             }
           ],
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "text", "value": null }]
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
           }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "colorMode": "value",
         "textMode": "auto",
         "graphMode": "none"
@@ -399,7 +595,12 @@
       "id": 32,
       "title": "Embeddings",
       "type": "stat",
-      "gridPos": { "h": 3, "w": 8, "x": 16, "y": 15 },
+      "gridPos": {
+        "h": 3,
+        "w": 8,
+        "x": 16,
+        "y": 15
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -415,13 +616,22 @@
         "defaults": {
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "purple", "value": null }]
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
           }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "colorMode": "background",
         "textMode": "auto",
         "graphMode": "none"
@@ -431,7 +641,12 @@
       "id": 40,
       "title": "Recent Errors",
       "type": "table",
-      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 18 },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -447,17 +662,24 @@
         "defaults": {
           "custom": {
             "align": "left",
-            "cellOptions": { "type": "auto" },
+            "cellOptions": {
+              "type": "auto"
+            },
             "filterable": false
           },
-          "color": { "fixedColor": "red", "mode": "fixed" }
+          "color": {
+            "fixedColor": "red",
+            "mode": "fixed"
+          }
         },
         "overrides": []
       },
       "options": {
         "showHeader": true,
         "cellHeight": "sm",
-        "footer": { "show": false }
+        "footer": {
+          "show": false
+        }
       }
     }
   ]
