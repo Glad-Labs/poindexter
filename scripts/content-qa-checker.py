@@ -47,10 +47,7 @@ LOG_PATH = GLADLABS_DIR / "content-qa-checker.log"
 # ---------------------------------------------------------------------------
 # Database
 # ---------------------------------------------------------------------------
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://postgres:***REMOVED***@hopper.proxy.rlwy.net:32382/railway",
-)
+DATABASE_URL = os.getenv("CLOUD_DATABASE_URL") or os.getenv("DATABASE_URL", "")
 
 # ---------------------------------------------------------------------------
 # Logging — file + console

@@ -33,11 +33,12 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 # --- Configuration ---
-$DB_HOST = "hopper.proxy.rlwy.net"
-$DB_PORT = "32382"
-$DB_NAME = "railway"
-$DB_USER = "postgres"
-$DB_PASS = "***REMOVED***"
+$DB_HOST = if ($env:DB_HOST) { $env:DB_HOST } else { "hopper.proxy.rlwy.net" }
+$DB_PORT = if ($env:DB_PORT) { $env:DB_PORT } else { "32382" }
+$DB_NAME = if ($env:DB_NAME) { $env:DB_NAME } else { "railway" }
+$DB_USER = if ($env:DB_USER) { $env:DB_USER } else { "postgres" }
+$DB_PASS = $env:DB_PASS
+if (-not $DB_PASS) { Write-Error "DB_PASS environment variable is required. Set it before running this script."; exit 1 }
 
 $Timestamp = Get-Date -Format "yyyy-MM-dd_HHmmss"
 $BackupFileName = "gladlabs-db-${Timestamp}.dump"

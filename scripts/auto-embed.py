@@ -17,6 +17,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,8 +30,8 @@ import httpx
 # Configuration
 # ---------------------------------------------------------------------------
 
-LOCAL_DSN = "postgresql://gladlabs:gladlabs-brain-local@localhost:5433/gladlabs_brain"
-CLOUD_DSN = "postgresql://postgres:***REMOVED***@hopper.proxy.rlwy.net:32382/railway"
+LOCAL_DSN = os.getenv("LOCAL_DATABASE_URL", "postgresql://gladlabs:gladlabs-brain-local@localhost:5433/gladlabs_brain")
+CLOUD_DSN = os.getenv("CLOUD_DATABASE_URL") or os.getenv("DATABASE_URL", "")
 OLLAMA_URL = "http://127.0.0.1:11434"
 EMBED_MODEL = "nomic-embed-text"
 MAX_CHARS = 6000  # nomic-embed-text has 8192 token context; ~6k chars stays safe
@@ -42,10 +43,10 @@ ISSUES_SOURCE = "issues"
 AUDIT_SOURCE = "audit"
 
 # Gitea API
-GITEA_URL = "http://localhost:3001"
-GITEA_USER = "gladlabs"
-GITEA_PASS = "***REMOVED***"
-GITEA_REPO = "gladlabs/glad-labs-codebase"
+GITEA_URL = os.getenv("GITEA_URL", "http://localhost:3001")
+GITEA_USER = os.getenv("GITEA_USER", "gladlabs")
+GITEA_PASS = os.getenv("GITEA_PASSWORD", "")
+GITEA_REPO = os.getenv("GITEA_REPO", "gladlabs/glad-labs-codebase")
 
 # Memory directories: (path, origin label)
 MEMORY_DIRS: List[Tuple[Path, str]] = [

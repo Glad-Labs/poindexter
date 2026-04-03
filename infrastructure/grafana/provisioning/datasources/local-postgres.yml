@@ -9,7 +9,7 @@ datasources:
     database: gladlabs_brain
     user: gladlabs
     secureJsonData:
-      password: gladlabs-brain-local
+      password: $__env{LOCAL_POSTGRES_PASSWORD}
     jsonData:
       sslmode: disable
       postgresVersion: 1600

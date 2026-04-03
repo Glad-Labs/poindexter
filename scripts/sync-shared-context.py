@@ -18,14 +18,8 @@ from pathlib import Path
 
 import asyncpg
 
-DB_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://postgres:***REMOVED***@hopper.proxy.rlwy.net:32382/railway",
-)
-LOCAL_DB_URL = os.getenv(
-    "LOCAL_DATABASE_URL",
-    "postgresql://gladlabs:gladlabs-brain-local@localhost:5433/gladlabs_brain",
-)
+DB_URL = os.getenv("CLOUD_DATABASE_URL") or os.getenv("DATABASE_URL", "")
+LOCAL_DB_URL = os.getenv("LOCAL_DATABASE_URL", "postgresql://gladlabs:gladlabs-brain-local@localhost:5433/gladlabs_brain")
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SHARED_DIR = REPO_ROOT / ".shared-context"
