@@ -51,7 +51,11 @@
         {
           "format": "table",
           "rawSql": "SELECT COUNT(*) AS \"Posts\" FROM content_tasks WHERE status = 'published'",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          }
         }
       ],
       "title": "Published",
@@ -109,7 +113,11 @@
         {
           "format": "table",
           "rawSql": "SELECT COUNT(*) AS \"Awaiting\" FROM content_tasks WHERE status = 'awaiting_approval'",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          }
         }
       ],
       "title": "Awaiting",
@@ -167,7 +175,11 @@
         {
           "format": "table",
           "rawSql": "SELECT ROUND(AVG(quality_score)::numeric, 1) AS \"Avg Score\" FROM content_tasks WHERE quality_score IS NOT NULL AND created_at >= NOW() - INTERVAL '7 days'",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          }
         }
       ],
       "title": "Quality",
@@ -225,7 +237,11 @@
         {
           "format": "table",
           "rawSql": "SELECT 0 AS \"Views\"",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          }
         }
       ],
       "title": "Views",
@@ -283,7 +299,11 @@
         {
           "format": "table",
           "rawSql": "SELECT COUNT(*) AS \"Failed\" FROM content_tasks WHERE status IN ('failed', 'rejected') AND created_at >= NOW() - INTERVAL '24 hours'",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          }
         }
       ],
       "title": "Errors 24h",
@@ -342,7 +362,11 @@
         {
           "format": "table",
           "rawSql": "SELECT COALESCE(ROUND(SUM(cost_usd)::numeric, 4), 0) AS \"Spend\" FROM cost_logs WHERE created_at >= CURRENT_DATE",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          }
         }
       ],
       "title": "Spend $",
@@ -401,7 +425,11 @@
         {
           "format": "table",
           "rawSql": "SELECT status, COUNT(*) AS count FROM content_tasks GROUP BY status ORDER BY count DESC",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          }
         }
       ],
       "title": "Pipeline",
@@ -473,12 +501,20 @@
         {
           "format": "time_series",
           "rawSql": "SELECT date_trunc('day', created_at) AS time, COUNT(*) AS \"Created\" FROM content_tasks WHERE created_at BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz GROUP BY 1 ORDER BY 1",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          }
         },
         {
           "format": "time_series",
           "rawSql": "SELECT date_trunc('day', published_at) AS time, COUNT(*) AS \"Published\" FROM content_tasks WHERE $__timeFilter(published_at) AND publish_status = 'published' AND published_at IS NOT NULL GROUP BY 1 ORDER BY 1",
-          "refId": "B"
+          "refId": "B",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          }
         }
       ],
       "title": "Content Trend",
@@ -512,7 +548,11 @@
         {
           "format": "table",
           "rawSql": "SELECT quality_score AS \"Score\" FROM content_tasks WHERE quality_score IS NOT NULL AND created_at >= NOW() - INTERVAL '7 days'",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          }
         }
       ],
       "title": "Quality Dist",
@@ -548,7 +588,11 @@
         {
           "format": "table",
           "rawSql": "SELECT model_used AS \"Model\", COUNT(*) AS \"Tasks\", ROUND(AVG(quality_score)::numeric, 1) AS \"Avg\", MIN(quality_score) AS \"Min\", MAX(quality_score) AS \"Max\" FROM content_tasks WHERE quality_score IS NOT NULL AND model_used IS NOT NULL AND created_at >= NOW() - INTERVAL '7 days' GROUP BY model_used ORDER BY AVG(quality_score) DESC",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          }
         }
       ],
       "title": "Quality by Model",
@@ -578,7 +622,11 @@
         {
           "format": "table",
           "rawSql": "SELECT entity AS \"Entity\", attribute AS \"Attr\", LEFT(value, 50) AS \"Value\", ROUND(confidence::numeric, 2) AS \"Conf\" FROM brain_knowledge WHERE source = 'cerebellum' ORDER BY updated_at DESC LIMIT 8",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          }
         }
       ],
       "title": "Brain Knowledge",
@@ -620,7 +668,11 @@
         {
           "format": "time_series",
           "rawSql": "SELECT date_trunc('day', created_at) AS time, provider AS metric, SUM(cost_usd) AS value FROM cost_logs WHERE created_at BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz GROUP BY 1, 2 ORDER BY 1",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          }
         }
       ],
       "title": "Cost by Provider",
@@ -650,7 +702,11 @@
         {
           "format": "table",
           "rawSql": "SELECT COALESCE(LEFT(title, 35), LEFT(topic, 35)) AS \"Post\", quality_score AS \"Q\", to_char(published_at, 'Mon DD') AS \"Date\" FROM content_tasks WHERE status = 'published' AND published_at IS NOT NULL ORDER BY published_at DESC LIMIT 8",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          }
         }
       ],
       "title": "Recent Tasks",

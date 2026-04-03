@@ -39,7 +39,11 @@
         {
           "rawSql": "SELECT COUNT(*) AS \"Posts\" FROM content_tasks WHERE status = 'published'",
           "format": "table",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          }
         }
       ],
       "fieldConfig": {
@@ -87,7 +91,11 @@
         {
           "rawSql": "SELECT COUNT(*) FILTER (WHERE status = 'completed') AS \"Done\", COUNT(*) FILTER (WHERE status = 'failed') AS \"Fail\", COUNT(*) FILTER (WHERE status NOT IN ('completed', 'failed')) AS \"Pend\" FROM content_tasks WHERE created_at >= CURRENT_DATE",
           "format": "table",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          }
         }
       ],
       "fieldConfig": {
@@ -238,7 +246,11 @@
         {
           "rawSql": "SELECT COUNT(*) AS \"Errors\" FROM audit_log WHERE \"timestamp\" >= NOW() - INTERVAL '1 hour' AND severity = 'error'",
           "format": "table",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          }
         }
       ],
       "fieldConfig": {
@@ -290,7 +302,11 @@
         {
           "rawSql": "SELECT LEFT(task_type, 15) AS \"Type\", status AS \"Status\", COALESCE(ROUND(quality_score::numeric, 1)::text, '-') AS \"Q\", to_char(created_at, 'HH24:MI') AS \"Time\" FROM content_tasks ORDER BY created_at DESC LIMIT 5",
           "format": "table",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          }
         }
       ],
       "fieldConfig": {
@@ -368,7 +384,11 @@
         {
           "rawSql": "SELECT COALESCE(ROUND(SUM(cost_usd)::numeric, 4), 0) AS \"Today $\" FROM cost_logs WHERE created_at >= CURRENT_DATE",
           "format": "table",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          }
         }
       ],
       "fieldConfig": {
@@ -421,7 +441,11 @@
         {
           "rawSql": "SELECT date_trunc('day', created_at) AS time, SUM(cost_usd) AS \"Cost\" FROM cost_logs WHERE created_at >= NOW() - INTERVAL '7 days' GROUP BY 1 ORDER BY 1",
           "format": "time_series",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          }
         }
       ],
       "fieldConfig": {
@@ -471,7 +495,11 @@
         {
           "rawSql": "SELECT COUNT(*) AS \"Conns\" FROM pg_stat_activity WHERE datname = current_database()",
           "format": "table",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          }
         }
       ],
       "fieldConfig": {
@@ -591,7 +619,11 @@
         {
           "rawSql": "SELECT COUNT(*) AS \"Total\" FROM embeddings",
           "format": "table",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          }
         }
       ],
       "fieldConfig": {
@@ -635,7 +667,11 @@
         {
           "rawSql": "SELECT to_char(\"timestamp\", 'HH24:MI') AS \"Time\", source AS \"Source\", LEFT(details::text, 80) AS \"Details\" FROM audit_log WHERE severity = 'error' ORDER BY \"timestamp\" DESC LIMIT 3",
           "format": "table",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          }
         }
       ],
       "fieldConfig": {
