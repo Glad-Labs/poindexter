@@ -336,6 +336,12 @@ class SyncService:
         result: Dict[str, Any] = {}
 
         try:
+            result["page_views"] = await self.pull_page_views()
+        except Exception as exc:
+            logger.error("Failed to pull page_views: %s", exc, exc_info=True)
+            result["page_views"] = {"error": str(exc)}
+
+        try:
             result["web_analytics"] = await self._pull_web_analytics()
         except Exception as exc:
             logger.error("Failed to pull web_analytics: %s", exc, exc_info=True)
@@ -349,6 +355,73 @@ class SyncService:
 
         logger.info("Pull metrics complete: %s", result)
         return result
+
+    async def pull_page_views(self) -> Dict[str, Any]:
+        """
+        Pull raw page_views rows from cloud DB into local DB.
+
+        Uses created_at watermark to only fetch new rows.
+        Upserts by id so re-runs are safe.
+        """
+        if not self._require_pools():
+            return {"status": "skipped", "reason": "pools not connected"}
+
+        try:
+            # Get the latest created_at in local DB
+            async with self._local_pool.acquire() as local:
+                # Ensure the table exists locally
+                await local.execute("""
+                    CREATE TABLE IF NOT EXISTS page_views (
+                        id SERIAL PRIMARY KEY,
+                        path TEXT,
+                        slug TEXT,
+                        referrer TEXT,
+                        user_agent TEXT,
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                row = await local.fetchrow(
+                    "SELECT MAX(created_at) AS max_ts FROM page_views",
+                )
+                last_ts = row["max_ts"] if row else None
+
+            # Fetch new rows from cloud
+            async with self._cloud_pool.acquire() as cloud:
+                if last_ts:
+                    rows = await cloud.fetch(
+                        "SELECT id, path, slug, referrer, user_agent, created_at "
+                        "FROM page_views WHERE created_at > $1 ORDER BY created_at LIMIT 5000",
+                        last_ts,
+                    )
+                else:
+                    rows = await cloud.fetch(
+                        "SELECT id, path, slug, referrer, user_agent, created_at "
+                        "FROM page_views ORDER BY created_at LIMIT 5000",
+                    )
+
+            if not rows:
+                return {"rows_pulled": 0}
+
+            # Upsert into local DB
+            async with self._local_pool.acquire() as local:
+                async with local.transaction():
+                    for r in rows:
+                        await local.execute(
+                            """
+                            INSERT INTO page_views (id, path, slug, referrer, user_agent, created_at)
+                            VALUES ($1, $2, $3, $4, $5, $6)
+                            ON CONFLICT (id) DO NOTHING
+                            """,
+                            r["id"], r.get("path"), r.get("slug"),
+                            r.get("referrer"), r.get("user_agent"), r["created_at"],
+                        )
+
+            logger.info("Pulled %d page_views rows from cloud", len(rows))
+            return {"rows_pulled": len(rows)}
+
+        except Exception as exc:
+            logger.error("Failed to pull page_views: %s", exc, exc_info=True)
+            return {"error": str(exc)}
 
     async def _pull_web_analytics(self) -> Dict[str, Any]:
         """Pull web_analytics rows from cloud that are newer than local max."""

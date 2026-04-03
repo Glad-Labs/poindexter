@@ -74,12 +74,19 @@ class IdleWorker:
         """Run one cycle of all due idle tasks. Returns summary."""
         results = {}
 
-        # Check if there are pending content tasks — if so, skip idle work
+        # Lightweight syncs run regardless of pipeline activity
+        if self._is_due("sync_page_views", 30):
+            results["sync_page_views"] = await self._sync_page_views()
+            self._mark_run("sync_page_views")
+
+        # Check if there are pending content tasks — if so, skip heavier idle work
         pending = await self.pool.fetchrow(
             "SELECT COUNT(*) as c FROM content_tasks WHERE status IN ('pending', 'approved', 'in_progress')"
         )
         if pending and pending["c"] > 0:
             logger.debug("[IDLE] %d active tasks — skipping idle work", pending["c"])
+            if results:
+                return results
             return {"skipped": True, "reason": f"{pending['c']} active tasks"}
 
         # 1. Quality audit on published posts (every 6 hours)
@@ -157,6 +164,11 @@ class IdleWorker:
         if self._is_due("anomaly_detect", 240):
             results["anomaly_detect"] = await self._detect_anomalies()
             self._mark_run("anomaly_detect")
+
+        # 16. Auto-update electricity rate + GPU power from public data (every 30 days)
+        if self._is_due("utility_rates", 43200):
+            results["utility_rates"] = await self._update_utility_rates()
+            self._mark_run("utility_rates")
 
         if results:
             logger.info("[IDLE] Completed %d background tasks: %s",
@@ -861,3 +873,218 @@ class IdleWorker:
         except Exception as e:
             logger.warning("[IDLE] Anomaly detection failed: %s", e)
             return {"error": str(e)}
+
+    async def _sync_page_views(self) -> dict:
+        """Pull new page_views rows from cloud (Railway) DB into local brain DB.
+
+        Grafana queries the local DB, so this sync is needed for the
+        Page Views dashboard to show data. Uses created_at watermark
+        and INSERT ON CONFLICT to stay idempotent.
+        """
+        try:
+            import asyncpg
+            import os
+
+            cloud_url = os.getenv("DATABASE_URL", "")
+            if not cloud_url:
+                return {"note": "no DATABASE_URL — skipping page_views sync"}
+
+            # Ensure local table exists
+            await self.pool.execute("""
+                CREATE TABLE IF NOT EXISTS page_views (
+                    id SERIAL PRIMARY KEY,
+                    path TEXT,
+                    slug TEXT,
+                    referrer TEXT,
+                    user_agent TEXT,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # Watermark: latest created_at in local DB
+            row = await self.pool.fetchrow("SELECT MAX(created_at) AS max_ts FROM page_views")
+            last_ts = row["max_ts"] if row else None
+
+            cloud = await asyncpg.connect(cloud_url)
+            try:
+                if last_ts:
+                    rows = await cloud.fetch(
+                        "SELECT id, path, slug, referrer, user_agent, created_at "
+                        "FROM page_views WHERE created_at > $1 ORDER BY created_at LIMIT 5000",
+                        last_ts,
+                    )
+                else:
+                    rows = await cloud.fetch(
+                        "SELECT id, path, slug, referrer, user_agent, created_at "
+                        "FROM page_views ORDER BY created_at LIMIT 5000",
+                    )
+            finally:
+                await cloud.close()
+
+            if not rows:
+                logger.debug("[IDLE] page_views sync: 0 new rows")
+                return {"rows_synced": 0}
+
+            # Batch insert into local DB
+            async with self.pool.acquire() as conn:
+                async with conn.transaction():
+                    for r in rows:
+                        await conn.execute(
+                            """
+                            INSERT INTO page_views (id, path, slug, referrer, user_agent, created_at)
+                            VALUES ($1, $2, $3, $4, $5, $6)
+                            ON CONFLICT (id) DO NOTHING
+                            """,
+                            r["id"], r.get("path"), r.get("slug"),
+                            r.get("referrer"), r.get("user_agent"), r["created_at"],
+                        )
+
+            logger.info("[IDLE] page_views sync: pulled %d new rows", len(rows))
+            return {"rows_synced": len(rows)}
+
+        except Exception as e:
+            logger.warning("[IDLE] page_views sync failed: %s", e)
+            return {"error": str(e)}
+
+    # Known GPU TDPs (watts) — add more as needed
+    GPU_TDP_MAP = {
+        "RTX 5090": 575,
+        "RTX 5080": 360,
+        "RTX 5070 Ti": 300,
+        "RTX 5070": 250,
+        "RTX 4090": 450,
+        "RTX 4080": 320,
+        "RTX 4070 Ti": 285,
+        "RTX 4070": 200,
+        "RTX 3090": 350,
+        "RTX 3080": 320,
+    }
+
+    async def _update_utility_rates(self) -> dict:
+        """Fetch current US residential electricity rate from EIA and detect GPU TDP.
+
+        Updates app_settings keys:
+        - electricity_rate_kwh: $/kWh from EIA monthly retail sales data
+        - gpu_power_watts: TDP from nvidia-smi GPU name lookup
+
+        Only updates electricity rate if it differs >10% from current value.
+        Logs all changes to audit_log.
+        """
+        import json
+
+        changes = {}
+
+        # --- Part 1: Electricity rate from EIA API ---
+        try:
+            import httpx
+
+            eia_url = (
+                "https://api.eia.gov/v2/electricity/retail-sales/data/"
+                "?api_key=DEMO_KEY"
+                "&frequency=monthly"
+                "&data[0]=price"
+                "&facets[sectorid][]=RES"
+                "&sort[0][column]=period"
+                "&sort[0][direction]=desc"
+                "&length=1"
+            )
+
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(eia_url)
+                resp.raise_for_status()
+                data = resp.json()
+
+            # EIA response: {"response": {"data": [{"price": 16.11, "period": "2025-12", ...}]}}
+            records = data.get("response", {}).get("data", [])
+            if records:
+                cents_kwh = float(records[0]["price"])
+                dollars_kwh = round(cents_kwh / 100, 4)
+                period = records[0].get("period", "unknown")
+
+                # Compare with current setting
+                current_raw = await self.pool.fetchval(
+                    "SELECT value FROM app_settings WHERE key = 'electricity_rate_kwh'"
+                )
+                current_rate = float(current_raw) if current_raw else 0.0
+
+                if current_rate == 0.0 or abs(dollars_kwh - current_rate) / max(current_rate, 0.001) > 0.10:
+                    # Upsert the setting
+                    await self.pool.execute("""
+                        INSERT INTO app_settings (key, value, updated_at)
+                        VALUES ('electricity_rate_kwh', $1, NOW())
+                        ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()
+                    """, str(dollars_kwh))
+
+                    changes["electricity_rate_kwh"] = {
+                        "old": current_rate, "new": dollars_kwh, "period": period,
+                    }
+                    logger.info(
+                        "[IDLE] Electricity rate updated: $%.4f/kWh → $%.4f/kWh (EIA %s)",
+                        current_rate, dollars_kwh, period,
+                    )
+                else:
+                    logger.info(
+                        "[IDLE] Electricity rate unchanged ($%.4f/kWh, EIA %s, <10%% diff)",
+                        dollars_kwh, period,
+                    )
+            else:
+                logger.warning("[IDLE] EIA API returned no data records")
+
+        except Exception as e:
+            logger.warning("[IDLE] EIA electricity rate fetch failed: %s", e)
+
+        # --- Part 2: GPU model detection via nvidia-smi ---
+        try:
+            import asyncio
+
+            proc = await asyncio.create_subprocess_exec(
+                "nvidia-smi", "--query-gpu=name", "--format=csv,noheader,nounits",
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+            gpu_name = stdout.decode().strip().split("\n")[0].strip()
+
+            if gpu_name:
+                # Match against known TDP map
+                tdp = None
+                for model, watts in self.GPU_TDP_MAP.items():
+                    if model in gpu_name:
+                        tdp = watts
+                        break
+
+                if tdp:
+                    current_watts = await self.pool.fetchval(
+                        "SELECT value FROM app_settings WHERE key = 'gpu_power_watts'"
+                    )
+                    current_int = int(current_watts) if current_watts else 0
+
+                    if current_int != tdp:
+                        await self.pool.execute("""
+                            INSERT INTO app_settings (key, value, updated_at)
+                            VALUES ('gpu_power_watts', $1, NOW())
+                            ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()
+                        """, str(tdp))
+
+                        changes["gpu_power_watts"] = {
+                            "old": current_int, "new": tdp, "gpu": gpu_name,
+                        }
+                        logger.info("[IDLE] GPU TDP updated: %dW → %dW (%s)", current_int, tdp, gpu_name)
+                    else:
+                        logger.info("[IDLE] GPU TDP unchanged (%dW, %s)", tdp, gpu_name)
+                else:
+                    logger.info("[IDLE] GPU '%s' not in TDP map — skipping", gpu_name)
+
+        except Exception as e:
+            logger.debug("[IDLE] nvidia-smi detection failed (expected on cloud): %s", e)
+
+        # --- Log changes to audit_log ---
+        if changes:
+            try:
+                await self.pool.execute(
+                    "INSERT INTO audit_log (event_type, source, details, severity) VALUES ($1, $2, $3, $4)",
+                    "utility_rates_updated", "idle_worker", json.dumps(changes), "info",
+                )
+            except Exception:
+                pass  # audit log is best-effort
+
+        return {"changes": changes} if changes else {"note": "all utility rates current"}
