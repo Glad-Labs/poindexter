@@ -75,6 +75,8 @@ PROBE_SCHEDULES = {
     "affiliate_linker": 3600,  # 1 hour
     "research_service": 3600,  # 1 hour
     "image_search": 3600,      # 1 hour
+    "grafana_datasources": 300,  # 5 min
+    "public_site": 300,          # 5 min
 }
 
 # Track last run times
@@ -260,6 +262,66 @@ async def probe_image_search(_pool) -> dict:
     return {"ok": True, "detail": "Pexels key not set — image search will use fallback"}
 
 
+async def probe_grafana_datasources(_pool) -> dict:
+    """Probe: Check all Grafana datasources can connect."""
+    if IS_RAILWAY:
+        return {"ok": True, "detail": "skipped on Railway (Grafana is local)"}
+    grafana_url = os.getenv("GRAFANA_URL", "http://localhost:3000")
+    grafana_user = os.getenv("GRAFANA_USER", "admin")
+    grafana_pass = os.getenv("GRAFANA_PASSWORD", "gladlabs")
+
+    try:
+        import base64
+        auth = base64.b64encode(f"{grafana_user}:{grafana_pass}".encode()).decode()
+        # List datasources
+        req = urllib.request.Request(
+            f"{grafana_url}/api/datasources",
+            headers={"Authorization": f"Basic {auth}"},
+        )
+        resp = urllib.request.urlopen(req, timeout=10)
+        datasources = json.loads(resp.read())
+
+        # Health check each datasource
+        broken = []
+        for ds in datasources:
+            uid = ds.get("uid", "")
+            name = ds.get("name", "")
+            try:
+                hc_req = urllib.request.Request(
+                    f"{grafana_url}/api/datasources/uid/{uid}/health",
+                    headers={"Authorization": f"Basic {auth}"},
+                )
+                hc_resp = urllib.request.urlopen(hc_req, timeout=10)
+                hc_data = json.loads(hc_resp.read())
+                if hc_data.get("status") != "OK":
+                    broken.append(f"{name}: {hc_data.get('message', 'unhealthy')}")
+            except Exception as e:
+                broken.append(f"{name}: {str(e)[:80]}")
+
+        if broken:
+            return {"ok": False, "detail": f"{len(broken)} datasource(s) broken: {'; '.join(broken[:3])}", "broken": broken}
+        return {"ok": True, "detail": f"all {len(datasources)} datasources healthy"}
+    except Exception as e:
+        return {"ok": False, "detail": f"Grafana unreachable: {str(e)[:100]}"}
+
+
+async def probe_public_site(_pool) -> dict:
+    """Probe: Check the public site returns content (not just 200)."""
+    try:
+        site_url = os.getenv("SITE_URL", "https://www.gladlabs.io")
+        ok, data = _http_json(f"{site_url}/api/posts?limit=1", timeout=10)
+        if not ok:
+            return {"ok": False, "detail": f"API unreachable: {data.get('error', 'unknown')}"}
+        # Check that posts are actually returned
+        items = data.get("items", [])
+        total = data.get("total", 0)
+        if total == 0 or (isinstance(items, list) and len(items) == 0):
+            return {"ok": False, "detail": "Site returns 0 posts — DB connection may be broken"}
+        return {"ok": True, "detail": f"{total} posts available", "sample": items[0].get("title", "")[:50] if items else ""}
+    except Exception as e:
+        return {"ok": False, "detail": f"Public site check failed: {str(e)[:100]}"}
+
+
 # All probes in execution order
 PROBES = {
     "db_ping": probe_db_ping,
@@ -269,6 +331,8 @@ PROBES = {
     "affiliate_linker": probe_affiliate_linker,
     "research_service": probe_research_service,
     "image_search": probe_image_search,
+    "grafana_datasources": probe_grafana_datasources,
+    "public_site": probe_public_site,
 }
 
 # Track consecutive failures for alerting
