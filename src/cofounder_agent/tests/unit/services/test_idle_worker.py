@@ -112,22 +112,25 @@ class TestTopicGaps:
 
 
 class TestThresholdTuning:
-    async def test_high_failure_rate_suggestion(self):
+    async def test_high_failure_rate_auto_lowers(self):
         pool = _make_pool()
-        # _tune_thresholds calls pool.fetchrow directly (no pending check)
         pool.fetchrow = AsyncMock(return_value={
-            "total": 10, "published": 3, "failed": 6, "rejected": 1, "avg_score": 65.0,
+            "total": 15, "published": 3, "failed": 10, "rejected": 2,
+            "avg_score": 65.0, "stddev_score": 8.0,
         })
+        pool.fetchval = AsyncMock(return_value="75")
+        pool.execute = AsyncMock()
         worker = IdleWorker(pool)
         result = await worker._tune_thresholds()
-        assert any("failure" in s.lower() or "lower" in s.lower()
-                    for s in result.get("suggestions", []))
+        assert result["adjustment"] < 0
+        assert "lower" in result.get("reason", "").lower() or "failure" in result.get("reason", "").lower()
 
-    async def test_no_recent_tasks(self):
+    async def test_insufficient_data(self):
         pool = _make_pool()
         pool.fetchrow = AsyncMock(return_value={
-            "total": 0, "published": 0, "failed": 0, "rejected": 0, "avg_score": None,
+            "total": 3, "published": 2, "failed": 1, "rejected": 0,
+            "avg_score": 80.0, "stddev_score": 5.0,
         })
         worker = IdleWorker(pool)
         result = await worker._tune_thresholds()
-        assert "no recent tasks" in result.get("note", "")
+        assert "insufficient" in result.get("note", "")

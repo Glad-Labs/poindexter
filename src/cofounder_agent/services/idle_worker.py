@@ -153,6 +153,11 @@ class IdleWorker:
             self._mark_run("fix_duplicates")
             self._mark_run("auto_embed")
 
+        # 15. Anomaly detection — statistical outlier monitoring (every 4 hours)
+        if self._is_due("anomaly_detect", 240):
+            results["anomaly_detect"] = await self._detect_anomalies()
+            self._mark_run("anomaly_detect")
+
         if results:
             logger.info("[IDLE] Completed %d background tasks: %s",
                         len(results), ", ".join(results.keys()))
@@ -300,50 +305,109 @@ class IdleWorker:
             logger.warning("[IDLE] Topic gap analysis failed: %s", e)
             return {"error": str(e)}
 
-    async def _tune_thresholds(self) -> dict:
-        """Analyze pass/fail rates and suggest threshold adjustments.
+    # Guardrails for auto-tuning
+    THRESHOLD_MIN = 50
+    THRESHOLD_MAX = 90
+    THRESHOLD_STEP = 3  # max adjustment per cycle
+    THRESHOLD_MIN_SAMPLES = 10  # need this many tasks before tuning
 
-        Writes suggestions to brain_knowledge — does NOT auto-modify thresholds.
-        Human or brain daemon reviews and applies changes.
+    async def _tune_thresholds(self) -> dict:
+        """Analyze pass/fail rates and auto-adjust publish threshold within guardrails.
+
+        Guardrails:
+        - Hard floor/ceiling: 50-90 range
+        - Max ±3 points per cycle (no oscillation)
+        - Requires 10+ scored tasks in last 7 days
+        - Logs every change to audit_log for traceability
         """
         try:
-            # Get pass/fail rate over last 7 days
             stats = await self.pool.fetchrow("""
                 SELECT
                     COUNT(*) as total,
                     SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END) as published,
                     SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
                     SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected,
-                    AVG(quality_score) as avg_score
+                    AVG(quality_score) as avg_score,
+                    STDDEV(quality_score) as stddev_score
                 FROM content_tasks
                 WHERE created_at > NOW() - INTERVAL '7 days'
                 AND quality_score IS NOT NULL
             """)
 
-            if not stats or stats["total"] == 0:
-                return {"note": "no recent tasks to analyze"}
+            if not stats or stats["total"] < self.THRESHOLD_MIN_SAMPLES:
+                return {"note": f"insufficient data ({stats['total'] if stats else 0} tasks, need {self.THRESHOLD_MIN_SAMPLES})"}
 
             total = stats["total"]
             pass_rate = (stats["published"] / total * 100) if total else 0
             fail_rate = (stats["failed"] / total * 100) if total else 0
             avg_score = float(stats["avg_score"] or 0)
 
-            suggestions = []
-            if fail_rate > 50:
-                suggestions.append(f"High failure rate ({fail_rate:.0f}%) — consider lowering qa_final_score_threshold")
-            if pass_rate > 90 and avg_score < 75:
-                suggestions.append(f"High pass rate but low avg score ({avg_score:.0f}) — consider raising threshold")
-            if avg_score > 85:
-                suggestions.append(f"High avg score ({avg_score:.0f}) — quality is strong, thresholds are appropriate")
+            # Read current threshold
+            current = await self.pool.fetchval(
+                "SELECT value FROM app_settings WHERE key = 'auto_publish_threshold'"
+            )
+            current_threshold = int(current) if current else 75
 
-            logger.info("[IDLE] Threshold analysis: %d tasks, %.0f%% pass rate, avg score %.0f",
-                        total, pass_rate, avg_score)
+            # Calculate adjustment
+            adjustment = 0
+            reason = "no change needed"
+
+            if fail_rate > 50:
+                # Too many failures — lower threshold to let more through
+                adjustment = -self.THRESHOLD_STEP
+                reason = f"high failure rate ({fail_rate:.0f}%) — lowering threshold"
+            elif pass_rate > 90 and avg_score < current_threshold - 5:
+                # Passing too much low-quality content — raise threshold
+                adjustment = self.THRESHOLD_STEP
+                reason = f"high pass rate ({pass_rate:.0f}%) with low avg score ({avg_score:.0f}) — raising threshold"
+            elif fail_rate > 30:
+                # Moderate failures — small decrease
+                adjustment = -1
+                reason = f"moderate failure rate ({fail_rate:.0f}%) — small decrease"
+            elif pass_rate > 95 and avg_score > 85:
+                # Everything passing with high scores — can afford to raise slightly
+                adjustment = 1
+                reason = f"excellent quality (avg {avg_score:.0f}) — raising slightly"
+
+            if adjustment != 0:
+                new_threshold = max(self.THRESHOLD_MIN, min(self.THRESHOLD_MAX, current_threshold + adjustment))
+                if new_threshold != current_threshold:
+                    await self.pool.execute(
+                        "UPDATE app_settings SET value = $1, updated_at = NOW() WHERE key = 'auto_publish_threshold'",
+                        str(new_threshold),
+                    )
+                    # Log to audit_log for traceability
+                    try:
+                        import json
+                        await self.pool.execute(
+                            "INSERT INTO audit_log (event_type, source, details, severity) VALUES ($1, $2, $3, $4)",
+                            "threshold_auto_tuned", "idle_worker",
+                            json.dumps({
+                                "old": current_threshold, "new": new_threshold,
+                                "adjustment": adjustment, "reason": reason,
+                                "stats": {"total": total, "pass_rate": round(pass_rate, 1),
+                                          "fail_rate": round(fail_rate, 1), "avg_score": round(avg_score, 1)},
+                            }),
+                            "info",
+                        )
+                    except Exception:
+                        pass  # audit log is best-effort
+                    logger.info("[IDLE] Threshold auto-tuned: %d → %d (%s)", current_threshold, new_threshold, reason)
+                else:
+                    adjustment = 0
+                    reason = f"at boundary ({new_threshold}), no change"
+
+            logger.info("[IDLE] Threshold analysis: %d tasks, %.0f%% pass, avg %.0f, threshold %d",
+                        total, pass_rate, avg_score, current_threshold + adjustment)
             return {
                 "total_tasks": total,
                 "pass_rate": round(pass_rate, 1),
                 "fail_rate": round(fail_rate, 1),
                 "avg_score": round(avg_score, 1),
-                "suggestions": suggestions,
+                "current_threshold": current_threshold,
+                "new_threshold": current_threshold + adjustment if adjustment else current_threshold,
+                "adjustment": adjustment,
+                "reason": reason,
             }
 
         except Exception as e:
@@ -677,4 +741,123 @@ class IdleWorker:
 
             return {"duplicates": len(duplicates), "pairs": duplicates[:5]}
         except Exception as e:
+            return {"error": str(e)}
+
+    async def _detect_anomalies(self) -> dict:
+        """Statistical anomaly detection across key system metrics.
+
+        Uses z-score method: compares recent values against the 30-day rolling
+        average. Flags anything >2 standard deviations from the mean.
+        Alerts via Gitea issue when anomalies cluster.
+        """
+        try:
+            import json
+            import math
+
+            anomalies = []
+
+            # Define metrics to monitor: (name, query for recent value, query for historical stats)
+            metrics = [
+                (
+                    "task_failure_rate",
+                    """SELECT CASE WHEN COUNT(*) = 0 THEN 0
+                        ELSE SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END)::float / COUNT(*)
+                        END as val
+                    FROM content_tasks WHERE created_at > NOW() - INTERVAL '24 hours'""",
+                    """SELECT AVG(daily_rate) as mean, STDDEV(daily_rate) as stddev FROM (
+                        SELECT date_trunc('day', created_at) as day,
+                            CASE WHEN COUNT(*) = 0 THEN 0
+                            ELSE SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END)::float / COUNT(*)
+                            END as daily_rate
+                        FROM content_tasks
+                        WHERE created_at > NOW() - INTERVAL '30 days'
+                        GROUP BY day
+                    ) t""",
+                ),
+                (
+                    "avg_quality_score",
+                    "SELECT AVG(quality_score) as val FROM content_tasks WHERE created_at > NOW() - INTERVAL '24 hours' AND quality_score IS NOT NULL",
+                    """SELECT AVG(daily_avg) as mean, STDDEV(daily_avg) as stddev FROM (
+                        SELECT date_trunc('day', created_at) as day, AVG(quality_score) as daily_avg
+                        FROM content_tasks
+                        WHERE created_at > NOW() - INTERVAL '30 days' AND quality_score IS NOT NULL
+                        GROUP BY day
+                    ) t""",
+                ),
+                (
+                    "cost_per_day",
+                    "SELECT COALESCE(SUM(cost_usd), 0) as val FROM cost_logs WHERE created_at > NOW() - INTERVAL '24 hours'",
+                    """SELECT AVG(daily_cost) as mean, STDDEV(daily_cost) as stddev FROM (
+                        SELECT date_trunc('day', created_at) as day, COALESCE(SUM(cost_usd), 0) as daily_cost
+                        FROM cost_logs
+                        WHERE created_at > NOW() - INTERVAL '30 days'
+                        GROUP BY day
+                    ) t""",
+                ),
+                (
+                    "error_log_rate",
+                    "SELECT COUNT(*) as val FROM audit_log WHERE severity = 'error' AND timestamp > NOW() - INTERVAL '24 hours'",
+                    """SELECT AVG(daily_errors) as mean, STDDEV(daily_errors) as stddev FROM (
+                        SELECT date_trunc('day', timestamp) as day, COUNT(*) as daily_errors
+                        FROM audit_log WHERE severity = 'error'
+                        AND timestamp > NOW() - INTERVAL '30 days'
+                        GROUP BY day
+                    ) t""",
+                ),
+            ]
+
+            for name, recent_q, hist_q in metrics:
+                try:
+                    recent = await self.pool.fetchval(recent_q)
+                    hist = await self.pool.fetchrow(hist_q)
+
+                    if recent is None or hist is None:
+                        continue
+                    mean = float(hist["mean"] or 0)
+                    stddev = float(hist["stddev"] or 0)
+                    value = float(recent)
+
+                    if stddev == 0 or math.isnan(stddev):
+                        continue  # not enough variance to detect anomalies
+
+                    z_score = (value - mean) / stddev
+
+                    if abs(z_score) > 2.0:
+                        direction = "spike" if z_score > 0 else "drop"
+                        anomalies.append({
+                            "metric": name,
+                            "value": round(value, 4),
+                            "mean": round(mean, 4),
+                            "stddev": round(stddev, 4),
+                            "z_score": round(z_score, 2),
+                            "direction": direction,
+                        })
+                except Exception as e:
+                    logger.debug("[IDLE] Anomaly check failed for %s: %s", name, e)
+
+            if anomalies:
+                # Log to audit_log
+                await self.pool.execute(
+                    "INSERT INTO audit_log (event_type, source, details, severity) VALUES ($1, $2, $3, $4)",
+                    "anomaly_detected", "idle_worker", json.dumps(anomalies), "warning",
+                )
+                # Create Gitea issue if 2+ anomalies (avoid noise from single metric blips)
+                if len(anomalies) >= 2:
+                    body = "## Anomalies Detected\n\n" + "\n".join(
+                        f"- **{a['metric']}**: {a['value']} ({a['direction']}, z={a['z_score']}, mean={a['mean']}±{a['stddev']})"
+                        for a in anomalies
+                    )
+                    await self._create_gitea_issue(
+                        f"anomaly: {len(anomalies)} metrics outside normal range", body,
+                    )
+                logger.warning("[IDLE] Anomalies detected: %s",
+                               ", ".join(f"{a['metric']}={a['value']} (z={a['z_score']})" for a in anomalies))
+
+            else:
+                logger.info("[IDLE] Anomaly detection: all metrics within normal range")
+
+            return {"anomalies": len(anomalies), "details": anomalies}
+
+        except Exception as e:
+            logger.warning("[IDLE] Anomaly detection failed: %s", e)
             return {"error": str(e)}
