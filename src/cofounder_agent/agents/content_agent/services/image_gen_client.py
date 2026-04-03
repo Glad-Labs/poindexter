@@ -2,8 +2,12 @@ from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
-import torch  # type: ignore
-from diffusers import StableDiffusionXLPipeline  # type: ignore[attr-defined]
+try:
+    import torch  # type: ignore
+    from diffusers import StableDiffusionXLPipeline  # type: ignore[attr-defined]
+    DIFFUSERS_AVAILABLE = True
+except ImportError:
+    DIFFUSERS_AVAILABLE = False
 
 import config
 
