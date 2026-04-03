@@ -1,730 +1,440 @@
 {
-  "description": "Full observability - every process at a glance",
+  "uid": "command-center",
+  "title": "Glad Labs Command Center",
+  "description": "Home",
+  "tags": ["glad-labs"],
   "editable": true,
-  "graphTooltip": 1,
-  "panels": [
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 50
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 4,
-        "x": 0,
-        "y": 0
-      },
-      "id": 1,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "text": {
-          "titleSize": 14,
-          "valueSize": 48
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "format": "table",
-          "rawSql": "SELECT COUNT(*) AS \"Posts\" FROM content_tasks WHERE status = 'published'",
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
-          }
-        }
-      ],
-      "title": "Published",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 10
-              },
-              {
-                "color": "red",
-                "value": 50
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 4,
-        "x": 4,
-        "y": 0
-      },
-      "id": 2,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "text": {
-          "titleSize": 14,
-          "valueSize": 48
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "format": "table",
-          "rawSql": "SELECT COUNT(*) AS \"Awaiting\" FROM content_tasks WHERE status = 'awaiting_approval'",
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
-          }
-        }
-      ],
-      "title": "Awaiting",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 65
-              },
-              {
-                "color": "green",
-                "value": 75
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 4,
-        "x": 8,
-        "y": 0
-      },
-      "id": 3,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "text": {
-          "titleSize": 14,
-          "valueSize": 48
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "format": "table",
-          "rawSql": "SELECT ROUND(AVG(quality_score)::numeric, 1) AS \"Avg Score\" FROM content_tasks WHERE quality_score IS NOT NULL AND created_at >= NOW() - INTERVAL '7 days'",
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
-          }
-        }
-      ],
-      "title": "Quality",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 10
-              },
-              {
-                "color": "green",
-                "value": 50
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 4,
-        "x": 12,
-        "y": 0
-      },
-      "id": 4,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "text": {
-          "titleSize": 14,
-          "valueSize": 48
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "format": "table",
-          "rawSql": "SELECT 0 AS \"Views\"",
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
-          }
-        }
-      ],
-      "title": "Views",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 3
-              },
-              {
-                "color": "red",
-                "value": 10
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 4,
-        "x": 16,
-        "y": 0
-      },
-      "id": 5,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "text": {
-          "titleSize": 14,
-          "valueSize": 48
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "format": "table",
-          "rawSql": "SELECT COUNT(*) AS \"Failed\" FROM content_tasks WHERE status IN ('failed', 'rejected') AND created_at >= NOW() - INTERVAL '24 hours'",
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
-          }
-        }
-      ],
-      "title": "Errors 24h",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 2
-              },
-              {
-                "color": "red",
-                "value": 5
-              }
-            ]
-          },
-          "unit": "currencyUSD"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 4,
-        "x": 20,
-        "y": 0
-      },
-      "id": 6,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "text": {
-          "titleSize": 14,
-          "valueSize": 48
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "format": "table",
-          "rawSql": "SELECT COALESCE(ROUND(SUM(cost_usd)::numeric, 4), 0) AS \"Spend\" FROM cost_logs WHERE created_at >= CURRENT_DATE",
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
-          }
-        }
-      ],
-      "title": "Spend $",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "datasource",
-        "uid": "-- Dashboard --"
-      },
-      "gridPos": {
-        "h": 2,
-        "w": 24,
-        "x": 0,
-        "y": 6
-      },
-      "id": 100,
-      "options": {
-        "content": "# Pipeline",
-        "mode": "markdown"
-      },
-      "title": "",
-      "transparent": true,
-      "type": "text"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 8,
-        "x": 0,
-        "y": 8
-      },
-      "id": 10,
-      "options": {
-        "legend": {
-          "displayMode": "hidden"
-        },
-        "pieType": "donut",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"]
-        }
-      },
-      "targets": [
-        {
-          "format": "table",
-          "rawSql": "SELECT status, COUNT(*) AS count FROM content_tasks GROUP BY status ORDER BY count DESC",
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
-          }
-        }
-      ],
-      "title": "Pipeline",
-      "type": "piechart"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "fillOpacity": 15,
-            "lineWidth": 1,
-            "pointSize": 1,
-            "showPoints": "never"
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Created"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "blue",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Published"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "green",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 8,
-        "y": 8
-      },
-      "id": 11,
-      "options": {
-        "legend": {
-          "displayMode": "hidden"
-        },
-        "tooltip": {
-          "mode": "multi"
-        }
-      },
-      "targets": [
-        {
-          "format": "time_series",
-          "rawSql": "SELECT date_trunc('day', created_at) AS time, COUNT(*) AS \"Created\" FROM content_tasks WHERE created_at BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz GROUP BY 1 ORDER BY 1",
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
-          }
-        },
-        {
-          "format": "time_series",
-          "rawSql": "SELECT date_trunc('day', published_at) AS time, COUNT(*) AS \"Published\" FROM content_tasks WHERE $__timeFilter(published_at) AND publish_status = 'published' AND published_at IS NOT NULL GROUP BY 1 ORDER BY 1",
-          "refId": "B",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
-          }
-        }
-      ],
-      "title": "Content Trend",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 8
-      },
-      "id": 20,
-      "options": {
-        "bucketSize": 5,
-        "combine": false
-      },
-      "targets": [
-        {
-          "format": "table",
-          "rawSql": "SELECT quality_score AS \"Score\" FROM content_tasks WHERE quality_score IS NOT NULL AND created_at >= NOW() - INTERVAL '7 days'",
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
-          }
-        }
-      ],
-      "title": "Quality Dist",
-      "type": "histogram"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 16
-      },
-      "id": 21,
-      "options": {
-        "cellHeight": "sm",
-        "showHeader": true,
-        "sortBy": [
-          {
-            "desc": true,
-            "displayName": "Avg"
-          }
-        ]
-      },
-      "targets": [
-        {
-          "format": "table",
-          "rawSql": "SELECT model_used AS \"Model\", COUNT(*) AS \"Tasks\", ROUND(AVG(quality_score)::numeric, 1) AS \"Avg\", MIN(quality_score) AS \"Min\", MAX(quality_score) AS \"Max\" FROM content_tasks WHERE quality_score IS NOT NULL AND model_used IS NOT NULL AND created_at >= NOW() - INTERVAL '7 days' GROUP BY model_used ORDER BY AVG(quality_score) DESC",
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
-          }
-        }
-      ],
-      "title": "Quality by Model",
-      "type": "table"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 16
-      },
-      "id": 30,
-      "options": {
-        "cellHeight": "sm",
-        "showHeader": true
-      },
-      "targets": [
-        {
-          "format": "table",
-          "rawSql": "SELECT entity AS \"Entity\", attribute AS \"Attr\", LEFT(value, 50) AS \"Value\", ROUND(confidence::numeric, 2) AS \"Conf\" FROM brain_knowledge WHERE source = 'cerebellum' ORDER BY updated_at DESC LIMIT 8",
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          }
-        }
-      ],
-      "title": "Brain Knowledge",
-      "type": "table"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "fillOpacity": 20,
-            "lineWidth": 1,
-            "pointSize": 1,
-            "showPoints": "never"
-          },
-          "unit": "currencyUSD"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 24
-      },
-      "id": 31,
-      "options": {
-        "legend": {
-          "displayMode": "hidden"
-        },
-        "tooltip": {
-          "mode": "multi"
-        }
-      },
-      "targets": [
-        {
-          "format": "time_series",
-          "rawSql": "SELECT date_trunc('day', created_at) AS time, provider AS metric, SUM(cost_usd) AS value FROM cost_logs WHERE created_at BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz GROUP BY 1, 2 ORDER BY 1",
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
-          }
-        }
-      ],
-      "title": "Cost by Provider",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 24
-      },
-      "id": 40,
-      "options": {
-        "cellHeight": "sm",
-        "showHeader": true
-      },
-      "targets": [
-        {
-          "format": "table",
-          "rawSql": "SELECT COALESCE(LEFT(title, 35), LEFT(topic, 35)) AS \"Post\", quality_score AS \"Q\", to_char(published_at, 'Mon DD') AS \"Date\" FROM content_tasks WHERE status = 'published' AND published_at IS NOT NULL ORDER BY published_at DESC LIMIT 8",
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
-          }
-        }
-      ],
-      "title": "Recent Tasks",
-      "type": "table"
-    }
-  ],
-  "refresh": "1m",
   "schemaVersion": 39,
-  "tags": ["glad-labs", "command-center", "master"],
+  "refresh": "30s",
   "time": {
-    "from": "now-7d",
+    "from": "now-30d",
     "to": "now"
   },
-  "timepicker": {
-    "refresh_intervals": ["30s", "1m", "5m", "15m"],
-    "time_options": ["1h", "6h", "12h", "24h", "7d", "30d"]
-  },
   "timezone": "browser",
-  "title": "Glad Labs Command Center",
-  "uid": "command-center"
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Posts",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "text": {
+          "valueSize": 28
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) as published FROM posts WHERE status='published'",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Tasks Today",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "yellow"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "text": {
+          "valueSize": 28
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) as today FROM content_tasks WHERE created_at>date_trunc('day',NOW())",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Quality",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "text": {
+          "valueSize": 28
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(AVG(overall_score)::numeric,1) as avg FROM quality_evaluations WHERE evaluation_timestamp>NOW()-INTERVAL '7 days'",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Spend $",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "text": {
+          "valueSize": 28
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(COALESCE(SUM(cost_usd),0)::numeric,4) as usd FROM cost_logs WHERE created_at>date_trunc('day',NOW())",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "bargauge",
+      "title": "Tasks by Status",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 0,
+        "y": 3
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": true
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT status as metric, COUNT(*) as value FROM content_tasks GROUP BY 1 ORDER BY 2 DESC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "bargauge",
+      "title": "Posts by Category",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 12,
+        "y": 3
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": true
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(c.name,'none') as metric, COUNT(p.id) as value FROM categories c LEFT JOIN posts p ON c.id=p.category_id AND p.status='published' GROUP BY 1 ORDER BY 2 DESC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Recent Tasks",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT LEFT(topic,50) as topic, status, quality_score as q, created_at::date FROM content_tasks ORDER BY created_at DESC LIMIT 12",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Cost Summary",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT provider, COUNT(*) as calls, ROUND(SUM(cost_usd)::numeric,4) as cost, SUM(input_tokens+output_tokens) as tokens FROM cost_logs GROUP BY 1 ORDER BY 3 DESC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Published Posts",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT LEFT(p.title,50) as title, COALESCE(c.name,'?') as cat, p.view_count as views, p.published_at::date FROM posts p LEFT JOIN categories c ON p.category_id=c.id WHERE p.status='published' ORDER BY p.published_at DESC LIMIT 12",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
 }

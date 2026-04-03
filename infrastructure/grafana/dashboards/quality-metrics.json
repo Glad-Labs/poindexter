@@ -1,254 +1,330 @@
 {
   "uid": "quality-metrics",
   "title": "Quality Metrics",
-  "description": "Content quality scores -- trends, distribution, and pass rates",
-  "tags": ["glad-labs", "quality", "content"],
-  "timezone": "browser",
+  "description": "Scores",
+  "tags": ["glad-labs"],
   "editable": true,
-  "fiscalYearStartMonth": 0,
-  "graphTooltip": 1,
+  "schemaVersion": 39,
+  "refresh": "30s",
   "time": {
     "from": "now-30d",
     "to": "now"
   },
-  "timepicker": {
-    "refresh_intervals": ["5m", "15m", "30m", "1h"],
-    "time_options": ["5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"]
-  },
-  "refresh": "15m",
-  "schemaVersion": 39,
-  "version": 1,
+  "timezone": "browser",
   "panels": [
     {
       "id": 1,
-      "title": "Average Quality Score (Daily)",
-      "type": "timeseries",
+      "type": "stat",
+      "title": "Avg",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
       "gridPos": {
-        "h": 12,
-        "w": 16,
+        "h": 3,
+        "w": 6,
         "x": 0,
         "y": 0
       },
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
       "fieldConfig": {
         "defaults": {
           "color": {
-            "fixedColor": "semi-dark-blue",
-            "mode": "fixed"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisLabel": "Quality Score",
-            "drawStyle": "line",
-            "fillOpacity": 20,
-            "gradientMode": "scheme",
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 6,
-            "showPoints": "always",
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "line+area"
-            }
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "transparent",
-                "value": null
-              },
-              {
-                "color": "rgba(255, 0, 0, 0.05)",
-                "value": 0
-              },
-              {
-                "color": "transparent",
-                "value": 7
-              }
-            ]
-          },
-          "unit": "short",
-          "min": 0,
-          "max": 10,
-          "decimals": 1
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
         },
         "overrides": []
       },
       "options": {
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        },
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
-          },
-          "rawSql": "SELECT date_trunc('day', created_at) as time, AVG(quality_score) as avg_quality FROM content_tasks WHERE quality_score IS NOT NULL AND created_at BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz GROUP BY 1 ORDER BY 1",
-          "format": "time_series",
-          "editorMode": "code"
-        }
-      ]
-    },
-    {
-      "id": 2,
-      "title": "Quality Pass Rate (7d)",
-      "type": "gauge",
-      "gridPos": {
-        "h": 12,
-        "w": 8,
-        "x": 16,
-        "y": 0
-      },
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 50
-              },
-              {
-                "color": "yellow",
-                "value": 70
-              },
-              {
-                "color": "green",
-                "value": 85
-              }
-            ]
-          },
-          "unit": "percent",
-          "min": 0,
-          "max": 100,
-          "decimals": 1
-        },
-        "overrides": []
-      },
-      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
         "reduceOptions": {
           "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
-        "orientation": "auto",
-        "showThresholdLabels": true,
-        "showThresholdMarkers": true
+        "textMode": "value_and_name",
+        "text": {
+          "valueSize": 28
+        }
       },
       "targets": [
         {
-          "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "railway-prod-db"
           },
-          "rawSql": "SELECT ROUND(COUNT(*) FILTER (WHERE quality_score >= 7.0) * 100.0 / NULLIF(COUNT(*), 0), 1) as pass_rate FROM content_tasks WHERE quality_score IS NOT NULL AND created_at > NOW() - INTERVAL '7 days'",
           "format": "table",
-          "editorMode": "code"
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(AVG(overall_score)::numeric,1) FROM quality_evaluations WHERE evaluation_timestamp>NOW()-INTERVAL '30 days'",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Pass %",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "text": {
+          "valueSize": 28
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(COUNT(*) FILTER (WHERE overall_score>=70)*100.0/NULLIF(COUNT(*),0),1) FROM quality_evaluations WHERE evaluation_timestamp>NOW()-INTERVAL '30 days'",
+          "refId": "A"
         }
       ]
     },
     {
       "id": 3,
-      "title": "Quality Score Distribution (30d)",
-      "type": "histogram",
-      "gridPos": {
-        "h": 10,
-        "w": 24,
-        "x": 0,
-        "y": 12
-      },
+      "type": "stat",
+      "title": "Evals",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "railway-prod-db"
       },
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 4
-              },
-              {
-                "color": "yellow",
-                "value": 6
-              },
-              {
-                "color": "green",
-                "value": 7
-              },
-              {
-                "color": "dark-green",
-                "value": 9
-              }
-            ]
-          },
-          "unit": "short",
-          "min": 0,
-          "max": 10
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
         },
         "overrides": []
       },
       "options": {
-        "bucketSize": 1,
-        "combine": false,
-        "fillOpacity": 80,
-        "gradientMode": "scheme",
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
         },
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
+        "textMode": "value_and_name",
+        "text": {
+          "valueSize": 28
         }
       },
       "targets": [
         {
-          "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "railway-prod-db"
           },
-          "rawSql": "SELECT quality_score FROM content_tasks WHERE quality_score IS NOT NULL AND created_at > NOW() - INTERVAL '30 days'",
           "format": "table",
-          "editorMode": "code"
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) FROM quality_evaluations",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Rejected",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "red"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "text": {
+          "valueSize": 28
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) FROM content_tasks WHERE status='rejected'",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Grades",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 0,
+        "y": 3
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT CASE WHEN overall_score>=80 THEN 'A (80+)' WHEN overall_score>=70 THEN 'B (70-79)' WHEN overall_score>=60 THEN 'C (60-69)' ELSE 'D (<60)' END as grade, COUNT(*) as count, ROUND(AVG(overall_score)::numeric,1) as avg FROM quality_evaluations GROUP BY 1 ORDER BY 1",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Daily",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 12,
+        "y": 3
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT date_trunc('day',evaluation_timestamp)::date as day, COUNT(*) as evals, ROUND(AVG(overall_score)::numeric,1) as avg, MIN(overall_score) as min, MAX(overall_score) as max FROM quality_evaluations GROUP BY 1 ORDER BY 1 DESC LIMIT 14",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Recent",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT LEFT(ct.topic,45) as topic, ct.quality_score as score, ct.status, ct.created_at::date FROM content_tasks ct WHERE ct.quality_score IS NOT NULL ORDER BY ct.created_at DESC LIMIT 15",
+          "refId": "A"
         }
       ]
     }

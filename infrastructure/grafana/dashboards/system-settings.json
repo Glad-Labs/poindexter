@@ -1,58 +1,52 @@
 {
-  "annotations": {
-    "list": []
-  },
-  "description": "All configurable system settings from app_settings \u00e2\u20ac\u201d the control plane",
+  "uid": "system-settings",
+  "title": "System Settings",
+  "description": "Config, prompts, permissions",
+  "tags": ["glad-labs"],
   "editable": true,
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "timezone": "browser",
   "panels": [
     {
+      "id": 1,
+      "type": "stat",
+      "title": "Settings",
       "datasource": {
-        "type": "datasource",
-        "uid": "-- Dashboard --"
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
       },
       "gridPos": {
-        "h": 2,
-        "w": 24,
+        "h": 3,
+        "w": 4,
         "x": 0,
         "y": 0
       },
-      "id": 100,
-      "options": {
-        "content": "# System Settings \u00e2\u20ac\u201d Control Plane",
-        "mode": "markdown"
-      },
-      "title": "",
-      "transparent": true,
-      "type": "text"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
       "fieldConfig": {
         "defaults": {
-          "custom": {
-            "align": "auto",
-            "displayMode": "auto"
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "purple"
           }
-        }
+        },
+        "overrides": []
       },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 2
-      },
-      "id": 1,
       "options": {
-        "showHeader": true,
-        "sortBy": [
-          {
-            "displayName": "key"
-          }
-        ],
-        "cellHeight": "sm"
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "text": {
+          "valueSize": 28
+        }
       },
       "targets": [
         {
@@ -62,41 +56,46 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT key, value, category FROM app_settings WHERE category IN ('quality', 'quality_thresholds') AND is_secret = false ORDER BY key",
+          "rawSql": "SELECT COUNT(*) FROM app_settings",
           "refId": "A"
         }
-      ],
-      "title": "Quality Thresholds",
-      "type": "table"
+      ]
     },
     {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "displayMode": "auto"
-          }
-        }
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 2
-      },
       "id": 2,
-      "options": {
-        "showHeader": true,
-        "sortBy": [
-          {
-            "displayName": "key"
+      "type": "stat",
+      "title": "Prompts",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 4,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
           }
-        ],
-        "cellHeight": "sm"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "text": {
+          "valueSize": 28
+        }
       },
       "targets": [
         {
@@ -106,41 +105,46 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT key, value, category FROM app_settings WHERE category = 'models' AND is_secret = false ORDER BY key",
+          "rawSql": "SELECT COUNT(*) FROM prompt_templates WHERE is_active=true",
           "refId": "A"
         }
-      ],
-      "title": "Model Selections",
-      "type": "table"
+      ]
     },
     {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "displayMode": "auto"
-          }
-        }
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 0,
-        "y": 10
-      },
       "id": 3,
-      "options": {
-        "showHeader": true,
-        "sortBy": [
-          {
-            "displayName": "key"
+      "type": "stat",
+      "title": "Stages",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 8,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
           }
-        ],
-        "cellHeight": "sm"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "text": {
+          "valueSize": 28
+        }
       },
       "targets": [
         {
@@ -150,41 +154,46 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT key, value FROM app_settings WHERE category IN ('cost', 'cost_limits', 'finance') AND is_secret = false ORDER BY key",
+          "rawSql": "SELECT COUNT(*) FROM pipeline_stages WHERE enabled=true",
           "refId": "A"
         }
-      ],
-      "title": "Cost Limits",
-      "type": "table"
+      ]
     },
     {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "displayMode": "auto"
-          }
-        }
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 8,
-        "y": 10
-      },
       "id": 4,
-      "options": {
-        "showHeader": true,
-        "sortBy": [
-          {
-            "displayName": "key"
+      "type": "stat",
+      "title": "Agents",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "yellow"
           }
-        ],
-        "cellHeight": "sm"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "text": {
+          "valueSize": 28
+        }
       },
       "targets": [
         {
@@ -194,41 +203,46 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT key, value FROM app_settings WHERE category IN ('tokens', 'token_limits') AND is_secret = false ORDER BY key",
+          "rawSql": "SELECT COUNT(*) FROM system_agents WHERE is_active=true",
           "refId": "A"
         }
-      ],
-      "title": "Token Limits",
-      "type": "table"
+      ]
     },
     {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "displayMode": "auto"
-          }
-        }
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 10
-      },
       "id": 5,
-      "options": {
-        "showHeader": true,
-        "sortBy": [
-          {
-            "displayName": "key"
+      "type": "stat",
+      "title": "Perms",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 16,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
           }
-        ],
-        "cellHeight": "sm"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "text": {
+          "valueSize": 28
+        }
       },
       "targets": [
         {
@@ -238,40 +252,85 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT key, value FROM app_settings WHERE category IN ('pipeline', 'retry_config', 'content') AND is_secret = false ORDER BY key",
+          "rawSql": "SELECT COUNT(*) FROM agent_permissions",
           "refId": "A"
         }
-      ],
-      "title": "Pipeline & Content Rules",
-      "type": "table"
+      ]
     },
     {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "displayMode": "auto"
-          }
-        }
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 18
-      },
       "id": 6,
+      "type": "stat",
+      "title": "Alerts",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 20,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "red"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "text": {
+          "valueSize": 28
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) FROM alert_actions WHERE enabled=true",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Settings",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 3
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
+        },
+        "overrides": []
+      },
       "options": {
         "showHeader": true,
-        "sortBy": [
-          {
-            "displayName": "key"
-          }
-        ],
         "cellHeight": "sm"
       },
       "targets": [
@@ -282,40 +341,36 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT key, value FROM app_settings WHERE category IN ('image', 'image_config', 'notifications') AND is_secret = false ORDER BY key",
+          "rawSql": "SELECT key, value, category FROM app_settings WHERE is_secret=false ORDER BY category, key",
           "refId": "A"
         }
-      ],
-      "title": "Image & Notifications",
-      "type": "table"
+      ]
     },
     {
+      "id": 8,
+      "type": "table",
+      "title": "Prompts",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "railway-prod-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "displayMode": "auto"
-          }
-        }
       },
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 18
+        "y": 3
       },
-      "id": 7,
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
+        },
+        "overrides": []
+      },
       "options": {
         "showHeader": true,
-        "sortBy": [
-          {
-            "displayName": "category"
-          }
-        ],
         "cellHeight": "sm"
       },
       "targets": [
@@ -326,249 +381,64 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT key, CASE WHEN is_secret THEN '********' ELSE value END as value, category FROM app_settings WHERE category IN ('api_keys', 'auth', 'integration', 'webhooks') ORDER BY category, key",
+          "rawSql": "SELECT key, category, LENGTH(template) as chars, version FROM prompt_templates ORDER BY category, key",
           "refId": "A"
         }
-      ],
-      "title": "Secrets & Integrations (masked)",
-      "type": "table"
+      ]
     },
     {
+      "id": 9,
+      "type": "table",
+      "title": "Permissions",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "railway-prod-db"
       },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 11
+      },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
           }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT agent_name, resource, action, CASE WHEN allowed AND NOT requires_approval THEN 'ALLOW' WHEN requires_approval THEN 'APPROVAL' ELSE 'DENY' END as access FROM agent_permissions ORDER BY agent_name, resource",
+          "refId": "A"
         }
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 0,
-        "y": 26
-      },
+      ]
+    },
+    {
       "id": 10,
-      "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "text": {
-          "valueSize": 40
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) as total FROM app_settings",
-          "refId": "A"
-        }
-      ],
-      "title": "Total Settings",
-      "type": "stat"
-    },
-    {
+      "type": "table",
+      "title": "Agents",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "railway-prod-db"
       },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        }
-      },
       "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 6,
-        "y": 26
-      },
-      "id": 11,
-      "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "text": {
-          "valueSize": 40
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COUNT(DISTINCT category) as categories FROM app_settings",
-          "refId": "A"
-        }
-      ],
-      "title": "Categories",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "orange",
-                "value": null
-              }
-            ]
-          }
-        }
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
+        "h": 8,
+        "w": 12,
         "x": 12,
-        "y": 26
-      },
-      "id": 12,
-      "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "text": {
-          "valueSize": 40
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) as secrets FROM app_settings WHERE is_secret = true",
-          "refId": "A"
-        }
-      ],
-      "title": "Secrets (masked)",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          }
-        }
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 18,
-        "y": 26
-      },
-      "id": 13,
-      "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "text": {
-          "valueSize": 40
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) as public FROM app_settings WHERE is_secret = false",
-          "refId": "A"
-        }
-      ],
-      "title": "Configurable (public)",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "datasource",
-        "uid": "-- Dashboard --"
-      },
-      "gridPos": {
-        "h": 2,
-        "w": 24,
-        "x": 0,
-        "y": 30
-      },
-      "id": 200,
-      "options": {
-        "content": "# Prompt Templates",
-        "mode": "markdown"
-      },
-      "title": "",
-      "transparent": true,
-      "type": "text"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "y": 11
       },
       "fieldConfig": {
         "defaults": {
@@ -576,385 +446,9 @@
             "align": "auto",
             "displayMode": "auto"
           }
-        }
-      },
-      "gridPos": {
-        "h": 12,
-        "w": 24,
-        "x": 0,
-        "y": 32
-      },
-      "id": 20,
-      "options": {
-        "showHeader": true,
-        "sortBy": [
-          {
-            "displayName": "category"
-          }
-        ],
-        "cellHeight": "sm"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT key, category, LENGTH(template) as template_chars, is_active, version, updated_at::date as last_updated FROM prompt_templates ORDER BY category, key",
-          "refId": "A"
-        }
-      ],
-      "title": "All Prompt Templates (27)",
-      "type": "table"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "purple",
-                "value": null
-              }
-            ]
-          }
-        }
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 8,
-        "x": 0,
-        "y": 44
-      },
-      "id": 21,
-      "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
         },
-        "text": {
-          "valueSize": 40
-        }
+        "overrides": []
       },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) as total FROM prompt_templates WHERE is_active = true",
-          "refId": "A"
-        }
-      ],
-      "title": "Active Prompts",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "purple",
-                "value": null
-              }
-            ]
-          }
-        }
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 8,
-        "x": 8,
-        "y": 44
-      },
-      "id": 22,
-      "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "text": {
-          "valueSize": 40
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COUNT(DISTINCT category) as categories FROM prompt_templates",
-          "refId": "A"
-        }
-      ],
-      "title": "Prompt Categories",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "purple",
-                "value": null
-              }
-            ]
-          }
-        }
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 8,
-        "x": 16,
-        "y": 44
-      },
-      "id": 23,
-      "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "text": {
-          "valueSize": 40
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT SUM(LENGTH(template)) as total_chars FROM prompt_templates WHERE is_active = true",
-          "refId": "A"
-        }
-      ],
-      "title": "Total Prompt Chars",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "datasource",
-        "uid": "-- Dashboard --"
-      },
-      "gridPos": {
-        "h": 2,
-        "w": 24,
-        "x": 0,
-        "y": 48
-      },
-      "id": 300,
-      "options": {
-        "content": "# Pipeline Stages \u00e2\u20ac\u201d Toggle & A/B Test",
-        "mode": "markdown"
-      },
-      "title": "",
-      "transparent": true,
-      "type": "text"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "displayMode": "auto"
-          }
-        }
-      },
-      "gridPos": {
-        "h": 12,
-        "w": 16,
-        "x": 0,
-        "y": 50
-      },
-      "id": 30,
-      "options": {
-        "showHeader": true,
-        "sortBy": [
-          {
-            "displayName": "stage_order"
-          }
-        ],
-        "cellHeight": "sm"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT key, name, stage_order, enabled, CASE WHEN ab_test_group IS NOT NULL THEN ab_test_group ELSE '-' END as ab_group, config_json::text as config FROM pipeline_stages ORDER BY stage_order",
-          "refId": "A"
-        }
-      ],
-      "title": "Pipeline Stages (14)",
-      "type": "table"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "displayMode": "auto"
-          }
-        }
-      },
-      "gridPos": {
-        "h": 12,
-        "w": 8,
-        "x": 16,
-        "y": 50
-      },
-      "id": 31,
-      "options": {
-        "showHeader": true,
-        "cellHeight": "sm"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT name, stage_key, traffic_split_pct as split_pct, is_active, COALESCE((results_a->>'runs')::int, 0) as runs_a, COALESCE((results_b->>'runs')::int, 0) as runs_b FROM pipeline_experiments ORDER BY created_at DESC",
-          "refId": "A"
-        }
-      ],
-      "title": "A/B Experiments",
-      "type": "table"
-    },
-    {
-      "datasource": {
-        "type": "datasource",
-        "uid": "-- Dashboard --"
-      },
-      "gridPos": {
-        "h": 2,
-        "w": 24,
-        "x": 0,
-        "y": 62
-      },
-      "id": 400,
-      "options": {
-        "content": "# Agent Permissions",
-        "mode": "markdown"
-      },
-      "title": "",
-      "transparent": true,
-      "type": "text"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "displayMode": "auto"
-          }
-        }
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 16,
-        "x": 0,
-        "y": 64
-      },
-      "id": 40,
-      "options": {
-        "showHeader": true,
-        "sortBy": [
-          {
-            "displayName": "agent_name"
-          }
-        ],
-        "cellHeight": "sm"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT agent_name, resource, action, CASE WHEN allowed AND NOT requires_approval THEN 'ALLOWED' WHEN requires_approval THEN 'APPROVAL' ELSE 'DENIED' END as access FROM agent_permissions ORDER BY agent_name, resource, action",
-          "refId": "A"
-        }
-      ],
-      "title": "Permission Matrix (48 rules)",
-      "type": "table"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "displayMode": "auto"
-          }
-        }
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 8,
-        "x": 16,
-        "y": 64
-      },
-      "id": 41,
       "options": {
         "showHeader": true,
         "cellHeight": "sm"
@@ -970,58 +464,7 @@
           "rawSql": "SELECT name, agent_type, trust_level, is_active FROM system_agents ORDER BY trust_level DESC",
           "refId": "A"
         }
-      ],
-      "title": "System Agents",
-      "type": "table"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "displayMode": "auto"
-          }
-        }
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 24,
-        "x": 0,
-        "y": 74
-      },
-      "id": 42,
-      "options": {
-        "showHeader": true,
-        "cellHeight": "sm"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT id, agent_name, resource, action, reason, status, created_at::date FROM approval_queue ORDER BY created_at DESC LIMIT 20",
-          "refId": "A"
-        }
-      ],
-      "title": "Approval Queue",
-      "type": "table"
+      ]
     }
-  ],
-  "refresh": "30s",
-  "schemaVersion": 39,
-  "tags": ["glad-labs", "settings", "control-plane"],
-  "time": {
-    "from": "now-7d",
-    "to": "now"
-  },
-  "timezone": "browser",
-  "title": "System Settings",
-  "uid": "system-settings"
+  ]
 }

@@ -791,7 +791,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT to_char(timestamp, 'MM-DD HH24:MI') as time, event_type, source, severity, LEFT(details::text, 100) as details FROM audit_log ORDER BY timestamp DESC LIMIT 15",
+          "rawSql": "SELECT to_char(\"timestamp\", 'MM-DD HH24:MI') as time, event_type, source, severity, LEFT(details::text, 100) as details FROM audit_log ORDER BY \"timestamp\" DESC LIMIT 15",
           "refId": "A"
         }
       ]
@@ -832,7 +832,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT to_char(timestamp, 'HH24:MI:SS') as time, utilization as util, temperature as temp, ROUND(power_draw::numeric) as watts, memory_used as vram_mb, fan_speed as fan, clock_graphics as clock FROM gpu_metrics ORDER BY timestamp DESC LIMIT 15",
+          "rawSql": "SELECT to_char(\"timestamp\", 'HH24:MI:SS') as time, utilization as util, temperature as temp, ROUND(power_draw::numeric) as watts, memory_used as vram_mb, fan_speed as fan, clock_graphics as clock FROM gpu_metrics ORDER BY \"timestamp\" DESC LIMIT 15",
           "refId": "A"
         }
       ]
