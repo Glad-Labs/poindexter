@@ -50,8 +50,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger("brain")
 
-# Read DB URL — prefer local brain DB when available, fall back to Railway
-DB_URL = os.getenv("LOCAL_DATABASE_URL", "") or os.getenv("DATABASE_URL", "")
+# Local brain DB — the daemon writes ALL data here (brain_knowledge, brain_decisions, etc.)
+# Railway is only used for HTTP health checks, never for DB writes.
+LOCAL_BRAIN_DB = os.getenv(
+    "DATABASE_URL",
+    "postgresql://gladlabs:gladlabs-brain-local@localhost:5433/gladlabs_brain",
+)
 
 # Telegram for alerts (direct bot API, no OpenClaw dependency)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
@@ -453,29 +457,12 @@ async def run_cycle(pool):
 async def main():
     one_shot = "--once" in sys.argv
 
-    # Get DB URL — try multiple sources
-    db_url = os.getenv("DATABASE_URL", "")
-    if not db_url:
-        # Try Railway CLI
-        try:
-            subprocess.run(
-                ["railway", "service", "Postgres"],
-                capture_output=True, text=True, timeout=10,
-            )
-            result2 = subprocess.run(
-                ["railway", "variables", "--json"],
-                capture_output=True, text=True, timeout=10,
-            )
-            data = json.loads(result2.stdout)
-            db_url = data.get("DATABASE_PUBLIC_URL", "")
-        except Exception:
-            pass
-
+    db_url = LOCAL_BRAIN_DB
     if not db_url:
         logger.error("[BRAIN] No DATABASE_URL — cannot start")
         sys.exit(1)
 
-    logger.info("[BRAIN] Connecting to database...")
+    logger.info("[BRAIN] Connecting to local brain DB...")
     pool = await asyncpg.create_pool(db_url, min_size=1, max_size=3)
     logger.info("[BRAIN] Connected. Starting brain daemon (once=%s)", one_shot)
 
