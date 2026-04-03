@@ -1,46 +1,40 @@
 {
-  "annotations": {
-    "list": []
-  },
-  "description": "Local brain infrastructure - embeddings, task execution, quality, and cost tracking",
+  "uid": "brain-operations",
+  "title": "Brain Operations",
+  "description": "Raw system data \u2014 embeddings, tasks, quality, costs, knowledge, GPU, audit",
+  "tags": ["glad-labs", "brain"],
   "editable": true,
-  "fiscalYearStartMonth": 0,
-  "graphTooltip": 1,
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "timezone": "browser",
   "panels": [
     {
+      "id": 1,
+      "type": "stat",
+      "title": "Embeddings",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "yellow",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 50
-              },
-              {
-                "color": "blue",
-                "value": 500
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
       "gridPos": {
-        "h": 6,
-        "w": 6,
+        "h": 3,
+        "w": 4,
         "x": 0,
         "y": 0
       },
-      "id": 1,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -49,60 +43,47 @@
           "fields": "",
           "values": false
         },
+        "textMode": "value_and_name",
         "text": {
-          "titleSize": 14,
-          "valueSize": 48
-        },
-        "textMode": "value_and_name"
+          "valueSize": 28
+        }
       },
       "targets": [
         {
-          "format": "table",
-          "rawSql": "SELECT COUNT(*) as total_embeddings FROM embeddings",
-          "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "local-brain-db"
-          }
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) as total FROM embeddings",
+          "refId": "A"
         }
-      ],
-      "title": "Embeddings",
-      "type": "stat"
+      ]
     },
     {
+      "id": 2,
+      "type": "stat",
+      "title": "Posts",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "railway-prod-db"
       },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 4,
+        "y": 0
+      },
       "fieldConfig": {
         "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "yellow",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 10
-              },
-              {
-                "color": "blue",
-                "value": 100
-              }
-            ]
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
           }
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 6,
-        "w": 6,
-        "x": 6,
-        "y": 0
-      },
-      "id": 8,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -111,64 +92,96 @@
           "fields": "",
           "values": false
         },
+        "textMode": "value_and_name",
         "text": {
-          "titleSize": 14,
-          "valueSize": 48
-        },
-        "textMode": "value_and_name"
+          "valueSize": 28
+        }
       },
       "targets": [
         {
-          "format": "table",
-          "rawSql": "SELECT COUNT(*) as total_tasks FROM content_tasks",
-          "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "railway-prod-db"
-          }
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) as published FROM posts WHERE status = 'published'",
+          "refId": "A"
         }
-      ],
-      "title": "Tasks",
-      "type": "stat"
+      ]
     },
     {
+      "id": 3,
+      "type": "stat",
+      "title": "Tasks",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "railway-prod-db"
       },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 8,
+        "y": 0
+      },
       "fieldConfig": {
         "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 5
-              },
-              {
-                "color": "yellow",
-                "value": 7
-              },
-              {
-                "color": "green",
-                "value": 8.5
-              }
-            ]
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "yellow"
           }
         },
         "overrides": []
       },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "text": {
+          "valueSize": 28
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) as total FROM content_tasks",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Quality",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
       "gridPos": {
-        "h": 6,
-        "w": 6,
+        "h": 3,
+        "w": 4,
         "x": 12,
         "y": 0
       },
-      "id": 10,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      },
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -177,60 +190,47 @@
           "fields": "",
           "values": false
         },
+        "textMode": "value_and_name",
         "text": {
-          "titleSize": 14,
-          "valueSize": 48
-        },
-        "textMode": "value_and_name"
+          "valueSize": 28
+        }
       },
       "targets": [
         {
-          "format": "table",
-          "rawSql": "SELECT ROUND(AVG(overall_score)::numeric, 1) as avg_quality FROM quality_evaluations WHERE evaluation_timestamp > NOW() - INTERVAL '7 days'",
-          "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "railway-prod-db"
-          }
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(AVG(overall_score)::numeric, 1) as avg FROM quality_evaluations WHERE evaluation_timestamp > NOW() - INTERVAL '30 days'",
+          "refId": "A"
         }
-      ],
-      "title": "Quality Avg",
-      "type": "stat"
+      ]
     },
     {
+      "id": 5,
+      "type": "stat",
+      "title": "Knowledge",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 16,
+        "y": 0
+      },
       "fieldConfig": {
         "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "yellow",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 10
-              },
-              {
-                "color": "blue",
-                "value": 100
-              }
-            ]
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "yellow"
           }
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 6,
-        "w": 6,
-        "x": 18,
-        "y": 0
-      },
-      "id": 14,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -239,55 +239,9 @@
           "fields": "",
           "values": false
         },
+        "textMode": "value_and_name",
         "text": {
-          "titleSize": 14,
-          "valueSize": 48
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "format": "table",
-          "rawSql": "SELECT COUNT(*) as knowledge_entries FROM brain_knowledge",
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          }
-        }
-      ],
-      "title": "Knowledge",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 8,
-        "x": 0,
-        "y": 6
-      },
-      "id": 2,
-      "options": {
-        "legend": {
-          "displayMode": "hidden"
-        },
-        "pieType": "donut",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
+          "valueSize": 28
         }
       },
       "targets": [
@@ -297,275 +251,155 @@
             "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT source_table, COUNT(*) as count FROM embeddings GROUP BY source_table ORDER BY count DESC",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) as entries FROM brain_knowledge",
           "refId": "A"
         }
-      ],
-      "title": "By Source",
-      "type": "piechart"
+      ]
     },
     {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "bars",
-            "fillOpacity": 60,
-            "gradientMode": "hue",
-            "lineWidth": 1,
-            "pointSize": 1,
-            "showPoints": "never",
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            }
-          },
-          "min": 0,
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 12
-      },
-      "id": 5,
-      "options": {
-        "legend": {
-          "displayMode": "hidden"
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawSql": "SELECT date_trunc('day', created_at) as time, COUNT(*) as new_embeddings FROM embeddings WHERE created_at BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz GROUP BY 1 ORDER BY 1",
-          "refId": "A"
-        }
-      ],
-      "title": "Embeddings Growth",
-      "type": "barchart"
-    },
-    {
+      "id": 6,
+      "type": "stat",
+      "title": "Settings",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "railway-prod-db"
       },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 20,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "purple"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "text": {
+          "valueSize": 28
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) as keys FROM app_settings",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "bargauge",
+      "title": "Embeddings by Source",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 3
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
           }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": true
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "completed"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "green",
-                  "mode": "fixed"
-                }
-              }
-            ]
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
           },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "failed"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "red",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "in_progress"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "blue",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "pending"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "yellow",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
-        ]
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT source_table as metric, COUNT(*) as value FROM embeddings GROUP BY 1 ORDER BY 2 DESC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "bargauge",
+      "title": "Tasks by Status",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
       },
       "gridPos": {
-        "h": 6,
+        "h": 5,
         "w": 8,
         "x": 8,
-        "y": 6
-      },
-      "id": 9,
-      "options": {
-        "legend": {
-          "displayMode": "hidden"
-        },
-        "pieType": "donut",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
-          },
-          "format": "table",
-          "rawSql": "SELECT status, COUNT(*) as count FROM content_tasks GROUP BY status",
-          "refId": "A"
-        }
-      ],
-      "title": "Task Status",
-      "type": "piechart"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "fixedColor": "green",
-            "mode": "fixed"
-          },
-          "custom": {
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "scheme",
-            "lineInterpolation": "smooth",
-            "lineWidth": 1,
-            "pointSize": 1,
-            "showPoints": "never"
-          },
-          "decimals": 1,
-          "max": 10,
-          "min": 0
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 12
-      },
-      "id": 11,
-      "options": {
-        "legend": {
-          "displayMode": "hidden"
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
-          },
-          "format": "table",
-          "rawSql": "SELECT date_trunc('day', evaluation_timestamp) as time, ROUND(AVG(overall_score)::numeric, 2) as avg_score FROM quality_evaluations WHERE evaluation_timestamp BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz GROUP BY 1 ORDER BY 1",
-          "refId": "A"
-        }
-      ],
-      "title": "Quality Trend",
-      "type": "barchart"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "y": 3
       },
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "palette-classic"
           },
-          "custom": {
-            "drawStyle": "bars",
-            "fillOpacity": 70,
-            "gradientMode": "hue",
-            "lineWidth": 1,
-            "pointSize": 1,
-            "showPoints": "never",
-            "stacking": {
-              "group": "A",
-              "mode": "normal"
-            }
-          },
-          "decimals": 2,
-          "min": 0,
-          "unit": "currencyUSD"
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 20
-      },
-      "id": 13,
       "options": {
-        "legend": {
-          "displayMode": "hidden"
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": true
         },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true
       },
       "targets": [
         {
@@ -574,57 +408,93 @@
             "uid": "railway-prod-db"
           },
           "format": "table",
-          "rawSql": "SELECT date_trunc('day', created_at) as time, provider, SUM(cost_usd) as cost FROM cost_logs WHERE created_at BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz GROUP BY 1, 2 ORDER BY 1",
+          "rawQuery": true,
+          "rawSql": "SELECT status as metric, COUNT(*) as value FROM content_tasks GROUP BY 1 ORDER BY 2 DESC",
           "refId": "A"
         }
-      ],
-      "title": "Cost Trend",
-      "type": "barchart"
+      ]
     },
     {
+      "id": 9,
+      "type": "bargauge",
+      "title": "Posts by Category",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 16,
+        "y": 3
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": true
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(c.name, 'none') as metric, COUNT(p.id) as value FROM categories c LEFT JOIN posts p ON c.id = p.category_id AND p.status = 'published' GROUP BY 1 ORDER BY 2 DESC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "Embeddings Growth",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 8
       },
       "fieldConfig": {
         "defaults": {
           "custom": {
             "align": "auto",
             "displayMode": "auto",
-            "filterable": false
+            "inspect": false
           }
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "text_preview"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 350
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 20
-      },
-      "id": 7,
       "options": {
-        "cellHeight": "sm",
         "showHeader": true,
-        "sortBy": [
-          {
-            "desc": true,
-            "displayName": "created_at"
-          }
-        ]
+        "cellHeight": "sm"
       },
       "targets": [
         {
@@ -633,26 +503,339 @@
             "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT source_table, source_id, chunk_index, embedding_model, LEFT(text_preview, 80) as text_preview, created_at FROM embeddings ORDER BY created_at DESC LIMIT 10",
+          "rawQuery": true,
+          "rawSql": "SELECT date_trunc('day', created_at)::date as day, COUNT(*) as new_embeddings FROM embeddings GROUP BY 1 ORDER BY 1 DESC LIMIT 14",
           "refId": "A"
         }
-      ],
-      "title": "Recent Items",
-      "type": "table"
+      ]
+    },
+    {
+      "id": 11,
+      "type": "table",
+      "title": "Quality Scores",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto",
+            "inspect": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT LEFT(topic, 45) as topic, quality_score as score, status, created_at::date FROM content_tasks WHERE quality_score IS NOT NULL ORDER BY created_at DESC LIMIT 12",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "table",
+      "title": "Cost Breakdown",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto",
+            "inspect": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT date_trunc('day', created_at)::date as day, provider, COUNT(*) as calls, ROUND(SUM(cost_usd)::numeric, 6) as cost, SUM(input_tokens + output_tokens) as tokens FROM cost_logs GROUP BY 1, 2 ORDER BY 1 DESC LIMIT 12",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "table",
+      "title": "Brain Knowledge",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 15
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto",
+            "inspect": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT entity, attribute, LEFT(value::text, 80) as value, ROUND(confidence::numeric, 1) as conf, updated_at::date FROM brain_knowledge ORDER BY updated_at DESC LIMIT 12",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "table",
+      "title": "Recent Embeddings",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 15
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto",
+            "inspect": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT source_table as src, source_id, LEFT(text_preview, 80) as preview, created_at FROM embeddings ORDER BY created_at DESC LIMIT 12",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "table",
+      "title": "Pipeline Stages",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 22
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto",
+            "inspect": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT stage_order as ord, key, name, enabled, config_json->>'model' as model, config_json->>'role' as role FROM pipeline_stages ORDER BY stage_order",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "table",
+      "title": "Alert Actions",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 22
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto",
+            "inspect": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT pattern, action_type as action, enabled, consecutive_failures as fails, total_triggers as fired, cooldown_minutes as cooldown FROM alert_actions ORDER BY pattern",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "table",
+      "title": "Audit Log",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 30
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto",
+            "inspect": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT to_char(timestamp, 'MM-DD HH24:MI') as time, event_type, source, severity, LEFT(details::text, 100) as details FROM audit_log ORDER BY timestamp DESC LIMIT 15",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "type": "table",
+      "title": "GPU Metrics",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 30
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto",
+            "inspect": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT to_char(timestamp, 'HH24:MI:SS') as time, utilization as util, temperature as temp, ROUND(power_draw::numeric) as watts, memory_used as vram_mb, fan_speed as fan, clock_graphics as clock FROM gpu_metrics ORDER BY timestamp DESC LIMIT 15",
+          "refId": "A"
+        }
+      ]
     }
-  ],
-  "refresh": "5m",
-  "schemaVersion": 39,
-  "tags": ["glad-labs", "brain", "local"],
-  "time": {
-    "from": "now-7d",
-    "to": "now"
-  },
-  "timepicker": {
-    "refresh_intervals": ["5m", "15m", "30m", "1h"],
-    "time_options": ["5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"]
-  },
-  "timezone": "browser",
-  "title": "Brain Operations",
-  "uid": "brain-operations"
+  ]
 }
