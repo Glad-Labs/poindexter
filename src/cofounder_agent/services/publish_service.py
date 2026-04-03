@@ -468,6 +468,23 @@ async def publish_post_from_task(
             logger.debug("[SOCIAL] Social posting failed (non-fatal): %s", e)
 
     # ---------------------------------------------------------------
+    # 9b. Queue Dev.to cross-posting (fire-and-forget)
+    # ---------------------------------------------------------------
+    try:
+        from services.devto_service import DevToCrossPostService
+
+        devto_svc = DevToCrossPostService(db_service.pool)
+        if background_tasks:
+            background_tasks.add_task(
+                devto_svc.cross_post_by_post_id, post_id
+            )
+        else:
+            asyncio.ensure_future(devto_svc.cross_post_by_post_id(post_id))
+        logger.info("[DEVTO] Queued cross-post for post %s", post_id)
+    except Exception as e:
+        logger.debug("[DEVTO] Cross-posting setup failed (non-fatal): %s", e)
+
+    # ---------------------------------------------------------------
     # 10. ISR revalidation
     # ---------------------------------------------------------------
     revalidation_success = False
@@ -488,6 +505,25 @@ async def publish_post_from_task(
     site_url = "https://www.gladlabs.io"
     published_url_full = f"{site_url}/posts/{slug}"
     asyncio.ensure_future(_ping_search_engines(site_url, published_url_full))
+
+    # ---------------------------------------------------------------
+    # 11b. Generate podcast episode (fire-and-forget, local worker only)
+    # ---------------------------------------------------------------
+    if _should_run_post_publish_hooks():
+        try:
+            from services.podcast_service import generate_podcast_episode
+
+            if background_tasks:
+                background_tasks.add_task(
+                    generate_podcast_episode, post_id, post_title, post_content
+                )
+            else:
+                asyncio.ensure_future(
+                    generate_podcast_episode(post_id, post_title, post_content)
+                )
+            logger.info("[PODCAST] Queued episode generation for post %s", post_id)
+        except Exception as e:
+            logger.debug("[PODCAST] Failed to queue episode (non-fatal): %s", e)
 
     # ---------------------------------------------------------------
     # 12. Send notification

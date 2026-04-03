@@ -57,6 +57,7 @@ _COORDINATOR_ROUTES = [
     ("routes.newsletter_routes", "router", "newsletter_router", "email campaigns"),
     ("routes.privacy_routes", "router", "privacy_router", "GDPR data subject requests"),
     ("routes.approval_routes", "router", "approval_router", "task approval workflow"),
+    ("routes.podcast_routes", "router", "podcast_router", "podcast RSS feed & episodes"),
 ]
 
 # Routes for worker mode (local PC — heavy compute)
@@ -66,6 +67,7 @@ _WORKER_ROUTES = [
     ("routes.task_routes", "router", "task_router", "task management"),
     ("routes.metrics_routes", "metrics_router", "metrics_router", "metrics & analytics"),
     ("routes.settings_routes", "router", "settings_router", "user settings"),
+    ("routes.podcast_routes", "router", "podcast_router", "podcast RSS feed & episodes"),
 ]
 
 # Backward-compatible alias: defaults to coordinator manifest

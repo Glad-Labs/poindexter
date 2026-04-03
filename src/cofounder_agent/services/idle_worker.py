@@ -215,6 +215,11 @@ class IdleWorker:
             results["publish_verify"] = await self._verify_published_posts()
             await self._persist_mark_run("publish_verify")
 
+        # 18. Dev.to cross-posting — cross-post published posts not yet on Dev.to (every 6 hours)
+        if self._is_due("devto_crosspost", 360):
+            results["devto_crosspost"] = await self._crosspost_to_devto()
+            await self._persist_mark_run("devto_crosspost")
+
         if results:
             logger.info("[IDLE] Completed %d background tasks: %s",
                         len(results), ", ".join(results.keys()))
@@ -1326,4 +1331,57 @@ class IdleWorker:
 
         except Exception as e:
             logger.warning("[IDLE] Publish verification failed: %s", e)
+            return {"error": str(e)}
+
+    async def _crosspost_to_devto(self) -> dict:
+        """Cross-post published posts that haven't been sent to Dev.to yet."""
+        try:
+            from services.devto_service import DevToCrossPostService
+
+            svc = DevToCrossPostService(self.pool)
+
+            # Check if API key is configured before doing any work
+            api_key = await svc._get_api_key()
+            if not api_key:
+                return {"skipped": True, "reason": "devto_api_key not configured"}
+
+            # Find published posts without a devto_url in metadata (limit 3 per cycle)
+            rows = await self.pool.fetch("""
+                SELECT id, title, slug
+                FROM posts
+                WHERE status = 'published'
+                  AND (metadata IS NULL
+                       OR metadata->>'devto_url' IS NULL
+                       OR metadata->>'devto_url' = '')
+                ORDER BY published_at DESC
+                LIMIT 3
+            """)
+
+            if not rows:
+                return {"crossposted": 0, "note": "all published posts already on Dev.to"}
+
+            crossposted = 0
+            errors = []
+            for row in rows:
+                post_id = str(row["id"])
+                try:
+                    devto_url = await svc.cross_post_by_post_id(post_id)
+                    if devto_url:
+                        crossposted += 1
+                        logger.info(
+                            "[IDLE] Cross-posted to Dev.to: %s -> %s",
+                            row["slug"], devto_url,
+                        )
+                    else:
+                        errors.append(f"{row['slug']}: no URL returned")
+                except Exception as e:
+                    errors.append(f"{row['slug']}: {e}")
+
+            result = {"crossposted": crossposted, "checked": len(rows)}
+            if errors:
+                result["errors"] = errors[:5]
+            return result
+
+        except Exception as e:
+            logger.warning("[IDLE] Dev.to cross-posting failed: %s", e)
             return {"error": str(e)}
