@@ -50,6 +50,11 @@ export const metadata = {
     'max-image-preview': 'large',
     'max-video-preview': -1,
   },
+  alternates: {
+    types: {
+      'application/rss+xml': '/feed.xml',
+    },
+  },
 };
 
 export default function RootLayout({ children }) {
