@@ -35,8 +35,8 @@ export const metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    site: '@GladLabsAI',
-    creator: '@GladLabsAI',
+    site: '@_gladlabs',
+    creator: '@_gladlabs',
   },
   verification: {
     google:
