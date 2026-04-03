@@ -78,6 +78,32 @@ async def _sync_published_post(post_id: str) -> None:
         logger.warning("[SYNC] Failed to sync published post (non-fatal): %s", e)
 
 
+async def _ping_search_engines(site_url: str, post_url: str) -> None:
+    """Notify search engines about new content via IndexNow and Google ping."""
+    import httpx
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        # IndexNow (Bing, Yandex, Naver, Seznam)
+        try:
+            await client.get(
+                "https://api.indexnow.org/indexnow",
+                params={"url": post_url, "key": "gladlabs"},
+            )
+            logger.info("[SEO] IndexNow ping sent for %s", post_url)
+        except Exception as e:
+            logger.debug("[SEO] IndexNow ping failed (non-fatal): %s", e)
+
+        # Google ping (sitemap-based)
+        try:
+            await client.get(
+                "https://www.google.com/ping",
+                params={"sitemap": f"{site_url}/sitemap.xml"},
+            )
+            logger.info("[SEO] Google sitemap ping sent")
+        except Exception as e:
+            logger.debug("[SEO] Google ping failed (non-fatal): %s", e)
+
+
 async def _embed_published_post(db_service, post_dict: dict) -> None:
     """Embed a newly published post into pgvector (non-blocking)."""
     try:
@@ -324,7 +350,14 @@ async def publish_post_from_task(
             logger.warning("[publish_service] ISR revalidation error (non-fatal): %s", reval_err)
 
     # ---------------------------------------------------------------
-    # 11. Send notification
+    # 11. Ping search engines (fire-and-forget)
+    # ---------------------------------------------------------------
+    site_url = "https://www.gladlabs.io"
+    published_url_full = f"{site_url}/posts/{slug}"
+    asyncio.ensure_future(_ping_search_engines(site_url, published_url_full))
+
+    # ---------------------------------------------------------------
+    # 12. Send notification
     # ---------------------------------------------------------------
     try:
         from services.task_executor import _notify_openclaw
