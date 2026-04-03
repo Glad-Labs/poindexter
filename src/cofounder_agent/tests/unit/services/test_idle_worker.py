@@ -2,7 +2,8 @@
 Unit tests for services/idle_worker.py
 
 Tests background maintenance tasks: quality audits, link checks,
-topic gaps, threshold tuning, and topic discovery.
+topic gaps, threshold tuning, topic discovery, schedule persistence,
+and post-publish verification.
 """
 
 import time
@@ -18,13 +19,17 @@ def _make_pool(pending_count=0):
     pool.fetchrow = AsyncMock(return_value={"c": pending_count})
     pool.fetch = AsyncMock(return_value=[])
     pool.execute = AsyncMock()
+    pool.fetchval = AsyncMock(return_value=None)
     return pool
 
 
 class TestRunCycleSkipsWhenBusy:
     async def test_skips_when_tasks_pending(self):
         pool = _make_pool(pending_count=5)
+        # Mark lightweight syncs as recently run so they don't fire
         worker = IdleWorker(pool)
+        worker._last_run["sync_page_views"] = time.time()
+        worker._last_run["sync_newsletter_subscribers"] = time.time()
         result = await worker.run_cycle()
         assert result.get("skipped") is True
         assert "5 active tasks" in result.get("reason", "")
@@ -60,6 +65,107 @@ class TestMarkRun:
         before = time.time()
         worker._mark_run("test_task")
         assert worker._last_run["test_task"] >= before
+
+
+class TestPersistMarkRun:
+    async def test_persists_to_db(self):
+        pool = _make_pool()
+        worker = IdleWorker(pool)
+        before = time.time()
+        await worker._persist_mark_run("my_task")
+        assert worker._last_run["my_task"] >= before
+        # Verify DB write was called with the right key
+        pool.execute.assert_called()
+        call_args = pool.execute.call_args
+        assert "idle_last_run_my_task" in call_args[0]
+
+    async def test_persists_even_if_db_fails(self):
+        pool = _make_pool()
+        pool.execute = AsyncMock(side_effect=Exception("DB down"))
+        worker = IdleWorker(pool)
+        await worker._persist_mark_run("my_task")
+        # In-memory should still be updated even if DB fails
+        assert "my_task" in worker._last_run
+
+
+class TestLoadPersistedSchedules:
+    async def test_loads_from_db(self):
+        pool = _make_pool()
+        pool.fetch = AsyncMock(return_value=[
+            {"key": "idle_last_run_quality_audit", "value": "1700000000.0"},
+            {"key": "idle_last_run_link_check", "value": "1700000100.0"},
+        ])
+        worker = IdleWorker(pool)
+        await worker._load_persisted_schedules()
+        assert worker._last_run["quality_audit"] == 1700000000.0
+        assert worker._last_run["link_check"] == 1700000100.0
+        assert worker._schedules_loaded is True
+
+    async def test_skips_on_second_call(self):
+        pool = _make_pool()
+        pool.fetch = AsyncMock(return_value=[])
+        worker = IdleWorker(pool)
+        await worker._load_persisted_schedules()
+        pool.fetch.reset_mock()
+        await worker._load_persisted_schedules()
+        pool.fetch.assert_not_called()
+
+    async def test_handles_db_failure(self):
+        pool = _make_pool()
+        pool.fetch = AsyncMock(side_effect=Exception("DB error"))
+        worker = IdleWorker(pool)
+        await worker._load_persisted_schedules()
+        # Should mark as loaded so it doesn't retry every cycle
+        assert worker._schedules_loaded is True
+
+
+class TestVerifyPublishedPosts:
+    @patch.dict("os.environ", {"DATABASE_URL": ""})
+    async def test_skips_without_database_url(self):
+        pool = _make_pool()
+        worker = IdleWorker(pool)
+        result = await worker._verify_published_posts()
+        assert "skipping" in result.get("note", "").lower() or "no DATABASE_URL" in result.get("note", "")
+
+    @patch.dict("os.environ", {"DATABASE_URL": "postgres://fake"})
+    @patch("asyncpg.connect")
+    async def test_no_recent_posts(self, mock_connect):
+        mock_conn = AsyncMock()
+        mock_conn.fetch = AsyncMock(return_value=[])
+        mock_connect.return_value = mock_conn
+        pool = _make_pool()
+        worker = IdleWorker(pool)
+        result = await worker._verify_published_posts()
+        assert result["checked"] == 0
+
+    @patch.dict("os.environ", {"DATABASE_URL": "postgres://fake"})
+    @patch("asyncpg.connect")
+    @patch("httpx.AsyncClient")
+    async def test_detects_failures(self, mock_httpx_cls, mock_connect):
+        mock_conn = AsyncMock()
+        mock_conn.fetch = AsyncMock(return_value=[
+            {"id": 1, "title": "Good Post", "slug": "good-post"},
+            {"id": 2, "title": "Bad Post", "slug": "bad-post"},
+        ])
+        mock_connect.return_value = mock_conn
+
+        mock_resp_ok = AsyncMock()
+        mock_resp_ok.status_code = 200
+        mock_resp_404 = AsyncMock()
+        mock_resp_404.status_code = 404
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=[mock_resp_ok, mock_resp_404])
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_httpx_cls.return_value = mock_client
+
+        pool = _make_pool()
+        worker = IdleWorker(pool)
+        result = await worker._verify_published_posts()
+        assert result["verified"] == 1
+        assert len(result["failures"]) == 1
+        assert result["failures"][0]["slug"] == "bad-post"
 
 
 class TestQualityAudit:

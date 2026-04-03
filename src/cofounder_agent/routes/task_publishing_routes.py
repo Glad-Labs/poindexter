@@ -315,177 +315,28 @@ async def approve_task(
         if approved and auto_publish:
             logger.info(f"Auto-publishing approved task {task_id}")
             try:
-                # IMPORTANT: Update task status to published FIRST, before creating post
-                # This ensures task state is consistent even if post creation fails
-                publish_metadata = {
-                    "published_at": datetime.now(timezone.utc).isoformat(),
-                    "published_by": "operator",
-                }
+                from services.publish_service import publish_post_from_task
 
-                # Convert Decimals before serialization
-                safe_publish_result = convert_decimals(
-                    {"metadata": {**approval_metadata, **publish_metadata}, **merged_result}
+                pub_result = await publish_post_from_task(
+                    db_service, task, task_id,
+                    publisher="operator",
+                    trigger_revalidation=True,
+                    queue_social=True,
                 )
-
-                try:
-                    await db_service.update_task_status(
-                        task_id, "published", result=safe_json_dumps(safe_publish_result)
+                if pub_result.success:
+                    merged_result["post_id"] = pub_result.post_id
+                    merged_result["post_slug"] = pub_result.post_slug
+                    merged_result["published_url"] = pub_result.published_url
+                else:
+                    logger.warning(
+                        "[approve_task] Auto-publish failed: %s", pub_result.error
                     )
-                except Exception as e:
-                    logger.error(
-                        f"Failed to update task status to published: {str(e)}", exc_info=True
-                    )
-                    # Still continue with post creation if status update fails
-                    # The task will be in 'approved' state but post may be created
-
-                # Create post in posts table when publishing (not before)
-                logger.info(f"Creating posts table entry for published task {task_id}")
-                try:
-                    # Extract content from merged_result (includes both result and task_metadata)
-                    topic = task.get("topic", "") or merged_result.get("topic", "")
-                    draft_content = (
-                        merged_result.get("draft_content", "")
-                        or merged_result.get("content", "")
-                        or ""
-                    )
-                    seo_description = merged_result.get("seo_description", "")
-                    seo_keywords = merged_result.get("seo_keywords", [])
-                    featured_image = featured_image_url or merged_result.get("featured_image_url")
-                    metadata = merged_result.get("metadata", {})
-
-                    # 🔑 EXTRACT TITLE: LLM often generates "#Title" at start of content
-                    # Extract it and use as the post title, remove from content
-                    extracted_title, cleaned_content = extract_title_from_content(draft_content)
-
-                    # Use extracted title if available, otherwise fall back to topic
-                    post_title = extracted_title or merged_result.get("title") or topic
-
-                    # Use cleaned content (title removed)
-                    post_content = cleaned_content
-
-                    logger.info(f"📝 Post title: {post_title}")
-                    logger.info(f"   Extracted from content: {bool(extracted_title)}")
-                    logger.info(f"   Content length: {len(post_content or '')} chars")
-
-                    if post_content and post_title:
-                        # Create slug from title
-                        slug = (
-                            re.sub(r"[^\w\s-]", "", post_title)
-                            .lower()
-                            .replace(" ", "-")[:50]
-                        )
-                        slug = f"{slug}-{task_id[:8]}"
-
-                        # Get author and category
-                        from services.content_router_service import (
-                            _get_or_create_default_author,
-                            _select_category_for_topic,
-                        )
-
-                        author_id = await _get_or_create_default_author(db_service)
-                        category_id = await _select_category_for_topic(post_title, db_service)
-
-                        # Create post with status='published'
-                        post = await db_service.create_post(
-                            {
-                                "title": post_title,
-                                "slug": slug,
-                                "content": post_content,
-                                "excerpt": seo_description,
-                                "featured_image_url": featured_image,
-                                "author_id": author_id,
-                                "category_id": category_id,
-                                "status": "published",  # Published, not draft
-                                "seo_title": post_title,
-                                "seo_description": seo_description,
-                                "seo_keywords": ",".join(seo_keywords) if seo_keywords else "",
-                                "metadata": metadata,
-                            }
-                        )
-                        logger.info(f"✅ Post created with status='published': {post.id}")  # type: ignore[attr-defined]
-                        logger.info(f"   Title: {post_title}")
-                        logger.info(f"   Slug: {slug}")
-                        logger.info(
-                            "[content_published] task_id=%s post_id=%s user_id=%s slug=%s",
-                            task_id,
-                            str(post.id) if hasattr(post, "id") else post.get("id"),  # type: ignore[attr-defined]
-                            "operator",
-                            slug,
-                        )
-
-                        # Store post info in merged_result for response
-                        merged_result["post_id"] = (
-                            str(post.id) if hasattr(post, "id") else str(post.get("id"))  # type: ignore[attr-defined]
-                        )
-                        merged_result["post_slug"] = slug
-                        merged_result["published_url"] = (
-                            f"/posts/{slug}"  # Relative URL for public site
-                        )
-
-                        # Emit webhook event for published post
-                        try:
-                            await emit_webhook_event(db_service.pool, "post.published", {
-                                "task_id": str(task_id), "title": post_title, "site": "default",
-                            })
-                        except Exception:
-                            logger.debug("[WEBHOOK] Failed to emit post.published event", exc_info=True)
-
-                        # Fire-and-forget sync + embed (no BackgroundTasks available in approve)
-                        if _should_run_post_publish_hooks():
-                            _auto_pub_post_id = merged_result.get("post_id", "")
-                            _auto_pub_post_dict = {
-                                "id": _auto_pub_post_id,
-                                "title": post_title,
-                                "excerpt": seo_description,
-                                "content": post_content,
-                            }
-                            asyncio.ensure_future(_sync_published_post(_auto_pub_post_id))
-                            asyncio.ensure_future(_embed_published_post(db_service, _auto_pub_post_dict))
-                            logger.info("[AUTO-PUBLISH] Queued sync + embed for post %s", _auto_pub_post_id)
-                    else:
-                        logger.warning("⚠️  Skipping post creation: missing content or topic")
-                except (ValueError, KeyError, TypeError) as e:
-                    # Catch specific exceptions from post creation
-                    logger.error(
-                        f"Failed to create post for published task: {type(e).__name__}: {str(e)}",
-                        exc_info=True,
-                    )
-                    # Don't fail the publish operation if post creation fails
-                    # Post table may have constraints or data issues, but task should stay published
-                except Exception as e:
-                    logger.critical(
-                        f"Unexpected error creating post for published task: {type(e).__name__}: {str(e)}",
-                        exc_info=True,
-                    )
-                    # Don't fail the publish operation if post creation fails
-
-            except (ValueError, KeyError, TypeError) as e:
-                logger.error(
-                    f"Error during auto-publish process: {type(e).__name__}: {str(e)}",
-                    exc_info=True,
-                )
-                # Don't fail approval if auto-publish fails
             except Exception as e:
                 logger.critical(
                     f"Unexpected error during auto-publish: {type(e).__name__}: {str(e)}",
                     exc_info=True,
                 )
                 # Don't fail approval if auto-publish fails
-
-        # Trigger ISR revalidation after auto-publish (#955)
-        if approved and auto_publish:
-            try:
-                reval_paths = ["/", "/archive", "/posts"]
-                slug_val = (
-                    merged_result.get("post_slug") if isinstance(merged_result, dict) else None
-                )
-                if slug_val:
-                    reval_paths.append(f"/posts/{slug_val}")
-                await trigger_nextjs_revalidation(reval_paths)
-            except Exception as reval_err:
-                logger.warning(
-                    f"[approve_task] ISR revalidation error (non-fatal): {reval_err}", exc_info=True
-                )
 
         # Fetch updated task
         updated_task = await db_service.get_task(task_id)
@@ -584,227 +435,42 @@ async def publish_task(
                 detail=f"Cannot publish task with status '{current_status}'. Must be 'approved'.",
             )
 
-        # Update task status to published
+        # Publish via shared service (post creation, ISR, social, sync, embed)
         logger.info(f"Publishing task {task_id}")
-        publish_metadata = {
-            "published_at": datetime.now(timezone.utc).isoformat(),
-            "published_by": "operator",
-        }
-        # Preserve existing task content: merge publish_metadata into result (do not overwrite)
-        existing_result = task.get("result", {})
-        if isinstance(existing_result, str):
-            try:
-                existing_result = json.loads(existing_result) if existing_result else {}
-            except (json.JSONDecodeError, ValueError):
-                logger.warning(
-                    "[publish_task] result is not valid JSON for task %s — defaulting to {}",
-                    task_id,
-                )
-                existing_result = {}
-        existing_result = existing_result or {}
-        task_meta = task.get("task_metadata", {})
-        if isinstance(task_meta, str):
-            try:
-                task_meta = json.loads(task_meta) if task_meta else {}
-            except (json.JSONDecodeError, ValueError):
-                logger.warning(
-                    "[publish_task] task_metadata is not valid JSON for task %s — defaulting to {}",
-                    task_id,
-                )
-                task_meta = {}
-        task_meta = task_meta or {}
-        # task_result wins over task_metadata; publish_metadata stored under its own key
-        merged_result = convert_decimals(
-            {**task_meta, **existing_result, "publish_metadata": publish_metadata}
-        )
-        await db_service.update_task_status(
-            task_id, "published", result=safe_json_dumps(merged_result)
+        from services.publish_service import publish_post_from_task
+
+        pub_result = await publish_post_from_task(
+            db_service, task, task_id,
+            publisher="operator",
+            trigger_revalidation=True,
+            queue_social=True,
+            background_tasks=background_tasks,
         )
 
-        # Create post in posts table when publishing (not before)
-        # This ensures posts only exist for published content
-        logger.info(f"Creating posts table entry for published task {task_id}")
-        try:
-            # Use merged content (task_metadata + result) so content is found whatever key the agent used
-            task_result = merged_result
-
-            # Extract content — check task columns first, then metadata/result
-            topic = task.get("topic", "") or task_result.get("topic", "")
-            draft_content = (
-                task.get("content", "")
-                or task_result.get("draft_content", "")
-                or task_result.get("content", "")
-                or task_result.get("body", "")
-                or task_result.get("article", "")
-                or ""
-            )
-            seo_description = task_result.get("seo_description", "") or task.get(
-                "seo_description", ""
-            )
-            seo_keywords = task_result.get("seo_keywords", [])
-            featured_image_url = task_result.get("featured_image_url") or task.get(
-                "featured_image_url"
-            )
-            metadata = task_result.get("metadata", {})
-
-            if draft_content and topic:
-                # 🔑 EXTRACT TITLE: LLM often generates "#Title" at start of content
-                # Extract it and use as the post title, remove from content
-                extracted_title, cleaned_content = extract_title_from_content(draft_content)
-
-                # Use extracted title if available, otherwise fall back to topic
-                post_title = extracted_title or task_result.get("title") or topic
-
-                # Use cleaned content (title removed)
-                post_content = cleaned_content
-
-                logger.info(f"📝 Post title: {post_title}")
-                logger.info(f"   Extracted from content: {bool(extracted_title)}")
-                logger.info(f"   Content length: {len(post_content or '')} chars")
-
-                # Create slug from title (not topic)
-                slug = re.sub(r"[^\w\s-]", "", post_title).lower().replace(" ", "-")[:50]
-                slug = f"{slug}-{task_id[:8]}"
-
-                # Get author and category
-                from services.content_router_service import (
-                    _get_or_create_default_author,
-                    _select_category_for_topic,
-                )
-
-                author_id = await _get_or_create_default_author(db_service)
-                category_id = await _select_category_for_topic(post_title, db_service)
-
-                # Create post with status='published'
-                post = await db_service.create_post(
-                    {
-                        "title": post_title,  # Use extracted title
-                        "slug": slug,
-                        "content": post_content,  # Use cleaned content
-                        "excerpt": seo_description,
-                        "featured_image_url": featured_image_url,
-                        "author_id": author_id,
-                        "category_id": category_id,
-                        "status": "published",  # Published, not draft
-                        "seo_title": post_title,  # Use extracted title for SEO
-                        "seo_description": seo_description,
-                        "seo_keywords": ",".join(seo_keywords) if seo_keywords else "",
-                        "metadata": metadata,
-                    }
-                )
-                logger.info(f"✅ Post created with status='published': {post.id}")  # type: ignore[attr-defined]
-                logger.info(f"   Title: {post_title}")
-                logger.info(f"   Slug: {slug}")
-                post_id_val = str(post.id) if hasattr(post, "id") else str(post.get("id", ""))  # type: ignore[union-attr]
-                logger.info(
-                    "[content_published] task_id=%s post_id=%s user_id=%s slug=%s",
-                    task_id,
-                    post_id_val,
-                    "operator",
-                    slug,
-                )
-                # Persist post info back to task result so frontend gets published_url
-                merged_result["post_id"] = post_id_val
-                merged_result["post_slug"] = slug
-                merged_result["published_url"] = f"/posts/{slug}"
-                await db_service.update_task_status(
-                    task_id, "published", result=safe_json_dumps(convert_decimals(merged_result))
-                )
-
-                # Emit webhook event for published post
-                try:
-                    await emit_webhook_event(db_service.pool, "post.published", {
-                        "task_id": str(task_id), "title": post_title, "site": "default",
-                    })
-                except Exception:
-                    logger.debug("[WEBHOOK] Failed to emit post.published event", exc_info=True)
-
-                # Queue sync + embed as fire-and-forget background tasks
-                if _should_run_post_publish_hooks() and background_tasks:
-                    post_dict_for_embed = {
-                        "id": post_id_val,
-                        "title": post_title,
-                        "excerpt": seo_description,
-                        "content": post_content,
-                    }
-                    background_tasks.add_task(_sync_published_post, post_id_val)
-                    background_tasks.add_task(_embed_published_post, db_service, post_dict_for_embed)
-                    logger.info("[PUBLISH] Queued sync + embed background tasks for post %s", post_id_val)
-            else:
-                logger.warning("⚠️  Skipping post creation: missing content or topic")
-        except Exception as e:
-            logger.error(f"Failed to create post for published task: {str(e)}", exc_info=True)
-            # Don't fail the publish operation if post creation fails
-            # The task is still published, just warn about the post creation issue
-
-        # Generate and distribute social media posts (non-fatal)
-        try:
-            from services.social_poster import generate_and_distribute_social_posts
-            _post_slug = merged_result.get("post_slug", "")
-            _post_title = task.get("title") or task.get("topic") or ""
-            _seo_desc = task.get("seo_description") or ""
-            _seo_kw = task.get("seo_keywords") or []
-            if isinstance(_seo_kw, str):
-                _seo_kw = [k.strip() for k in _seo_kw.split(",") if k.strip()]
-            if _post_title and _post_slug:
-                if background_tasks:
-                    background_tasks.add_task(
-                        generate_and_distribute_social_posts,
-                        title=_post_title,
-                        slug=_post_slug,
-                        excerpt=_seo_desc,
-                        keywords=_seo_kw,
-                    )
-                    logger.info("[SOCIAL] Queued social post generation for %s", _post_slug)
-                else:
-                    await generate_and_distribute_social_posts(
-                        title=_post_title,
-                        slug=_post_slug,
-                        excerpt=_seo_desc,
-                        keywords=_seo_kw,
-                    )
-                    logger.info("[SOCIAL] Social posts generated for %s", _post_slug)
-        except Exception as e:
-            logger.debug("[SOCIAL] Social posting failed (non-fatal): %s", e)
-
-        # Trigger ISR revalidation on public site (#955)
-        # Non-fatal: publish succeeds even if revalidation fails
-        revalidation_success = False
-        post_slug_val = merged_result.get("post_slug")
-        revalidation_paths = ["/", "/archive", "/posts"]
-        if post_slug_val:
-            revalidation_paths.append(f"/posts/{post_slug_val}")
-        try:
-            revalidation_success = await trigger_nextjs_revalidation(revalidation_paths)
-            if not revalidation_success:
-                logger.warning(
-                    "[publish_task] ISR revalidation returned failure — post is published but cache may be stale"
-                )
-        except Exception as reval_err:
-            logger.warning(
-                f"[publish_task] ISR revalidation error (non-fatal): {reval_err}", exc_info=True
-            )
-
-        # Store revalidation status in result for frontend signal
-        merged_result["revalidation"] = {
-            "triggered": True,
-            "success": revalidation_success,
-            "paths": revalidation_paths,
-        }
-        await db_service.update_task_status(
-            task_id, "published", result=safe_json_dumps(convert_decimals(merged_result))
-        )
+        if not pub_result.success:
+            logger.error("[publish_task] Post creation failed: %s", pub_result.error)
+            # Task stays in approved state — don't fail the request entirely
+            # but warn about the issue
 
         # Fetch updated task
         updated_task = await db_service.get_task(task_id)
 
         # Convert to response schema
         try:
-            return UnifiedTaskResponse(
-                **ModelConverter.task_response_to_unified(
-                    ModelConverter.to_task_response(updated_task)
-                )
+            response_data = ModelConverter.task_response_to_unified(
+                ModelConverter.to_task_response(updated_task)
             )
+            if pub_result.published_url:
+                response_data["published_url"] = pub_result.published_url
+            if pub_result.post_id:
+                response_data["post_id"] = pub_result.post_id
+            if pub_result.post_slug:
+                response_data["post_slug"] = pub_result.post_slug
+            response_data["revalidation"] = {
+                "triggered": True,
+                "success": pub_result.revalidation_success,
+            }
+            return UnifiedTaskResponse(**response_data)
         except Exception as resp_err:
             logger.warning(
                 f"[publish_task] Response model conversion failed ({resp_err}); returning minimal response",
@@ -813,10 +479,10 @@ async def publish_task(
             return {  # type: ignore[return-value]
                 "id": task_id,
                 "status": "published",
-                "published_url": merged_result.get("published_url"),
-                "post_id": merged_result.get("post_id"),
-                "post_slug": merged_result.get("post_slug"),
-                "revalidation": merged_result.get("revalidation"),
+                "published_url": pub_result.published_url,
+                "post_id": pub_result.post_id,
+                "post_slug": pub_result.post_slug,
+                "revalidation": {"triggered": True, "success": pub_result.revalidation_success},
                 "message": "Task published successfully",
             }
 

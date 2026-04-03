@@ -131,6 +131,8 @@ class TaskExecutor:
         # How long (seconds) the queue may have pending tasks without any being
         # picked up before we fire a CRITICAL alert.
         self._IDLE_ALERT_THRESHOLD_S: int = 300  # 5 minutes
+        # Timestamp tracker for stale task sweeping (FIX: was dead code)
+        self._last_sweep: float = 0.0
 
         logger.info(
             f"TaskExecutor initialized: orchestrator={'✅' if orchestrator else '❌'}, "
@@ -283,6 +285,11 @@ class TaskExecutor:
                             await idle.run_cycle()
                     except Exception as idle_err:
                         logger.debug("[TASK_EXEC_LOOP] Idle worker error (non-critical): %s", idle_err)
+
+                # Sweep stale tasks on a schedule (every SWEEP_INTERVAL_SECONDS)
+                if time.time() - self._last_sweep > SWEEP_INTERVAL_SECONDS:
+                    await self._sweep_stale_tasks()
+                    self._last_sweep = time.time()
 
                 # Sleep before next poll
                 await asyncio.sleep(self.poll_interval)
@@ -1656,11 +1663,17 @@ The key to success with {topic} is staying informed, adapting to changes, and co
             return 0.0
 
     async def _auto_publish_task(self, task_id: str, quality_score: float):
-        """Auto-approve and publish a task that meets the quality threshold."""
-        # Update status to approved
+        """Auto-approve and publish a task that meets the quality threshold.
+
+        Uses the shared publish_service to actually create a post row,
+        trigger ISR revalidation, queue social media, sync to cloud, and embed.
+        """
+        from services.publish_service import publish_post_from_task
+
+        # Update status to approved first
         await self.database_service.update_task_status(task_id, "approved")
-        # Update task with auto-publish metadata; the scheduled_publisher will handle
-        # the actual post creation, or an external consumer can pick it up.
+
+        # Store auto-publish metadata on the task
         await self.database_service.update_task(task_id, {
             "approval_status": "approved",
             "publish_mode": "auto",
@@ -1670,4 +1683,29 @@ The key to success with {topic} is staying informed, adapting to changes, and co
                 "auto_published_at": datetime.now(timezone.utc).isoformat(),
             }),
         })
-        logger.info(f"✅ [AUTO_PUBLISH] Task {task_id} auto-approved (score: {quality_score})")
+
+        # Fetch the full task to pass to the shared publisher
+        task = await self.database_service.get_task(task_id)
+        if not task:
+            logger.error("[AUTO_PUBLISH] Task %s not found after approval", task_id)
+            return
+
+        result = await publish_post_from_task(
+            self.database_service,
+            task,
+            task_id,
+            publisher="auto_publish",
+            trigger_revalidation=True,
+            queue_social=True,
+        )
+
+        if result.success:
+            self.published_count += 1
+            logger.info(
+                "[AUTO_PUBLISH] Task %s published as post %s (score: %s, slug: %s)",
+                task_id, result.post_id, quality_score, result.post_slug,
+            )
+        else:
+            logger.error(
+                "[AUTO_PUBLISH] Task %s auto-publish failed: %s", task_id, result.error
+            )
