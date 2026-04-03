@@ -1043,53 +1043,62 @@ async def _stage_capture_training_data(
     database_service, task_id, topic, style, tone, target_length, tags,
     content_text, quality_result, featured_image, result
 ):
-    """Stage 6: Capture quality evaluation and training data in PostgreSQL."""
+    """Stage 6: Capture quality evaluation and training data in PostgreSQL.
+
+    This entire stage is non-critical — failures must never crash the pipeline.
+    """
     logger.info("🎓 STAGE 6: Capturing training data...")
 
-    # Capture readability metrics for context_data
-    word_count = len(content_text.split())
-    paragraph_count = len([p for p in content_text.split("\n\n") if p.strip()])
-    sentences = [s.strip() for s in content_text.split(".") if s.strip()]
-    avg_sentence_length = len(sentences) / word_count if word_count > 0 else 0
-
-    await database_service.create_quality_evaluation(
-        {
-            "content_id": task_id,
-            "task_id": task_id,
-            "overall_score": quality_result.overall_score,
-            "clarity": quality_result.dimensions.clarity,
-            "accuracy": quality_result.dimensions.accuracy,
-            "completeness": quality_result.dimensions.completeness,
-            "relevance": quality_result.dimensions.relevance,
-            "seo_quality": quality_result.dimensions.seo_quality,
-            "readability": quality_result.dimensions.readability,
-            "engagement": quality_result.dimensions.engagement,
-            "passing": quality_result.passing,
-            "feedback": quality_result.feedback,
-            "suggestions": quality_result.suggestions,
-            "evaluated_by": "ContentQualityService",
-            "evaluation_method": quality_result.evaluation_method,
-            "content_length": len(content_text),
-            "content": content_text,
-            "context_data": {
-                "topic": topic,
-                "style": style,
-                "tone": tone,
-                "target_length": target_length,
-                "has_featured_image": featured_image is not None,
-                "readability_metrics": {
-                    "word_count": word_count,
-                    "paragraph_count": paragraph_count,
-                    "average_sentence_length": round(avg_sentence_length, 2),
-                    "sentence_count": len(sentences),
-                },
-            },
-        }
-    )
-
-    # Wrap in try/except — re-processed tasks (auto-retry, GPU scheduler)
-    # may already have training data from a previous run.
     try:
+        # Capture readability metrics for context_data
+        word_count = len(content_text.split())
+        paragraph_count = len([p for p in content_text.split("\n\n") if p.strip()])
+        sentences = [s.strip() for s in content_text.split(".") if s.strip()]
+        avg_sentence_length = len(sentences) / word_count if word_count > 0 else 0
+
+        await database_service.create_quality_evaluation(
+            {
+                "content_id": task_id,
+                "task_id": task_id,
+                "overall_score": quality_result.overall_score,
+                "clarity": quality_result.dimensions.clarity,
+                "accuracy": quality_result.dimensions.accuracy,
+                "completeness": quality_result.dimensions.completeness,
+                "relevance": quality_result.dimensions.relevance,
+                "seo_quality": quality_result.dimensions.seo_quality,
+                "readability": quality_result.dimensions.readability,
+                "engagement": quality_result.dimensions.engagement,
+                "passing": quality_result.passing,
+                "feedback": quality_result.feedback,
+                "suggestions": quality_result.suggestions,
+                "evaluated_by": "ContentQualityService",
+                "evaluation_method": quality_result.evaluation_method,
+                "content_length": len(content_text),
+                "content": content_text,
+                "context_data": {
+                    "topic": topic,
+                    "style": style,
+                    "tone": tone,
+                    "target_length": target_length,
+                    "has_featured_image": featured_image is not None,
+                    "readability_metrics": {
+                        "word_count": word_count,
+                        "paragraph_count": paragraph_count,
+                        "average_sentence_length": round(avg_sentence_length, 2),
+                        "sentence_count": len(sentences),
+                    },
+                },
+            }
+        )
+    except Exception as _qe_err:
+        logger.warning("Quality evaluation insert failed (non-critical): %s", _qe_err)
+
+    # Upsert training data — ON CONFLICT in content_db handles duplicates,
+    # but wrap in try/except as a safety net for any DB errors.
+    try:
+        # quality_score is DECIMAL(3,2) i.e. 0.00-9.99; schema expects 0.0-1.0
+        normalized_score = min(quality_result.overall_score / 100, 1.0)
+
         await database_service.create_orchestrator_training_data(
             {
                 "execution_id": task_id,
@@ -1102,7 +1111,7 @@ async def _stage_capture_training_data(
                     "featured_image": featured_image is not None,
                 },
                 "execution_result": "success",
-                "quality_score": quality_result.overall_score / 10,
+                "quality_score": normalized_score,
                 "success": quality_result.passing,
                 "tags": tags or [],
                 "source_agent": "content_router_service",
