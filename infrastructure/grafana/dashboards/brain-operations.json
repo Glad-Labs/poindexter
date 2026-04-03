@@ -59,7 +59,11 @@
         {
           "format": "table",
           "rawSql": "SELECT COUNT(*) as total_embeddings FROM embeddings",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          }
         }
       ],
       "title": "Embeddings",
@@ -117,7 +121,11 @@
         {
           "format": "table",
           "rawSql": "SELECT COUNT(*) as total_tasks FROM content_tasks",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          }
         }
       ],
       "title": "Tasks",
@@ -179,7 +187,11 @@
         {
           "format": "table",
           "rawSql": "SELECT ROUND(AVG(overall_score)::numeric, 1) as avg_quality FROM quality_evaluations WHERE evaluation_timestamp > NOW() - INTERVAL '7 days'",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          }
         }
       ],
       "title": "Quality Avg",
@@ -237,7 +249,11 @@
         {
           "format": "table",
           "rawSql": "SELECT COUNT(*) as knowledge_entries FROM brain_knowledge",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          }
         }
       ],
       "title": "Knowledge",
@@ -337,13 +353,13 @@
             "type": "grafana-postgresql-datasource",
             "uid": "local-brain-db"
           },
-          "format": "time_series",
+          "format": "table",
           "rawSql": "SELECT date_trunc('day', created_at) as time, COUNT(*) as new_embeddings FROM embeddings WHERE created_at BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz GROUP BY 1 ORDER BY 1",
           "refId": "A"
         }
       ],
       "title": "Embeddings Growth",
-      "type": "timeseries"
+      "type": "barchart"
     },
     {
       "datasource": {
@@ -499,13 +515,13 @@
             "type": "grafana-postgresql-datasource",
             "uid": "railway-prod-db"
           },
-          "format": "time_series",
+          "format": "table",
           "rawSql": "SELECT date_trunc('day', evaluation_timestamp) as time, ROUND(AVG(overall_score)::numeric, 2) as avg_score FROM quality_evaluations WHERE evaluation_timestamp BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz GROUP BY 1 ORDER BY 1",
           "refId": "A"
         }
       ],
       "title": "Quality Trend",
-      "type": "timeseries"
+      "type": "barchart"
     },
     {
       "datasource": {
@@ -557,13 +573,13 @@
             "type": "grafana-postgresql-datasource",
             "uid": "railway-prod-db"
           },
-          "format": "time_series",
+          "format": "table",
           "rawSql": "SELECT date_trunc('day', created_at) as time, provider, SUM(cost_usd) as cost FROM cost_logs WHERE created_at BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz GROUP BY 1, 2 ORDER BY 1",
           "refId": "A"
         }
       ],
       "title": "Cost Trend",
-      "type": "timeseries"
+      "type": "barchart"
     },
     {
       "datasource": {
