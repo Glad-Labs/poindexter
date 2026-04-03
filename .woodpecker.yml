@@ -242,7 +242,7 @@ steps:
         from_secret: TELEGRAM_CHAT_ID
     when:
       branch: dev
-      status: failure
+      status: [failure]
 
   notify-deploy-success:
     image: curlimages/curl:latest
@@ -268,7 +268,7 @@ steps:
         from_secret: TELEGRAM_CHAT_ID
     when:
       branch: main
-      status: success
+      status: [success]
 
   notify-deploy-failure:
     image: curlimages/curl:latest
@@ -292,4 +292,4 @@ steps:
         from_secret: TELEGRAM_CHAT_ID
     when:
       branch: main
-      status: failure
+      status: [failure]
