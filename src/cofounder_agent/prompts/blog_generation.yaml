@@ -24,8 +24,9 @@
 
     ⭐ CRITICAL REQUIREMENTS:
     1. Start your response with a Markdown heading (# Your Title Here) on the first line
-    2. Include 3-5 main sections with ## subheadings
-    3. ⚠️ SECTION TITLES MUST BE CATCHY AND CREATIVE - NOT GENERIC!
+    2. Start with a "## What You'll Learn" section (3-5 bullet points of concrete takeaways)
+    3. Include 3-5 main sections with ## subheadings
+    4. ⚠️ SECTION TITLES MUST BE CATCHY AND CREATIVE - NOT GENERIC!
        ❌ AVOID these boring titles: Introduction, Background, Overview, Conclusion, Summary, The End, Final Thoughts, Wrap-up
        ✅ USE these approaches:
           - Curiosity-driven: "Why Most People Get [Topic] Wrong", "The Hidden Truth About [Topic]"
@@ -33,13 +34,22 @@
           - Action-oriented: "Start With [Action]", "Never [Mistake] Again", "The Quickest Way to [Goal]"
           - Insight-focused: "What the Data Shows", "Industry Insiders Reveal", "The Surprising Connection"
           - Story-based: "From [Problem] to [Solution]", "How [Entity] Transformed"
-    4. Incorporate research context provided below
-    5. Add [IMAGE-1], [IMAGE-2], etc. where visuals would enhance the content
-    6. ⚠️ MANDATORY: Write FULL CONTENT to reach approximately {word_count} words.
+    5. Incorporate research context provided below
+    6. Add [IMAGE-1], [IMAGE-2], etc. where visuals would enhance the content
+    7. ⚠️ MANDATORY: Write FULL CONTENT to reach approximately {word_count} words.
        This is NOT a suggestion - your response MUST be comprehensive and thorough to hit this target.
        Break content into multiple detailed sections to meet word count.
        If you're at 50% of target, you're not done - continue adding value and details.
-    7. Format: Valid Markdown with proper structure
+    8. Format: Valid Markdown with proper structure
+    9. End with a "## Key Takeaways" or actionable closing section — give the reader specific next steps they can do TODAY
+
+    ⭐ CODE AND SPECIFICITY REQUIREMENTS (NON-NEGOTIABLE):
+    - Include AT LEAST 2 code examples with proper syntax-highlighted fenced code blocks (```python, ```bash, ```javascript, etc.)
+    - Code examples must be realistic, runnable snippets — NOT pseudocode or toy examples
+    - Name SPECIFIC tools, libraries, frameworks, and products (e.g. "FastAPI", "PostgreSQL 16", "Docker Compose", "pytest") — NOT vague references like "a popular framework" or "modern tools"
+    - Use REAL-WORLD scenarios: actual error messages, real config files, genuine CLI commands — NOT "imagine if..." hypotheticals
+    - When discussing a technology, show how it's actually used: installation commands, config snippets, API calls
+    - If the topic involves a CLI tool, show actual terminal sessions with realistic output
 
     ⭐ RESEARCH CONTEXT TO INCORPORATE:
     {research_context}
@@ -124,6 +134,9 @@
        ❌ AVOID: Introduction, Background, Conclusion, Summary, Wrap-up, Final Thoughts
        ✅ USE: Curiosity-driven ("Why X Fails"), Benefit-focused ("How to Achieve Y"), Action-oriented ("Start With Z")
        Examples: "The Hidden Cost", "Why Companies Struggle", "The 3-Step Solution", "What You're Missing"
+    8. Ensure at least 2 fenced code examples (```python, ```bash, etc.) with realistic, runnable snippets
+    9. Replace any vague tool references with specific product names
+    10. If missing, add a "What You'll Learn" section at the top and actionable takeaways at the end
 
     Improved version:
 
@@ -156,6 +169,14 @@
     - If you don't have a real source, write from expertise without faking one.
     - Use "many organizations have found..." instead of inventing specific companies.
     - It is better to be honestly general than dishonestly specific.
+
+    ⭐ CONTENT DEPTH REQUIREMENTS (NON-NEGOTIABLE):
+    - Include AT LEAST 2 code examples using fenced code blocks with language tags (```python, ```bash, etc.)
+    - Code must be realistic and runnable — real imports, real function signatures, real CLI commands
+    - Name SPECIFIC tools and products (FastAPI, PostgreSQL, Docker, pytest, etc.) — never "a popular tool"
+    - Use real-world scenarios with actual error messages, config files, and CLI output — not hypotheticals
+    - Start with a "What You'll Learn" section listing 3-5 concrete takeaways
+    - End with actionable next steps the reader can do immediately
 
     Include:
     - Compelling introduction (creative title that hooks the reader)

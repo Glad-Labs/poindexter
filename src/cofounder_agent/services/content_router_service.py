@@ -14,6 +14,8 @@ Provides centralized blog post generation with:
 - Comprehensive task tracking
 """
 
+import asyncio
+
 from services.logger_config import get_logger
 from typing import Any, Dict, List, Optional
 
@@ -27,6 +29,39 @@ from .seo_content_generator import get_seo_content_generator
 from .webhook_delivery_service import emit_webhook_event
 
 logger = get_logger(__name__)
+
+# Per-stage timeouts in seconds — easy to tune in one place.
+# Prevents a single slow stage (e.g. Ollama generation) from eating the entire budget.
+STAGE_TIMEOUTS = {
+    "verify_task": 30,
+    "generate_content": 300,      # Stage 2: Draft — 5 min (heaviest LLM call)
+    "quality_evaluation": 60,     # Stage 2B: Pattern QA — 1 min
+    "url_validation": 60,         # Stage 2B.1: URL checks — 1 min
+    "replace_inline_images": 120, # Stage 2C: Image replacement — 2 min
+    "source_featured_image": 120, # Stage 3: Image search — 2 min
+    "cross_model_qa": 180,        # Stage 3.5+3.7: Multi-model QA — 3 min
+    "generate_seo_metadata": 60,  # Stage 4: SEO — 1 min
+    "capture_training_data": 30,  # Stage 5: Training data — 30s
+    "finalize_task": 30,          # Stage 6: Finalize — 30s
+}
+
+
+async def _run_stage_with_timeout(coro, stage_name: str, task_id: str):
+    """Wrap a stage coroutine with a timeout. On timeout, log and return None."""
+    timeout = STAGE_TIMEOUTS.get(stage_name, 120)
+    try:
+        return await asyncio.wait_for(coro, timeout=timeout)
+    except asyncio.TimeoutError:
+        logger.error(
+            "Stage '%s' timed out after %ds for task %s",
+            stage_name, timeout, task_id[:8],
+        )
+        audit_log_bg(
+            "stage_timeout", "content_router",
+            {"stage": stage_name, "timeout_seconds": timeout},
+            task_id=task_id, severity="warning",
+        )
+        return None
 
 
 async def _is_stage_enabled(pool, stage_key: str) -> bool:
@@ -1273,19 +1308,33 @@ async def process_content_generation_task(
         )
 
         # Stage 1: Verify task record
-        await _stage_verify_task(database_service, task_id, result)
+        await _run_stage_with_timeout(
+            _stage_verify_task(database_service, task_id, result),
+            "verify_task", task_id,
+        )
         audit_log_bg("task_started", "content_router", {"topic": topic[:100]}, task_id=task_id)
 
-        # Stage 2: Generate blog content
-        content_text, model_used, metrics, title = await _stage_generate_content(
-            database_service, task_id, topic, style, tone, target_length, tags, models_by_phase, result
+        # Stage 2: Generate blog content (critical — fail pipeline on timeout)
+        gen_result = await _run_stage_with_timeout(
+            _stage_generate_content(
+                database_service, task_id, topic, style, tone, target_length, tags, models_by_phase, result
+            ),
+            "generate_content", task_id,
         )
+        if gen_result is None:
+            raise RuntimeError(f"Stage 'generate_content' timed out after {STAGE_TIMEOUTS['generate_content']}s — cannot continue without content")
+        content_text, model_used, metrics, title = gen_result
         audit_log_bg("generation_complete", "content_router", {
             "model": model_used, "word_count": len(content_text.split()) if content_text else 0,
         }, task_id=task_id)
 
-        # Stage 2B: Quality evaluation
-        quality_result = await _stage_quality_evaluation(topic, tags, content_text, quality_service, result)
+        # Stage 2B: Quality evaluation (critical — fail pipeline on timeout)
+        quality_result = await _run_stage_with_timeout(
+            _stage_quality_evaluation(topic, tags, content_text, quality_service, result),
+            "quality_evaluation", task_id,
+        )
+        if quality_result is None:
+            raise RuntimeError(f"Stage 'quality_evaluation' timed out after {STAGE_TIMEOUTS['quality_evaluation']}s — cannot continue without QA score")
         audit_log_bg("qa_passed" if quality_result.overall_score >= 50 else "qa_failed", "content_router", {
             "score": quality_result.overall_score, "stage": "early_eval",
         }, task_id=task_id)
@@ -1324,15 +1373,23 @@ async def process_content_generation_task(
             logger.warning("URL validation failed (non-critical): %s", _url_err)
             result["url_validation"] = {"error": str(_url_err)}
 
-        # Stage 2C: Replace inline image placeholders
-        content_text = await _stage_replace_inline_images(
-            database_service, task_id, topic, content_text, image_service, result
+        # Stage 2C: Replace inline image placeholders (non-critical — skip on timeout)
+        _img_result = await _run_stage_with_timeout(
+            _stage_replace_inline_images(
+                database_service, task_id, topic, content_text, image_service, result
+            ),
+            "replace_inline_images", task_id,
         )
+        if _img_result is not None:
+            content_text = _img_result
 
-        # Stage 3: Source featured image (gate-checked)
+        # Stage 3: Source featured image (gate-checked, non-critical — skip on timeout)
         if await _is_stage_enabled(_pool, "featured_image"):
-            featured_image = await _stage_source_featured_image(
-                topic, tags, generate_featured_image, image_service, result
+            featured_image = await _run_stage_with_timeout(
+                _stage_source_featured_image(
+                    topic, tags, generate_featured_image, image_service, result
+                ),
+                "source_featured_image", task_id,
             )
         else:
             featured_image = None
@@ -1346,70 +1403,93 @@ async def process_content_generation_task(
         else:
             from services.multi_model_qa import MultiModelQA
             _qa = MultiModelQA(pool=database_service.pool)
-            _qa_result = await _qa.review(
-                title=_normalize_text(result.get("seo_title", topic)),
-                content=_normalize_text(content_text),
-                topic=topic,
+            _qa_result = await _run_stage_with_timeout(
+                _qa.review(
+                    title=_normalize_text(result.get("seo_title", topic)),
+                    content=_normalize_text(content_text),
+                    topic=topic,
+                ),
+                "cross_model_qa", task_id,
             )
-            result["qa_final_score"] = _qa_result.final_score
-            result["qa_reviews"] = [
-                {"reviewer": r.reviewer, "score": r.score, "approved": r.approved,
-                 "feedback": r.feedback, "provider": r.provider}
-                for r in _qa_result.reviews
-            ]
-            # Log QA review cost to database
-            if _qa_result.cost_log and database_service:
-                try:
-                    _qa_result.cost_log["task_id"] = task_id
-                    await database_service.log_cost(_qa_result.cost_log)
-                    logger.info("QA cost logged: $%.4f (%s/%s)", _qa_result.cost_log["cost_usd"], _qa_result.cost_log["provider"], _qa_result.cost_log["model"])
-                    audit_log_bg("cost_logged", "content_router", {
-                        "cost_usd": _qa_result.cost_log.get("cost_usd"),
-                        "provider": _qa_result.cost_log.get("provider"),
-                        "model": _qa_result.cost_log.get("model"),
-                        "phase": "multi_model_qa",
-                    }, task_id=task_id)
-                except Exception as e:
-                    logger.warning("QA cost logging failed (non-critical): %s", e)
+            if _qa_result is None:
+                logger.warning("Cross-model QA timed out for task %s — using early QA score", task_id[:8])
+                result["qa_final_score"] = quality_result.overall_score
+                result["qa_reviews"] = [{"reviewer": "timeout", "score": 0, "approved": True,
+                                         "feedback": "QA stage timed out — skipped", "provider": "none"}]
+            else:
+                result["qa_final_score"] = _qa_result.final_score
+                result["qa_reviews"] = [
+                    {"reviewer": r.reviewer, "score": r.score, "approved": r.approved,
+                     "feedback": r.feedback, "provider": r.provider}
+                    for r in _qa_result.reviews
+                ]
+                # Log QA review cost to database
+                if _qa_result.cost_log and database_service:
+                    try:
+                        _qa_result.cost_log["task_id"] = task_id
+                        await database_service.log_cost(_qa_result.cost_log)
+                        logger.info("QA cost logged: $%.4f (%s/%s)", _qa_result.cost_log["cost_usd"], _qa_result.cost_log["provider"], _qa_result.cost_log["model"])
+                        audit_log_bg("cost_logged", "content_router", {
+                            "cost_usd": _qa_result.cost_log.get("cost_usd"),
+                            "provider": _qa_result.cost_log.get("provider"),
+                            "model": _qa_result.cost_log.get("model"),
+                            "phase": "multi_model_qa",
+                        }, task_id=task_id)
+                    except Exception as e:
+                        logger.warning("QA cost logging failed (non-critical): %s", e)
 
-            if not _qa_result.approved:
-                logger.warning(
-                    "[MULTI_QA] Content rejected for task %s:\n%s",
-                    task_id[:8], _qa_result.summary,
-                )
-                audit_log_bg("qa_failed", "content_router", {
+                if not _qa_result.approved:
+                    logger.warning(
+                        "[MULTI_QA] Content rejected for task %s:\n%s",
+                        task_id[:8], _qa_result.summary,
+                    )
+                    audit_log_bg("qa_failed", "content_router", {
+                        "score": _qa_result.final_score, "stage": "multi_model_qa",
+                        "summary": _qa_result.summary[:300],
+                    }, task_id=task_id, severity="warning")
+                    result["status"] = "rejected"
+                    await database_service.update_task(task_id, {
+                        "status": "rejected",
+                        "error_message": f"Multi-model QA rejected (score: {_qa_result.final_score:.0f}): "
+                            + (_qa_result.reviews[-1].feedback[:200] if _qa_result.reviews else "No feedback"),
+                    })
+                    return result
+                audit_log_bg("qa_passed", "content_router", {
                     "score": _qa_result.final_score, "stage": "multi_model_qa",
-                    "summary": _qa_result.summary[:300],
-                }, task_id=task_id, severity="warning")
-                result["status"] = "rejected"
-                await database_service.update_task(task_id, {
-                    "status": "rejected",
-                    "error_message": f"Multi-model QA rejected (score: {_qa_result.final_score:.0f}): "
-                        + (_qa_result.reviews[-1].feedback[:200] if _qa_result.reviews else "No feedback"),
-                })
-                return result
-            audit_log_bg("qa_passed", "content_router", {
-                "score": _qa_result.final_score, "stage": "multi_model_qa",
-            }, task_id=task_id)
-            logger.info("[MULTI_QA] Content approved for task %s: %s", task_id[:8], _qa_result.summary.split("\\n")[0])
+                }, task_id=task_id)
+                logger.info("[MULTI_QA] Content approved for task %s: %s", task_id[:8], _qa_result.summary.split("\\n")[0])
 
-        # Stage 4: Generate SEO metadata
+        # Stage 4: Generate SEO metadata (non-critical — use fallbacks on timeout)
         content_generator = get_content_generator()
-        seo_title, seo_description, seo_keywords = await _stage_generate_seo_metadata(
-            topic, tags, content_text, content_generator, result
+        seo_result = await _run_stage_with_timeout(
+            _stage_generate_seo_metadata(
+                topic, tags, content_text, content_generator, result
+            ),
+            "generate_seo_metadata", task_id,
         )
+        if seo_result is not None:
+            seo_title, seo_description, seo_keywords = seo_result
+        else:
+            logger.warning("SEO metadata timed out for task %s — using topic as fallback", task_id[:8])
+            seo_title, seo_description, seo_keywords = topic[:60], topic[:160], tags or []
 
-        # Stage 6: Capture training data
-        await _stage_capture_training_data(
-            database_service, task_id, topic, style, tone, target_length, tags,
-            content_text, quality_result, featured_image, result
+        # Stage 5/6: Capture training data (non-critical — skip on timeout)
+        await _run_stage_with_timeout(
+            _stage_capture_training_data(
+                database_service, task_id, topic, style, tone, target_length, tags,
+                content_text, quality_result, featured_image, result
+            ),
+            "capture_training_data", task_id,
         )
 
         # Final: Update task with status and metadata
-        await _stage_finalize_task(
-            database_service, task_id, topic, style, tone, content_text,
-            quality_result, seo_title, seo_description, seo_keywords,
-            category, target_audience, result
+        await _run_stage_with_timeout(
+            _stage_finalize_task(
+                database_service, task_id, topic, style, tone, content_text,
+                quality_result, seo_title, seo_description, seo_keywords,
+                category, target_audience, result
+            ),
+            "finalize_task", task_id,
         )
 
         audit_log_bg("pipeline_complete", "content_router", {

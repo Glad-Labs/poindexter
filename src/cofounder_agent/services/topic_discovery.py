@@ -87,11 +87,18 @@ class TopicDiscovery:
     async def discover(self, max_topics: int = 10, categories: Optional[List[str]] = None) -> List[DiscoveredTopic]:
         """Discover fresh topics from multiple sources.
 
+        Brain knowledge is the primary source (works offline).
+        Web scraping enriches with trending signals when available.
+
         Returns deduplicated, scored topics ready for queuing.
         """
         all_topics: List[DiscoveredTopic] = []
 
-        # Scrape from multiple sources concurrently
+        # Primary: generate topics from brain knowledge (always available)
+        knowledge_topics = await self._discover_from_knowledge(categories)
+        all_topics.extend(knowledge_topics)
+
+        # Enrichment: scrape from web sources concurrently
         sources = await asyncio.gather(
             self._scrape_hackernews(),
             self._scrape_devto(),
@@ -135,6 +142,109 @@ class TopicDiscovery:
             except Exception as e:
                 logger.warning("[TOPIC_DISCOVERY] Failed to queue '%s': %s", topic.title[:40], e)
         return queued
+
+    async def _discover_from_knowledge(self, categories: Optional[List[str]] = None) -> List[DiscoveredTopic]:
+        """Generate topics from the brain's own knowledge graph and gap analysis.
+
+        Works completely offline — no internet required. Combines:
+        1. brain_knowledge entities related to content/tech
+        2. Published post titles (to find category gaps)
+        3. topic_gaps analysis from idle_worker
+        """
+        topics: List[DiscoveredTopic] = []
+        if not self.pool:
+            return topics
+
+        try:
+            # 1. Get knowledge entities (tech/content related)
+            knowledge_rows = await self.pool.fetch("""
+                SELECT DISTINCT entity, attribute, value
+                FROM brain_knowledge
+                WHERE attribute IN ('topic', 'trend', 'technology', 'category', 'gap', 'opportunity')
+                   OR entity ILIKE '%content%' OR entity ILIKE '%topic%' OR entity ILIKE '%tech%'
+                ORDER BY updated_at DESC NULLS LAST
+                LIMIT 50
+            """)
+
+            # 2. Count published posts per category to find gaps
+            category_counts = await self.pool.fetch("""
+                SELECT c.name AS category, COUNT(p.id) AS post_count
+                FROM categories c
+                LEFT JOIN posts p ON p.category_id = c.id AND p.status = 'published'
+                GROUP BY c.name
+                ORDER BY post_count ASC
+            """)
+
+            # Build a map of underserved categories
+            underserved: Dict[str, int] = {}
+            for row in category_counts:
+                cat = row["category"].lower() if row["category"] else "technology"
+                count = row["post_count"]
+                # Categories with fewer posts are underserved
+                underserved[cat] = count
+
+            avg_posts = sum(underserved.values()) / max(len(underserved), 1)
+
+            # 3. Check for topic_gaps from idle_worker analysis
+            gap_rows = await self.pool.fetch("""
+                SELECT value
+                FROM brain_knowledge
+                WHERE entity = 'content_strategy' AND attribute = 'topic_gap'
+                ORDER BY updated_at DESC NULLS LAST
+                LIMIT 20
+            """)
+
+            # Generate topics from gaps first (highest value)
+            for row in gap_rows:
+                gap_value = row["value"]
+                if not gap_value or len(gap_value) < 10:
+                    continue
+                category = self._classify_category(gap_value)
+                if categories and category not in categories:
+                    continue
+                topics.append(DiscoveredTopic(
+                    title=gap_value,
+                    category=category,
+                    source="brain_knowledge_gap",
+                    source_url="",
+                    relevance_score=4.0,  # High score — gaps are high value
+                ))
+
+            # Generate topics from knowledge entities + underserved categories
+            for row in knowledge_rows:
+                entity = row["entity"]
+                value = row["value"]
+                if not value or len(value) < 10:
+                    continue
+
+                # Use the value as a topic seed
+                candidate = value if len(value) < 120 else entity
+                if len(candidate) < 10:
+                    continue
+
+                category = self._classify_category(candidate)
+                if categories and category not in categories:
+                    continue
+
+                # Boost score for underserved categories
+                cat_count = underserved.get(category, 0)
+                gap_boost = max(0, (avg_posts - cat_count) / max(avg_posts, 1)) * 2.0
+                base_score = 2.5 + gap_boost
+
+                topics.append(DiscoveredTopic(
+                    title=self._rewrite_as_blog_topic(candidate),
+                    category=category,
+                    source="brain_knowledge",
+                    source_url="",
+                    relevance_score=base_score,
+                ))
+
+            logger.info("[TOPIC_DISCOVERY] Brain knowledge: %d topics (%d gaps, %d entities)",
+                        len(topics), len(gap_rows), len(knowledge_rows))
+        except Exception as e:
+            logger.warning("[TOPIC_DISCOVERY] Brain knowledge discovery failed: %s", e)
+
+        return topics
 
     async def _scrape_hackernews(self) -> List[DiscoveredTopic]:
         """Scrape top stories from Hacker News API (free, no auth)."""
