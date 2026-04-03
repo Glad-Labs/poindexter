@@ -475,6 +475,107 @@ class SyncService:
 
         return {"rows_pulled": len(rows)}
 
+    async def pull_newsletter_subscribers(self) -> Dict[str, Any]:
+        """
+        Pull newsletter_subscribers rows from cloud DB into local DB.
+
+        Uses updated_at watermark to only fetch new/changed rows.
+        Upserts by id so re-runs are safe (handles unsubscribes, verification updates).
+        """
+        if not self._require_pools():
+            return {"status": "skipped", "reason": "pools not connected"}
+
+        try:
+            # Ensure the table exists locally
+            async with self._local_pool.acquire() as local:
+                await local.execute("""
+                    CREATE TABLE IF NOT EXISTS newsletter_subscribers (
+                        id SERIAL PRIMARY KEY,
+                        email VARCHAR(255) NOT NULL UNIQUE,
+                        first_name VARCHAR(100),
+                        last_name VARCHAR(100),
+                        company VARCHAR(255),
+                        interest_categories JSONB,
+                        subscribed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                        ip_address VARCHAR(45),
+                        user_agent TEXT,
+                        verified BOOLEAN DEFAULT FALSE,
+                        verification_token VARCHAR(255),
+                        verified_at TIMESTAMP WITH TIME ZONE,
+                        unsubscribed_at TIMESTAMP WITH TIME ZONE,
+                        unsubscribe_reason TEXT,
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                        marketing_consent BOOLEAN DEFAULT FALSE
+                    )
+                """)
+                row = await local.fetchrow(
+                    "SELECT MAX(updated_at) AS max_ts FROM newsletter_subscribers",
+                )
+                last_ts = row["max_ts"] if row else None
+
+            # Fetch new/updated rows from cloud
+            async with self._cloud_pool.acquire() as cloud:
+                if last_ts:
+                    rows = await cloud.fetch(
+                        "SELECT * FROM newsletter_subscribers "
+                        "WHERE updated_at > $1 ORDER BY updated_at LIMIT 1000",
+                        last_ts,
+                    )
+                else:
+                    rows = await cloud.fetch(
+                        "SELECT * FROM newsletter_subscribers "
+                        "ORDER BY updated_at LIMIT 1000",
+                    )
+
+            if not rows:
+                return {"rows_pulled": 0}
+
+            # Upsert into local DB
+            async with self._local_pool.acquire() as local:
+                async with local.transaction():
+                    for r in rows:
+                        await local.execute(
+                            """
+                            INSERT INTO newsletter_subscribers (
+                                id, email, first_name, last_name, company,
+                                interest_categories, subscribed_at, ip_address, user_agent,
+                                verified, verification_token, verified_at,
+                                unsubscribed_at, unsubscribe_reason,
+                                created_at, updated_at, marketing_consent
+                            )
+                            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+                            ON CONFLICT (id) DO UPDATE SET
+                                email              = EXCLUDED.email,
+                                first_name         = EXCLUDED.first_name,
+                                last_name          = EXCLUDED.last_name,
+                                company            = EXCLUDED.company,
+                                interest_categories = EXCLUDED.interest_categories,
+                                subscribed_at      = EXCLUDED.subscribed_at,
+                                verified           = EXCLUDED.verified,
+                                verified_at        = EXCLUDED.verified_at,
+                                unsubscribed_at    = EXCLUDED.unsubscribed_at,
+                                unsubscribe_reason = EXCLUDED.unsubscribe_reason,
+                                updated_at         = EXCLUDED.updated_at,
+                                marketing_consent  = EXCLUDED.marketing_consent
+                            """,
+                            r["id"], r["email"], r.get("first_name"), r.get("last_name"),
+                            r.get("company"), r.get("interest_categories"),
+                            r.get("subscribed_at"), r.get("ip_address"), r.get("user_agent"),
+                            r.get("verified", False), r.get("verification_token"),
+                            r.get("verified_at"), r.get("unsubscribed_at"),
+                            r.get("unsubscribe_reason"),
+                            r["created_at"], r["updated_at"],
+                            r.get("marketing_consent", False),
+                        )
+
+            logger.info("Pulled %d newsletter_subscribers rows from cloud", len(rows))
+            return {"rows_pulled": len(rows)}
+
+        except Exception as exc:
+            logger.error("Failed to pull newsletter_subscribers: %s", exc, exc_info=True)
+            return {"error": str(exc)}
+
     async def _pull_newsletter_stats(self) -> Dict[str, Any]:
         """
         Pull aggregate newsletter stats from cloud and store as a

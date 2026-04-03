@@ -79,6 +79,10 @@ class IdleWorker:
             results["sync_page_views"] = await self._sync_page_views()
             self._mark_run("sync_page_views")
 
+        if self._is_due("sync_newsletter_subscribers", 60):
+            results["sync_newsletter_subscribers"] = await self._sync_newsletter_subscribers()
+            self._mark_run("sync_newsletter_subscribers")
+
         # Check if there are pending content tasks — if so, skip heavier idle work
         pending = await self.pool.fetchrow(
             "SELECT COUNT(*) as c FROM content_tasks WHERE status IN ('pending', 'approved', 'in_progress')"
@@ -944,6 +948,113 @@ class IdleWorker:
 
         except Exception as e:
             logger.warning("[IDLE] page_views sync failed: %s", e)
+            return {"error": str(e)}
+
+    async def _sync_newsletter_subscribers(self) -> dict:
+        """Pull new/updated newsletter_subscribers from cloud (Railway) DB into local brain DB.
+
+        Grafana queries the local DB, so this sync keeps subscriber data
+        available locally. Uses updated_at watermark and INSERT ON CONFLICT
+        to stay idempotent (handles unsubscribes, verification changes).
+        """
+        try:
+            import asyncpg
+            import os
+
+            cloud_url = os.getenv("DATABASE_URL", "")
+            if not cloud_url:
+                return {"note": "no DATABASE_URL — skipping newsletter_subscribers sync"}
+
+            # Ensure local table exists
+            await self.pool.execute("""
+                CREATE TABLE IF NOT EXISTS newsletter_subscribers (
+                    id SERIAL PRIMARY KEY,
+                    email VARCHAR(255) NOT NULL UNIQUE,
+                    first_name VARCHAR(100),
+                    last_name VARCHAR(100),
+                    company VARCHAR(255),
+                    interest_categories JSONB,
+                    subscribed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    ip_address VARCHAR(45),
+                    user_agent TEXT,
+                    verified BOOLEAN DEFAULT FALSE,
+                    verification_token VARCHAR(255),
+                    verified_at TIMESTAMP WITH TIME ZONE,
+                    unsubscribed_at TIMESTAMP WITH TIME ZONE,
+                    unsubscribe_reason TEXT,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    marketing_consent BOOLEAN DEFAULT FALSE
+                )
+            """)
+
+            # Watermark: latest updated_at in local DB
+            row = await self.pool.fetchrow("SELECT MAX(updated_at) AS max_ts FROM newsletter_subscribers")
+            last_ts = row["max_ts"] if row else None
+
+            cloud = await asyncpg.connect(cloud_url)
+            try:
+                if last_ts:
+                    rows = await cloud.fetch(
+                        "SELECT * FROM newsletter_subscribers "
+                        "WHERE updated_at > $1 ORDER BY updated_at LIMIT 1000",
+                        last_ts,
+                    )
+                else:
+                    rows = await cloud.fetch(
+                        "SELECT * FROM newsletter_subscribers "
+                        "ORDER BY updated_at LIMIT 1000",
+                    )
+            finally:
+                await cloud.close()
+
+            if not rows:
+                logger.debug("[IDLE] newsletter_subscribers sync: 0 new rows")
+                return {"rows_synced": 0}
+
+            # Batch upsert into local DB
+            async with self.pool.acquire() as conn:
+                async with conn.transaction():
+                    for r in rows:
+                        await conn.execute(
+                            """
+                            INSERT INTO newsletter_subscribers (
+                                id, email, first_name, last_name, company,
+                                interest_categories, subscribed_at, ip_address, user_agent,
+                                verified, verification_token, verified_at,
+                                unsubscribed_at, unsubscribe_reason,
+                                created_at, updated_at, marketing_consent
+                            )
+                            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+                            ON CONFLICT (id) DO UPDATE SET
+                                email              = EXCLUDED.email,
+                                first_name         = EXCLUDED.first_name,
+                                last_name          = EXCLUDED.last_name,
+                                company            = EXCLUDED.company,
+                                interest_categories = EXCLUDED.interest_categories,
+                                subscribed_at      = EXCLUDED.subscribed_at,
+                                verified           = EXCLUDED.verified,
+                                verified_at        = EXCLUDED.verified_at,
+                                unsubscribed_at    = EXCLUDED.unsubscribed_at,
+                                unsubscribe_reason = EXCLUDED.unsubscribe_reason,
+                                updated_at         = EXCLUDED.updated_at,
+                                marketing_consent  = EXCLUDED.marketing_consent
+                            """,
+                            r["id"], r["email"], r.get("first_name"), r.get("last_name"),
+                            r.get("company"), r.get("interest_categories"),
+                            r.get("subscribed_at"), r.get("ip_address"), r.get("user_agent"),
+                            r.get("verified", False), r.get("verification_token"),
+                            r.get("verified_at"), r.get("unsubscribed_at"),
+                            r.get("unsubscribe_reason"),
+                            r["created_at"], r["updated_at"],
+                            r.get("marketing_consent", False),
+                        )
+
+            logger.info("[IDLE] newsletter_subscribers sync: pulled %d rows", len(rows))
+            return {"rows_synced": len(rows)}
+
+        except Exception as e:
+            logger.warning("[IDLE] newsletter_subscribers sync failed: %s", e)
             return {"error": str(e)}
 
     # Known GPU TDPs (watts) — add more as needed
