@@ -90,12 +90,9 @@ tmpclaude*
 docs/archive/
 
 # ============================================================
-# Documentation (proprietary — sold via Gumroad, not open source)
+# Documentation (proprietary — the product, not the code)
 # ============================================================
-docs/products/
-docs/marketing/
-docs/operations/
-docs/screenshots/
+docs/
 
 # ============================================================
 # Logs (never commit)
@@ -117,3 +114,4 @@ Modelfile*
 *.gguf
 .env.local.backup
 infrastructure/headscale/certs/key.pem
+mcp.json

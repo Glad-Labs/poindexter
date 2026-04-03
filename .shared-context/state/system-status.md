@@ -1,18 +1,18 @@
 ---
 name: System Status
-last_updated: 2026-04-02T23:14:21Z
+last_updated: 2026-04-03T00:59:19Z
 updated_by: sync-shared-context
 category: state
 ---
 
 # System Status (auto-generated)
 
-**Last sync:** 2026-04-02T23:14:21Z
+**Last sync:** 2026-04-03T00:59:19Z
 
 ## Content
 
-- Published posts: 141
-- Drafts: 11
+- Published posts: 40
+- Drafts: 112
 - Pending/approved tasks: 0
 - Failed tasks: 15
 - Newsletter subscribers: 1
@@ -20,7 +20,7 @@ category: state
 
 ## Categories
 
-- Technology: 112 posts
+- Technology: 14 posts
 - Business: 11 posts
 - Startup: 5 posts
 - Engineering: 4 posts
@@ -29,7 +29,7 @@ category: state
 
 ## Configuration
 
-- App settings: 128 keys
+- App settings: 130 keys
 - Prompt templates: 27 active
 - Pipeline stages: 16 enabled
 - Embeddings: 1038 vectors
