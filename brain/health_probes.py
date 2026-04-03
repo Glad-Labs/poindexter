@@ -11,6 +11,9 @@ Standalone: only depends on asyncpg + urllib (no FastAPI imports).
 import json
 import logging
 import os
+import platform
+import shutil
+import subprocess
 import time
 import urllib.error
 import urllib.request
@@ -77,6 +80,8 @@ PROBE_SCHEDULES = {
     "image_search": 3600,      # 1 hour
     "grafana_datasources": 300,  # 5 min
     "public_site": 300,          # 5 min
+    "scheduled_tasks": 3600,     # 1 hour
+    "disk_space": 3600,          # 1 hour
 }
 
 # Track last run times
@@ -322,6 +327,93 @@ async def probe_public_site(_pool) -> dict:
         return {"ok": False, "detail": f"Public site check failed: {str(e)[:100]}"}
 
 
+async def probe_scheduled_tasks(_pool) -> dict:
+    """Probe: Check Windows scheduled tasks for failures (non-zero last result)."""
+    if IS_RAILWAY or platform.system() != "Windows":
+        return {"ok": True, "detail": "skipped (not Windows)"}
+    try:
+        # Query Glad Labs scheduled tasks via schtasks
+        result = subprocess.run(
+            ["schtasks", "/query", "/fo", "CSV", "/v"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode != 0:
+            return {"ok": False, "detail": f"schtasks failed: {result.stderr[:100]}"}
+
+        # Parse CSV output — look for our tasks with non-zero "Last Result"
+        import csv
+        import io
+        reader = csv.DictReader(io.StringIO(result.stdout))
+        failed_tasks = []
+        for row in reader:
+            task_name = row.get("TaskName", "")
+            # Only check Glad Labs tasks (in root or GladLabs folder)
+            if not any(kw in task_name.lower() for kw in [
+                "openclaw", "worker", "brain", "publisher", "nvidia",
+                "power", "content", "update", "claude", "gladlabs", "glad"
+            ]):
+                continue
+            last_result = row.get("Last Result", "0")
+            # 0 = success, 1 = running/queued (OK), 267011 = task hasn't run yet
+            if last_result not in ("0", "1", "267011", "267009"):
+                try:
+                    code = int(last_result)
+                    if code != 0:
+                        short_name = task_name.split("\\")[-1]
+                        failed_tasks.append(f"{short_name} (exit {code})")
+                except ValueError:
+                    pass
+
+        if failed_tasks:
+            return {
+                "ok": False,
+                "failed": failed_tasks[:5],
+                "detail": f"{len(failed_tasks)} task(s) failing: {', '.join(failed_tasks[:3])}",
+            }
+        return {"ok": True, "detail": "all scheduled tasks healthy"}
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "detail": "schtasks timed out after 15s"}
+    except Exception as e:
+        return {"ok": False, "detail": f"scheduled task check failed: {str(e)[:150]}"}
+
+
+async def probe_disk_space(_pool) -> dict:
+    """Probe: Alert if any drive drops below 10% free space."""
+    if IS_RAILWAY:
+        return {"ok": True, "detail": "skipped on Railway (managed infra)"}
+    try:
+        warnings = []
+        if platform.system() == "Windows":
+            # Check all lettered drives
+            for letter in "CDEFGH":
+                drive = f"{letter}:\\"
+                try:
+                    usage = shutil.disk_usage(drive)
+                    pct_free = (usage.free / usage.total) * 100
+                    if pct_free < 10:
+                        gb_free = usage.free / (1024 ** 3)
+                        warnings.append(f"{drive} {pct_free:.1f}% free ({gb_free:.1f} GB)")
+                except (FileNotFoundError, OSError):
+                    pass  # Drive doesn't exist
+        else:
+            # Linux/Mac — check root
+            usage = shutil.disk_usage("/")
+            pct_free = (usage.free / usage.total) * 100
+            if pct_free < 10:
+                gb_free = usage.free / (1024 ** 3)
+                warnings.append(f"/ {pct_free:.1f}% free ({gb_free:.1f} GB)")
+
+        if warnings:
+            return {
+                "ok": False,
+                "low_drives": warnings,
+                "detail": f"Low disk space: {', '.join(warnings)}",
+            }
+        return {"ok": True, "detail": "all drives above 10% free"}
+    except Exception as e:
+        return {"ok": False, "detail": f"disk check failed: {str(e)[:150]}"}
+
+
 # All probes in execution order
 PROBES = {
     "db_ping": probe_db_ping,
@@ -333,6 +425,8 @@ PROBES = {
     "image_search": probe_image_search,
     "grafana_datasources": probe_grafana_datasources,
     "public_site": probe_public_site,
+    "scheduled_tasks": probe_scheduled_tasks,
+    "disk_space": probe_disk_space,
 }
 
 # Track consecutive failures for alerting

@@ -215,3 +215,274 @@ groups:
                     type: and
                   reducer:
                     type: last
+
+      # 5. DAILY COST SPIKE — cost_logs SUM in last 24h exceeds $5
+      - uid: brain-daily-cost-spike
+        title: Daily Cost Spike
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          team: glad-labs
+        annotations:
+          summary: "Daily LLM spending exceeded $5 budget"
+          description: "Total cost in the last 24 hours is ${{ $values.B.Value }}. Check cost_logs for runaway API calls."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 86400
+              to: 0
+            model:
+              rawSql: "SELECT COALESCE(SUM(cost_usd), 0) as daily_cost FROM cost_logs WHERE created_at > NOW() - INTERVAL '24 hours'"
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 5
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+
+      # 6. CONTENT QUALITY DROP — avg quality_score over last 7 days below 70
+      - uid: brain-content-quality-drop
+        title: Content Quality Drop
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          team: glad-labs
+        annotations:
+          summary: "Average content quality score dropped below 70"
+          description: "7-day average quality score is {{ $values.B.Value }}. Review pipeline prompts or model performance."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 604800
+              to: 0
+            model:
+              rawSql: "SELECT COALESCE(AVG(quality_score), 100) as avg_score FROM content_tasks WHERE quality_score IS NOT NULL AND updated_at > NOW() - INTERVAL '7 days'"
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: lt
+                    params:
+                      - 70
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+
+      # 7. TRAFFIC ANOMALY — page_views dropped >50% vs previous 24h
+      - uid: brain-traffic-anomaly
+        title: Traffic Anomaly
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          team: glad-labs
+        annotations:
+          summary: "Page views dropped over 50% compared to previous day"
+          description: "Today: {{ $values.B.Value }} ratio vs yesterday. Possible site issue, SEO penalty, or CDN problem."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 172800
+              to: 0
+            model:
+              rawSql: >
+                WITH today AS (
+                  SELECT COUNT(*) as cnt FROM page_views
+                  WHERE viewed_at > NOW() - INTERVAL '24 hours'
+                ), yesterday AS (
+                  SELECT COUNT(*) as cnt FROM page_views
+                  WHERE viewed_at BETWEEN NOW() - INTERVAL '48 hours' AND NOW() - INTERVAL '24 hours'
+                )
+                SELECT CASE WHEN yesterday.cnt = 0 THEN 1.0
+                            ELSE today.cnt::float / yesterday.cnt::float
+                       END as ratio
+                FROM today, yesterday
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: lt
+                    params:
+                      - 0.5
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+
+      # 8. PIPELINE STALLED — zero new content_tasks in last 48h
+      - uid: brain-pipeline-stalled
+        title: Pipeline Stalled
+        condition: C
+        for: 0s
+        noDataState: Alerting
+        execErrState: Error
+        labels:
+          severity: warning
+          team: glad-labs
+        annotations:
+          summary: "No new content tasks created in 48 hours"
+          description: "The pipeline has not generated any new tasks in 2 days. Check worker status, cron jobs, and Ollama health."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 172800
+              to: 0
+            model:
+              rawSql: "SELECT COUNT(*) as task_count FROM content_tasks WHERE created_at > NOW() - INTERVAL '48 hours'"
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: lt
+                    params:
+                      - 1
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+
+      # 9. ZERO PUBLISHED POSTS THIS WEEK — no posts published in 7 days
+      - uid: brain-zero-published-week
+        title: Zero Published Posts This Week
+        condition: C
+        for: 0s
+        noDataState: Alerting
+        execErrState: Error
+        labels:
+          severity: warning
+          team: glad-labs
+        annotations:
+          summary: "No posts published in the last 7 days"
+          description: "The pipeline has not published any content this week. Check approval queue, quality scores, and auto-publish threshold."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 604800
+              to: 0
+            model:
+              rawSql: "SELECT COUNT(*) as pub_count FROM posts WHERE status = 'published' AND published_at > NOW() - INTERVAL '7 days'"
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: lt
+                    params:
+                      - 1
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
