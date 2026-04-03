@@ -132,6 +132,40 @@ services:
     depends_on:
       - woodpecker-server
 
+  # ===========================================
+  # Content Pipeline Worker — claims tasks, runs Ollama inference
+  # ===========================================
+  worker:
+    build:
+      context: ./src/cofounder_agent
+      dockerfile: Dockerfile.worker
+    container_name: gladlabs-worker
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+    environment:
+      DEPLOYMENT_MODE: worker
+      ENVIRONMENT: production
+      PORT: "8002"
+      DATABASE_URL: "postgresql://postgres:***REMOVED***@hopper.proxy.rlwy.net:32382/railway"
+      LOCAL_DATABASE_URL: "postgresql://gladlabs:gladlabs-brain-local@postgres-local:5432/gladlabs_brain"
+      OLLAMA_BASE_URL: "http://host.docker.internal:11434"
+      SITE_NAME: "Glad Labs"
+      SITE_DOMAIN: "gladlabs.io"
+      SITE_URL: "https://www.gladlabs.io"
+      API_BASE_URL: "https://cofounder-production.up.railway.app"
+      COMPANY_NAME: "Glad Labs"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/api/health')"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+
 volumes:
   postgres-local-data:
     name: gladlabs-postgres-local-data
