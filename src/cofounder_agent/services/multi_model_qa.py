@@ -209,8 +209,9 @@ class MultiModelQA:
                 if today_calls >= daily_limit:
                     logger.warning("[MULTI_QA] Cloud API daily limit reached (%d/%d) — skipping", today_calls, daily_limit)
                     return None
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error("[MULTI_QA] Cost limit check failed — blocking cloud API to be safe: %s", e, exc_info=True)
+                return None  # Fail safe: don't call cloud API if we can't verify the budget
 
         # 3. Emergency cloud fallback
         logger.warning("[MULTI_QA] Using EMERGENCY cloud API (Ollama unavailable)")
