@@ -2,7 +2,10 @@
   "uid": "brain-operations",
   "title": "Brain Operations",
   "description": "Raw system data \u2014 embeddings, tasks, quality, costs, knowledge, GPU, audit",
-  "tags": ["glad-labs", "brain"],
+  "tags": [
+    "glad-labs",
+    "brain"
+  ],
   "editable": true,
   "schemaVersion": 39,
   "refresh": "30s",
@@ -39,7 +42,9 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -88,7 +93,9 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -137,7 +144,9 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -186,7 +195,9 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -235,7 +246,9 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -284,7 +297,9 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -339,7 +354,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": true
         },
@@ -393,7 +410,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": true
         },
@@ -447,7 +466,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": true
         },
@@ -791,7 +812,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT to_char(\"timestamp\", 'MM-DD HH24:MI') as time, event_type, source, severity, LEFT(details::text, 100) as details FROM audit_log ORDER BY \"timestamp\" DESC LIMIT 15",
+          "rawSql": "SELECT id, to_char(\"timestamp\", 'MM-DD HH24:MI') as event_time, event_type, source, task_id, severity, LEFT(details::text,100) as details FROM audit_log ORDER BY \"timestamp\" DESC LIMIT 15",
           "refId": "A"
         }
       ]
@@ -832,7 +853,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT to_char(\"timestamp\", 'HH24:MI:SS') as time, utilization as util, temperature as temp, ROUND(power_draw::numeric) as watts, memory_used as vram_mb, fan_speed as fan, clock_graphics as clock FROM gpu_metrics ORDER BY \"timestamp\" DESC LIMIT 15",
+          "rawSql": "SELECT to_char(\"timestamp\", 'HH24:MI:SS') as sample_time, utilization as util, temperature as temp, ROUND(power_draw::numeric) as watts, memory_used as vram, fan_speed as fan, clock_graphics as clock FROM gpu_metrics WHERE \"timestamp\">NOW()-INTERVAL '2 hours' ORDER BY \"timestamp\" DESC LIMIT 20",
           "refId": "A"
         }
       ]

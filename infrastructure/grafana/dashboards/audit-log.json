@@ -1,74 +1,55 @@
 {
   "uid": "audit-log",
   "title": "Pipeline Audit Log",
-  "description": "Audit log monitoring -- event rates, severity breakdown, errors, and pipeline stage timing",
-  "tags": ["glad-labs", "pipeline", "audit"],
-  "timezone": "browser",
+  "description": "Events, errors, sources",
+  "tags": [
+    "glad-labs"
+  ],
   "editable": true,
-  "fiscalYearStartMonth": 0,
-  "graphTooltip": 1,
+  "schemaVersion": 39,
+  "refresh": "30s",
   "time": {
-    "from": "now-7d",
+    "from": "now-30d",
     "to": "now"
   },
-  "timepicker": {
-    "refresh_intervals": ["5m", "15m", "30m", "1h"],
-    "time_options": ["5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"]
-  },
-  "refresh": "5m",
-  "schemaVersion": 39,
-  "version": 1,
+  "timezone": "browser",
   "panels": [
     {
       "id": 1,
-      "title": "Event Rate Over Time",
-      "description": "Event count per interval grouped by event_type",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 10,
-        "w": 16,
-        "x": 0,
-        "y": 0
-      },
+      "type": "stat",
+      "title": "Events",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisLabel": "Events",
-            "drawStyle": "line",
-            "fillOpacity": 15,
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            }
-          },
-          "unit": "short"
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
         },
         "overrides": []
       },
       "options": {
-        "legend": {
-          "calcs": ["sum"],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
         },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
+        "textMode": "value_and_name",
+        "text": {
+          "valueSize": 28
         }
       },
       "targets": [
@@ -77,106 +58,49 @@
             "type": "grafana-postgresql-datasource",
             "uid": "local-brain-db"
           },
-          "editorMode": "code",
-          "format": "time_series",
+          "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  $__timeGroupAlias(\"timestamp\", $__interval),\n  event_type AS metric,\n  COUNT(*) AS value\nFROM audit_log\nWHERE $__timeFilter(\"timestamp\")\nGROUP BY 1, 2\nORDER BY 1",
+          "rawSql": "SELECT COUNT(*) FROM audit_log",
           "refId": "A"
         }
       ]
     },
     {
       "id": 2,
-      "title": "Events by Severity",
-      "description": "Distribution of events by severity level",
-      "type": "piechart",
-      "gridPos": {
-        "h": 10,
-        "w": 8,
-        "x": 16,
-        "y": 0
-      },
+      "type": "stat",
+      "title": "Errors",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            }
+            "mode": "fixed",
+            "fixedColor": "red"
           }
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "info"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "green",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "warning"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "yellow",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "error"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "red",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "options": {
+        "colorMode": "background",
+        "graphMode": "none",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
-          "values": true
+          "values": false
         },
-        "pieType": "donut",
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "values": ["value", "percent"]
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
+        "textMode": "value_and_name",
+        "text": {
+          "valueSize": 28
         }
       },
       "targets": [
@@ -185,59 +109,49 @@
             "type": "grafana-postgresql-datasource",
             "uid": "local-brain-db"
           },
-          "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  severity,\n  COUNT(*) AS count\nFROM audit_log\nWHERE $__timeFilter(\"timestamp\")\nGROUP BY severity\nORDER BY count DESC",
+          "rawSql": "SELECT COUNT(*) FROM audit_log WHERE severity='error'",
           "refId": "A"
         }
       ]
     },
     {
       "id": 3,
-      "title": "Events by Source",
-      "description": "Event count per source service",
-      "type": "barchart",
-      "gridPos": {
-        "h": 10,
-        "w": 12,
-        "x": 0,
-        "y": 10
-      },
+      "type": "stat",
+      "title": "Sources",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisLabel": "Count",
-            "fillOpacity": 80,
-            "gradientMode": "scheme",
-            "lineWidth": 1
-          },
-          "unit": "short"
+            "mode": "fixed",
+            "fixedColor": "yellow"
+          }
         },
         "overrides": []
       },
       "options": {
-        "orientation": "horizontal",
-        "barWidth": 0.7,
-        "groupWidth": 0.7,
-        "showValue": "always",
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": false
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
         },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
+        "textMode": "value_and_name",
+        "text": {
+          "valueSize": 28
         }
       },
       "targets": [
@@ -246,33 +160,82 @@
             "type": "grafana-postgresql-datasource",
             "uid": "local-brain-db"
           },
-          "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  source,\n  COUNT(*) AS count\nFROM audit_log\nWHERE $__timeFilter(\"timestamp\")\nGROUP BY source\nORDER BY count DESC",
+          "rawSql": "SELECT COUNT(DISTINCT source) FROM audit_log",
           "refId": "A"
         }
       ]
     },
     {
       "id": 4,
-      "title": "Error Count",
-      "description": "Total errors in selected time range",
       "type": "stat",
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 12,
-        "y": 10
-      },
+      "title": "Tasks",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "thresholds"
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "text": {
+          "valueSize": 28
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(DISTINCT task_id) FROM audit_log WHERE task_id IS NOT NULL",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "bargauge",
+      "title": "By Severity",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 3
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
           },
           "thresholds": {
             "mode": "absolute",
@@ -280,93 +243,23 @@
               {
                 "color": "green",
                 "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 5
-              },
-              {
-                "color": "red",
-                "value": 10
               }
             ]
-          },
-          "unit": "short"
+          }
         },
         "overrides": []
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
-          "values": false
+          "values": true
         },
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "textMode": "value_and_name",
-        "orientation": "auto"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT\n  COUNT(*) AS \"Errors\"\nFROM audit_log\nWHERE $__timeFilter(\"timestamp\")\n  AND severity = 'error'",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 5,
-      "title": "Events Per Task",
-      "description": "Tasks generating the most audit events",
-      "type": "barchart",
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 18,
-        "y": 10
-      },
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisLabel": "Events",
-            "fillOpacity": 80,
-            "gradientMode": "scheme",
-            "lineWidth": 1
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
         "orientation": "horizontal",
-        "barWidth": 0.7,
-        "groupWidth": 0.7,
-        "showValue": "always",
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": false
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
+        "displayMode": "gradient",
+        "showUnfilled": true
       },
       "targets": [
         {
@@ -374,155 +267,55 @@
             "type": "grafana-postgresql-datasource",
             "uid": "local-brain-db"
           },
-          "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  task_id,\n  COUNT(*) AS events\nFROM audit_log\nWHERE $__timeFilter(\"timestamp\")\n  AND task_id IS NOT NULL\nGROUP BY task_id\nORDER BY events DESC\nLIMIT 15",
+          "rawSql": "SELECT severity as metric, COUNT(*) as value FROM audit_log GROUP BY 1 ORDER BY 2 DESC",
           "refId": "A"
         }
       ]
     },
     {
       "id": 6,
-      "title": "Recent Errors",
-      "description": "Last 20 error-severity events",
-      "type": "table",
-      "gridPos": {
-        "h": 10,
-        "w": 12,
-        "x": 12,
-        "y": 15
-      },
+      "type": "bargauge",
+      "title": "By Source",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "inspect": true
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "transparent",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "timestamp"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 180
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "details"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 400
-              }
-            ]
-          }
-        ]
-      },
-      "options": {
-        "showHeader": true,
-        "cellHeight": "sm",
-        "footer": {
-          "show": false
-        },
-        "sortBy": [
-          {
-            "desc": true,
-            "displayName": "timestamp"
-          }
-        ]
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT\n  \"timestamp\",\n  source,\n  task_id,\n  details::text AS details\nFROM audit_log\nWHERE $__timeFilter(\"timestamp\")\n  AND severity = 'error'\nORDER BY \"timestamp\" DESC\nLIMIT 20",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 7,
-      "title": "Pipeline Stage Timing",
-      "description": "Time from task_created to the last pipeline event per task",
-      "type": "timeseries",
       "gridPos": {
-        "h": 10,
-        "w": 12,
-        "x": 0,
-        "y": 15
-      },
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "h": 5,
+        "w": 8,
+        "x": 8,
+        "y": 3
       },
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "palette-classic"
           },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisLabel": "Duration",
-            "drawStyle": "bars",
-            "fillOpacity": 50,
-            "lineWidth": 1,
-            "pointSize": 5,
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            }
-          },
-          "unit": "s"
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
         },
         "overrides": []
       },
       "options": {
-        "legend": {
-          "calcs": ["mean", "max"],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
         },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true
       },
       "targets": [
         {
@@ -530,145 +323,95 @@
             "type": "grafana-postgresql-datasource",
             "uid": "local-brain-db"
           },
-          "editorMode": "code",
-          "format": "time_series",
+          "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  created.\"timestamp\" AS time,\n  EXTRACT(EPOCH FROM (completed.\"timestamp\" - created.\"timestamp\")) AS \"pipeline_duration_seconds\"\nFROM\n  (SELECT task_id, \"timestamp\" FROM audit_log WHERE event_type = 'task_created' AND task_id IS NOT NULL) AS created\nINNER JOIN\n  (SELECT task_id, MAX(\"timestamp\") AS \"timestamp\" FROM audit_log WHERE event_type IN ('published', 'qa_passed', 'generation_complete') AND task_id IS NOT NULL GROUP BY task_id) AS completed\nON created.task_id = completed.task_id\nWHERE $__timeFilter(created.\"timestamp\")\nORDER BY 1",
+          "rawSql": "SELECT source as metric, COUNT(*) as value FROM audit_log GROUP BY 1 ORDER BY 2 DESC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "bargauge",
+      "title": "By Event",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 16,
+        "y": 3
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT event_type as metric, COUNT(*) as value FROM audit_log GROUP BY 1 ORDER BY 2 DESC",
           "refId": "A"
         }
       ]
     },
     {
       "id": 8,
-      "title": "Full Audit Log",
-      "description": "Last 100 audit events, newest first",
       "type": "table",
-      "gridPos": {
-        "h": 12,
-        "w": 24,
-        "x": 0,
-        "y": 25
-      },
+      "title": "Full Audit Log",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
           "custom": {
             "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "inspect": true
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "transparent",
-                "value": null
-              }
-            ]
+            "displayMode": "auto"
           }
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "timestamp"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 180
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "details"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 400
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "severity"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 80
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-text"
-                }
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green",
-                      "value": null
-                    }
-                  ]
-                }
-              },
-              {
-                "id": "mappings",
-                "value": [
-                  {
-                    "type": "value",
-                    "options": {
-                      "error": {
-                        "color": "red",
-                        "index": 0,
-                        "text": "error"
-                      },
-                      "warning": {
-                        "color": "yellow",
-                        "index": 1,
-                        "text": "warning"
-                      },
-                      "info": {
-                        "color": "green",
-                        "index": 2,
-                        "text": "info"
-                      }
-                    }
-                  }
-                ]
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "options": {
         "showHeader": true,
-        "cellHeight": "sm",
-        "footer": {
-          "show": false
-        },
-        "sortBy": [
-          {
-            "desc": true,
-            "displayName": "timestamp"
-          }
-        ]
+        "cellHeight": "sm"
       },
       "targets": [
         {
@@ -676,10 +419,49 @@
             "type": "grafana-postgresql-datasource",
             "uid": "local-brain-db"
           },
-          "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  id,\n  \"timestamp\",\n  event_type,\n  source,\n  task_id,\n  severity,\n  details::text AS details\nFROM audit_log\nWHERE $__timeFilter(\"timestamp\")\nORDER BY \"timestamp\" DESC\nLIMIT 100",
+          "rawSql": "SELECT id, to_char(\"timestamp\",'MM-DD HH24:MI') as event_time, event_type, source, task_id, severity, LEFT(details::text,100) as details FROM audit_log ORDER BY \"timestamp\" DESC LIMIT 20",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Errors Only",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT to_char(\"timestamp\",'MM-DD HH24:MI') as event_time, event_type, source, LEFT(details::text,120) as details FROM audit_log WHERE severity='error' ORDER BY \"timestamp\" DESC LIMIT 10",
           "refId": "A"
         }
       ]
