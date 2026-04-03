@@ -139,8 +139,19 @@ class DatabaseService:
                 logger.info(
                     f"✅ Local database pool initialized (size: {local_min}-{local_max})"
                 )
+
+                # Worker mode: flip pools so .pool = local (internal ops default)
+                # and .cloud_pool = Railway (public content only)
+                deployment_mode = os.getenv("DEPLOYMENT_MODE", "coordinator")
+                if deployment_mode == "worker":
+                    self.cloud_pool = self.pool  # Railway for publishing
+                    self.pool = self.local_pool  # Local for everything else
+                    logger.info("🔄 Worker mode: pool=local, cloud_pool=Railway")
+                else:
+                    self.cloud_pool = self.pool  # Coordinator: both point to Railway
             else:
                 self.local_pool = self.pool
+                self.cloud_pool = self.pool
                 logger.info("ℹ️  No LOCAL_DATABASE_URL — local_pool = pool (single-pool mode)")
 
             # Initialize delegate modules routed to appropriate pools
