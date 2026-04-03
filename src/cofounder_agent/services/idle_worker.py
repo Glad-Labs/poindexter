@@ -114,6 +114,21 @@ class IdleWorker:
             results["topic_discovery"] = await self._discover_and_queue_topics()
             self._mark_run("topic_discovery")
 
+        # 7. GPU metrics scraping (every 1 minute)
+        if self._is_due("gpu_scrape", 1):
+            results["gpu_scrape"] = await self._scrape_gpu_metrics()
+            self._mark_run("gpu_scrape")
+
+        # 8. Shared context sync (every 30 minutes)
+        if self._is_due("context_sync", 30):
+            results["context_sync"] = await self._sync_shared_context()
+            self._mark_run("context_sync")
+
+        # 9. Auto-embed new/changed posts (every 2 hours)
+        if self._is_due("auto_embed", 120):
+            results["auto_embed"] = await self._auto_embed_posts()
+            self._mark_run("auto_embed")
+
         if results:
             logger.info("[IDLE] Completed %d background tasks: %s",
                         len(results), ", ".join(results.keys()))
@@ -349,4 +364,73 @@ class IdleWorker:
 
         except Exception as e:
             logger.warning("[IDLE] Topic discovery failed: %s", e)
+            return {"error": str(e)}
+
+    async def _scrape_gpu_metrics(self) -> dict:
+        """Scrape nvidia-smi and store in gpu_metrics table (local DB)."""
+        try:
+            import asyncio
+            import asyncpg
+
+            proc = await asyncio.create_subprocess_exec(
+                "nvidia-smi",
+                "--query-gpu=utilization.gpu,temperature.gpu,power.draw,memory.used,memory.total,fan.speed,clocks.gr,clocks.mem",
+                "--format=csv,noheader,nounits",
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+            if proc.returncode != 0:
+                return {"note": "nvidia-smi not available"}
+
+            vals = stdout.decode().strip().split(", ")
+            if len(vals) < 8:
+                return {"note": f"unexpected nvidia-smi output: {vals}"}
+
+            local_url = site_config.get("local_database_url", "")
+            if not local_url:
+                return {"note": "no local DB for GPU metrics"}
+
+            conn = await asyncpg.connect(local_url)
+            await conn.execute(
+                """INSERT INTO gpu_metrics (utilization, temperature, power_draw, memory_used, memory_total, fan_speed, clock_graphics, clock_memory)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8)""",
+                float(vals[0]), float(vals[1]), float(vals[2]), float(vals[3]),
+                float(vals[4]), float(vals[5]), float(vals[6]), float(vals[7]),
+            )
+            await conn.close()
+            return {"ok": True, "util": vals[0], "temp": vals[1]}
+
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def _sync_shared_context(self) -> dict:
+        """Run the shared context sync script."""
+        try:
+            import asyncio
+            proc = await asyncio.create_subprocess_exec(
+                "python", "scripts/sync-shared-context.py",
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                cwd=site_config.get("repo_root", "/app"),
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+            output = stdout.decode().strip()
+            logger.info("[IDLE] Shared context synced: %s", output[:80])
+            return {"ok": proc.returncode == 0, "output": output[:100]}
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def _auto_embed_posts(self) -> dict:
+        """Embed new/changed posts into pgvector."""
+        try:
+            import asyncio
+            proc = await asyncio.create_subprocess_exec(
+                "python", "scripts/auto-embed.py", "--phase", "posts",
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                cwd=site_config.get("repo_root", "/app"),
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
+            output = stdout.decode().strip()
+            logger.info("[IDLE] Auto-embed: %s", output[-80:] if output else "done")
+            return {"ok": proc.returncode == 0, "output": output[-100:] if output else "done"}
+        except Exception as e:
             return {"error": str(e)}
