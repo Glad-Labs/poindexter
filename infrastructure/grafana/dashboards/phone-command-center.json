@@ -1,20 +1,20 @@
 {
   "uid": "phone-command-center",
   "title": "Phone Command Center",
-  "description": "Mobile-optimized single-column dashboard for monitoring Glad Labs on the go",
+  "description": "Mobile-optimized single-screen view — 30-second health check for Glad Labs",
   "tags": ["glad-labs", "mobile", "command-center"],
   "timezone": "browser",
   "editable": true,
   "graphTooltip": 1,
   "time": {
-    "from": "now-7d",
+    "from": "now-24h",
     "to": "now"
   },
   "timepicker": {
     "refresh_intervals": ["30s", "1m", "5m"],
     "time_options": ["1h", "6h", "12h", "24h", "7d"]
   },
-  "refresh": "1m",
+  "refresh": "30s",
   "schemaVersion": 39,
   "version": 1,
   "annotations": {
@@ -23,27 +23,68 @@
   "panels": [
     {
       "id": 1,
-      "title": "Published Posts",
+      "title": "System Status",
       "type": "stat",
-      "gridPos": {
-        "h": 3,
-        "w": 6,
-        "x": 0,
-        "y": 0
-      },
+      "gridPos": { "h": 4, "w": 12, "x": 0, "y": 0 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
       "targets": [
         {
-          "rawSql": "SELECT COUNT(*) AS \"Posts\" FROM content_tasks WHERE status = 'published'",
-          "format": "table",
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawSql": "SELECT CASE WHEN (SELECT COUNT(*) FROM audit_log WHERE severity = 'error' AND \"timestamp\" >= NOW() - INTERVAL '1 hour') > 5 THEN 'Down' WHEN (SELECT COUNT(*) FROM audit_log WHERE severity = 'error' AND \"timestamp\" >= NOW() - INTERVAL '1 hour') > 0 THEN 'Degraded' WHEN (SELECT COUNT(*) FROM content_tasks WHERE status = 'failed' AND updated_at >= NOW() - INTERVAL '1 hour') > 2 THEN 'Degraded' ELSE 'Healthy' END AS \"Status\""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "Healthy": { "color": "green", "text": "Healthy" },
+                "Degraded": { "color": "yellow", "text": "Degraded" },
+                "Down": { "color": "red", "text": "DOWN" }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
           }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Errors (1h)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 12, "x": 12, "y": 0 },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS \"Errors\" FROM audit_log WHERE \"timestamp\" >= NOW() - INTERVAL '1 hour' AND severity = 'error'"
         }
       ],
       "fieldConfig": {
@@ -51,51 +92,39 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 10
-              }
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 1 },
+              { "color": "red", "value": 5 }
             ]
           }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"]
-        },
         "colorMode": "background",
+        "graphMode": "none",
         "textMode": "auto",
-        "graphMode": "none"
+        "reduceOptions": { "calcs": ["lastNotNull"] }
       }
     },
     {
-      "id": 2,
-      "title": "Today's Tasks",
+      "id": 3,
+      "title": "Total Posts",
       "type": "stat",
-      "gridPos": {
-        "h": 3,
-        "w": 6,
-        "x": 6,
-        "y": 0
-      },
+      "gridPos": { "h": 3, "w": 12, "x": 0, "y": 4 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "uid": "railway-prod-db"
       },
       "targets": [
         {
-          "rawSql": "SELECT COUNT(*) FILTER (WHERE status = 'completed') AS \"Done\", COUNT(*) FILTER (WHERE status = 'failed') AS \"Fail\", COUNT(*) FILTER (WHERE status NOT IN ('completed', 'failed')) AS \"Pend\" FROM content_tasks WHERE created_at >= CURRENT_DATE",
-          "format": "table",
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          }
+            "uid": "railway-prod-db"
+          },
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS \"Posts\" FROM posts WHERE status = 'published'"
         }
       ],
       "fieldConfig": {
@@ -103,93 +132,200 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
+              { "color": "blue", "value": null },
+              { "color": "green", "value": 10 }
             ]
           }
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Fail"
-            },
-            "properties": [
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green",
-                      "value": null
-                    },
-                    {
-                      "color": "red",
-                      "value": 1
-                    }
-                  ]
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Pend"
-            },
-            "properties": [
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "yellow",
-                      "value": null
-                    }
-                  ]
-                }
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"]
-        },
         "colorMode": "background",
+        "graphMode": "none",
         "textMode": "auto",
-        "graphMode": "none"
+        "reduceOptions": { "calcs": ["lastNotNull"] }
       }
     },
     {
-      "id": 3,
-      "title": "GPU Temp",
+      "id": 4,
+      "title": "Posts This Week",
       "type": "stat",
-      "gridPos": {
-        "h": 3,
-        "w": 6,
-        "x": 12,
-        "y": 0
+      "gridPos": { "h": 3, "w": 12, "x": 12, "y": 4 },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
       },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          },
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS \"This Week\" FROM posts WHERE published_at >= date_trunc('week', CURRENT_DATE)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "yellow", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Views Today",
+      "type": "stat",
+      "gridPos": { "h": 3, "w": 12, "x": 0, "y": 7 },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          },
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS \"Views\" FROM page_views WHERE created_at >= CURRENT_DATE"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "purple", "value": null },
+              { "color": "blue", "value": 10 },
+              { "color": "green", "value": 50 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Spend Today",
+      "type": "stat",
+      "gridPos": { "h": 3, "w": 12, "x": 12, "y": 7 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
       "targets": [
         {
+          "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "local-brain-db"
           },
           "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT temperature FROM gpu_metrics ORDER BY timestamp DESC LIMIT 1",
-          "refId": "A"
+          "rawSql": "SELECT COALESCE(ROUND(SUM(cost_usd)::numeric, 4), 0) AS \"$\" FROM cost_logs WHERE created_at >= CURRENT_DATE"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 4 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "id": 7,
+      "title": "GPU Util",
+      "type": "stat",
+      "gridPos": { "h": 3, "w": 12, "x": 0, "y": 10 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gpu-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gpu-prometheus"
+          },
+          "expr": "nvidia_gpu_utilization_percent",
+          "legendFormat": "GPU"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "orange", "value": 90 },
+              { "color": "red", "value": 98 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "id": 8,
+      "title": "GPU Temp",
+      "type": "stat",
+      "gridPos": { "h": 3, "w": 12, "x": 12, "y": 10 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gpu-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gpu-prometheus"
+          },
+          "expr": "nvidia_gpu_temperature_celsius",
+          "legendFormat": "Temp"
         }
       ],
       "fieldConfig": {
@@ -198,59 +334,253 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 70
-              },
-              {
-                "color": "orange",
-                "value": 80
-              },
-              {
-                "color": "red",
-                "value": 90
-              }
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "orange", "value": 80 },
+              { "color": "red", "value": 90 }
             ]
           }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"]
-        },
         "colorMode": "background",
+        "graphMode": "area",
         "textMode": "auto",
-        "graphMode": "area"
+        "reduceOptions": { "calcs": ["lastNotNull"] }
       }
     },
     {
-      "id": 4,
-      "title": "Errors (1h)",
+      "id": 9,
+      "title": "Pipeline",
+      "description": "Content pipeline task counts by status",
       "type": "stat",
-      "gridPos": {
-        "h": 3,
-        "w": 6,
-        "x": 18,
-        "y": 0
-      },
+      "gridPos": { "h": 3, "w": 24, "x": 0, "y": 13 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
       "targets": [
         {
-          "rawSql": "SELECT COUNT(*) AS \"Errors\" FROM audit_log WHERE \"timestamp\" >= NOW() - INTERVAL '1 hour' AND severity = 'error'",
-          "format": "table",
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) FILTER (WHERE status = 'pending') AS \"Pending\", COUNT(*) FILTER (WHERE status = 'in_progress') AS \"Active\", COUNT(*) FILTER (WHERE status = 'failed') AS \"Failed\" FROM content_tasks"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
           }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Failed" },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "green", "value": null },
+                    { "color": "red", "value": 1 }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Pending" },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [{ "color": "yellow", "value": null }]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Active" },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [{ "color": "blue", "value": null }]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "id": 10,
+      "title": "Brain",
+      "description": "Brain daemon health — knowledge entries and recent decisions",
+      "type": "stat",
+      "gridPos": { "h": 3, "w": 12, "x": 0, "y": 16 },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawSql": "SELECT (SELECT COUNT(*) FROM brain_knowledge) AS \"Knowledge\", (SELECT COUNT(*) FROM brain_decisions WHERE created_at >= NOW() - INTERVAL '24 hours') AS \"Decisions (24h)\", (SELECT COUNT(*) FROM brain_queue WHERE created_at >= NOW() - INTERVAL '24 hours') AS \"Queue\""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "purple", "value": null }]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Decisions (24h)" },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "red", "value": null },
+                    { "color": "green", "value": 1 }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "id": 11,
+      "title": "Power",
+      "type": "stat",
+      "gridPos": { "h": 3, "w": 12, "x": 12, "y": 16 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gpu-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gpu-prometheus"
+          },
+          "expr": "system_total_power_estimate_watts",
+          "legendFormat": "Total"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 400 },
+              { "color": "orange", "value": 700 },
+              { "color": "red", "value": 1000 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "id": 12,
+      "title": "VRAM",
+      "type": "stat",
+      "gridPos": { "h": 3, "w": 12, "x": 0, "y": 19 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "gpu-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "gpu-prometheus"
+          },
+          "expr": "nvidia_gpu_memory_used_mib",
+          "legendFormat": "VRAM"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decmbytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 24000 },
+              { "color": "red", "value": 30000 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "id": 13,
+      "title": "DB Conns",
+      "type": "stat",
+      "gridPos": { "h": 3, "w": 12, "x": 12, "y": 19 },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS \"Conns\" FROM pg_stat_activity WHERE datname = current_database()"
         }
       ],
       "fieldConfig": {
@@ -258,79 +588,143 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 1
-              },
-              {
-                "color": "red",
-                "value": 5
-              }
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 20 },
+              { "color": "red", "value": 80 }
             ]
           }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"]
-        },
         "colorMode": "background",
+        "graphMode": "none",
         "textMode": "auto",
-        "graphMode": "none"
+        "reduceOptions": { "calcs": ["lastNotNull"] }
       }
     },
     {
-      "id": 10,
-      "title": "Recent Tasks",
-      "type": "table",
-      "gridPos": {
-        "h": 7,
-        "w": 24,
-        "x": 0,
-        "y": 3
+      "id": 14,
+      "title": "Avg QA Score (7d)",
+      "type": "stat",
+      "gridPos": { "h": 3, "w": 12, "x": 0, "y": 22 },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "railway-prod-db"
       },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "railway-prod-db"
+          },
+          "format": "table",
+          "rawSql": "SELECT ROUND(AVG(score)::numeric, 1) AS \"Avg QA\" FROM quality_evaluations WHERE created_at >= NOW() - INTERVAL '7 days'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 60 },
+              { "color": "green", "value": 75 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "id": 15,
+      "title": "Ollama Status",
+      "type": "stat",
+      "gridPos": { "h": 3, "w": 12, "x": 12, "y": 22 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
       "targets": [
         {
-          "rawSql": "SELECT LEFT(task_type, 15) AS \"Type\", status AS \"Status\", COALESCE(ROUND(quality_score::numeric, 1)::text, '-') AS \"Q\", to_char(created_at, 'HH24:MI') AS \"Time\" FROM content_tasks ORDER BY created_at DESC LIMIT 5",
-          "format": "table",
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT CASE WHEN MAX(timestamp) >= NOW() - INTERVAL '10 minutes' THEN 'ACTIVE' WHEN MAX(timestamp) >= NOW() - INTERVAL '1 hour' THEN 'IDLE' ELSE 'STALE' END AS \"Status\" FROM gpu_metrics WHERE utilization > 10"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "ACTIVE": { "text": "ACTIVE", "color": "green" },
+                "IDLE": { "text": "IDLE", "color": "yellow" },
+                "STALE": { "text": "STALE", "color": "red" }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "text", "value": null }]
           }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "id": 20,
+      "title": "Recent Tasks",
+      "type": "table",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 25 },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawSql": "SELECT LEFT(COALESCE(title, task_type), 25) AS \"Task\", status AS \"Status\", COALESCE(quality_score::text, '-') AS \"Q\", to_char(COALESCE(updated_at, created_at), 'MM/DD HH24:MI') AS \"When\" FROM content_tasks ORDER BY COALESCE(updated_at, created_at) DESC NULLS LAST LIMIT 5"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "custom": {
             "align": "left",
-            "cellOptions": {
-              "type": "auto"
-            },
+            "cellOptions": { "type": "auto" },
             "filterable": false
           }
         },
         "overrides": [
           {
-            "matcher": {
-              "id": "byName",
-              "options": "Status"
-            },
+            "matcher": { "id": "byName", "options": "Status" },
             "properties": [
               {
                 "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-text"
-                }
+                "value": { "type": "color-text" }
               },
               {
                 "id": "mappings",
@@ -338,18 +732,10 @@
                   {
                     "type": "value",
                     "options": {
-                      "completed": {
-                        "text": "completed",
-                        "color": "green"
-                      },
-                      "failed": {
-                        "text": "failed",
-                        "color": "red"
-                      },
-                      "pending": {
-                        "text": "pending",
-                        "color": "yellow"
-                      }
+                      "completed": { "color": "green", "text": "done" },
+                      "failed": { "color": "red", "text": "FAIL" },
+                      "pending": { "color": "yellow", "text": "pend" },
+                      "in_progress": { "color": "blue", "text": "run" }
                     }
                   }
                 ]
@@ -359,328 +745,77 @@
         ]
       },
       "options": {
-        "showHeader": true,
         "cellHeight": "sm",
-        "footer": {
-          "show": false
-        }
-      }
-    },
-    {
-      "id": 20,
-      "title": "Today's Spend",
-      "type": "stat",
-      "gridPos": {
-        "h": 3,
-        "w": 12,
-        "x": 0,
-        "y": 10
-      },
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "targets": [
-        {
-          "rawSql": "SELECT COALESCE(ROUND(SUM(cost_usd)::numeric, 4), 0) AS \"Today $\" FROM cost_logs WHERE created_at >= CURRENT_DATE",
-          "format": "table",
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "currencyUSD",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 4
-              },
-              {
-                "color": "red",
-                "value": 5
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"]
-        },
-        "colorMode": "background",
-        "textMode": "auto",
-        "graphMode": "none"
+        "footer": { "show": false },
+        "showHeader": true
       }
     },
     {
       "id": 21,
-      "title": "7-Day Spend",
-      "type": "table",
-      "gridPos": {
-        "h": 5,
-        "w": 12,
-        "x": 12,
-        "y": 10
-      },
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "targets": [
-        {
-          "rawSql": "SELECT date_trunc('day', created_at)::date as day, ROUND(SUM(cost_usd)::numeric, 4) as spend FROM cost_logs GROUP BY 1 ORDER BY 1 DESC LIMIT 7",
-          "format": "table",
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "displayMode": "auto"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "showHeader": true,
-        "cellHeight": "sm"
-      }
-    },
-    {
-      "id": 30,
-      "title": "DB Connections",
-      "type": "stat",
-      "gridPos": {
-        "h": 3,
-        "w": 8,
-        "x": 0,
-        "y": 15
-      },
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "targets": [
-        {
-          "rawSql": "SELECT COUNT(*) AS \"Conns\" FROM pg_stat_activity WHERE datname = current_database()",
-          "format": "table",
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 20
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"]
-        },
-        "colorMode": "background",
-        "textMode": "auto",
-        "graphMode": "none"
-      }
-    },
-    {
-      "id": 31,
-      "title": "Ollama (Last Activity)",
-      "type": "stat",
-      "gridPos": {
-        "h": 3,
-        "w": 8,
-        "x": 8,
-        "y": 15
-      },
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT CASE WHEN MAX(timestamp) >= NOW() - INTERVAL '10 minutes' THEN 'ACTIVE' WHEN MAX(timestamp) >= NOW() - INTERVAL '1 hour' THEN 'IDLE' ELSE 'STALE' END AS \"Status\" FROM gpu_metrics WHERE utilization > 10",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "ACTIVE": {
-                  "text": "ACTIVE",
-                  "color": "green"
-                },
-                "IDLE": {
-                  "text": "IDLE",
-                  "color": "yellow"
-                },
-                "STALE": {
-                  "text": "STALE",
-                  "color": "red"
-                }
-              }
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"]
-        },
-        "colorMode": "value",
-        "textMode": "auto",
-        "graphMode": "none"
-      }
-    },
-    {
-      "id": 32,
-      "title": "Embeddings",
-      "type": "stat",
-      "gridPos": {
-        "h": 3,
-        "w": 8,
-        "x": 16,
-        "y": 15
-      },
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "targets": [
-        {
-          "rawSql": "SELECT COUNT(*) AS \"Total\" FROM embeddings",
-          "format": "table",
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "purple",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"]
-        },
-        "colorMode": "background",
-        "textMode": "auto",
-        "graphMode": "none"
-      }
-    },
-    {
-      "id": 40,
       "title": "Recent Errors",
       "type": "table",
-      "gridPos": {
-        "h": 6,
-        "w": 24,
-        "x": 0,
-        "y": 18
-      },
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 31 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
       "targets": [
         {
-          "rawSql": "SELECT to_char(\"timestamp\", 'HH24:MI') AS \"Time\", source AS \"Source\", LEFT(details::text, 80) AS \"Details\" FROM audit_log WHERE severity = 'error' ORDER BY \"timestamp\" DESC LIMIT 3",
-          "format": "table",
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "local-brain-db"
-          }
+          },
+          "format": "table",
+          "rawSql": "SELECT to_char(\"timestamp\", 'MM/DD HH24:MI') AS \"Time\", source AS \"Src\", LEFT(details::text, 60) AS \"Details\" FROM audit_log WHERE severity = 'error' ORDER BY \"timestamp\" DESC LIMIT 3"
         }
       ],
       "fieldConfig": {
         "defaults": {
+          "color": { "fixedColor": "red", "mode": "fixed" },
           "custom": {
             "align": "left",
-            "cellOptions": {
-              "type": "auto"
-            },
+            "cellOptions": { "type": "auto" },
             "filterable": false
-          },
-          "color": {
-            "fixedColor": "red",
-            "mode": "fixed"
           }
         },
         "overrides": []
       },
       "options": {
-        "showHeader": true,
         "cellHeight": "sm",
-        "footer": {
-          "show": false
+        "footer": { "show": false },
+        "showHeader": true
+      }
+    },
+    {
+      "id": 22,
+      "title": "7-Day Spend",
+      "type": "table",
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 36 },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawSql": "SELECT to_char(date_trunc('day', created_at)::date, 'MM/DD') as \"Day\", ROUND(SUM(cost_usd)::numeric, 4) as \"$\" FROM cost_logs GROUP BY 1 ORDER BY 1 DESC LIMIT 7"
         }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "auto", "displayMode": "auto" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
       }
     }
   ]
