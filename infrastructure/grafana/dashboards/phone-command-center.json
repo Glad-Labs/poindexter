@@ -2,7 +2,11 @@
   "uid": "phone-command-center",
   "title": "Phone Command Center",
   "description": "Mobile-optimized single-column dashboard for monitoring Glad Labs on the go",
-  "tags": ["glad-labs", "mobile", "command-center"],
+  "tags": [
+    "glad-labs",
+    "mobile",
+    "command-center"
+  ],
   "timezone": "browser",
   "editable": true,
   "graphTooltip": 1,
@@ -11,8 +15,18 @@
     "to": "now"
   },
   "timepicker": {
-    "refresh_intervals": ["30s", "1m", "5m"],
-    "time_options": ["1h", "6h", "12h", "24h", "7d"]
+    "refresh_intervals": [
+      "30s",
+      "1m",
+      "5m"
+    ],
+    "time_options": [
+      "1h",
+      "6h",
+      "12h",
+      "24h",
+      "7d"
+    ]
   },
   "refresh": "1m",
   "schemaVersion": 39,
@@ -66,7 +80,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"]
+          "calcs": [
+            "lastNotNull"
+          ]
         },
         "colorMode": "background",
         "textMode": "auto",
@@ -159,7 +175,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"]
+          "calcs": [
+            "lastNotNull"
+          ]
         },
         "colorMode": "background",
         "textMode": "auto",
@@ -221,7 +239,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"]
+          "calcs": [
+            "lastNotNull"
+          ]
         },
         "colorMode": "background",
         "textMode": "auto",
@@ -277,7 +297,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"]
+          "calcs": [
+            "lastNotNull"
+          ]
         },
         "colorMode": "background",
         "textMode": "auto",
@@ -416,7 +438,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"]
+          "calcs": [
+            "lastNotNull"
+          ]
         },
         "colorMode": "background",
         "textMode": "auto",
@@ -426,7 +450,7 @@
     {
       "id": 21,
       "title": "7-Day Spend",
-      "type": "timeseries",
+      "type": "table",
       "gridPos": {
         "h": 5,
         "w": 12,
@@ -439,8 +463,8 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT date_trunc('day', created_at) AS time, SUM(cost_usd) AS \"Cost\" FROM cost_logs WHERE created_at >= NOW() - INTERVAL '7 days' GROUP BY 1 ORDER BY 1",
-          "format": "time_series",
+          "rawSql": "SELECT date_trunc('day', created_at)::date as day, ROUND(SUM(cost_usd)::numeric, 4) as spend FROM cost_logs GROUP BY 1 ORDER BY 1 DESC LIMIT 7",
+          "format": "table",
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
@@ -450,31 +474,16 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "currencyUSD",
-          "color": {
-            "fixedColor": "orange",
-            "mode": "fixed"
-          },
           "custom": {
-            "drawStyle": "line",
-            "lineWidth": 2,
-            "fillOpacity": 20,
-            "pointSize": 4,
-            "showPoints": "always",
-            "spanNulls": true,
-            "axisBorderShow": false
-          },
-          "min": 0
+            "align": "auto",
+            "displayMode": "auto"
+          }
         },
         "overrides": []
       },
       "options": {
-        "legend": {
-          "showLegend": false
-        },
-        "tooltip": {
-          "mode": "single"
-        }
+        "showHeader": true,
+        "cellHeight": "sm"
       }
     },
     {
@@ -526,7 +535,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"]
+          "calcs": [
+            "lastNotNull"
+          ]
         },
         "colorMode": "background",
         "textMode": "auto",
@@ -594,7 +605,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"]
+          "calcs": [
+            "lastNotNull"
+          ]
         },
         "colorMode": "value",
         "textMode": "auto",
@@ -642,7 +655,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"]
+          "calcs": [
+            "lastNotNull"
+          ]
         },
         "colorMode": "background",
         "textMode": "auto",
