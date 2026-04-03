@@ -2,7 +2,9 @@
   "uid": "gpu-metrics",
   "title": "GPU Metrics",
   "description": "RTX 5090",
-  "tags": ["glad-labs"],
+  "tags": [
+    "glad-labs"
+  ],
   "editable": true,
   "schemaVersion": 39,
   "refresh": "30s",
@@ -53,7 +55,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         }
@@ -112,7 +116,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         }
@@ -171,7 +177,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         }
@@ -230,7 +238,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         }
@@ -283,7 +293,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT to_char(\"timestamp\",'HH24:MI') as time, utilization as util, temperature as temp, ROUND(power_draw::numeric) as watts, memory_used as vram, fan_speed as fan, clock_graphics as clock FROM gpu_metrics WHERE \"timestamp\">NOW()-INTERVAL '2 hours' ORDER BY \"timestamp\" DESC LIMIT 20",
+          "rawSql": "SELECT to_char(\"timestamp\",'HH24:MI') as sample_time, utilization as util, temperature as temp, ROUND(power_draw::numeric) as watts, memory_used as vram, fan_speed as fan, clock_graphics as clock FROM gpu_metrics WHERE \"timestamp\">NOW()-INTERVAL '2 hours' ORDER BY \"timestamp\" DESC LIMIT 20",
           "refId": "A"
         }
       ]
