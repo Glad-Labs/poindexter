@@ -31,6 +31,41 @@ class IdleWorker:
     def __init__(self, pool):
         self.pool = pool
         self._last_run: dict[str, float] = {}
+        self._schedules_loaded = False
+
+    async def _load_persisted_schedules(self):
+        """Load last-run timestamps from app_settings so restarts don't cause a thundering herd."""
+        if self._schedules_loaded:
+            return
+        try:
+            rows = await self.pool.fetch(
+                "SELECT key, value FROM app_settings WHERE key LIKE 'idle_last_run_%'"
+            )
+            for row in rows:
+                task_name = row["key"].replace("idle_last_run_", "")
+                try:
+                    self._last_run[task_name] = float(row["value"])
+                except (ValueError, TypeError):
+                    pass
+            self._schedules_loaded = True
+            if rows:
+                logger.info("[IDLE] Loaded %d persisted schedule timestamps", len(rows))
+        except Exception as e:
+            logger.warning("[IDLE] Failed to load persisted schedules: %s", e)
+            self._schedules_loaded = True  # Don't retry on every cycle
+
+    async def _persist_mark_run(self, task_name: str):
+        """Mark a task as run in-memory and persist to DB."""
+        now = time.time()
+        self._last_run[task_name] = now
+        try:
+            await self.pool.execute(
+                "INSERT INTO app_settings (key, value) VALUES ($1, $2) "
+                "ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()",
+                f"idle_last_run_{task_name}", str(now),
+            )
+        except Exception as e:
+            logger.debug("[IDLE] Failed to persist schedule for %s: %s", task_name, e)
 
     async def _create_gitea_issue(self, title: str, body: str) -> bool:
         """Create a Gitea issue for tracking discovered problems."""
@@ -72,16 +107,17 @@ class IdleWorker:
 
     async def run_cycle(self) -> dict:
         """Run one cycle of all due idle tasks. Returns summary."""
+        await self._load_persisted_schedules()
         results = {}
 
         # Lightweight syncs run regardless of pipeline activity
         if self._is_due("sync_page_views", 30):
             results["sync_page_views"] = await self._sync_page_views()
-            self._mark_run("sync_page_views")
+            await self._persist_mark_run("sync_page_views")
 
         if self._is_due("sync_newsletter_subscribers", 60):
             results["sync_newsletter_subscribers"] = await self._sync_newsletter_subscribers()
-            self._mark_run("sync_newsletter_subscribers")
+            await self._persist_mark_run("sync_newsletter_subscribers")
 
         # Check if there are pending content tasks — if so, skip heavier idle work
         pending = await self.pool.fetchrow(
@@ -96,83 +132,88 @@ class IdleWorker:
         # 1. Quality audit on published posts (every 6 hours)
         if self._is_due("quality_audit", 360):
             results["quality_audit"] = await self._audit_published_quality()
-            self._mark_run("quality_audit")
+            await self._persist_mark_run("quality_audit")
 
         # 2. Broken link check (every 12 hours)
         if self._is_due("link_check", 720):
             results["link_check"] = await self._check_published_links()
-            self._mark_run("link_check")
+            await self._persist_mark_run("link_check")
 
         # 3. Topic gap analysis (every 24 hours)
         if self._is_due("topic_gaps", 1440):
             results["topic_gaps"] = await self._analyze_topic_gaps()
-            self._mark_run("topic_gaps")
+            await self._persist_mark_run("topic_gaps")
 
         # 4. Threshold tuning (every 12 hours)
         if self._is_due("threshold_tune", 720):
             results["threshold_tune"] = await self._tune_thresholds()
-            self._mark_run("threshold_tune")
+            await self._persist_mark_run("threshold_tune")
 
         # 5. Stale embedding refresh (every 4 hours)
         if self._is_due("embedding_refresh", 240):
             results["embedding_refresh"] = await self._refresh_stale_embeddings()
-            self._mark_run("embedding_refresh")
+            await self._persist_mark_run("embedding_refresh")
 
         # 6. Topic discovery — find and queue fresh content topics (every 8 hours)
         if self._is_due("topic_discovery", 480):
             results["topic_discovery"] = await self._discover_and_queue_topics()
-            self._mark_run("topic_discovery")
+            await self._persist_mark_run("topic_discovery")
 
         # 7. Shared context sync (every 30 minutes)
         if self._is_due("context_sync", 30):
             results["context_sync"] = await self._sync_shared_context()
-            self._mark_run("context_sync")
+            await self._persist_mark_run("context_sync")
 
         # 8. Auto-embed new/changed posts (every 2 hours)
         if self._is_due("auto_embed", 120):
             results["auto_embed"] = await self._auto_embed_posts()
-            self._mark_run("auto_embed")
+            await self._persist_mark_run("auto_embed")
 
         # 9. Regenerate stock photo images with SDXL (every 6 hours, 5 per cycle)
         if self._is_due("image_regen", 360):
             results["image_regen"] = await self._regenerate_stock_images()
-            self._mark_run("image_regen")
+            await self._persist_mark_run("image_regen")
 
         # 10. Fix uncategorized posts (every 12 hours)
         if self._is_due("fix_categories", 720):
             results["fix_categories"] = await self._fix_uncategorized_posts()
-            self._mark_run("fix_categories")
+            await self._persist_mark_run("fix_categories")
 
         # 11. Fix posts missing SEO metadata (every 12 hours)
         if self._is_due("fix_seo", 720):
             results["fix_seo"] = await self._fix_missing_seo()
-            self._mark_run("fix_seo")
+            await self._persist_mark_run("fix_seo")
 
         # 12. Clean broken internal links (every 24 hours)
         if self._is_due("fix_internal_links", 1440):
             results["fix_internal_links"] = await self._fix_broken_internal_links()
-            self._mark_run("fix_internal_links")
+            await self._persist_mark_run("fix_internal_links")
 
         # 13. Remove broken external links (every 24 hours)
         if self._is_due("fix_external_links", 1440):
             results["fix_external_links"] = await self._fix_broken_external_links()
-            self._mark_run("fix_external_links")
+            await self._persist_mark_run("fix_external_links")
 
         # 14. Fix duplicate titles (every 24 hours)
         if self._is_due("fix_duplicates", 1440):
             results["fix_duplicates"] = await self._detect_duplicate_posts()
-            self._mark_run("fix_duplicates")
-            self._mark_run("auto_embed")
+            await self._persist_mark_run("fix_duplicates")
+            await self._persist_mark_run("auto_embed")
 
         # 15. Anomaly detection — statistical outlier monitoring (every 4 hours)
         if self._is_due("anomaly_detect", 240):
             results["anomaly_detect"] = await self._detect_anomalies()
-            self._mark_run("anomaly_detect")
+            await self._persist_mark_run("anomaly_detect")
 
         # 16. Auto-update electricity rate + GPU power from public data (every 30 days)
         if self._is_due("utility_rates", 43200):
             results["utility_rates"] = await self._update_utility_rates()
-            self._mark_run("utility_rates")
+            await self._persist_mark_run("utility_rates")
+
+        # 17. Post-publish verification — check recently published posts are accessible (every 2 hours)
+        if self._is_due("publish_verify", 120):
+            results["publish_verify"] = await self._verify_published_posts()
+            await self._persist_mark_run("publish_verify")
 
         if results:
             logger.info("[IDLE] Completed %d background tasks: %s",
@@ -560,9 +601,13 @@ class IdleWorker:
                         negative_prompt=negative, high_quality=False,
                     )
                     if success and os.path.exists(output_path):
-                        result = cloudinary.uploader.upload(
-                            output_path, folder="generated/",
-                            resource_type="image", tags=["featured", cat],
+                        import asyncio
+                        result = await asyncio.get_event_loop().run_in_executor(
+                            None,
+                            lambda p=output_path, c=cat: cloudinary.uploader.upload(
+                                p, folder="generated/",
+                                resource_type="image", tags=["featured", c],
+                            ),
                         )
                         image_url = result.get("secure_url", "")
                         if image_url:
@@ -1199,3 +1244,86 @@ class IdleWorker:
                 pass  # audit log is best-effort
 
         return {"changes": changes} if changes else {"note": "all utility rates current"}
+
+    async def _verify_published_posts(self) -> dict:
+        """Check that recently published posts are accessible on the live site.
+
+        Fetches posts published in the last 24 hours and verifies each one
+        returns HTTP 200 from the public URL. Logs warnings to audit_log
+        for any that fail.
+        """
+        try:
+            import asyncpg
+            import httpx
+            import json
+            import os
+
+            cloud_url = os.getenv("DATABASE_URL", "")
+            if not cloud_url:
+                return {"note": "no DATABASE_URL — skipping publish verification"}
+
+            cloud = await asyncpg.connect(cloud_url)
+            try:
+                rows = await cloud.fetch("""
+                    SELECT id, title, slug FROM posts
+                    WHERE status = 'published'
+                    AND published_at > NOW() - INTERVAL '24 hours'
+                    ORDER BY published_at DESC
+                    LIMIT 20
+                """)
+            finally:
+                await cloud.close()
+
+            if not rows:
+                return {"checked": 0, "note": "no posts published in last 24h"}
+
+            site_url = site_config.get("site_url", "https://www.gladlabs.io")
+            verified = 0
+            failures = []
+
+            async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+                for row in rows:
+                    url = f"{site_url}/posts/{row['slug']}"
+                    try:
+                        resp = await client.get(url)
+                        if resp.status_code == 200:
+                            verified += 1
+                        else:
+                            failures.append({
+                                "slug": row["slug"],
+                                "title": row["title"][:50],
+                                "status": resp.status_code,
+                            })
+                    except Exception as e:
+                        failures.append({
+                            "slug": row["slug"],
+                            "title": row["title"][:50],
+                            "status": f"error: {e}",
+                        })
+
+            if failures:
+                # Log each failure to audit_log
+                for f in failures:
+                    try:
+                        await self.pool.execute(
+                            "INSERT INTO audit_log (event_type, source, details, severity) "
+                            "VALUES ($1, $2, $3, $4)",
+                            "publish_verify_failed", "idle_worker",
+                            json.dumps(f), "warning",
+                        )
+                    except Exception:
+                        pass
+
+                logger.warning(
+                    "[IDLE] Publish verification: %d/%d failed — %s",
+                    len(failures), len(rows),
+                    ", ".join(f["slug"] for f in failures[:5]),
+                )
+            else:
+                logger.info("[IDLE] Publish verification: all %d recent posts accessible", verified)
+
+            return {"checked": len(rows), "verified": verified, "failures": failures[:10]}
+
+        except Exception as e:
+            logger.warning("[IDLE] Publish verification failed: %s", e)
+            return {"error": str(e)}

@@ -928,9 +928,13 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
                         api_key=site_config.get("cloudinary_api_key"),
                         api_secret=site_config.get("cloudinary_api_secret"),
                     )
-                    upload_result = cloudinary.uploader.upload(
-                        output_path, folder="generated/", resource_type="image",
-                        tags=["featured", category or "default"],
+                    import asyncio
+                    upload_result = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: cloudinary.uploader.upload(
+                            output_path, folder="generated/", resource_type="image",
+                            tags=["featured", category or "default"],
+                        ),
                     )
                     image_url = upload_result.get("secure_url", output_path)
                     logger.info("Uploaded to Cloudinary: %s", image_url[:80])
