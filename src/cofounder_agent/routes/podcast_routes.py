@@ -14,9 +14,10 @@ from pathlib import Path
 from typing import Optional
 from xml.etree.ElementTree import Element, SubElement, tostring
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, Response
 
+from middleware.api_token_auth import verify_api_token
 from services.logger_config import get_logger
 from services.podcast_service import PODCAST_DIR, PodcastService
 
@@ -223,6 +224,10 @@ async def stream_episode(post_id: str):
     safe_id = post_id.replace("/", "").replace("\\", "").replace("..", "")
     path = PODCAST_DIR / f"{safe_id}.mp3"
 
+    # Defense-in-depth: verify resolved path is under PODCAST_DIR
+    if not path.resolve().is_relative_to(PODCAST_DIR.resolve()):
+        raise HTTPException(status_code=404, detail="Episode not found")
+
     if not path.exists():
         raise HTTPException(status_code=404, detail="Episode not found")
 
@@ -255,7 +260,7 @@ async def list_episodes():
 # ---------------------------------------------------------------------------
 
 
-@router.post("/generate/{post_id}")
+@router.post("/generate/{post_id}", dependencies=[Depends(verify_api_token)])
 async def generate_episode(post_id: str):
     """Manually trigger podcast episode generation for a published post."""
     from services.container import service_container
@@ -276,7 +281,8 @@ async def generate_episode(post_id: str):
                 post_id,
             )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"DB error: {e}")
+        logger.error("Podcast generate DB error: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Database error")
 
     if not row:
         raise HTTPException(status_code=404, detail="Published post not found")
@@ -290,9 +296,8 @@ async def generate_episode(post_id: str):
     )
 
     if not result.success:
-        raise HTTPException(
-            status_code=500, detail=f"Generation failed: {result.error}"
-        )
+        logger.error("Podcast generation failed for %s: %s", post_id, result.error)
+        raise HTTPException(status_code=500, detail="Episode generation failed")
 
     return {
         "success": True,
