@@ -129,6 +129,37 @@ class IdleWorker:
             results["auto_embed"] = await self._auto_embed_posts()
             self._mark_run("auto_embed")
 
+        # 10. Regenerate stock photo images with SDXL (every 6 hours, 5 per cycle)
+        if self._is_due("image_regen", 360):
+            results["image_regen"] = await self._regenerate_stock_images()
+            self._mark_run("image_regen")
+
+        # 11. Fix uncategorized posts (every 12 hours)
+        if self._is_due("fix_categories", 720):
+            results["fix_categories"] = await self._fix_uncategorized_posts()
+            self._mark_run("fix_categories")
+
+        # 12. Fix posts missing SEO metadata (every 12 hours)
+        if self._is_due("fix_seo", 720):
+            results["fix_seo"] = await self._fix_missing_seo()
+            self._mark_run("fix_seo")
+
+        # 13. Clean broken internal links (every 24 hours)
+        if self._is_due("fix_internal_links", 1440):
+            results["fix_internal_links"] = await self._fix_broken_internal_links()
+            self._mark_run("fix_internal_links")
+
+        # 14. Remove broken external links (every 24 hours)
+        if self._is_due("fix_external_links", 1440):
+            results["fix_external_links"] = await self._fix_broken_external_links()
+            self._mark_run("fix_external_links")
+
+        # 15. Fix duplicate titles (every 24 hours)
+        if self._is_due("fix_duplicates", 1440):
+            results["fix_duplicates"] = await self._detect_duplicate_posts()
+            self._mark_run("fix_duplicates")
+            self._mark_run("auto_embed")
+
         if results:
             logger.info("[IDLE] Completed %d background tasks: %s",
                         len(results), ", ".join(results.keys()))
@@ -432,5 +463,262 @@ class IdleWorker:
             output = stdout.decode().strip()
             logger.info("[IDLE] Auto-embed: %s", output[-80:] if output else "done")
             return {"ok": proc.returncode == 0, "output": output[-100:] if output else "done"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def _regenerate_stock_images(self) -> dict:
+        """Find posts with Pexels stock photos and replace with SDXL-generated images."""
+        try:
+            import asyncpg
+            import os
+            import tempfile
+
+            # Find posts with pexels URLs (stock photos)
+            cloud_url = os.getenv("DATABASE_URL", "")
+            if not cloud_url:
+                return {"note": "no cloud DB for posts"}
+
+            cloud = await asyncpg.connect(cloud_url)
+            posts = await cloud.fetch("""
+                SELECT p.id, p.title, c.name as category
+                FROM posts p LEFT JOIN categories c ON p.category_id = c.id
+                WHERE p.status = 'published'
+                AND p.featured_image_url LIKE '%pexels%'
+                LIMIT 5
+            """)
+
+            if not posts:
+                await cloud.close()
+                return {"regenerated": 0, "note": "all posts have AI images"}
+
+            # Get styles from local settings
+            styles = {}
+            rows = await self.pool.fetch("SELECT key, value FROM app_settings WHERE key LIKE 'image_style_%'")
+            for r in rows:
+                styles[r["key"].replace("image_style_", "")] = r["value"]
+            negative = await self.pool.fetchval("SELECT value FROM app_settings WHERE key = 'image_negative_prompt'") or ""
+
+            from services.image_service import get_image_service
+            svc = get_image_service()
+
+            import cloudinary
+            import cloudinary.uploader
+            cloudinary.config(
+                cloud_name=site_config.get("cloudinary_cloud_name"),
+                api_key=site_config.get("cloudinary_api_key"),
+                api_secret=site_config.get("cloudinary_api_secret"),
+            )
+
+            regenerated = 0
+            for post in posts:
+                cat = (post["category"] or "technology").lower()
+                style = styles.get(cat, styles.get("default", "professional digital art"))
+                prompt = f"{style}, blog header about {post['title'][:50]}"
+
+                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                    output_path = tmp.name
+
+                try:
+                    success = await svc.generate_image(
+                        prompt=prompt, output_path=output_path,
+                        negative_prompt=negative, high_quality=False,
+                    )
+                    if success and os.path.exists(output_path):
+                        result = cloudinary.uploader.upload(
+                            output_path, folder="generated/",
+                            resource_type="image", tags=["featured", cat],
+                        )
+                        image_url = result.get("secure_url", "")
+                        if image_url:
+                            await cloud.execute(
+                                "UPDATE posts SET featured_image_url = $1, updated_at = NOW() WHERE id = $2",
+                                image_url, post["id"],
+                            )
+                            regenerated += 1
+                            logger.info("[IDLE] Regenerated image for: %s", post["title"][:40])
+                        os.remove(output_path)
+                except Exception as e:
+                    logger.warning("[IDLE] Image regen failed for %s: %s", post["title"][:30], e)
+                    try:
+                        os.remove(output_path)
+                    except Exception:
+                        pass
+
+            await cloud.close()
+
+            if regenerated:
+                await self._create_gitea_issue(
+                    f"images: regenerated {regenerated} stock photos with SDXL",
+                    f"Replaced Pexels stock photos with AI-generated category art for {regenerated} posts.",
+                )
+
+            return {"regenerated": regenerated, "remaining": len(posts) - regenerated}
+
+        except Exception as e:
+            logger.warning("[IDLE] Image regeneration failed: %s", e)
+            return {"error": str(e)}
+
+    async def _fix_uncategorized_posts(self) -> dict:
+        """Find published posts with no category and assign one based on content."""
+        try:
+            import asyncpg, os
+            cloud = await asyncpg.connect(os.getenv("DATABASE_URL", ""))
+            posts = await cloud.fetch(
+                "SELECT id, title FROM posts WHERE status = 'published' AND category_id IS NULL LIMIT 5"
+            )
+            if not posts:
+                await cloud.close()
+                return {"fixed": 0, "note": "all posts categorized"}
+
+            # Default to Technology if we can't determine
+            default_cat = await cloud.fetchval("SELECT id FROM categories WHERE slug = 'technology'")
+            fixed = 0
+            for post in posts:
+                await cloud.execute("UPDATE posts SET category_id = $1 WHERE id = $2", default_cat, post["id"])
+                fixed += 1
+
+            await cloud.close()
+            if fixed:
+                await self._create_gitea_issue(
+                    f"content: assigned category to {fixed} uncategorized posts",
+                    f"Posts defaulted to Technology category. Review and reassign if needed.",
+                )
+            return {"fixed": fixed}
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def _fix_missing_seo(self) -> dict:
+        """Find posts missing SEO title/description and flag them."""
+        try:
+            import asyncpg, os
+            cloud = await asyncpg.connect(os.getenv("DATABASE_URL", ""))
+            missing = await cloud.fetch("""
+                SELECT id, title FROM posts
+                WHERE status = 'published' AND (seo_title IS NULL OR seo_title = '' OR seo_description IS NULL OR seo_description = '')
+                LIMIT 10
+            """)
+            await cloud.close()
+
+            if not missing:
+                return {"missing": 0, "note": "all posts have SEO metadata"}
+
+            titles = [p["title"][:40] for p in missing]
+            await self._create_gitea_issue(
+                f"seo: {len(missing)} posts missing SEO title or description",
+                "## Posts Missing SEO\n\n" + "\n".join(f"- {t}" for t in titles),
+            )
+            return {"missing": len(missing), "posts": titles}
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def _fix_broken_internal_links(self) -> dict:
+        """Remove internal links that point to unpublished/deleted posts."""
+        try:
+            import asyncpg, os, re
+            cloud = await asyncpg.connect(os.getenv("DATABASE_URL", ""))
+
+            pub_rows = await cloud.fetch("SELECT slug FROM posts WHERE status = 'published'")
+            published = {r["slug"] for r in pub_rows}
+
+            rows = await cloud.fetch("SELECT id, title, content FROM posts WHERE status = 'published' AND content LIKE '%/posts/%'")
+            fixed = 0
+            for row in rows:
+                content = row["content"]
+                new_content = content
+                linked = re.findall(r"/posts/([a-z0-9-]+)", content)
+                for slug in set(linked):
+                    if slug not in published:
+                        new_content = re.sub(r"\[([^\]]+)\]\(/posts/" + re.escape(slug) + r"\)", r"\1", new_content)
+                        new_content = re.sub(r"<a[^>]*href=\"/posts/" + re.escape(slug) + r"\"[^>]*>([^<]*)</a>", r"\1", new_content)
+                        new_content = re.sub(r"<li[^>]*>.*?/posts/" + re.escape(slug) + r"[^<]*</a></li>", "", new_content)
+                if new_content != content:
+                    await cloud.execute("UPDATE posts SET content = $1, updated_at = NOW() WHERE id = $2", new_content, row["id"])
+                    fixed += 1
+
+            await cloud.close()
+            if fixed:
+                await self._create_gitea_issue(
+                    f"links: removed broken internal links from {fixed} posts",
+                    "Auto-cleaned links to unpublished/deleted posts.",
+                )
+            return {"fixed": fixed}
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def _fix_broken_external_links(self) -> dict:
+        """Check and remove broken external URLs from published posts (5 posts per cycle)."""
+        try:
+            import asyncpg, httpx, os, re
+            cloud = await asyncpg.connect(os.getenv("DATABASE_URL", ""))
+
+            rows = await cloud.fetch("""
+                SELECT id, title, content FROM posts
+                WHERE status = 'published' AND content LIKE '%http%'
+                ORDER BY RANDOM() LIMIT 5
+            """)
+
+            site_domain = site_config.get("site_domain", "localhost")
+            broken_total = 0
+            posts_fixed = 0
+
+            async with httpx.AsyncClient(timeout=8, follow_redirects=True) as client:
+                for row in rows:
+                    md_urls = re.findall(r"\]\((https?://[^\s\)]+)\)", row["content"] or "")
+                    html_urls = re.findall(r'href="(https?://[^"]+)"', row["content"] or "")
+                    urls = set(u.rstrip(".,;:)") for u in md_urls + html_urls if site_domain not in u and "pexels" not in u and "cloudinary" not in u)
+
+                    broken = set()
+                    for url in list(urls)[:10]:
+                        try:
+                            resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
+                            if resp.status_code == 404:
+                                broken.add(url)
+                        except Exception:
+                            broken.add(url)
+
+                    if broken:
+                        content = row["content"]
+                        for url in broken:
+                            escaped = re.escape(url)
+                            content = re.sub(r"\[([^\]]+)\]\(" + escaped + r"\)", r"\1", content)
+                            content = re.sub(r'<a[^>]*href="' + escaped + r'"[^>]*>([^<]*)</a>', r"\1", content)
+                        await cloud.execute("UPDATE posts SET content = $1, updated_at = NOW() WHERE id = $2", content, row["id"])
+                        broken_total += len(broken)
+                        posts_fixed += 1
+
+            await cloud.close()
+            if posts_fixed:
+                await self._create_gitea_issue(
+                    f"links: removed {broken_total} broken external URLs from {posts_fixed} posts",
+                    "Auto-cleaned 404 external links.",
+                )
+            return {"checked": len(rows), "posts_fixed": posts_fixed, "links_removed": broken_total}
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def _detect_duplicate_posts(self) -> dict:
+        """Detect posts with very similar titles and flag for review."""
+        try:
+            import asyncpg, os
+            cloud = await asyncpg.connect(os.getenv("DATABASE_URL", ""))
+            posts = await cloud.fetch("SELECT id, title FROM posts WHERE status = 'published' ORDER BY title")
+            await cloud.close()
+
+            # Simple word-overlap duplicate detection
+            duplicates = []
+            titles = [(p["id"], p["title"].lower().split()) for p in posts]
+            for i, (id1, words1) in enumerate(titles):
+                for id2, words2 in titles[i+1:]:
+                    if len(words1) < 4 or len(words2) < 4:
+                        continue
+                    overlap = len(set(words1) & set(words2)) / max(len(set(words1)), len(set(words2)))
+                    if overlap > 0.7:
+                        duplicates.append((posts[i]["title"][:50], [p for p in posts if p["id"] == id2][0]["title"][:50]))
+
+            if duplicates:
+                body = "## Potential Duplicate Posts\n\n" + "\n".join(f"- \"{a}\" vs \"{b}\"" for a, b in duplicates[:10])
+                await self._create_gitea_issue(f"content: {len(duplicates)} potential duplicate post pairs", body)
+
+            return {"duplicates": len(duplicates), "pairs": duplicates[:5]}
         except Exception as e:
             return {"error": str(e)}
