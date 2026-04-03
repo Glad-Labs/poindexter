@@ -34,7 +34,7 @@ logger = get_logger(__name__)
 # Prevents a single slow stage (e.g. Ollama generation) from eating the entire budget.
 STAGE_TIMEOUTS = {
     "verify_task": 30,
-    "generate_content": 300,      # Stage 2: Draft — 5 min (heaviest LLM call)
+    "generate_content": 480,      # Stage 2: Draft — 8 min (long posts with code examples need time)
     "quality_evaluation": 60,     # Stage 2B: Pattern QA — 1 min
     "url_validation": 60,         # Stage 2B.1: URL checks — 1 min
     "replace_inline_images": 120, # Stage 2C: Image replacement — 2 min
