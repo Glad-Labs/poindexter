@@ -69,7 +69,7 @@ class TestRouteManifestStructure:
 
     def test_coordinator_manifest_has_expected_routes(self):
         """Coordinator manifest should have 11 route entries."""
-        assert len(_COORDINATOR_ROUTES) == 11
+        assert len(_COORDINATOR_ROUTES) == 12
 
     def test_manifest_alias_equals_coordinator(self):
         """_ROUTE_MANIFEST should be an alias for _COORDINATOR_ROUTES."""
@@ -83,7 +83,7 @@ class TestRouteManifestStructure:
 
     def test_worker_manifest_has_3_routes(self):
         """Worker manifest should have exactly 3 route entries."""
-        assert len(_WORKER_ROUTES) == 3
+        assert len(_WORKER_ROUTES) == 4
 
     def test_worker_task_router_is_first(self):
         """Task router should be first in the worker manifest."""
