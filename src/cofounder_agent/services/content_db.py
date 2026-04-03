@@ -100,8 +100,11 @@ class ContentDatabase(DatabaseServiceMixin):
 
         async with self.pool.acquire() as conn:
             try:
-                # Determine published_at timestamp based on status
+                # Determine published_at timestamp based on status.
+                # Callers (e.g. publish_service) may supply a future published_at
+                # for scheduled spacing — honour it when present.
                 is_published = post_data.get("status") == "published"
+                explicit_published_at = post_data.get("published_at")
 
                 row = await conn.fetchrow(
                     """
@@ -139,8 +142,8 @@ class ContentDatabase(DatabaseServiceMixin):
                     post_data.get("author_id"),
                     post_data.get("category_id"),
                     post_data.get("status", "draft"),
-                    # published_at: Set to NOW() if published, None if draft
-                    datetime.now(timezone.utc) if is_published else None,
+                    # published_at: use explicit value if provided, else NOW() for published
+                    explicit_published_at or (datetime.now(timezone.utc) if is_published else None),
                     post_data.get("seo_title"),
                     post_data.get("seo_description"),
                     seo_keywords,

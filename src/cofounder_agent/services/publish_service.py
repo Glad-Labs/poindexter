@@ -13,8 +13,9 @@ This eliminates three divergent copy-paste blocks that were drifting apart.
 import asyncio
 import json
 import os
+import random
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 from services.logger_config import get_logger
@@ -139,6 +140,124 @@ def _parse_json_field(value, field_name: str = "field", task_id: str = "") -> di
     return value
 
 
+async def _calculate_scheduled_publish_time(db_service) -> Optional[datetime]:
+    """Determine when a post should be published to avoid batch-publishing.
+
+    Checks how many posts were already published today and what the latest
+    publish time is.  If the daily cap is reached, the post is scheduled for
+    the next available day.  Within a day, posts are spaced by at least
+    ``publish_spacing_hours`` (default 4 h).
+
+    Returns:
+        ``None`` if the post can be published right now (NOW()), or a future
+        ``datetime`` (UTC) for the scheduled slot.
+    """
+    try:
+        max_per_day = int(await db_service.get_setting_value("max_posts_per_day", 3))
+        spacing_hours = int(await db_service.get_setting_value("publish_spacing_hours", 4))
+    except Exception:
+        # If settings lookup fails, publish immediately — don't block the pipeline
+        logger.debug("[schedule] Could not read scheduling settings, publishing now")
+        return None
+
+    pool = db_service.pool
+    try:
+        async with pool.acquire() as conn:
+            # How many posts published today (by published_at date, UTC)?
+            row = await conn.fetchrow(
+                """
+                SELECT COUNT(*)                          AS cnt,
+                       MAX(published_at)                 AS latest
+                FROM   posts
+                WHERE  status = 'published'
+                  AND  published_at::date = CURRENT_DATE
+                """
+            )
+    except Exception as e:
+        logger.debug("[schedule] DB query failed, publishing now: %s", e)
+        return None
+
+    today_count = row["cnt"] if row else 0
+    latest_today = row["latest"] if row else None
+
+    now = datetime.now(timezone.utc)
+
+    # --- Under the daily cap: check spacing ---
+    if today_count < max_per_day:
+        if latest_today is not None:
+            # Ensure latest_today is timezone-aware
+            if latest_today.tzinfo is None:
+                latest_today = latest_today.replace(tzinfo=timezone.utc)
+            earliest_next = latest_today + timedelta(hours=spacing_hours)
+            if earliest_next > now:
+                # Still within today — schedule at the spaced time
+                if earliest_next.date() == now.date():
+                    logger.info(
+                        "[schedule] Spacing: scheduling post at %s (last was %s)",
+                        earliest_next.isoformat(), latest_today.isoformat(),
+                    )
+                    return earliest_next
+                # Spacing pushes into tomorrow — fall through to next-day logic
+            else:
+                # Enough time has passed since last publish — go now
+                return None
+        else:
+            # No posts today yet — publish immediately
+            return None
+
+    # --- Daily cap reached: schedule for the next available day ---
+    # Find the next day that has fewer than max_per_day posts
+    check_date = now.date() + timedelta(days=1)
+    for _ in range(30):  # look up to 30 days ahead (safety bound)
+        try:
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    SELECT COUNT(*)     AS cnt,
+                           MAX(published_at) AS latest
+                    FROM   posts
+                    WHERE  status = 'published'
+                      AND  published_at::date = $1
+                    """,
+                    check_date,
+                )
+        except Exception:
+            break
+
+        day_count = row["cnt"] if row else 0
+        if day_count < max_per_day:
+            # Pick a random hour between 8 AM and 6 PM UTC for a natural look
+            hour = random.randint(8, 17)
+            minute = random.randint(0, 59)
+
+            # If there are already posts that day, respect spacing
+            day_latest = row["latest"] if row else None
+            scheduled = datetime(
+                check_date.year, check_date.month, check_date.day,
+                hour, minute, 0, tzinfo=timezone.utc,
+            )
+            if day_latest is not None:
+                if day_latest.tzinfo is None:
+                    day_latest = day_latest.replace(tzinfo=timezone.utc)
+                earliest = day_latest + timedelta(hours=spacing_hours)
+                if scheduled < earliest:
+                    scheduled = earliest
+                    # Nudge into the 8-18 window if spacing pushed it earlier
+                    if scheduled.hour < 8:
+                        scheduled = scheduled.replace(hour=8, minute=random.randint(0, 59))
+
+            logger.info(
+                "[schedule] Daily cap reached (%d/%d). Scheduling post for %s",
+                today_count, max_per_day, scheduled.isoformat(),
+            )
+            return scheduled
+        check_date += timedelta(days=1)
+
+    # Fallback: couldn't find a slot (extremely unlikely) — publish now
+    logger.warning("[schedule] Could not find an open slot in 30 days, publishing now")
+    return None
+
+
 async def publish_post_from_task(
     db_service,
     task: Dict[str, Any],
@@ -224,25 +343,37 @@ async def publish_post_from_task(
     category_id = await _select_category_for_topic(post_title, db_service)
 
     # ---------------------------------------------------------------
+    # 4b. Determine scheduled publish time (content spacing)
+    # ---------------------------------------------------------------
+    scheduled_at = await _calculate_scheduled_publish_time(db_service)
+    if scheduled_at:
+        logger.info(
+            "[publish_service] Post scheduled for %s (not immediate)",
+            scheduled_at.isoformat(),
+        )
+
+    # ---------------------------------------------------------------
     # 5. Insert into posts table
     # ---------------------------------------------------------------
+    post_data: Dict[str, Any] = {
+        "title": post_title,
+        "slug": slug,
+        "content": post_content,
+        "excerpt": seo_description,
+        "featured_image_url": featured_image_url,
+        "author_id": author_id,
+        "category_id": category_id,
+        "status": "published",
+        "seo_title": post_title,
+        "seo_description": seo_description,
+        "seo_keywords": ",".join(seo_keywords) if seo_keywords else "",
+        "metadata": metadata,
+    }
+    if scheduled_at:
+        post_data["published_at"] = scheduled_at
+
     try:
-        post = await db_service.create_post(
-            {
-                "title": post_title,
-                "slug": slug,
-                "content": post_content,
-                "excerpt": seo_description,
-                "featured_image_url": featured_image_url,
-                "author_id": author_id,
-                "category_id": category_id,
-                "status": "published",
-                "seo_title": post_title,
-                "seo_description": seo_description,
-                "seo_keywords": ",".join(seo_keywords) if seo_keywords else "",
-                "metadata": metadata,
-            }
-        )
+        post = await db_service.create_post(post_data)
     except Exception as e:
         msg = f"Failed to create post: {type(e).__name__}: {e}"
         logger.error("[publish_service] %s", msg, exc_info=True)
@@ -266,6 +397,8 @@ async def publish_post_from_task(
         "published_at": datetime.now(timezone.utc).isoformat(),
         "published_by": publisher,
     }
+    if scheduled_at:
+        publish_meta["scheduled_publish_at"] = scheduled_at.isoformat()
     merged["publish_metadata"] = publish_meta
 
     try:
