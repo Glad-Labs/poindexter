@@ -2,9 +2,7 @@
   "uid": "llm-analytics",
   "title": "LLM Analytics",
   "description": "Models, tokens, costs, quality",
-  "tags": [
-    "glad-labs"
-  ],
+  "tags": ["glad-labs"],
   "editable": true,
   "schemaVersion": 39,
   "refresh": "30s",
@@ -20,7 +18,7 @@
       "title": "Total Tokens",
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "gridPos": {
         "h": 3,
@@ -41,9 +39,7 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -56,7 +52,7 @@
         {
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "format": "table",
           "rawQuery": true,
@@ -71,7 +67,7 @@
       "title": "Total Calls",
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "gridPos": {
         "h": 3,
@@ -92,9 +88,7 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -107,7 +101,7 @@
         {
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "format": "table",
           "rawQuery": true,
@@ -122,7 +116,7 @@
       "title": "Total Cost",
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "gridPos": {
         "h": 3,
@@ -143,9 +137,7 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -158,7 +150,7 @@
         {
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "format": "table",
           "rawQuery": true,
@@ -173,7 +165,7 @@
       "title": "Avg Quality",
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "gridPos": {
         "h": 3,
@@ -194,9 +186,7 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -209,7 +199,7 @@
         {
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "format": "table",
           "rawQuery": true,
@@ -224,7 +214,7 @@
       "title": "Calls by Model",
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "gridPos": {
         "h": 5,
@@ -251,9 +241,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": true
         },
@@ -265,7 +253,7 @@
         {
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "format": "table",
           "rawQuery": true,
@@ -280,7 +268,7 @@
       "title": "Tokens by Model",
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "gridPos": {
         "h": 5,
@@ -307,9 +295,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": true
         },
@@ -321,7 +307,7 @@
         {
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "format": "table",
           "rawQuery": true,
@@ -336,7 +322,7 @@
       "title": "Token Usage by Day",
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "gridPos": {
         "h": 8,
@@ -361,7 +347,7 @@
         {
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "format": "table",
           "rawQuery": true,
@@ -376,7 +362,7 @@
       "title": "Cost by Provider",
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "gridPos": {
         "h": 5,
@@ -403,9 +389,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": true
         },
@@ -417,7 +401,7 @@
         {
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "format": "table",
           "rawQuery": true,
@@ -432,7 +416,7 @@
       "title": "Cost by Phase",
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "gridPos": {
         "h": 5,
@@ -459,9 +443,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": true
         },
@@ -473,7 +455,7 @@
         {
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "format": "table",
           "rawQuery": true,
@@ -488,7 +470,7 @@
       "title": "Quality by Model",
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "gridPos": {
         "h": 5,
@@ -513,7 +495,7 @@
         {
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "format": "table",
           "rawQuery": true,
@@ -528,7 +510,7 @@
       "title": "Success vs Fail",
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "gridPos": {
         "h": 5,
@@ -553,7 +535,7 @@
         {
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "format": "table",
           "rawQuery": true,
