@@ -86,8 +86,9 @@ class UsageTracker:
         "gemini-pro-vision": {"input": 0.001, "output": 0.002},
         # Meta models
         "llama-2-70b": {"input": 0.001, "output": 0.003},
-        # Ollama (self-hosted, free)
-        "ollama": {"input": 0, "output": 0},
+        # Ollama (self-hosted — electricity cost, not free)
+        # ~300W GPU, ~40 tok/s, $0.12/kWh => ~$0.00025/1K tokens
+        "ollama": {"input": 0.00025, "output": 0.00025},
         # Mistral
         "mistral-7b": {"input": 0.0002, "output": 0.0006},
     }

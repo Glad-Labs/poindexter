@@ -15,6 +15,7 @@ from services.ollama_client import (
     DEFAULT_BASE_URL,
     DEFAULT_MODEL,
     OllamaClient,
+    calculate_electricity_cost,
     initialize_ollama_client,
 )
 
@@ -143,7 +144,7 @@ class TestOllamaGenerate:
 
         assert result["text"] == "This is the generated text."
         assert result["tokens"] == 50
-        assert result["cost"] == 0.0
+        assert result["cost"] > 0  # Electricity cost, not free
         assert result["done"] is True
 
     @pytest.mark.asyncio
@@ -222,7 +223,7 @@ class TestOllamaChat:
         assert "here to help" in result["content"]
 
     @pytest.mark.asyncio
-    async def test_chat_cost_is_zero(self, client):
+    async def test_chat_cost_is_electricity(self, client):
         mock_resp = make_mock_response(
             {
                 "message": {"role": "assistant", "content": "Hi there"},
@@ -236,7 +237,8 @@ class TestOllamaChat:
 
         result = await client.chat([{"role": "user", "content": "Hi"}])
 
-        assert result["cost"] == 0.0
+        assert result["cost"] > 0  # Electricity cost, not free
+        assert result["cost"] < 0.01  # But very cheap
 
     @pytest.mark.asyncio
     async def test_chat_passes_messages_directly(self, client):
@@ -459,3 +461,54 @@ class TestInitializeOllamaClient:
         assert client.base_url == "http://remote:11434"
         assert client.model == "codellama"
         await client.close()
+
+
+# ---------------------------------------------------------------------------
+# calculate_electricity_cost
+# ---------------------------------------------------------------------------
+
+
+class TestCalculateElectricityCost:
+    def test_basic_calculation(self):
+        # 300W GPU, 60 seconds, $0.12/kWh
+        # (300/1000) * (60/3600) * 0.12 = 0.3 * 0.01667 * 0.12 = 0.0006
+        cost = calculate_electricity_cost(60.0, 300.0, 0.12)
+        assert abs(cost - 0.0006) < 1e-6
+
+    def test_zero_duration(self):
+        assert calculate_electricity_cost(0.0) == 0.0
+
+    def test_negative_duration(self):
+        assert calculate_electricity_cost(-1.0) == 0.0
+
+    def test_custom_rate(self):
+        # Higher electricity rate doubles the cost
+        cost_low = calculate_electricity_cost(60.0, 300.0, 0.12)
+        cost_high = calculate_electricity_cost(60.0, 300.0, 0.24)
+        assert abs(cost_high - 2 * cost_low) < 1e-8
+
+    def test_two_second_inference(self):
+        # Typical short inference: 2 seconds at 300W, $0.12/kWh
+        cost = calculate_electricity_cost(2.0, 300.0, 0.12)
+        assert cost > 0
+        assert cost < 0.001  # Should be tiny
+
+
+class TestConfigureElectricity:
+    def test_configure_updates_rate(self):
+        c = OllamaClient()
+        c.configure_electricity(electricity_rate_kwh=0.29)
+        assert c._electricity_rate_kwh == 0.29
+
+    def test_configure_updates_power(self):
+        c = OllamaClient()
+        c.configure_electricity(gpu_power_watts=450.0)
+        assert c._gpu_power_watts == 450.0
+
+    def test_none_values_dont_change_defaults(self):
+        c = OllamaClient()
+        original_rate = c._electricity_rate_kwh
+        original_power = c._gpu_power_watts
+        c.configure_electricity()  # No args
+        assert c._electricity_rate_kwh == original_rate
+        assert c._gpu_power_watts == original_power

@@ -34,7 +34,7 @@ TOKEN_COSTS_PER_1K = {
     "anthropic_opus": {"input": 0.015, "output": 0.075},   # Opus
     "openai": {"input": 0.0005, "output": 0.0015},         # GPT-4o-mini
     "google": {"input": 0.0001, "output": 0.0004},           # Gemini Flash
-    "ollama": {"input": 0.000256, "output": 0.000256},     # Local — electricity cost (~250W @ $0.147/kWh, ~40 tok/s)
+    "ollama": {"input": 0.00025, "output": 0.00025},        # Local — electricity estimate (~300W @ $0.12/kWh, ~40 tok/s)
 }
 
 

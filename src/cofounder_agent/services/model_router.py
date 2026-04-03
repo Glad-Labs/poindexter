@@ -11,7 +11,7 @@ Cost Comparison (per 1K tokens):
 - GPT-3.5 Turbo: $0.0015 input / $0.002 output (20x cheaper)
 - Claude Opus: $0.015 input / $0.075 output
 - Claude Instant: $0.0008 input / $0.0024 output (18x cheaper)
-- Ollama (Local): ~$0.000256/1K tokens (electricity cost at $0.147/kWh)
+- Ollama (Local): ~$0.00025/1K tokens (electricity cost at $0.12/kWh, 300W GPU)
 
 Expected Savings: $10,000-$15,000/year with smart routing
 Additional Savings: $2,400-$3,600/year with token limiting

@@ -1,8 +1,14 @@
 """
 Ollama Client Service
 
-Provides zero-cost local AI model inference using Ollama.
-Model profiles are fetched dynamically from the running Ollama instance.
+Provides local AI model inference using Ollama.
+NOT zero-cost — GPU inference uses electricity.
+
+Cost is calculated as:
+  (gpu_power_watts / 1000) * (duration_seconds / 3600) * electricity_rate_per_kwh
+
+Defaults: 300W typical inference draw, $0.12/kWh.
+The electricity rate is configurable via app_settings key "electricity_rate_kwh".
 
 Install Ollama: https://ollama.ai/download
 Pull models: ollama pull qwen3:8b
@@ -28,10 +34,38 @@ DEFAULT_BASE_URL = (
     os.getenv("OLLAMA_BASE_URL") or os.getenv("OLLAMA_HOST") or "http://localhost:11434"
 )
 
+# GPU electricity cost defaults (RTX 5090: 575W TDP, ~300W typical inference)
+# Override via env vars or app_settings key "electricity_rate_kwh"
+DEFAULT_GPU_POWER_WATTS = float(os.getenv("GPU_POWER_WATTS", "300"))
+DEFAULT_ELECTRICITY_RATE_KWH = float(os.getenv("ELECTRICITY_RATE_KWH", "0.12"))
+
 
 # ============================================================================
 # EXCEPTIONS
 # ============================================================================
+
+
+def calculate_electricity_cost(
+    duration_seconds: float,
+    gpu_power_watts: float = DEFAULT_GPU_POWER_WATTS,
+    electricity_rate_kwh: float = DEFAULT_ELECTRICITY_RATE_KWH,
+) -> float:
+    """Calculate electricity cost for a GPU inference call.
+
+    Formula: (watts / 1000) * (seconds / 3600) * rate_per_kwh
+
+    Args:
+        duration_seconds: Wall-clock time of the inference call.
+        gpu_power_watts: GPU power draw in watts (default 300W typical inference).
+        electricity_rate_kwh: Electricity price in USD/kWh (default $0.12).
+
+    Returns:
+        Cost in USD (typically fractions of a cent).
+    """
+    if duration_seconds <= 0:
+        return 0.0
+    kwh = (gpu_power_watts / 1000.0) * (duration_seconds / 3600.0)
+    return round(kwh * electricity_rate_kwh, 8)
 
 
 class OllamaError(Exception):
@@ -63,7 +97,27 @@ class OllamaClient:
         self._cache_ts: float = 0
         self._resolved_default: Optional[str] = None  # Lazily resolved from installed models
 
+        # Electricity cost parameters — updated at runtime via configure_electricity()
+        self._gpu_power_watts: float = DEFAULT_GPU_POWER_WATTS
+        self._electricity_rate_kwh: float = DEFAULT_ELECTRICITY_RATE_KWH
+
         logger.info("Ollama client initialized", base_url=self.base_url, model=self.model)
+
+    def configure_electricity(
+        self,
+        gpu_power_watts: float | None = None,
+        electricity_rate_kwh: float | None = None,
+    ) -> None:
+        """Update electricity cost parameters (call after reading app_settings)."""
+        if gpu_power_watts is not None:
+            self._gpu_power_watts = gpu_power_watts
+        if electricity_rate_kwh is not None:
+            self._electricity_rate_kwh = electricity_rate_kwh
+        logger.info(
+            "Ollama electricity config updated",
+            gpu_power_watts=self._gpu_power_watts,
+            electricity_rate_kwh=self._electricity_rate_kwh,
+        )
 
     async def resolve_model(self, model: Optional[str] = None) -> str:
         """Resolve a model name, handling 'auto' by discovering the best installed model.
@@ -270,12 +324,19 @@ class OllamaClient:
             msg = result.get("message", {})
             text = msg.get("content", "")
 
+            duration_s = result.get("total_duration", 0) / 1e9
+            electricity_cost = calculate_electricity_cost(
+                duration_s,
+                gpu_power_watts=self._gpu_power_watts,
+                electricity_rate_kwh=self._electricity_rate_kwh,
+            )
+
             logger.info(
                 "Ollama generation complete",
                 model=model,
                 tokens=result.get("eval_count", 0),
-                duration=result.get("total_duration", 0) / 1e9,
-                cost=0.0,
+                duration=duration_s,
+                electricity_cost_usd=electricity_cost,
             )
 
             return {
@@ -285,8 +346,8 @@ class OllamaClient:
                 "tokens": result.get("eval_count", 0),
                 "prompt_tokens": result.get("prompt_eval_count", 0),
                 "total_tokens": result.get("eval_count", 0) + result.get("prompt_eval_count", 0),
-                "duration_seconds": result.get("total_duration", 0) / 1e9,
-                "cost": 0.0,
+                "duration_seconds": duration_s,
+                "cost": electricity_cost,
                 "done": result.get("done", False),
             }
 
@@ -326,11 +387,18 @@ class OllamaClient:
 
             msg = result.get("message", {})
 
+            duration_s = result.get("total_duration", 0) / 1e9
+            electricity_cost = calculate_electricity_cost(
+                duration_s,
+                gpu_power_watts=self._gpu_power_watts,
+                electricity_rate_kwh=self._electricity_rate_kwh,
+            )
+
             logger.info(
                 "Ollama chat complete",
                 model=model,
                 tokens=result.get("eval_count", 0),
-                cost=0.0,
+                electricity_cost_usd=electricity_cost,
             )
 
             return {
@@ -340,8 +408,8 @@ class OllamaClient:
                 "tokens": result.get("eval_count", 0),
                 "prompt_tokens": result.get("prompt_eval_count", 0),
                 "total_tokens": result.get("eval_count", 0) + result.get("prompt_eval_count", 0),
-                "duration_seconds": result.get("total_duration", 0) / 1e9,
-                "cost": 0.0,
+                "duration_seconds": duration_s,
+                "cost": electricity_cost,
                 "done": result.get("done", False),
             }
 

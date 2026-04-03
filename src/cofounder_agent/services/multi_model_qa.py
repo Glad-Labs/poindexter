@@ -252,6 +252,11 @@ class MultiModelQA:
             from services.ollama_client import OllamaClient
 
             client = OllamaClient()
+            # Configure electricity rate from app_settings if available
+            if self.settings:
+                rate = await self.settings.get("electricity_rate_kwh")
+                if rate:
+                    client.configure_electricity(electricity_rate_kwh=float(rate))
             if not await client.check_health():
                 logger.debug("[MULTI_QA] Ollama not available, skipping local review")
                 await client.close()
@@ -306,13 +311,15 @@ class MultiModelQA:
                     logger.warning("[MULTI_QA] Ollama response was not valid JSON: %s", text[:200])
                     return None
 
-            total_tokens = result.get("prompt_tokens", 0) + result.get("tokens", 0)
-            electricity_cost = total_tokens / 1000 * 0.000256  # ~250W @ $0.147/kWh, ~40 tok/s
+            # Cost is calculated from GPU power draw * duration by the Ollama client
+            electricity_cost = result.get("cost", 0.0)
+            duration_s = result.get("duration_seconds", 0.0)
             cost_log = {
                 "provider": "ollama", "model": ollama_model,
                 "input_tokens": result.get("prompt_tokens", 0),
                 "output_tokens": result.get("tokens", 0),
                 "cost_usd": round(electricity_cost, 6), "phase": "qa_review",
+                "duration_seconds": round(duration_s, 2),
             }
             logger.info(
                 "[MULTI_QA] Ollama QA: model=%s, tokens=%d, electricity=$%.6f",
