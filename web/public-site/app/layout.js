@@ -52,7 +52,10 @@ export const metadata = {
   },
   alternates: {
     types: {
-      'application/rss+xml': '/feed.xml',
+      'application/rss+xml': [
+        { url: '/feed.xml', title: 'Glad Labs Blog' },
+        { url: '/api/podcast', title: 'Glad Labs Podcast' },
+      ],
     },
   },
 };

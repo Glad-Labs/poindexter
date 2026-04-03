@@ -1,0 +1,232 @@
+"""
+Dev.to Cross-Posting Service
+
+Automatically cross-posts published blog content to Dev.to with a canonical URL
+pointing back to gladlabs.io. Articles are created as drafts so they can be
+reviewed before going live on Dev.to.
+
+The Dev.to API key is stored in app_settings (key: devto_api_key). If not
+configured, all operations gracefully skip.
+
+Usage:
+    from services.devto_service import DevToCrossPostService
+
+    svc = DevToCrossPostService(pool)
+    result = await svc.cross_post(
+        title="Why Local LLMs Beat Cloud APIs",
+        content_markdown="## Introduction\n\nLocal LLMs are...",
+        canonical_url="https://www.gladlabs.io/posts/why-local-llms-beat-cloud-apis",
+        tags=["llm", "selfhosting", "ai"],
+    )
+"""
+
+import json
+import re
+import uuid
+from typing import List, Optional
+
+import httpx
+
+from services.logger_config import get_logger
+
+logger = get_logger(__name__)
+
+DEVTO_API_BASE = "https://dev.to/api"
+SITE_URL = "https://www.gladlabs.io"
+
+
+class DevToCrossPostService:
+    """Cross-post blog content to Dev.to as drafts with canonical URLs."""
+
+    def __init__(self, pool):
+        self.pool = pool
+        self._api_key: Optional[str] = None
+        self._api_key_loaded = False
+
+    async def _get_api_key(self) -> Optional[str]:
+        """Fetch the Dev.to API key from app_settings (cached per instance)."""
+        if self._api_key_loaded:
+            return self._api_key
+        try:
+            row = await self.pool.fetchrow(
+                "SELECT value FROM app_settings WHERE key = 'devto_api_key'"
+            )
+            self._api_key = row["value"] if row and row["value"] else None
+            self._api_key_loaded = True
+        except Exception as e:
+            logger.debug("[DEVTO] Failed to load API key: %s", e)
+            self._api_key_loaded = True
+        return self._api_key
+
+    @staticmethod
+    def _clean_markdown(content: str) -> str:
+        """Prepare markdown for Dev.to.
+
+        - Converts relative internal links to absolute gladlabs.io URLs
+        - Strips HTML-only elements (iframes, script tags, custom components)
+        - Removes any HTML comments
+        """
+        # Convert relative links like [text](/posts/slug) to absolute
+        content = re.sub(
+            r'\[([^\]]+)\]\((/[^)]+)\)',
+            lambda m: f'[{m.group(1)}]({SITE_URL}{m.group(2)})',
+            content,
+        )
+
+        # Convert relative image paths to absolute
+        content = re.sub(
+            r'!\[([^\]]*)\]\((/[^)]+)\)',
+            lambda m: f'![{m.group(1)}]({SITE_URL}{m.group(2)})',
+            content,
+        )
+
+        # Strip <script> tags
+        content = re.sub(r'<script[^>]*>.*?</script>', '', content, flags=re.DOTALL | re.IGNORECASE)
+
+        # Strip <iframe> tags
+        content = re.sub(r'<iframe[^>]*>.*?</iframe>', '', content, flags=re.DOTALL | re.IGNORECASE)
+
+        # Strip HTML comments
+        content = re.sub(r'<!--.*?-->', '', content, flags=re.DOTALL)
+
+        # Strip custom React/Next.js components (e.g., <ViewTracker />, <AdSense />)
+        content = re.sub(r'<[A-Z][a-zA-Z]*\s*[^>]*/>', '', content)
+
+        return content.strip()
+
+    @staticmethod
+    def _normalize_tags(tags: List[str]) -> List[str]:
+        """Normalize tags for Dev.to: max 4, lowercase, no spaces, alphanumeric only."""
+        cleaned = []
+        for tag in tags:
+            # Lowercase, strip spaces, keep only alphanumeric
+            normalized = re.sub(r'[^a-z0-9]', '', tag.lower().strip())
+            if normalized and normalized not in cleaned:
+                cleaned.append(normalized)
+            if len(cleaned) >= 4:
+                break
+        return cleaned
+
+    async def cross_post(
+        self,
+        title: str,
+        content_markdown: str,
+        canonical_url: str,
+        tags: Optional[List[str]] = None,
+    ) -> Optional[str]:
+        """Cross-post an article to Dev.to as a draft.
+
+        Args:
+            title: Article title
+            content_markdown: Full markdown body
+            canonical_url: The gladlabs.io URL (set as canonical for SEO)
+            tags: Up to 4 tags (will be normalized)
+
+        Returns:
+            The Dev.to article URL if successful, None otherwise.
+        """
+        api_key = await self._get_api_key()
+        if not api_key:
+            logger.debug("[DEVTO] No API key configured — skipping cross-post")
+            return None
+
+        cleaned_content = self._clean_markdown(content_markdown)
+        normalized_tags = self._normalize_tags(tags or [])
+
+        payload = {
+            "article": {
+                "title": title,
+                "body_markdown": cleaned_content,
+                "published": False,
+                "canonical_url": canonical_url,
+                "tags": normalized_tags,
+            }
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(
+                    f"{DEVTO_API_BASE}/articles",
+                    headers={
+                        "api-key": api_key,
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                )
+
+                if resp.status_code in (200, 201):
+                    data = resp.json()
+                    devto_url = data.get("url", "")
+                    devto_id = data.get("id", "")
+                    logger.info(
+                        "[DEVTO] Cross-posted draft: %s (id=%s)", devto_url, devto_id
+                    )
+                    return devto_url
+                else:
+                    logger.warning(
+                        "[DEVTO] API returned %d: %s",
+                        resp.status_code,
+                        resp.text[:500],
+                    )
+                    return None
+
+        except Exception as e:
+            logger.warning("[DEVTO] Cross-post failed: %s", e)
+            return None
+
+    async def cross_post_by_post_id(self, post_id: str) -> Optional[str]:
+        """Cross-post a published post by its database ID.
+
+        Fetches the post from DB, cross-posts to Dev.to, and stores the
+        Dev.to URL in the post's metadata.
+
+        Returns:
+            The Dev.to article URL if successful, None otherwise.
+        """
+        try:
+            row = await self.pool.fetchrow(
+                "SELECT id, title, slug, content, seo_keywords, metadata "
+                "FROM posts WHERE id = $1 AND status = 'published'",
+                post_id if not isinstance(post_id, str) else uuid.UUID(post_id),
+            )
+        except Exception as e:
+            logger.warning("[DEVTO] Failed to fetch post %s: %s", post_id, e)
+            return None
+
+        if not row:
+            logger.debug("[DEVTO] Post %s not found or not published", post_id)
+            return None
+
+        # Build canonical URL
+        canonical_url = f"{SITE_URL}/posts/{row['slug']}"
+
+        # Parse tags from seo_keywords
+        tags = []
+        if row["seo_keywords"]:
+            tags = [k.strip() for k in row["seo_keywords"].split(",") if k.strip()]
+
+        devto_url = await self.cross_post(
+            title=row["title"],
+            content_markdown=row["content"],
+            canonical_url=canonical_url,
+            tags=tags,
+        )
+
+        if devto_url:
+            # Store the Dev.to URL in post metadata
+            try:
+                await self.pool.execute(
+                    """
+                    UPDATE posts
+                    SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb,
+                        updated_at = NOW()
+                    WHERE id = $2
+                    """,
+                    json.dumps({"devto_url": devto_url}),
+                    row["id"],
+                )
+                logger.info("[DEVTO] Stored devto_url in post metadata: %s", post_id)
+            except Exception as e:
+                logger.warning("[DEVTO] Failed to store devto_url (non-fatal): %s", e)
+
+        return devto_url
