@@ -97,7 +97,7 @@ async def _load_config_from_db(pool):
             TELEGRAM_CHAT_ID = config["telegram_chat_id"]
         logger.info("[BRAIN] Loaded %d config values from DB", len(config))
     except Exception as e:
-        logger.warning("[BRAIN] Could not load config from DB: %s (using defaults)", e)
+        logger.warning("[BRAIN] Could not load config from DB: %s (using defaults)", e, exc_info=True)
 
 # Local-only services (only monitored when running on Matt's PC)
 if not IS_RAILWAY:
@@ -198,7 +198,7 @@ def send_telegram(message: str):
         )
         urllib.request.urlopen(req, timeout=10)
     except Exception as e:
-        logger.error("[BRAIN] Telegram send failed: %s", e)
+        logger.error("[BRAIN] Telegram send failed: %s", e, exc_info=True)
 
 
 def restart_service(name: str):
@@ -225,7 +225,7 @@ def restart_service(name: str):
             )
             logger.info("[BRAIN] Restarted OpenClaw")
     except Exception as e:
-        logger.error("[BRAIN] Failed to restart %s: %s", name, e)
+        logger.error("[BRAIN] Failed to restart %s: %s", name, e, exc_info=True)
 
 
 async def monitor_services(pool) -> list:
@@ -290,7 +290,7 @@ async def monitor_services(pool) -> list:
                     else:
                         send_telegram(f"ALERT: {name} is DOWN — {detail}")
                 except Exception as alert_err:
-                    logger.warning("[BRAIN] Alert triage failed: %s — falling back to Telegram", alert_err)
+                    logger.warning("[BRAIN] Alert triage failed: %s — falling back to Telegram", alert_err, exc_info=True)
                     send_telegram(f"ALERT: {name} is DOWN — {detail}")
         else:
             logger.debug("[BRAIN] Service %s: OK", name)
@@ -367,7 +367,7 @@ async def process_queue(pool, max_items: int = 5):
         if items:
             logger.info("[BRAIN] Processed %d queue items", len(items))
     except Exception as e:
-        logger.error("[BRAIN] Queue processing failed: %s", e)
+        logger.error("[BRAIN] Queue processing failed: %s", e, exc_info=True)
 
 
 async def self_maintain(pool):
@@ -387,7 +387,7 @@ async def self_maintain(pool):
         if expired:
             logger.info("[BRAIN] Maintenance: expired %d facts", expired)
     except Exception as e:
-        logger.error("[BRAIN] Maintenance failed: %s", e)
+        logger.error("[BRAIN] Maintenance failed: %s", e, exc_info=True)
 
 
 async def update_system_metrics(pool):
@@ -496,7 +496,7 @@ async def main():
         try:
             await run_cycle(pool)
         except Exception as e:
-            logger.error("[BRAIN] Cycle failed: %s", e)
+            logger.error("[BRAIN] Cycle failed: %s", e, exc_info=True)
 
         if one_shot:
             break

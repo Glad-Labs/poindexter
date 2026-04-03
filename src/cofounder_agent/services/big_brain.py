@@ -82,7 +82,7 @@ class BigBrain:
             logger.info("[BRAIN] Learned: %s.%s = %s", entity, attribute, value[:50])
             return True
         except Exception as e:
-            logger.error("[BRAIN] Failed to learn: %s", e)
+            logger.error("[BRAIN] Failed to learn: %s", e, exc_info=True)
             return False
 
     # ========================================================================
@@ -108,7 +108,7 @@ class BigBrain:
             logger.info("[BRAIN] Queued: [%s] %s", item_type, observation[:60])
             return row["id"] if row else 0
         except Exception as e:
-            logger.error("[BRAIN] Failed to queue: %s", e)
+            logger.error("[BRAIN] Failed to queue: %s", e, exc_info=True)
             return 0
 
     # ========================================================================
@@ -129,7 +129,7 @@ class BigBrain:
             """, entity)
             return [dict(r) for r in rows]
         except Exception as e:
-            logger.error("[BRAIN] Failed to recall %s: %s", entity, e)
+            logger.error("[BRAIN] Failed to recall %s: %s", entity, e, exc_info=True)
             return []
 
     async def recall_fact(self, entity: str, attribute: str) -> Optional[str]:
@@ -238,7 +238,7 @@ class BigBrain:
             """, f"%{query}%", limit)
             return [dict(r) for r in rows]
         except Exception as e:
-            logger.error("[BRAIN] Search failed: %s", e)
+            logger.error("[BRAIN] Search failed: %s", e, exc_info=True)
             return []
 
     # ========================================================================
@@ -267,7 +267,7 @@ class BigBrain:
                 LIMIT $1
             """, max_items)
         except Exception as e:
-            logger.error("[BRAIN] Failed to read queue: %s", e)
+            logger.error("[BRAIN] Failed to read queue: %s", e, exc_info=True)
             return []
 
         results = []
@@ -280,7 +280,7 @@ class BigBrain:
                     json.dumps(result), item["id"],
                 )
             except Exception as e:
-                logger.error("[BRAIN] Failed to process item %d: %s", item["id"], e)
+                logger.error("[BRAIN] Failed to process item %d: %s", item["id"], e, exc_info=True)
                 await self.pool.execute(
                     "UPDATE brain_queue SET status = 'failed', result = $1, processed_at = NOW() WHERE id = $2",
                     str(e)[:500], item["id"],
@@ -403,7 +403,7 @@ class BigBrain:
             logger.info("[BRAIN] Maintenance: expired=%d, low_confidence=%d",
                         results["expired"], results["low_confidence"])
         except Exception as e:
-            logger.error("[BRAIN] Maintenance failed: %s", e)
+            logger.error("[BRAIN] Maintenance failed: %s", e, exc_info=True)
 
         return results
 
