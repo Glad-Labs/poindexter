@@ -38,7 +38,19 @@ $DB_PORT = if ($env:DB_PORT) { $env:DB_PORT } else { "32382" }
 $DB_NAME = if ($env:DB_NAME) { $env:DB_NAME } else { "railway" }
 $DB_USER = if ($env:DB_USER) { $env:DB_USER } else { "postgres" }
 $DB_PASS = $env:DB_PASS
-if (-not $DB_PASS) { Write-Error "DB_PASS environment variable is required. Set it before running this script."; exit 1 }
+
+# If DB_PASS not in environment, load from .env.local
+if (-not $DB_PASS) {
+    $envFile = Join-Path (Join-Path $PSScriptRoot "..") ".env.local"
+    if (Test-Path $envFile) {
+        $match = Select-String -Path $envFile -Pattern "^DB_PASS=(.+)$" | Select-Object -First 1
+        if ($match) {
+            $DB_PASS = $match.Matches[0].Groups[1].Value.Trim()
+        }
+    }
+}
+
+if (-not $DB_PASS) { Write-Error "DB_PASS not found in environment or .env.local. Set it before running this script."; exit 1 }
 
 $Timestamp = Get-Date -Format "yyyy-MM-dd_HHmmss"
 $BackupFileName = "gladlabs-db-${Timestamp}.dump"
