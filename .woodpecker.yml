@@ -1,11 +1,15 @@
 # =============================================================================
-# Woodpecker CI Pipeline for Glad Labs
+# Woodpecker CI/CD Pipeline for Glad Labs
 #
-# Runs on every push to main. Tests must pass before Railway/Vercel
-# auto-deploy from GitHub. Notifies via Telegram on success/failure.
+# Flow: push to main → tests → deploy (only if tests pass) → notify
+#
+# Railway and Vercel auto-deploy MUST be disabled in their dashboards.
+# Woodpecker is the single deployer — no deploy without green tests.
 #
 # Required Woodpecker secrets:
-#   TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+#   TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+#   RAILWAY_TOKEN, VERCEL_TOKEN, VERCEL_ORG_ID,
+#   PUBLIC_SITE_PROD_PROJECT_ID
 # =============================================================================
 
 when:
@@ -14,7 +18,7 @@ when:
 
 steps:
   # ===========================================================================
-  # TEST PHASE
+  # TEST PHASE — all must pass before deploy
   # ===========================================================================
 
   backend-unit-tests:
@@ -47,14 +51,43 @@ steps:
       - npm audit --audit-level=moderate
 
   # ===========================================================================
-  # POST-DEPLOY SMOKE TESTS (after Railway/Vercel auto-deploy)
+  # DEPLOY PHASE — only runs if all tests pass
+  # ===========================================================================
+
+  deploy-railway:
+    image: node:22-bookworm
+    commands:
+      - npm install -g @railway/cli
+      - echo "Deploying Co-Founder Agent to Railway..."
+      - railway up --service cofounder --detach
+      - echo "Railway deploy triggered"
+    environment:
+      RAILWAY_TOKEN:
+        from_secret: RAILWAY_TOKEN
+
+  deploy-vercel:
+    image: node:22-bookworm
+    commands:
+      - echo "Deploying Public Site to Vercel..."
+      - npx vercel deploy --prod --token=$VERCEL_TOKEN --scope=$VERCEL_ORG_ID --yes
+      - echo "Vercel deploy complete"
+    environment:
+      VERCEL_TOKEN:
+        from_secret: VERCEL_TOKEN
+      VERCEL_ORG_ID:
+        from_secret: VERCEL_ORG_ID
+      VERCEL_PROJECT_ID:
+        from_secret: PUBLIC_SITE_PROD_PROJECT_ID
+
+  # ===========================================================================
+  # POST-DEPLOY SMOKE TESTS
   # ===========================================================================
 
   smoke-tests:
     image: curlimages/curl:latest
     failure: ignore
     commands:
-      - echo "Waiting 90s for Railway/Vercel to deploy..."
+      - echo "Waiting 90s for deploys to go live..."
       - sleep 90
       - |
         echo "Testing API health..."
@@ -75,11 +108,11 @@ steps:
         curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
           -d chat_id="$TELEGRAM_CHAT_ID" \
           -d parse_mode="Markdown" \
-          -d text="✅ *CI Passed — Deploying*
+          -d text="✅ *CI Passed + Deployed*
 
         Commit: \`$COMMIT_SHA\` — $CI_COMMIT_MESSAGE
 
-        Tests passed. Railway + Vercel deploying automatically."
+        Tests passed → Railway + Vercel deployed."
     environment:
       TELEGRAM_BOT_TOKEN:
         from_secret: TELEGRAM_BOT_TOKEN
@@ -96,13 +129,11 @@ steps:
         curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
           -d chat_id="$TELEGRAM_CHAT_ID" \
           -d parse_mode="Markdown" \
-          -d text="❌ *CI Failed — Deploy may have bad code*
+          -d text="❌ *CI Failed — Deploy Blocked*
 
         Commit: \`$COMMIT_SHA\` — $CI_COMMIT_MESSAGE
 
-        ⚠️ Railway/Vercel auto-deployed but tests failed. Check immediately.
-
-        [View Logs]($CI_PIPELINE_URL)"
+        Tests failed. Nothing deployed. Fix and push again."
     environment:
       TELEGRAM_BOT_TOKEN:
         from_secret: TELEGRAM_BOT_TOKEN
