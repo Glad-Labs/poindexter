@@ -18,8 +18,6 @@ Usage:
 """
 
 import time
-from datetime import datetime, timezone
-from typing import Optional
 
 from services.logger_config import get_logger
 from services.site_config import site_config
@@ -114,47 +112,42 @@ class IdleWorker:
             results["topic_discovery"] = await self._discover_and_queue_topics()
             self._mark_run("topic_discovery")
 
-        # 7. GPU metrics scraping (every 1 minute)
-        if self._is_due("gpu_scrape", 1):
-            results["gpu_scrape"] = await self._scrape_gpu_metrics()
-            self._mark_run("gpu_scrape")
-
-        # 8. Shared context sync (every 30 minutes)
+        # 7. Shared context sync (every 30 minutes)
         if self._is_due("context_sync", 30):
             results["context_sync"] = await self._sync_shared_context()
             self._mark_run("context_sync")
 
-        # 9. Auto-embed new/changed posts (every 2 hours)
+        # 8. Auto-embed new/changed posts (every 2 hours)
         if self._is_due("auto_embed", 120):
             results["auto_embed"] = await self._auto_embed_posts()
             self._mark_run("auto_embed")
 
-        # 10. Regenerate stock photo images with SDXL (every 6 hours, 5 per cycle)
+        # 9. Regenerate stock photo images with SDXL (every 6 hours, 5 per cycle)
         if self._is_due("image_regen", 360):
             results["image_regen"] = await self._regenerate_stock_images()
             self._mark_run("image_regen")
 
-        # 11. Fix uncategorized posts (every 12 hours)
+        # 10. Fix uncategorized posts (every 12 hours)
         if self._is_due("fix_categories", 720):
             results["fix_categories"] = await self._fix_uncategorized_posts()
             self._mark_run("fix_categories")
 
-        # 12. Fix posts missing SEO metadata (every 12 hours)
+        # 11. Fix posts missing SEO metadata (every 12 hours)
         if self._is_due("fix_seo", 720):
             results["fix_seo"] = await self._fix_missing_seo()
             self._mark_run("fix_seo")
 
-        # 13. Clean broken internal links (every 24 hours)
+        # 12. Clean broken internal links (every 24 hours)
         if self._is_due("fix_internal_links", 1440):
             results["fix_internal_links"] = await self._fix_broken_internal_links()
             self._mark_run("fix_internal_links")
 
-        # 14. Remove broken external links (every 24 hours)
+        # 13. Remove broken external links (every 24 hours)
         if self._is_due("fix_external_links", 1440):
             results["fix_external_links"] = await self._fix_broken_external_links()
             self._mark_run("fix_external_links")
 
-        # 15. Fix duplicate titles (every 24 hours)
+        # 14. Fix duplicate titles (every 24 hours)
         if self._is_due("fix_duplicates", 1440):
             results["fix_duplicates"] = await self._detect_duplicate_posts()
             self._mark_run("fix_duplicates")
@@ -395,43 +388,6 @@ class IdleWorker:
 
         except Exception as e:
             logger.warning("[IDLE] Topic discovery failed: %s", e)
-            return {"error": str(e)}
-
-    async def _scrape_gpu_metrics(self) -> dict:
-        """Scrape nvidia-smi and store in gpu_metrics table (local DB)."""
-        try:
-            import asyncio
-            import asyncpg
-
-            proc = await asyncio.create_subprocess_exec(
-                "nvidia-smi",
-                "--query-gpu=utilization.gpu,temperature.gpu,power.draw,memory.used,memory.total,fan.speed,clocks.gr,clocks.mem",
-                "--format=csv,noheader,nounits",
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
-            if proc.returncode != 0:
-                return {"note": "nvidia-smi not available"}
-
-            vals = stdout.decode().strip().split(", ")
-            if len(vals) < 8:
-                return {"note": f"unexpected nvidia-smi output: {vals}"}
-
-            local_url = site_config.get("local_database_url", "")
-            if not local_url:
-                return {"note": "no local DB for GPU metrics"}
-
-            conn = await asyncpg.connect(local_url)
-            await conn.execute(
-                """INSERT INTO gpu_metrics (utilization, temperature, power_draw, memory_used, memory_total, fan_speed, clock_graphics, clock_memory)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8)""",
-                float(vals[0]), float(vals[1]), float(vals[2]), float(vals[3]),
-                float(vals[4]), float(vals[5]), float(vals[6]), float(vals[7]),
-            )
-            await conn.close()
-            return {"ok": True, "util": vals[0], "temp": vals[1]}
-
-        except Exception as e:
             return {"error": str(e)}
 
     async def _sync_shared_context(self) -> dict:

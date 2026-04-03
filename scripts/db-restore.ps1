@@ -54,7 +54,7 @@ param(
     [string]$TargetPort = "32382",
     [string]$TargetDB = "railway",
     [string]$TargetUser = "postgres",
-    [string]$TargetPassword = "***REMOVED***",
+    [string]$TargetPassword = $env:DB_PASS,
 
     [switch]$Local,
     [switch]$CleanRestore
@@ -69,7 +69,7 @@ if ($Local) {
     $TargetPort = "5432"
     $TargetDB = "glad_labs_dev"
     $TargetUser = "postgres"
-    if (-not $TargetPassword -or $TargetPassword -eq "***REMOVED***") {
+    if (-not $TargetPassword) {
         $TargetPassword = "postgres"
     }
 }

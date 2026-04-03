@@ -457,7 +457,12 @@ async def api_health():
                     "error_count": executor_stats.get("error_count", 0),
                 }
                 # Degrade overall status if executor is not running
-                if not executor_stats.get("running", False) and health_data["status"] == "healthy":
+                # Skip in coordinator mode — executor is intentionally not started there
+                if (
+                    not executor_stats.get("running", False)
+                    and health_data["status"] == "healthy"
+                    and _deployment_mode != "coordinator"
+                ):
                     health_data["status"] = "degraded"
                     health_data["components"]["task_executor"][
                         "degraded_reason"

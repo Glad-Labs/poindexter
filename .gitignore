@@ -114,4 +114,5 @@ Modelfile*
 *.gguf
 .env.local.backup
 infrastructure/headscale/certs/key.pem
+scripts/secrets-to-scrub.txt
 mcp.json

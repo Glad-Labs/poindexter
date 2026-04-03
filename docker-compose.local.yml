@@ -34,9 +34,9 @@ services:
     ports:
       - "5433:5432"
     environment:
-      POSTGRES_DB: gladlabs_brain
-      POSTGRES_USER: gladlabs
-      POSTGRES_PASSWORD: gladlabs-brain-local
+      POSTGRES_DB: ${LOCAL_POSTGRES_DB:-gladlabs_brain}
+      POSTGRES_USER: ${LOCAL_POSTGRES_USER:-gladlabs}
+      POSTGRES_PASSWORD: ${LOCAL_POSTGRES_PASSWORD:-gladlabs-brain-local}
     volumes:
       - postgres-local-data:/var/lib/postgresql/data
       - ./infrastructure/local-db/init.sql:/docker-entrypoint-initdb.d/01-init.sql
@@ -53,9 +53,10 @@ services:
     ports:
       - "3000:3000"
     environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: gladlabs
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?Set GRAFANA_PASSWORD in .env}
       GF_INSTALL_PLUGINS: grafana-clock-panel
+      LOCAL_POSTGRES_PASSWORD: ${LOCAL_POSTGRES_PASSWORD:-gladlabs-brain-local}
     volumes:
       - grafana-data:/var/lib/grafana
       - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning
@@ -81,7 +82,7 @@ services:
       GITEA__database__HOST: postgres-local:5432
       GITEA__database__NAME: gladlabs_brain
       GITEA__database__USER: gladlabs
-      GITEA__database__PASSWD: gladlabs-brain-local
+      GITEA__database__PASSWD: ${LOCAL_POSTGRES_PASSWORD:-gladlabs-brain-local}
       GITEA__server__ROOT_URL: http://localhost:3001
       GITEA__server__SSH_DOMAIN: localhost
       GITEA__server__SSH_PORT: 2222
@@ -108,9 +109,9 @@ services:
       WOODPECKER_GITEA: "true"
       WOODPECKER_GITEA_URL: http://localhost:3001
       WOODPECKER_GITEA_SKIP_VERIFY: "true"
-      WOODPECKER_GITEA_CLIENT: "0efd0251-1892-47e7-b434-a2b5df4d250b"
-      WOODPECKER_GITEA_SECRET: "***REMOVED***"
-      WOODPECKER_SECRET: ***REMOVED***
+      WOODPECKER_GITEA_CLIENT: ${WOODPECKER_GITEA_CLIENT:?Set in .env}
+      WOODPECKER_GITEA_SECRET: ${WOODPECKER_GITEA_SECRET:?Set in .env}
+      WOODPECKER_SECRET: ${WOODPECKER_SECRET:?Set in .env}
       WOODPECKER_ADMIN: gladlabs
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -126,7 +127,7 @@ services:
     restart: unless-stopped
     environment:
       WOODPECKER_SERVER: woodpecker-server:9000
-      WOODPECKER_AGENT_SECRET: "***REMOVED***"
+      WOODPECKER_AGENT_SECRET: ${WOODPECKER_SECRET:?Set in .env}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
@@ -147,8 +148,8 @@ services:
       DEPLOYMENT_MODE: worker
       ENVIRONMENT: production
       PORT: "8002"
-      DATABASE_URL: "postgresql://postgres:***REMOVED***@hopper.proxy.rlwy.net:32382/railway"
-      LOCAL_DATABASE_URL: "postgresql://gladlabs:gladlabs-brain-local@postgres-local:5432/gladlabs_brain"
+      DATABASE_URL: ${CLOUD_DATABASE_URL:?Set CLOUD_DATABASE_URL in .env}
+      LOCAL_DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-gladlabs}:${LOCAL_POSTGRES_PASSWORD:-gladlabs-brain-local}@postgres-local:5432/${LOCAL_POSTGRES_DB:-gladlabs_brain}"
       OLLAMA_BASE_URL: "http://host.docker.internal:11434"
       SITE_NAME: "Glad Labs"
       SITE_DOMAIN: "gladlabs.io"

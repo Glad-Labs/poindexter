@@ -13,6 +13,7 @@ Usage:
 """
 
 import asyncio
+import os
 import sys
 import time
 
@@ -22,13 +23,8 @@ import asyncpg
 # Configuration
 # ---------------------------------------------------------------------------
 
-CLOUD_DSN = (
-    "postgresql://postgres:***REMOVED***"
-    "@hopper.proxy.rlwy.net:32382/railway"
-)
-LOCAL_DSN = (
-    "postgresql://gladlabs:gladlabs-brain-local@localhost:5433/gladlabs_brain"
-)
+CLOUD_DSN = os.getenv("CLOUD_DATABASE_URL") or os.getenv("DATABASE_URL", "")
+LOCAL_DSN = os.getenv("LOCAL_DATABASE_URL", "postgresql://gladlabs:gladlabs-brain-local@localhost:5433/gladlabs_brain")
 
 TABLES_TO_MIGRATE = [
     "content_tasks",
