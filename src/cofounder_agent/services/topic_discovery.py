@@ -133,10 +133,10 @@ class TopicDiscovery:
             try:
                 await self.pool.execute("""
                     INSERT INTO content_tasks (task_id, task_type, topic, status, task_metadata)
-                    VALUES (gen_random_uuid()::text, 'blog_post', $1, 'pending',
-                            jsonb_build_object('category', $2, 'source', $3, 'source_url', $4,
+                    VALUES (gen_random_uuid()::text, 'blog_post', $1::text, 'pending',
+                            jsonb_build_object('category', $2::text, 'source', $3::text, 'source_url', $4::text,
                                               'discovered_by', 'topic_discovery'))
-                """, topic.title, topic.category, topic.source, topic.source_url)
+                """, str(topic.title), str(topic.category or 'technology'), str(topic.source or 'unknown'), str(topic.source_url or ''))
                 queued += 1
                 logger.info("[TOPIC_DISCOVERY] Queued: %s [%s]", topic.title[:50], topic.category)
             except Exception as e:
