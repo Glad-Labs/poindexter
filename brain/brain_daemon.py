@@ -29,6 +29,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+import time
 from datetime import datetime, timezone
 
 # Standalone — no imports from the FastAPI codebase
@@ -64,6 +65,8 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
 # Detect if running on Railway (cloud) or locally
 IS_RAILWAY = bool(os.getenv("RAILWAY_SERVICE_ID"))
+# Detect Docker (set in docker-compose.local.yml)
+IS_DOCKER = bool(os.getenv("IN_DOCKER"))
 
 # Service URLs — loaded from DB at startup, these are just initial defaults
 # Updated by _load_config_from_db() before the first monitoring cycle
@@ -99,13 +102,17 @@ async def _load_config_from_db(pool):
     except Exception as e:
         logger.warning("[BRAIN] Could not load config from DB: %s (using defaults)", e, exc_info=True)
 
-# Local-only services (only monitored when running on Matt's PC)
+# Local-only services (only monitored when running on Matt's PC or in Docker)
 if not IS_RAILWAY:
+    # In Docker, other containers are on the Docker network; host services use host.docker.internal
+    _local_host = "host.docker.internal" if IS_DOCKER else "localhost"
+    # Worker is a sibling container in Docker — use its container name
+    _worker_host = "gladlabs-worker" if IS_DOCKER else "localhost"
     SERVICES.update({
-        "worker": {"url": "http://localhost:8002/api/health", "type": "json_status", "critical": False},
-        "openclaw": {"url": "http://localhost:18789/status", "type": "http", "critical": False},
-        "nvidia_exporter": {"url": "http://localhost:9835/metrics", "type": "http", "critical": False},
-        "windows_exporter": {"url": "http://localhost:9182/metrics", "type": "http", "critical": False},
+        "worker": {"url": f"http://{_worker_host}:8002/api/health", "type": "json_status", "critical": False},
+        "openclaw": {"url": f"http://{_local_host}:18789/status", "type": "http", "critical": False},
+        "nvidia_exporter": {"url": f"http://{_local_host}:9835/metrics", "type": "http", "critical": False},
+        "windows_exporter": {"url": f"http://{_local_host}:9182/metrics", "type": "http", "critical": False},
     })
 
 # External service status pages (always monitored from anywhere)
@@ -206,6 +213,12 @@ def restart_service(name: str):
     if IS_RAILWAY:
         logger.info("[BRAIN] Cannot restart local service %s from Railway — alert sent instead", name)
         send_telegram(f"Service {name} is down. Brain cannot restart from cloud — check your PC.")
+        return
+    if IS_DOCKER:
+        # In Docker, we can restart sibling containers via the Docker socket (if mounted)
+        # or just alert. For now, alert — Matt can add Docker socket mount later.
+        logger.info("[BRAIN] Cannot restart %s from Docker container — alerting instead", name)
+        send_telegram(f"Service {name} is down. Brain is in Docker — restart manually or mount Docker socket.")
         return
     try:
         kwargs = {}
@@ -492,9 +505,15 @@ async def main():
         # Windows doesn't support add_signal_handler — use KeyboardInterrupt instead
         pass
 
+    # Touch heartbeat file for Docker HEALTHCHECK
+    _heartbeat_path = "/tmp/brain_heartbeat"
+
     while not shutdown.is_set():
         try:
             await run_cycle(pool)
+            # Update heartbeat after successful cycle
+            with open(_heartbeat_path, "w") as hb:
+                hb.write(str(time.time()))
         except Exception as e:
             logger.error("[BRAIN] Cycle failed: %s", e, exc_info=True)
 

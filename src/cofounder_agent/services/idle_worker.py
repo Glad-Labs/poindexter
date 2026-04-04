@@ -220,6 +220,11 @@ class IdleWorker:
             results["devto_crosspost"] = await self._crosspost_to_devto()
             await self._persist_mark_run("devto_crosspost")
 
+        # 19. Database backup — export key tables as JSON to local disk (every 24 hours)
+        if self._is_due("db_backup", 1440):
+            results["db_backup"] = await self._backup_database()
+            await self._persist_mark_run("db_backup")
+
         if results:
             logger.info("[IDLE] Completed %d background tasks: %s",
                         len(results), ", ".join(results.keys()))
@@ -1385,3 +1390,66 @@ class IdleWorker:
         except Exception as e:
             logger.warning("[IDLE] Dev.to cross-posting failed: %s", e)
             return {"error": str(e)}
+
+    async def _backup_database(self) -> dict:
+        """Export key tables as JSON to ~/.gladlabs/backups/ (no pg_dump needed)."""
+        import json
+        import os
+        from datetime import datetime
+
+        backup_dir = os.path.join(os.path.expanduser("~"), ".gladlabs", "backups")
+        os.makedirs(backup_dir, exist_ok=True)
+
+        tables = [
+            "posts",
+            "app_settings",
+            "brain_knowledge",
+            "brain_decisions",
+            "affiliate_links",
+            "content_tasks",
+            "page_views",
+            "cost_logs",
+        ]
+
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        backed_up = []
+        errors = []
+
+        for table in tables:
+            try:
+                rows = await self.pool.fetch(f"SELECT * FROM {table}")  # noqa: S608 — trusted table names
+                if not rows:
+                    continue
+                records = [dict(r) for r in rows]
+                # Convert non-serializable types
+                for rec in records:
+                    for k, v in rec.items():
+                        if hasattr(v, "isoformat"):
+                            rec[k] = v.isoformat()
+                        elif isinstance(v, (bytes, memoryview)):
+                            rec[k] = None  # skip binary
+                        elif not isinstance(v, (str, int, float, bool, list, dict, type(None))):
+                            rec[k] = str(v)
+
+                filepath = os.path.join(backup_dir, f"{table}_{timestamp}.json")
+                with open(filepath, "w", encoding="utf-8") as f:
+                    json.dump(records, f, indent=2, default=str)
+                backed_up.append(f"{table}: {len(records)} rows")
+            except Exception as e:
+                errors.append(f"{table}: {e}")
+
+        # Prune old backups — keep last 7 days
+        try:
+            cutoff = time.time() - (7 * 86400)
+            for fname in os.listdir(backup_dir):
+                fpath = os.path.join(backup_dir, fname)
+                if os.path.isfile(fpath) and os.path.getmtime(fpath) < cutoff:
+                    os.remove(fpath)
+        except Exception as e:
+            logger.debug("[IDLE] Backup pruning failed: %s", e)
+
+        logger.info("[IDLE] DB backup: %d tables backed up to %s", len(backed_up), backup_dir)
+        result = {"backed_up": backed_up, "backup_dir": backup_dir}
+        if errors:
+            result["errors"] = errors[:5]
+        return result
