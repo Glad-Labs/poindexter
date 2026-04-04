@@ -13,7 +13,6 @@ All operations use upsert (INSERT ON CONFLICT UPDATE) for idempotency.
 Graceful failure: if either DB is unreachable, log and skip.
 """
 
-import asyncio
 import os
 from services.logger_config import get_logger
 from datetime import datetime, timezone

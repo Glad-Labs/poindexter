@@ -341,11 +341,6 @@ class TestApproveTask:
                 new_callable=AsyncMock,
                 return_value="cat-1",
             ),
-            patch(
-                "routes.task_publishing_routes.trigger_nextjs_revalidation",
-                new_callable=AsyncMock,
-                return_value=True,
-            ),
         ):
             mc.to_task_response.return_value = MagicMock()
             mc.task_response_to_unified.return_value = _unified_response_dict(status="published")
@@ -431,11 +426,6 @@ class TestPublishTask:
                 new_callable=AsyncMock,
                 return_value="cat-1",
             ),
-            patch(
-                "routes.task_publishing_routes.trigger_nextjs_revalidation",
-                new_callable=AsyncMock,
-                return_value=True,
-            ),
         ):
             mc.to_task_response.return_value = MagicMock()
             mc.task_response_to_unified.return_value = _unified_response_dict(status="published")
@@ -512,11 +502,6 @@ class TestPublishTask:
                 new_callable=AsyncMock,
                 return_value="cat-1",
             ),
-            patch(
-                "routes.task_publishing_routes.trigger_nextjs_revalidation",
-                new_callable=AsyncMock,
-                return_value=True,
-            ),
         ):
             mc.to_task_response.return_value = MagicMock()
             mc.task_response_to_unified.return_value = _unified_response_dict(status="published")
@@ -534,14 +519,7 @@ class TestPublishTask:
         mock_db.get_task = AsyncMock(side_effect=[task, task])
 
         app = _build_app(mock_db)
-        with (
-            _mock_model_converter() as mc,
-            patch(
-                "routes.task_publishing_routes.trigger_nextjs_revalidation",
-                new_callable=AsyncMock,
-                return_value=True,
-            ),
-        ):
+        with _mock_model_converter() as mc:
             mc.to_task_response.return_value = MagicMock()
             mc.task_response_to_unified.return_value = _unified_response_dict(
                 status="published", topic=""
@@ -572,11 +550,6 @@ class TestPublishTask:
                 "services.content_router_service._select_category_for_topic",
                 new_callable=AsyncMock,
                 return_value="cat-1",
-            ),
-            patch(
-                "routes.task_publishing_routes.trigger_nextjs_revalidation",
-                new_callable=AsyncMock,
-                return_value=True,
             ),
         ):
             mc.to_task_response.return_value = MagicMock()

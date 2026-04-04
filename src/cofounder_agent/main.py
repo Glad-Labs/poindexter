@@ -48,10 +48,6 @@ except ImportError:
 # PostgreSQL database service is now the primary service
 DATABASE_SERVICE_AVAILABLE = True
 
-# Flag for Google Cloud availability (for test mocking)
-# Google Cloud services have been replaced with PostgreSQL + task store
-GOOGLE_CLOUD_AVAILABLE = False
-
 logger = get_logger(__name__)
 
 
