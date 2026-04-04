@@ -73,29 +73,6 @@ _WORKER_ROUTES = [
 # Backward-compatible alias: defaults to coordinator manifest
 _ROUTE_MANIFEST = _COORDINATOR_ROUTES
 
-# Disabled routes (preserved for potential reuse)
-# To re-enable, move entries back to _ROUTE_MANIFEST
-_DISABLED_ROUTES = [
-    ("routes.auth_unified", "router", "auth_router", "auth"),
-    ("routes.writing_style_routes", "router", "writing_style_router", "RAG style matching"),
-    ("routes.media_routes", "media_router", "media_router", "image generation & search"),
-    ("routes.command_queue_routes", "router", "command_queue_router", "command queue"),
-    ("routes.chat_routes", "router", "chat_router", "chat & AI integration"),
-    ("routes.ollama_routes", "router", "ollama_router", "Ollama integration"),
-    ("routes.social_routes", "social_router", "social_router", "social media management"),
-    ("routes.analytics_routes", "analytics_router", "analytics_router", "KPI dashboard"),
-    ("routes.profiling_routes", "router", "profiling_router", "performance profiling"),
-    ("routes.agents_routes", "router", "agents_router", "agent management"),
-    ("routes.service_registry_routes", "router", "service_registry_router", "service discovery"),
-    ("routes.agent_registry_routes", "router", "agent_registry_router", "agent discovery"),
-    ("routes.workflow_routes", "router", "workflow_router", "workflow orchestration"),
-    ("routes.custom_workflows_routes", "router", "custom_workflows_router", "custom workflow builder"),
-    ("routes.workflow_progress_routes", "router", "workflow_progress_router", "progress tracking"),
-    ("routes.capability_tasks_routes", "router", "capability_tasks_router", "capability composition"),
-    ("routes.websocket_routes", "websocket_router", "websocket_router", "real-time tracking"),
-]
-
-
 def register_all_routes(
     app: FastAPI,
     deployment_mode: str = "coordinator",

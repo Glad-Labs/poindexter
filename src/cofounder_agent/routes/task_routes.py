@@ -860,7 +860,6 @@ async def delete_task(
         raise HTTPException(status_code=500, detail="Failed to delete task") from e
 
 
-from routes.task_intent_routes import intent_router
 from routes.task_publishing_routes import publishing_router
 
 # ============================================================================
@@ -870,4 +869,3 @@ from routes.task_status_routes import status_router
 
 router.include_router(status_router)
 router.include_router(publishing_router)
-router.include_router(intent_router)

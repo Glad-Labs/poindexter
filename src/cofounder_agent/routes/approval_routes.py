@@ -32,7 +32,6 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from middleware.api_token_auth import get_operator_identity, verify_api_token
-from routes.websocket_routes import broadcast_approval_status
 from services.database_service import DatabaseService
 from services.error_handler import AppError
 from services.logger_config import get_logger
@@ -40,6 +39,13 @@ from utils.route_utils import get_database_dependency
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/tasks", tags=["approval"])
+
+
+async def broadcast_approval_status(
+    task_id: str, status: str, details: Optional[Dict] = None
+) -> None:
+    """No-op stub — websocket routes removed (no connected clients)."""
+    pass
 
 
 # ============================================================================

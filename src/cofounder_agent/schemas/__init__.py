@@ -4,42 +4,21 @@ Unified Schemas Package
 Consolidates all Pydantic models used across the application.
 
 Modules:
-- orchestrator_schemas: Orchestration endpoints (process, approve, training)
 - quality_schemas: Quality assessment endpoints
 - task_schemas: Task management endpoints
 - content_schemas: Content creation and management
-- auth_schemas: Authentication and user models (when available)
+- auth_schemas: Authentication and user models
+- settings_schemas: Application settings
+- metrics_schemas: Cost and performance metrics
+- bulk_task_schemas: Bulk task operations
+- database_response_models: Typed DB response models
 """
-
-# Agent schemas
-from .agent_schemas import (
-    AgentCommand,
-    AgentCommandResult,
-    AgentHealth,
-    AgentLog,
-    AgentLogs,
-    AgentStatus,
-    AllAgentsStatus,
-    MemoryStats,
-)
 
 # Auth schemas
 from .auth_schemas import GitHubCallbackRequest, LogoutResponse, UserProfile
 
 # Bulk task schemas
 from .bulk_task_schemas import BulkTaskRequest, BulkTaskResponse
-
-# Chat schemas
-from .chat_schemas import ChatMessage, ChatRequest, ChatResponse
-
-# Command schemas
-from .command_schemas import (
-    CommandErrorRequest,
-    CommandListResponse,
-    CommandRequest,
-    CommandResponse,
-    CommandResultRequest,
-)
 
 # Content schemas
 from .content_schemas import (
@@ -79,24 +58,6 @@ from .model_converter import ModelConverter
 # Models schemas
 from .models_schemas import ModelInfo, ModelsListResponse, ProvidersStatusResponse, ProviderStatus
 
-# Natural language schemas
-from .natural_language_schemas import (
-    NaturalLanguageRequest,
-    NaturalLanguageResponse,
-    RefineContentRequest,
-)
-
-# Ollama schemas
-from .ollama_schemas import OllamaHealthResponse, OllamaModelSelection, OllamaWarmupResponse
-
-# Orchestrator schemas
-from .orchestrator_schemas import (
-    ApprovalAction,
-    ProcessRequestBody,
-    TrainingDataExportRequest,
-    TrainingModelUploadRequest,
-)
-
 # Quality schemas
 from .quality_schemas import (
     BatchQualityRequest,
@@ -117,27 +78,6 @@ from .settings_schemas import (
     SettingListResponse,
     SettingResponse,
     SettingUpdate,
-)
-
-# Social schemas
-from .social_schemas import (
-    CrossPostRequest,
-    GenerateContentRequest,
-    SocialAnalytics,
-    SocialPlatformConnection,
-    SocialPlatformEnum,
-    SocialPost,
-    ToneEnum,
-)
-
-# Subtask schemas
-from .subtask_schemas import (
-    CreativeSubtaskRequest,
-    FormatSubtaskRequest,
-    ImageSubtaskRequest,
-    QASubtaskRequest,
-    ResearchSubtaskRequest,
-    SubtaskResponse,
 )
 
 # Task schemas
@@ -167,11 +107,6 @@ from .workflow_history_schemas import (
 )
 
 __all__ = [
-    # Orchestrator
-    "ProcessRequestBody",
-    "ApprovalAction",
-    "TrainingDataExportRequest",
-    "TrainingModelUploadRequest",
     # Quality
     "QualityEvaluationRequest",
     "QualityDimensionsResponse",
@@ -200,29 +135,10 @@ __all__ = [
     "ApprovalResponse",
     "PublishDraftResponse",
     "GenerateAndPublishRequest",
-    # Agent
-    "AgentStatus",
-    "AllAgentsStatus",
-    "AgentCommand",
-    "AgentCommandResult",
-    "AgentLog",
-    "AgentLogs",
-    "MemoryStats",
-    "AgentHealth",
     # Auth
     "UserProfile",
     "LogoutResponse",
     "GitHubCallbackRequest",
-    # Chat
-    "ChatMessage",
-    "ChatRequest",
-    "ChatResponse",
-    # Command
-    "CommandRequest",
-    "CommandResponse",
-    "CommandListResponse",
-    "CommandResultRequest",
-    "CommandErrorRequest",
     # Metrics
     "CostMetric",
     "CostsResponse",
@@ -231,14 +147,6 @@ __all__ = [
     # Bulk task
     "BulkTaskRequest",
     "BulkTaskResponse",
-    # Natural language
-    "NaturalLanguageRequest",
-    "RefineContentRequest",
-    "NaturalLanguageResponse",
-    # Ollama
-    "OllamaHealthResponse",
-    "OllamaWarmupResponse",
-    "OllamaModelSelection",
     # Settings
     "SettingDataTypeEnum",
     "SettingCategoryEnum",
@@ -251,21 +159,6 @@ __all__ = [
     "SettingHistoryResponse",
     "SettingBulkUpdateRequest",
     "ErrorResponse",
-    # Social
-    "SocialPlatformEnum",
-    "ToneEnum",
-    "SocialPlatformConnection",
-    "SocialPost",
-    "SocialAnalytics",
-    "GenerateContentRequest",
-    "CrossPostRequest",
-    # Subtask
-    "ResearchSubtaskRequest",
-    "CreativeSubtaskRequest",
-    "QASubtaskRequest",
-    "ImageSubtaskRequest",
-    "FormatSubtaskRequest",
-    "SubtaskResponse",
     # Webhook
     "WebhookEntry",
     "ContentWebhookPayload",
