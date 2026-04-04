@@ -127,6 +127,9 @@ def clean_generated_content(content: str, title: str = "") -> str:
     content = re.sub(r"^\s*Introduction:\s*\n?", "", content, flags=re.MULTILINE)
     content = re.sub(r"^\s*Conclusion:\s*\n?", "", content, flags=re.MULTILINE)
 
+    # Remove leftover [IMAGE-N] placeholders that weren't replaced with actual images
+    content = re.sub(r"\[IMAGE-\d+\]", "", content)
+
     # Strip AI-generated "Recommended External Resources" sections (and variants)
     # These are generic "go read the docs" links that signal AI generation
     content = re.sub(
