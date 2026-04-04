@@ -861,7 +861,7 @@ class AIContentGenerator:
                         # If content passes QA, return it
                         if validation.is_valid:
                             logger.info("      ✅ Content APPROVED by QA")
-                            metrics["model_used"] = f"Ollama - {model_name}"
+                            metrics["model_used"] = model_name
                             metrics["models_used_by_phase"]["draft"] = metrics["model_used"]
                             metrics["final_quality_score"] = validation.quality_score
                             metrics["generation_time_seconds"] = time.time() - start_time
