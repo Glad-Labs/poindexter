@@ -62,14 +62,14 @@ class TestRouteManifestStructure:
         keys = [entry[2] for entry in _ROUTE_MANIFEST]
         assert len(keys) == len(set(keys)), "Duplicate status keys found in manifest"
 
-    def test_task_router_is_first(self):
-        """Task router should be first in the active manifest."""
+    def test_approval_router_precedes_task_router(self):
+        """Approval router must precede task router (concrete path before wildcard)."""
         status_keys = [entry[2] for entry in _ROUTE_MANIFEST]
-        assert status_keys[0] == "task_router"
+        assert status_keys.index("approval_router") < status_keys.index("task_router")
 
     def test_coordinator_manifest_has_expected_routes(self):
-        """Coordinator manifest should have 11 route entries."""
-        assert len(_COORDINATOR_ROUTES) == 12
+        """Coordinator manifest should have 8 route entries (public site only)."""
+        assert len(_COORDINATOR_ROUTES) == 8
 
     def test_manifest_alias_equals_coordinator(self):
         """_ROUTE_MANIFEST should be an alias for _COORDINATOR_ROUTES."""

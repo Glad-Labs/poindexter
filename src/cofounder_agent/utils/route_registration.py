@@ -5,22 +5,18 @@ Handles registration of route modules with the FastAPI application.
 Provides dependency injection of database service to route modules.
 
 Deployment modes (controlled by DEPLOYMENT_MODE env var):
-- coordinator (default): Railway always-on lightweight server. All routes active.
+- coordinator (default): Railway — only routes the public site needs
 - worker: Local PC heavy compute. Minimal routes — workers claim tasks from DB.
 
-Unified Task Endpoint (/api/tasks):
-- Single endpoint for all task types (blog_post, social_media, email, newsletter, business_analytics, data_retrieval, market_research, financial_analysis)
-- Routes to appropriate handler based on task_type parameter
-- Subtasks bypassed - use /api/tasks with task_type instead
-
-Coordinator routes:
-- Task management (core CRUD + status + publishing + intent sub-routers)
-- Bulk task operations
-- CMS (posts, categories, tags)
-- Models & AI backends
-- Metrics & analytics
-- Settings
-- Cache revalidation
+Coordinator routes (public site + essential ops):
+- CMS (posts, categories, tags, search, status, page view beacon)
+- Newsletter (subscribe, unsubscribe, count)
+- Revalidation (ISR cache busting)
+- Podcast (RSS feed, episodes, MP3 streaming)
+- Tasks (create, list, status, publish — includes sub-routers)
+- Settings (read/write)
+- Approval (approve/reject tasks)
+- Metrics (system metrics)
 
 Worker routes:
 - Task management (core CRUD + status)
@@ -44,20 +40,16 @@ logger = get_logger(__name__)
 # path /api/tasks/pending-approval is matched before the wildcard /{task_id}.
 # ---------------------------------------------------------------------------
 
-# Routes for coordinator mode (Railway — always-on, lightweight)
+# Routes for coordinator mode (Railway — only what the public site needs)
 _COORDINATOR_ROUTES = [
-    ("routes.task_routes", "router", "task_router", "task management"),
-    ("routes.bulk_task_routes", "router", "bulk_task_router", "bulk task operations"),
-    ("routes.cms_routes", "router", "cms_router", "FastAPI CMS"),
-    ("routes.model_routes", "models_router", "models_router", "AI model backends"),
-    ("routes.metrics_routes", "metrics_router", "metrics_router", "metrics & analytics"),
-    ("routes.settings_routes", "router", "settings_router", "user settings"),
-    ("routes.revalidate_routes", "router", "revalidate_router", "secure cache invalidation"),
-    ("routes.composer_routes", "router", "composer_router", "process composer (intent-to-workflow)"),
-    ("routes.newsletter_routes", "router", "newsletter_router", "email campaigns"),
-    ("routes.privacy_routes", "router", "privacy_router", "GDPR data subject requests"),
     ("routes.approval_routes", "router", "approval_router", "task approval workflow"),
+    ("routes.task_routes", "router", "task_router", "task management"),
+    ("routes.cms_routes", "router", "cms_router", "CMS (posts, categories, tags, search, beacon)"),
+    ("routes.newsletter_routes", "router", "newsletter_router", "newsletter subscribe/unsubscribe"),
+    ("routes.revalidate_routes", "router", "revalidate_router", "ISR cache invalidation"),
     ("routes.podcast_routes", "router", "podcast_router", "podcast RSS feed & episodes"),
+    ("routes.settings_routes", "router", "settings_router", "settings read/write"),
+    ("routes.metrics_routes", "metrics_router", "metrics_router", "system metrics"),
 ]
 
 # Routes for worker mode (local PC — heavy compute)
