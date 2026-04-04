@@ -42,9 +42,17 @@ logger = get_logger(__name__)
 
 PODCAST_DIR = Path(os.path.expanduser("~")) / ".gladlabs" / "podcast"
 
-# Edge TTS voice — en-US-AndrewMultilingualNeural is a natural male voice.
-# Fallbacks are tried in order if the primary voice fails.
-VOICE_PRIMARY = site_config.get("tts_voice", "en-US-AndrewMultilingualNeural")
+# Default voice from DB config, with voice pool for rotation
+VOICE_PRIMARY = site_config.get("tts_voice", "en-US-AvaMultilingualNeural")
+
+# Voice rotation pool — cycle through for variety across episodes
+VOICE_POOL = [
+    "en-US-AvaMultilingualNeural",       # Female, American (default)
+    "en-US-AndrewMultilingualNeural",     # Male, American
+    "en-US-BrianMultilingualNeural",      # Male, American (deeper)
+    "en-GB-RyanNeural",                   # Male, British
+    "en-AU-WilliamNeural",               # Male, Australian
+]
 VOICE_FALLBACKS = [
     "en-US-GuyNeural",
     "en-US-ChristopherNeural",
@@ -58,21 +66,33 @@ VOICE_FALLBACKS = [
 
 
 def _strip_markdown(text: str) -> str:
-    """Convert markdown to plain text suitable for TTS reading."""
+    """Convert markdown to natural spoken-word text for TTS.
+
+    Removes everything a human wouldn't say out loud:
+    headings, image captions, photographer credits, code blocks,
+    markdown formatting, URLs, and reference links.
+    """
     # Remove HTML tags
     text = re.sub(r"<[^>]+>", "", text)
-    # Remove images ![alt](url)
+    # Remove images ![alt](url) and image captions
     text = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", text)
+    # Remove standalone image URLs
+    text = re.sub(r"^https?://\S+\s*$", "", text, flags=re.MULTILINE)
+    # Remove photographer/image credits (Photo by..., Image by..., Credit:...)
+    text = re.sub(r"(?i)^(photo|image|credit|source|via|courtesy)[:\s].*$", "", text, flags=re.MULTILINE)
+    text = re.sub(r"(?i)photographer[:\s].*$", "", text, flags=re.MULTILINE)
+    # Remove Pexels/Unsplash/Cloudinary attribution lines
+    text = re.sub(r"(?i)^.*(?:pexels|unsplash|cloudinary|stock photo).*$", "", text, flags=re.MULTILINE)
     # Convert links [text](url) to just text
     text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
-    # Remove headings markers (keep the text)
-    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
+    # Remove section headings entirely (not natural in speech)
+    text = re.sub(r"^#{1,6}\s+.*$", "", text, flags=re.MULTILINE)
     # Remove bold/italic markers
     text = re.sub(r"\*{1,3}([^*]+)\*{1,3}", r"\1", text)
     text = re.sub(r"_{1,3}([^_]+)_{1,3}", r"\1", text)
-    # Remove code blocks (fenced)
-    text = re.sub(r"```[\s\S]*?```", "[code example omitted]", text)
-    # Remove inline code
+    # Remove code blocks — summarize instead of reading code
+    text = re.sub(r"```[\s\S]*?```", "", text)
+    # Remove inline code backticks (keep the term)
     text = re.sub(r"`([^`]+)`", r"\1", text)
     # Remove blockquote markers
     text = re.sub(r"^>\s?", "", text, flags=re.MULTILINE)
@@ -83,9 +103,13 @@ def _strip_markdown(text: str) -> str:
     text = re.sub(r"^\s*\d+\.\s+", "", text, flags=re.MULTILINE)
     # Remove reference-style links
     text = re.sub(r"^\[[^\]]+\]:\s+.*$", "", text, flags=re.MULTILINE)
+    # Remove [IMAGE-N] placeholders
+    text = re.sub(r"\[IMAGE-\d+\]", "", text)
     # Collapse multiple blank lines
     text = re.sub(r"\n{3,}", "\n\n", text)
-    # Remove leading/trailing whitespace
+    # Remove leading/trailing whitespace per line
+    text = "\n".join(line.strip() for line in text.split("\n"))
+    text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
 
