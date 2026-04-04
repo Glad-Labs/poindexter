@@ -32,7 +32,7 @@ logger = get_logger(__name__)
 
 # Per-stage timeouts in seconds — easy to tune in one place.
 # Prevents a single slow stage (e.g. Ollama generation) from eating the entire budget.
-STAGE_TIMEOUTS = {
+_DEFAULT_STAGE_TIMEOUTS = {
     "verify_task": 30,
     "generate_content": 480,      # Stage 2: Draft — 8 min (long posts with code examples need time)
     "quality_evaluation": 60,     # Stage 2B: Pattern QA — 1 min
@@ -44,6 +44,37 @@ STAGE_TIMEOUTS = {
     "capture_training_data": 30,  # Stage 5: Training data — 30s
     "finalize_task": 30,          # Stage 6: Finalize — 30s
 }
+
+
+def _load_stage_timeouts() -> dict:
+    """Build stage timeouts from defaults, overridden by app_settings keys like stage_timeout_draft."""
+    from services.site_config import site_config
+
+    timeouts = dict(_DEFAULT_STAGE_TIMEOUTS)
+    # Map app_settings keys to stage names
+    _overrides = {
+        "stage_timeout_verify_task": "verify_task",
+        "stage_timeout_draft": "generate_content",
+        "stage_timeout_qa": "quality_evaluation",
+        "stage_timeout_url_validation": "url_validation",
+        "stage_timeout_inline_images": "replace_inline_images",
+        "stage_timeout_featured_image": "source_featured_image",
+        "stage_timeout_cross_model_qa": "cross_model_qa",
+        "stage_timeout_seo": "generate_seo_metadata",
+        "stage_timeout_training_data": "capture_training_data",
+        "stage_timeout_finalize": "finalize_task",
+    }
+    for setting_key, stage_name in _overrides.items():
+        val = site_config.get(setting_key)
+        if val is not None:
+            try:
+                timeouts[stage_name] = int(val)
+            except (ValueError, TypeError):
+                pass
+    return timeouts
+
+
+STAGE_TIMEOUTS = _load_stage_timeouts()
 
 
 async def _run_stage_with_timeout(coro, stage_name: str, task_id: str):

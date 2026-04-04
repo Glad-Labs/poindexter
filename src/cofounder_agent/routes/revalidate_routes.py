@@ -56,7 +56,8 @@ async def trigger_nextjs_revalidation(paths: Optional[list] = None) -> bool:
         nextjs_url = nextjs_url[:-4]
 
     revalidate_url = f"{nextjs_url}/api/revalidate"
-    revalidate_secret = os.getenv("REVALIDATE_SECRET", "")
+    from services.site_config import site_config
+    revalidate_secret = site_config.get("revalidate_secret") or os.getenv("REVALIDATE_SECRET", "")
     environment = os.getenv("ENVIRONMENT", "development").lower()
 
     if not revalidate_secret:

@@ -121,7 +121,8 @@ async def chat(
             # Use local Ollama with specified model or default
             try:
                 # Use specified Ollama model or fall back to environment config or llama2
-                actual_ollama_model = model_name or os.getenv("DEFAULT_OLLAMA_CHAT_MODEL", "auto")
+                from services.site_config import site_config
+                actual_ollama_model = model_name or site_config.get("default_chat_model") or os.getenv("DEFAULT_OLLAMA_CHAT_MODEL", "auto")
                 logger.info(f"[Chat] Calling Ollama with model: {actual_ollama_model}")
 
                 # Check if model is available
