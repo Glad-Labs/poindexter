@@ -66,6 +66,22 @@ VOICE_FALLBACKS = [
 
 # Order matters — longer patterns first to avoid partial replacements
 _SPOKEN_REPLACEMENTS = [
+    # Words TTS mispronounces
+    ("GitFlow", "git flow"),
+    ("GitHub", "git hub"),
+    ("GitLab", "git lab"),
+    ("DevOps", "dev ops"),
+    ("DevEx", "dev ex"),
+    ("FastAPI", "fast A P I"),
+    ("PostgreSQL", "postgres"),
+    ("MongoDB", "mongo D B"),
+    ("GraphQL", "graph Q L"),
+    ("WebSocket", "web socket"),
+    ("TypeScript", "type script"),
+    ("JavaScript", "java script"),
+    ("Next.js", "next J S"),
+    ("Node.js", "node J S"),
+    ("Vue.js", "view J S"),
     # Technical abbreviations with punctuation
     ("CI/CD", "CI CD"),
     ("I/O", "I O"),
