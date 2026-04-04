@@ -67,7 +67,10 @@
 
     Ensure the tone is professional and engaging.
     Include placeholders like '[IMAGE-1]', '[IMAGE-2]', etc., where you think images would be appropriate.
-    Also, suggest a list of external URLs to credible sources that would support the content.
+
+    ⚠️ DO NOT include a "Suggested External Resources", "Recommended Links", or similar section at the end.
+    DO NOT start with "Imagine..." or "Picture this..." — those are AI cliches. Start with a bold statement, a surprising fact, or a direct hook.
+    All links should be woven naturally into the prose, not listed at the end.
 
 - key: blog_generation.seo_and_social
   category: blog_generation

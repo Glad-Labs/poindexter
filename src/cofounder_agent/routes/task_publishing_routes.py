@@ -21,16 +21,13 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 
 from middleware.api_token_auth import verify_api_token
-from routes.revalidate_routes import trigger_nextjs_revalidation
 from routes.task_routes import _check_task_ownership
 from schemas.model_converter import ModelConverter
 from schemas.unified_task_response import UnifiedTaskResponse
 from services.database_service import DatabaseService
 from services.logger_config import get_logger
-from services.webhook_delivery_service import emit_webhook_event
 from utils.json_encoder import convert_decimals, safe_json_dumps
 from utils.route_utils import get_database_dependency
-from utils.text_utils import extract_title_from_content
 
 logger = get_logger(__name__)
 
@@ -129,6 +126,13 @@ def clean_generated_content(content: str, title: str = "") -> str:
     # Remove common section prefixes if they appear as standalone lines
     content = re.sub(r"^\s*Introduction:\s*\n?", "", content, flags=re.MULTILINE)
     content = re.sub(r"^\s*Conclusion:\s*\n?", "", content, flags=re.MULTILINE)
+
+    # Strip AI-generated "Recommended External Resources" sections (and variants)
+    # These are generic "go read the docs" links that signal AI generation
+    content = re.sub(
+        r"\n##?\s*(Suggested|Recommended)\s*(External\s*)?(Resources|Links|URLs|Sources).*",
+        "", content, flags=re.DOTALL | re.IGNORECASE,
+    )
 
     # If a title was provided, remove it if it appears as a standalone paragraph
     if title:
