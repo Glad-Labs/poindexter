@@ -61,6 +61,69 @@ VOICE_FALLBACKS = [
 
 
 # ---------------------------------------------------------------------------
+# Spoken English normalization — convert written conventions to natural speech
+# ---------------------------------------------------------------------------
+
+# Order matters — longer patterns first to avoid partial replacements
+_SPOKEN_REPLACEMENTS = [
+    # Technical abbreviations with punctuation
+    ("CI/CD", "CI CD"),
+    ("I/O", "I O"),
+    ("TCP/IP", "TCP IP"),
+    ("OS/2", "OS 2"),
+    # Common abbreviations
+    ("e.g.", "for example"),
+    ("i.e.", "that is"),
+    ("etc.", "and so on"),
+    ("vs.", "versus"),
+    ("approx.", "approximately"),
+    ("incl.", "including"),
+    ("w/", "with"),
+    ("w/o", "without"),
+    # Symbols people don't say
+    ("&", "and"),
+    (" - ", ", "),  # em dash as pause
+    (" -- ", ", "),
+    ("->", "to"),
+    ("=>", "becomes"),
+    (">=", "at least"),
+    ("<=", "at most"),
+    ("!=", "not equal to"),
+    ("==", "equals"),
+    # Units and formats
+    ("24/7", "twenty four seven"),
+    ("/mo", " per month"),
+    ("/yr", " per year"),
+    ("$0", "zero dollars"),
+]
+
+# Regex-based replacements for patterns
+_SPOKEN_REGEX = [
+    # Hyphenated compound words — remove dash (real-time → real time)
+    (re.compile(r"(\w+)-(\w+)"), r"\1 \2"),
+    # File paths and URLs — skip entirely
+    (re.compile(r"https?://\S+"), ""),
+    (re.compile(r"[\w/\\]+\.\w{2,4}(?:\s|$)"), " "),  # file.ext
+    # Version numbers — say naturally (v2.0 → version 2.0)
+    (re.compile(r"\bv(\d)"), r"version \1"),
+    # Parenthetical asides — convert to commas for natural pause
+    (re.compile(r"\s*\(([^)]{1,50})\)\s*"), r", \1, "),
+]
+
+
+def _normalize_for_speech(text: str) -> str:
+    """Convert written English conventions to natural spoken form."""
+    for written, spoken in _SPOKEN_REPLACEMENTS:
+        text = text.replace(written, spoken)
+    for pattern, replacement in _SPOKEN_REGEX:
+        text = pattern.sub(replacement, text)
+    # Clean up double spaces and comma-space issues
+    text = re.sub(r"  +", " ", text)
+    text = re.sub(r",\s*,", ",", text)
+    return text
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -116,11 +179,14 @@ def _strip_markdown(text: str) -> str:
 def _build_script(title: str, content: str) -> str:
     """Build the full podcast script with intro, body, and outro."""
     plain_text = _strip_markdown(content)
+    # Normalize written conventions to natural speech
+    plain_text = _normalize_for_speech(plain_text)
+    spoken_title = _normalize_for_speech(title)
 
-    intro = f"Welcome to the Glad Labs podcast. Today's episode: {title}."
+    intro = f"Welcome to the Glad Labs podcast. Today's episode: {spoken_title}."
     outro = (
         "Thanks for listening to the Glad Labs podcast. "
-        "Visit gladlabs.io for more episodes, articles, and insights. "
+        "Visit gladlabs dot io for more episodes, articles, and insights. "
         "See you next time."
     )
 
