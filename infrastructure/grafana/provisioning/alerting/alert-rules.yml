@@ -343,10 +343,10 @@ groups:
               rawSql: >
                 WITH today AS (
                   SELECT COUNT(*) as cnt FROM page_views
-                  WHERE viewed_at > NOW() - INTERVAL '24 hours'
+                  WHERE created_at > NOW() - INTERVAL '24 hours'
                 ), yesterday AS (
                   SELECT COUNT(*) as cnt FROM page_views
-                  WHERE viewed_at BETWEEN NOW() - INTERVAL '48 hours' AND NOW() - INTERVAL '24 hours'
+                  WHERE created_at BETWEEN NOW() - INTERVAL '48 hours' AND NOW() - INTERVAL '24 hours'
                 )
                 SELECT CASE WHEN yesterday.cnt = 0 THEN 1.0
                             ELSE today.cnt::float / yesterday.cnt::float
