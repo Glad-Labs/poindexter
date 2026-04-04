@@ -33,6 +33,7 @@ except ImportError:
     CLOUDINARY_AVAILABLE = False
 
 from services.image_service import FeaturedImageMetadata, ImageModel, ImageService
+from services.site_config import site_config
 
 logger = get_logger(__name__)
 media_router = APIRouter(prefix="/api/media", tags=["Media"])
@@ -42,15 +43,23 @@ media_router = APIRouter(prefix="/api/media", tags=["Media"])
 # CLOUDINARY SETUP (Primary - Free Tier)
 # ═══════════════════════════════════════════════════════════════════════════
 
-if CLOUDINARY_AVAILABLE and os.getenv("CLOUDINARY_CLOUD_NAME"):
-    cloudinary.config(
-        cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
-        api_key=os.getenv("CLOUDINARY_API_KEY"),
-        api_secret=os.getenv("CLOUDINARY_API_SECRET"),
-    )
-    logger.info("✅ Cloudinary configured for image storage")
-else:
-    logger.info("ℹ️ Cloudinary not configured (use for local dev or production)")
+
+def _configure_cloudinary():
+    """Configure Cloudinary from site_config (DB) with os.getenv fallback."""
+    cloud_name = site_config.get("cloudinary_cloud_name") or os.getenv("CLOUDINARY_CLOUD_NAME")
+    if CLOUDINARY_AVAILABLE and cloud_name:
+        cloudinary.config(
+            cloud_name=cloud_name,
+            api_key=site_config.get("cloudinary_api_key") or os.getenv("CLOUDINARY_API_KEY"),
+            api_secret=site_config.get("cloudinary_api_secret") or os.getenv("CLOUDINARY_API_SECRET"),
+        )
+        logger.info("✅ Cloudinary configured for image storage")
+    else:
+        logger.info("ℹ️ Cloudinary not configured (use for local dev or production)")
+
+
+# Run at import time (env-var path), re-run after site_config.load() via lifespan
+_configure_cloudinary()
 
 
 async def upload_to_cloudinary(file_path: str, task_id: Optional[str] = None) -> Optional[str]:

@@ -31,8 +31,10 @@ from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
+from services.site_config import site_config
+
 DEVTO_API_BASE = "https://dev.to/api"
-SITE_URL = "https://www.gladlabs.io"
+SITE_URL = site_config.get("site_url", "https://www.gladlabs.io")
 
 
 class DevToCrossPostService:

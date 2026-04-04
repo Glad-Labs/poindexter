@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Optional
 
 from services.logger_config import get_logger
+from services.site_config import site_config
 
 logger = get_logger(__name__)
 
@@ -43,7 +44,7 @@ PODCAST_DIR = Path(os.path.expanduser("~")) / ".gladlabs" / "podcast"
 
 # Edge TTS voice — en-US-AndrewMultilingualNeural is a natural male voice.
 # Fallbacks are tried in order if the primary voice fails.
-VOICE_PRIMARY = "en-US-AndrewMultilingualNeural"
+VOICE_PRIMARY = site_config.get("tts_voice", "en-US-AndrewMultilingualNeural")
 VOICE_FALLBACKS = [
     "en-US-GuyNeural",
     "en-US-ChristopherNeural",
