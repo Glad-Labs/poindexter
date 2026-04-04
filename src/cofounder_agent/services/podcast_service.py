@@ -25,7 +25,6 @@ Usage:
     # result = {"file_path": "~/.gladlabs/podcast/abc123.mp3", "duration_seconds": 312}
 """
 
-import asyncio
 import os
 import re
 from dataclasses import dataclass

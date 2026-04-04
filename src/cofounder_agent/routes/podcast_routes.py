@@ -10,11 +10,9 @@ Endpoints:
 
 import os
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Optional
 from xml.etree.ElementTree import Element, SubElement, tostring
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, Response
 
 from middleware.api_token_auth import verify_api_token

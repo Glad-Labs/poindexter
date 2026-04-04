@@ -21,7 +21,7 @@ Usage:
 """
 
 from services.logger_config import get_logger
-from typing import Optional, Tuple
+from typing import Tuple
 
 logger = get_logger(__name__)
 
