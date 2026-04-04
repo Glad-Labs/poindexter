@@ -150,6 +150,7 @@ class DevToCrossPostService:
                     headers={
                         "api-key": api_key,
                         "Content-Type": "application/json",
+                        "User-Agent": "GladLabs/1.0 (https://gladlabs.io)",
                     },
                     json=payload,
                 )
