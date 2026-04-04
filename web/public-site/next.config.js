@@ -263,7 +263,7 @@ const nextConfig = {
       { source: '/feed', destination: '/', permanent: true },
       { source: '/feed/:path*', destination: '/', permanent: true },
       {
-        source: '/gemini_generated_image_:path*',
+        source: '/gemini_generated_image:path(.*)',
         destination: '/',
         permanent: true,
       },
