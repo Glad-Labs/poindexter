@@ -156,6 +156,34 @@ services:
       - woodpecker-server
 
   # ===========================================
+  # Brain Daemon — standalone monitor, self-healer, knowledge graph
+  # ===========================================
+  brain-daemon:
+    build:
+      context: ./brain
+      dockerfile: Dockerfile
+    container_name: gladlabs-brain-daemon
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-gladlabs}:${LOCAL_POSTGRES_PASSWORD:-gladlabs-brain-local}@postgres-local:5432/${LOCAL_POSTGRES_DB:-gladlabs_brain}"
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      API_URL: "https://cofounder-production.up.railway.app"
+      SITE_URL: "https://www.gladlabs.io"
+      OLLAMA_URL: "http://host.docker.internal:11434"
+      GRAFANA_URL: "http://grafana:3000"
+      GRAFANA_PASSWORD: ${GRAFANA_PASSWORD:-gladlabs}
+      GITEA_URL: "http://gitea:3000"
+      GITEA_USER: ${GITEA_USER:-gladlabs}
+      GITEA_PASS: ${GITEA_PASSWORD:-}
+      IN_DOCKER: "true"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+
+  # ===========================================
   # Content Pipeline Worker — claims tasks, runs Ollama inference
   # ===========================================
   worker:
