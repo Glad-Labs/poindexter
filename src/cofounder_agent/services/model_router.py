@@ -257,7 +257,11 @@ class ModelRouter:
 
         # Check USE_OLLAMA environment variable if not explicitly set
         if use_ollama is None:
-            use_ollama = os.getenv("USE_OLLAMA", "false").lower() == "true"
+            try:
+                from services.site_config import site_config
+                use_ollama = site_config.get("use_ollama", os.getenv("USE_OLLAMA", "false")).lower() == "true"
+            except Exception:
+                use_ollama = os.getenv("USE_OLLAMA", "false").lower() == "true"
 
         self.use_ollama = use_ollama
 
@@ -275,7 +279,11 @@ class ModelRouter:
         # Spending cap — block cloud API calls when monthly budget exceeded.
         # Tracks in-memory estimated spend (resets on restart). For persistent
         # tracking, use cost_aggregation_service.get_budget_status().
-        self._monthly_spend_limit = float(os.getenv("MONTHLY_SPEND_LIMIT", "100.0"))
+        try:
+            from services.site_config import site_config
+            self._monthly_spend_limit = float(site_config.get("monthly_spend_limit") or os.getenv("MONTHLY_SPEND_LIMIT", "100.0"))
+        except Exception:
+            self._monthly_spend_limit = float(os.getenv("MONTHLY_SPEND_LIMIT", "100.0"))
         self._session_cloud_spend = 0.0  # Accumulated since last restart
         self._budget_exceeded_logged = False
 

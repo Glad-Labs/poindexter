@@ -29,15 +29,25 @@ logger = get_logger(__name__)
 # CONSTANTS
 # ============================================================================
 
-DEFAULT_MODEL = os.getenv("DEFAULT_OLLAMA_MODEL", "auto")
+def _sc_get(key: str, default: str = "") -> str:
+    """Get from site_config with env fallback (lazy import to avoid circular deps)."""
+    try:
+        from services.site_config import site_config
+        val = site_config.get(key)
+        if val:
+            return val
+    except Exception:
+        pass
+    return os.getenv(key.upper(), default)
+
+DEFAULT_MODEL = _sc_get("default_ollama_model", os.getenv("DEFAULT_OLLAMA_MODEL", "auto"))
 DEFAULT_BASE_URL = (
     os.getenv("OLLAMA_BASE_URL") or os.getenv("OLLAMA_HOST") or "http://host.docker.internal:11434"
 )
 
 # GPU electricity cost defaults (RTX 5090: 575W TDP, ~300W typical inference)
-# Override via env vars or app_settings key "electricity_rate_kwh"
-DEFAULT_GPU_POWER_WATTS = float(os.getenv("GPU_POWER_WATTS", "300"))
-DEFAULT_ELECTRICITY_RATE_KWH = float(os.getenv("ELECTRICITY_RATE_KWH", "0.12"))
+DEFAULT_GPU_POWER_WATTS = float(_sc_get("gpu_inference_watts", os.getenv("GPU_POWER_WATTS", "300")))
+DEFAULT_ELECTRICITY_RATE_KWH = float(_sc_get("electricity_rate_kwh", os.getenv("ELECTRICITY_RATE_KWH", "0.12")))
 
 
 # ============================================================================

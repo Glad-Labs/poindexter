@@ -30,7 +30,15 @@ class ProviderChecker:
 
     @staticmethod
     def _get_env(*keys: str) -> str:
-        """Get first available environment variable from list of keys."""
+        """Get first available value from site_config or environment variables."""
+        try:
+            from services.site_config import site_config
+            for key in keys:
+                value = site_config.get(key.lower())
+                if value:
+                    return value
+        except Exception:
+            pass
         for key in keys:
             value = os.getenv(key)
             if value:
@@ -54,7 +62,7 @@ class ProviderChecker:
     def is_openai_available(cls) -> bool:
         """Check if OpenAI API is available and configured."""
         if "openai" not in cls._cache:
-            key = os.getenv("OPENAI_API_KEY", "")
+            key = cls._get_env("OPENAI_API_KEY")
             cls._cache["openai"] = bool(key)
             if cls._cache["openai"]:
                 logger.debug("✅ OpenAI provider available")
@@ -66,7 +74,7 @@ class ProviderChecker:
     def is_anthropic_available(cls) -> bool:
         """Check if Anthropic Claude API is available and configured."""
         if "anthropic" not in cls._cache:
-            key = os.getenv("ANTHROPIC_API_KEY", "")
+            key = cls._get_env("ANTHROPIC_API_KEY")
             cls._cache["anthropic"] = bool(key)
             if cls._cache["anthropic"]:
                 logger.debug("✅ Anthropic provider available")
@@ -78,7 +86,7 @@ class ProviderChecker:
     def is_huggingface_available(cls) -> bool:
         """Check if HuggingFace API is available and configured."""
         if "huggingface" not in cls._cache:
-            key = os.getenv("HUGGINGFACE_API_TOKEN", "")
+            key = cls._get_env("HUGGINGFACE_API_TOKEN")
             cls._cache["huggingface"] = bool(key)
             if cls._cache["huggingface"]:
                 logger.debug("✅ HuggingFace provider available")
@@ -139,17 +147,17 @@ class ProviderChecker:
     @classmethod
     def get_openai_api_key(cls) -> str:
         """Get OpenAI API key."""
-        return os.getenv("OPENAI_API_KEY", "")
+        return cls._get_env("OPENAI_API_KEY")
 
     @classmethod
     def get_anthropic_api_key(cls) -> str:
         """Get Anthropic API key."""
-        return os.getenv("ANTHROPIC_API_KEY", "")
+        return cls._get_env("ANTHROPIC_API_KEY")
 
     @classmethod
     def get_huggingface_token(cls) -> str:
         """Get HuggingFace API token."""
-        return os.getenv("HUGGINGFACE_API_TOKEN", "")
+        return cls._get_env("HUGGINGFACE_API_TOKEN")
 
     @classmethod
     def get_huggingface_api_key(cls) -> str:

@@ -124,6 +124,7 @@ class OllamaAdapter(ProviderAdapter):
     def __init__(self):
         from .ollama_client import OllamaClient
 
+        # OLLAMA_BASE_URL stays as env var — it's infrastructure/networking config
         self.host = os.getenv("OLLAMA_BASE_URL", os.getenv("OLLAMA_HOST", "http://host.docker.internal:11434"))
         self.client = OllamaClient(base_url=self.host)
         self.provider_type = ProviderType.OLLAMA
@@ -159,7 +160,12 @@ class OllamaAdapter(ProviderAdapter):
         **kwargs,
     ) -> ModelResponse:
         """Generate text using Ollama"""
-        model = model or os.getenv("DEFAULT_OLLAMA_MODEL", "auto")
+        if not model:
+            try:
+                from services.site_config import site_config
+                model = site_config.get("default_ollama_model") or "auto"
+            except Exception:
+                model = os.getenv("DEFAULT_OLLAMA_MODEL", "auto")
         start_time = datetime.now(timezone.utc)
 
         try:
@@ -287,7 +293,12 @@ class GoogleAdapter(ProviderAdapter):
     def __init__(self):
         from .gemini_client import GeminiClient
 
-        self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+        try:
+            from services.site_config import site_config
+            self.api_key = site_config.get("google_api_key") or site_config.get("gemini_api_key")
+        except Exception:
+            self.api_key = None
+        self.api_key = self.api_key or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
         self.client = GeminiClient(api_key=self.api_key)
         self.provider_type = ProviderType.GOOGLE
 

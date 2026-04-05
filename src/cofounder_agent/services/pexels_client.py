@@ -39,6 +39,12 @@ class PexelsClient:
         Args:
             api_key: Pexels API key (defaults to PEXELS_API_KEY env var)
         """
+        if not api_key:
+            try:
+                from services.site_config import site_config
+                api_key = site_config.get("pexels_api_key")
+            except Exception:
+                pass
         self.api_key = api_key or os.getenv("PEXELS_API_KEY")
         if not self.api_key:
             logger.warning("Pexels API key not configured - image search will be unavailable")

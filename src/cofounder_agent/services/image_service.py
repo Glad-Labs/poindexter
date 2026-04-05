@@ -216,12 +216,13 @@ class ImageService:
 
     def __init__(self):
         """Initialize image service"""
-        self.pexels_api_key = os.getenv("PEXELS_API_KEY")
-        self._pexels_key_checked_db = False  # Track whether we've tried the DB
+        from services.site_config import site_config
+        self.pexels_api_key = site_config.get("pexels_api_key") or os.getenv("PEXELS_API_KEY")
+        self._pexels_key_checked_db = bool(self.pexels_api_key)
 
         if not self.pexels_api_key:
             logger.info(
-                "Pexels API key not in env — will check app_settings DB on first use"
+                "Pexels API key not in config or env — will check app_settings DB on first use"
             )
 
         self.pexels_available = bool(self.pexels_api_key)
