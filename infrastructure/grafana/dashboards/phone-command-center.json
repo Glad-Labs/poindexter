@@ -620,7 +620,7 @@
             "uid": "railway-prod-db"
           },
           "format": "table",
-          "rawSql": "SELECT ROUND(AVG(score)::numeric, 1) AS \"Avg QA\" FROM quality_evaluations WHERE created_at >= NOW() - INTERVAL '7 days'"
+          "rawSql": "SELECT ROUND(AVG(overall_score)::numeric, 1) AS \"Avg QA\" FROM quality_evaluations WHERE evaluation_timestamp >= NOW() - INTERVAL '7 days'"
         }
       ],
       "fieldConfig": {
