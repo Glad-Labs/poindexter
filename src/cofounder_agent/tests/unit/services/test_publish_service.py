@@ -76,6 +76,7 @@ def _make_db(
     pool.acquire = MagicMock(return_value=ctx)
 
     db.pool = pool
+    db.cloud_pool = None  # Ensure cloud_pool fallback uses db.pool
 
     return db
 

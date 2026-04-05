@@ -26,10 +26,12 @@ def _make_pool(pending_count=0):
 class TestRunCycleSkipsWhenBusy:
     async def test_skips_when_tasks_pending(self):
         pool = _make_pool(pending_count=5)
-        # Mark lightweight syncs as recently run so they don't fire
+        # Mark all lightweight/pre-check tasks as recently run so they don't fire
         worker = IdleWorker(pool)
-        worker._last_run["sync_page_views"] = time.time()
-        worker._last_run["sync_newsletter_subscribers"] = time.time()
+        now = time.time()
+        worker._last_run["sync_page_views"] = now
+        worker._last_run["sync_newsletter_subscribers"] = now
+        worker._last_run["expire_stale_approvals"] = now
         result = await worker.run_cycle()
         assert result.get("skipped") is True
         assert "5 active tasks" in result.get("reason", "")

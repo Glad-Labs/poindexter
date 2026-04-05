@@ -68,8 +68,8 @@ class TestRouteManifestStructure:
         assert status_keys.index("approval_router") < status_keys.index("task_router")
 
     def test_coordinator_manifest_has_expected_routes(self):
-        """Coordinator manifest should have 8 route entries (public site only)."""
-        assert len(_COORDINATOR_ROUTES) == 8
+        """Coordinator manifest should have 9 route entries (public site + video)."""
+        assert len(_COORDINATOR_ROUTES) == 9
 
     def test_manifest_alias_equals_coordinator(self):
         """_ROUTE_MANIFEST should be an alias for _COORDINATOR_ROUTES."""
@@ -81,9 +81,9 @@ class TestRouteManifestStructure:
         for entry in _WORKER_ROUTES:
             assert entry[2] in coordinator_keys, f"Worker route {entry[2]} not in coordinator"
 
-    def test_worker_manifest_has_3_routes(self):
-        """Worker manifest should have exactly 3 route entries."""
-        assert len(_WORKER_ROUTES) == 4
+    def test_worker_manifest_has_5_routes(self):
+        """Worker manifest should have exactly 5 route entries."""
+        assert len(_WORKER_ROUTES) == 5
 
     def test_worker_task_router_is_first(self):
         """Task router should be first in the worker manifest."""
