@@ -699,7 +699,8 @@ async def cms_status(request: Request) -> Dict[str, Any]:
                 exists = exists_row["exists"] if exists_row else False
 
                 if exists:
-                    count_row = await conn.fetchrow(f"SELECT COUNT(*) as cnt FROM {table_name}")
+                    # table_name is from CMS_TABLES allowlist above — safe to interpolate
+                    count_row = await conn.fetchrow(f'SELECT COUNT(*) as cnt FROM "{table_name}"')
                     count = count_row["cnt"] if count_row else 0
                     tables[table_name] = {"exists": True, "count": count}
                 else:

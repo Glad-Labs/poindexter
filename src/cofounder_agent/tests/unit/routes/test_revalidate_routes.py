@@ -163,8 +163,23 @@ def _make_mock_httpx_client(status_code: int = 200, text: str = "ok"):
     return mock_client
 
 
+def _mock_site_config():
+    """Return a mock site_config that provides a revalidate_secret."""
+    cfg = MagicMock()
+    cfg.get = lambda key, default=None: {
+        "revalidate_secret": "test-secret",
+        "public_site_url": "http://localhost:3000",
+    }.get(key, default)
+    return cfg
+
+
 @pytest.mark.unit
 class TestTriggerNextjsRevalidation:
+    @pytest.fixture(autouse=True)
+    def _patch_site_config(self):
+        with patch("services.site_config.site_config", _mock_site_config()):
+            yield
+
     def _run(self, coro):
         return asyncio.get_event_loop().run_until_complete(coro)
 
@@ -225,9 +240,15 @@ class TestTriggerNextjsRevalidation:
         assert "/" in (posted_json.get("paths", []) if isinstance(posted_json, dict) else [])
 
     def test_uses_env_var_for_nextjs_url(self):
-        """NEXT_PUBLIC_PUBLIC_SITE_URL env var changes the target URL."""
+        """NEXT_PUBLIC_PUBLIC_SITE_URL env var changes the target URL when site_config has no URL."""
         mock_client = _make_mock_httpx_client(status_code=200)
-        with patch("routes.revalidate_routes.httpx.AsyncClient", return_value=mock_client):
+        # site_config returns secret but no URL, so env var is used for URL
+        mock_cfg = MagicMock()
+        mock_cfg.get = lambda key, default=None: {
+            "revalidate_secret": "test-secret",
+        }.get(key, default)
+        with patch("services.site_config.site_config", mock_cfg), \
+             patch("routes.revalidate_routes.httpx.AsyncClient", return_value=mock_client):
             with patch.dict(
                 os.environ,
                 {"NEXT_PUBLIC_PUBLIC_SITE_URL": "http://my-site.example.com"},
@@ -251,8 +272,5 @@ class TestTriggerNextjsRevalidation:
                 },
                 clear=False,
             ):
-                # Remove the primary env var so fallback is used
-                with patch.dict(os.environ, {"NEXT_PUBLIC_PUBLIC_SITE_URL": ""}, clear=False):
-                    result = self._run(trigger_nextjs_revalidation(["/blog"]))
-        # Should not raise; result depends on mock response
+                result = self._run(trigger_nextjs_revalidation(["/blog"]))
         assert result is True
