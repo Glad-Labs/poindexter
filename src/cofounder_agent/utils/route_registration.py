@@ -48,6 +48,7 @@ _COORDINATOR_ROUTES = [
     ("routes.newsletter_routes", "router", "newsletter_router", "newsletter subscribe/unsubscribe"),
     ("routes.revalidate_routes", "router", "revalidate_router", "ISR cache invalidation"),
     ("routes.podcast_routes", "router", "podcast_router", "podcast RSS feed & episodes"),
+    ("routes.video_routes", "router", "video_router", "video episodes & generation"),
     ("routes.settings_routes", "router", "settings_router", "settings read/write"),
     ("routes.metrics_routes", "metrics_router", "metrics_router", "system metrics"),
 ]
