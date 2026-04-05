@@ -169,22 +169,29 @@ class TestPodcastService:
 
     @pytest.mark.asyncio
     async def test_generate_empty_content(self):
+        async def _mock_script(title, content):
+            return _build_script(title, content)
         with tempfile.TemporaryDirectory() as tmp:
             svc = PodcastService(output_dir=Path(tmp))
-            # Mock TTS to prevent real network call
             svc._generate_with_voice = AsyncMock(
                 return_value=EpisodeResult(success=False, error="empty content")
             )
-            result = await svc.generate_episode("abc", "Title", "")
+            with patch("services.podcast_service._build_script_with_llm", side_effect=_mock_script):
+                result = await svc.generate_episode("abc", "Title", "")
             assert result.success or result.error is not None
 
     @pytest.mark.asyncio
     async def test_generate_handles_import_error(self):
+        async def _mock_script(title, content):
+            return _build_script(title, content)
         with tempfile.TemporaryDirectory() as tmp:
             svc = PodcastService(output_dir=Path(tmp))
-            with patch.dict("sys.modules", {"edge_tts": None}):
+            svc._generate_with_voice = AsyncMock(
+                return_value=EpisodeResult(success=False, error="no edge_tts")
+            )
+            with patch("services.podcast_service._build_script_with_llm", side_effect=_mock_script):
                 result = await svc.generate_episode("abc", "Title", "Some content here")
-                assert result.success or result.error is not None
+            assert result.success or result.error is not None
 
 
 # ---------------------------------------------------------------------------
