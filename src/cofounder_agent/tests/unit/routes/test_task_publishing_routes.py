@@ -402,6 +402,21 @@ class TestApproveTask:
 
 @pytest.mark.unit
 class TestPublishTask:
+    @pytest.fixture(autouse=True)
+    def _mock_publish_service(self):
+        """Mock publish_post_from_task to prevent real HTTP calls (revalidation, Telegram, video)."""
+        mock_result = MagicMock(
+            success=True, post_id="post-xyz", post_slug="great-post",
+            published_url="/posts/great-post", post_title="Great Post",
+            revalidation_success=True,
+        )
+        with patch(
+            "services.publish_service.publish_post_from_task",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ):
+            yield
+
     def _post_publish(self, client, task_id=VALID_TASK_ID):
         return client.post(f"/{task_id}/publish")
 
@@ -424,15 +439,7 @@ class TestPublishTask:
                 new_callable=AsyncMock,
                 return_value="cat-1",
             ),
-            patch(
-                "services.publish_service.publish_post_from_task",
-                new_callable=AsyncMock,
-                return_value=MagicMock(
-                    success=True, post_id="post-xyz", post_slug="great-post",
-                    published_url="/posts/great-post", post_title="Great Post",
-                    revalidation_success=True,
-                ),
-            ),
+            # publish_post_from_task is mocked by autouse fixture
         ):
             mc.to_task_response.return_value = MagicMock()
             mc.task_response_to_unified.return_value = _unified_response_dict(status="published")
