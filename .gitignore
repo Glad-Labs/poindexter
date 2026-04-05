@@ -62,6 +62,8 @@ screenshots/
 .env.*.local
 # All real env files are ignored. For public/example configs, commit
 # *.template files instead (e.g., web/oversight-hub/.env.production.template).
+infrastructure/pgadmin/pgpass
+scripts/posts_audit.json
 .env.development
 .env.test
 .env.staging

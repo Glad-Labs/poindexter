@@ -18,7 +18,8 @@
       "MaintenanceDB": "railway",
       "Username": "postgres",
       "SSLMode": "prefer",
-      "PassFile": "/tmp/pgpass"
+      "PassFile": "/tmp/pgpass",
+      "_note": "Password loaded from pgpass file (not committed to git)"
     }
   }
 }
