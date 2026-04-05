@@ -169,14 +169,13 @@ class TestPodcastService:
 
     @pytest.mark.asyncio
     async def test_generate_empty_content(self):
-        mock_communicate = MagicMock()
-        mock_communicate.save = AsyncMock()
-        mock_edge_tts = MagicMock()
-        mock_edge_tts.Communicate.return_value = mock_communicate
         with tempfile.TemporaryDirectory() as tmp:
             svc = PodcastService(output_dir=Path(tmp))
-            with patch.dict("sys.modules", {"edge_tts": mock_edge_tts}):
-                result = await svc.generate_episode("abc", "Title", "")
+            # Mock TTS to prevent real network call
+            svc._generate_with_voice = AsyncMock(
+                return_value=EpisodeResult(success=False, error="empty content")
+            )
+            result = await svc.generate_episode("abc", "Title", "")
             assert result.success or result.error is not None
 
     @pytest.mark.asyncio
