@@ -6,6 +6,7 @@ topic gaps, threshold tuning, topic discovery, schedule persistence,
 and post-publish verification.
 """
 
+import asyncio
 import time
 from unittest.mock import AsyncMock, patch
 
@@ -39,12 +40,14 @@ class TestRunCycleSkipsWhenBusy:
     async def test_runs_when_no_tasks(self):
         pool = _make_pool(pending_count=0)
         worker = IdleWorker(pool)
-        # Force all tasks to be due but mock every task method so no real I/O
+        # Force all tasks to be due
         worker._last_run = {}
-        # Mock all task methods that run_cycle calls to prevent real HTTP/DB calls
-        for attr in dir(worker):
-            if attr.startswith("_run_") or attr.startswith("_check_"):
-                setattr(worker, attr, AsyncMock())
+        # Mock every async method except run_cycle itself to prevent real HTTP/DB calls
+        for attr_name in dir(worker):
+            if attr_name.startswith("_") and attr_name != "run_cycle" and not attr_name.startswith("__"):
+                attr = getattr(worker, attr_name, None)
+                if callable(attr) and asyncio.iscoroutinefunction(attr):
+                    setattr(worker, attr_name, AsyncMock(return_value={}))
         result = await worker.run_cycle()
         assert result.get("skipped") is not True
 
