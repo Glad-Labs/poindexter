@@ -155,10 +155,10 @@ class DatabaseService:
                 logger.info("ℹ️  No LOCAL_DATABASE_URL — local_pool = pool (single-pool mode)")
 
             # Initialize delegate modules routed to appropriate pools
-            # Cloud pool: users, content, admin
-            self.users = UsersDatabase(self.pool)
-            self.content = ContentDatabase(self.pool)
-            self.admin = AdminDatabase(self.pool)
+            # Cloud pool: users, content, admin (Railway for public-facing data)
+            self.users = UsersDatabase(self.cloud_pool)
+            self.content = ContentDatabase(self.cloud_pool)
+            self.admin = AdminDatabase(self.cloud_pool)
 
             # Local pool: tasks, writing_style, embeddings, audit
             self.tasks = TasksDatabase(self.local_pool)

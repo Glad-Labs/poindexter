@@ -445,7 +445,7 @@ async def track_usage(
 @metrics_router.get("/costs/breakdown/phase")
 async def get_costs_by_phase(
     token: str = Depends(verify_api_token),
-    period: str = Query("week", regex="^(today|week|month)$"),
+    period: str = Query("week", pattern="^(today|week|month)$"),
     db_service: DatabaseService = Depends(get_database_dependency),
 ) -> Dict[str, Any]:
     """
@@ -472,7 +472,7 @@ async def get_costs_by_phase(
 @metrics_router.get("/costs/breakdown/model")
 async def get_costs_by_model(
     token: str = Depends(verify_api_token),
-    period: str = Query("week", regex="^(today|week|month)$"),
+    period: str = Query("week", pattern="^(today|week|month)$"),
     db_service: DatabaseService = Depends(get_database_dependency),
 ) -> Dict[str, Any]:
     """
@@ -500,7 +500,7 @@ async def get_costs_by_model(
 @metrics_router.get("/costs/history")
 async def get_cost_history(
     token: str = Depends(verify_api_token),
-    period: str = Query("week", regex="^(week|month)$"),
+    period: str = Query("week", pattern="^(week|month)$"),
     db_service: DatabaseService = Depends(get_database_dependency),
 ) -> Dict[str, Any]:
     """

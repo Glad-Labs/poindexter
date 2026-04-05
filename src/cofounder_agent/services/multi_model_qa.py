@@ -298,7 +298,7 @@ class MultiModelQA:
             # Parse JSON response
             json_match = text
             if "```" in text:
-                match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+                match = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, re.DOTALL)
                 if match:
                     json_match = match.group(1)
 
@@ -327,10 +327,14 @@ class MultiModelQA:
                 ollama_model, result.get("tokens", 0), electricity_cost,
             )
 
+            score = float(data.get("quality_score", 0))
+            # Trust the score over the LLM's boolean — models often say
+            # approved=false even with high scores due to minor nitpicks
+            approved = score >= 70 or data.get("approved", False)
             review = ReviewerResult(
                 reviewer="ollama_critic",
-                approved=data.get("approved", False),
-                score=float(data.get("quality_score", 0)),
+                approved=approved,
+                score=score,
                 feedback=data.get("feedback", "No feedback"),
                 provider="ollama",
             )
@@ -380,7 +384,7 @@ class MultiModelQA:
             # Parse JSON response
             json_match = text
             if "```" in text:
-                match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+                match = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, re.DOTALL)
                 if match:
                     json_match = match.group(1)
 

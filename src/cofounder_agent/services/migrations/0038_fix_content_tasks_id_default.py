@@ -29,15 +29,42 @@ async def up(pool) -> None:
             logger.warning("Table 'content_tasks' does not exist — skipping migration 0038")
             return
 
-        # Check if column already has a default set
-        existing_default = await conn.fetchval(
+        # Determine the column's data type — the migration was written assuming
+        # UUID, but the column may actually be INTEGER (e.g. SERIAL / BIGSERIAL).
+        # If it's an integer type the column already auto-increments via its
+        # sequence default and gen_random_uuid() would be a type mismatch error.
+        col_info = await conn.fetchrow(
             """
-            SELECT column_default
+            SELECT data_type, column_default, is_nullable
             FROM information_schema.columns
             WHERE table_name = 'content_tasks' AND column_name = 'id'
             """
         )
-        if existing_default and "gen_random_uuid" in existing_default:
+        if col_info is None:
+            logger.warning("content_tasks.id column not found — skipping migration 0038")
+            return
+
+        data_type = col_info["data_type"]  # e.g. 'integer', 'bigint', 'uuid'
+        existing_default = col_info["column_default"] or ""
+
+        # If the column is an integer type, UUID backfill / default makes no
+        # sense and would error.  The integer column already has a working
+        # sequence default, so just ensure NOT NULL and move on.
+        if data_type in ("integer", "bigint", "smallint"):
+            logger.info(
+                f"content_tasks.id is {data_type} — UUID default not applicable, "
+                "skipping UUID-specific parts of migration 0038"
+            )
+            if col_info["is_nullable"] == "YES":
+                await conn.execute(
+                    "ALTER TABLE content_tasks ALTER COLUMN id SET NOT NULL"
+                )
+                logger.info("Set NOT NULL on integer content_tasks.id")
+            return
+
+        # --- UUID path (original logic) ---
+
+        if "gen_random_uuid" in existing_default:
             logger.info("content_tasks.id already has gen_random_uuid() default — skipping")
             return
 

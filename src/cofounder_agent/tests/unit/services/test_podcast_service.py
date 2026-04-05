@@ -9,7 +9,7 @@ from services.podcast_service import (
     PodcastService,
     EpisodeResult,
     _strip_markdown,
-    _build_script,
+    _build_script_fallback as _build_script,
     _estimate_duration_from_text,
 )
 
@@ -18,9 +18,10 @@ class TestStripMarkdown:
     """Test markdown-to-plain-text conversion."""
 
     def test_removes_headings(self):
-        assert _strip_markdown("# Title") == "Title"
-        assert _strip_markdown("## Subtitle") == "Subtitle"
-        assert _strip_markdown("### Deep heading") == "Deep heading"
+        # Headings are stripped entirely for TTS (not natural in speech)
+        assert _strip_markdown("# Title") == ""
+        assert _strip_markdown("## Subtitle") == ""
+        assert _strip_markdown("### Deep heading") == ""
 
     def test_removes_bold_italic(self):
         assert _strip_markdown("**bold text**") == "bold text"
@@ -40,7 +41,7 @@ class TestStripMarkdown:
         md = "Before\n```python\nprint('hello')\n```\nAfter"
         result = _strip_markdown(md)
         assert "print" not in result
-        assert "[code example omitted]" in result
+        # Code blocks are removed entirely for TTS
         assert "Before" in result
         assert "After" in result
 
@@ -96,7 +97,7 @@ class TestBuildScript:
     def test_includes_outro(self):
         script = _build_script("Title", "Content")
         assert "Thanks for listening" in script
-        assert "gladlabs.io" in script
+        assert "gladlabs dot io" in script
 
     def test_strips_markdown_from_content(self):
         script = _build_script("Title", "# Heading\n**bold** text")

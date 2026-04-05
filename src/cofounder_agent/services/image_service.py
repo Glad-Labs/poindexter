@@ -217,9 +217,11 @@ class ImageService:
     def __init__(self):
         """Initialize image service"""
         self.pexels_api_key = os.getenv("PEXELS_API_KEY")
+        self._pexels_key_checked_db = False  # Track whether we've tried the DB
+
         if not self.pexels_api_key:
-            logger.warning(
-                "Pexels API key not configured - featured image search will be unavailable"
+            logger.info(
+                "Pexels API key not in env — will check app_settings DB on first use"
             )
 
         self.pexels_available = bool(self.pexels_api_key)
@@ -474,6 +476,51 @@ class ImageService:
             logger.warning(f"Error applying optimizations: {e}", exc_info=True)
 
     # =========================================================================
+    # DB-FIRST KEY LOADING
+    # =========================================================================
+
+    async def _ensure_pexels_key(self) -> None:
+        """Load Pexels API key from app_settings DB if not already set.
+
+        DB-first: the key lives in app_settings (key='pexels_api_key').
+        Falls back to PEXELS_API_KEY env var (already checked in __init__).
+        Only queries the DB once per service lifetime to avoid repeated lookups.
+        """
+        if self.pexels_api_key or self._pexels_key_checked_db:
+            return
+
+        self._pexels_key_checked_db = True
+
+        try:
+            import asyncpg
+
+            db_url = os.getenv(
+                "LOCAL_DATABASE_URL",
+                os.getenv("DATABASE_URL", ""),
+            )
+            if not db_url:
+                logger.warning("No DATABASE_URL available — cannot load pexels_api_key from DB")
+                return
+
+            conn = await asyncpg.connect(db_url)
+            try:
+                row = await conn.fetchrow(
+                    "SELECT value FROM app_settings WHERE key = $1",
+                    "pexels_api_key",
+                )
+                if row and row["value"]:
+                    self.pexels_api_key = row["value"]
+                    self.pexels_available = True
+                    self.pexels_headers = {"Authorization": self.pexels_api_key}
+                    logger.info("Pexels API key loaded from app_settings DB")
+                else:
+                    logger.warning("pexels_api_key not found in app_settings table")
+            finally:
+                await conn.close()
+        except Exception:
+            logger.error("Failed to load pexels_api_key from DB", exc_info=True)
+
+    # =========================================================================
     # FEATURED IMAGE SEARCH (Pexels - Free, Unlimited)
     # =========================================================================
 
@@ -500,8 +547,10 @@ class ImageService:
         """
         import random
 
+        await self._ensure_pexels_key()
+
         if not self.pexels_api_key:
-            logger.warning("Pexels API key not configured")
+            logger.warning("Pexels API key not configured (checked env + DB)")
             return None
 
         # Build search queries prioritizing concept/topic over people
@@ -582,8 +631,10 @@ class ImageService:
         Returns:
             List of FeaturedImageMetadata objects
         """
+        await self._ensure_pexels_key()
+
         if not self.pexels_api_key:
-            logger.warning("Pexels API key not configured")
+            logger.warning("Pexels API key not configured (checked env + DB)")
             return []
 
         search_queries = [topic]
@@ -706,6 +757,29 @@ class ImageService:
         Returns:
             True if successful, False otherwise
         """
+        # Strategy 1: Try host SDXL server (runs on GPU outside Docker)
+        sdxl_server_url = os.getenv("SDXL_SERVER_URL", "http://host.docker.internal:9836")
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=120) as client:
+                resp = await client.post(f"{sdxl_server_url}/generate", json={
+                    "prompt": prompt,
+                    "negative_prompt": negative_prompt or "",
+                    "steps": num_inference_steps or 4,
+                    "guidance_scale": guidance_scale or 1.0,
+                })
+                if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image/"):
+                    with open(output_path, "wb") as f:
+                        f.write(resp.content)
+                    elapsed = resp.headers.get("X-Elapsed-Seconds", "?")
+                    logger.info(f"SDXL image generated via host server in {elapsed}s: {output_path}")
+                    return True
+                else:
+                    logger.warning(f"SDXL server returned {resp.status_code}: {resp.text[:200]}")
+        except Exception as e:
+            logger.info(f"SDXL host server unavailable ({e}), trying local diffusers...")
+
+        # Strategy 2: Try local diffusers (if available)
         # Lazy initialize on first generation request
         if not self.sdxl_initialized or (model is not None and model != self._active_model):
             target = model or get_default_image_model()

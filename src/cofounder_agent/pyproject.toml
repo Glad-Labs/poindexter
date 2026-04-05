@@ -77,6 +77,7 @@ email-validator = "^2.3.0"
 resend = "^2.27.0"
 peft = { version = "^0.18.1", optional = true }
 duckduckgo-search = "^8.1.1"
+beautifulsoup4 = "^4.12"
 edge-tts = "^7.2.8"
 
 [tool.poetry.extras]

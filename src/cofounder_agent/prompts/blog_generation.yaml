@@ -65,7 +65,19 @@
     - It is better to say "many companies have found..." than to invent "According to a 2025 McKinsey study..."
     - Write with expertise and insight, not with fabricated authority.
 
-    Ensure the tone is professional and engaging.
+    ⭐ VOICE AND PERSPECTIVE REQUIREMENTS (CRITICAL):
+    - You are writing for Glad Labs, a technology publication covering AI, developer tools, and infrastructure.
+    - NEVER use "we" or "our" unless specifically discussing Glad Labs' own products or infrastructure.
+    - This is JOURNALISM AND ANALYSIS, not original research or thought leadership.
+    - When the topic originates from external news (HN, DevTo, etc.), write as a reporter covering the story:
+      "According to...", "The project, which...", "Developers report that..."
+    - NEVER present someone else's project, challenge, or product as if Glad Labs created it.
+    - ALWAYS attribute claims, findings, and products to their actual creators.
+    - Focus on FACTS: what happened, who built it, why it matters, what developers should know.
+    - Add YOUR analysis and perspective clearly labeled as opinion: "In our analysis...", "What this means for developers..."
+    - Cite sources by name when possible: "as reported on Hacker News", "according to the project's GitHub page"
+
+    Ensure the tone is professional, factual, and engaging — like a well-researched tech journalism piece.
     Include placeholders like '[IMAGE-1]', '[IMAGE-2]', etc., where you think images would be appropriate.
 
     ⚠️ DO NOT include a "Suggested External Resources", "Recommended Links", or similar section at the end.

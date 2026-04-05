@@ -46,7 +46,7 @@ _OPENCLAW_TOKEN = os.getenv("OPENCLAW_HOOKS_TOKEN", "hooks-gladlabs")
 _DISCORD_OPS_CHANNEL = "1487683559065125055"
 
 # LLM defaults — social copy is a simple task, use the fast 8B model
-_SOCIAL_MODEL = os.getenv("SOCIAL_POSTER_MODEL", "ollama/qwen3:8b")
+_SOCIAL_MODEL = os.getenv("SOCIAL_POSTER_MODEL", "ollama/llama3:latest")
 
 # Platform character limits (with safety margin)
 TWITTER_CHAR_LIMIT = 280

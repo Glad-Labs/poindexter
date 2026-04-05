@@ -64,5 +64,41 @@ CREATE TABLE IF NOT EXISTS system_devices (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- =============================================
+-- GPU metrics — hardware monitoring from nvidia-smi exporter
+-- =============================================
+CREATE TABLE IF NOT EXISTS gpu_metrics (
+    id BIGSERIAL PRIMARY KEY,
+    timestamp TIMESTAMPTZ DEFAULT NOW(),
+    utilization REAL,
+    temperature REAL,
+    power_draw REAL,
+    memory_used REAL,
+    memory_total REAL,
+    fan_speed REAL,
+    clock_graphics REAL,
+    clock_memory REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_gpu_metrics_timestamp ON gpu_metrics(timestamp);
+
+-- =============================================
+-- Affiliate links — auto-injected into published content
+-- =============================================
+CREATE TABLE IF NOT EXISTS affiliate_links (
+    id SERIAL PRIMARY KEY,
+    keyword VARCHAR(255) NOT NULL,
+    url TEXT NOT NULL,
+    merchant VARCHAR(100),
+    commission_rate NUMERIC(5,2),
+    active BOOLEAN DEFAULT true,
+    click_count INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(keyword)
+);
+
+CREATE INDEX IF NOT EXISTS idx_affiliate_links_keyword ON affiliate_links(keyword);
+
 -- Log successful initialization
-DO $$ BEGIN RAISE NOTICE 'pgvector + embeddings + audit_log + system_devices initialized'; END $$;
+DO $$ BEGIN RAISE NOTICE 'pgvector + embeddings + audit_log + system_devices + gpu_metrics + affiliate_links initialized'; END $$;

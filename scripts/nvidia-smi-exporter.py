@@ -310,6 +310,7 @@ def get_liquidctl_psu_metrics():
         return ""  # liquidctl not installed, skip silently
 
     lines = []
+    headers_emitted = set()
     try:
         devices = find_liquidctl_devices()
         for dev in devices:
@@ -326,30 +327,34 @@ def get_liquidctl_psu_metrics():
                 safe_key = re.sub(r"[^a-zA-Z0-9_]", "_", key_lower)
 
                 if unit == "W":
-                    metric = f'psu_{safe_key}_watts'
-                    if "psu_total" not in "".join(lines):
+                    if "power" not in headers_emitted:
                         lines.append("# HELP psu_power_watts Corsair HXi PSU power metrics (via liquidctl)")
                         lines.append("# TYPE psu_power_watts gauge")
+                        headers_emitted.add("power")
                     lines.append(f'psu_power_watts{{sensor="{safe_key}",label="{key}"}} {value}')
                 elif unit == "V":
-                    if "psu_voltage" not in "".join(lines):
+                    if "voltage" not in headers_emitted:
                         lines.append("# HELP psu_voltage_volts Corsair HXi PSU voltage metrics (via liquidctl)")
                         lines.append("# TYPE psu_voltage_volts gauge")
+                        headers_emitted.add("voltage")
                     lines.append(f'psu_voltage_volts{{sensor="{safe_key}",label="{key}"}} {value}')
                 elif unit == "A":
-                    if "psu_current" not in "".join(lines):
+                    if "current" not in headers_emitted:
                         lines.append("# HELP psu_current_amps Corsair HXi PSU current metrics (via liquidctl)")
                         lines.append("# TYPE psu_current_amps gauge")
+                        headers_emitted.add("current")
                     lines.append(f'psu_current_amps{{sensor="{safe_key}",label="{key}"}} {value}')
                 elif unit == "°C":
-                    if "psu_temperature" not in "".join(lines):
+                    if "temp" not in headers_emitted:
                         lines.append("# HELP psu_temperature_celsius Corsair HXi PSU temperature (via liquidctl)")
                         lines.append("# TYPE psu_temperature_celsius gauge")
+                        headers_emitted.add("temp")
                     lines.append(f'psu_temperature_celsius{{sensor="{safe_key}",label="{key}"}} {value}')
                 elif unit == "rpm":
-                    if "psu_fan" not in "".join(lines):
+                    if "fan" not in headers_emitted:
                         lines.append("# HELP psu_fan_rpm Corsair HXi PSU fan speed (via liquidctl)")
                         lines.append("# TYPE psu_fan_rpm gauge")
+                        headers_emitted.add("fan")
                     lines.append(f'psu_fan_rpm{{sensor="{safe_key}",label="{key}"}} {value}')
 
     except Exception:

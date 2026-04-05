@@ -5,25 +5,26 @@
   notes: "v1.0: Strong safety guardrail against people/faces, aspect ratio specified"
   example_output: "A modern, minimalist medical technology visualization showing interconnected healthcare nodes and AI algorithms. Abstract blue and green data streams flowing through digital healthcare infrastructure. 1200x630px, professional medical tech aesthetic."
   template: |
-    Generate a professional, modern featured image prompt for this blog post.
+    Generate a Stable Diffusion XL image prompt for a blog featured image.
 
     Title: {title}
     Category: {category}
     Content Context: {content_context}
 
-    ⭐ CRITICAL REQUIREMENTS:
-    1. Aspect ratio: 1200x630px (16:9)
-    2. Professional and visually appealing
-    3. Relevant to topic
-    4. Modern design aesthetic
-    5. High quality, suitable for blog thumbnail + social sharing
+    ⭐ STYLE REQUIREMENTS:
+    1. Photorealistic scene composition — like a cinematic still or editorial photo
+    2. Describe a specific, concrete scene (e.g., "a server room with blue LED lighting" not "technology concept")
+    3. Include lighting direction, atmosphere, and mood
+    4. End with quality tags: "photorealistic, cinematic lighting, 4k, detailed"
+    5. Keep it to 1-2 sentences max — SDXL works best with concise prompts
 
-    ⚠️ MANDATORY: NO PEOPLE IN IMAGE
-    - Do NOT include any human figures, faces, portraits, people of any kind
-    - Focus ONLY on: objects, nature, technology, abstract concepts, landscapes, icons
-    - If scale needed, use non-human elements (buildings, vehicles, props, tools)
+    ⚠️ MANDATORY CONSTRAINTS:
+    - NO people, faces, hands, portraits, or human figures of any kind
+    - NO text, words, letters, watermarks, or UI elements
+    - Focus on: environments, technology, landscapes, objects, architecture, nature
+    - Think editorial photography: the kind of image a tech magazine would use as a cover
 
-    Generate ONLY the image description prompt (2-3 sentences), nothing else.
+    Generate ONLY the SDXL prompt, nothing else. No explanation, no quotes.
 
 - key: image.search_queries
   category: image_generation

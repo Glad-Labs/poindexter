@@ -20,6 +20,7 @@ Usage:
 """
 
 import asyncio
+import json
 import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
@@ -115,6 +116,9 @@ class TopicDiscovery:
         # Deduplicate against published posts
         all_topics = await self._deduplicate(all_topics)
 
+        # Filter to brand-relevant topics
+        all_topics = [t for t in all_topics if self._is_brand_relevant(t.title)]
+
         # Score and rank
         all_topics.sort(key=lambda t: t.relevance_score, reverse=True)
 
@@ -128,15 +132,50 @@ class TopicDiscovery:
 
     async def queue_topics(self, topics: List[DiscoveredTopic]) -> int:
         """Queue discovered topics as content tasks."""
+        import random
+        # Vary post lengths: 60% short (800-1200), 30% medium (1500-2000), 10% deep dive (2500-3500)
+        _LENGTH_WEIGHTS = [
+            (800, 1200, 0.6),    # Short reads (3-5 min)
+            (1500, 2000, 0.3),   # Medium reads (6-8 min)
+            (2500, 3500, 0.1),   # Deep dives (10-15 min)
+        ]
+
+        # Vary writing styles to mimic a multi-writer newsroom
+        _STYLES = [
+            ("technical", "professional"),    # Deep technical analysis
+            ("narrative", "professional"),    # Story-driven reporting
+            ("listicle", "casual"),           # "5 things..." quick reads
+            ("educational", "professional"),  # How-to / explainer
+            ("narrative", "casual"),          # Conversational analysis
+        ]
+
+        def _pick_length() -> int:
+            r = random.random()
+            cumulative = 0.0
+            for lo, hi, weight in _LENGTH_WEIGHTS:
+                cumulative += weight
+                if r <= cumulative:
+                    return random.randint(lo, hi)
+            return 1200  # fallback
+
         queued = 0
         for topic in topics:
             try:
+                target_length = _pick_length()
+                style, tone = random.choice(_STYLES)
+                metadata = json.dumps({
+                    "category": str(topic.category or "technology"),
+                    "source": str(topic.source or "unknown"),
+                    "source_url": str(topic.source_url or ""),
+                    "discovered_by": "topic_discovery",
+                    "target_length": target_length,
+                    "style": style,
+                    "tone": tone,
+                })
                 await self.pool.execute("""
-                    INSERT INTO content_tasks (task_id, task_type, topic, status, task_metadata)
-                    VALUES (gen_random_uuid()::text, 'blog_post', $1::text, 'pending',
-                            jsonb_build_object('category', $2::text, 'source', $3::text, 'source_url', $4::text,
-                                              'discovered_by', 'topic_discovery'))
-                """, str(topic.title), str(topic.category or 'technology'), str(topic.source or 'unknown'), str(topic.source_url or ''))
+                    INSERT INTO content_tasks (task_id, task_type, content_type, topic, status, metadata)
+                    VALUES (gen_random_uuid()::text, 'blog_post', 'blog_post', $1::text, 'pending', $2::jsonb)
+                """, str(topic.title), metadata)
                 queued += 1
                 logger.info("[TOPIC_DISCOVERY] Queued: %s [%s]", topic.title[:50], topic.category)
             except Exception as e:
@@ -158,11 +197,11 @@ class TopicDiscovery:
         try:
             # 1. Get knowledge entities (tech/content related)
             knowledge_rows = await self.pool.fetch("""
-                SELECT DISTINCT entity, attribute, value
+                SELECT DISTINCT ON (entity, attribute) entity, attribute, value, updated_at
                 FROM brain_knowledge
                 WHERE attribute IN ('topic', 'trend', 'technology', 'category', 'gap', 'opportunity')
                    OR entity ILIKE '%content%' OR entity ILIKE '%topic%' OR entity ILIKE '%tech%'
-                ORDER BY updated_at DESC NULLS LAST
+                ORDER BY entity, attribute, updated_at DESC NULLS LAST
                 LIMIT 50
             """)
 
@@ -215,6 +254,12 @@ class TopicDiscovery:
                 entity = row["entity"]
                 value = row["value"]
                 if not value or len(value) < 10:
+                    continue
+
+                # Skip JSON blobs and operational metrics — not real topic seeds
+                if value.strip().startswith("{") or value.strip().startswith("["):
+                    continue
+                if any(skip in entity for skip in ("probe.", "trend.", "freshness.", "health_status")):
                     continue
 
                 # Use the value as a topic seed
@@ -393,6 +438,29 @@ class TopicDiscovery:
             logger.warning("[TOPIC_DISCOVERY] Dedup failed: %s", e)
 
         return topics
+
+    # Keywords that indicate a topic is relevant to Glad Labs' niche
+    _BRAND_KEYWORDS = {
+        "ai", "artificial intelligence", "llm", "language model", "gpt", "claude",
+        "inference", "gpu", "cuda", "nvidia", "local", "self-host", "self host",
+        "developer", "dev tool", "devops", "cicd", "ci/cd", "pipeline",
+        "automation", "agent", "autonomous", "content", "blog", "podcast",
+        "machine learning", "deep learning", "neural", "transformer",
+        "open source", "open-source", "linux", "docker", "kubernetes",
+        "api", "cloud", "edge computing", "serverless", "infrastructure",
+        "coding", "programming", "software", "engineering", "code",
+        "ollama", "hugging face", "huggingface", "stable diffusion", "sdxl",
+        "privacy", "security", "self-healing", "monitoring", "grafana",
+        "productivity", "workflow", "vram", "model", "fine-tun", "rag",
+        "embeddings", "vector", "database", "postgres", "data",
+        "startup", "indie", "solo", "founder", "saas", "business",
+    }
+
+    @staticmethod
+    def _is_brand_relevant(title: str) -> bool:
+        """Check if a topic is relevant to Glad Labs' niche."""
+        title_lower = title.lower()
+        return any(kw in title_lower for kw in TopicDiscovery._BRAND_KEYWORDS)
 
     def _classify_category(self, title: str) -> str:
         """Classify a title into a category."""

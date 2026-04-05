@@ -160,7 +160,7 @@ async def _calculate_scheduled_publish_time(db_service) -> Optional[datetime]:
         logger.debug("[schedule] Could not read scheduling settings, publishing now")
         return None
 
-    pool = db_service.pool
+    pool = getattr(db_service, "cloud_pool", None) or db_service.pool
     try:
         async with pool.acquire() as conn:
             # How many posts published today (by published_at date, UTC)?
@@ -266,6 +266,7 @@ async def publish_post_from_task(
     publisher: str = "operator",
     trigger_revalidation: bool = True,
     queue_social: bool = True,
+    draft_mode: bool = False,
     background_tasks=None,
 ) -> PublishResult:
     """Create a published post from a completed content task.
@@ -361,9 +362,10 @@ async def publish_post_from_task(
         "content": post_content,
         "excerpt": seo_description,
         "featured_image_url": featured_image_url,
+        "cover_image_url": featured_image_url,
         "author_id": author_id,
         "category_id": category_id,
-        "status": "published",
+        "status": "draft" if draft_mode else "published",
         "seo_title": post_title,
         "seo_description": seo_description,
         "seo_keywords": ",".join(seo_keywords) if seo_keywords else "",
@@ -414,7 +416,7 @@ async def publish_post_from_task(
     try:
         from services.webhook_delivery_service import emit_webhook_event
 
-        await emit_webhook_event(db_service.pool, "post.published", {
+        await emit_webhook_event(getattr(db_service, "cloud_pool", None) or db_service.pool, "post.published", {
             "task_id": str(task_id), "title": post_title, "site": "default",
         })
     except Exception:
@@ -473,7 +475,7 @@ async def publish_post_from_task(
     try:
         from services.devto_service import DevToCrossPostService
 
-        devto_svc = DevToCrossPostService(db_service.pool)
+        devto_svc = DevToCrossPostService(getattr(db_service, "cloud_pool", None) or db_service.pool)
         if background_tasks:
             background_tasks.add_task(
                 devto_svc.cross_post_by_post_id, post_id
@@ -524,6 +526,25 @@ async def publish_post_from_task(
             logger.info("[PODCAST] Queued episode generation for post %s", post_id)
         except Exception as e:
             logger.debug("[PODCAST] Failed to queue episode (non-fatal): %s", e)
+
+    # ---------------------------------------------------------------
+    # 11c. Generate video episode (fire-and-forget, local worker only)
+    # ---------------------------------------------------------------
+    if _should_run_post_publish_hooks():
+        try:
+            from services.video_service import generate_video_episode
+
+            if background_tasks:
+                background_tasks.add_task(
+                    generate_video_episode, post_id, post_title, post_content
+                )
+            else:
+                asyncio.ensure_future(
+                    generate_video_episode(post_id, post_title, post_content)
+                )
+            logger.info("[VIDEO] Queued video generation for post %s", post_id)
+        except Exception as e:
+            logger.debug("[VIDEO] Failed to queue video (non-fatal): %s", e)
 
     # ---------------------------------------------------------------
     # 12. Send notification

@@ -855,29 +855,40 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
     image_placeholders = _re.findall(r"\[IMAGE-(\d+)(?::\s*([^\]]*))?\]", content_text)
 
     # If LLM didn't produce placeholders (common with local models), inject them
-    # after the 2nd and 4th ## headings for visual variety
+    # dynamically based on word count: 1 image per ~500 words, evenly distributed
     if not image_placeholders:
+        word_count = len(content_text.split())
+        target_images = max(1, word_count // 500)
         headings = list(_re.finditer(r"^## .+$", content_text, _re.MULTILINE))
-        if len(headings) >= 3:
-            # Insert after 2nd heading's paragraph, and after 4th if available
+
+        if headings:
+            # Distribute images evenly across available headings
+            # Skip the first heading (too close to featured image), use the rest
+            usable_headings = headings[1:] if len(headings) > 1 else headings
+            # Pick evenly spaced headings
+            step = max(1, len(usable_headings) // target_images)
+            selected = usable_headings[::step][:target_images]
+
             insert_positions = []
-            for idx in [1, 3]:
-                if idx < len(headings):
-                    h = headings[idx]
-                    # Find end of first paragraph after this heading
-                    para_end = content_text.find("\n\n", h.end())
-                    if para_end > 0:
-                        insert_positions.append((para_end, idx + 1))
+            for i, h in enumerate(selected):
+                para_end = content_text.find("\n\n", h.end())
+                if para_end > 0:
+                    # Use heading text as context for image generation
+                    heading_text = h.group().lstrip("# ").strip()
+                    insert_positions.append((para_end, i + 1, heading_text))
 
             # Insert in reverse order to preserve positions
-            for pos, img_num in reversed(insert_positions):
-                placeholder = f"\n[IMAGE-{img_num}: {topic} illustration]\n"
+            for pos, img_num, heading_ctx in reversed(insert_positions):
+                placeholder = f"\n[IMAGE-{img_num}: {heading_ctx} illustration]\n"
                 content_text = content_text[:pos] + placeholder + content_text[pos:]
 
             # Re-scan for the injected placeholders
             image_placeholders = _re.findall(r"\[IMAGE-(\d+)(?::\s*([^\]]*))?\]", content_text)
             if image_placeholders:
-                logger.info("📌 Injected %d image placeholders (LLM didn't produce any)", len(image_placeholders))
+                logger.info(
+                    "📌 Injected %d image placeholders (%d words, 1 per 500 words)",
+                    len(image_placeholders), word_count,
+                )
 
     if not image_placeholders:
         result["stages"]["2c_inline_images_replaced"] = False
@@ -890,46 +901,113 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
     used_image_ids = set()  # Avoid duplicate images
 
     for num, desc in image_placeholders:
-        # Use the LLM's description as search query, fall back to topic
         search_query = desc.strip() if desc else topic
-        # Shorten to first 5 words for better Pexels search results
-        search_words = search_query.split()[:5]
-        short_query = " ".join(search_words)
+        alt_text = desc.strip() if desc else f"{topic} illustration"
+        alt_text = alt_text.replace("[", "").replace("]", "").replace("\n", " ")[:120]
+        image_replaced = False
 
-        # Build safe keywords list — guard against empty topic (#1263 Copilot review)
-        keywords = [topic.split()[0]] if topic and topic.strip() else []
-
+        # Strategy 1: SDXL generation (unique, on-topic images)
         try:
-            img = await image_service.search_featured_image(
-                topic=short_query, keywords=keywords
+            import os as _os
+            import tempfile as _tf
+            import httpx as _hx2
+
+            sdxl_url = _os.environ.get("SDXL_SERVER_URL", "http://host.docker.internal:9836")
+            ollama_url = _os.environ.get("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+            _model = _os.environ.get("DEFAULT_OLLAMA_MODEL", "llama3:latest")
+            if _model == "auto":
+                _model = "llama3:latest"
+
+            # Generate SDXL prompt via Ollama
+            _img_prompt_req = (
+                f"Write a Stable Diffusion XL image prompt for a blog illustration about: {search_query}\n"
+                f"Article topic: {topic}\n\n"
+                "Requirements: photorealistic scene, cinematic lighting, no people, no text, no faces. "
+                "Describe a specific scene. 1 sentence only. Output ONLY the prompt."
             )
+            async with _hx2.AsyncClient(timeout=30) as _c2:
+                _pr = await _c2.post(f"{ollama_url}/api/generate", json={
+                    "model": _model, "prompt": _img_prompt_req, "stream": False,
+                    "options": {"num_predict": 100, "temperature": 0.8},
+                })
+                _pr.raise_for_status()
+                sdxl_inline_prompt = _pr.json().get("response", "").strip().strip('"')
 
-            if img and img.url and img.url not in used_image_ids:
-                used_image_ids.add(img.url)
-                alt_text = desc.strip() if desc else f"{topic} illustration"
-                # Clean alt text of special chars for markdown
-                alt_text = (
-                    alt_text.replace("[", "").replace("]", "").replace("\n", " ")[:120]
-                )
-                photographer = getattr(img, "photographer", "Pexels")
-                markdown_img = (
-                    f"\n\n![{alt_text}]({img.url})\n*Photo by {photographer} on Pexels*\n\n"
-                )
+            if sdxl_inline_prompt and len(sdxl_inline_prompt) > 20:
+                # Generate the image
+                neg = "text, words, letters, watermark, face, person, hands, blurry, low quality, distorted, ugly, deformed"
+                async with _hx2.AsyncClient(timeout=120) as _c3:
+                    _ir = await _c3.post(f"{sdxl_url}/generate", json={
+                        "prompt": sdxl_inline_prompt, "negative_prompt": neg,
+                        "steps": 4, "guidance_scale": 1.0,
+                    })
+                    if _ir.status_code == 200 and _ir.headers.get("content-type", "").startswith("image/"):
+                        # Save and upload to Cloudinary
+                        output_dir = _os.path.join(_os.path.expanduser("~"), "Downloads", "glad-labs-generated-images")
+                        _os.makedirs(output_dir, exist_ok=True)
+                        with _tf.NamedTemporaryFile(suffix=".png", delete=False, dir=output_dir) as _tmp:
+                            _tmp.write(_ir.content)
+                            tmp_path = _tmp.name
 
-                # Use regex to handle spacing variations in [IMAGE-N: desc]
-                content_text = _re.sub(
-                    rf"\[IMAGE-{num}[^\]]*\]", markdown_img, content_text, count=1
+                        # Try Cloudinary upload
+                        img_url = tmp_path
+                        try:
+                            import cloudinary
+                            import cloudinary.uploader
+                            from services.site_config import site_config as _sc_img
+                            cloudinary.config(
+                                cloud_name=_sc_img.get("cloudinary_cloud_name"),
+                                api_key=_sc_img.get("cloudinary_api_key"),
+                                api_secret=_sc_img.get("cloudinary_api_secret"),
+                            )
+                            import asyncio
+                            _up = await asyncio.get_event_loop().run_in_executor(
+                                None, lambda: cloudinary.uploader.upload(
+                                    tmp_path, folder="generated/inline/", resource_type="image",
+                                )
+                            )
+                            img_url = _up.get("secure_url", tmp_path)
+                            _os.remove(tmp_path)
+                        except Exception:
+                            logger.debug("[IMAGE] Cloudinary upload failed for inline, using local path")
+
+                        if img_url not in used_image_ids:
+                            used_image_ids.add(img_url)
+                            markdown_img = f"\n\n![{alt_text}]({img_url})\n\n"
+                            content_text = _re.sub(
+                                rf"\[IMAGE-{num}[^\]]*\]", markdown_img, content_text, count=1
+                            )
+                            logger.info(f"  ✅ [IMAGE-{num}] → SDXL generated")
+                            image_replaced = True
+        except Exception as sdxl_err:
+            logger.debug(f"  [IMAGE-{num}] SDXL inline failed: {sdxl_err}")
+
+        # Strategy 2: Pexels fallback
+        if not image_replaced:
+            search_words = search_query.split()[:5]
+            short_query = " ".join(search_words)
+            keywords = [topic.split()[0]] if topic and topic.strip() else []
+            try:
+                img = await image_service.search_featured_image(
+                    topic=short_query, keywords=keywords
                 )
-                logger.info(f"  ✅ [IMAGE-{num}] → Pexels image by {photographer}")
-            else:
-                # Remove placeholder if no image found
-                content_text = _re.sub(rf"\[IMAGE-{num}[^\]]*\]", "", content_text, count=1)
-                logger.warning(
-                    f"  ⚠️ [IMAGE-{num}] — no suitable image found, removed placeholder"
-                )
-        except Exception as e:
-            logger.error(f"  ❌ [IMAGE-{num}] search failed: {e}", exc_info=True)
+                if img and img.url and img.url not in used_image_ids:
+                    used_image_ids.add(img.url)
+                    photographer = getattr(img, "photographer", "Pexels")
+                    markdown_img = (
+                        f"\n\n![{alt_text}]({img.url})\n*Photo by {photographer} on Pexels*\n\n"
+                    )
+                    content_text = _re.sub(
+                        rf"\[IMAGE-{num}[^\]]*\]", markdown_img, content_text, count=1
+                    )
+                    logger.info(f"  ✅ [IMAGE-{num}] → Pexels image by {photographer}")
+                    image_replaced = True
+            except Exception as e:
+                logger.error(f"  ❌ [IMAGE-{num}] Pexels search failed: {e}")
+
+        if not image_replaced:
             content_text = _re.sub(rf"\[IMAGE-{num}[^\]]*\]", "", content_text, count=1)
+            logger.warning(f"  ⚠️ [IMAGE-{num}] — no image source available, removed placeholder")
 
     # Normalize again after image placeholder substitution
     content_text = _normalize_text(content_text)
@@ -964,18 +1042,80 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
             import tempfile
             from services.site_config import site_config
 
-            # Get category-specific style from app_settings
+            # Use LLM-generated image prompt if available, otherwise fall back to generic
             category = result.get("category", "technology")
-            style_key = f"image_style_{category}" if category else "image_style_default"
-            style_prompt = site_config.get(style_key) or site_config.get("image_style_default", "professional digital art, abstract technology concept, blue color scheme, no people, no text")
-            negative = site_config.get("image_negative_prompt", "text, words, letters, face, person, blurry")
+            negative = site_config.get("image_negative_prompt", "text, words, letters, watermark, face, person, hands, blurry, low quality, distorted, ugly, deformed")
 
-            sdxl_prompt = f"{style_prompt}, blog header about {topic}"
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=False, dir=os.path.join(
-                os.path.expanduser("~"), "Downloads", "glad-labs-generated-images"
-            )) as tmp:
+            # Check if the content pipeline already generated an image prompt
+            sdxl_prompt = result.get("featured_image_prompt", "")
+            if not sdxl_prompt:
+                # Style diversity: check recent images and pick least-used style
+                _IMAGE_STYLES = [
+                    ("photorealistic scene", "cinematic lighting, shallow depth of field, 4k"),
+                    ("isometric 3D illustration", "clean vector style, soft shadows, minimal"),
+                    ("dark moody editorial photograph", "dramatic side lighting, high contrast, film grain"),
+                    ("clean minimal flat design", "soft pastel colors, geometric shapes, modern"),
+                    ("aerial drone photograph", "bird's eye view, golden hour lighting, wide angle"),
+                    ("macro close-up photograph", "extreme detail, bokeh background, studio lighting"),
+                    ("cyberpunk neon cityscape", "rain-slicked streets, neon reflections, atmospheric fog"),
+                ]
+                import random as _rnd
+                # Check what styles were used recently
+                try:
+                    import asyncpg as _apg
+                    _cloud_url = os.environ.get("DATABASE_URL", "")
+                    if _cloud_url:
+                        _cconn = await _apg.connect(_cloud_url)
+                        _recent = await _cconn.fetch("""
+                            SELECT metadata->>'image_style' as style
+                            FROM posts WHERE status = 'published'
+                            AND metadata->>'image_style' IS NOT NULL
+                            ORDER BY published_at DESC LIMIT 5
+                        """)
+                        await _cconn.close()
+                        _recent_styles = [r["style"] for r in _recent if r["style"]]
+                        # Filter out recently used styles, pick from remaining
+                        _available = [s for s in _IMAGE_STYLES if s[0] not in _recent_styles]
+                        if not _available:
+                            _available = _IMAGE_STYLES  # All used recently, reset
+                        _chosen_style, _style_tags = _rnd.choice(_available)
+                    else:
+                        _chosen_style, _style_tags = _rnd.choice(_IMAGE_STYLES)
+                except Exception:
+                    _chosen_style, _style_tags = _rnd.choice(_IMAGE_STYLES)
+
+                # Store chosen style in result metadata for tracking
+                result["image_style"] = _chosen_style
+
+                # Generate SDXL prompt via Ollama with the chosen style
+                try:
+                    import httpx as _hx
+                    _ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+                    content_excerpt = result.get("content", "")[:300]
+                    _img_prompt = (
+                        f"Write a Stable Diffusion XL image prompt for a blog featured image.\n"
+                        f"Topic: {topic}\n"
+                        f"Context: {content_excerpt}\n"
+                        f"Style: {_chosen_style}\n\n"
+                        f"Requirements: {_style_tags}, no people, no text, no faces, no hands. "
+                        "Describe a specific concrete scene. 1-2 sentences only. "
+                        "Output ONLY the prompt, nothing else."
+                    )
+                    async with _hx.AsyncClient(timeout=30) as _c:
+                        _r = await _c.post(f"{_ollama_url}/api/generate", json={
+                            "model": "llama3:latest", "prompt": _img_prompt, "stream": False,
+                            "options": {"num_predict": 150, "temperature": 0.7},
+                        })
+                        _r.raise_for_status()
+                        sdxl_prompt = _r.json().get("response", "").strip().strip('"')
+                    logger.info("[IMAGE] Style: %s | SDXL prompt: %s", _chosen_style, sdxl_prompt[:80])
+                except Exception as prompt_err:
+                    logger.warning("[IMAGE] LLM prompt generation failed, using fallback: %s", prompt_err)
+                    sdxl_prompt = f"{_chosen_style} of {topic}, {_style_tags}, no people, no text"
+            output_dir = os.path.join(os.path.expanduser("~"), "Downloads", "glad-labs-generated-images")
+            os.makedirs(output_dir, exist_ok=True)
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False, dir=output_dir) as tmp:
                 output_path = tmp.name
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
             success = await image_service.generate_image(
                 prompt=sdxl_prompt,

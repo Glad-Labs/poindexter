@@ -49,7 +49,7 @@ class IdleWorker:
                     pass
             self._schedules_loaded = True
             if rows:
-                logger.info("[IDLE] Loaded %d persisted schedule timestamps", len(rows))
+                logger.debug("[IDLE] Loaded %d persisted schedule timestamps", len(rows))
         except Exception as e:
             logger.warning("[IDLE] Failed to load persisted schedules: %s", e)
             self._schedules_loaded = True  # Don't retry on every cycle
@@ -98,12 +98,26 @@ class IdleWorker:
         return False
 
     def _is_due(self, task_name: str, interval_minutes: int) -> bool:
-        """Check if a background task is due to run."""
+        """Check if a background task is due to run.
+
+        Also respects _completion_cooldown — if a task reported 0 remaining items,
+        it gets a longer cooldown (4x the normal interval) to avoid wasting cycles
+        rechecking work that's already done.
+        """
         last = self._last_run.get(task_name, 0)
+        # If task completed all work last run, use extended cooldown
+        cooldown_key = f"{task_name}_completed"
+        if self._last_run.get(cooldown_key, 0) > last:
+            # Task finished all work — use 4x interval before rechecking
+            return (time.time() - last) >= (interval_minutes * 60 * 4)
         return (time.time() - last) >= (interval_minutes * 60)
 
     def _mark_run(self, task_name: str):
         self._last_run[task_name] = time.time()
+
+    def _mark_completed(self, task_name: str):
+        """Mark a task as having completed all available work (extended cooldown)."""
+        self._last_run[f"{task_name}_completed"] = time.time()
 
     async def run_cycle(self) -> dict:
         """Run one cycle of all due idle tasks. Returns summary."""
@@ -118,6 +132,11 @@ class IdleWorker:
         if self._is_due("sync_newsletter_subscribers", 60):
             results["sync_newsletter_subscribers"] = await self._sync_newsletter_subscribers()
             await self._persist_mark_run("sync_newsletter_subscribers")
+
+        # Expire stale approval queue items (every 6 hours)
+        if self._is_due("expire_stale_approvals", 360):
+            results["expire_stale_approvals"] = await self._expire_stale_approvals()
+            await self._persist_mark_run("expire_stale_approvals")
 
         # Check if there are pending content tasks — if so, skip heavier idle work
         pending = await self.pool.fetchrow(
@@ -174,7 +193,17 @@ class IdleWorker:
             results["image_regen"] = await self._regenerate_stock_images()
             await self._persist_mark_run("image_regen")
 
-        # 10. Fix uncategorized posts (every 12 hours)
+        # 10. Backfill podcast episodes for posts missing them (every 4 hours, 2 per cycle)
+        if self._is_due("podcast_backfill", 240):
+            results["podcast_backfill"] = await self._backfill_podcasts()
+            await self._persist_mark_run("podcast_backfill")
+
+        # 11. Backfill videos for posts missing them (every 6 hours, 1 per cycle)
+        if self._is_due("video_backfill", 360):
+            results["video_backfill"] = await self._backfill_videos()
+            await self._persist_mark_run("video_backfill")
+
+        # 12. Fix uncategorized posts (every 12 hours)
         if self._is_due("fix_categories", 720):
             results["fix_categories"] = await self._fix_uncategorized_posts()
             await self._persist_mark_run("fix_categories")
@@ -230,6 +259,44 @@ class IdleWorker:
                         len(results), ", ".join(results.keys()))
 
         return results
+
+    async def _expire_stale_approvals(self) -> dict:
+        """Auto-reject tasks stuck in awaiting_approval too long.
+
+        Content goes stale — no point approving a 2-week-old draft about
+        yesterday's news. TTL is configurable via app_settings (default: 7 days).
+        """
+        try:
+            ttl_days = 7
+            try:
+                row = await self.pool.fetchrow(
+                    "SELECT value FROM app_settings WHERE key = 'approval_ttl_days'"
+                )
+                if row and row["value"]:
+                    ttl_days = int(row["value"])
+            except Exception:
+                pass
+
+            expired = await self.pool.fetch("""
+                UPDATE content_tasks
+                SET status = 'expired',
+                    result = jsonb_build_object('reason', 'Auto-expired: exceeded approval TTL of ' || $1 || ' days')
+                WHERE status = 'awaiting_approval'
+                  AND updated_at < NOW() - make_interval(days => $1)
+                RETURNING task_id, topic
+            """, ttl_days)
+
+            if expired:
+                logger.info(
+                    "[IDLE] Expired %d stale approval tasks (TTL: %d days)",
+                    len(expired), ttl_days,
+                )
+                for row in expired[:5]:
+                    logger.info("  - %s: %s", row["task_id"][:8], (row["topic"] or "")[:50])
+            return {"expired_count": len(expired), "ttl_days": ttl_days}
+        except Exception as e:
+            logger.warning("[IDLE] Approval expiry failed: %s", e)
+            return {"error": str(e)}
 
     async def _audit_published_quality(self) -> dict:
         """Re-score a batch of published posts to catch quality drift."""
@@ -576,6 +643,7 @@ class IdleWorker:
 
             if not posts:
                 await cloud.close()
+                self._mark_completed("image_regen")
                 return {"regenerated": 0, "note": "all posts have AI images"}
 
             # Get styles from local settings
@@ -599,8 +667,23 @@ class IdleWorker:
             regenerated = 0
             for post in posts:
                 cat = (post["category"] or "technology").lower()
-                style = styles.get(cat, styles.get("default", "professional digital art"))
-                prompt = f"{style}, blog header about {post['title'][:50]}"
+                # Use Ollama to generate a proper SDXL prompt
+                prompt = f"photorealistic scene related to {post['title'][:50]}, cinematic lighting, 4k, detailed, no people, no text"
+                try:
+                    import httpx
+                    _ollama = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+                    async with httpx.AsyncClient(timeout=30) as _c:
+                        _r = await _c.post(f"{_ollama}/api/generate", json={
+                            "model": "llama3:latest",
+                            "prompt": f"Write a Stable Diffusion XL prompt for a blog featured image about: {post['title'][:80]}\nRequirements: photorealistic scene, cinematic lighting, no people, no text. 1 sentence only. Output ONLY the prompt.",
+                            "stream": False, "options": {"num_predict": 100, "temperature": 0.7},
+                        })
+                        _r.raise_for_status()
+                        _gen = _r.json().get("response", "").strip().strip('"')
+                        if len(_gen) > 20:
+                            prompt = _gen
+                except Exception:
+                    pass  # Use fallback prompt
 
                 with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
                     output_path = tmp.name
@@ -647,6 +730,102 @@ class IdleWorker:
 
         except Exception as e:
             logger.warning("[IDLE] Image regeneration failed: %s", e)
+            return {"error": str(e)}
+
+    async def _backfill_podcasts(self) -> dict:
+        """Generate podcast episodes for published posts that don't have them yet."""
+        try:
+            import asyncpg
+            import os
+            from services.podcast_service import PodcastService, PODCAST_DIR
+
+            cloud_url = os.getenv("DATABASE_URL", "")
+            if not cloud_url:
+                return {"note": "no cloud DB"}
+
+            cloud = await asyncpg.connect(cloud_url)
+            posts = await cloud.fetch("""
+                SELECT id::text, title, content
+                FROM posts WHERE status = 'published'
+                ORDER BY published_at DESC LIMIT 20
+            """)
+
+            svc = PodcastService()
+            generated = 0
+            for post in posts:
+                if svc.episode_exists(post["id"]):
+                    continue
+                try:
+                    result = await svc.generate_episode(
+                        post_id=post["id"],
+                        title=post["title"],
+                        content=post["content"] or "",
+                    )
+                    if result.success:
+                        generated += 1
+                        logger.info("[IDLE] Generated podcast for: %s", post["title"][:40])
+                    if generated >= 2:  # Max 2 per cycle
+                        break
+                except Exception as e:
+                    logger.warning("[IDLE] Podcast backfill failed for %s: %s", post["title"][:30], e)
+
+            await cloud.close()
+            if generated == 0:
+                self._mark_completed("podcast_backfill")
+            return {"generated": generated}
+        except Exception as e:
+            logger.warning("[IDLE] Podcast backfill failed: %s", e)
+            return {"error": str(e)}
+
+    async def _backfill_videos(self) -> dict:
+        """Generate videos for published posts that have podcasts but no video."""
+        try:
+            import asyncpg
+            import os
+            from services.podcast_service import PODCAST_DIR
+            from services.video_service import VIDEO_DIR, generate_video_for_post
+
+            cloud_url = os.getenv("DATABASE_URL", "")
+            if not cloud_url:
+                return {"note": "no cloud DB"}
+
+            cloud = await asyncpg.connect(cloud_url)
+            posts = await cloud.fetch("""
+                SELECT id::text, title, content
+                FROM posts WHERE status = 'published'
+                ORDER BY published_at DESC LIMIT 20
+            """)
+
+            generated = 0
+            for post in posts:
+                post_id = post["id"]
+                podcast_path = PODCAST_DIR / f"{post_id}.mp3"
+                video_path = VIDEO_DIR / f"{post_id}.mp4"
+
+                # Only generate video if podcast exists but video doesn't
+                if not podcast_path.exists() or video_path.exists():
+                    continue
+
+                try:
+                    result = await generate_video_for_post(
+                        post_id=post_id,
+                        title=post["title"],
+                        content=post["content"] or "",
+                    )
+                    if result.success:
+                        generated += 1
+                        logger.info("[IDLE] Generated video for: %s", post["title"][:40])
+                    if generated >= 1:  # Max 1 per cycle (GPU-heavy)
+                        break
+                except Exception as e:
+                    logger.warning("[IDLE] Video backfill failed for %s: %s", post["title"][:30], e)
+
+            await cloud.close()
+            if generated == 0:
+                self._mark_completed("video_backfill")
+            return {"generated": generated}
+        except Exception as e:
+            logger.warning("[IDLE] Video backfill failed: %s", e)
             return {"error": str(e)}
 
     async def _fix_uncategorized_posts(self) -> dict:
@@ -1395,7 +1574,7 @@ class IdleWorker:
         """Export key tables as JSON to ~/.gladlabs/backups/ (no pg_dump needed)."""
         import json
         import os
-        from datetime import datetime
+        from datetime import datetime, timezone
 
         backup_dir = os.path.join(os.path.expanduser("~"), ".gladlabs", "backups")
         os.makedirs(backup_dir, exist_ok=True)
@@ -1411,7 +1590,7 @@ class IdleWorker:
             "cost_logs",
         ]
 
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         backed_up = []
         errors = []
 

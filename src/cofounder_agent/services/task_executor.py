@@ -208,6 +208,23 @@ class TaskExecutor:
                 logger.debug("🔍 [TASK_EXEC_LOOP] Polling for pending tasks...")
                 pending_tasks = await self.database_service.get_pending_tasks(limit=10)
 
+                # Throttle: don't process new tasks if approval queue is too full
+                if pending_tasks:
+                    try:
+                        _max_queue = int(await self._get_setting("max_approval_queue", "3"))
+                        _queue_row = await self.database_service.pool.fetchrow(
+                            "SELECT COUNT(*) as c FROM content_tasks WHERE status = 'awaiting_approval'"
+                        )
+                        _queue_size = _queue_row["c"] if _queue_row else 0
+                        if _queue_size >= _max_queue:
+                            logger.info(
+                                "[THROTTLE] Approval queue full (%d/%d) — skipping generation",
+                                _queue_size, _max_queue,
+                            )
+                            pending_tasks = []  # Skip processing
+                    except Exception:
+                        pass  # On error, proceed normally
+
                 if pending_tasks:
                     logger.info(f"📋 [TASK_EXEC_LOOP] Found {len(pending_tasks)} pending task(s)")
                     for idx, task in enumerate(pending_tasks, 1):
@@ -281,8 +298,9 @@ class TaskExecutor:
                     try:
                         from services.idle_worker import IdleWorker
                         if self.database_service and self.database_service.pool:
-                            idle = IdleWorker(self.database_service.pool)
-                            await idle.run_cycle()
+                            if not hasattr(self, '_idle_worker'):
+                                self._idle_worker = IdleWorker(self.database_service.pool)
+                            await self._idle_worker.run_cycle()
                     except Exception as idle_err:
                         logger.debug("[TASK_EXEC_LOOP] Idle worker error (non-critical): %s", idle_err)
 
@@ -349,6 +367,15 @@ class TaskExecutor:
             logger.info(f"   Name: {task_name}")
             logger.info(f"   Topic: {topic}")
             logger.info(f"   Category: {category}")
+
+            # Pre-generation brand relevance check — reject off-topic before wasting GPU
+            from services.topic_discovery import TopicDiscovery
+            if topic and not TopicDiscovery._is_brand_relevant(topic):
+                logger.info("[TASK_SINGLE] Rejecting off-brand topic: %s", topic[:60])
+                await self.database_service.update_task(
+                    task_id=task_id, updates={"status": "rejected", "result": '{"reason": "Off-topic: not relevant to Glad Labs brand"}'}
+                )
+                return
 
             # Set per-task timeout (15 minutes max for content generation)
             TASK_TIMEOUT_SECONDS = 900  # 15 minutes
@@ -429,35 +456,42 @@ class TaskExecutor:
                 # Emit task.completed webhook unconditionally for all successful completions
                 quality_score = float(result.get("quality_score", 0)) if isinstance(result, dict) else 0.0
                 try:
-                    await emit_webhook_event(self.database_service.pool, "task.completed", {
+                    await emit_webhook_event(getattr(self.database_service, "cloud_pool", None) or self.database_service.pool, "task.completed", {
                         "task_id": task_id, "topic": topic, "quality_score": quality_score,
                         "status": final_status,
                     })
                 except Exception:
                     logger.warning("[WEBHOOK] Failed to emit task.completed event", exc_info=True)
 
-                # Check auto-publish threshold
+                # Check if human approval is required before publishing
                 auto_published = False
                 try:
-                    auto_threshold = await self._get_auto_publish_threshold()
-                    if auto_threshold > 0 and quality_score >= auto_threshold:
+                    require_approval = await self._get_setting("require_human_approval", "true")
+                    if require_approval.lower() in ("true", "1", "yes"):
                         logger.info(
-                            f"🚀 [AUTO_PUBLISH] Quality score {quality_score} >= threshold {auto_threshold}, "
-                            f"auto-publishing task {task_id}"
+                            "[APPROVAL] Human approval required — task %s (score: %.0f) queued as awaiting_approval",
+                            task_id, quality_score,
                         )
-                        await self._auto_publish_task(task_id, quality_score)
-                        auto_published = True
+                    else:
+                        auto_threshold = await self._get_auto_publish_threshold()
+                        if auto_threshold > 0 and quality_score >= auto_threshold:
+                            logger.info(
+                                f"🚀 [AUTO_PUBLISH] Quality score {quality_score} >= threshold {auto_threshold}, "
+                                f"auto-publishing task {task_id}"
+                            )
+                            await self._auto_publish_task(task_id, quality_score)
+                            auto_published = True
                 except Exception:
                     logger.warning("Auto-publish check failed, task stays in awaiting_approval", exc_info=True)
 
                 # Emit webhook event for OpenClaw notifications
                 try:
                     if auto_published:
-                        await emit_webhook_event(self.database_service.pool, "task.auto_published", {
+                        await emit_webhook_event(getattr(self.database_service, "cloud_pool", None) or self.database_service.pool, "task.auto_published", {
                             "task_id": task_id, "topic": topic, "quality_score": quality_score,
                         })
                     else:
-                        await emit_webhook_event(self.database_service.pool, "task.needs_review", {
+                        await emit_webhook_event(getattr(self.database_service, "cloud_pool", None) or self.database_service.pool, "task.needs_review", {
                             "task_id": task_id, "topic": topic, "quality_score": quality_score,
                         })
                 except Exception:
@@ -483,12 +517,14 @@ class TaskExecutor:
                     )
                 else:
                     from services.site_config import site_config as _sc2
+                    _site_url = _sc2.get("site_url", "https://www.gladlabs.io")
                     _api_base = _sc2.get("api_base_url", "https://localhost:8000")
-                    api_link = f"{_api_base}/api/tasks/{task_id}"
+                    approve_link = f"{_api_base}/api/tasks/{task_id}/approve"
                     await _notify_openclaw(
-                        f"Ready for review: \"{topic}\" (score: {quality_score:.0f})\n"
-                        f"Preview: {api_link}\n"
-                        f"Dashboard: http://localhost:3000/d/command-center"
+                        f"📝 Awaiting approval: \"{topic}\"\n"
+                        f"Quality score: {quality_score:.0f}/100\n"
+                        f"Task ID: {task_id}\n"
+                        f"Approve: {approve_link}"
                     )
 
                 return
@@ -586,7 +622,7 @@ class TaskExecutor:
                 )
                 # Emit webhook event for failed task
                 try:
-                    await emit_webhook_event(self.database_service.pool, "task.failed", {
+                    await emit_webhook_event(getattr(self.database_service, "cloud_pool", None) or self.database_service.pool, "task.failed", {
                         "task_id": task_id, "topic": topic, "error": str(error_msg)[:200],
                     })
                 except Exception:
@@ -630,6 +666,20 @@ class TaskExecutor:
         style = task.get("style", "")
         tone = task.get("tone", "")
         target_length = task.get("target_length")
+        # Also check task_metadata (topic discovery stores target_length there)
+        # Also check task_metadata (topic discovery stores target_length/style/tone there)
+        _meta = task.get("task_metadata") or task.get("metadata") or {}
+        if isinstance(_meta, str):
+            try:
+                _meta = json.loads(_meta)
+            except (json.JSONDecodeError, TypeError):
+                _meta = {}
+        if not target_length:
+            target_length = _meta.get("target_length")
+        if not style:
+            style = _meta.get("style", "")
+        if not tone:
+            tone = _meta.get("tone", "")
         agent_id = task.get("agent_id", "content-agent")
         writing_style_id = task.get("writing_style_id")
 
@@ -1654,9 +1704,9 @@ The key to success with {topic} is staying informed, adapting to changes, and co
         }
 
     async def _get_auto_publish_threshold(self) -> float:
-        """Read auto_publish_threshold from settings table."""
+        """Read auto_publish_threshold from app_settings table."""
         try:
-            value = await self.database_service.get_setting_value("auto_publish_threshold", default=0.0)
+            value = await self._get_setting("auto_publish_threshold", "0")
             return float(value) if value else 0.0
         except Exception as e:
             logger.warning("[AUTO_PUBLISH] Failed to read auto_publish_threshold: %s", e)
@@ -1670,21 +1720,55 @@ The key to success with {topic} is staying informed, adapting to changes, and co
         """
         from services.publish_service import publish_post_from_task
 
-        # Update status to approved first
+        # Check daily post limit before publishing
+        try:
+            daily_limit = int(await self._get_setting("daily_post_limit", "1"))
+            # Check production posts table (cloud_pool) for accurate daily count
+            check_pool = getattr(self.database_service, 'cloud_pool', self.database_service.pool)
+            published_today = await check_pool.fetchval(
+                "SELECT COUNT(*) FROM posts WHERE status = 'published' AND published_at::date = CURRENT_DATE"
+            )
+            if published_today >= daily_limit:
+                logger.info("[AUTO_PUBLISH] Daily limit reached (%d/%d), task %s stays in awaiting_approval",
+                           published_today, daily_limit, task_id)
+                return
+        except Exception as e:
+            logger.warning("[AUTO_PUBLISH] Failed to check daily limit: %s", e)
+
+        # Fetch the task to check completeness before publishing
+        task = await self.database_service.get_task(task_id)
+        if not task:
+            logger.error("[AUTO_PUBLISH] Task %s not found", task_id)
+            return
+
+        # Require featured image for auto-publish
+        if not task.get("featured_image_url"):
+            logger.info("[AUTO_PUBLISH] Task %s missing featured image, stays in awaiting_approval", task_id)
+            return
+
+        # Update status to approved
         await self.database_service.update_task_status(task_id, "approved")
 
-        # Store auto-publish metadata on the task
+        # Merge auto-publish metadata into existing task_metadata
+        existing_metadata = task.get("task_metadata") or {}
+        if isinstance(existing_metadata, str):
+            try:
+                existing_metadata = json.loads(existing_metadata) if existing_metadata else {}
+            except (json.JSONDecodeError, TypeError):
+                existing_metadata = {}
+        existing_metadata.update({
+            "auto_published": True,
+            "auto_publish_quality_score": quality_score,
+            "auto_published_at": datetime.now(timezone.utc).isoformat(),
+        })
+
         await self.database_service.update_task(task_id, {
             "approval_status": "approved",
             "publish_mode": "auto",
-            "task_metadata": json.dumps({
-                "auto_published": True,
-                "auto_publish_quality_score": quality_score,
-                "auto_published_at": datetime.now(timezone.utc).isoformat(),
-            }),
+            "task_metadata": json.dumps(existing_metadata, default=str),
         })
 
-        # Fetch the full task to pass to the shared publisher
+        # Re-fetch with updated metadata
         task = await self.database_service.get_task(task_id)
         if not task:
             logger.error("[AUTO_PUBLISH] Task %s not found after approval", task_id)

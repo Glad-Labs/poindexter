@@ -60,6 +60,7 @@ _WORKER_ROUTES = [
     ("routes.metrics_routes", "metrics_router", "metrics_router", "metrics & analytics"),
     ("routes.settings_routes", "router", "settings_router", "user settings"),
     ("routes.podcast_routes", "router", "podcast_router", "podcast RSS feed & episodes"),
+    ("routes.video_routes", "router", "video_router", "video episodes & generation"),
 ]
 
 # Backward-compatible alias: defaults to coordinator manifest

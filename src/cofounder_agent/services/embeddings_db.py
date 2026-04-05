@@ -39,6 +39,7 @@ class EmbeddingsDatabase(DatabaseServiceMixin):
         content_hash: str,
         embedding: list[float],
         metadata: Optional[Dict[str, Any]] = None,
+        embedding_model: Optional[str] = None,
     ) -> str:
         """
         Store an embedding vector in the database.
@@ -57,33 +58,34 @@ class EmbeddingsDatabase(DatabaseServiceMixin):
         """
         import json
 
-        embedding_id = str(uuid4())
         now = datetime.now(timezone.utc)
         vector_str = "[" + ",".join(str(v) for v in embedding) + "]"
         metadata_json = json.dumps(metadata) if metadata else None
 
         try:
             async with self.pool.acquire() as conn:
-                await conn.execute(
+                row = await conn.fetchrow(
                     """
-                    INSERT INTO embeddings (id, source_type, source_id, content_hash,
-                                            embedding, metadata, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, $5::vector, $6::jsonb, $7, $8)
-                    ON CONFLICT (source_type, source_id)
+                    INSERT INTO embeddings (source_table, source_id, content_hash,
+                                            embedding, embedding_model, metadata, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4::vector, $5, $6::jsonb, $7, $8)
+                    ON CONFLICT (source_table, source_id, chunk_index, embedding_model)
                     DO UPDATE SET content_hash = EXCLUDED.content_hash,
                                   embedding   = EXCLUDED.embedding,
                                   metadata    = EXCLUDED.metadata,
                                   updated_at  = EXCLUDED.updated_at
+                    RETURNING id
                     """,
-                    embedding_id,
                     source_type,
                     source_id,
                     content_hash,
                     vector_str,
+                    embedding_model or "nomic-embed-text",
                     metadata_json,
                     now,
                     now,
                 )
+            embedding_id = str(row["id"]) if row else None
             logger.info(
                 "Stored embedding",
                 source_type=source_type,
@@ -127,10 +129,10 @@ class EmbeddingsDatabase(DatabaseServiceMixin):
                 if source_type:
                     rows = await conn.fetch(
                         """
-                        SELECT source_type, source_id, content_hash, metadata,
+                        SELECT source_table, source_id, content_hash, metadata,
                                1 - (embedding <=> $1::vector) as similarity
                         FROM embeddings
-                        WHERE source_type = $2
+                        WHERE source_table = $2
                           AND 1 - (embedding <=> $1::vector) >= $3
                         ORDER BY embedding <=> $1::vector
                         LIMIT $4
@@ -143,7 +145,7 @@ class EmbeddingsDatabase(DatabaseServiceMixin):
                 else:
                     rows = await conn.fetch(
                         """
-                        SELECT source_type, source_id, content_hash, metadata,
+                        SELECT source_table, source_id, content_hash, metadata,
                                1 - (embedding <=> $1::vector) as similarity
                         FROM embeddings
                         WHERE 1 - (embedding <=> $1::vector) >= $2
@@ -185,10 +187,10 @@ class EmbeddingsDatabase(DatabaseServiceMixin):
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
                     """
-                    SELECT id, source_type, source_id, content_hash, metadata,
+                    SELECT id, source_table, source_id, content_hash, metadata,
                            created_at, updated_at
                     FROM embeddings
-                    WHERE source_type = $1 AND source_id = $2
+                    WHERE source_table = $1 AND source_id = $2
                     """,
                     source_type,
                     source_id,
@@ -223,13 +225,13 @@ class EmbeddingsDatabase(DatabaseServiceMixin):
             async with self.pool.acquire() as conn:
                 if source_id:
                     result = await conn.execute(
-                        "DELETE FROM embeddings WHERE source_type = $1 AND source_id = $2",
+                        "DELETE FROM embeddings WHERE source_table = $1 AND source_id = $2",
                         source_type,
                         source_id,
                     )
                 else:
                     result = await conn.execute(
-                        "DELETE FROM embeddings WHERE source_type = $1",
+                        "DELETE FROM embeddings WHERE source_table = $1",
                         source_type,
                     )
             # asyncpg returns "DELETE N"
@@ -269,7 +271,7 @@ class EmbeddingsDatabase(DatabaseServiceMixin):
                 row = await conn.fetchrow(
                     """
                     SELECT content_hash FROM embeddings
-                    WHERE source_type = $1 AND source_id = $2
+                    WHERE source_table = $1 AND source_id = $2
                     """,
                     source_type,
                     source_id,

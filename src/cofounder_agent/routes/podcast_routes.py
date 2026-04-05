@@ -52,14 +52,12 @@ def _rfc2822(dt: datetime) -> str:
 
 
 @router.get("/feed.xml", response_class=Response)
-async def podcast_feed(
-    db_service=None,
-):
+async def podcast_feed():
     """Generate a valid podcast RSS feed (Apple Podcasts / Spotify compatible)."""
     # Lazy import to avoid circular deps
-    from services.container import service_container
+    from utils.route_utils import get_services
 
-    db = service_container.db_service
+    db = get_services().get_database()
 
     svc = PodcastService()
     episodes_on_disk = {ep["post_id"]: ep for ep in svc.list_episodes()}
@@ -75,9 +73,11 @@ async def podcast_feed(
     post_ids = list(episodes_on_disk.keys())
     posts_meta = []
 
-    if db and hasattr(db, "pool") and db.pool:
+    # Use cloud_pool (Railway) where published posts live
+    pool = getattr(db, "cloud_pool", None) or (db.pool if db else None)
+    if pool:
         try:
-            async with db.pool.acquire() as conn:
+            async with pool.acquire() as conn:
                 rows = await conn.fetch(
                     """
                     SELECT id::text, title, slug, excerpt, published_at
@@ -261,15 +261,16 @@ async def list_episodes():
 @router.post("/generate/{post_id}", dependencies=[Depends(verify_api_token)])
 async def generate_episode(post_id: str):
     """Manually trigger podcast episode generation for a published post."""
-    from services.container import service_container
+    from utils.route_utils import get_services
 
-    db = service_container.db_service
-    if not db or not hasattr(db, "pool") or not db.pool:
+    db = get_services().get_database()
+    pool = getattr(db, "cloud_pool", None) or (db.pool if db else None)
+    if not pool:
         raise HTTPException(status_code=503, detail="Database not available")
 
-    # Fetch post content
+    # Fetch post content from cloud DB (Railway) where published posts live
     try:
-        async with db.pool.acquire() as conn:
+        async with pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
                 SELECT id::text, title, content

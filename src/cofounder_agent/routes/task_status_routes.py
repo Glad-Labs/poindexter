@@ -433,7 +433,7 @@ async def get_task_status_history(
         # than the enhanced service dependency injection
         from services.tasks_db import TasksDatabase
 
-        task_db = TasksDatabase(db_service._pool if hasattr(db_service, "_pool") else None)  # type: ignore[arg-type, attr-defined]
+        task_db = TasksDatabase(db_service.pool)
         history = await task_db.get_status_history(task_id, limit)
 
         return {

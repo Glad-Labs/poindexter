@@ -1,33 +1,23 @@
 {
   "uid": "gpu-metrics",
-  "title": "GPU Metrics",
-  "description": "RTX 5090",
-  "tags": [
-    "glad-labs"
-  ],
+  "title": "GPU & Power Metrics",
+  "description": "RTX 5090 + HX1500i PSU",
+  "tags": ["glad-labs", "hardware"],
   "editable": true,
   "schemaVersion": 39,
   "refresh": "30s",
-  "time": {
-    "from": "now-30d",
-    "to": "now"
-  },
+  "time": { "from": "now-6h", "to": "now" },
   "timezone": "browser",
   "panels": [
     {
       "id": 1,
       "type": "gauge",
-      "title": "Util %",
+      "title": "GPU Util %",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 0,
-        "y": 0
-      },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
       "fieldConfig": {
         "defaults": {
           "min": 0,
@@ -36,18 +26,9 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 60.0
-              },
-              {
-                "color": "red",
-                "value": 85.0
-              }
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 60 },
+              { "color": "red", "value": 85 }
             ]
           }
         },
@@ -55,9 +36,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         }
@@ -78,17 +57,12 @@
     {
       "id": 2,
       "type": "gauge",
-      "title": "Temp",
+      "title": "GPU Temp",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 6,
-        "y": 0
-      },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
       "fieldConfig": {
         "defaults": {
           "min": 0,
@@ -97,18 +71,9 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 60.0
-              },
-              {
-                "color": "red",
-                "value": 85.0
-              }
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 60 },
+              { "color": "red", "value": 85 }
             ]
           }
         },
@@ -116,9 +81,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         }
@@ -139,17 +102,12 @@
     {
       "id": 3,
       "type": "gauge",
-      "title": "Power",
+      "title": "GPU Power",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 12,
-        "y": 0
-      },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
       "fieldConfig": {
         "defaults": {
           "min": 0,
@@ -158,18 +116,9 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 360.0
-              },
-              {
-                "color": "red",
-                "value": 510.0
-              }
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 360 },
+              { "color": "red", "value": 510 }
             ]
           }
         },
@@ -177,9 +126,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         }
@@ -205,12 +152,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 18,
-        "y": 0
-      },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
       "fieldConfig": {
         "defaults": {
           "min": 0,
@@ -219,18 +161,9 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 60.0
-              },
-              {
-                "color": "red",
-                "value": 85.0
-              }
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 60 },
+              { "color": "red", "value": 85 }
             ]
           }
         },
@@ -238,9 +171,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         }
@@ -259,32 +190,320 @@
       ]
     },
     {
-      "id": 5,
-      "type": "table",
-      "title": "Recent",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 24,
-        "x": 0,
-        "y": 5
-      },
+      "id": 10,
+      "type": "gauge",
+      "title": "Wall Power (HX1500i)",
+      "datasource": { "type": "prometheus", "uid": "gpu-prometheus" },
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 5 },
       "fieldConfig": {
         "defaults": {
-          "custom": {
-            "align": "auto",
-            "displayMode": "auto"
+          "min": 0,
+          "max": 1500,
+          "unit": "watt",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 500 },
+              { "color": "orange", "value": 800 },
+              { "color": "red", "value": 1200 }
+            ]
           }
         },
         "overrides": []
       },
       "options": {
-        "showHeader": true,
-        "cellHeight": "sm"
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
       },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "gpu-prometheus" },
+          "expr": "psu_power_watts{sensor=\"estimated_input_power\"}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "gauge",
+      "title": "DC Output (HX1500i)",
+      "datasource": { "type": "prometheus", "uid": "gpu-prometheus" },
+      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 5 },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1500,
+          "unit": "watt",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 500 },
+              { "color": "orange", "value": 800 },
+              { "color": "red", "value": 1200 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "gpu-prometheus" },
+          "expr": "psu_power_watts{sensor=\"total_power_output\"}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "gauge",
+      "title": "CPU Package Power",
+      "datasource": { "type": "prometheus", "uid": "gpu-prometheus" },
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 5 },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 200,
+          "unit": "watt",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 100 },
+              { "color": "red", "value": 150 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "gpu-prometheus" },
+          "expr": "system_cpu_package_power_watts",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Power Over Time",
+      "datasource": { "type": "prometheus", "uid": "gpu-prometheus" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 10 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisLabel": "Watts",
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
+          "unit": "watt"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Wall Power" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "fixedColor": "red", "mode": "fixed" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "DC Output" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "fixedColor": "orange", "mode": "fixed" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "GPU" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "fixedColor": "blue", "mode": "fixed" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "CPU" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "fixedColor": "green", "mode": "fixed" }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": ["mean", "max", "lastNotNull"],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "gpu-prometheus" },
+          "expr": "psu_power_watts{sensor=\"estimated_input_power\"}",
+          "legendFormat": "Wall Power",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "gpu-prometheus" },
+          "expr": "psu_power_watts{sensor=\"total_power_output\"}",
+          "legendFormat": "DC Output",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "gpu-prometheus" },
+          "expr": "nvidia_gpu_power_draw_watts",
+          "legendFormat": "GPU",
+          "refId": "C"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "gpu-prometheus" },
+          "expr": "system_cpu_package_power_watts",
+          "legendFormat": "CPU",
+          "refId": "D"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Electricity Cost (EIA rate)",
+      "datasource": { "type": "prometheus", "uid": "gpu-prometheus" },
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 18 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisLabel": "$/day",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
+          "unit": "currencyUSD",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["mean", "lastNotNull"],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "gpu-prometheus" },
+          "expr": "psu_power_watts{sensor=\"estimated_input_power\"} / 1000 * 0.14 * 24",
+          "legendFormat": "Est. Daily Cost",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "PSU Temperatures",
+      "datasource": { "type": "prometheus", "uid": "gpu-prometheus" },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 18 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
+          "unit": "celsius"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "PSU VRM" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "fixedColor": "red", "mode": "fixed" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "PSU Case" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "fixedColor": "orange", "mode": "fixed" }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": ["mean", "max", "lastNotNull"],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "gpu-prometheus" },
+          "expr": "psu_temperature_celsius{sensor=\"vrm_temperature\"}",
+          "legendFormat": "PSU VRM",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "gpu-prometheus" },
+          "expr": "psu_temperature_celsius{sensor=\"case_temperature\"}",
+          "legendFormat": "PSU Case",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Recent GPU Samples",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "displayMode": "auto" } },
+        "overrides": []
+      },
+      "options": { "showHeader": true, "cellHeight": "sm" },
       "targets": [
         {
           "datasource": {
@@ -301,30 +520,17 @@
     {
       "id": 6,
       "type": "table",
-      "title": "Daily Avg",
+      "title": "Daily GPU Avg",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "gridPos": {
-        "h": 7,
-        "w": 24,
-        "x": 0,
-        "y": 15
-      },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 32 },
       "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "displayMode": "auto"
-          }
-        },
+        "defaults": { "custom": { "align": "auto", "displayMode": "auto" } },
         "overrides": []
       },
-      "options": {
-        "showHeader": true,
-        "cellHeight": "sm"
-      },
+      "options": { "showHeader": true, "cellHeight": "sm" },
       "targets": [
         {
           "datasource": {

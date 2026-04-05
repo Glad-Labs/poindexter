@@ -30,6 +30,7 @@ Usage:
 
 import asyncio
 import os
+import httpx
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -71,9 +72,10 @@ class ProviderStatus:
 
     @property
     def cache_expired(self) -> bool:
-        """Check if cache should be refreshed (5 min TTL)"""
+        """Check if cache should be refreshed (30s TTL for failures, 5 min for success)"""
         now = datetime.now(timezone.utc)
-        return now - self.last_checked > timedelta(minutes=5)
+        ttl = timedelta(minutes=5) if self.is_available else timedelta(seconds=30)
+        return now - self.last_checked > ttl
 
 
 @dataclass
@@ -122,28 +124,25 @@ class OllamaAdapter(ProviderAdapter):
     def __init__(self):
         from .ollama_client import OllamaClient
 
-        self.host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+        self.host = os.getenv("OLLAMA_BASE_URL", os.getenv("OLLAMA_HOST", "http://host.docker.internal:11434"))
         self.client = OllamaClient(base_url=self.host)
         self.provider_type = ProviderType.OLLAMA
 
     async def is_available(self) -> bool:
         """Check if Ollama service is running"""
         try:
-            # Use the shared httpx.AsyncClient from OllamaClient instead of
-            # creating a new one per call (#1326).
-            response = await self.client.client.get(
-                f"{self.host}/api/tags", timeout=3.0
-            )
-            is_available = response.status_code == 200
-            if is_available:
-                logger.debug(
-                    "Ollama available", host=self.host, status_code=response.status_code
+            # Try shared client first, fall back to fresh client if closed
+            try:
+                response = await self.client.client.get(
+                    f"{self.host}/api/tags", timeout=3.0
                 )
-            else:
-                logger.debug(
-                    "Ollama returning non-200 status", status_code=response.status_code
-                )
-            return is_available
+            except Exception:
+                # Shared client may be closed — create a fresh one
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(
+                        f"{self.host}/api/tags", timeout=3.0
+                    )
+            return response.status_code == 200
         except asyncio.TimeoutError:
             logger.debug("Ollama health check timed out (3s)", host=self.host)
             return False
@@ -160,7 +159,7 @@ class OllamaAdapter(ProviderAdapter):
         **kwargs,
     ) -> ModelResponse:
         """Generate text using Ollama"""
-        model = model or "qwen3:8b"
+        model = model or os.getenv("DEFAULT_OLLAMA_MODEL", "auto")
         start_time = datetime.now(timezone.utc)
 
         try:

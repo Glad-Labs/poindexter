@@ -314,6 +314,8 @@ class ModelConverter:
     def to_setting_response(row: Any) -> SettingResponse:
         """Convert row to SettingResponse model."""
         data = ModelConverter._normalize_row_data(row)
+        if "id" in data:
+            data["id"] = str(data["id"])
         return SettingResponse(**data)
 
     @staticmethod

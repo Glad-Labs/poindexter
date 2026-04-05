@@ -78,24 +78,22 @@ class AIContentGenerator:
             logger.debug(f"ℹ️ Ollama already checked previously: {self.ollama_available}")
             return
 
-        logger.info("🔍 Checking if Ollama server is running...")
+        ollama_url = os.getenv("OLLAMA_BASE_URL", os.getenv("OLLAMA_HOST", "http://host.docker.internal:11434"))
+        logger.info(f"🔍 Checking if Ollama server is running at {ollama_url}...")
         try:
             async with httpx.AsyncClient(timeout=5) as client:
-                logger.debug("   → Sending request to http://localhost:11434/api/tags")
-                response = await client.get("http://localhost:11434/api/tags")
+                response = await client.get(f"{ollama_url}/api/tags")
                 self.ollama_available = response.status_code == 200
-                logger.debug(f"   ← Response status: {response.status_code}")
 
             if self.ollama_available:
-                logger.info("✅ Ollama IS running at http://localhost:11434")
+                logger.info(f"✅ Ollama IS running at {ollama_url}")
             else:
                 logger.warning(f"⚠️ Ollama returned non-200 status: {response.status_code}")
         except Exception as e:
-            logger.warning(f"⚠️ Ollama health check failed: {type(e).__name__}: {e}", exc_info=True)
+            logger.warning(f"⚠️ Ollama health check failed: {type(e).__name__}: {e}")
             self.ollama_available = False
         finally:
             self.ollama_checked = True
-            logger.debug(f"   → Ollama checked. Result: {self.ollama_available}")
 
     def _validate_content(
         self, content: str, topic: str, target_length: int
@@ -766,7 +764,8 @@ class AIContentGenerator:
             return None
 
         logger.info("🔄 [ATTEMPT 1/3] Trying Ollama (Local, GPU-accelerated)...")
-        logger.info("   ├─ Endpoint: http://localhost:11434")
+        ollama_endpoint = os.getenv("OLLAMA_BASE_URL", os.getenv("OLLAMA_HOST", "http://host.docker.internal:11434"))
+        logger.info("   ├─ Endpoint: %s", ollama_endpoint)
         logger.info("   └─ Status: Connecting...\n")
         try:
             from .ollama_client import OllamaClient
@@ -815,8 +814,8 @@ class AIContentGenerator:
                     logger.info("      ⏱️  Generating content (timeout: 120s)...")
 
                     # Calculate max tokens: markdown content + headers + lists need ~2-2.5 tokens per word
-                    # Using 2.5x multiplier to prevent token cutoff during generation
-                    max_tokens = int(target_length * 3.0)
+                    # Using 4x multiplier to prevent truncation mid-sentence
+                    max_tokens = int(target_length * 4.0)
                     logger.debug(f"      Max tokens: {max_tokens} (target_length: {target_length})")
 
                     response = await ollama.generate(

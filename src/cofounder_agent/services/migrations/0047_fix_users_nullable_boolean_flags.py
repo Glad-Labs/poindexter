@@ -12,46 +12,69 @@ Python but is neither TRUE nor FALSE in SQL, causing:
 Fix:
 1. Backfill existing NULLs with safe defaults (is_active→TRUE, others→FALSE/0)
 2. Add NOT NULL + DEFAULT constraints to all four columns
+
+NOTE: The users table may be Gitea-managed and some columns (e.g. is_locked,
+totp_enabled, failed_login_attempts) may not exist.  Each column is checked
+individually so missing columns are silently skipped.
 """
 
-SQL_UP = """
--- Backfill existing NULLs with safe defaults before adding NOT NULL
-UPDATE users SET is_active             = TRUE  WHERE is_active             IS NULL;
-UPDATE users SET is_locked             = FALSE WHERE is_locked             IS NULL;
-UPDATE users SET totp_enabled          = FALSE WHERE totp_enabled          IS NULL;
-UPDATE users SET failed_login_attempts = 0     WHERE failed_login_attempts IS NULL;
+from services.logger_config import get_logger
 
--- Apply NOT NULL and DEFAULT constraints
-ALTER TABLE users
-    ALTER COLUMN is_active             SET NOT NULL,
-    ALTER COLUMN is_active             SET DEFAULT TRUE,
-    ALTER COLUMN is_locked             SET NOT NULL,
-    ALTER COLUMN is_locked             SET DEFAULT FALSE,
-    ALTER COLUMN totp_enabled          SET NOT NULL,
-    ALTER COLUMN totp_enabled          SET DEFAULT FALSE,
-    ALTER COLUMN failed_login_attempts SET NOT NULL,
-    ALTER COLUMN failed_login_attempts SET DEFAULT 0;
-"""
+logger = get_logger(__name__)
 
-SQL_DOWN = """
--- Remove constraints — columns revert to nullable without defaults
-ALTER TABLE users
-    ALTER COLUMN is_active             DROP NOT NULL,
-    ALTER COLUMN is_active             DROP DEFAULT,
-    ALTER COLUMN is_locked             DROP NOT NULL,
-    ALTER COLUMN is_locked             DROP DEFAULT,
-    ALTER COLUMN totp_enabled          DROP NOT NULL,
-    ALTER COLUMN totp_enabled          DROP DEFAULT,
-    ALTER COLUMN failed_login_attempts DROP NOT NULL,
-    ALTER COLUMN failed_login_attempts DROP DEFAULT;
-"""
+# Columns to fix: (name, backfill_value, default_value)
+_COLUMNS = [
+    ("is_active",             "TRUE",  "TRUE"),
+    ("is_locked",             "FALSE", "FALSE"),
+    ("totp_enabled",          "FALSE", "FALSE"),
+    ("failed_login_attempts", "0",     "0"),
+]
+
+
+async def _column_exists(conn, table: str, column: str) -> bool:
+    return await conn.fetchval(
+        """
+        SELECT EXISTS(
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = $1 AND column_name = $2
+        )
+        """,
+        table,
+        column,
+    )
 
 
 async def run_migration(conn) -> None:
-    """Apply migration 0047."""
-    await conn.execute(SQL_UP)
+    """Apply migration 0047 — skips columns that don't exist."""
+    table_exists = await conn.fetchval(
+        "SELECT EXISTS(SELECT FROM information_schema.tables WHERE table_name = 'users')"
+    )
+    if not table_exists:
+        logger.warning("Table 'users' does not exist — skipping migration 0047")
+        return
+
+    for col, backfill, default in _COLUMNS:
+        if not await _column_exists(conn, "users", col):
+            logger.info(f"users.{col} does not exist — skipping")
+            continue
+
+        await conn.execute(f"UPDATE users SET {col} = {backfill} WHERE {col} IS NULL")
+        await conn.execute(f"ALTER TABLE users ALTER COLUMN {col} SET NOT NULL")
+        await conn.execute(f"ALTER TABLE users ALTER COLUMN {col} SET DEFAULT {default}")
+        logger.info(f"Set NOT NULL + DEFAULT {default} on users.{col}")
 
 
 async def rollback_migration(conn) -> None:
-    """Roll back migration 0047."""
-    await conn.execute(SQL_DOWN)
+    """Roll back migration 0047 — skips columns that don't exist."""
+    table_exists = await conn.fetchval(
+        "SELECT EXISTS(SELECT FROM information_schema.tables WHERE table_name = 'users')"
+    )
+    if not table_exists:
+        return
+
+    for col, _, _ in _COLUMNS:
+        if not await _column_exists(conn, "users", col):
+            continue
+        await conn.execute(f"ALTER TABLE users ALTER COLUMN {col} DROP NOT NULL")
+        await conn.execute(f"ALTER TABLE users ALTER COLUMN {col} DROP DEFAULT")
+        logger.info(f"Rolled back NOT NULL + DEFAULT on users.{col}")

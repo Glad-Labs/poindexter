@@ -197,15 +197,22 @@ services:
     environment:
       DEPLOYMENT_MODE: worker
       ENVIRONMENT: production
+      DEVELOPMENT_MODE: "true"
       PORT: "8002"
       DATABASE_URL: ${CLOUD_DATABASE_URL:?Set CLOUD_DATABASE_URL in .env}
       LOCAL_DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-gladlabs}:${LOCAL_POSTGRES_PASSWORD:-gladlabs-brain-local}@postgres-local:5432/${LOCAL_POSTGRES_DB:-gladlabs_brain}"
       OLLAMA_BASE_URL: "http://host.docker.internal:11434"
+      DEFAULT_OLLAMA_MODEL: ${DEFAULT_OLLAMA_MODEL:-auto}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       SITE_NAME: "Glad Labs"
       SITE_DOMAIN: "gladlabs.io"
       SITE_URL: "https://www.gladlabs.io"
       API_BASE_URL: "https://cofounder-production.up.railway.app"
       COMPANY_NAME: "Glad Labs"
+      HOST_HOME: "C:/Users/mattm"
+    volumes:
+      - ${USERPROFILE:-.}/.gladlabs:/root/.gladlabs
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

@@ -229,17 +229,9 @@ async def approve_task(
 
         # Check if task is in a state that can be approved/rejected
         current_status = task.get("status", "unknown")
-        # Allow approval for multiple statuses: awaiting_approval (ideal), but also handle failed,
-        # completed, pending tasks that may need approval decision
         allowed_statuses = [
             "awaiting_approval",
-            "pending",
-            "in_progress",
-            "completed",
-            "rejected",
-            "failed",
-            "approved",
-            "published",
+            "completed",  # QA-passed tasks that haven't been reviewed yet
         ]
         if current_status not in allowed_statuses:
             raise HTTPException(
@@ -318,8 +310,63 @@ async def approve_task(
             logger.error(f"Failed to update task status to {new_status}: {str(e)}", exc_info=True)
             raise HTTPException(status_code=500, detail="Failed to update task status") from e
 
-        # Auto-publish if approved and auto_publish=True
-        if approved and auto_publish:
+        # Check if staging mode is enabled (create draft + preview instead of publishing)
+        staging_mode = False
+        try:
+            _staging = await db_service.pool.fetchval(
+                "SELECT value FROM app_settings WHERE key = 'staging_mode'",
+            )
+            staging_mode = str(_staging).lower() in ("true", "1", "yes") if _staging else False
+        except Exception:
+            pass
+
+        if approved and auto_publish and staging_mode:
+            # STAGING MODE: Create draft post with preview token, generate media, send preview link
+            logger.info(f"[STAGING] Creating draft preview for task {task_id}")
+            try:
+                from services.publish_service import publish_post_from_task
+                import secrets as _secrets
+
+                preview_token = _secrets.token_hex(16)  # 32-char hex token
+
+                pub_result = await publish_post_from_task(
+                    db_service, task, task_id,
+                    publisher="operator",
+                    trigger_revalidation=False,  # Don't revalidate — it's a draft
+                    queue_social=False,  # Don't post to social yet
+                    draft_mode=True,  # New param: create as draft instead of published
+                )
+                if pub_result.success:
+                    # Set preview token on the draft post
+                    pool = getattr(db_service, "cloud_pool", None) or db_service.pool
+                    await pool.execute(
+                        "UPDATE posts SET preview_token = $1, status = 'draft' WHERE id = $2",
+                        preview_token, pub_result.post_id,
+                    )
+                    merged_result["post_id"] = pub_result.post_id
+                    merged_result["post_slug"] = pub_result.post_slug
+                    merged_result["preview_token"] = preview_token
+
+                    # Send preview link to Telegram
+                    preview_url = f"https://www.gladlabs.io/preview/{preview_token}"
+                    try:
+                        from services.task_executor import _notify_openclaw
+                        topic_name = task.get("topic", task.get("title", "Untitled"))
+                        await _notify_openclaw(
+                            f"📋 Draft ready for review: \"{topic_name}\"\n"
+                            f"Preview: {preview_url}\n"
+                            f"Task: {task_id}\n"
+                            f"Approve to publish: reply 'publish {task_id[:8]}'"
+                        )
+                    except Exception:
+                        logger.debug("[STAGING] Notification failed", exc_info=True)
+                else:
+                    logger.warning("[STAGING] Draft creation failed: %s", pub_result.error)
+            except Exception as e:
+                logger.critical(f"[STAGING] Error: {type(e).__name__}: {e}", exc_info=True)
+
+        elif approved and auto_publish:
+            # DIRECT PUBLISH MODE (staging_mode=false)
             logger.info(f"Auto-publishing approved task {task_id}")
             try:
                 from services.publish_service import publish_post_from_task
@@ -498,6 +545,65 @@ async def publish_task(
     except Exception as e:
         logger.error(f"Failed to publish task {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to publish task") from e
+
+
+@publishing_router.post(
+    "/{post_id}/go-live", summary="Promote a draft post to published (go live)"
+)
+async def go_live(
+    post_id: str,
+    token: str = Depends(verify_api_token),
+    db_service: DatabaseService = Depends(get_database_dependency),
+):
+    """Promote a draft post to published status. Triggers RSS, social, revalidation."""
+    pool = getattr(db_service, "cloud_pool", None) or db_service.pool
+
+    # Verify post exists and is a draft
+    row = await pool.fetchrow(
+        "SELECT id, title, slug, status FROM posts WHERE id::text = $1", post_id
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Post not found")
+    if row["status"] != "draft":
+        raise HTTPException(status_code=400, detail=f"Post is '{row['status']}', not 'draft'")
+
+    # Promote to published
+    from datetime import datetime, timezone
+    await pool.execute(
+        """UPDATE posts SET status = 'published', published_at = $1, preview_token = NULL
+           WHERE id::text = $2""",
+        datetime.now(timezone.utc), post_id,
+    )
+
+    # Trigger revalidation
+    try:
+        from routes.revalidate_routes import revalidate_path
+        await revalidate_path(f"/posts/{row['slug']}")
+        await revalidate_path("/")
+        await revalidate_path("/archive/1")
+    except Exception:
+        logger.debug("[GO-LIVE] Revalidation failed (non-fatal)", exc_info=True)
+
+    # Queue social/podcast/video (they check for existing files)
+    if _should_run_post_publish_hooks():
+        try:
+            from services.task_executor import _notify_openclaw
+            from services.site_config import site_config as _sc
+            _site_url = _sc.get("site_url", "https://www.gladlabs.io")
+            await _notify_openclaw(
+                f"🚀 Published: \"{row['title']}\"\n{_site_url}/posts/{row['slug']}"
+            )
+        except Exception:
+            pass
+
+    logger.info("[GO-LIVE] Post %s promoted to published: %s", post_id, row["slug"])
+    return {
+        "success": True,
+        "post_id": post_id,
+        "slug": row["slug"],
+        "published_url": f"/posts/{row['slug']}",
+        "message": "Post is now live",
+    }
 
 
 @publishing_router.post(

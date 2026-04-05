@@ -716,7 +716,7 @@ async def export_settings(
     include_secrets: bool = Query(False, description="Include encrypted secrets in export"),
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
-    format: str = Query("json", regex="^(json|yaml|csv)$", description="Export format"),
+    format: str = Query("json", pattern="^(json|yaml|csv)$", description="Export format"),
 ):
     """
     Export all settings (admin only).

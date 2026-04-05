@@ -75,7 +75,7 @@ async def subscribe_to_newsletter(
 
         # Check for existing subscription — return generic message to prevent email enumeration.
         # An attacker must not be able to determine whether an email is already registered.
-        existing = await db.pool.fetchrow(
+        existing = await (getattr(db, "cloud_pool", None) or db.pool).fetchrow(
             """
             SELECT id, unsubscribed_at FROM newsletter_subscribers
             WHERE email = $1
@@ -102,7 +102,7 @@ async def subscribe_to_newsletter(
             interest_str = json.dumps(payload.interest_categories)
 
         # Insert new subscriber
-        subscriber_id = await db.pool.fetchval(
+        subscriber_id = await (getattr(db, "cloud_pool", None) or db.pool).fetchval(
             """
             INSERT INTO newsletter_subscribers 
             (email, first_name, last_name, company, interest_categories, 
@@ -158,7 +158,7 @@ async def unsubscribe_from_newsletter(
     """
     try:
         # Update subscriber as unsubscribed
-        result = await db.pool.execute(
+        result = await (getattr(db, "cloud_pool", None) or db.pool).execute(
             """
             UPDATE newsletter_subscribers
             SET unsubscribed_at = CURRENT_TIMESTAMP,
@@ -197,7 +197,7 @@ async def get_subscriber_count(
 ):
     """Get total active newsletter subscribers count"""
     try:
-        count = await db.pool.fetchval("""
+        count = await (getattr(db, "cloud_pool", None) or db.pool).fetchval("""
             SELECT COUNT(*) FROM newsletter_subscribers 
             WHERE unsubscribed_at IS NULL AND verified = TRUE
             """)

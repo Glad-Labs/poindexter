@@ -31,7 +31,7 @@ logger = get_logger(__name__)
 
 DEFAULT_MODEL = os.getenv("DEFAULT_OLLAMA_MODEL", "auto")
 DEFAULT_BASE_URL = (
-    os.getenv("OLLAMA_BASE_URL") or os.getenv("OLLAMA_HOST") or "http://localhost:11434"
+    os.getenv("OLLAMA_BASE_URL") or os.getenv("OLLAMA_HOST") or "http://host.docker.internal:11434"
 )
 
 # GPU electricity cost defaults (RTX 5090: 575W TDP, ~300W typical inference)

@@ -66,6 +66,32 @@ VOICE_FALLBACKS = [
 
 # Order matters — longer patterns first to avoid partial replacements
 _SPOKEN_REPLACEMENTS = [
+    # Blog-to-podcast medium adaptation (catch "post/article" → "episode/podcast")
+    ("in this post", "in this episode"),
+    ("In this post", "In this episode"),
+    ("in this article", "in this episode"),
+    ("In this article", "In this episode"),
+    ("this blog post", "this episode"),
+    ("This blog post", "This episode"),
+    ("this post", "this episode"),
+    ("This post", "This episode"),
+    ("the article", "the episode"),
+    ("Reading this", "Listening to this"),
+    ("reading this", "listening to this"),
+    ("Read on", "Stay tuned"),
+    ("read on", "stay tuned"),
+    ("as we discussed above", "as we discussed earlier"),
+    ("As we discussed above", "As we discussed earlier"),
+    ("See below", "Coming up next"),
+    ("see below", "coming up next"),
+    ("Shown below", "Coming up next"),
+    ("shown below", "coming up next"),
+    ("Listed below", "Coming up"),
+    ("listed below", "coming up"),
+    ("the following section", "the next section"),
+    ("The following section", "The next section"),
+    ("Scroll down", "Keep listening"),
+    ("scroll down", "keep listening"),
     # Words TTS mispronounces
     ("GitFlow", "git flow"),
     ("GitHub", "git hub"),
@@ -149,7 +175,8 @@ def _strip_markdown(text: str) -> str:
 
     Removes everything a human wouldn't say out loud:
     headings, image captions, photographer credits, code blocks,
-    markdown formatting, URLs, and reference links.
+    markdown formatting, URLs, reference links, and end-of-post
+    resource/link sections.
     """
     # Remove HTML tags
     text = re.sub(r"<[^>]+>", "", text)
@@ -157,15 +184,29 @@ def _strip_markdown(text: str) -> str:
     text = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", text)
     # Remove standalone image URLs
     text = re.sub(r"^https?://\S+\s*$", "", text, flags=re.MULTILINE)
-    # Remove photographer/image credits (Photo by..., Image by..., Credit:...)
-    text = re.sub(r"(?i)^(photo|image|credit|source|via|courtesy)[:\s].*$", "", text, flags=re.MULTILINE)
-    text = re.sub(r"(?i)photographer[:\s].*$", "", text, flags=re.MULTILINE)
-    # Remove Pexels/Unsplash/Cloudinary attribution lines
-    text = re.sub(r"(?i)^.*(?:pexels|unsplash|cloudinary|stock photo).*$", "", text, flags=re.MULTILINE)
-    # Convert links [text](url) to just text
-    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+
+    # Remove photographer/image credits — with or without markdown formatting
+    # Handles: *Photo by X on Pexels*, Photo by X, **Image credit: ...**
+    text = re.sub(r"(?i)^[*_]*\s*(photo|image|credit|source|via|courtesy|photographer)\b.*$", "", text, flags=re.MULTILINE)
+    # Remove Pexels/Unsplash/Cloudinary/stock attribution lines (anywhere in line)
+    text = re.sub(r"(?i)^[*_]*.*(?:pexels|unsplash|cloudinary|stock photo|shutterstock|getty).*$", "", text, flags=re.MULTILINE)
+
+    # Remove trailing resource/link sections (Suggested Resources, External Links, etc.)
+    text = re.sub(
+        r"(?i)^[#*_ ]*(?:suggested|external|further|additional|related)\s+(?:external\s+)?(?:resources|reading|links|references)\s*[*_:]*\s*\n[\s\S]*$",
+        "", text, flags=re.MULTILINE,
+    )
+
     # Remove section headings entirely (not natural in speech)
     text = re.sub(r"^#{1,6}\s+.*$", "", text, flags=re.MULTILINE)
+
+    # Convert internal cross-links to just the anchor text
+    # e.g., [Long Article Title](/posts/slug-here) → just removes the link entirely
+    # when it appears as a standalone reference in parentheses or brackets
+    text = re.sub(r"\[([^\]]+)\]\(/posts/[^)]+\)", r"\1", text)
+    # Convert external links [text](url) to just text
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+
     # Remove bold/italic markers
     text = re.sub(r"\*{1,3}([^*]+)\*{1,3}", r"\1", text)
     text = re.sub(r"_{1,3}([^_]+)_{1,3}", r"\1", text)
@@ -175,7 +216,7 @@ def _strip_markdown(text: str) -> str:
     text = re.sub(r"`([^`]+)`", r"\1", text)
     # Remove blockquote markers
     text = re.sub(r"^>\s?", "", text, flags=re.MULTILINE)
-    # Remove horizontal rules
+    # Remove horizontal rules (---, ***, ___)
     text = re.sub(r"^[-*_]{3,}\s*$", "", text, flags=re.MULTILINE)
     # Remove list markers but keep text
     text = re.sub(r"^\s*[-*+]\s+", "", text, flags=re.MULTILINE)
@@ -184,6 +225,10 @@ def _strip_markdown(text: str) -> str:
     text = re.sub(r"^\[[^\]]+\]:\s+.*$", "", text, flags=re.MULTILINE)
     # Remove [IMAGE-N] placeholders
     text = re.sub(r"\[IMAGE-\d+\]", "", text)
+    # Remove any remaining bare URLs
+    text = re.sub(r"https?://\S+", "", text)
+    # Remove empty parentheses left after URL removal
+    text = re.sub(r"\(\s*\)", "", text)
     # Collapse multiple blank lines
     text = re.sub(r"\n{3,}", "\n\n", text)
     # Remove leading/trailing whitespace per line
@@ -192,10 +237,87 @@ def _strip_markdown(text: str) -> str:
     return text.strip()
 
 
-def _build_script(title: str, content: str) -> str:
-    """Build the full podcast script with intro, body, and outro."""
+async def _build_script_with_llm(title: str, content: str) -> str:
+    """Use Ollama to rewrite a blog post as a natural podcast script.
+
+    The LLM handles all nuances: removing visual references, URLs, image credits,
+    converting written style to conversational spoken English, restructuring for
+    audio flow, etc. Falls back to regex stripping if Ollama is unavailable.
+    """
+    import httpx
+
+    ollama_url = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+    model = os.getenv("DEFAULT_OLLAMA_MODEL", "llama3:latest")
+    if model == "auto":
+        model = "llama3:latest"
+
+    prompt = f"""Rewrite the following blog article as a podcast script for a single narrator.
+
+RULES:
+- This is for text-to-speech, so write exactly what should be spoken aloud
+- Convert ALL written/visual conventions to natural spoken English
+- Remove ALL URLs, links, image references, photo credits, and attribution lines
+- Remove any "Suggested Resources", "External Links", or reference sections at the end
+- Replace "this post", "this article", "this blog" with "this episode" or "today's episode"
+- Replace "see below", "shown below", "scroll down" with "coming up next" or "in a moment"
+- Replace "read on" with "stay with us" or "let's continue"
+- Replace "as shown above" with "as we discussed"
+- Don't read section headings as-is — weave transitions naturally ("Let's now turn to..." or "Next, let's explore...")
+- Expand abbreviations: "e.g." → "for example", "i.e." → "that is", "etc." → "and so on"
+- Spell out acronyms on first use if not commonly known
+- Don't include any markdown formatting, asterisks, brackets, or special characters
+- Keep the same depth, arguments, and structure — don't summarize or shorten
+- Write in a warm, conversational but authoritative tone
+- Do NOT add any meta-commentary like "Here's the script:" — just output the script text directly
+
+ARTICLE TITLE: {title}
+
+ARTICLE CONTENT:
+{_strip_markdown(content)}
+
+PODCAST SCRIPT:"""
+
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post(
+                f"{ollama_url}/api/generate",
+                json={
+                    "model": model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"num_predict": 8192, "temperature": 0.4},
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            script_body = data.get("response", "").strip()
+
+            if len(script_body) < 200:
+                logger.warning("[PODCAST] LLM script too short (%d chars), falling back to regex", len(script_body))
+                return _build_script_fallback(title, content)
+
+            logger.info("[PODCAST] LLM generated %d-char script for '%s'", len(script_body), title[:50])
+
+    except Exception as e:
+        logger.warning("[PODCAST] Ollama script generation failed (%s), falling back to regex", e)
+        return _build_script_fallback(title, content)
+
+    # Still apply speech normalization for TTS pronunciation fixes
+    script_body = _normalize_for_speech(script_body)
+    spoken_title = _normalize_for_speech(title)
+
+    intro = f"Welcome to the Glad Labs podcast. Today's episode: {spoken_title}."
+    outro = (
+        "Thanks for listening to the Glad Labs podcast. "
+        "Visit gladlabs dot io for more episodes, articles, and insights. "
+        "See you next time."
+    )
+    return f"{intro}\n\n{script_body}\n\n{outro}"
+
+
+def _build_script_fallback(title: str, content: str) -> str:
+    """Fallback: build script via regex stripping when Ollama is unavailable."""
     plain_text = _strip_markdown(content)
-    # Normalize written conventions to natural speech
     plain_text = _normalize_for_speech(plain_text)
     spoken_title = _normalize_for_speech(title)
 
@@ -205,8 +327,6 @@ def _build_script(title: str, content: str) -> str:
         "Visit gladlabs dot io for more episodes, articles, and insights. "
         "See you next time."
     )
-
-    # Add natural pauses between sections with periods
     return f"{intro}\n\n{plain_text}\n\n{outro}"
 
 
@@ -298,7 +418,7 @@ class PodcastService:
                 duration_seconds=_estimate_duration_from_text(content),
             )
 
-        script = _build_script(title, content)
+        script = await _build_script_with_llm(title, content)
 
         if not script.strip():
             return EpisodeResult(success=False, error="Empty content after markdown stripping")

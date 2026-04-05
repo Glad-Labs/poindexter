@@ -137,7 +137,7 @@ async def get_db_pool():
     DatabaseService mid-request, which would bypass the connection pool.
     """
     db_service = get_database_dependency()
-    return db_service.pool
+    return getattr(db_service, "cloud_pool", None) or db_service.pool
 
 
 # ============================================================================
@@ -225,6 +225,53 @@ async def list_posts(
             }
     except Exception as e:
         raise await handle_route_error(e, "list_posts", logger)
+
+
+@router.get("/api/posts/preview/{preview_token}")
+async def preview_post(preview_token: str):
+    """
+    Preview a draft post using a secret token. No auth required — the token IS the auth.
+    Used for mobile preview before publishing.
+    """
+    import re
+    # Validate token format (hex only, prevent injection)
+    if not re.match(r'^[a-f0-9]{32}$', preview_token):
+        raise HTTPException(status_code=404, detail="Post not found")
+    try:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT id, title, slug, content, excerpt, featured_image_url, cover_image_url,
+                       category_id, published_at, created_at, updated_at,
+                       seo_title, seo_description, seo_keywords, status, author_id,
+                       preview_token, metadata
+                FROM posts
+                WHERE preview_token = $1
+                """,
+                preview_token,
+            )
+            if not row:
+                raise HTTPException(status_code=404, detail="Post not found")
+
+            post = dict(row)
+            for dt_field in ("published_at", "created_at", "updated_at"):
+                if post.get(dt_field):
+                    post[dt_field] = post[dt_field].isoformat()
+            # Include podcast/video availability
+            from services.podcast_service import PODCAST_DIR
+            from services.video_service import VIDEO_DIR
+            post_id = str(post["id"])
+            post["has_podcast"] = (PODCAST_DIR / f"{post_id}.mp3").exists()
+            post["has_video"] = (VIDEO_DIR / f"{post_id}.mp4").exists()
+            post["is_preview"] = True
+
+            return post
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Preview fetch error: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch preview")
 
 
 @router.get("/api/posts/search")
