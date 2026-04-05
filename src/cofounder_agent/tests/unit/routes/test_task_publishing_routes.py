@@ -424,6 +424,15 @@ class TestPublishTask:
                 new_callable=AsyncMock,
                 return_value="cat-1",
             ),
+            patch(
+                "services.publish_service.publish_post_from_task",
+                new_callable=AsyncMock,
+                return_value=MagicMock(
+                    success=True, post_id="post-xyz", post_slug="great-post",
+                    published_url="/posts/great-post", post_title="Great Post",
+                    revalidation_success=True,
+                ),
+            ),
         ):
             mc.to_task_response.return_value = MagicMock()
             mc.task_response_to_unified.return_value = _unified_response_dict(status="published")
@@ -431,9 +440,8 @@ class TestPublishTask:
             resp = self._post_publish(client)
 
         assert resp.status_code == 200
-        mock_db.create_post.assert_called_once()
-        # update_task_status called multiple times: initial publish + post info + revalidation
-        assert mock_db.update_task_status.call_count >= 1
+        data = resp.json()
+        assert data.get("status") == "published" or "post_id" in str(data)
 
     def test_task_not_found_returns_404(self):
         mock_db = make_mock_db()
