@@ -1059,13 +1059,14 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
             sdxl_prompt = result.get("featured_image_prompt", "")
             if not sdxl_prompt:
                 # Style diversity: check recent images and pick least-used style
-                # Featured image styles — cinematic/editorial only (no flat/isometric)
+                # Featured image styles — editorial illustration, mood-setting
+                # Goal: trigger imagination, set the stage — NOT literal depiction
                 _IMAGE_STYLES = [
-                    ("photorealistic scene", "cinematic lighting, shallow depth of field, 4k"),
-                    ("dark moody editorial photograph", "dramatic side lighting, high contrast, film grain"),
-                    ("aerial drone photograph", "bird's eye view, golden hour lighting, wide angle"),
-                    ("macro close-up photograph", "extreme detail, bokeh background, studio lighting"),
-                    ("cyberpunk neon cityscape", "rain-slicked streets, neon reflections, atmospheric fog"),
+                    ("editorial illustration of a busy futuristic workspace", "stylized, warm lighting, faceless figures, conceptual art"),
+                    ("dark atmospheric cityscape at night", "neon accents, rain-slicked streets, moody, cinematic"),
+                    ("stylized bird's-eye view of a sprawling tech campus", "golden hour, miniature tilt-shift effect, dreamy"),
+                    ("abstract tech prototype sketch", "blueprint style, glowing lines, futuristic engineering concept art"),
+                    ("conceptual art of a vast digital landscape", "flowing data streams, abstract geometric shapes, ethereal lighting"),
                 ]
                 import random as _rnd
                 # Check what styles were used recently
@@ -1101,13 +1102,14 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
                     _ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
                     content_excerpt = result.get("content", "")[:300]
                     _img_prompt = (
-                        f"Write a Stable Diffusion XL image prompt for a blog featured image.\n"
-                        f"Topic: {topic}\n"
-                        f"Context: {content_excerpt}\n"
-                        f"Style: {_chosen_style}\n\n"
-                        f"Requirements: {_style_tags}, no people, no text, no faces, no hands. "
-                        "Describe a specific concrete scene. 1-2 sentences only. "
-                        "Output ONLY the prompt, nothing else."
+                        f"Write a Stable Diffusion XL image prompt for a magazine-style editorial cover image.\n"
+                        f"The article is about: {topic}\n"
+                        f"DO NOT depict the topic literally. Instead, create an atmospheric scene that evokes the FEELING of the topic.\n"
+                        f"Style direction: {_chosen_style}\n\n"
+                        f"Requirements: {_style_tags}, faceless silhouettes OK but no identifiable faces, "
+                        "no text or words in the image, no hands. "
+                        "Think editorial magazine art — mood, atmosphere, imagination. "
+                        "1-2 sentences only. Output ONLY the prompt, nothing else."
                     )
                     async with _hx.AsyncClient(timeout=30) as _c:
                         _r = await _c.post(f"{_ollama_url}/api/generate", json={
@@ -1119,7 +1121,7 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
                     logger.info("[IMAGE] Style: %s | SDXL prompt: %s", _chosen_style, sdxl_prompt[:80])
                 except Exception as prompt_err:
                     logger.warning("[IMAGE] LLM prompt generation failed, using fallback: %s", prompt_err)
-                    sdxl_prompt = f"{_chosen_style} of {topic}, {_style_tags}, no people, no text"
+                    sdxl_prompt = f"{_chosen_style}, {_style_tags}, no text, no faces"
             output_dir = os.path.join(os.path.expanduser("~"), "Downloads", "glad-labs-generated-images")
             os.makedirs(output_dir, exist_ok=True)
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False, dir=output_dir) as tmp:
