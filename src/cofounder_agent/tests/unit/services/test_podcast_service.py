@@ -169,11 +169,14 @@ class TestPodcastService:
 
     @pytest.mark.asyncio
     async def test_generate_empty_content(self):
+        mock_communicate = MagicMock()
+        mock_communicate.save = AsyncMock()
+        mock_edge_tts = MagicMock()
+        mock_edge_tts.Communicate.return_value = mock_communicate
         with tempfile.TemporaryDirectory() as tmp:
             svc = PodcastService(output_dir=Path(tmp))
-            result = await svc.generate_episode("abc", "Title", "")
-            # Should still have intro/outro text, so it won't be empty
-            # But let's test a truly empty scenario via mocking
+            with patch.dict("sys.modules", {"edge_tts": mock_edge_tts}):
+                result = await svc.generate_episode("abc", "Title", "")
             assert result.success or result.error is not None
 
     @pytest.mark.asyncio
@@ -182,8 +185,7 @@ class TestPodcastService:
             svc = PodcastService(output_dir=Path(tmp))
             with patch.dict("sys.modules", {"edge_tts": None}):
                 result = await svc.generate_episode("abc", "Title", "Some content here")
-                # Will fail gracefully with import error or module None
-                assert not result.success or result.success  # Either way, no crash
+                assert result.success or result.error is not None
 
 
 # ---------------------------------------------------------------------------
