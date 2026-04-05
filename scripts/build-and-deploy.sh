@@ -48,20 +48,25 @@ if [ "$POST_COUNT" = "0" ]; then
     exit 1
 fi
 
-# 2. Build the Next.js site
-echo "[2/4] Building Next.js site..."
+# 2. Generate static feeds (RSS + sitemap) from local DB
+echo "[2/5] Generating static feed.xml and sitemap.xml..."
+DATABASE_URL="postgresql://gladlabs:gladlabs-brain-local@localhost:5433/gladlabs_brain" \
+python "$PROJECT_DIR/scripts/generate-static-feeds.py"
+
+# 3. Build the Next.js site
+echo "[3/5] Building Next.js site..."
 cd "$SITE_DIR"
 NEXT_PUBLIC_API_BASE_URL="http://localhost:$API_PORT" \
 NEXT_PUBLIC_FASTAPI_URL="http://localhost:$API_PORT" \
 NEXT_PUBLIC_SITE_URL="https://www.gladlabs.io" \
 npm run build
 
-# 3. Deploy to Vercel
-echo "[3/4] Deploying to Vercel..."
+# 4. Deploy to Vercel
+echo "[4/5] Deploying to Vercel..."
 npx vercel deploy --prebuilt --prod
 
-# 4. Cleanup
-echo "[4/4] Stopping temporary API server..."
+# 5. Cleanup
+echo "[5/5] Stopping temporary API server..."
 kill $API_PID 2>/dev/null || true
 
 echo "=== Deploy complete! ==="
