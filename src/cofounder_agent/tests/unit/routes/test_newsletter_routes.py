@@ -47,6 +47,7 @@ def _make_pool_mock(
 def _make_db(pool=None):
     db = MagicMock()
     db.pool = pool or _make_pool_mock()
+    db.cloud_pool = None  # Ensure cloud_pool fallback uses db.pool
     return db
 
 

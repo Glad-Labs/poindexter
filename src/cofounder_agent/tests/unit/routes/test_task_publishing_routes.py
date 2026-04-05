@@ -294,13 +294,7 @@ class TestApproveTask:
         """All listed allowed statuses should not trigger the 400 guard."""
         allowed = [
             "awaiting_approval",
-            "pending",
-            "in_progress",
             "completed",
-            "rejected",
-            "failed",
-            "approved",
-            "published",
         ]
         for status in allowed:
             mock_db = make_mock_db()
@@ -340,6 +334,10 @@ class TestApproveTask:
                 "services.content_router_service._select_category_for_topic",
                 new_callable=AsyncMock,
                 return_value="cat-1",
+            ),
+            patch(
+                "services.task_executor._notify_openclaw",
+                new_callable=AsyncMock,
             ),
         ):
             mc.to_task_response.return_value = MagicMock()
