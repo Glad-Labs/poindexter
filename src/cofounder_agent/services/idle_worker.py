@@ -68,7 +68,11 @@ class IdleWorker:
             logger.debug("[IDLE] Failed to persist schedule for %s: %s", task_name, e)
 
     async def _create_gitea_issue(self, title: str, body: str) -> bool:
-        """Create a Gitea issue for tracking discovered problems."""
+        """Create a Gitea issue for tracking discovered problems.
+
+        Deduplicates by checking for existing open issues with similar titles
+        (matching the prefix before the first colon or dash).
+        """
         import base64
         import httpx
 
@@ -83,10 +87,26 @@ class IdleWorker:
 
         try:
             auth = base64.b64encode(f"{gitea_user}:{gitea_pass}".encode()).decode()
+            headers = {"Authorization": f"Basic {auth}", "Content-Type": "application/json"}
             async with httpx.AsyncClient(timeout=10) as client:
+                # Dedup: check for existing open issues with same prefix
+                title_prefix = title.split(":")[0].strip() if ":" in title else title[:30]
+                search_resp = await client.get(
+                    f"{gitea_url}/api/v1/repos/{gitea_repo}/issues",
+                    headers=headers,
+                    params={"state": "open", "limit": 10},
+                )
+                if search_resp.status_code == 200:
+                    existing = search_resp.json()
+                    for issue in existing:
+                        existing_prefix = issue["title"].split(":")[0].strip() if ":" in issue["title"] else issue["title"][:30]
+                        if existing_prefix == title_prefix:
+                            logger.debug("[IDLE] Gitea issue already exists: #%d %s", issue["number"], title_prefix)
+                            return False
+
                 resp = await client.post(
                     f"{gitea_url}/api/v1/repos/{gitea_repo}/issues",
-                    headers={"Authorization": f"Basic {auth}", "Content-Type": "application/json"},
+                    headers=headers,
                     json={"title": title, "body": body},
                 )
                 if resp.status_code < 300:
