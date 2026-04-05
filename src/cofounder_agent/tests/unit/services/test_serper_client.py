@@ -55,7 +55,8 @@ class TestInit:
         assert client.api_key == "test-key"
 
     def test_no_key_logs_warning(self):
-        with patch("services.site_config.site_config", MagicMock(get=lambda *a, **k: None)):
+        with patch("services.site_config.site_config", MagicMock(get=lambda *a, **k: None)), \
+             patch.dict("os.environ", {"SERPER_API_KEY": ""}, clear=False):
             c = SerperClient(api_key=None)
         assert not c.api_key
 
@@ -88,7 +89,8 @@ class TestSearch:
         assert payload["num"] == 30
 
     def test_returns_empty_without_api_key(self):
-        with patch("services.site_config.site_config", MagicMock(get=lambda *a, **k: None)):
+        with patch("services.site_config.site_config", MagicMock(get=lambda *a, **k: None)), \
+             patch.dict("os.environ", {"SERPER_API_KEY": ""}, clear=False):
             c = SerperClient(api_key=None)
         result = _run(c.search("test"))
         assert result == {}
