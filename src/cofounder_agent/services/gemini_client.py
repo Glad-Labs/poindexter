@@ -35,6 +35,12 @@ class GeminiClient:
         Args:
             api_key: Google API key (defaults to GOOGLE_API_KEY env var)
         """
+        if not api_key:
+            try:
+                from services.site_config import site_config
+                api_key = site_config.get("google_api_key") or site_config.get("gemini_api_key")
+            except Exception:
+                pass
         self.api_key = api_key or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
         self._client = None  # Lazy-initialized shared client
         self.base_url = "https://generativelanguage.googleapis.com/v1"
