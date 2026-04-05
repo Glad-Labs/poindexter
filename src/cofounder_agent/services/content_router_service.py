@@ -918,11 +918,20 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
             if _model == "auto":
                 _model = "llama3:latest"
 
-            # Generate SDXL prompt via Ollama
+            # Generate SDXL prompt via Ollama — inline images use all styles including flat/isometric
+            import random as _inline_rnd
+            _INLINE_STYLES = [
+                "photorealistic scene, cinematic lighting",
+                "isometric 3D illustration, clean vector style, soft shadows",
+                "dark moody editorial photograph, dramatic lighting",
+                "clean minimal flat design, pastel colors, geometric shapes",
+                "macro close-up photograph, extreme detail, bokeh",
+            ]
+            _inline_style = _inline_rnd.choice(_INLINE_STYLES)
             _img_prompt_req = (
                 f"Write a Stable Diffusion XL image prompt for a blog illustration about: {search_query}\n"
                 f"Article topic: {topic}\n\n"
-                "Requirements: photorealistic scene, cinematic lighting, no people, no text, no faces. "
+                f"Requirements: {_inline_style}, no people, no text, no faces. "
                 "Describe a specific scene. 1 sentence only. Output ONLY the prompt."
             )
             async with _hx2.AsyncClient(timeout=30) as _c2:
@@ -1050,11 +1059,10 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
             sdxl_prompt = result.get("featured_image_prompt", "")
             if not sdxl_prompt:
                 # Style diversity: check recent images and pick least-used style
+                # Featured image styles — cinematic/editorial only (no flat/isometric)
                 _IMAGE_STYLES = [
                     ("photorealistic scene", "cinematic lighting, shallow depth of field, 4k"),
-                    ("isometric 3D illustration", "clean vector style, soft shadows, minimal"),
                     ("dark moody editorial photograph", "dramatic side lighting, high contrast, film grain"),
-                    ("clean minimal flat design", "soft pastel colors, geometric shapes, modern"),
                     ("aerial drone photograph", "bird's eye view, golden hour lighting, wide angle"),
                     ("macro close-up photograph", "extreme detail, bokeh background, studio lighting"),
                     ("cyberpunk neon cityscape", "rain-slicked streets, neon reflections, atmospheric fog"),
