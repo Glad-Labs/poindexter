@@ -451,6 +451,7 @@ async def update_post(
             "content",
             "excerpt",
             "featured_image_url",
+            "cover_image_url",
             "status",
             "tags",
             "seo_title",

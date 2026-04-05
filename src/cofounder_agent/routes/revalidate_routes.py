@@ -46,17 +46,19 @@ async def trigger_nextjs_revalidation(paths: Optional[list] = None) -> bool:
     if paths is None:
         paths = ["/", "/archive"]
 
-    # Get Next.js public site URL from environment or use default
-    nextjs_url = os.getenv(
-        "NEXT_PUBLIC_PUBLIC_SITE_URL",
-        os.getenv("NEXT_PUBLIC_API_BASE_URL", "http://localhost:3000"),
+    # Get Next.js public site URL from DB config, env, or default
+    from services.site_config import site_config
+    nextjs_url = (
+        site_config.get("public_site_url")
+        or site_config.get("site_url")
+        or os.getenv("NEXT_PUBLIC_PUBLIC_SITE_URL")
+        or os.getenv("SITE_URL")
+        or os.getenv("NEXT_PUBLIC_API_BASE_URL", "http://localhost:3000")
     )
     if nextjs_url.endswith("/api"):
-        # Remove /api suffix if present
         nextjs_url = nextjs_url[:-4]
 
     revalidate_url = f"{nextjs_url}/api/revalidate"
-    from services.site_config import site_config
     revalidate_secret = site_config.get("revalidate_secret") or os.getenv("REVALIDATE_SECRET", "")
     environment = os.getenv("ENVIRONMENT", "development").lower()
 
