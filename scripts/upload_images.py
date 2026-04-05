@@ -10,11 +10,11 @@ TOKEN = os.environ.get("API_TOKEN", "")
 HEADERS = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}
 IMAGE_DIR = os.path.join(os.path.expanduser("~"), "Downloads", "glad-labs-featured-images")
 
-# Configure Cloudinary
+# Configure Cloudinary — keys from env vars (stored in app_settings DB)
 cloudinary.config(
-    cloud_name="dujk7kdhd",
-    api_key="432885452812599",
-    api_secret="w6VvLuIgxNSTvsxjD9GW9NGTm4I",
+    cloud_name=os.environ.get("CLOUDINARY_CLOUD_NAME", ""),
+    api_key=os.environ.get("CLOUDINARY_API_KEY", ""),
+    api_secret=os.environ.get("CLOUDINARY_API_SECRET", ""),
 )
 
 TAKEN_DOWN = {
