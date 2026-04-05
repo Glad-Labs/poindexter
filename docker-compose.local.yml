@@ -165,9 +165,10 @@ services:
     container_name: gladlabs-brain-daemon
     restart: unless-stopped
     environment:
-      DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-gladlabs}:${LOCAL_POSTGRES_PASSWORD:-gladlabs-brain-local}@postgres-local:5432/${LOCAL_POSTGRES_DB:-gladlabs_brain}"
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      # Primary DB is Railway (shared with public API). Local DB kept for backup/dev.
+      DATABASE_URL: ${CLOUD_DATABASE_URL:?Set CLOUD_DATABASE_URL in .env}
+      LOCAL_DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-gladlabs}:${LOCAL_POSTGRES_PASSWORD:-gladlabs-brain-local}@postgres-local:5432/${LOCAL_POSTGRES_DB:-gladlabs_brain}"
+      # No Telegram tokens — OpenClaw owns Telegram/Discord connections
       API_URL: "https://cofounder-production.up.railway.app"
       SITE_URL: "https://www.gladlabs.io"
       OLLAMA_URL: "http://host.docker.internal:11434"
