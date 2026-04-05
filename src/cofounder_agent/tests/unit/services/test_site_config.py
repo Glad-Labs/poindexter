@@ -23,7 +23,9 @@ class TestGetBeforeLoad:
     """Before load() is called, should fall back to env vars or defaults."""
 
     def test_returns_default_when_not_loaded(self, config):
-        assert config.get("site_name", "fallback") == "fallback"
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("SITE_NAME", None)
+            assert config.get("site_name", "fallback") == "fallback"
 
     def test_returns_env_var_when_not_loaded(self, config):
         with patch.dict(os.environ, {"SITE_NAME": "From Env"}):

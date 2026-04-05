@@ -1,0 +1,24 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "Local (Brain DB)",
+      "Group": "Glad Labs",
+      "Host": "postgres-local",
+      "Port": 5432,
+      "MaintenanceDB": "gladlabs_brain",
+      "Username": "gladlabs",
+      "SSLMode": "prefer",
+      "PassFile": "/tmp/pgpass"
+    },
+    "2": {
+      "Name": "Railway (Production)",
+      "Group": "Glad Labs",
+      "Host": "hopper.proxy.rlwy.net",
+      "Port": 32382,
+      "MaintenanceDB": "railway",
+      "Username": "postgres",
+      "SSLMode": "prefer",
+      "PassFile": "/tmp/pgpass"
+    }
+  }
+}

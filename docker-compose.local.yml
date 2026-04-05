@@ -224,6 +224,34 @@ services:
       timeout: 10s
       retries: 3
 
+  # ===========================================
+  # pgAdmin — PostgreSQL web UI
+  # ===========================================
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: gladlabs-pgadmin
+    restart: unless-stopped
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: mattg@gladlabs.io
+      PGADMIN_DEFAULT_PASSWORD: gladlabs
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+      - ./infrastructure/pgadmin/servers.json:/pgadmin4/servers.json:ro
+      - ./infrastructure/pgadmin/pgpass:/tmp/pgpass_src:ro
+    entrypoint: >
+      /bin/sh -c "
+      cp /tmp/pgpass_src /tmp/pgpass &&
+      chmod 0600 /tmp/pgpass &&
+      /entrypoint.sh
+      "
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+
 volumes:
   postgres-local-data:
     name: gladlabs-postgres-local-data
@@ -237,3 +265,5 @@ volumes:
     name: gladlabs-headscale-data
   prometheus-data:
     name: gladlabs-prometheus-data
+  pgadmin-data:
+    name: gladlabs-pgadmin-data

@@ -194,6 +194,15 @@ class TestPodcastService:
 class TestGenerateEpisode:
     """Test generate_episode with mocked edge_tts."""
 
+    @pytest.fixture(autouse=True)
+    def mock_llm_script(self):
+        """Mock _build_script_with_llm to use fallback (no Ollama in tests)."""
+        async def _fallback(title, content):
+            return _build_script(title, content)
+
+        with patch("services.podcast_service._build_script_with_llm", side_effect=_fallback):
+            yield
+
     @pytest.mark.asyncio
     async def test_generate_episode_returns_mp3_path(self):
         """Successful generation returns an EpisodeResult with file_path."""

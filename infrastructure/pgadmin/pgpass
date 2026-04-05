@@ -1,0 +1,2 @@
+postgres-local:5432:gladlabs_brain:gladlabs:gladlabs-brain-local
+hopper.proxy.rlwy.net:32382:railway:postgres:QCvgQhpOkqPDWbXTLeLPdYfzgqLSNTTl
