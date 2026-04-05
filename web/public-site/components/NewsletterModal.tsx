@@ -2,7 +2,19 @@
 
 import * as Sentry from '@sentry/nextjs';
 import { useState, useRef, useEffect, ChangeEvent, FormEvent } from 'react';
-import { subscribeToNewsletter } from '../lib/api-fastapi';
+// Subscribe via local Vercel serverless function (no backend dependency)
+async function subscribeToNewsletter(data: Record<string, unknown>) {
+  const response = await fetch('/api/newsletter/subscribe', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Subscription failed');
+  }
+  return response.json();
+}
 
 /**
  * Newsletter Signup Modal
