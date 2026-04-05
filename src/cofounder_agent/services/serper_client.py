@@ -40,7 +40,11 @@ class SerperClient:
         Args:
             api_key: Serper API key (defaults to SERPER_API_KEY env var)
         """
-        self.api_key = api_key or os.getenv("SERPER_API_KEY")
+        try:
+            from services.site_config import site_config
+            self.api_key = api_key or site_config.get("serper_api_key") or os.getenv("SERPER_API_KEY")
+        except Exception:
+            self.api_key = api_key or os.getenv("SERPER_API_KEY")
         if not self.api_key:
             logger.warning("Serper API key not configured - web search will be unavailable")
 

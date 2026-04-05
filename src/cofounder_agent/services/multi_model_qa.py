@@ -355,7 +355,11 @@ class MultiModelQA:
         import os
         import re
 
-        api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+        try:
+            from services.site_config import site_config
+            api_key = site_config.get("google_api_key") or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+        except Exception:
+            api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
         if not api_key:
             logger.debug("[MULTI_QA] No Google API key, skipping cloud review")
             return None

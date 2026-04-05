@@ -69,7 +69,11 @@ class FineTuningService:
         """
         # Use provided model, environment config, or default to mistral
         if not base_model:
-            base_model = os.getenv("OLLAMA_FINETUNE_BASE_MODEL", "mistral")
+            try:
+                from services.site_config import site_config
+                base_model = site_config.get("ollama_finetune_base_model") or os.getenv("OLLAMA_FINETUNE_BASE_MODEL", "mistral")
+            except Exception:
+                base_model = os.getenv("OLLAMA_FINETUNE_BASE_MODEL", "mistral")
 
         job_id = f"ollama_finetune_{datetime.now().timestamp()}"
         logger.info(
@@ -166,7 +170,11 @@ PARAMETER learning_rate {learning_rate}
             # Import google-genai library
             import google.genai as genai
 
-            key = api_key or os.getenv("GOOGLE_API_KEY")
+            try:
+                from services.site_config import site_config
+                key = api_key or site_config.get("google_api_key") or os.getenv("GOOGLE_API_KEY")
+            except Exception:
+                key = api_key or os.getenv("GOOGLE_API_KEY")
             if not key:
                 return {
                     "job_id": job_id,
@@ -231,7 +239,11 @@ PARAMETER learning_rate {learning_rate}
         try:
             import anthropic
 
-            key = api_key or os.getenv("ANTHROPIC_API_KEY")
+            try:
+                from services.site_config import site_config
+                key = api_key or site_config.get("anthropic_api_key") or os.getenv("ANTHROPIC_API_KEY")
+            except Exception:
+                key = api_key or os.getenv("ANTHROPIC_API_KEY")
             if not key:
                 return {
                     "job_id": job_id,
@@ -309,7 +321,11 @@ PARAMETER learning_rate {learning_rate}
         try:
             from openai import AsyncOpenAI
 
-            key = api_key or os.getenv("OPENAI_API_KEY")
+            try:
+                from services.site_config import site_config
+                key = api_key or site_config.get("openai_api_key") or os.getenv("OPENAI_API_KEY")
+            except Exception:
+                key = api_key or os.getenv("OPENAI_API_KEY")
             if not key:
                 return {
                     "job_id": job_id,
@@ -413,7 +429,11 @@ PARAMETER learning_rate {learning_rate}
             try:
                 import anthropic
 
-                key = os.getenv("ANTHROPIC_API_KEY")
+                try:
+                    from services.site_config import site_config
+                    key = site_config.get("anthropic_api_key") or os.getenv("ANTHROPIC_API_KEY")
+                except Exception:
+                    key = os.getenv("ANTHROPIC_API_KEY")
                 if not key:
                     return {"status": "error", "error": "ANTHROPIC_API_KEY not set"}
 
@@ -443,7 +463,11 @@ PARAMETER learning_rate {learning_rate}
             try:
                 from openai import AsyncOpenAI
 
-                key = os.getenv("OPENAI_API_KEY")
+                try:
+                    from services.site_config import site_config
+                    key = site_config.get("openai_api_key") or os.getenv("OPENAI_API_KEY")
+                except Exception:
+                    key = os.getenv("OPENAI_API_KEY")
                 if not key:
                     return {"status": "error", "error": "OPENAI_API_KEY not set"}
 
@@ -490,7 +514,11 @@ PARAMETER learning_rate {learning_rate}
             try:
                 import anthropic
 
-                key = os.getenv("ANTHROPIC_API_KEY")
+                try:
+                    from services.site_config import site_config
+                    key = site_config.get("anthropic_api_key") or os.getenv("ANTHROPIC_API_KEY")
+                except Exception:
+                    key = os.getenv("ANTHROPIC_API_KEY")
                 if key:
                     client = anthropic.Anthropic(api_key=key)
                     # Claude doesn't support cancellation, just mark locally

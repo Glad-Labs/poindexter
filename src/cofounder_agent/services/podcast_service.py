@@ -247,7 +247,10 @@ async def _build_script_with_llm(title: str, content: str) -> str:
     import httpx
 
     ollama_url = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
-    model = os.getenv("DEFAULT_OLLAMA_MODEL", "llama3:latest")
+    try:
+        model = site_config.get("default_ollama_model") or os.getenv("DEFAULT_OLLAMA_MODEL", "llama3:latest")
+    except Exception:
+        model = os.getenv("DEFAULT_OLLAMA_MODEL", "llama3:latest")
     if model == "auto":
         model = "llama3:latest"
 

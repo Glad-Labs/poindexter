@@ -10,16 +10,26 @@ accepted as an alias for backward compatibility.
 
 import os
 
-# Resolved once at import time — check the preferred env var first, then
-# the legacy OpenClaw-prefixed variant, then fall back to the default.
+# Resolved once at import time — check DB config first, then the preferred
+# env var, then the legacy OpenClaw-prefixed variant, then fall back to default.
+try:
+    from services.site_config import site_config
+    _db_chat_id = site_config.get("telegram_chat_id")
+    _db_bot_token = site_config.get("telegram_bot_token")
+except Exception:
+    _db_chat_id = None
+    _db_bot_token = None
+
 TELEGRAM_CHAT_ID: str = (
-    os.getenv("TELEGRAM_CHAT_ID")
+    _db_chat_id
+    or os.getenv("TELEGRAM_CHAT_ID")
     or os.getenv("OPENCLAW_TELEGRAM_CHAT_ID")
     or "5318613610"
 )
 
 TELEGRAM_BOT_TOKEN: str = (
-    os.getenv("TELEGRAM_BOT_TOKEN")
+    _db_bot_token
+    or os.getenv("TELEGRAM_BOT_TOKEN")
     or os.getenv("OPENCLAW_TELEGRAM_BOT_TOKEN")
     or ""
 )

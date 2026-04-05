@@ -1180,7 +1180,11 @@ class AIContentGenerator:
             max_tokens_fallback = int(target_length * 3.0)
 
             # Use model from environment or default to latest flash
-            gemini_model_name = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash")
+            try:
+                from services.site_config import site_config
+                gemini_model_name = site_config.get("gemini_fallback_model") or os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash")
+            except Exception:
+                gemini_model_name = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash")
             response = client.models.generate_content(
                 model=f"models/{gemini_model_name}",
                 contents=f"{system_prompt}\n\n{generation_prompt}",
