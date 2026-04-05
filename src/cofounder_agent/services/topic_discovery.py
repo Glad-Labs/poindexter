@@ -76,6 +76,16 @@ CATEGORY_SEARCHES = {
         "content marketing for developers",
         "SaaS metrics that matter",
     ],
+    "hardware": [
+        "best GPU for AI inference 2026",
+        "AMD vs NVIDIA gaming benchmarks",
+        "PC hardware news reviews 2026",
+    ],
+    "gaming": [
+        "upcoming PC games 2026",
+        "indie game development news",
+        "game engine updates Unreal Unity Godot",
+    ],
 }
 
 
@@ -441,19 +451,37 @@ class TopicDiscovery:
 
     # Keywords that indicate a topic is relevant to Glad Labs' niche
     _BRAND_KEYWORDS = {
+        # AI / ML
         "ai", "artificial intelligence", "llm", "language model", "gpt", "claude",
-        "inference", "gpu", "cuda", "nvidia", "local", "self-host", "self host",
+        "inference", "machine learning", "deep learning", "neural", "transformer",
+        "ollama", "hugging face", "huggingface", "stable diffusion", "sdxl",
+        "fine-tun", "rag", "embeddings", "vector", "model", "training",
+        "computer vision", "nlp", "generative", "diffusion", "lora",
+        "agent", "autonomous", "copilot", "chatbot", "prompt",
+        # Hardware
+        "gpu", "cuda", "nvidia", "amd", "radeon", "vram", "cpu", "ryzen",
+        "geforce", "rtx", "3d v-cache", "x3d", "threadripper", "epyc",
+        "pcie", "nvme", "ddr5", "ram", "overclock", "benchmark", "cooling",
+        "custom build", "pc build", "workstation", "server", "homelab",
+        "raspberry pi", "arm", "risc-v", "fpga", "asic",
+        # Gaming
+        "gaming", "game", "esports", "steam", "xbox", "playstation", "nintendo",
+        "unreal engine", "unity", "godot", "game dev", "game engine",
+        "fps", "mmo", "rpg", "indie game", "retro", "emulat",
+        "controller", "peripheral", "monitor", "display", "refresh rate",
+        "ray tracing", "dlss", "fsr", "frame generation", "upscaling",
+        "vr", "virtual reality", "ar", "mixed reality",
+        "streaming", "twitch", "obs", "capture card",
+        # Dev / Infra (supporting)
         "developer", "dev tool", "devops", "cicd", "ci/cd", "pipeline",
-        "automation", "agent", "autonomous", "content", "blog", "podcast",
-        "machine learning", "deep learning", "neural", "transformer",
+        "automation", "content", "blog", "podcast",
         "open source", "open-source", "linux", "docker", "kubernetes",
         "api", "cloud", "edge computing", "serverless", "infrastructure",
         "coding", "programming", "software", "engineering", "code",
-        "ollama", "hugging face", "huggingface", "stable diffusion", "sdxl",
         "privacy", "security", "self-healing", "monitoring", "grafana",
-        "productivity", "workflow", "vram", "model", "fine-tun", "rag",
-        "embeddings", "vector", "database", "postgres", "data",
+        "productivity", "workflow", "database", "postgres", "data",
         "startup", "indie", "solo", "founder", "saas", "business",
+        "local", "self-host", "self host",
     }
 
     @staticmethod
