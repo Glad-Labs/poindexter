@@ -34,7 +34,7 @@ _CACHE_TTL = 7 * 24 * 60 * 60
 
 # Internal domains to skip (no point validating our own URLs during generation)
 _site_domain = _sc.get("site_domain", "localhost:3000").split(":")[0]
-_SKIP_DOMAINS = {_site_domain, f"www.{_site_domain}"}
+_SKIP_DOMAINS = {_site_domain, f"www.{_site_domain}", "localhost", "127.0.0.1"}
 
 # Regex for extracting URLs from markdown / HTML content
 # Matches http(s):// URLs in markdown links, raw URLs, and href attributes

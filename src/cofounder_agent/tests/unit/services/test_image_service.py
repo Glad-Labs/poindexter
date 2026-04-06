@@ -181,6 +181,9 @@ class TestSearchFeaturedImage:
     async def test_returns_none_when_no_api_key(self, monkeypatch):
         monkeypatch.delenv("PEXELS_API_KEY", raising=False)
         svc = ImageService()
+        svc.pexels_api_key = ""
+        svc.pexels_available = False
+        svc._pexels_key_checked_db = True  # prevent DB lookup
         result = await svc.search_featured_image("AI")
         assert result is None
 
@@ -244,6 +247,9 @@ class TestGetImagesForGallery:
     async def test_returns_empty_list_without_api_key(self, monkeypatch):
         monkeypatch.delenv("PEXELS_API_KEY", raising=False)
         svc = ImageService()
+        svc.pexels_api_key = ""
+        svc.pexels_available = False
+        svc._pexels_key_checked_db = True  # prevent DB lookup
         result = await svc.get_images_for_gallery("AI")
         assert result == []
 
