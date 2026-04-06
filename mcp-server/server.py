@@ -30,8 +30,8 @@ from mcp.server.fastmcp import FastMCP
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("gladlabs-mcp")
 
-API_URL = os.getenv("GLADLABS_API_URL", "https://cofounder-production.up.railway.app")
-API_TOKEN = os.getenv("GLADLABS_API_TOKEN", "")
+API_URL = os.getenv("GLADLABS_API_URL", "http://localhost:8002")
+API_TOKEN = os.getenv("GLADLABS_API_TOKEN", "dev-token")
 LOCAL_DB_DSN = os.getenv(
     "LOCAL_DATABASE_URL",
     "postgresql://gladlabs:gladlabs-brain-local@localhost:5433/gladlabs_brain",
