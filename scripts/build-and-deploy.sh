@@ -59,17 +59,57 @@ if [ "$POST_COUNT" = "0" ]; then
 fi
 
 # 2. Generate static feeds (RSS + sitemap) from local DB
-echo "[2/4] Generating static feed.xml and sitemap.xml..."
+echo "[2/6] Generating static feed.xml and sitemap.xml..."
 DATABASE_URL="postgresql://gladlabs:gladlabs-brain-local@localhost:5433/gladlabs_brain" \
 python3 "$PROJECT_DIR/scripts/generate-static-feeds.py"
 
-# 3. Deploy to Vercel (builds on Vercel's servers using their env vars)
-echo "[3/4] Deploying to Vercel (server-side build)..."
+# 3. Copy media files (podcast + video) into public/ for static serving
+echo "[3/6] Syncing media files to public/media/..."
+MEDIA_DIR="$SITE_DIR/public/media"
+PODCAST_SRC="$HOME/.gladlabs/podcast"
+VIDEO_SRC="$HOME/.gladlabs/video"
+
+mkdir -p "$MEDIA_DIR/podcast" "$MEDIA_DIR/video"
+
+# Copy only real episode files (UUID-named, skip test files)
+PODCAST_COUNT=0
+if [ -d "$PODCAST_SRC" ]; then
+    for f in "$PODCAST_SRC"/*.mp3; do
+        [ -f "$f" ] || continue
+        base=$(basename "$f")
+        # Skip test/jingle files, only copy UUID-named episodes
+        if echo "$base" | grep -qE '^[0-9a-f]{8}-'; then
+            cp "$f" "$MEDIA_DIR/podcast/$base"
+            PODCAST_COUNT=$((PODCAST_COUNT + 1))
+        fi
+    done
+fi
+echo "    Podcast episodes: $PODCAST_COUNT"
+
+VIDEO_COUNT=0
+if [ -d "$VIDEO_SRC" ]; then
+    for f in "$VIDEO_SRC"/*.mp4; do
+        [ -f "$f" ] || continue
+        cp "$f" "$MEDIA_DIR/video/$(basename "$f")"
+        VIDEO_COUNT=$((VIDEO_COUNT + 1))
+    done
+fi
+echo "    Video episodes: $VIDEO_COUNT"
+
+MEDIA_SIZE=$(du -sh "$MEDIA_DIR" 2>/dev/null | cut -f1)
+echo "    Total media: $MEDIA_SIZE"
+
+# 4. Deploy to Vercel (builds on Vercel's servers using their env vars)
+echo "[4/6] Deploying to Vercel (server-side build)..."
 cd "$PROJECT_DIR"
 npx vercel deploy --prod --archive=tgz
 
-# 4. Verify deployment
-echo "[4/4] Verifying deployment..."
+# 5. Clean up media files (not committed to git)
+echo "[5/6] Cleaning up local media copy..."
+rm -rf "$MEDIA_DIR"
+
+# 6. Verify deployment
+echo "[6/6] Verifying deployment..."
 sleep 5
 if curl -sL "https://www.gladlabs.io" | grep -q "href=\"/posts/"; then
     echo "    Homepage verified — posts are rendering!"

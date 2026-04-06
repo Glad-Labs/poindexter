@@ -111,7 +111,7 @@ async def video_feed():
             SubElement(item, "pubDate").text = _rfc2822(pub_date)
 
         enclosure = SubElement(item, "enclosure")
-        enclosure.set("url", f"{MEDIA_BASE_URL}/api/video/episodes/{pid}.mp4")
+        enclosure.set("url", f"{MEDIA_BASE_URL}/media/video/{pid}.mp4")
         enclosure.set("length", str(disk_info.get("file_size_bytes", 0)))
         enclosure.set("type", "video/mp4")
 

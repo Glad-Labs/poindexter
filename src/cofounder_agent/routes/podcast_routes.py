@@ -188,7 +188,7 @@ def _build_rss_xml(episodes: list[dict]) -> str:
         # Enclosure (the MP3 file)
         enclosure = SubElement(item, "enclosure")
         enclosure.set(
-            "url", f"{MEDIA_BASE_URL}/api/podcast/episodes/{ep['post_id']}.mp3"
+            "url", f"{MEDIA_BASE_URL}/media/podcast/{ep['post_id']}.mp3"
         )
         enclosure.set("length", str(ep.get("file_size_bytes", 0)))
         enclosure.set("type", "audio/mpeg")
