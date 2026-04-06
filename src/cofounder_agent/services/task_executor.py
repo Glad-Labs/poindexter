@@ -565,7 +565,10 @@ class TaskExecutor:
                         f"Task ID: {task_id[:8]}\n"
                         f"Reply: /approve-post {task_id[:8]}"
                     )
-                    await _notify_openclaw(msg, critical=True)
+                    # Only send to Telegram if quality is worth reviewing (>= 50)
+                    # Low-quality tasks still go to Discord for logging
+                    is_worth_reviewing = quality_score >= 50
+                    await _notify_openclaw(msg, critical=is_worth_reviewing)
 
                 return
 
