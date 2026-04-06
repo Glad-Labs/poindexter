@@ -28,9 +28,8 @@ router = APIRouter(prefix="/api/podcast", tags=["podcast"])
 # ---------------------------------------------------------------------------
 
 SITE_URL = "https://www.gladlabs.io"
-# Podcast media URLs must be publicly reachable (for Apple Podcasts / Spotify).
-# Use the site URL to proxy through Next.js API routes, not the internal worker URL.
-MEDIA_BASE_URL = os.getenv("SITE_URL", SITE_URL)
+# Media files hosted on Cloudflare R2 CDN — zero egress fees, globally cached.
+R2_PUBLIC_URL = site_config.get("r2_public_url", "https://www.gladlabs.io/media")
 
 
 def _format_duration(seconds: int) -> str:
@@ -165,7 +164,7 @@ def _build_rss_xml(episodes: list[dict]) -> str:
 
     # Atom self-link
     atom_link = SubElement(channel, "{http://www.w3.org/2005/Atom}link")
-    atom_link.set("href", f"{MEDIA_BASE_URL}/api/podcast/feed.xml")
+    atom_link.set("href", f"{SITE_URL}/api/podcast/feed.xml")
     atom_link.set("rel", "self")
     atom_link.set("type", "application/rss+xml")
 
@@ -188,7 +187,7 @@ def _build_rss_xml(episodes: list[dict]) -> str:
         # Enclosure (the MP3 file)
         enclosure = SubElement(item, "enclosure")
         enclosure.set(
-            "url", f"{MEDIA_BASE_URL}/media/podcast/{ep['post_id']}.mp3"
+            "url", f"{R2_PUBLIC_URL}/podcast/{ep['post_id']}.mp3"
         )
         enclosure.set("length", str(ep.get("file_size_bytes", 0)))
         enclosure.set("type", "audio/mpeg")

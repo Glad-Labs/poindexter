@@ -24,7 +24,9 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/api/video", tags=["video"])
 
 SITE_URL = "https://www.gladlabs.io"
-MEDIA_BASE_URL = os.getenv("SITE_URL", SITE_URL)
+
+from services.site_config import site_config
+R2_PUBLIC_URL = site_config.get("r2_public_url", "https://www.gladlabs.io/media")
 
 
 def _rfc2822(dt: datetime) -> str:
@@ -86,7 +88,7 @@ async def video_feed():
     SubElement(channel, "language").text = "en-us"
 
     atom_link = SubElement(channel, "{http://www.w3.org/2005/Atom}link")
-    atom_link.set("href", f"{MEDIA_BASE_URL}/api/video/feed.xml")
+    atom_link.set("href", f"{SITE_URL}/api/video/feed.xml")
     atom_link.set("rel", "self")
     atom_link.set("type", "application/rss+xml")
 
@@ -111,7 +113,7 @@ async def video_feed():
             SubElement(item, "pubDate").text = _rfc2822(pub_date)
 
         enclosure = SubElement(item, "enclosure")
-        enclosure.set("url", f"{MEDIA_BASE_URL}/media/video/{pid}.mp4")
+        enclosure.set("url", f"{R2_PUBLIC_URL}/video/{pid}.mp4")
         enclosure.set("length", str(disk_info.get("file_size_bytes", 0)))
         enclosure.set("type", "video/mp4")
 
