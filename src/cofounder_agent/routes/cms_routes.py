@@ -265,6 +265,13 @@ async def preview_post(preview_token: str):
             post["has_podcast"] = (PODCAST_DIR / f"{post_id}.mp3").exists()
             post["has_video"] = (VIDEO_DIR / f"{post_id}.mp4").exists()
             post["is_preview"] = True
+            # Include direct media URLs for preview players
+            from services.site_config import site_config as _sc
+            _r2_url = _sc.get("r2_public_url", "https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev")
+            if post["has_podcast"]:
+                post["podcast_url"] = f"{_r2_url}/podcast/{post_id}.mp3"
+            if post["has_video"]:
+                post["video_url"] = f"{_r2_url}/video/{post_id}.mp4"
 
             return post
     except HTTPException:
