@@ -141,6 +141,9 @@ async def main():
             size = mp3_path.stat().st_size
             pub_date = p["published_at"].strftime("%a, %d %b %Y %H:%M:%S +0000") if p["published_at"] else now
             desc = escape_xml(p["excerpt"] or p["title"])
+            # Estimate duration: ~16kB/s for 128kbps MP3
+            dur_secs = max(1, size // 16000)
+            dur_fmt = f"{dur_secs // 3600:02d}:{(dur_secs % 3600) // 60:02d}:{dur_secs % 60:02d}"
             pod_items.append(f"""    <item>
       <title><![CDATA[{p['title']}]]></title>
       <link>{SITE_URL}/posts/{p['slug']}</link>
@@ -148,6 +151,7 @@ async def main():
       <guid>gladlabs-podcast-{pid}</guid>
       <pubDate>{pub_date}</pubDate>
       <enclosure url="{R2_URL}/podcast/{pid}.mp3" length="{size}" type="audio/mpeg" />
+      <itunes:duration>{dur_fmt}</itunes:duration>
       <itunes:explicit>no</itunes:explicit>
     </item>""")
 
@@ -166,7 +170,9 @@ async def main():
       <itunes:name>Matt Gladding</itunes:name>
       <itunes:email>mattg@gladlabs.io</itunes:email>
     </itunes:owner>
+    <itunes:image href="{SITE_URL}/og-image.jpg" />
     <itunes:category text="Technology" />
+    <itunes:type>episodic</itunes:type>
     <itunes:explicit>no</itunes:explicit>
     <atom:link href="{SITE_URL}/podcast-feed.xml" rel="self" type="application/rss+xml" />
 {chr(10).join(pod_items)}
