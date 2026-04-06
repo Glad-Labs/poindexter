@@ -532,13 +532,33 @@ class TaskExecutor:
                         critical=True,
                     )
                 else:
-                    await _notify_openclaw(
+                    # Generate preview token so Matt can see the post before approving
+                    preview_url = ""
+                    try:
+                        import secrets as _secrets
+                        preview_token = _secrets.token_hex(16)
+                        pool = getattr(self.database_service, "cloud_pool", None) or self.database_service.pool
+                        await pool.execute(
+                            "UPDATE posts SET preview_token = $1 WHERE task_id = $2",
+                            preview_token, task_id,
+                        )
+                        from services.site_config import site_config as _sc
+                        _site_url = _sc.get("site_url", "https://www.gladlabs.io")
+                        preview_url = f"{_site_url}/preview/{preview_token}"
+                    except Exception:
+                        logger.debug("[PREVIEW] Failed to create preview token", exc_info=True)
+
+                    msg = (
                         f"📝 Awaiting approval: \"{topic}\"\n"
                         f"Quality score: {quality_score:.0f}/100\n"
-                        f"Task ID: {task_id[:8]}\n"
-                        f"Reply: /approve-post {task_id[:8]}",
-                        critical=True,
                     )
+                    if preview_url:
+                        msg += f"Preview: {preview_url}\n"
+                    msg += (
+                        f"Task ID: {task_id[:8]}\n"
+                        f"Reply: /approve-post {task_id[:8]}"
+                    )
+                    await _notify_openclaw(msg, critical=True)
 
                 return
 
