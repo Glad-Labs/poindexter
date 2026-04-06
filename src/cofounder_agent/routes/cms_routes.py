@@ -251,29 +251,52 @@ async def preview_post(preview_token: str):
                 """,
                 preview_token,
             )
-            if not row:
+            if row:
+                post = dict(row)
+                for dt_field in ("published_at", "created_at", "updated_at"):
+                    if post.get(dt_field):
+                        post[dt_field] = post[dt_field].isoformat()
+                # Include podcast/video availability
+                from services.podcast_service import PODCAST_DIR
+                from services.video_service import VIDEO_DIR
+                post_id = str(post["id"])
+                post["has_podcast"] = (PODCAST_DIR / f"{post_id}.mp3").exists()
+                post["has_video"] = (VIDEO_DIR / f"{post_id}.mp4").exists()
+                post["is_preview"] = True
+                # Include direct media URLs for preview players
+                from services.site_config import site_config as _sc
+                _r2_url = _sc.get("r2_public_url", "https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev")
+                if post["has_podcast"]:
+                    post["podcast_url"] = f"{_r2_url}/podcast/{post_id}.mp3"
+                if post["has_video"]:
+                    post["video_url"] = f"{_r2_url}/video/{post_id}.mp4"
+
+                return post
+
+            # No post row yet — check content_tasks (pre-approval preview)
+            task_row = await conn.fetchrow(
+                """
+                SELECT task_id, topic AS title, content, excerpt, featured_image_url,
+                       seo_title, seo_description, seo_keywords, category, quality_score,
+                       status, created_at, updated_at, metadata
+                FROM content_tasks
+                WHERE metadata->>'preview_token' = $1
+                """,
+                preview_token,
+            )
+            if not task_row:
                 raise HTTPException(status_code=404, detail="Post not found")
 
-            post = dict(row)
-            for dt_field in ("published_at", "created_at", "updated_at"):
-                if post.get(dt_field):
-                    post[dt_field] = post[dt_field].isoformat()
-            # Include podcast/video availability
-            from services.podcast_service import PODCAST_DIR
-            from services.video_service import VIDEO_DIR
-            post_id = str(post["id"])
-            post["has_podcast"] = (PODCAST_DIR / f"{post_id}.mp3").exists()
-            post["has_video"] = (VIDEO_DIR / f"{post_id}.mp4").exists()
-            post["is_preview"] = True
-            # Include direct media URLs for preview players
-            from services.site_config import site_config as _sc
-            _r2_url = _sc.get("r2_public_url", "https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev")
-            if post["has_podcast"]:
-                post["podcast_url"] = f"{_r2_url}/podcast/{post_id}.mp3"
-            if post["has_video"]:
-                post["video_url"] = f"{_r2_url}/video/{post_id}.mp4"
-
-            return post
+            task = dict(task_row)
+            for dt_field in ("created_at", "updated_at"):
+                if task.get(dt_field):
+                    task[dt_field] = task[dt_field].isoformat()
+            task["is_preview"] = True
+            task["is_task_preview"] = True  # Flag: this is a task, not a published post
+            task["slug"] = None
+            task["has_podcast"] = False
+            task["has_video"] = False
+            return task
     except HTTPException:
         raise
     except Exception as e:

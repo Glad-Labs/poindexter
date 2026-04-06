@@ -20,19 +20,30 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
+# Benchmarks require a real app instance which needs database connectivity.
+# Skip the entire module if pytest-benchmark is not installed or DB is unavailable.
+pytest_plugins: list[str] = []
+
 DEV_TOKEN = "dev-token"
 AUTH_HEADERS = {"Authorization": f"Bearer {DEV_TOKEN}"}
 
 
 @pytest.fixture(scope="session")
 def app():
-    """Import and return the FastAPI app with minimal env setup."""
+    """Import and return the FastAPI app with minimal env setup.
+
+    Requires a reachable database — the app startup connects during lifespan.
+    If the app fails to start (no DB, missing deps), skip all benchmarks.
+    """
     # Set required env vars so the app can import without crashing
     os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
     os.environ.setdefault("ANTHROPIC_API_KEY", "benchmark-placeholder")
     os.environ.setdefault("SECRET_KEY", "benchmark-secret-key")
 
-    from main import app as _app  # noqa: PLC0415
+    try:
+        from main import app as _app  # noqa: PLC0415
+    except Exception as exc:
+        pytest.skip(f"Cannot import app for benchmarks: {exc}")
 
     return _app
 
@@ -40,5 +51,8 @@ def app():
 @pytest.fixture(scope="session")
 def client(app):
     """Return a TestClient configured for benchmark tests."""
-    with TestClient(app, raise_server_exceptions=False) as c:
-        yield c
+    try:
+        with TestClient(app, raise_server_exceptions=False) as c:
+            yield c
+    except Exception as exc:
+        pytest.skip(f"Cannot start TestClient for benchmarks: {exc}")

@@ -533,13 +533,17 @@ class TaskExecutor:
                     )
                 else:
                     # Generate preview token so Matt can see the post before approving
+                    # NOTE: At this point, no post row exists yet (post is created on approval).
+                    # Store preview_token on the content_tasks table instead.
                     preview_url = ""
                     try:
                         import secrets as _secrets
                         preview_token = _secrets.token_hex(16)
                         pool = getattr(self.database_service, "cloud_pool", None) or self.database_service.pool
                         await pool.execute(
-                            "UPDATE posts SET preview_token = $1 WHERE task_id = $2",
+                            """UPDATE content_tasks
+                               SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('preview_token', $1::text)
+                               WHERE task_id = $2""",
                             preview_token, task_id,
                         )
                         from services.site_config import site_config as _sc
