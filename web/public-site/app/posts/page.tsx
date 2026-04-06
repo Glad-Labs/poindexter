@@ -66,6 +66,7 @@ export const metadata: Metadata = {
   title: 'All Articles | Glad Labs',
   description:
     'Browse our complete collection of in-depth articles on AI, technology, and digital transformation.',
+  alternates: { canonical: 'https://www.gladlabs.io/posts' },
   openGraph: {
     title: 'All Articles | Glad Labs',
     description:
