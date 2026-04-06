@@ -19,11 +19,19 @@ Covers ContentTaskStore:
 Also covers get_content_task_store singleton behavior.
 """
 
-from unittest.mock import AsyncMock
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.content_router_service import ContentTaskStore, get_content_task_store
+from services.content_router_service import (
+    ContentTaskStore,
+    _is_stage_enabled,
+    _normalize_text,
+    _parse_model_preferences,
+    _run_stage_with_timeout,
+    get_content_task_store,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -340,3 +348,203 @@ class TestGetContentTaskStore:
         assert store2 is store1
         assert store2.database_service is db
         mod._content_task_store = None  # cleanup
+
+
+# ===========================================================================
+# _normalize_text
+# ===========================================================================
+
+
+@pytest.mark.unit
+class TestNormalizeText:
+    """Tests for Unicode→ASCII text normalization."""
+
+    def test_empty_string_returns_empty(self):
+        assert _normalize_text("") == ""
+
+    def test_none_returns_none(self):
+        assert _normalize_text(None) is None
+
+    def test_smart_single_quotes(self):
+        assert _normalize_text("\u2018hello\u2019") == "'hello'"
+
+    def test_smart_double_quotes(self):
+        assert _normalize_text("\u201chello\u201d") == '"hello"'
+
+    def test_em_dash(self):
+        assert _normalize_text("word\u2014word") == "word--word"
+
+    def test_en_dash(self):
+        assert _normalize_text("1\u20132") == "1-2"
+
+    def test_ellipsis(self):
+        assert _normalize_text("wait\u2026") == "wait..."
+
+    def test_non_breaking_space(self):
+        assert _normalize_text("hello\u00a0world") == "hello world"
+
+    def test_non_breaking_hyphen(self):
+        assert _normalize_text("self\u2011hosted") == "self-hosted"
+
+    def test_plain_text_unchanged(self):
+        text = "Hello, world! This is normal ASCII."
+        assert _normalize_text(text) == text
+
+    def test_multiple_replacements(self):
+        text = "\u201cHello\u201d \u2014 it\u2019s a test\u2026"
+        expected = '"Hello" -- it\'s a test...'
+        assert _normalize_text(text) == expected
+
+
+# ===========================================================================
+# _parse_model_preferences
+# ===========================================================================
+
+
+@pytest.mark.unit
+class TestParseModelPreferences:
+    """Tests for model preference parsing from UI selections."""
+
+    def test_none_returns_none_none(self):
+        model, provider = _parse_model_preferences(None)
+        assert model is None
+        assert provider is None
+
+    def test_empty_dict_returns_none_none(self):
+        model, provider = _parse_model_preferences({})
+        assert model is None
+        assert provider is None
+
+    def test_auto_returns_none_none(self):
+        model, provider = _parse_model_preferences({"draft": "auto"})
+        assert model is None
+        assert provider is None
+
+    def test_slash_format(self):
+        model, provider = _parse_model_preferences({"draft": "gemini/gemini-1.5-pro"})
+        assert model == "gemini-1.5-pro"
+        assert provider == "gemini"
+
+    def test_infers_gemini_provider(self):
+        model, provider = _parse_model_preferences({"draft": "gemini-1.5-flash"})
+        assert provider == "gemini"
+
+    def test_infers_openai_provider_from_gpt(self):
+        model, provider = _parse_model_preferences({"draft": "gpt-4"})
+        assert provider == "openai"
+
+    def test_infers_anthropic_provider(self):
+        model, provider = _parse_model_preferences({"draft": "claude-3-opus"})
+        assert provider == "anthropic"
+
+    def test_infers_ollama_provider_from_llama(self):
+        model, provider = _parse_model_preferences({"draft": "llama3"})
+        assert provider == "ollama"
+
+    def test_infers_ollama_provider_from_mistral(self):
+        model, provider = _parse_model_preferences({"draft": "mistral"})
+        assert provider == "ollama"
+
+    def test_duplicate_gemini_prefix(self):
+        model, provider = _parse_model_preferences({"draft": "gemini-gemini-1.5-pro"})
+        assert provider == "gemini"
+        assert model == "gemini-1.5-pro"
+
+    def test_duplicate_gpt_prefix(self):
+        model, provider = _parse_model_preferences({"draft": "gpt-gpt-4"})
+        assert provider == "openai"
+        assert model == "gpt-4"
+
+    def test_duplicate_claude_prefix(self):
+        model, provider = _parse_model_preferences({"draft": "claude-claude-opus"})
+        assert provider == "anthropic"
+        assert model == "claude-opus"
+
+    def test_fallback_phase_generate(self):
+        model, provider = _parse_model_preferences({"generate": "gpt-4"})
+        assert provider == "openai"
+
+    def test_fallback_phase_content(self):
+        model, provider = _parse_model_preferences({"content": "gpt-4"})
+        assert provider == "openai"
+
+    def test_unknown_model_sets_model_only(self):
+        model, provider = _parse_model_preferences({"draft": "my-custom-model"})
+        assert model == "my-custom-model"
+        assert provider is None
+
+    def test_strips_whitespace(self):
+        model, provider = _parse_model_preferences({"draft": "  gpt-4  "})
+        assert provider == "openai"
+
+
+# ===========================================================================
+# _is_stage_enabled
+# ===========================================================================
+
+
+@pytest.mark.unit
+class TestIsStageEnabled:
+    """Tests for pipeline stage enable/disable checks."""
+
+    @pytest.mark.asyncio
+    async def test_returns_true_when_pool_is_none(self):
+        result = await _is_stage_enabled(None, "generate_content")
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_returns_true_when_stage_not_in_db(self):
+        pool = MagicMock()
+        pool.fetchrow = AsyncMock(return_value=None)
+        result = await _is_stage_enabled(pool, "nonexistent_stage")
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_returns_enabled_value_from_db(self):
+        pool = MagicMock()
+        pool.fetchrow = AsyncMock(return_value={"enabled": False})
+        result = await _is_stage_enabled(pool, "generate_content")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_returns_true_on_db_exception(self):
+        pool = MagicMock()
+        pool.fetchrow = AsyncMock(side_effect=Exception("DB down"))
+        result = await _is_stage_enabled(pool, "any_stage")
+        assert result is True
+
+
+# ===========================================================================
+# _run_stage_with_timeout
+# ===========================================================================
+
+
+@pytest.mark.unit
+class TestRunStageWithTimeout:
+    """Tests for stage timeout wrapper."""
+
+    @pytest.mark.asyncio
+    async def test_returns_result_on_success(self):
+        async def fast_stage():
+            return {"content": "hello"}
+
+        result = await _run_stage_with_timeout(fast_stage(), "verify_task", "task-123")
+        assert result == {"content": "hello"}
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_timeout(self):
+        async def slow_stage():
+            await asyncio.sleep(100)
+            return "never"
+
+        with patch.dict("services.content_router_service.STAGE_TIMEOUTS", {"slow": 0.01}):
+            result = await _run_stage_with_timeout(slow_stage(), "slow", "task-123")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_uses_default_timeout_for_unknown_stage(self):
+        async def fast_stage():
+            return "ok"
+
+        result = await _run_stage_with_timeout(fast_stage(), "unknown_stage", "task-123")
+        assert result == "ok"
