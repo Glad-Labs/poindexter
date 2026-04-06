@@ -81,9 +81,9 @@ class TestRouteManifestStructure:
         for entry in _WORKER_ROUTES:
             assert entry[2] in coordinator_keys, f"Worker route {entry[2]} not in coordinator"
 
-    def test_worker_manifest_has_5_routes(self):
-        """Worker manifest should have exactly 5 route entries."""
-        assert len(_WORKER_ROUTES) == 5
+    def test_worker_manifest_has_6_routes(self):
+        """Worker manifest should have exactly 6 route entries (including CMS for preview)."""
+        assert len(_WORKER_ROUTES) == 6
 
     def test_worker_task_router_is_first(self):
         """Task router should be first in the worker manifest."""
@@ -212,13 +212,14 @@ class TestRegisterAllRoutes:
         registered = [k for k, v in result.items() if v is True]
         assert len(registered) == len(_WORKER_ROUTES)
 
-    def test_worker_mode_does_not_include_cms_router(self):
+    def test_worker_mode_includes_cms_router_for_preview(self):
+        """Worker mode includes CMS routes for preview endpoint access."""
         app = _make_app()
         with patch("utils.route_registration.importlib.import_module") as mock_import:
             mock_module = MagicMock()
             mock_import.return_value = mock_module
             result = register_all_routes(app, deployment_mode="worker")
-        assert "cms_router" not in result or result.get("cms_router") is not True
+        assert result.get("cms_router") is True
 
     def test_coordinator_mode_includes_all_7_routes(self):
         app = _make_app()
