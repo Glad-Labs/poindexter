@@ -8,7 +8,7 @@ Using pure asyncpg for non-blocking database access.
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 
 from middleware.api_token_auth import verify_api_token, verify_api_token_optional
@@ -306,6 +306,98 @@ async def preview_post(preview_token: str):
     except Exception as e:
         logger.error("Preview fetch error: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch preview")
+
+
+@router.get("/preview/{preview_token}", response_class=Response)
+async def preview_post_html(preview_token: str):
+    """
+    Render a mobile-friendly HTML preview page for a draft post.
+    Accessible over Tailscale — no Next.js needed.
+    """
+    import re as _re
+    if not _re.match(r'^[a-f0-9]{32}$', preview_token):
+        return Response(content="Not found", status_code=404, media_type="text/html")
+
+    # Reuse the JSON preview endpoint logic
+    post = await preview_post(preview_token)
+    if not post:
+        return Response(content="Not found", status_code=404, media_type="text/html")
+
+    # Handle both dict (from task preview) and response model
+    if hasattr(post, "body"):
+        import json as _json
+        post = _json.loads(post.body)
+
+    title = post.get("title", "Untitled")
+    content = post.get("content", "")
+    status = post.get("status", "unknown")
+    quality = post.get("quality_score", "?")
+    excerpt = post.get("excerpt", "")
+    featured_img = post.get("featured_image_url", "")
+    has_podcast = post.get("has_podcast", False)
+    has_video = post.get("has_video", False)
+    podcast_url = post.get("podcast_url", "")
+    video_url = post.get("video_url", "")
+    task_id = post.get("task_id", post.get("id", ""))
+
+    # Build podcast/video players
+    media_html = ""
+    if podcast_url:
+        media_html += f'<div style="margin:16px 0;padding:12px;background:#1a2332;border:1px solid #22c55e44;border-radius:8px"><h3 style="color:#22c55e;font-size:12px;text-transform:uppercase;margin:0 0 8px">Podcast</h3><audio controls style="width:100%" preload="metadata"><source src="{podcast_url}" type="audio/mpeg"></audio></div>'
+    if video_url:
+        media_html += f'<div style="margin:16px 0;padding:12px;background:#1a2332;border:1px solid #3b82f644;border-radius:8px"><h3 style="color:#3b82f6;font-size:12px;text-transform:uppercase;margin:0 0 8px">Video</h3><video controls style="width:100%;border-radius:6px" preload="metadata" playsinline><source src="{video_url}" type="video/mp4"></video></div>'
+
+    img_html = ""
+    if featured_img and featured_img.startswith("http"):
+        img_html = f'<img src="{featured_img}" style="width:100%;border-radius:12px;margin:16px 0" alt="{title}">'
+
+    html = f"""<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>[PREVIEW] {title}</title>
+<style>
+body{{font-family:-apple-system,system-ui,sans-serif;background:#0f172a;color:#cbd5e1;margin:0;padding:0}}
+.banner{{background:#f59e0b;color:#000;text-align:center;padding:8px;font-weight:bold;font-size:13px;position:sticky;top:0;z-index:50}}
+.banner small{{font-weight:normal;opacity:.7;margin-left:8px}}
+.container{{max-width:720px;margin:0 auto;padding:16px}}
+h1{{color:#fff;font-size:28px;line-height:1.3;margin:16px 0 8px}}
+.excerpt{{color:#94a3b8;font-size:16px;line-height:1.6;margin-bottom:16px}}
+.badges span{{display:inline-block;padding:4px 10px;border-radius:20px;font-size:12px;margin:0 4px 8px 0}}
+.badge-status{{background:#f59e0b33;color:#fbbf24;border:1px solid #f59e0b44}}
+.badge-quality{{background:#22c55e33;color:#4ade80;border:1px solid #22c55e44}}
+.badge-podcast{{background:#22c55e22;color:#22c55e;border:1px solid #22c55e33}}
+.badge-video{{background:#3b82f622;color:#3b82f6;border:1px solid #3b82f633}}
+article{{color:#e2e8f0;line-height:1.8;font-size:16px}}
+article h1,article h2,article h3{{color:#fff}}
+article h2{{font-size:22px;margin:24px 0 12px;border-bottom:1px solid #334155;padding-bottom:8px}}
+article h3{{font-size:18px;margin:20px 0 8px}}
+article a{{color:#22d3ee}}
+article code{{background:#1e293b;padding:2px 6px;border-radius:4px;font-size:14px;color:#67e8f9}}
+article pre{{background:#1e293b;padding:16px;border-radius:8px;overflow-x:auto;border:1px solid #334155}}
+article blockquote{{border-left:3px solid #22d3ee55;background:#1e293b44;padding:8px 16px;margin:16px 0;border-radius:0 8px 8px 0}}
+article ul,article ol{{padding-left:24px}}
+article li{{margin:4px 0}}
+article img{{max-width:100%;border-radius:8px;margin:12px 0}}
+.approve{{margin:24px 0;padding:16px;background:#1e293b;border-radius:12px;text-align:center}}
+.approve a{{display:inline-block;padding:12px 32px;background:#22c55e;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;font-size:16px}}
+</style></head><body>
+<div class="banner">PREVIEW MODE<small>{status.upper()} | Q: {quality}</small></div>
+<div class="container">
+{img_html}
+<h1>{title}</h1>
+{"<p class='excerpt'>" + excerpt + "</p>" if excerpt else ""}
+<div class="badges">
+<span class="badge-status">{status.upper()}</span>
+<span class="badge-quality">Quality: {quality}</span>
+{"<span class='badge-podcast'>Podcast Ready</span>" if has_podcast else ""}
+{"<span class='badge-video'>Video Ready</span>" if has_video else ""}
+</div>
+{media_html}
+<article>{content}</article>
+</div></body></html>"""
+
+    return Response(content=html, media_type="text/html; charset=utf-8")
 
 
 @router.get("/api/posts/search")
