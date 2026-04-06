@@ -26,7 +26,12 @@ router = APIRouter(prefix="/api/video", tags=["video"])
 SITE_URL = "https://www.gladlabs.io"
 
 from services.site_config import site_config
-R2_PUBLIC_URL = site_config.get("r2_public_url", "https://www.gladlabs.io/media")
+
+_R2_FALLBACK = "https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev"
+
+
+def _r2_url() -> str:
+    return site_config.get("r2_public_url", _R2_FALLBACK)
 
 
 def _rfc2822(dt: datetime) -> str:
@@ -113,7 +118,7 @@ async def video_feed():
             SubElement(item, "pubDate").text = _rfc2822(pub_date)
 
         enclosure = SubElement(item, "enclosure")
-        enclosure.set("url", f"{R2_PUBLIC_URL}/video/{pid}.mp4")
+        enclosure.set("url", f"{_r2_url()}/video/{pid}.mp4")
         enclosure.set("length", str(disk_info.get("file_size_bytes", 0)))
         enclosure.set("type", "video/mp4")
 

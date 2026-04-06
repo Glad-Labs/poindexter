@@ -18,6 +18,7 @@ from fastapi.responses import FileResponse, Response
 from middleware.api_token_auth import verify_api_token
 from services.logger_config import get_logger
 from services.podcast_service import PODCAST_DIR, PodcastService
+from services.site_config import site_config
 
 logger = get_logger(__name__)
 
@@ -28,8 +29,12 @@ router = APIRouter(prefix="/api/podcast", tags=["podcast"])
 # ---------------------------------------------------------------------------
 
 SITE_URL = "https://www.gladlabs.io"
-# Media files hosted on Cloudflare R2 CDN — zero egress fees, globally cached.
-R2_PUBLIC_URL = site_config.get("r2_public_url", "https://www.gladlabs.io/media")
+_R2_FALLBACK = "https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev"
+
+
+def _r2_url() -> str:
+    """Get R2 CDN base URL, with DB override support."""
+    return site_config.get("r2_public_url", _R2_FALLBACK)
 
 
 def _format_duration(seconds: int) -> str:
@@ -187,7 +192,7 @@ def _build_rss_xml(episodes: list[dict]) -> str:
         # Enclosure (the MP3 file)
         enclosure = SubElement(item, "enclosure")
         enclosure.set(
-            "url", f"{R2_PUBLIC_URL}/podcast/{ep['post_id']}.mp3"
+            "url", f"{_r2_url()}/podcast/{ep['post_id']}.mp3"
         )
         enclosure.set("length", str(ep.get("file_size_bytes", 0)))
         enclosure.set("type", "audio/mpeg")
