@@ -368,3 +368,192 @@ class TestCheckOllamaAsync:
 
         # Should not have made any HTTP request
         mock_client.get.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# _extract_ollama_response
+# ---------------------------------------------------------------------------
+
+
+class TestExtractOllamaResponse:
+    """Tests for parsing various Ollama response formats."""
+
+    def test_dict_with_text_key(self):
+        gen = _make_generator()
+        result = gen._extract_ollama_response({"text": "Hello world"})
+        assert result == "Hello world"
+
+    def test_dict_with_response_key(self):
+        gen = _make_generator()
+        result = gen._extract_ollama_response({"response": "From API"})
+        assert result == "From API"
+
+    def test_dict_with_content_key(self):
+        gen = _make_generator()
+        result = gen._extract_ollama_response({"content": "Chat format"})
+        assert result == "Chat format"
+
+    def test_dict_prefers_text_over_response(self):
+        gen = _make_generator()
+        result = gen._extract_ollama_response({"text": "preferred", "response": "fallback"})
+        assert result == "preferred"
+
+    def test_dict_with_no_known_keys(self):
+        gen = _make_generator()
+        result = gen._extract_ollama_response({"unknown": "value"})
+        assert result == ""
+
+    def test_string_response(self):
+        gen = _make_generator()
+        result = gen._extract_ollama_response("Direct string output")
+        assert result == "Direct string output"
+
+    def test_empty_string_response(self):
+        gen = _make_generator()
+        result = gen._extract_ollama_response("")
+        assert result == ""
+
+    def test_none_response(self):
+        gen = _make_generator()
+        result = gen._extract_ollama_response(None)
+        assert result == ""
+
+    def test_integer_response(self):
+        gen = _make_generator()
+        result = gen._extract_ollama_response(42)
+        assert result == ""
+
+    def test_empty_dict(self):
+        gen = _make_generator()
+        result = gen._extract_ollama_response({})
+        assert result == ""
+
+
+# ---------------------------------------------------------------------------
+# _validate_content edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestValidateContentEdgeCases:
+    """Additional edge case tests for content validation."""
+
+    def test_missing_heading_penalizes(self):
+        gen = _make_generator()
+        # Content with no # heading
+        content = "No heading here\n\n## Section 1\n\n## Section 2\n\n## Section 3\n\n- bullet\n\nConclusion summary\n\nReady to try it?"
+        result = gen._validate_content(content, "test topic content", 15)
+        assert "Missing title" in str(result.issues)
+
+    def test_missing_cta_penalizes(self):
+        gen = _make_generator()
+        # Content with no CTA keywords
+        content = "# Test Topic Content\n\n## Section 1\n\n## Section 2\n\n## Section 3\n\n- bullet\n\nConclusion summary of test topic content"
+        result = gen._validate_content(content, "test topic content", 15)
+        assert "Missing call-to-action" in str(result.issues)
+
+    def test_few_headings_penalizes(self):
+        gen = _make_generator()
+        content = "# Test Topic Content\n\n## Only one section\n\n- list\n\nConclusion summary\n\nReady to start?"
+        result = gen._validate_content(content, "test topic content", 10)
+        assert "Insufficient structure" in str(result.issues)
+
+    def test_well_structured_content_scores_high(self):
+        gen = _make_generator()
+        words = " ".join(["word"] * 100)
+        content = f"# AI Tools for test topic content\n\n{words}\n\n## Section 1\n\n{words}\n\n## Section 2\n\n{words}\n\n## Section 3\n\n- bullet point\n\n## Conclusion\n\nSummary of test topic content.\n\nReady to start implementing?"
+        result = gen._validate_content(content, "test topic content", 400)
+        assert result.quality_score >= 7.0
+
+    def test_empty_content_scores_zero(self):
+        gen = _make_generator()
+        result = gen._validate_content("", "test topic", 1000)
+        assert result.quality_score <= 2.0
+        assert result.is_valid is False
+
+
+# ---------------------------------------------------------------------------
+# _generate_fallback_content
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateFallbackContentExpanded:
+    """More tests for fallback content template."""
+
+    def test_includes_conclusion(self):
+        gen = _make_generator()
+        content = gen._generate_fallback_content("Test Topic", "technical", "professional", ["ai"])
+        assert "Conclusion" in content
+
+    def test_includes_numbered_steps(self):
+        gen = _make_generator()
+        content = gen._generate_fallback_content("Test Topic", "technical", "professional", [])
+        assert "1." in content
+
+    def test_includes_style_and_tone(self):
+        gen = _make_generator()
+        content = gen._generate_fallback_content("Test", "narrative", "casual", [])
+        assert "narrative" in content
+        assert "casual" in content
+
+    def test_tags_included(self):
+        gen = _make_generator()
+        content = gen._generate_fallback_content("Test", "blog", "friendly", ["python", "ai"])
+        assert "python, ai" in content
+
+    def test_empty_tags_shows_general(self):
+        gen = _make_generator()
+        content = gen._generate_fallback_content("Test", "blog", "friendly", [])
+        assert "general" in content
+
+    def test_fallback_passes_validation(self):
+        """Fallback content should pass basic structural validation."""
+        gen = _make_generator()
+        content = gen._generate_fallback_content("Test Topic AI", "technical", "professional", ["ai"])
+        result = gen._validate_content(content, "test topic ai", len(content.split()))
+        # Fallback is deliberately simple, but should have structure
+        assert result.quality_score >= 3.0
+
+
+# ---------------------------------------------------------------------------
+# get_content_generator singleton
+# ---------------------------------------------------------------------------
+
+
+class TestGetContentGenerator:
+    def test_returns_ai_content_generator(self):
+        import services.ai_content_generator as mod
+        mod._generator = None
+        from services.ai_content_generator import get_content_generator
+        gen = get_content_generator()
+        assert isinstance(gen, AIContentGenerator)
+        mod._generator = None
+
+    def test_returns_same_instance(self):
+        import services.ai_content_generator as mod
+        mod._generator = None
+        from services.ai_content_generator import get_content_generator
+        g1 = get_content_generator()
+        g2 = get_content_generator()
+        assert g1 is g2
+        mod._generator = None
+
+
+# ---------------------------------------------------------------------------
+# ContentValidationResult
+# ---------------------------------------------------------------------------
+
+
+class TestContentValidationResultExpanded:
+    def test_default_issues_empty(self):
+        result = ContentValidationResult(is_valid=True, quality_score=8.0)
+        assert result.issues == []
+        assert result.feedback == ""
+
+    def test_custom_issues(self):
+        result = ContentValidationResult(
+            is_valid=False, quality_score=3.0,
+            issues=["too short", "no heading"],
+            feedback="Needs work",
+        )
+        assert len(result.issues) == 2
+        assert result.feedback == "Needs work"
