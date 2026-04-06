@@ -549,8 +549,9 @@ class TaskExecutor:
                             preview_token, task_id,
                         )
                         from services.site_config import site_config as _sc
-                        _site_url = _sc.get("site_url", "https://www.gladlabs.io")
-                        preview_url = f"{_site_url}/preview/{preview_token}"
+                        # Use worker's own URL for HTML preview (accessible via Tailscale)
+                        _preview_base = _sc.get("preview_base_url", "http://100.81.93.12:8002")
+                        preview_url = f"{_preview_base}/preview/{preview_token}"
                     except Exception:
                         logger.debug("[PREVIEW] Failed to create preview token", exc_info=True)
 

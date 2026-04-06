@@ -347,8 +347,10 @@ async def approve_task(
                     merged_result["post_slug"] = pub_result.post_slug
                     merged_result["preview_token"] = preview_token
 
-                    # Send preview link to Telegram
-                    preview_url = f"https://www.gladlabs.io/preview/{preview_token}"
+                    # Send preview link (Tailscale-accessible HTML preview)
+                    from services.site_config import site_config as _prev_sc
+                    _preview_base = _prev_sc.get("preview_base_url", "http://100.81.93.12:8002")
+                    preview_url = f"{_preview_base}/preview/{preview_token}"
                     try:
                         from services.task_executor import _notify_openclaw
                         topic_name = task.get("topic", task.get("title", "Untitled"))
