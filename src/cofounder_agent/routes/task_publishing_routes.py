@@ -356,7 +356,8 @@ async def approve_task(
                             f"📋 Draft ready for review: \"{topic_name}\"\n"
                             f"Preview: {preview_url}\n"
                             f"Task: {task_id}\n"
-                            f"Approve to publish: reply 'publish {task_id[:8]}'"
+                            f"Approve to publish: reply 'publish {task_id[:8]}'",
+                            critical=True,
                         )
                     except Exception:
                         logger.debug("[STAGING] Notification failed", exc_info=True)
@@ -591,7 +592,8 @@ async def go_live(
             from services.site_config import site_config as _sc
             _site_url = _sc.get("site_url", "https://www.gladlabs.io")
             await _notify_openclaw(
-                f"🚀 Published: \"{row['title']}\"\n{_site_url}/posts/{row['slug']}"
+                f"🚀 Published: \"{row['title']}\"\n{_site_url}/posts/{row['slug']}",
+                critical=True,
             )
         except Exception:
             pass

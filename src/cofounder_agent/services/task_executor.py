@@ -666,7 +666,7 @@ class TaskExecutor:
                     })
                 except Exception:
                     logger.warning("[WEBHOOK] Failed to emit task.failed event", exc_info=True)
-                await _notify_openclaw(f"Failed: \"{topic}\" - {str(error_msg)[:100]}")
+                await _notify_openclaw(f"Failed: \"{topic}\" - {str(error_msg)[:100]}", critical=True)
             else:
                 logger.info(
                     "✅ [TASK_SINGLE] Task %s: task_id=%s user_id=%s category=%s quality_score=%s",
