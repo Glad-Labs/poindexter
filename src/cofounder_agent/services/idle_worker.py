@@ -1133,7 +1133,7 @@ class IdleWorker:
             return {"error": str(e)}
 
     async def _sync_page_views(self) -> dict:
-        """Pull new page_views rows from cloud (Railway) DB into local brain DB.
+        """Pull new page_views rows from cloud DB into local brain DB.
 
         Grafana queries the local DB, so this sync is needed for the
         Page Views dashboard to show data. Uses created_at watermark
@@ -1205,7 +1205,7 @@ class IdleWorker:
             return {"error": str(e)}
 
     async def _sync_newsletter_subscribers(self) -> dict:
-        """Pull new/updated newsletter_subscribers from cloud (Railway) DB into local brain DB.
+        """Pull new/updated newsletter_subscribers from cloud DB into local brain DB.
 
         Grafana queries the local DB, so this sync keeps subscriber data
         available locally. Uses updated_at watermark and INSERT ON CONFLICT

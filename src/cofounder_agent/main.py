@@ -307,7 +307,7 @@ app = FastAPI(
     description=f"""
 ## AI-powered content pipeline and business co-founder
 
-**Deployment mode: `{_deployment_mode}`** — {"always-on lightweight coordinator (Railway)" if _deployment_mode == "coordinator" else "heavy-compute worker (local PC)"}
+**Deployment mode: `{_deployment_mode}`** — {"always-on lightweight coordinator (cloud)" if _deployment_mode == "coordinator" else "heavy-compute worker (local PC)"}
 
 This system provides autonomous agents and intelligent orchestration
 for complete business operations including:
@@ -380,7 +380,7 @@ logger.info("[STARTUP] ✅ Routes registered (mode=%s)", _deployment_mode)
 @app.get("/api/health")
 async def api_health():
     """
-    Unified health check endpoint for Railway deployment and load balancers.
+    Unified health check endpoint for cloud deployment and load balancers.
 
     Returns comprehensive status of all critical services:
     - Startup status (starting/degraded/healthy)
@@ -389,7 +389,7 @@ async def api_health():
     - LLM providers availability
     - Timestamp for monitoring systems
 
-    Used by: Railway load balancers, monitoring systems, external health checks
+    Used by: Cloud load balancers, monitoring systems, external health checks
     Authentication: Not required (critical for load balancers)
     """
     try:

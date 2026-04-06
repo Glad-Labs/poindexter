@@ -63,7 +63,7 @@ def _should_run_post_publish_hooks() -> bool:
 
 
 async def _sync_published_post(post_id: str) -> None:
-    """Push a newly published post to the cloud Railway DB (non-blocking)."""
+    """Push a newly published post to the cloud DB (non-blocking)."""
     if not os.getenv("LOCAL_DATABASE_URL"):
         return
     try:

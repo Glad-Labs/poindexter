@@ -716,7 +716,7 @@ async def get_performance_metrics(
     summary="Operational gauges — task queue depth, executor health, WebSocket connections",
     description=(
         "Returns in-memory operational metrics without requiring a database query. "
-        "Designed for external monitoring scraping (Railway, Datadog, Loki). "
+        "Designed for external monitoring scraping (Datadog, Loki, etc.). "
         "Requires authentication for consistency with other metrics endpoints."
     ),
     include_in_schema=True,
@@ -730,7 +730,7 @@ async def get_operational_metrics(
     Return structured operational gauges for alerting and dashboards.
 
     Emits a structured INFO log alongside the JSON response so that
-    log-based metric pipelines (Railway/Loki) can create dashboards
+    log-based metric pipelines (Loki, etc.) can create dashboards
     without a Prometheus scraper.
 
     Metrics included:

@@ -1,13 +1,13 @@
 """
 Database Sync Service for Split Architecture
 
-Handles bidirectional sync between local brain DB and cloud (Railway) DB:
+Handles bidirectional sync between local brain DB and cloud (production) DB:
 
   PUSH (local -> cloud): Published posts, categories, tags, post_tags
   PULL (cloud -> local): page_views (web_analytics), newsletter subscriber counts
 
-Cloud DB (Railway):  Public site data only
-Local DB:            Full operational data + pulled metrics for Grafana
+Cloud DB:   Public site data only
+Local DB:   Full operational data + pulled metrics for Grafana
 
 All operations use upsert (INSERT ON CONFLICT UPDATE) for idempotency.
 Graceful failure: if either DB is unreachable, log and skip.
@@ -77,7 +77,7 @@ class SyncService:
             self._cloud_pool = await asyncpg.create_pool(
                 self.cloud_url, min_size=2, max_size=5, timeout=15, command_timeout=30,
             )
-            logger.info("Connected to cloud DB (Railway)")
+            logger.info("Connected to cloud DB")
         except Exception as exc:
             logger.error("Failed to connect to cloud DB: %s", exc)
             self._cloud_pool = None

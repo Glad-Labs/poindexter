@@ -86,7 +86,7 @@ def setup_telemetry(app, service_name="cofounder-agent"):
         provider = TracerProvider(resource=resource)
 
         # Configure the OTLP exporter only when an explicit endpoint is provided.
-        # Defaulting to localhost is not safe in production (Railway has no local OTLP
+        # Defaulting to localhost is not safe in production (cloud deploy has no local OTLP
         # collector) — it causes a silent export-failure cycle that wastes CPU/memory.
         # Set OTEL_EXPORTER_OTLP_ENDPOINT to point at Grafana Tempo, Honeycomb, etc.
         otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")

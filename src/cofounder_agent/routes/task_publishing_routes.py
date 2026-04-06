@@ -59,11 +59,11 @@ async def _embed_published_post(db_service: DatabaseService, post_dict: dict) ->
 
 
 async def _sync_published_post(post_id: str) -> None:
-    """Push a newly published post to the cloud Railway DB as a background task.
+    """Push a newly published post to the cloud DB as a background task.
 
     Non-blocking: if either database is unreachable, logs a warning
     and returns silently so the publish flow is never interrupted.
-    Skipped entirely when LOCAL_DATABASE_URL is not set (Railway coordinator mode).
+    Skipped entirely when LOCAL_DATABASE_URL is not set (coordinator mode).
     """
     if not os.getenv("LOCAL_DATABASE_URL"):
         logger.debug("[SYNC] Skipping post sync: LOCAL_DATABASE_URL not set (coordinator mode)")
@@ -86,7 +86,7 @@ def _should_run_post_publish_hooks() -> bool:
     """Return True if post-publish hooks (sync + embed) should run.
 
     They require LOCAL_DATABASE_URL to be set, meaning we are on the
-    local workstation with the brain DB. On Railway (coordinator mode)
+    local workstation with the brain DB. On the cloud coordinator,
     LOCAL_DATABASE_URL is absent and hooks are silently skipped.
     """
     return bool(os.getenv("LOCAL_DATABASE_URL"))

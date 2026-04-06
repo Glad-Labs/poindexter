@@ -5,7 +5,7 @@ Handles registration of route modules with the FastAPI application.
 Provides dependency injection of database service to route modules.
 
 Deployment modes (controlled by DEPLOYMENT_MODE env var):
-- coordinator (default): Railway — only routes the public site needs
+- coordinator (default): cloud — only routes the public site needs
 - worker: Local PC heavy compute. Minimal routes — workers claim tasks from DB.
 
 Coordinator routes (public site + essential ops):
@@ -40,7 +40,7 @@ logger = get_logger(__name__)
 # path /api/tasks/pending-approval is matched before the wildcard /{task_id}.
 # ---------------------------------------------------------------------------
 
-# Routes for coordinator mode (Railway — only what the public site needs)
+# Routes for coordinator mode (cloud — only what the public site needs)
 _COORDINATOR_ROUTES = [
     ("routes.approval_routes", "router", "approval_router", "task approval workflow"),
     ("routes.task_routes", "router", "task_router", "task management"),
