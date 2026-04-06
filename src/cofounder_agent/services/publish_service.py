@@ -547,6 +547,21 @@ async def publish_post_from_task(
             logger.debug("[VIDEO] Failed to queue video (non-fatal): %s", e)
 
     # ---------------------------------------------------------------
+    # 11d. Upload media to R2 CDN (fire-and-forget, after generation)
+    # ---------------------------------------------------------------
+    if _should_run_post_publish_hooks():
+        async def _upload_media_to_r2(pid: str) -> None:
+            """Wait for media files to appear, then upload to R2."""
+            import asyncio as _aio
+            from services.r2_upload_service import upload_podcast_episode, upload_video_episode
+            # Give podcast/video generation time to complete
+            await _aio.sleep(120)
+            await upload_podcast_episode(pid)
+            await upload_video_episode(pid)
+
+        asyncio.ensure_future(_upload_media_to_r2(post_id))
+
+    # ---------------------------------------------------------------
     # 12. Send notification
     # ---------------------------------------------------------------
     try:
