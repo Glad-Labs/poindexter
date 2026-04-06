@@ -53,19 +53,21 @@ _DISCORD_OPS_CHANNEL = "1487683559065125055"
 
 
 async def _notify_discord(message: str) -> None:
-    """Send ops notification to Discord #ops channel only (no Telegram spam)."""
+    """Send ops notification to Discord #ops channel via webhook."""
     _logger = get_logger(__name__)
     try:
+        # Load webhook URL from app_settings (DB-first config)
+        from services.site_config import site_config
+        webhook_url = site_config.get("discord_ops_webhook_url", "")
+        if not webhook_url:
+            _logger.debug("[NOTIFY:discord] No discord_ops_webhook_url configured — skipping")
+            return
+
         async with _httpx.AsyncClient(timeout=10) as client:
             _logger.info(f"[NOTIFY:discord] {message[:80]}")
             await client.post(
-                f"{_OPENCLAW_URL}/hooks/agent",
-                headers={"Authorization": f"Bearer {_OPENCLAW_TOKEN}"},
-                json={
-                    "message": f"Post this to the #ops channel in Discord: {message}",
-                    "channel": "discord",
-                    "target": _DISCORD_OPS_CHANNEL,
-                },
+                webhook_url,
+                json={"content": message},
             )
     except Exception as e:
         _logger.warning(f"[NOTIFY:discord] Failed: {e}")
