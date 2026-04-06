@@ -520,6 +520,24 @@ async def main() -> None:
         logger.info("Connecting to local pgvector DB...")
         local_conn = await asyncpg.connect(LOCAL_DSN)
 
+        # Load Gitea creds from DB if not set via env vars (DB-first config)
+        global GITEA_URL, GITEA_USER, GITEA_PASS, GITEA_REPO
+        if not GITEA_PASS:
+            try:
+                for key in ("gitea_url", "gitea_user", "gitea_password", "gitea_repo"):
+                    val = await local_conn.fetchval(
+                        "SELECT value FROM app_settings WHERE key = $1", key
+                    )
+                    if val:
+                        if key == "gitea_url": GITEA_URL = val
+                        elif key == "gitea_user": GITEA_USER = val
+                        elif key == "gitea_password": GITEA_PASS = val
+                        elif key == "gitea_repo": GITEA_REPO = val
+                if GITEA_PASS:
+                    logger.info("Loaded Gitea credentials from app_settings")
+            except Exception as e:
+                logger.debug(f"Could not load Gitea creds from DB: {e}")
+
         # Phase 1: memory files
         logger.info("--- Phase 1: Memory files ---")
         mem_stats = await sync_memory_files(local_conn, http)
