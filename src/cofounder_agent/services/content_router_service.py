@@ -723,17 +723,19 @@ async def _stage_generate_content(
     except Exception as e:
         logger.warning("RAG context skipped (non-fatal): %s", e)
 
-    content_text, model_used, metrics = await content_generator.generate_blog_post(
-        topic=topic,
-        style=style,
-        tone=tone,
-        target_length=target_length,
-        tags=tags or [],
-        preferred_model=preferred_model,
-        preferred_provider=preferred_provider,
-        writing_style_context=writing_style_context,
-        research_context=research_context,
-    )
+    from services.gpu_scheduler import gpu
+    async with gpu.lock("ollama", model=preferred_model):
+        content_text, model_used, metrics = await content_generator.generate_blog_post(
+            topic=topic,
+            style=style,
+            tone=tone,
+            target_length=target_length,
+            tags=tags or [],
+            preferred_model=preferred_model,
+            preferred_provider=preferred_provider,
+            writing_style_context=writing_style_context,
+            research_context=research_context,
+        )
 
     # Validate content_text is not None
     if not content_text:
@@ -937,7 +939,7 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
             async with _hx2.AsyncClient(timeout=30) as _c2:
                 _pr = await _c2.post(f"{ollama_url}/api/generate", json={
                     "model": _model, "prompt": _img_prompt_req, "stream": False,
-                    "options": {"num_predict": 100, "temperature": 0.8},
+                    "options": {"num_predict": 100, "temperature": 0.8, "num_ctx": 4096},
                 })
                 _pr.raise_for_status()
                 sdxl_inline_prompt = _pr.json().get("response", "").strip().strip('"')
@@ -1114,7 +1116,7 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
                     async with _hx.AsyncClient(timeout=30) as _c:
                         _r = await _c.post(f"{_ollama_url}/api/generate", json={
                             "model": "llama3:latest", "prompt": _img_prompt, "stream": False,
-                            "options": {"num_predict": 150, "temperature": 0.7},
+                            "options": {"num_predict": 150, "temperature": 0.7, "num_ctx": 4096},
                         })
                         _r.raise_for_status()
                         sdxl_prompt = _r.json().get("response", "").strip().strip('"')
@@ -1127,12 +1129,14 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False, dir=output_dir) as tmp:
                 output_path = tmp.name
 
-            success = await image_service.generate_image(
-                prompt=sdxl_prompt,
-                output_path=output_path,
-                negative_prompt=negative,
-                high_quality=True,
-            )
+            from services.gpu_scheduler import gpu
+            async with gpu.lock("sdxl", model="sdxl_lightning"):
+                success = await image_service.generate_image(
+                    prompt=sdxl_prompt,
+                    output_path=output_path,
+                    negative_prompt=negative,
+                    high_quality=True,
+                )
             if success and os.path.exists(output_path):
                 # Upload to Cloudinary for CDN hosting
                 image_url = output_path  # Fallback to local path

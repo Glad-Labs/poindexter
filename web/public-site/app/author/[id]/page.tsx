@@ -13,6 +13,12 @@ const authorProfiles: Record<string, { name: string; bio: string }> = {
   },
 };
 
+export function generateStaticParams() {
+  return Object.keys(authorProfiles)
+    .filter((id) => id !== 'default')
+    .map((id) => ({ id }));
+}
+
 export async function generateMetadata({
   params,
 }: {

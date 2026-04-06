@@ -27,11 +27,19 @@ def _generate_video(
     audio_path: str,
     title: str = "",
     output_path: str | None = None,
+    ken_burns: bool = True,
+    ken_burns_zoom_range: list[float] | None = None,
+    transition_duration: float | None = None,
 ) -> dict:
     """Generate a Ken Burns slideshow video from images + audio narration.
 
-    Each image gets a slow zoom or pan effect. Crossfade transitions between images.
+    Each image gets a slow zoom/pan effect. Crossfade transitions between images.
     Audio (podcast MP3) plays as narration over the slideshow.
+
+    Args:
+        ken_burns: Enable zoom/pan effects on images (default True).
+        ken_burns_zoom_range: [min_zoom, max_zoom] e.g. [1.0, 1.15].
+        transition_duration: Approx seconds per image. None = auto from audio.
 
     Returns dict with output_path, duration_seconds, file_size_bytes.
     """
@@ -39,6 +47,8 @@ def _generate_video(
         return {"error": "No images provided"}
     if not audio_path or not os.path.exists(audio_path):
         return {"error": f"Audio file not found: {audio_path}"}
+
+    zoom_min, zoom_max = (ken_burns_zoom_range or [1.0, 1.15])
 
     # Get audio duration
     probe = subprocess.run(
@@ -51,24 +61,63 @@ def _generate_video(
     # Calculate time per image (with 1s crossfade overlap)
     n_images = len(image_paths)
     crossfade_dur = 1.0
-    # Each image shows for (total_duration + overlaps) / n_images
-    time_per_image = (audio_duration + crossfade_dur * (n_images - 1)) / n_images
+    if transition_duration and transition_duration > 0:
+        time_per_image = float(transition_duration)
+    else:
+        time_per_image = (audio_duration + crossfade_dur * (n_images - 1)) / n_images
     time_per_image = max(5.0, time_per_image)  # At least 5s per image
 
     if not output_path:
         output_path = str(OUTPUT_DIR / f"{uuid.uuid4().hex[:12]}.mp4")
 
-    # Build complex filter — scale + crossfade (reliable, no zoompan corruption)
+    fps = 30
     filter_parts = []
     inputs = []
 
+    # Ken Burns effect patterns — alternate zoom-in, zoom-out, pan-left, pan-right
+    import random
+    random.seed(len(image_paths))  # deterministic per image set
+    effects = ["zoom_in", "zoom_out", "pan_left", "pan_right"]
+
     for i, img_path in enumerate(image_paths):
+        frames = int(time_per_image * fps)
         inputs.extend(["-loop", "1", "-t", str(time_per_image), "-i", img_path])
-        filter_parts.append(
-            f"[{i}:v]scale=1920:1080:force_original_aspect_ratio=decrease,"
-            f"pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,"
-            f"setsar=1,fps=30[v{i}]"
-        )
+
+        if ken_burns:
+            effect = effects[i % len(effects)]
+            # zoompan: zoom factor over time, position for panning
+            # We render at 2x then scale down for smooth zoom
+            zp_w, zp_h = 1920 * 2, 1080 * 2
+            if effect == "zoom_in":
+                zoom_expr = f"min({zoom_min}+on/{frames}*{zoom_max - zoom_min}\\,{zoom_max})"
+                x_expr = f"(iw-iw/zoom)/2"
+                y_expr = f"(ih-ih/zoom)/2"
+            elif effect == "zoom_out":
+                zoom_expr = f"max({zoom_max}-on/{frames}*{zoom_max - zoom_min}\\,{zoom_min})"
+                x_expr = f"(iw-iw/zoom)/2"
+                y_expr = f"(ih-ih/zoom)/2"
+            elif effect == "pan_left":
+                zoom_expr = f"{zoom_max}"
+                x_expr = f"(iw-iw/zoom)*on/{frames}"
+                y_expr = f"(ih-ih/zoom)/2"
+            else:  # pan_right
+                zoom_expr = f"{zoom_max}"
+                x_expr = f"(iw-iw/zoom)*(1-on/{frames})"
+                y_expr = f"(ih-ih/zoom)/2"
+
+            filter_parts.append(
+                f"[{i}:v]scale={zp_w}:{zp_h}:force_original_aspect_ratio=decrease,"
+                f"pad={zp_w}:{zp_h}:(ow-iw)/2:(oh-ih)/2:black,"
+                f"zoompan=z='{zoom_expr}':x='{x_expr}':y='{y_expr}'"
+                f":d={frames}:s=1920x1080:fps={fps},"
+                f"setsar=1[v{i}]"
+            )
+        else:
+            filter_parts.append(
+                f"[{i}:v]scale=1920:1080:force_original_aspect_ratio=decrease,"
+                f"pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,"
+                f"setsar=1,fps={fps}[v{i}]"
+            )
 
     # Crossfade transitions between segments
     if n_images == 1:
@@ -181,7 +230,12 @@ class VideoHandler(BaseHTTPRequestHandler):
 
             try:
                 start = time.time()
-                result = _generate_video(image_paths, audio_path, title)
+                result = _generate_video(
+                    image_paths, audio_path, title,
+                    ken_burns=body.get("ken_burns", True),
+                    ken_burns_zoom_range=body.get("ken_burns_zoom_range"),
+                    transition_duration=body.get("transition_duration"),
+                )
                 elapsed = time.time() - start
                 result["elapsed_seconds"] = round(elapsed, 2)
 

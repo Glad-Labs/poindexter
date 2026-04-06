@@ -245,13 +245,7 @@ const nextConfig = {
       { source: '/page/:num', destination: '/archive/:num', permanent: true },
       // Old WordPress URLs from Search Console — redirect valuable ones
       { source: '/2025/:path*', destination: '/archive/1', permanent: true },
-      {
-        source: '/category/:path*',
-        destination: '/archive/1',
-        permanent: true,
-      },
-      { source: '/tag/:path*', destination: '/archive/1', permanent: true },
-      { source: '/author/:path*', destination: '/about', permanent: true },
+      // Category, tag, and author pages now have real routes — no redirect needed
       { source: '/es/:path*', destination: '/', permanent: true },
       { source: '/contact-us', destination: '/about', permanent: true },
       { source: '/my-account', destination: '/', permanent: true },

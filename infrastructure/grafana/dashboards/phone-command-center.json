@@ -38,7 +38,7 @@
             "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT CASE WHEN (SELECT COUNT(*) FROM audit_log WHERE severity = 'error' AND \"timestamp\" >= NOW() - INTERVAL '1 hour') > 5 THEN 'Down' WHEN (SELECT COUNT(*) FROM audit_log WHERE severity = 'error' AND \"timestamp\" >= NOW() - INTERVAL '1 hour') > 0 THEN 'Degraded' WHEN (SELECT COUNT(*) FROM content_tasks WHERE status = 'failed' AND updated_at >= NOW() - INTERVAL '1 hour') > 2 THEN 'Degraded' ELSE 'Healthy' END AS \"Status\""
+          "rawSql": "SELECT CASE WHEN (SELECT COUNT(*) FROM audit_log WHERE severity = 'error' AND \"timestamp\" >= $__timeFrom()::timestamptz) > 5 THEN 2 WHEN (SELECT COUNT(*) FROM audit_log WHERE severity = 'error' AND \"timestamp\" >= $__timeFrom()::timestamptz) > 0 THEN 1 WHEN (SELECT COUNT(*) FROM content_tasks WHERE status = 'failed' AND updated_at >= $__timeFrom()::timestamptz) > 2 THEN 1 ELSE 0 END AS \"Status\""
         }
       ],
       "fieldConfig": {
@@ -47,15 +47,19 @@
             {
               "type": "value",
               "options": {
-                "Healthy": { "color": "green", "text": "Healthy" },
-                "Degraded": { "color": "yellow", "text": "Degraded" },
-                "Down": { "color": "red", "text": "DOWN" }
+                "0": { "color": "green", "text": "Healthy" },
+                "1": { "color": "yellow", "text": "Degraded" },
+                "2": { "color": "red", "text": "DOWN" }
               }
             }
           ],
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "green", "value": null }]
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 2 }
+            ]
           }
         },
         "overrides": []
@@ -69,7 +73,7 @@
     },
     {
       "id": 2,
-      "title": "Errors (1h)",
+      "title": "Errors",
       "type": "stat",
       "gridPos": { "h": 4, "w": 12, "x": 12, "y": 0 },
       "datasource": {
@@ -84,7 +88,7 @@
             "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT COUNT(*) AS \"Errors\" FROM audit_log WHERE \"timestamp\" >= NOW() - INTERVAL '1 hour' AND severity = 'error'"
+          "rawSql": "SELECT COUNT(*) AS \"Errors\" FROM audit_log WHERE \"timestamp\" >= $__timeFrom()::timestamptz AND \"timestamp\" <= $__timeTo()::timestamptz AND severity = 'error'"
         }
       ],
       "fieldConfig": {
@@ -109,22 +113,61 @@
     },
     {
       "id": 3,
-      "title": "Total Posts",
+      "title": "Published Posts",
       "type": "stat",
       "gridPos": { "h": 3, "w": 12, "x": 0, "y": 4 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "targets": [
         {
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT COUNT(*) AS \"Posts\" FROM posts WHERE status = 'published'"
+          "rawSql": "SELECT COUNT(*) AS \"Posts\" FROM posts WHERE status = 'published' AND published_at >= $__timeFrom()::timestamptz AND published_at <= $__timeTo()::timestamptz"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Total Published",
+      "type": "stat",
+      "gridPos": { "h": 3, "w": 12, "x": 12, "y": 4 },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS \"All Time\" FROM posts WHERE status = 'published'"
         }
       ],
       "fieldConfig": {
@@ -147,62 +190,23 @@
       }
     },
     {
-      "id": 4,
-      "title": "Posts This Week",
-      "type": "stat",
-      "gridPos": { "h": 3, "w": 12, "x": 12, "y": 4 },
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
-          },
-          "format": "table",
-          "rawSql": "SELECT COUNT(*) AS \"This Week\" FROM posts WHERE published_at >= date_trunc('week', CURRENT_DATE)"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "yellow", "value": null },
-              { "color": "green", "value": 1 }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "textMode": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"] }
-      }
-    },
-    {
       "id": 5,
-      "title": "Views Today",
+      "title": "Page Views",
       "type": "stat",
       "gridPos": { "h": 3, "w": 12, "x": 0, "y": 7 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "targets": [
         {
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT COUNT(*) AS \"Views\" FROM page_views WHERE created_at >= CURRENT_DATE"
+          "rawSql": "SELECT COUNT(*) AS \"Views\" FROM page_views WHERE created_at >= $__timeFrom()::timestamptz AND created_at <= $__timeTo()::timestamptz"
         }
       ],
       "fieldConfig": {
@@ -227,7 +231,7 @@
     },
     {
       "id": 6,
-      "title": "Spend Today",
+      "title": "Spend",
       "type": "stat",
       "gridPos": { "h": 3, "w": 12, "x": 12, "y": 7 },
       "datasource": {
@@ -242,7 +246,7 @@
             "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT COALESCE(ROUND(SUM(cost_usd)::numeric, 4), 0) AS \"$\" FROM cost_logs WHERE created_at >= CURRENT_DATE"
+          "rawSql": "SELECT COALESCE(ROUND(SUM(cost_usd)::numeric, 4), 0) AS \"$\" FROM cost_logs WHERE created_at >= $__timeFrom()::timestamptz AND created_at <= $__timeTo()::timestamptz"
         }
       ],
       "fieldConfig": {
@@ -368,7 +372,7 @@
             "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT COUNT(*) FILTER (WHERE status = 'pending') AS \"Pending\", COUNT(*) FILTER (WHERE status = 'in_progress') AS \"Active\", COUNT(*) FILTER (WHERE status = 'failed') AS \"Failed\" FROM content_tasks"
+          "rawSql": "SELECT COUNT(*) FILTER (WHERE status = 'pending') AS \"Pending\", COUNT(*) FILTER (WHERE status = 'in_progress') AS \"Active\", COUNT(*) FILTER (WHERE status = 'failed') AS \"Failed\" FROM content_tasks WHERE COALESCE(updated_at, created_at) >= $__timeFrom()::timestamptz AND COALESCE(updated_at, created_at) <= $__timeTo()::timestamptz"
         }
       ],
       "fieldConfig": {
@@ -445,7 +449,7 @@
             "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT (SELECT COUNT(*) FROM brain_knowledge) AS \"Knowledge\", (SELECT COUNT(*) FROM brain_decisions WHERE created_at >= NOW() - INTERVAL '24 hours') AS \"Decisions (24h)\", (SELECT COUNT(*) FROM brain_queue WHERE created_at >= NOW() - INTERVAL '24 hours') AS \"Queue\""
+          "rawSql": "SELECT (SELECT COUNT(*) FROM brain_knowledge) AS \"Knowledge\", (SELECT COUNT(*) FROM brain_decisions WHERE created_at >= $__timeFrom()::timestamptz AND created_at <= $__timeTo()::timestamptz) AS \"Decisions\", (SELECT COUNT(*) FROM brain_queue WHERE created_at >= $__timeFrom()::timestamptz AND created_at <= $__timeTo()::timestamptz) AS \"Queue\""
         }
       ],
       "fieldConfig": {
@@ -457,7 +461,7 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Decisions (24h)" },
+            "matcher": { "id": "byName", "options": "Decisions" },
             "properties": [
               {
                 "id": "thresholds",
@@ -605,22 +609,22 @@
     },
     {
       "id": 14,
-      "title": "Avg QA Score (7d)",
+      "title": "Avg QA Score",
       "type": "stat",
       "gridPos": { "h": 3, "w": 12, "x": 0, "y": 22 },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "targets": [
         {
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT ROUND(AVG(overall_score)::numeric, 1) AS \"Avg QA\" FROM quality_evaluations WHERE evaluation_timestamp >= NOW() - INTERVAL '7 days'"
+          "rawSql": "SELECT ROUND(AVG(overall_score)::numeric, 1) AS \"Avg QA\" FROM quality_evaluations WHERE evaluation_timestamp >= $__timeFrom()::timestamptz AND evaluation_timestamp <= $__timeTo()::timestamptz"
         }
       ],
       "fieldConfig": {
@@ -661,7 +665,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT CASE WHEN MAX(timestamp) >= NOW() - INTERVAL '10 minutes' THEN 'ACTIVE' WHEN MAX(timestamp) >= NOW() - INTERVAL '1 hour' THEN 'IDLE' ELSE 'STALE' END AS \"Status\" FROM gpu_metrics WHERE utilization > 10"
+          "rawSql": "SELECT CASE WHEN MAX(timestamp) >= NOW() - INTERVAL '10 minutes' THEN 0 WHEN MAX(timestamp) >= NOW() - INTERVAL '1 hour' THEN 1 ELSE 2 END AS \"Status\" FROM gpu_metrics WHERE utilization > 10"
         }
       ],
       "fieldConfig": {
@@ -670,15 +674,19 @@
             {
               "type": "value",
               "options": {
-                "ACTIVE": { "text": "ACTIVE", "color": "green" },
-                "IDLE": { "text": "IDLE", "color": "yellow" },
-                "STALE": { "text": "STALE", "color": "red" }
+                "0": { "text": "ACTIVE", "color": "green" },
+                "1": { "text": "IDLE", "color": "yellow" },
+                "2": { "text": "STALE", "color": "red" }
               }
             }
           ],
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "text", "value": null }]
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 2 }
+            ]
           }
         },
         "overrides": []
@@ -707,7 +715,7 @@
             "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT LEFT(COALESCE(title, task_type), 25) AS \"Task\", status AS \"Status\", COALESCE(quality_score::text, '-') AS \"Q\", to_char(COALESCE(updated_at, created_at), 'MM/DD HH24:MI') AS \"When\" FROM content_tasks ORDER BY COALESCE(updated_at, created_at) DESC NULLS LAST LIMIT 5"
+          "rawSql": "SELECT LEFT(COALESCE(title, task_type), 25) AS \"Task\", status AS \"Status\", COALESCE(quality_score::text, '-') AS \"Q\", to_char(COALESCE(updated_at, created_at), 'MM/DD HH24:MI') AS \"When\" FROM content_tasks WHERE COALESCE(updated_at, created_at) >= $__timeFrom()::timestamptz AND COALESCE(updated_at, created_at) <= $__timeTo()::timestamptz ORDER BY COALESCE(updated_at, created_at) DESC NULLS LAST LIMIT 10"
         }
       ],
       "fieldConfig": {
@@ -767,7 +775,7 @@
             "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT to_char(\"timestamp\", 'MM/DD HH24:MI') AS \"Time\", source AS \"Src\", LEFT(details::text, 60) AS \"Details\" FROM audit_log WHERE severity = 'error' ORDER BY \"timestamp\" DESC LIMIT 3"
+          "rawSql": "SELECT to_char(\"timestamp\", 'MM/DD HH24:MI') AS \"Time\", source AS \"Src\", LEFT(details::text, 60) AS \"Details\" FROM audit_log WHERE severity = 'error' AND \"timestamp\" >= $__timeFrom()::timestamptz AND \"timestamp\" <= $__timeTo()::timestamptz ORDER BY \"timestamp\" DESC LIMIT 10"
         }
       ],
       "fieldConfig": {
@@ -789,7 +797,7 @@
     },
     {
       "id": 22,
-      "title": "7-Day Spend",
+      "title": "Spend Breakdown",
       "type": "table",
       "gridPos": { "h": 5, "w": 24, "x": 0, "y": 36 },
       "datasource": {
@@ -804,7 +812,7 @@
             "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT to_char(date_trunc('day', created_at)::date, 'MM/DD') as \"Day\", ROUND(SUM(cost_usd)::numeric, 4) as \"$\" FROM cost_logs GROUP BY 1 ORDER BY 1 DESC LIMIT 7"
+          "rawSql": "SELECT to_char(date_trunc('day', created_at)::date, 'MM/DD') as \"Day\", ROUND(SUM(cost_usd)::numeric, 4) as \"$\" FROM cost_logs WHERE created_at >= $__timeFrom()::timestamptz AND created_at <= $__timeTo()::timestamptz GROUP BY 1 ORDER BY 1 DESC"
         }
       ],
       "fieldConfig": {

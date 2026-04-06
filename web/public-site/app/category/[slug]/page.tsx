@@ -70,6 +70,18 @@ async function getCategoryPosts(categoryId: string): Promise<Post[]> {
   }
 }
 
+export async function generateStaticParams() {
+  try {
+    const response = await fetch(`${API_BASE}/api/categories`);
+    if (!response.ok) return [];
+    const data = await response.json();
+    const categories = data.categories || data.data || data || [];
+    return categories.map((cat: { slug: string }) => ({ slug: cat.slug }));
+  } catch {
+    return [];
+  }
+}
+
 export async function generateMetadata({
   params,
 }: {

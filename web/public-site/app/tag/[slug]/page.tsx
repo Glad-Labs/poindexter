@@ -44,6 +44,18 @@ async function getTagPosts(tag: string): Promise<Post[]> {
   }
 }
 
+export async function generateStaticParams() {
+  try {
+    const response = await fetch(`${API_BASE}/api/tags`);
+    if (!response.ok) return [];
+    const data = await response.json();
+    const tags = data.tags || data.data || data || [];
+    return tags.map((tag: { slug: string }) => ({ slug: tag.slug }));
+  } catch {
+    return [];
+  }
+}
+
 export async function generateMetadata({
   params,
 }: {

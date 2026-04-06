@@ -175,7 +175,7 @@ async def generate_video_for_post(
 
     # Generate images
     logger.info("[VIDEO] Generating images for '%s'", title[:50])
-    image_paths = await _generate_images_for_video(title, content, num_images=5)
+    image_paths = await _generate_images_for_video(title, content, num_images=8)
 
     if not image_paths:
         return VideoResult(success=False, error="No images could be generated")
@@ -197,6 +197,9 @@ async def generate_video_for_post(
                 "image_paths": host_image_paths,
                 "audio_path": host_audio_path,
                 "title": title,
+                "transition_duration": 30,      # ~30s per image before transitioning
+                "ken_burns": True,               # Enable zoom/pan effects on all images
+                "ken_burns_zoom_range": [1.0, 1.15],  # Subtle zoom range
             })
 
             if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("video/"):

@@ -223,6 +223,7 @@ markers = [
     "slow: slow tests",
     "voice: voice interface tests",
     "websocket: websocket tests",
+    "benchmark: benchmark tests",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",

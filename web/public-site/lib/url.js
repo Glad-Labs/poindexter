@@ -44,10 +44,11 @@ function resolveApiBaseUrl() {
     parsed.hostname === '127.0.0.1' ||
     parsed.hostname === '0.0.0.0';
 
-  if (IS_PROD && isLocalhost) {
+  const skipValidation = process.env.SKIP_ENV_VALIDATION === 'true';
+  if (IS_PROD && isLocalhost && !skipValidation) {
     throw new Error(
       `[Config] NEXT_PUBLIC_API_BASE_URL="${raw}" points to localhost in production. ` +
-        'Set a real backend URL.'
+        'Set a real backend URL. To bypass for local builds, set SKIP_ENV_VALIDATION=true.'
     );
   }
 

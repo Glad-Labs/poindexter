@@ -49,6 +49,10 @@ DEFAULT_BASE_URL = (
 DEFAULT_GPU_POWER_WATTS = float(_sc_get("gpu_inference_watts", os.getenv("GPU_POWER_WATTS", "300")))
 DEFAULT_ELECTRICITY_RATE_KWH = float(_sc_get("electricity_rate_kwh", os.getenv("ELECTRICITY_RATE_KWH", "0.12")))
 
+# Context window limit — prevents models from allocating massive KV caches.
+# Default 8192 is plenty for article generation and saves ~15GB VRAM vs 65K context.
+DEFAULT_NUM_CTX = int(_sc_get("ollama_num_ctx", os.getenv("OLLAMA_NUM_CTX", "8192")))
+
 
 # ============================================================================
 # EXCEPTIONS
@@ -317,7 +321,7 @@ class OllamaClient:
             "model": model,
             "messages": messages,
             "stream": stream,
-            "options": {"temperature": temperature},
+            "options": {"temperature": temperature, "num_ctx": DEFAULT_NUM_CTX},
         }
 
         if max_tokens:
@@ -382,7 +386,7 @@ class OllamaClient:
             "model": model,
             "messages": messages,
             "stream": False,
-            "options": {"temperature": temperature},
+            "options": {"temperature": temperature, "num_ctx": DEFAULT_NUM_CTX},
         }
 
         if max_tokens:
@@ -530,7 +534,7 @@ class OllamaClient:
             "model": model,
             "messages": messages,
             "stream": True,
-            "options": {"temperature": temperature},
+            "options": {"temperature": temperature, "num_ctx": DEFAULT_NUM_CTX},
         }
 
         if max_tokens:

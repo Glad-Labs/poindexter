@@ -169,7 +169,8 @@ services:
       DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-gladlabs}:${LOCAL_POSTGRES_PASSWORD:-gladlabs-brain-local}@postgres-local:5432/${LOCAL_POSTGRES_DB:-gladlabs_brain}"
       CLOUD_DATABASE_URL: ${CLOUD_DATABASE_URL:-}
       # No Telegram tokens — OpenClaw owns Telegram/Discord connections
-      API_URL: "https://cofounder-production.up.railway.app"
+      API_URL: "http://worker:8002"
+      WORKER_API_URL: "http://worker:8002"
       SITE_URL: "https://www.gladlabs.io"
       OLLAMA_URL: "http://host.docker.internal:11434"
       GRAFANA_URL: "http://grafana:3000"

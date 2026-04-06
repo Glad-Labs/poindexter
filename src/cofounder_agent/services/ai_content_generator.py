@@ -782,12 +782,35 @@ class AIContentGenerator:
                 model_list = [preferred_model]
                 logger.info(f"   ├─ Using UI-selected model: {preferred_model}")
             else:
-                # Start with the client's configured/resolved model
-                resolved = await ollama.resolve_model()
-                model_list = [resolved]
-                logger.info(f"   ├─ Primary model: {resolved}")
+                # Read pipeline_writer_model from DB first (DB-first config)
+                try:
+                    from services.site_config import site_config
+                    db_model = site_config.get("pipeline_writer_model", "")
+                    if db_model:
+                        # Strip "ollama/" prefix if present
+                        db_model = db_model.removeprefix("ollama/")
+                except Exception:
+                    db_model = ""
 
-                # Add other installed models as fallbacks (in case primary fails)
+                if db_model:
+                    resolved = db_model
+                    logger.info(f"   ├─ Primary model (from DB): {resolved}")
+                else:
+                    resolved = await ollama.resolve_model()
+                    logger.info(f"   ├─ Primary model (auto): {resolved}")
+                model_list = [resolved]
+
+                # Read fallback model from DB
+                try:
+                    db_fallback = site_config.get("pipeline_fallback_model", "")
+                    if db_fallback:
+                        db_fallback = db_fallback.removeprefix("ollama/")
+                        if db_fallback != resolved:
+                            model_list.append(db_fallback)
+                except Exception:
+                    pass
+
+                # Add other installed models as fallbacks (smaller first for speed)
                 try:
                     available = await ollama.list_models()
                     fallbacks = [
@@ -795,9 +818,8 @@ class AIContentGenerator:
                         for m in sorted(
                             available,
                             key=lambda x: x.get("size", 0),
-                            reverse=True,
                         )
-                        if "embed" not in m.get("name", "").lower() and m["name"] != resolved
+                        if "embed" not in m.get("name", "").lower() and m["name"] not in model_list
                     ]
                     model_list.extend(fallbacks)
                 except Exception as e:
