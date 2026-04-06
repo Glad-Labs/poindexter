@@ -568,7 +568,8 @@ async def publish_post_from_task(
         from services.task_executor import _notify_openclaw
 
         await _notify_openclaw(
-            f"Published: {post_title}\n/posts/{slug}\nScore: {merged.get('quality_score', 'N/A')}"
+            f"Published: {post_title}\n/posts/{slug}\nScore: {merged.get('quality_score', 'N/A')}",
+            critical=True,
         )
     except Exception:
         logger.debug("[publish_service] Notification failed (non-fatal)", exc_info=True)
