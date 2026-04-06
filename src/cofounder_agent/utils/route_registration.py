@@ -54,10 +54,11 @@ _COORDINATOR_ROUTES = [
 ]
 
 # Routes for worker mode (local PC — heavy compute)
-# Workers primarily claim tasks from the DB and report results back.
-# They don't need CMS or webhook routes.
+# Workers claim tasks from the DB and report results back.
+# CMS routes included for preview endpoint (mobile review before publishing).
 _WORKER_ROUTES = [
     ("routes.task_routes", "router", "task_router", "task management"),
+    ("routes.cms_routes", "router", "cms_router", "CMS (posts, preview, categories)"),
     ("routes.metrics_routes", "metrics_router", "metrics_router", "metrics & analytics"),
     ("routes.settings_routes", "router", "settings_router", "user settings"),
     ("routes.podcast_routes", "router", "podcast_router", "podcast RSS feed & episodes"),
