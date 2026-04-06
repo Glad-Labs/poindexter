@@ -109,6 +109,11 @@ const nextConfig = {
         hostname: 'images.pexels.com',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev',
+        pathname: '/**',
+      },
     ],
 
     // Reduced variant cardinality to mitigate CVE-2026-27980 disk cache
