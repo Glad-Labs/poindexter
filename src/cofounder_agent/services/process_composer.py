@@ -406,8 +406,10 @@ async def step_probe_site(**kwargs) -> dict:
 async def step_probe_api(**kwargs) -> dict:
     """Check if the backend API is healthy."""
     import httpx
+    import os
     from services.site_config import site_config
-    api_url = site_config.get("api_base_url", "http://localhost:8000")
+    # In Docker, localhost means the container — use WORKER_URL env or Docker service name
+    api_url = os.getenv("WORKER_API_URL") or site_config.get("api_base_url", "http://localhost:8000")
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(f"{api_url}/api/health")
@@ -420,8 +422,9 @@ async def step_probe_api(**kwargs) -> dict:
 async def step_check_budget(**kwargs) -> dict:
     """Check current spending status."""
     import httpx
+    import os
     from services.site_config import site_config
-    api_url = site_config.get("api_base_url", "http://localhost:8000")
+    api_url = os.getenv("WORKER_API_URL") or site_config.get("api_base_url", "http://localhost:8000")
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(

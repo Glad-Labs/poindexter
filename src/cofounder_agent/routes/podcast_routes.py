@@ -29,7 +29,7 @@ router = APIRouter(prefix="/api/podcast", tags=["podcast"])
 
 SITE_URL = "https://www.gladlabs.io"
 API_URL = os.getenv(
-    "API_BASE_URL", "https://cofounder-production.up.railway.app"
+    "API_BASE_URL", "http://localhost:8002"
 )
 
 

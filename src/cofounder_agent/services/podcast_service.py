@@ -432,9 +432,16 @@ class PodcastService:
             len(script),
         )
 
-        # Try primary voice, then fallbacks
-        voices_to_try = [VOICE_PRIMARY] + VOICE_FALLBACKS
+        # Rotate voice based on post_id hash for variety across episodes
+        import hashlib
+        voice_index = int(hashlib.md5(post_id.encode()).hexdigest(), 16) % len(VOICE_POOL)
+        selected_voice = VOICE_POOL[voice_index]
+        # Try selected voice first, then remaining pool voices, then fallbacks
+        remaining_pool = [v for v in VOICE_POOL if v != selected_voice]
+        voices_to_try = [selected_voice] + remaining_pool + VOICE_FALLBACKS
         last_error = None
+        logger.info("[PODCAST] Voice rotation: selected '%s' (index %d) for post %s",
+                    selected_voice, voice_index, post_id[:12])
 
         for voice in voices_to_try:
             try:

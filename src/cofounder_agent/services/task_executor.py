@@ -52,18 +52,12 @@ from services.telegram_config import TELEGRAM_CHAT_ID as _TELEGRAM_CHAT_ID  # no
 _DISCORD_OPS_CHANNEL = "1487683559065125055"
 
 
-async def _notify_openclaw(message: str) -> None:
-    """Send pipeline notifications to Telegram (direct) and Discord (via OpenClaw)."""
+async def _notify_discord(message: str) -> None:
+    """Send ops notification to Discord #ops channel only (no Telegram spam)."""
     _logger = get_logger(__name__)
     try:
         async with _httpx.AsyncClient(timeout=10) as client:
-            _logger.info(f"[NOTIFY] {message[:80]}")
-            # Telegram — direct bot API (reliable)
-            await client.post(
-                f"https://api.telegram.org/bot{_TELEGRAM_BOT_TOKEN}/sendMessage",
-                json={"chat_id": _TELEGRAM_CHAT_ID, "text": message},
-            )
-            # Discord — via OpenClaw hooks (posts to #ops channel)
+            _logger.info(f"[NOTIFY:discord] {message[:80]}")
             await client.post(
                 f"{_OPENCLAW_URL}/hooks/agent",
                 headers={"Authorization": f"Bearer {_OPENCLAW_TOKEN}"},
@@ -74,7 +68,28 @@ async def _notify_openclaw(message: str) -> None:
                 },
             )
     except Exception as e:
-        _logger.warning(f"[NOTIFY] Failed: {e}")
+        _logger.warning(f"[NOTIFY:discord] Failed: {e}")
+
+
+async def _notify_telegram(message: str) -> None:
+    """Send critical notification to Telegram (approval requests, failures)."""
+    _logger = get_logger(__name__)
+    try:
+        async with _httpx.AsyncClient(timeout=10) as client:
+            _logger.info(f"[NOTIFY:telegram] {message[:80]}")
+            await client.post(
+                f"https://api.telegram.org/bot{_TELEGRAM_BOT_TOKEN}/sendMessage",
+                json={"chat_id": _TELEGRAM_CHAT_ID, "text": message},
+            )
+    except Exception as e:
+        _logger.warning(f"[NOTIFY:telegram] Failed: {e}")
+
+
+async def _notify_openclaw(message: str, critical: bool = False) -> None:
+    """Send pipeline notification. Critical → Telegram + Discord. Normal → Discord only."""
+    if critical:
+        await _notify_telegram(message)
+    await _notify_discord(message)
 
 # Import WebSocket progress emission (re-exported so tests can patch at this module)
 from .websocket_event_broadcaster import emit_notification, emit_task_progress  # noqa: F401
@@ -513,18 +528,16 @@ class TaskExecutor:
                     _site_url = _sc.get("site_url", "https://localhost:3000")
                     link = f"{_site_url}/posts/{slug}" if slug else _site_url
                     await _notify_openclaw(
-                        f"Published: \"{topic}\" (score: {quality_score:.0f})\n{link}"
+                        f"Published: \"{topic}\" (score: {quality_score:.0f})\n{link}",
+                        critical=True,
                     )
                 else:
-                    from services.site_config import site_config as _sc2
-                    _site_url = _sc2.get("site_url", "https://www.gladlabs.io")
-                    _api_base = _sc2.get("api_base_url", "https://localhost:8000")
-                    approve_link = f"{_api_base}/api/tasks/{task_id}/approve"
                     await _notify_openclaw(
                         f"📝 Awaiting approval: \"{topic}\"\n"
                         f"Quality score: {quality_score:.0f}/100\n"
-                        f"Task ID: {task_id}\n"
-                        f"Approve: {approve_link}"
+                        f"Task ID: {task_id[:8]}\n"
+                        f"Reply: /approve-post {task_id[:8]}",
+                        critical=True,
                     )
 
                 return
