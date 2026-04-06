@@ -20,7 +20,7 @@ from lib.config import load_api_token  # noqa: E402
 from lib.topic_dedup import fetch_existing_topics, is_too_similar, is_topic_duplicate_semantic  # noqa: E402
 
 # Production API
-API_URL = "https://cofounder-production.up.railway.app"
+API_URL = "http://localhost:8002"
 API_TOKEN = load_api_token()
 
 # Topic templates — {angle} gets filled with a random perspective

@@ -29,7 +29,7 @@ Glad Labs is an AI-operated content business — a solo founder using AI to run 
 | Service       | URL                                             |
 | ------------- | ----------------------------------------------- |
 | Public site   | https://gladlabs.io (→ www.gladlabs.io)         |
-| Backend API   | https://cofounder-production.up.railway.app     |
+| Backend API   | http://localhost:8002                           |
 | Brain daemon  | Separate Railway service (brain/)               |
 | Grafana       | https://gladlabs.grafana.net                    |
 | GitHub        | https://github.com/Glad-Labs/glad-labs-codebase |

@@ -5,7 +5,7 @@ import httpx
 import cloudinary
 import cloudinary.uploader
 
-API_URL = "https://cofounder-production.up.railway.app"
+API_URL = "http://localhost:8002"
 TOKEN = os.environ.get("API_TOKEN", "")
 HEADERS = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}
 IMAGE_DIR = os.path.join(os.path.expanduser("~"), "Downloads", "glad-labs-featured-images")

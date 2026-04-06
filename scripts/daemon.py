@@ -55,7 +55,7 @@ logger.addHandler(_file_handler)
 if sys.stdout is not None and not sys.stdout.name == os.devnull:
     logger.addHandler(logging.StreamHandler(sys.stdout))
 
-API_URL = "https://cofounder-production.up.railway.app"
+API_URL = "http://localhost:8002"
 API_TOKEN = load_api_token()
 AUTH = f"Bearer {API_TOKEN}"
 

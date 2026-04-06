@@ -14,7 +14,7 @@ export function ViewTracker({ slug }: ViewTrackerProps) {
     const apiBase =
       process.env.NEXT_PUBLIC_API_BASE_URL ||
       process.env.NEXT_PUBLIC_FASTAPI_URL ||
-      'https://cofounder-production.up.railway.app';
+      'http://localhost:8002';
 
     const payload = {
       path: window.location.pathname,

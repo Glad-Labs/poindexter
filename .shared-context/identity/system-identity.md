@@ -7,7 +7,7 @@ category: identity
 
 # System Identity
 
-**api_base_url:** https://cofounder-production.up.railway.app
+**api_base_url:** http://localhost:8002
 **company_age_months:** 6
 **company_founded_date:** 2025-09-25
 **company_founded_year:** 2025

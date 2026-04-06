@@ -4,7 +4,7 @@ import os
 import asyncio
 import httpx
 
-API_URL = "https://cofounder-production.up.railway.app"
+API_URL = "http://localhost:8002"
 TOKEN = os.environ.get("API_TOKEN", "")
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 HEADERS = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}

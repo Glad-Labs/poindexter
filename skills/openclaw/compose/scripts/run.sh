@@ -1,7 +1,7 @@
 #!/bin/bash
 # Process Composer skill — plan, approve, execute business processes
 
-FASTAPI_URL="${FASTAPI_URL:-https://cofounder-production.up.railway.app}"
+FASTAPI_URL="${FASTAPI_URL:-http://localhost:8002}"
 GLADLABS_KEY="${GLADLABS_KEY}"
 ACTION="$1"
 INTENT="$2"

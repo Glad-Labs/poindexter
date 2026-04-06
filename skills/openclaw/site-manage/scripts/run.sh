@@ -1,7 +1,7 @@
 #!/bin/bash
 # scripts/run.sh — View or update site settings
 
-FASTAPI_URL="${FASTAPI_URL:-https://cofounder-production.up.railway.app}"
+FASTAPI_URL="${FASTAPI_URL:-http://localhost:8002}"
 GLADLABS_KEY="${GLADLABS_KEY}"
 
 if [ -z "$GLADLABS_KEY" ]; then
