@@ -31,7 +31,8 @@ import httpx
 # ---------------------------------------------------------------------------
 
 LOCAL_DSN = os.getenv("LOCAL_DATABASE_URL", "postgresql://gladlabs:gladlabs-brain-local@localhost:5433/gladlabs_brain")
-CLOUD_DSN = os.getenv("CLOUD_DATABASE_URL") or os.getenv("DATABASE_URL", "")
+# Cloud DB moved to local — fall back to LOCAL_DSN if no cloud DSN is configured
+CLOUD_DSN = os.getenv("CLOUD_DATABASE_URL") or os.getenv("DATABASE_URL") or LOCAL_DSN
 OLLAMA_URL = "http://127.0.0.1:11434"
 EMBED_MODEL = "nomic-embed-text"
 MAX_CHARS = 6000  # nomic-embed-text has 8192 token context; ~6k chars stays safe
