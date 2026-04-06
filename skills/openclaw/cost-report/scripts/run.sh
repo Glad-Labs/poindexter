@@ -1,7 +1,7 @@
 #!/bin/bash
 # scripts/run.sh — Fetch and display cost/spending metrics
 
-FASTAPI_URL="${FASTAPI_URL:-https://cofounder-production.up.railway.app}"
+FASTAPI_URL="${FASTAPI_URL:-http://localhost:8002}"
 GLADLABS_KEY="${GLADLABS_KEY}"
 
 if [ -z "$GLADLABS_KEY" ]; then

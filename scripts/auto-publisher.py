@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from services.content_validator import validate_content  # noqa: E402
 from lib.config import load_api_token  # noqa: E402
 
-API_URL = "https://cofounder-production.up.railway.app"
+API_URL = "http://localhost:8002"
 API_TOKEN = load_api_token()
 AUTH = f"Bearer {API_TOKEN}"
 

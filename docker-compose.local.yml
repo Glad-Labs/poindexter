@@ -210,7 +210,7 @@ services:
       SITE_NAME: "Glad Labs"
       SITE_DOMAIN: "gladlabs.io"
       SITE_URL: "https://www.gladlabs.io"
-      API_BASE_URL: "https://cofounder-production.up.railway.app"
+      API_BASE_URL: "http://localhost:8002"
       COMPANY_NAME: "Glad Labs"
       HOST_HOME: "C:/Users/mattm"
     volumes:

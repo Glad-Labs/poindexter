@@ -20,7 +20,7 @@ import urllib.request
 
 logger = logging.getLogger("brain.probes")
 
-API_URL = os.getenv("API_URL", "https://cofounder-production.up.railway.app")
+API_URL = os.getenv("API_URL", "http://localhost:8002")
 LOCAL_OLLAMA = os.getenv("OLLAMA_URL", "http://localhost:11434")
 GITEA_URL = os.getenv("GITEA_URL", "http://localhost:3001")
 GITEA_USER = os.getenv("GITEA_USER", "gladlabs")

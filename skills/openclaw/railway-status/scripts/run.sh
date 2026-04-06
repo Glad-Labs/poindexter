@@ -1,6 +1,6 @@
 #!/bin/bash
 ACTION="${1:-all}"
-RAILWAY_URL="${RAILWAY_URL:-https://cofounder-production.up.railway.app}"
+RAILWAY_URL="${RAILWAY_URL:-http://localhost:8002}"
 
 case "$ACTION" in
   status)
