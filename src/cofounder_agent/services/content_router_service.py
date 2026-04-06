@@ -960,27 +960,18 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
                             _tmp.write(_ir.content)
                             tmp_path = _tmp.name
 
-                        # Try Cloudinary upload
+                        # Upload to R2 CDN
                         img_url = tmp_path
                         try:
-                            import cloudinary
-                            import cloudinary.uploader
-                            from services.site_config import site_config as _sc_img
-                            cloudinary.config(
-                                cloud_name=_sc_img.get("cloudinary_cloud_name"),
-                                api_key=_sc_img.get("cloudinary_api_key"),
-                                api_secret=_sc_img.get("cloudinary_api_secret"),
-                            )
-                            import asyncio
-                            _up = await asyncio.get_event_loop().run_in_executor(
-                                None, lambda: cloudinary.uploader.upload(
-                                    tmp_path, folder="generated/inline/", resource_type="image",
-                                )
-                            )
-                            img_url = _up.get("secure_url", tmp_path)
-                            _os.remove(tmp_path)
+                            from services.r2_upload_service import upload_to_r2
+                            import uuid as _uuid
+                            r2_key = f"images/inline/{_uuid.uuid4().hex[:12]}.png"
+                            r2_url = await upload_to_r2(tmp_path, r2_key, content_type="image/png")
+                            if r2_url:
+                                img_url = r2_url
+                                _os.remove(tmp_path)
                         except Exception:
-                            logger.debug("[IMAGE] Cloudinary upload failed for inline, using local path")
+                            logger.debug("[IMAGE] R2 upload failed for inline, using local path")
 
                         if img_url not in used_image_ids:
                             used_image_ids.add(img_url)
@@ -1138,29 +1129,20 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
                     high_quality=True,
                 )
             if success and os.path.exists(output_path):
-                # Upload to Cloudinary for CDN hosting
+                # Upload to R2 CDN (replaced Cloudinary — zero egress fees)
                 image_url = output_path  # Fallback to local path
                 try:
-                    import cloudinary
-                    import cloudinary.uploader
-                    cloudinary.config(
-                        cloud_name=site_config.get("cloudinary_cloud_name"),
-                        api_key=site_config.get("cloudinary_api_key"),
-                        api_secret=site_config.get("cloudinary_api_secret"),
-                    )
-                    import asyncio
-                    upload_result = await asyncio.get_event_loop().run_in_executor(
-                        None,
-                        lambda: cloudinary.uploader.upload(
-                            output_path, folder="generated/", resource_type="image",
-                            tags=["featured", category or "default"],
-                        ),
-                    )
-                    image_url = upload_result.get("secure_url", output_path)
-                    logger.info("Uploaded to Cloudinary: %s", image_url[:80])
-                    os.remove(output_path)  # Clean up local file
+                    from services.r2_upload_service import upload_to_r2
+                    r2_key = f"images/featured/{task_id}.jpg"
+                    r2_url = await upload_to_r2(output_path, r2_key, content_type="image/jpeg")
+                    if r2_url:
+                        image_url = r2_url
+                        logger.info("Uploaded to R2: %s", image_url[:80])
+                        os.remove(output_path)  # Clean up local file
+                    else:
+                        logger.warning("R2 upload returned None, using local path")
                 except Exception as upload_err:
-                    logger.warning("Cloudinary upload failed (using local): %s", upload_err)
+                    logger.warning("R2 upload failed (using local): %s", upload_err)
 
                 from dataclasses import dataclass
 
