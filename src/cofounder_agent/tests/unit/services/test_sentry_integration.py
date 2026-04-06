@@ -1,0 +1,244 @@
+"""Tests for sentry_integration service."""
+
+from unittest.mock import AsyncMock, MagicMock, patch
+import pytest
+
+
+class TestSentryIntegration:
+    """Tests for the SentryIntegration class."""
+
+    def setup_method(self):
+        """Reset class state before each test."""
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._initialized = False
+        SentryIntegration._sentry_enabled = False
+
+    def test_initialize_no_dsn_returns_false(self):
+        from services.sentry_integration import SentryIntegration
+
+        app = MagicMock()
+        with patch.dict("os.environ", {"SENTRY_DSN": ""}, clear=False):
+            result = SentryIntegration.initialize(app)
+        assert result is False
+        assert SentryIntegration._initialized is True
+        assert SentryIntegration._sentry_enabled is False
+
+    def test_initialize_disabled_via_env(self):
+        from services.sentry_integration import SentryIntegration
+
+        app = MagicMock()
+        with patch.dict(
+            "os.environ",
+            {"SENTRY_DSN": "https://key@sentry.io/123", "SENTRY_ENABLED": "false"},
+            clear=False,
+        ):
+            result = SentryIntegration.initialize(app)
+        assert result is False
+        assert SentryIntegration._sentry_enabled is False
+
+    @patch("services.sentry_integration.SqlAlchemyIntegration", MagicMock())
+    @patch("services.sentry_integration.sentry_sdk")
+    def test_initialize_success(self, mock_sentry):
+        from services.sentry_integration import SentryIntegration
+
+        app = MagicMock()
+        with patch.dict(
+            "os.environ",
+            {
+                "SENTRY_DSN": "https://key@sentry.io/123",
+                "SENTRY_ENABLED": "true",
+                "ENVIRONMENT": "production",
+            },
+            clear=False,
+        ):
+            result = SentryIntegration.initialize(app)
+        assert result is True
+        assert SentryIntegration._sentry_enabled is True
+        mock_sentry.init.assert_called_once()
+
+    @patch("services.sentry_integration.sentry_sdk")
+    def test_initialize_already_initialized_skips(self, mock_sentry):
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._initialized = True
+        SentryIntegration._sentry_enabled = True
+        app = MagicMock()
+        result = SentryIntegration.initialize(app)
+        assert result is True
+        mock_sentry.init.assert_not_called()
+
+    @patch("services.sentry_integration.sentry_sdk")
+    def test_initialize_sdk_init_raises(self, mock_sentry):
+        from services.sentry_integration import SentryIntegration
+
+        mock_sentry.init.side_effect = RuntimeError("init failed")
+        app = MagicMock()
+        with patch.dict(
+            "os.environ",
+            {"SENTRY_DSN": "https://key@sentry.io/123", "SENTRY_ENABLED": "true"},
+            clear=False,
+        ):
+            result = SentryIntegration.initialize(app)
+        assert result is False
+        assert SentryIntegration._sentry_enabled is False
+
+    def test_capture_exception_when_disabled_is_noop(self):
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._sentry_enabled = False
+        SentryIntegration.capture_exception(ValueError("test"))
+
+    @patch("services.sentry_integration.sentry_sdk")
+    def test_capture_exception_with_context(self, mock_sentry):
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._sentry_enabled = True
+        mock_scope = MagicMock()
+        mock_sentry.push_scope.return_value.__enter__ = MagicMock(return_value=mock_scope)
+        mock_sentry.push_scope.return_value.__exit__ = MagicMock(return_value=False)
+        err = ValueError("test")
+        SentryIntegration.capture_exception(err, context={"extra": {"key": "val"}})
+        mock_sentry.capture_exception.assert_called_once_with(err)
+
+    def test_capture_message_when_disabled_is_noop(self):
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._sentry_enabled = False
+        SentryIntegration.capture_message("test msg")
+
+    @patch("services.sentry_integration.sentry_sdk")
+    def test_capture_message_calls_sdk(self, mock_sentry):
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._sentry_enabled = True
+        mock_scope = MagicMock()
+        mock_sentry.push_scope.return_value.__enter__ = MagicMock(return_value=mock_scope)
+        mock_sentry.push_scope.return_value.__exit__ = MagicMock(return_value=False)
+        SentryIntegration.capture_message("hello", level="warning")
+        mock_sentry.capture_message.assert_called_once_with("hello", level="warning")
+
+    @patch("services.sentry_integration.sentry_sdk")
+    def test_set_user_context(self, mock_sentry):
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._sentry_enabled = True
+        SentryIntegration.set_user_context("u1", email="a@b.com", username="matt")
+        mock_sentry.set_user.assert_called_once_with(
+            {"id": "u1", "email": "a@b.com", "username": "matt"}
+        )
+
+    @patch("services.sentry_integration.sentry_sdk")
+    def test_clear_user_context(self, mock_sentry):
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._sentry_enabled = True
+        SentryIntegration.clear_user_context()
+        mock_sentry.set_user.assert_called_once_with(None)
+
+    @patch("services.sentry_integration.sentry_sdk")
+    def test_add_breadcrumb(self, mock_sentry):
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._sentry_enabled = True
+        SentryIntegration.add_breadcrumb("api.call", "fetched data", data={"url": "/api"})
+        mock_sentry.add_breadcrumb.assert_called_once_with(
+            category="api.call",
+            message="fetched data",
+            level="info",
+            data={"url": "/api"},
+        )
+
+    @patch("services.sentry_integration.sentry_sdk")
+    def test_start_transaction(self, mock_sentry):
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._sentry_enabled = True
+        mock_sentry.start_transaction.return_value = MagicMock()
+        txn = SentryIntegration.start_transaction("test-op", op="task")
+        assert txn is not None
+        mock_sentry.start_transaction.assert_called_once()
+
+    def test_start_transaction_disabled_returns_none(self):
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._sentry_enabled = False
+        result = SentryIntegration.start_transaction("test")
+        assert result is None
+
+    def test_get_initialized_status(self):
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._sentry_enabled = False
+        assert SentryIntegration.get_initialized_status() is False
+        SentryIntegration._sentry_enabled = True
+        assert SentryIntegration.get_initialized_status() is True
+
+
+class TestBeforeSend:
+    """Tests for the _before_send event filter."""
+
+    def test_redacts_authorization_header(self):
+        from services.sentry_integration import SentryIntegration
+
+        event = {
+            "level": "error",
+            "request": {
+                "headers": {"authorization": "Bearer secret123"},
+                "url": "https://api.example.com/data",
+            },
+        }
+        result = SentryIntegration._before_send(event, {"exc_info": True})
+        assert result["request"]["headers"]["authorization"] == "[REDACTED]"
+
+    def test_redacts_api_key_in_url(self):
+        from services.sentry_integration import SentryIntegration
+
+        event = {
+            "level": "error",
+            "request": {
+                "headers": {},
+                "url": "https://api.example.com/data?api_key=secret123",
+            },
+        }
+        result = SentryIntegration._before_send(event, {"exc_info": True})
+        assert "secret123" not in result["request"]["url"]
+
+    def test_passes_through_non_error_events(self):
+        from services.sentry_integration import SentryIntegration
+
+        event = {"level": "info", "message": "hello"}
+        result = SentryIntegration._before_send(event, {})
+        assert result == event
+
+    def test_redacts_multiple_sensitive_headers(self):
+        from services.sentry_integration import SentryIntegration
+
+        event = {
+            "level": "error",
+            "request": {
+                "headers": {
+                    "authorization": "Bearer x",
+                    "cookie": "session=abc",
+                    "x-api-key": "key123",
+                    "x-token": "tok",
+                },
+                "url": "https://example.com",
+            },
+        }
+        result = SentryIntegration._before_send(event, {"exc_info": True})
+        for h in ["authorization", "cookie", "x-api-key", "x-token"]:
+            assert result["request"]["headers"][h] == "[REDACTED]"
+
+
+class TestSetupSentryConvenience:
+    """Test the setup_sentry convenience function."""
+
+    def test_setup_sentry_delegates(self):
+        from services.sentry_integration import SentryIntegration, setup_sentry
+
+        app = MagicMock()
+        with patch.object(SentryIntegration, "initialize", return_value=True) as mock_init:
+            result = setup_sentry(app, "test-service")
+        mock_init.assert_called_once_with(app, "test-service")
+        assert result is True
