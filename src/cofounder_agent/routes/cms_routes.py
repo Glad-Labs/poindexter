@@ -291,6 +291,10 @@ async def preview_post(preview_token: str):
             for dt_field in ("created_at", "updated_at"):
                 if task.get(dt_field):
                     task[dt_field] = task[dt_field].isoformat()
+            # Convert markdown content to HTML for frontend rendering
+            if task.get("content"):
+                task["content"] = convert_markdown_to_html(task["content"])
+            task["id"] = task.get("task_id", "")  # Frontend expects 'id'
             task["is_preview"] = True
             task["is_task_preview"] = True  # Flag: this is a task, not a published post
             task["slug"] = None
