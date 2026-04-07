@@ -5,23 +5,21 @@ Handles registration of route modules with the FastAPI application.
 Provides dependency injection of database service to route modules.
 
 Deployment modes (controlled by DEPLOYMENT_MODE env var):
-- coordinator (default): cloud — only routes the public site needs
-- worker: Local PC heavy compute. Minimal routes — workers claim tasks from DB.
+- coordinator (default): Railway cloud — minimal read-only API for Vercel frontend
+- worker: Local PC — heavy compute, all write operations, admin APIs
 
-Coordinator routes (public site + essential ops):
+Coordinator routes (public site only — least privilege):
 - CMS (posts, categories, tags, search, status, page view beacon)
-- Newsletter (subscribe, unsubscribe, count)
-- Revalidation (ISR cache busting)
 - Podcast (RSS feed, episodes, MP3 streaming)
-- Tasks (create, list, status, publish — includes sub-routers)
-- Settings (read/write)
-- Approval (approve/reject tasks)
-- Metrics (system metrics)
+- Revalidation (ISR cache busting — called BY backend, not by users)
+- Newsletter (subscribe, unsubscribe — Vercel serverless handles Resend directly)
 
-Worker routes:
-- Task management (core CRUD + status)
+Worker routes (local PC — everything):
+- All coordinator routes (for local dev/preview)
+- Task management (create, list, status, publish, approval)
+- Settings (read/write)
 - Metrics & analytics
-- Settings
+- Video (episodes & generation)
 """
 
 import importlib
@@ -40,29 +38,27 @@ logger = get_logger(__name__)
 # path /api/tasks/pending-approval is matched before the wildcard /{task_id}.
 # ---------------------------------------------------------------------------
 
-# Routes for coordinator mode (cloud — only what the public site needs)
+# Routes for coordinator mode (Railway cloud — minimal read-only for Vercel)
+# LEAST PRIVILEGE: only endpoints the public site actually calls
 _COORDINATOR_ROUTES = [
+    ("routes.cms_routes", "router", "cms_router", "CMS (posts, categories, tags, search, beacon)"),
+    ("routes.podcast_routes", "router", "podcast_router", "podcast RSS feed & episodes"),
+    ("routes.revalidate_routes", "router", "revalidate_router", "ISR cache invalidation"),
+    ("routes.newsletter_routes", "router", "newsletter_router", "newsletter subscribe/unsubscribe"),
+]
+
+# Routes for worker mode (local PC — full power, all operations)
+# Workers run content generation, task management, and serve preview.
+_WORKER_ROUTES = [
     ("routes.approval_routes", "router", "approval_router", "task approval workflow"),
     ("routes.task_routes", "router", "task_router", "task management"),
-    ("routes.cms_routes", "router", "cms_router", "CMS (posts, categories, tags, search, beacon)"),
+    ("routes.cms_routes", "router", "cms_router", "CMS (posts, preview, categories)"),
     ("routes.newsletter_routes", "router", "newsletter_router", "newsletter subscribe/unsubscribe"),
     ("routes.revalidate_routes", "router", "revalidate_router", "ISR cache invalidation"),
     ("routes.podcast_routes", "router", "podcast_router", "podcast RSS feed & episodes"),
     ("routes.video_routes", "router", "video_router", "video episodes & generation"),
     ("routes.settings_routes", "router", "settings_router", "settings read/write"),
-    ("routes.metrics_routes", "metrics_router", "metrics_router", "system metrics"),
-]
-
-# Routes for worker mode (local PC — heavy compute)
-# Workers claim tasks from the DB and report results back.
-# CMS routes included for preview endpoint (mobile review before publishing).
-_WORKER_ROUTES = [
-    ("routes.task_routes", "router", "task_router", "task management"),
-    ("routes.cms_routes", "router", "cms_router", "CMS (posts, preview, categories)"),
     ("routes.metrics_routes", "metrics_router", "metrics_router", "metrics & analytics"),
-    ("routes.settings_routes", "router", "settings_router", "user settings"),
-    ("routes.podcast_routes", "router", "podcast_router", "podcast RSS feed & episodes"),
-    ("routes.video_routes", "router", "video_router", "video episodes & generation"),
 ]
 
 # Backward-compatible alias: defaults to coordinator manifest
