@@ -380,6 +380,147 @@ async def process_queue(pool, max_items: int = 5):
         logger.error("[BRAIN] Queue processing failed: %s", e, exc_info=True)
 
 
+async def auto_remediate(pool):
+    """Detect and fix pipeline problems automatically. Runs every cycle."""
+    try:
+        actions_taken = []
+
+        # 1. Auto-cancel tasks stuck in_progress > 8 hours (likely crashed)
+        stuck = await pool.fetch("""
+            UPDATE content_tasks SET status = 'failed',
+                result = jsonb_build_object('error', 'Auto-cancelled: stuck in_progress > 8h')
+            WHERE status = 'in_progress'
+              AND updated_at < NOW() - INTERVAL '8 hours'
+            RETURNING task_id, topic
+        """)
+        if stuck:
+            topics = [r["topic"][:40] for r in stuck]
+            actions_taken.append(f"cancelled {len(stuck)} stuck task(s): {', '.join(topics)}")
+
+        # 2. Auto-expire awaiting_approval tasks older than 7 days
+        expired = await pool.fetch("""
+            UPDATE content_tasks SET status = 'rejected',
+                result = jsonb_build_object('error', 'Auto-rejected: awaiting_approval > 7 days')
+            WHERE status = 'awaiting_approval'
+              AND updated_at < NOW() - INTERVAL '7 days'
+            RETURNING task_id, topic
+        """)
+        if expired:
+            topics = [r["topic"][:40] for r in expired]
+            actions_taken.append(f"auto-rejected {len(expired)} stale approval(s): {', '.join(topics)}")
+
+        # 3. Detect and alert on pipeline stall (no new tasks in 48h + no pending tasks)
+        row = await pool.fetchrow("""
+            SELECT
+                (SELECT COUNT(*) FROM content_tasks WHERE status = 'pending') as pending,
+                (SELECT COUNT(*) FROM content_tasks WHERE status = 'in_progress') as active,
+                (SELECT MAX(created_at) FROM content_tasks) as last_task
+        """)
+        if row:
+            pending = row["pending"] or 0
+            active = row["active"] or 0
+            last_task = row["last_task"]
+            if pending == 0 and active == 0 and last_task:
+                from datetime import datetime, timezone
+                if last_task.tzinfo is None:
+                    last_task = last_task.replace(tzinfo=timezone.utc)
+                hours_idle = (datetime.now(timezone.utc) - last_task).total_seconds() / 3600
+                if hours_idle > 48:
+                    actions_taken.append(f"pipeline idle {hours_idle:.0f}h — no pending/active tasks")
+                    # Store in knowledge graph for trend tracking
+                    await pool.execute("""
+                        INSERT INTO brain_knowledge (entity, attribute, value, confidence, source, tags)
+                        VALUES ('pipeline', 'idle_alert', $1, 0.8, 'auto_remediate', $2)
+                        ON CONFLICT (entity, attribute) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+                    """, f"{hours_idle:.0f}h idle", ["pipeline", "alert"])
+
+        # 4. Detect failed task ratio spike and alert
+        row = await pool.fetchrow("""
+            SELECT
+                (SELECT COUNT(*) FROM content_tasks
+                 WHERE status = 'failed' AND updated_at > NOW() - INTERVAL '24 hours') as recent_fails,
+                (SELECT COUNT(*) FROM content_tasks
+                 WHERE updated_at > NOW() - INTERVAL '24 hours') as recent_total
+        """)
+        if row and row["recent_total"] and row["recent_total"] > 0:
+            fail_rate = row["recent_fails"] / row["recent_total"]
+            if fail_rate > 0.5 and row["recent_fails"] >= 3:
+                actions_taken.append(f"high failure rate: {row['recent_fails']}/{row['recent_total']} ({fail_rate:.0%}) in 24h")
+
+        if actions_taken:
+            logger.info("[BRAIN] Auto-remediation: %s", "; ".join(actions_taken))
+            # Alert on significant actions
+            for action in actions_taken:
+                if "cancelled" in action or "high failure" in action or "idle" in action:
+                    send_telegram(f"🔧 Auto-remediation: {action}")
+
+    except Exception as e:
+        logger.debug("[BRAIN] Auto-remediation failed: %s", e)
+
+
+async def generate_daily_digest(pool):
+    """Send a daily summary to Telegram at ~9 AM (runs every cycle, fires once/day)."""
+    try:
+        # Check if we already sent today
+        row = await pool.fetchrow("""
+            SELECT value FROM brain_knowledge
+            WHERE entity = 'digest' AND attribute = 'last_sent'
+        """)
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        if row:
+            last_sent = row["value"]
+            # Parse date and skip if same day
+            try:
+                last_date = last_sent[:10]
+                today = now.strftime("%Y-%m-%d")
+                if last_date == today:
+                    return  # Already sent today
+            except Exception:
+                pass
+
+        # Only send between 13:00-14:00 UTC (~9 AM ET)
+        if not (13 <= now.hour < 14):
+            return
+
+        # Build digest
+        stats = await pool.fetchrow("""
+            SELECT
+                (SELECT COUNT(*) FROM posts WHERE status = 'published') as total_posts,
+                (SELECT COUNT(*) FROM content_tasks WHERE status = 'awaiting_approval') as approval_queue,
+                (SELECT COUNT(*) FROM content_tasks WHERE status = 'pending') as pending,
+                (SELECT COUNT(*) FROM content_tasks WHERE status = 'failed'
+                    AND updated_at > NOW() - INTERVAL '24 hours') as failed_24h,
+                (SELECT COUNT(*) FROM posts WHERE published_at > NOW() - INTERVAL '24 hours') as published_24h,
+                (SELECT COUNT(*) FROM page_views WHERE created_at >= date_trunc('day', NOW())) as views_today,
+                (SELECT COALESCE(SUM(cost_usd), 0) FROM cost_logs
+                    WHERE created_at >= date_trunc('month', NOW())) as month_spend
+        """)
+        if not stats:
+            return
+
+        msg = (
+            f"📊 Daily Digest ({now.strftime('%b %d')})\n"
+            f"Posts: {stats['total_posts']} published, {stats['published_24h']} new today\n"
+            f"Pipeline: {stats['pending']} pending, {stats['approval_queue']} awaiting approval, {stats['failed_24h']} failed\n"
+            f"Traffic: {stats['views_today']} views today\n"
+            f"Spend: ${float(stats['month_spend']):.2f} MTD"
+        )
+        send_telegram(msg)
+
+        # Mark sent
+        await pool.execute("""
+            INSERT INTO brain_knowledge (entity, attribute, value, confidence, source)
+            VALUES ('digest', 'last_sent', $1, 1.0, 'brain_daemon')
+            ON CONFLICT (entity, attribute) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+        """, now.isoformat())
+
+        logger.info("[BRAIN] Daily digest sent")
+
+    except Exception as e:
+        logger.debug("[BRAIN] Daily digest failed: %s", e)
+
+
 async def self_maintain(pool):
     """Expire stale knowledge, clean old queue items."""
     try:
@@ -515,9 +656,11 @@ async def run_cycle(pool):
     issues = await monitor_services(pool)
     ext_issues = await monitor_external_services(pool)
     await process_queue(pool)
+    await auto_remediate(pool)
     await self_maintain(pool)
     await update_system_metrics(pool)
     await log_electricity_cost(pool)
+    await generate_daily_digest(pool)
 
     # Health probes — exercise services with real inputs (each on its own schedule)
     probe_results = await run_health_probes(pool, send_telegram_fn=send_telegram)

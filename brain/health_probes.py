@@ -542,23 +542,38 @@ async def probe_publish_rate(pool) -> dict:
 
 
 async def probe_cost_freshness(pool) -> dict:
-    """Probe: Alert if cost_logs haven't been written in 24 hours."""
+    """Probe: Alert if cost_logs haven't been written in 24 hours. Correlates with approval queue."""
     try:
         row = await pool.fetchrow("""
-            SELECT MAX(created_at) as last_entry FROM cost_logs
+            SELECT
+                (SELECT MAX(created_at) FROM cost_logs WHERE cost_type IS NULL OR cost_type = 'inference') as last_inference,
+                (SELECT MAX(created_at) FROM cost_logs) as last_any,
+                (SELECT COUNT(*) FROM content_tasks WHERE status = 'awaiting_approval') as approval_queue
         """)
-        if not row or not row["last_entry"]:
+        if not row or not row["last_any"]:
             return {"ok": True, "detail": "no cost_logs entries yet (pipeline idle)"}
         from datetime import datetime, timezone
-        last = row["last_entry"]
+        # Check inference costs specifically (electricity logs every 5 min)
+        last = row["last_inference"] or row["last_any"]
         if last.tzinfo is None:
             last = last.replace(tzinfo=timezone.utc)
         age_hours = (datetime.now(timezone.utc) - last).total_seconds() / 3600
+        approval_queue = row["approval_queue"] or 0
         stale = age_hours > 24
+
+        # Correlate: if stale AND approval queue is full, explain the root cause
+        if stale and approval_queue >= 3:
+            return {
+                "ok": True,  # Not a real failure — root cause is approval queue
+                "status": "expected_idle",
+                "age_hours": round(age_hours, 1),
+                "approval_queue": approval_queue,
+                "detail": f"inference idle {age_hours:.0f}h — approval queue full ({approval_queue}/3), pipeline throttled",
+            }
         return {
             "ok": not stale,
             "age_hours": round(age_hours, 1),
-            "detail": f"cost_logs last entry {age_hours:.1f}h ago" + (" — STALE" if stale else ""),
+            "detail": f"inference costs last entry {age_hours:.1f}h ago" + (" — STALE" if stale else ""),
         }
     except Exception as e:
         return {"ok": False, "detail": str(e)[:200]}
