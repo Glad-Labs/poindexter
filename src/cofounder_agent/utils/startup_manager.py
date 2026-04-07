@@ -353,14 +353,12 @@ class StartupManager:
             )
 
     async def _initialize_agent_registry(self) -> None:
-        """Initialize agent registry with all available agents"""
+        """Initialize agent registry with available agents"""
         try:
             from agents.registry import get_agent_registry
-            from utils.agent_initialization import register_all_agents
 
             registry = get_agent_registry()
-            initialized_registry = register_all_agents(registry)
-            agent_count = len(initialized_registry)
+            agent_count = len(registry)
             logger.info(f"  Agent registry initialized with {agent_count} agents")
         except Exception as e:
             logger.warning(

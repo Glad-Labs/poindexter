@@ -608,37 +608,22 @@ class TestVerifyConnections:
 
 @pytest.mark.unit
 class TestInitializeAgentRegistry:
-    def test_dev_mode_skips_initialization(self):
-        mgr = _make_manager()
-
-        with patch.dict(os.environ, {"DEVELOPMENT_MODE": "true"}):
-            _run(mgr._initialize_agent_registry())
-
-        # No import needed — dev mode exits early
-
-    def test_non_dev_mode_registers_agents(self):
+    def test_initializes_registry(self):
         mgr = _make_manager()
 
         mock_registry = MagicMock()
-        mock_initialized = MagicMock()
-        mock_initialized.__len__ = MagicMock(return_value=5)
+        mock_registry.__len__ = MagicMock(return_value=0)
         mock_get_registry = MagicMock(return_value=mock_registry)
-        mock_register = MagicMock(return_value=mock_initialized)
 
         mock_registry_module = MagicMock(get_agent_registry=mock_get_registry)
-        mock_init_module = MagicMock(register_all_agents=mock_register)
 
-        with patch.dict(os.environ, {"DEVELOPMENT_MODE": "false"}):
-            with patch.dict(
-                "sys.modules",
-                {
-                    "agents.registry": mock_registry_module,
-                    "utils.agent_initialization": mock_init_module,
-                },
-            ):
-                _run(mgr._initialize_agent_registry())
+        with patch.dict(
+            "sys.modules",
+            {"agents.registry": mock_registry_module},
+        ):
+            _run(mgr._initialize_agent_registry())
 
-        mock_register.assert_called_once_with(mock_registry)
+        mock_get_registry.assert_called_once()
 
     def test_exception_logs_warning_not_raises(self):
         mgr = _make_manager()
@@ -646,15 +631,11 @@ class TestInitializeAgentRegistry:
         mock_registry_module = MagicMock()
         mock_registry_module.get_agent_registry.side_effect = Exception("agent registry failed")
 
-        with patch.dict(os.environ, {"DEVELOPMENT_MODE": "false"}):
-            with patch.dict(
-                "sys.modules",
-                {
-                    "agents.registry": mock_registry_module,
-                    "utils.agent_initialization": MagicMock(),
-                },
-            ):
-                _run(mgr._initialize_agent_registry())  # Must not raise
+        with patch.dict(
+            "sys.modules",
+            {"agents.registry": mock_registry_module},
+        ):
+            _run(mgr._initialize_agent_registry())  # Must not raise
 
 
 # ---------------------------------------------------------------------------
