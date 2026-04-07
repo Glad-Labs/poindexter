@@ -544,12 +544,21 @@ async def probe_publish_rate(pool) -> dict:
 async def probe_cost_freshness(pool) -> dict:
     """Probe: Alert if cost_logs haven't been written in 24 hours. Correlates with approval queue."""
     try:
-        row = await pool.fetchrow("""
-            SELECT
-                (SELECT MAX(created_at) FROM cost_logs WHERE cost_type IS NULL OR cost_type = 'inference') as last_inference,
-                (SELECT MAX(created_at) FROM cost_logs) as last_any,
-                (SELECT COUNT(*) FROM content_tasks WHERE status = 'awaiting_approval') as approval_queue
-        """)
+        # Try with cost_type column; fall back if migration hasn't run yet
+        try:
+            row = await pool.fetchrow("""
+                SELECT
+                    (SELECT MAX(created_at) FROM cost_logs WHERE cost_type IS NULL OR cost_type = 'inference') as last_inference,
+                    (SELECT MAX(created_at) FROM cost_logs) as last_any,
+                    (SELECT COUNT(*) FROM content_tasks WHERE status = 'awaiting_approval') as approval_queue
+            """)
+        except Exception:
+            row = await pool.fetchrow("""
+                SELECT
+                    (SELECT MAX(created_at) FROM cost_logs) as last_inference,
+                    (SELECT MAX(created_at) FROM cost_logs) as last_any,
+                    (SELECT COUNT(*) FROM content_tasks WHERE status = 'awaiting_approval') as approval_queue
+            """)
         if not row or not row["last_any"]:
             return {"ok": True, "detail": "no cost_logs entries yet (pipeline idle)"}
         from datetime import datetime, timezone
