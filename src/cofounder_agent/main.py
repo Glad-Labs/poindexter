@@ -458,6 +458,13 @@ async def api_health():
         else:
             health_data["components"]["task_executor"] = "unavailable"
 
+        # GPU scheduler status (gaming detection)
+        try:
+            from services.gpu_scheduler import gpu
+            health_data["components"]["gpu"] = gpu.status
+        except Exception:
+            pass
+
         return health_data
     except Exception as e:  # pylint: disable=broad-except
         logger.error("Health check failed: %s", str(e), exc_info=True)
