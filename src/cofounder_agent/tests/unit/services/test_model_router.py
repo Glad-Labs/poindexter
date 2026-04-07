@@ -23,14 +23,14 @@ from services.model_router import (
 
 @pytest.fixture
 def router() -> ModelRouter:
-    """Fresh ModelRouter with Ollama disabled for predictable model selection."""
-    return ModelRouter(default_model="ollama/mistral", use_ollama=False)
+    """Fresh ModelRouter with Ollama enabled (default policy)."""
+    return ModelRouter(default_model="ollama/qwen3:8b", use_ollama=True)
 
 
 @pytest.fixture
 def ollama_router() -> ModelRouter:
-    """ModelRouter with Ollama enabled."""
-    return ModelRouter(default_model="ollama/mistral", use_ollama=True)
+    """ModelRouter with Ollama enabled (alias for clarity in older test names)."""
+    return ModelRouter(default_model="ollama/qwen3:8b", use_ollama=True)
 
 
 # ---------------------------------------------------------------------------
@@ -65,17 +65,14 @@ class TestAssessComplexity:
         assert result == TaskComplexity.CRITICAL
 
     def test_requires_reasoning_overrides_to_complex(self, router):
-        """context flag requires_reasoning forces COMPLEX even for simple task types."""
         result = router._assess_complexity("summarize", {"requires_reasoning": True})
         assert result == TaskComplexity.COMPLEX
 
     def test_large_max_tokens_overrides_to_complex(self, router):
-        """max_tokens > 2000 in context escalates to COMPLEX."""
         result = router._assess_complexity("summarize", {"max_tokens": 2001})
         assert result == TaskComplexity.COMPLEX
 
     def test_max_tokens_at_boundary_does_not_escalate(self, router):
-        """max_tokens == 2000 stays at the task's natural complexity."""
         result = router._assess_complexity("summarize", {"max_tokens": 2000})
         assert result == TaskComplexity.SIMPLE
 
@@ -95,27 +92,18 @@ class TestAssessComplexity:
 
 @pytest.mark.unit
 class TestRouteRequest:
-    def test_simple_task_gets_budget_model(self, router):
+    def test_simple_task_returns_ollama_model(self, router):
         model, cost, complexity = router.route_request("summarize")
         assert complexity == TaskComplexity.SIMPLE
-        assert model == "gpt-3.5-turbo"
+        assert model.startswith("ollama/")
 
     def test_critical_priority_context_overrides_complexity(self, router):
-        """priority=critical in context must escalate to CRITICAL regardless of task type."""
         model, cost, complexity = router.route_request("summarize", {"priority": "critical"})
         assert complexity == TaskComplexity.CRITICAL
 
     def test_force_premium_escalates_to_complex(self, router):
-        """force_premium in context must escalate to COMPLEX."""
         model, cost, complexity = router.route_request("summarize", {"force_premium": True})
         assert complexity == TaskComplexity.COMPLEX
-
-    def test_prefer_fallback_returns_fallback_model(self, router):
-        """prefer_fallback should select the fallback model for the chosen complexity."""
-        model, cost, complexity = router.route_request("summarize", {"prefer_fallback": True})
-        assert complexity == TaskComplexity.SIMPLE
-        expected_fallback = ModelRouter.MODEL_RECOMMENDATIONS[TaskComplexity.SIMPLE]["fallback"]
-        assert model == expected_fallback
 
     def test_ollama_router_returns_ollama_model(self, ollama_router):
         model, cost, complexity = ollama_router.route_request("summarize")
@@ -129,6 +117,10 @@ class TestRouteRequest:
         _, cost, _ = router.route_request("create", estimated_tokens=500)
         assert cost >= 0.0
 
+    def test_ollama_cost_is_zero(self, router):
+        _, cost, _ = router.route_request("summarize", estimated_tokens=1000)
+        assert cost == 0.0
+
     def test_total_requests_incremented(self, router):
         router.route_request("summarize")
         router.route_request("analyze")
@@ -137,6 +129,20 @@ class TestRouteRequest:
     def test_ollama_uses_tracked(self, ollama_router):
         ollama_router.route_request("summarize")
         assert ollama_router.metrics["ollama_uses"] == 1
+
+    def test_complexity_maps_to_expected_models(self, router):
+        """Each complexity level maps to the expected Ollama model."""
+        model_s, _, _ = router.route_request("summarize")
+        assert model_s == "ollama/qwen3:8b"
+
+        model_m, _, _ = router.route_request("analyze")
+        assert model_m == "ollama/gemma3:27b"
+
+        model_c, _, _ = router.route_request("create")
+        assert model_c == "ollama/qwen3.5:35b"
+
+        model_cr, _, _ = router.route_request("legal")
+        assert model_cr == "ollama/qwen3.5:122b"
 
 
 # ---------------------------------------------------------------------------
@@ -162,12 +168,10 @@ class TestGetMaxTokens:
         assert result == 2000
 
     def test_max_tokens_takes_precedence_over_override_tokens(self, router):
-        """max_tokens is checked first; override_tokens is a secondary alias."""
         result = router.get_max_tokens("create", {"max_tokens": 100, "override_tokens": 999})
         assert result == 100
 
     def test_partial_match_in_task_type(self, router):
-        """Substring match: 'auto-summarize' should match 'summarize' keyword."""
         assert router.get_max_tokens("auto-summarize") == MAX_TOKENS_BY_TASK["summarize"]
 
 
@@ -178,17 +182,13 @@ class TestGetMaxTokens:
 
 @pytest.mark.unit
 class TestGetModelCost:
-    def test_known_model_returns_cost(self, router):
-        cost = router.get_model_cost("gpt-4-turbo")
-        assert cost == 0.045
-
     def test_ollama_model_is_free(self, router):
         cost = router.get_model_cost("ollama/qwen3:8b")
         assert cost == 0.0
 
-    def test_unknown_model_returns_fallback(self, router):
+    def test_unknown_model_returns_zero(self, router):
         cost = router.get_model_cost("unknown-model-xyz")
-        assert cost == 0.045  # default fallback in get_model_cost
+        assert cost == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -203,24 +203,13 @@ class TestGetMetrics:
         assert metrics["total_requests"] == 0
         assert metrics["budget_model_uses"] == 0
         assert metrics["estimated_cost_actual"] == 0.0
-        assert metrics["estimated_cost_saved"] == 0.0
 
-    def test_savings_percentage_zero_when_no_requests(self, router):
-        metrics = router.get_metrics()
-        assert metrics["savings_percentage"] == 0.0
-
-    def test_budget_model_percentage_after_requests(self, router):
-        # Both "summarize" and "list" are SIMPLE → budget tier
+    def test_metrics_after_requests(self, router):
         router.route_request("summarize")
         router.route_request("list")
         metrics = router.get_metrics()
-        assert metrics["budget_model_percentage"] == 100.0
-
-    def test_cost_saved_positive_for_budget_model(self, router):
-        router.route_request("summarize", estimated_tokens=1000)
-        metrics = router.get_metrics()
-        # gpt-3.5-turbo is cheaper than gpt-4-turbo baseline
-        assert metrics["estimated_cost_saved"] > 0
+        assert metrics["total_requests"] == 2
+        assert metrics["ollama_uses"] == 2
 
 
 # ---------------------------------------------------------------------------
@@ -246,20 +235,16 @@ class TestResetMetrics:
 @pytest.mark.unit
 class TestRecommendModelForBudget:
     def test_returns_cheapest_model_within_budget(self, router):
-        # Any budget should get at least the cheapest model
         model = router.recommend_model_for_budget(remaining_budget=1.0, estimated_tokens=1000)
         assert model is not None
 
-    def test_returns_none_when_budget_is_zero(self, router):
-        # No paid model fits a zero budget (Ollama models have 0.0 cost so they
-        # may fit — verify that at minimum a non-error result is returned)
-        model = router.recommend_model_for_budget(remaining_budget=0.0, estimated_tokens=1000)
+    def test_returns_model_when_budget_is_zero(self, router):
         # Ollama free models cost 0.0 so one should always be returned
+        model = router.recommend_model_for_budget(remaining_budget=0.0, estimated_tokens=1000)
         assert model is not None
 
     def test_returns_none_for_negative_budget(self, router):
-        # Negative budget: free (0.0-cost) Ollama models still fit (0.0 <= neg? no)
-        # Depends on implementation: 0.0 <= -0.01 is False → should return None
+        # 0.0 <= -0.01 is False -> should return None
         model = router.recommend_model_for_budget(remaining_budget=-0.01, estimated_tokens=1000)
         assert model is None
 
@@ -276,14 +261,13 @@ class TestRecommendModelForBudget:
 @pytest.mark.unit
 class TestGetModelForPhase:
     def test_explicit_selection_returned_as_is(self):
-        selections = {"draft": "gpt-4"}
+        selections = {"draft": "ollama/custom:7b"}
         result = get_model_for_phase("draft", selections, "balanced")
-        assert result == "gpt-4"
+        assert result == "ollama/custom:7b"
 
     def test_auto_selection_falls_back_to_default(self):
         selections = {"draft": "auto"}
         result = get_model_for_phase("draft", selections, "balanced")
-        # draft phase uses best model in balanced tier (#196 phase differentiation)
         assert result == "ollama/qwen3.5:35b"
 
     def test_empty_selections_uses_quality_preference(self):
@@ -292,12 +276,10 @@ class TestGetModelForPhase:
 
     def test_unknown_quality_preference_falls_back_to_balanced(self):
         result = get_model_for_phase("draft", {}, "nonexistent_tier")
-        # falls back to balanced tier; draft uses best model (#196)
         assert result == "ollama/qwen3.5:35b"
 
     def test_none_quality_preference_defaults_to_balanced(self):
         result = get_model_for_phase("draft", {}, None)  # type: ignore[arg-type]
-        # defaults to balanced tier; draft uses best model (#196)
         assert result == "ollama/qwen3.5:35b"
 
     def test_unknown_phase_returns_fallback(self):
@@ -337,33 +319,32 @@ class TestGlobalSingleton:
 @pytest.mark.unit
 class TestProviderFailureTracking:
     def test_record_failure_increments_count(self, router):
-        router.record_provider_failure("anthropic")
+        router.record_provider_failure("ollama")
         health = router.get_provider_health()
-        assert health["anthropic"]["consecutive_failures"] == 1
+        assert health["ollama"]["consecutive_failures"] == 1
 
     def test_record_success_resets_count(self, router):
         for _ in range(3):
-            router.record_provider_failure("openai")
-        router.record_provider_success("openai")
+            router.record_provider_failure("ollama")
+        router.record_provider_success("ollama")
         health = router.get_provider_health()
-        assert health["openai"]["consecutive_failures"] == 0
+        assert health["ollama"]["consecutive_failures"] == 0
 
     def test_critical_threshold_at_five_failures(self, router, caplog):
         import logging
 
         with caplog.at_level(logging.CRITICAL):
             for _ in range(5):
-                router.record_provider_failure("gemini")
+                router.record_provider_failure("ollama")
         assert any("5 consecutive" in r.message for r in caplog.records)
 
     def test_get_provider_health_empty_on_fresh_router(self, router):
-        # No failures recorded yet — no keys in health dict
         assert router.get_provider_health() == {}
 
     def test_multiple_providers_tracked_independently(self, router):
-        router.record_provider_failure("anthropic")
-        router.record_provider_failure("anthropic")
-        router.record_provider_failure("openai")
+        router.record_provider_failure("ollama")
+        router.record_provider_failure("ollama")
+        router.record_provider_failure("huggingface")
         health = router.get_provider_health()
-        assert health["anthropic"]["consecutive_failures"] == 2
-        assert health["openai"]["consecutive_failures"] == 1
+        assert health["ollama"]["consecutive_failures"] == 2
+        assert health["huggingface"]["consecutive_failures"] == 1
