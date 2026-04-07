@@ -620,6 +620,18 @@ async def publish_post_from_task(
             short_path = Path(os.path.expanduser("~")) / ".gladlabs" / "video" / f"{pid}-short.mp4"
             if short_path.exists():
                 await upload_to_r2(str(short_path), f"video/{pid}-short.mp4", "video/mp4")
+            # Regenerate public podcast RSS feed on R2
+            try:
+                import httpx as _hx
+                async with _hx.AsyncClient() as _client:
+                    _feed = await _client.get("http://localhost:8002/api/podcast/feed.xml")
+                    _feed_path = "/tmp/podcast-feed.xml"
+                    with open(_feed_path, "w") as _f:
+                        _f.write(_feed.text)
+                    await upload_to_r2(_feed_path, "podcast/feed.xml", "application/rss+xml")
+                    logger.info("[R2] Podcast RSS feed regenerated on CDN")
+            except Exception as _e:
+                logger.debug("[R2] Feed regen failed (non-fatal): %s", _e)
 
         asyncio.ensure_future(_upload_media_to_r2(post_id))
 
