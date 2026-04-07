@@ -5,23 +5,9 @@ Consolidates all Pydantic models used across the application.
 
 Modules:
 - task_schemas: Task management endpoints
-- content_schemas: Content creation and management
 - settings_schemas: Application settings
 - database_response_models: Typed DB response models
 """
-
-# Content schemas
-from .content_schemas import (
-    ApprovalRequest,
-    ApprovalResponse,
-    BlogDraftResponse,
-    CreateBlogPostRequest,
-    DraftsListResponse,
-    GenerateAndPublishRequest,
-    PublishDraftRequest,
-    PublishDraftResponse,
-    TaskStatusResponse,
-)
 
 # Database Response Models (Phase 2)
 from .database_response_models import (
@@ -85,18 +71,9 @@ __all__ = [
     "TaskConfirmRequest",
     "TaskConfirmResponse",
     # Content
-    "CreateBlogPostRequest",
     "CreateBlogPostResponse",
     "UnifiedTaskResponse",
     "ProgressInfo",
-    "TaskStatusResponse",
-    "BlogDraftResponse",
-    "DraftsListResponse",
-    "PublishDraftRequest",
-    "ApprovalRequest",
-    "ApprovalResponse",
-    "PublishDraftResponse",
-    "GenerateAndPublishRequest",
     # Settings
     "SettingDataTypeEnum",
     "SettingCategoryEnum",

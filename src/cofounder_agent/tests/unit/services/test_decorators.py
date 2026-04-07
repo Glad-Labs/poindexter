@@ -1,12 +1,12 @@
 """
 Unit tests for services/decorators.py
 
-Tests the log_query_performance and log_api_call decorators. The tests verify
-that the decorators:
+Tests the log_query_performance decorator. The tests verify
+that the decorator:
 - Correctly pass-through return values from the wrapped function
-- Re-raise exceptions without swallowing them
-- Respect the ENABLE_QUERY_MONITORING env var toggle
-- Handle both list and dict return values for result_count inference
+- Re-raises exceptions without swallowing them
+- Respects the ENABLE_QUERY_MONITORING env var toggle
+- Handles both list and dict return values for result_count inference
 
 All tests are pure async — no DB or network calls.
 """
@@ -18,7 +18,7 @@ import pytest
 # Ensure monitoring is enabled for all tests (override env before import)
 os.environ.setdefault("ENABLE_QUERY_MONITORING", "true")
 
-from services.decorators import log_api_call, log_query_performance
+from services.decorators import log_query_performance
 
 # ---------------------------------------------------------------------------
 # log_query_performance
@@ -124,62 +124,3 @@ class TestLogQueryPerformance:
         result = await count_query()
         assert result["total"] == 42
 
-
-# ---------------------------------------------------------------------------
-# log_api_call
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestLogApiCall:
-    @pytest.mark.asyncio
-    async def test_returns_value_from_wrapped_function(self):
-        @log_api_call(provider="openai", operation="chat")
-        async def call_api():
-            return {"content": "hello"}
-
-        result = await call_api()
-        assert result == {"content": "hello"}
-
-    @pytest.mark.asyncio
-    async def test_re_raises_exception(self):
-        @log_api_call(provider="anthropic", operation="complete")
-        async def failing_call():
-            raise RuntimeError("rate limited")
-
-        with pytest.raises(RuntimeError, match="rate limited"):
-            await failing_call()
-
-    @pytest.mark.asyncio
-    async def test_works_with_none_return(self):
-        @log_api_call(provider="ollama", operation="generate")
-        async def no_result():
-            return None
-
-        result = await no_result()
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_passes_args_and_kwargs(self):
-        @log_api_call(provider="google", operation="embed")
-        async def embed(text: str, model: str = "gemini"):
-            return {"text": text, "model": model}
-
-        result = await embed("hello world", model="gemini-2.5")
-        assert result["text"] == "hello world"
-        assert result["model"] == "gemini-2.5"
-
-    @pytest.mark.asyncio
-    async def test_different_providers_do_not_interfere(self):
-        @log_api_call(provider="openai", operation="chat")
-        async def openai_call():
-            return "openai"
-
-        @log_api_call(provider="anthropic", operation="chat")
-        async def anthropic_call():
-            return "anthropic"
-
-        r1 = await openai_call()
-        r2 = await anthropic_call()
-        assert r1 == "openai"
-        assert r2 == "anthropic"

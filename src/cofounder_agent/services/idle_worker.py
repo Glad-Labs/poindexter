@@ -1,21 +1,4 @@
-"""
-Idle Worker — background tasks that run when the pipeline has no active content generation.
-
-The system should never be truly idle. When not generating new content, it:
-1. Audits existing published posts for quality issues
-2. Checks for broken links in published content
-3. Re-embeds content that has changed
-4. Analyzes which topics get traffic and suggests new ones
-5. Adjusts quality thresholds based on pass/fail rates
-6. Cleans up stale data
-
-All tasks are non-blocking and yield to content generation when tasks arrive.
-Controlled via pipeline_stages table (key: 'idle_*').
-
-Usage:
-    idle = IdleWorker(pool)
-    await idle.run_cycle()  # One pass of all idle tasks
-"""
+"""Idle Worker — background maintenance tasks that run when the pipeline has no active content generation."""
 
 import time
 
@@ -68,11 +51,7 @@ class IdleWorker:
             logger.debug("[IDLE] Failed to persist schedule for %s: %s", task_name, e)
 
     async def _create_gitea_issue(self, title: str, body: str) -> bool:
-        """Create a Gitea issue for tracking discovered problems.
-
-        Deduplicates by checking for existing open issues with similar titles
-        (matching the prefix before the first colon or dash).
-        """
+        """Create a deduplicated Gitea issue for tracking discovered problems."""
         import base64
         import httpx
 
@@ -118,12 +97,7 @@ class IdleWorker:
         return False
 
     def _is_due(self, task_name: str, interval_minutes: int) -> bool:
-        """Check if a background task is due to run.
-
-        Also respects _completion_cooldown — if a task reported 0 remaining items,
-        it gets a longer cooldown (4x the normal interval) to avoid wasting cycles
-        rechecking work that's already done.
-        """
+        """Check if a task is due. Uses 4x cooldown if task previously completed all work."""
         last = self._last_run.get(task_name, 0)
         # If task completed all work last run, use extended cooldown
         cooldown_key = f"{task_name}_completed"
@@ -131,9 +105,6 @@ class IdleWorker:
             # Task finished all work — use 4x interval before rechecking
             return (time.time() - last) >= (interval_minutes * 60 * 4)
         return (time.time() - last) >= (interval_minutes * 60)
-
-    def _mark_run(self, task_name: str):
-        self._last_run[task_name] = time.time()
 
     def _mark_completed(self, task_name: str):
         """Mark a task as having completed all available work (extended cooldown)."""
@@ -281,11 +252,7 @@ class IdleWorker:
         return results
 
     async def _expire_stale_approvals(self) -> dict:
-        """Auto-reject tasks stuck in awaiting_approval too long.
-
-        Content goes stale — no point approving a 2-week-old draft about
-        yesterday's news. TTL is configurable via app_settings (default: 7 days).
-        """
+        """Auto-expire tasks stuck in awaiting_approval beyond the configurable TTL (default 7 days)."""
         try:
             ttl_days = 7
             try:
@@ -466,14 +433,7 @@ class IdleWorker:
     THRESHOLD_MIN_SAMPLES = 10  # need this many tasks before tuning
 
     async def _tune_thresholds(self) -> dict:
-        """Analyze pass/fail rates and auto-adjust publish threshold within guardrails.
-
-        Guardrails:
-        - Hard floor/ceiling: 50-90 range
-        - Max ±3 points per cycle (no oscillation)
-        - Requires 10+ scored tasks in last 7 days
-        - Logs every change to audit_log for traceability
-        """
+        """Auto-adjust publish threshold based on 7-day pass/fail rates (50-90 range, max +/-3/cycle)."""
         try:
             stats = await self.pool.fetchrow("""
                 SELECT
@@ -1014,12 +974,7 @@ class IdleWorker:
             return {"error": str(e)}
 
     async def _detect_anomalies(self) -> dict:
-        """Statistical anomaly detection across key system metrics.
-
-        Uses z-score method: compares recent values against the 30-day rolling
-        average. Flags anything >2 standard deviations from the mean.
-        Alerts via Gitea issue when anomalies cluster.
-        """
+        """Z-score anomaly detection across system metrics (>2 stddev from 30-day mean)."""
         try:
             import json
             import math
@@ -1133,12 +1088,7 @@ class IdleWorker:
             return {"error": str(e)}
 
     async def _sync_page_views(self) -> dict:
-        """Pull new page_views rows from cloud DB into local brain DB.
-
-        Grafana queries the local DB, so this sync is needed for the
-        Page Views dashboard to show data. Uses created_at watermark
-        and INSERT ON CONFLICT to stay idempotent.
-        """
+        """Pull new page_views from cloud DB into local brain DB for Grafana dashboards."""
         try:
             import asyncpg
             import os
@@ -1205,12 +1155,7 @@ class IdleWorker:
             return {"error": str(e)}
 
     async def _sync_newsletter_subscribers(self) -> dict:
-        """Pull new/updated newsletter_subscribers from cloud DB into local brain DB.
-
-        Grafana queries the local DB, so this sync keeps subscriber data
-        available locally. Uses updated_at watermark and INSERT ON CONFLICT
-        to stay idempotent (handles unsubscribes, verification changes).
-        """
+        """Pull new/updated newsletter_subscribers from cloud DB into local brain DB."""
         try:
             import asyncpg
             import os
@@ -1326,15 +1271,7 @@ class IdleWorker:
     }
 
     async def _update_utility_rates(self) -> dict:
-        """Fetch current US residential electricity rate from EIA and detect GPU TDP.
-
-        Updates app_settings keys:
-        - electricity_rate_kwh: $/kWh from EIA monthly retail sales data
-        - gpu_power_watts: TDP from nvidia-smi GPU name lookup
-
-        Only updates electricity rate if it differs >10% from current value.
-        Logs all changes to audit_log.
-        """
+        """Fetch EIA electricity rate and detect GPU TDP via nvidia-smi. Updates app_settings."""
         import json
 
         changes = {}
@@ -1455,12 +1392,7 @@ class IdleWorker:
         return {"changes": changes} if changes else {"note": "all utility rates current"}
 
     async def _verify_published_posts(self) -> dict:
-        """Check that recently published posts are accessible on the live site.
-
-        Fetches posts published in the last 24 hours and verifies each one
-        returns HTTP 200 from the public URL. Logs warnings to audit_log
-        for any that fail.
-        """
+        """Verify recently published posts return HTTP 200 on the live site."""
         try:
             import asyncpg
             import httpx

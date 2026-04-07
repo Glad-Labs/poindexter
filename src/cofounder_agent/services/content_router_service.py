@@ -1,18 +1,4 @@
-"""
-Unified Content Router Service
-
-Consolidates functionality from:
-- routes/content.py (full-featured blog creation)
-- routes/content_generation.py (Ollama-focused generation)
-- routes/enhanced_content.py (SEO-optimized generation)
-
-Provides centralized blog post generation with:
-- Multi-model AI support (Ollama → HuggingFace)
-- Featured image search (Pexels - free)
-- SEO optimization and metadata
-- Draft management
-- Comprehensive task tracking
-"""
+"""Unified Content Router Service — centralized blog post generation pipeline."""
 
 import asyncio
 
@@ -236,40 +222,19 @@ def _scrub_fabricated_links(content: str) -> str:
 
 
 # ============================================================================
-# ENUMS
-# ============================================================================
-# NOTE: ContentStyle, ContentTone, PublishMode are now defined in schemas/content_schemas.py
-# to avoid circular imports. They are imported above.
-
-
-# ============================================================================
-# TASK STORE - UNIFIED STORAGE (Now using persistent database backend)
+# TASK STORE
 # ============================================================================
 
 
 class ContentTaskStore:
-    """
-    Unified task storage adapter for all content generation requests.
-
-    Now delegates to persistent database backend (PersistentTaskStore).
-    Provides backward-compatible interface with enhanced persistence.
-    """
+    """Unified task storage adapter delegating to persistent DatabaseService backend."""
 
     def __init__(self, database_service: Optional[DatabaseService] = None):
-        """
-        Initialize unified task store with async DatabaseService
-
-        Args:
-            database_service: Optional DatabaseService instance for task persistence
-        """
         self.database_service = database_service
 
     @property
     def persistent_store(self):
-        """
-        Backward-compatible property for existing code.
-        Now returns the DatabaseService which handles all async task operations.
-        """
+        """Backward-compatible property — returns the DatabaseService."""
         return self.database_service
 
     async def create_task(
@@ -284,21 +249,7 @@ class ContentTaskStore:
         task_type: str = "blog_post",
         metadata: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """
-        Create a new task in persistent storage (async, non-blocking)
-
-        Args:
-            topic: Blog post topic
-            style: Content style
-            tone: Content tone
-            target_length: Target word count
-            tags: Tags for categorization
-            generate_featured_image: Whether to search for featured image
-            request_type: Type of request (basic, enhanced, etc.)
-
-        Returns:
-            Task ID for tracking
-        """
+        """Create a new task in persistent storage. Returns task ID."""
         logger.info("📋 [CONTENT_TASK_STORE] Creating task (async)")
         logger.info(f"   Topic: {topic[:60]}{'...' if len(topic) > 60 else ''}")
         logger.info(f"   Style: {style} | Tone: {tone} | Length: {target_length}w")
@@ -411,106 +362,12 @@ def get_content_task_store(database_service: Optional[DatabaseService] = None) -
 
 
 # ============================================================================
-# CONTENT GENERATION SERVICE
-# ============================================================================
-
-
-class ContentGenerationService:
-    """Service for AI-powered content generation"""
-
-    def __init__(self):
-        """Initialize with available generators"""
-        self.ai_generator = get_content_generator()
-        self.seo_generator = get_seo_content_generator(self.ai_generator)
-
-    async def generate_blog_post(
-        self,
-        topic: str,
-        style: str,
-        tone: str,
-        target_length: int,
-        tags: Optional[List[str]] = None,
-        enhanced: bool = False,
-        preferred_model: Optional[str] = None,
-        preferred_provider: Optional[str] = None,
-        writing_style_context: Optional[str] = None,
-    ) -> tuple:
-        """
-        Generate blog post content
-
-        Args:
-            topic: Blog post topic
-            style: Content style
-            tone: Content tone
-            target_length: Target word count
-            tags: Tags for categorization
-            enhanced: Whether to use SEO enhancement
-            preferred_model: User-selected model name (e.g., 'qwen3.5:35b')
-            preferred_provider: User-selected provider ('ollama')
-            writing_style_context: Optional writing style excerpts for voice matching
-
-        Returns:
-            Tuple of (content, model_used, metrics)
-        """
-        if enhanced:
-            logger.info(f"Generating SEO-enhanced blog post: {topic}")
-            result = await self.seo_generator.generate_complete_blog_post(
-                topic=topic,
-                style=style,
-                tone=tone,
-                target_length=target_length,
-                tags_input=tags,
-                generate_images=False,  # Handle separately
-            )
-            return (
-                result.content,
-                result.model_used,
-                {
-                    "quality_score": result.quality_score,
-                    "generation_time": result.generation_time_seconds,
-                    "validation_results": result.validation_results,
-                },
-            )
-        else:
-            logger.info(f"Generating blog post: {topic}")
-            content, model_used, metrics = await self.ai_generator.generate_blog_post(
-                topic=topic,
-                style=style,
-                tone=tone,
-                target_length=target_length,
-                tags=tags or [],
-                preferred_model=preferred_model,
-                preferred_provider=preferred_provider,
-                writing_style_context=writing_style_context,
-            )
-            return content, model_used, metrics
-
-    async def generate_featured_image_prompt(self, topic: str, content: str) -> str:
-        """Generate a detailed image prompt for featured image"""
-        try:
-            generator = get_content_generator()
-            # Use generator to create image prompt
-            prompt = f"Create a visual representation for: {topic}\n\nContext: {content[:200]}"
-            return prompt
-        except Exception as e:
-            logger.warning(f"Error generating image prompt: {e}", exc_info=True)
-            return f"Featured image for: {topic}"
-
-
-# ============================================================================
-# ============================================================================
 # BACKGROUND TASK PROCESSORS
 # ============================================================================
 
 
 async def _check_title_originality(title: str) -> dict:
-    """Check if a proposed title is too similar to existing content online.
-
-    Uses free DuckDuckGo search to find existing articles with similar titles.
-    Returns {is_original: bool, similar_titles: list[str], max_similarity: float}.
-
-    Similarity threshold is tunable via app_settings key: qa_title_similarity_threshold.
-    """
+    """Check if a title is too similar to existing content via web search (threshold from app_settings)."""
     from difflib import SequenceMatcher
 
     result = {"is_original": True, "similar_titles": [], "max_similarity": 0.0}
@@ -568,18 +425,7 @@ async def _check_title_originality(title: str) -> dict:
 async def _generate_canonical_title(
     topic: str, primary_keyword: str, content_excerpt: str, existing_titles: str = ""
 ) -> Optional[str]:
-    """
-    Generate a canonical, SEO-optimized title for blog content using unified prompt manager.
-    Consolidates all title generation logic into a single, testable function.
-
-    Args:
-        topic: The blog topic
-        primary_keyword: Primary SEO keyword
-        content_excerpt: First 500 chars of generated content for context
-
-    Returns:
-        Generated title or None if generation fails
-    """
+    """Generate an SEO-optimized title via LLM, avoiding similarity to existing titles."""
     try:
         from .model_consolidation_service import get_model_consolidation_service
 
@@ -699,14 +545,7 @@ async def _build_writing_style_context(
     max_samples: int = 3,
     max_words_per_sample: int = 500,
 ) -> Optional[str]:
-    """Fetch active writing style samples and build a context string for LLM prompts.
-
-    Queries the writing_samples table for active samples, extracts a truncated
-    excerpt from each (up to *max_words_per_sample* words), and returns a
-    formatted string suitable for injection into a system prompt.
-
-    Returns None if no samples are available or if the database is unreachable.
-    """
+    """Fetch active writing style samples for voice matching. Returns None if unavailable."""
     if not database_service:
         return None
 
@@ -760,14 +599,7 @@ async def _build_writing_style_context(
 async def _build_rag_context(
     database_service: Optional[DatabaseService], topic: str
 ) -> Optional[str]:
-    """Embed the topic and search pgvector for similar published posts.
-
-    Returns a formatted context string for injection into the generation prompt,
-    or None if RAG is unavailable or finds no results.
-
-    This is non-blocking: if Ollama or pgvector is unavailable, returns None
-    so the pipeline continues without RAG.
-    """
+    """Search pgvector for similar published posts. Returns None if unavailable."""
     if not database_service or not getattr(database_service, "embeddings", None):
         return None
 
@@ -1749,36 +1581,7 @@ async def process_content_generation_task(
     category: Optional[str] = None,
     target_audience: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """
-    Complete Content Generation Pipeline with Image Sourcing & SEO Metadata.
-
-    Process a content generation request through the full pipeline:
-
-    STAGE 1: Verify content_task record exists
-    STAGE 2: Generate blog content
-    STAGE 2B: Early quality evaluation
-    STAGE 2C: Replace inline image placeholders
-    STAGE 3: Source featured image from Pexels
-    STAGE 3.5+3.7: Multi-model QA (programmatic validator + cloud critic)
-    STAGE 4: Generate SEO metadata
-    STAGE 5: (Skipped) Posts record created at approval time
-    STAGE 6: Capture training data for learning
-
-    Args:
-        topic: Blog post topic
-        style: Content style (technical, narrative, listicle, educational, thought-leadership)
-        tone: Content tone (professional, casual, academic, inspirational)
-        target_length: Target word count (default 1500)
-        tags: Optional tags for categorization
-        generate_featured_image: Whether to search for featured image
-        database_service: DatabaseService instance for persistence
-        task_id: Optional task_id (auto-generated if not provided)
-        models_by_phase: Optional per-phase model selections
-        quality_preference: Optional quality preference (fast, balanced, quality) for auto-selection
-
-    Returns:
-        Dict with complete task result including post_id, quality_score, image_url, cost_breakdown, etc.
-    """
+    """Run the full content generation pipeline (verify, generate, QA, images, SEO, finalize)."""
     from uuid import uuid4
 
     # Generate task_id if not provided
@@ -2090,31 +1893,10 @@ async def process_content_generation_task(
         return result
 
 
-# ================================================================================
-# HELPER FUNCTIONS FOR CONTENT PIPELINE
-# ================================================================================
-# NOTE: Metadata functions moved to unified_metadata_service.py
-# For SEO keyword extraction, title generation, description generation,
-# use get_unified_metadata_service() from unified_metadata_service.py
-#
-# Example:
-#   from services.unified_metadata_service import get_unified_metadata_service
-#   service = get_unified_metadata_service()
-#   seo_metadata = await service.generate_seo_metadata(title, content)
-# ================================================================================
-
-
 async def _select_category_for_topic(
     topic: str, database_service: DatabaseService, requested_category: Optional[str] = None
 ) -> Optional[str]:
-    """
-    Select appropriate category. Priority:
-    1. Requested category from task metadata (if it exists in DB)
-    2. Keyword matching against topic
-    3. Default to "technology"
-
-    Returns category UUID
-    """
+    """Select category by requested slug, keyword matching, or default to 'technology'. Returns UUID."""
     # Priority 1: Use the requested category if valid
     if requested_category:
         try:
@@ -2160,11 +1942,7 @@ async def _select_category_for_topic(
 
 
 async def _get_or_create_default_author(database_service: DatabaseService) -> Optional[str]:
-    """
-    Get or create the default "Poindexter AI" author
-
-    Returns author UUID
-    """
+    """Get or create the default 'Poindexter AI' author. Returns UUID."""
     try:
         async with database_service.pool.acquire() as conn:
             # Try to get existing Poindexter AI author

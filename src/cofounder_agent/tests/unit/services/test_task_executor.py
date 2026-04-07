@@ -7,7 +7,7 @@ Covers:
 - _sweep_stale_tasks: delegates to database_service, handles errors silently
 - _process_loop: no-pending-tasks path, task processed path, service error path,
   unexpected error path, loop stops when running=False, CancelledError exit
-- _process_single_task: marks in_progress, calls _execute_task, updates DB on success,
+- _process_single_task: marks in_progress, runs content router pipeline, updates DB on success,
   timeout path marks task failed, ServiceError re-raises, generic exception wraps
   in ServiceError
 """
@@ -613,9 +613,7 @@ class TestProcessSingleTask:
         executor = _make_executor(db=db)
         task = {"task_name": "No ID Task", "status": "pending"}  # No id or task_id
 
-        with patch.object(executor, "_execute_task", new_callable=AsyncMock) as mock_exec:
-            await executor._process_single_task(task)
-            mock_exec.assert_not_awaited()
+        await executor._process_single_task(task)
 
         db.update_task.assert_not_awaited()
 
@@ -723,15 +721,7 @@ class TestProcessSingleTask:
 
 
 class TestTaskMetricsWiring:
-    """Verify TaskMetrics is imported and instantiated during _execute_task."""
-
-    def test_task_metrics_importable_from_task_executor_module(self):
-        """TaskMetrics must be importable via the task_executor module (wired at import time)."""
-        import services.task_executor as te_mod
-
-        assert hasattr(
-            te_mod, "TaskMetrics"
-        ), "TaskMetrics should be imported in task_executor (issue #837)"
+    """Verify TaskMetrics interface works correctly."""
 
     def test_task_metrics_class_interface(self):
         """TaskMetrics exposes the required instrumentation methods."""

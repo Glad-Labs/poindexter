@@ -68,7 +68,6 @@ def register_all_routes(
     app: FastAPI,
     deployment_mode: str = "coordinator",
     database_service: Optional[Any] = None,
-    training_data_service: Optional[Any] = None,
 ) -> Dict[str, bool]:
     """
     Register route routers with the FastAPI application based on deployment mode.

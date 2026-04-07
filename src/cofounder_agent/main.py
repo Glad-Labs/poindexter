@@ -86,7 +86,6 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # app.state.orchestrator will be set to UnifiedOrchestrator below
         # (removed legacy Orchestrator)
         app.state.task_executor = services["task_executor"]
-        app.state.training_data_service = services.get("training_data_service")
         app.state.custom_workflows_service = services.get("custom_workflows_service")
         app.state.legacy_data_service = services.get("legacy_data_service")
         app.state.startup_error = services["startup_error"]

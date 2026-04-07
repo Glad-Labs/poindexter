@@ -2,29 +2,24 @@
 Unit tests for utils.constraint_utils module.
 
 All tests are pure — zero DB, LLM, or network calls.
-Covers all three tiers of constraint utilities:
-- Tier 1: extract_constraints_from_request, count_words, inject_constraints, validate_constraints
-- Tier 2: calculate_phase_targets, check_tolerance, apply_strict_mode, merge_compliance_reports
-- Tier 3: auto_trim_content, auto_expand_content (sync path), analyze_style_consistency,
-          calculate_cost_impact
+Covers:
+- count_words_in_content
+- validate_constraints
+- calculate_phase_targets
+- check_tolerance
+- apply_strict_mode
+- merge_compliance_reports
 """
-
-from unittest.mock import patch
 
 import pytest
 
 from utils.constraint_utils import (
     ConstraintCompliance,
     ContentConstraints,
-    analyze_style_consistency,
-    auto_expand_content,
-    auto_trim_content,
-    calculate_cost_impact,
+    apply_strict_mode,
     calculate_phase_targets,
+    check_tolerance,
     count_words_in_content,
-    extract_constraints_from_request,
-    format_compliance_report,
-    inject_constraints_into_prompt,
     merge_compliance_reports,
     validate_constraints,
 )
@@ -55,66 +50,7 @@ def _make_compliance(
 
 
 # ---------------------------------------------------------------------------
-# Tier 1: extract_constraints_from_request
-# ---------------------------------------------------------------------------
-
-
-class TestExtractConstraintsFromRequest:
-    """Tests for extract_constraints_from_request."""
-
-    def test_extracts_word_count_from_dict(self):
-        req = {"content_constraints": {"word_count": 2000}}
-        result = extract_constraints_from_request(req)
-        assert result.word_count == 2000
-
-    def test_extracts_writing_style(self):
-        req = {"content_constraints": {"writing_style": "technical"}}
-        result = extract_constraints_from_request(req)
-        assert result.writing_style == "technical"
-
-    def test_extracts_tolerance(self):
-        req = {"content_constraints": {"word_count_tolerance": 15}}
-        result = extract_constraints_from_request(req)
-        assert result.word_count_tolerance == 15
-
-    def test_extracts_strict_mode(self):
-        req = {"content_constraints": {"strict_mode": True}}
-        result = extract_constraints_from_request(req)
-        assert result.strict_mode is True
-
-    def test_extracts_per_phase_overrides(self):
-        overrides = {"creative": 1500, "qa": 200}
-        req = {"content_constraints": {"per_phase_overrides": overrides}}
-        result = extract_constraints_from_request(req)
-        assert result.per_phase_overrides == overrides
-
-    def test_returns_defaults_when_no_constraints_key(self):
-        result = extract_constraints_from_request({})
-        assert result.word_count == 1500
-        assert result.writing_style == "educational"
-        assert result.word_count_tolerance == 10
-        assert result.strict_mode is False
-
-    def test_returns_passed_constraints_object_unchanged(self):
-        constraints = ContentConstraints(word_count=3000)
-        req = {"content_constraints": constraints}
-        result = extract_constraints_from_request(req)
-        assert result is constraints
-
-    def test_returns_defaults_for_non_dict_non_constraints_type(self):
-        req = {"content_constraints": "invalid value"}
-        result = extract_constraints_from_request(req)
-        assert result.word_count == 1800  # ContentConstraints() default
-
-    def test_partial_dict_uses_defaults_for_missing_keys(self):
-        req = {"content_constraints": {"word_count": 500}}
-        result = extract_constraints_from_request(req)
-        assert result.word_count == 500
-        assert result.writing_style == "educational"  # default
-
-
-# ---------------------------------------------------------------------------
-# Tier 1: count_words_in_content
+# count_words_in_content
 # ---------------------------------------------------------------------------
 
 
@@ -141,84 +77,7 @@ class TestCountWordsInContent:
 
 
 # ---------------------------------------------------------------------------
-# Tier 1: inject_constraints_into_prompt
-# ---------------------------------------------------------------------------
-
-
-class TestInjectConstraintsIntoPrompt:
-    """Tests for inject_constraints_into_prompt."""
-
-    def test_returns_base_prompt_when_no_constraints(self):
-        result = inject_constraints_into_prompt("Write a blog post.", None)
-        assert result == "Write a blog post."
-
-    def test_injects_word_count_target(self):
-        constraints = ContentConstraints(word_count=1000)
-        result = inject_constraints_into_prompt("Write.", constraints)
-        assert "1000" in result
-
-    def test_injects_writing_style(self):
-        constraints = ContentConstraints(writing_style="technical")
-        result = inject_constraints_into_prompt("Write.", constraints)
-        assert "technical" in result
-
-    def test_injects_phase_name(self):
-        constraints = ContentConstraints()
-        result = inject_constraints_into_prompt("Write.", constraints, phase_name="creative")
-        assert "creative" in result
-
-    def test_uses_word_count_target_override(self):
-        constraints = ContentConstraints(word_count=1500)
-        result = inject_constraints_into_prompt("Write.", constraints, word_count_target=800)
-        assert "800" in result
-
-    def test_adds_style_guidance_for_technical(self):
-        constraints = ContentConstraints(writing_style="technical")
-        result = inject_constraints_into_prompt("Prompt.", constraints)
-        assert "technical" in result.lower()
-
-    def test_adds_style_guidance_for_narrative(self):
-        constraints = ContentConstraints(writing_style="narrative")
-        result = inject_constraints_into_prompt("Prompt.", constraints)
-        assert "narrative" in result.lower() or "story" in result.lower()
-
-    def test_adds_style_guidance_for_listicle(self):
-        constraints = ContentConstraints(writing_style="listicle")
-        result = inject_constraints_into_prompt("Prompt.", constraints)
-        assert "list" in result.lower()
-
-    def test_adds_style_guidance_for_educational(self):
-        constraints = ContentConstraints(writing_style="educational")
-        result = inject_constraints_into_prompt("Prompt.", constraints)
-        assert "educational" in result.lower() or "learn" in result.lower()
-
-    def test_adds_style_guidance_for_thought_leadership(self):
-        constraints = ContentConstraints(writing_style="thought-leadership")
-        result = inject_constraints_into_prompt("Prompt.", constraints)
-        assert (
-            "insight" in result.lower() or "thought" in result.lower() or "expert" in result.lower()
-        )
-
-    def test_original_prompt_preserved_in_output(self):
-        constraints = ContentConstraints()
-        base = "Write an amazing blog post."
-        result = inject_constraints_into_prompt(base, constraints)
-        assert base in result
-
-    def test_tolerance_range_shown(self):
-        constraints = ContentConstraints(word_count=1000, word_count_tolerance=10)
-        result = inject_constraints_into_prompt("Write.", constraints)
-        assert "900" in result and "1100" in result
-
-    def test_unknown_style_no_guidance(self):
-        constraints = ContentConstraints(writing_style="unknown_style_xyz")
-        result = inject_constraints_into_prompt("Write.", constraints)
-        # No STYLE GUIDANCE block expected for unknown styles
-        assert "Write." in result
-
-
-# ---------------------------------------------------------------------------
-# Tier 1: validate_constraints
+# validate_constraints
 # ---------------------------------------------------------------------------
 
 
@@ -295,7 +154,7 @@ class TestValidateConstraints:
 
 
 # ---------------------------------------------------------------------------
-# Tier 2: calculate_phase_targets
+# calculate_phase_targets
 # ---------------------------------------------------------------------------
 
 
@@ -350,7 +209,61 @@ class TestCalculatePhaseTargets:
 
 
 # ---------------------------------------------------------------------------
-# Tier 2: merge_compliance_reports
+# check_tolerance
+# ---------------------------------------------------------------------------
+
+
+class TestCheckTolerance:
+    """Tests for check_tolerance."""
+
+    def test_within_tolerance_returns_true(self):
+        within, pct = check_tolerance(1000, 1000, 10)
+        assert within is True
+        assert pct == pytest.approx(0.0)
+
+    def test_above_tolerance_returns_false(self):
+        within, pct = check_tolerance(1200, 1000, 10)
+        assert within is False
+        assert pct == pytest.approx(20.0)
+
+    def test_below_tolerance_returns_false(self):
+        within, pct = check_tolerance(800, 1000, 10)
+        assert within is False
+        assert pct == pytest.approx(-20.0)
+
+    def test_zero_target_returns_false(self):
+        within, pct = check_tolerance(100, 0, 10)
+        assert within is False
+
+
+# ---------------------------------------------------------------------------
+# apply_strict_mode
+# ---------------------------------------------------------------------------
+
+
+class TestApplyStrictMode:
+    """Tests for apply_strict_mode."""
+
+    def test_non_strict_always_valid(self):
+        compliance = _make_compliance(within=False, strict=False)
+        valid, msg = apply_strict_mode(compliance)
+        assert valid is True
+        assert msg == ""
+
+    def test_strict_mode_passes_when_within_tolerance(self):
+        compliance = _make_compliance(within=True, strict=True)
+        valid, msg = apply_strict_mode(compliance)
+        assert valid is True
+
+    def test_strict_mode_fails_when_outside_tolerance(self):
+        compliance = _make_compliance(within=False, strict=True, violation="Too short")
+        valid, msg = apply_strict_mode(compliance)
+        assert valid is False
+        assert "Too short" in msg
+
+
+# ---------------------------------------------------------------------------
+# merge_compliance_reports
 # ---------------------------------------------------------------------------
 
 
@@ -413,229 +326,3 @@ class TestMergeComplianceReports:
         result = merge_compliance_reports([r1, r2])
         # target=1000 → percentage = (2000-1000)/1000 * 100 = 100
         assert result.word_count_percentage == pytest.approx(100.0)
-
-
-# ---------------------------------------------------------------------------
-# Tier 3: auto_trim_content
-# ---------------------------------------------------------------------------
-
-
-class TestAutoTrimContent:
-    """Tests for auto_trim_content."""
-
-    def _content(self, word_count: int) -> str:
-        return " ".join([f"word{i}" for i in range(word_count)])
-
-    def test_content_within_tolerance_returned_unchanged(self):
-        content = self._content(1000)
-        result = auto_trim_content(content, target_words=1000, tolerance_percent=10)
-        assert result == content
-
-    def test_content_shorter_than_max_returned_unchanged(self):
-        content = self._content(500)
-        result = auto_trim_content(content, target_words=1000, tolerance_percent=10)
-        # 500 <= 1100 (max), so returned unchanged
-        assert result == content
-
-    def test_content_exceeding_max_is_trimmed(self):
-        content = self._content(1500)
-        result = auto_trim_content(content, target_words=1000, tolerance_percent=10)
-        # result should be <= 1100 words
-        result_words = count_words_in_content(result)
-        assert result_words <= 1100
-
-    def test_preserve_structure_default_true(self):
-        content = self._content(2000)
-        result = auto_trim_content(content, target_words=1000, tolerance_percent=5)
-        assert len(result) > 0
-
-
-# ---------------------------------------------------------------------------
-# Tier 3: auto_expand_content — async mode (returns original unchanged)
-# ---------------------------------------------------------------------------
-
-
-class TestAutoExpandContent:
-    """Tests for auto_expand_content."""
-
-    def _content(self, word_count: int) -> str:
-        return " ".join(["word"] * word_count)
-
-    def test_content_already_at_target_returned_unchanged(self):
-        content = self._content(1000)
-        result = auto_expand_content(content, target_words=1000, tolerance_percent=10)
-        assert result == content
-
-    def test_content_above_min_returned_unchanged(self):
-        content = self._content(950)  # min for 1000 target @ 10% = 900
-        result = auto_expand_content(content, target_words=1000, tolerance_percent=10)
-        assert result == content
-
-    def test_short_content_async_mode_returns_original(self):
-        # In async=False mode (default), returns original content with warning
-        content = self._content(500)
-        result = auto_expand_content(content, target_words=1000, tolerance_percent=10)
-        assert result == content
-
-    def test_sync_mode_import_error_returns_original(self):
-        # When model_router / prompt_manager not available (mocked), returns original
-        content = self._content(500)
-        with patch("utils.constraint_utils.auto_expand_content") as mock_fn:
-            mock_fn.return_value = content
-            result = mock_fn(content, target_words=1000, sync_mode=True)
-            assert result == content
-
-
-# ---------------------------------------------------------------------------
-# Tier 3: analyze_style_consistency
-# ---------------------------------------------------------------------------
-
-
-class TestAnalyzeStyleConsistency:
-    """Tests for analyze_style_consistency."""
-
-    def test_returns_tuple_of_float_and_string(self):
-        score, feedback = analyze_style_consistency("Some content here", "technical")
-        assert isinstance(score, float)
-        assert isinstance(feedback, str)
-
-    def test_score_between_zero_and_one(self):
-        for style in ["technical", "narrative", "listicle", "educational", "thought-leadership"]:
-            score, _ = analyze_style_consistency("Some content here.", style)
-            assert 0.0 <= score <= 1.0
-
-    def test_technical_style_detected_by_keywords(self):
-        content = "The algorithm implementation uses architecture framework component"
-        score, _ = analyze_style_consistency(content, "technical")
-        assert score >= 0.5
-
-    def test_narrative_style_detected_by_keywords(self):
-        content = (
-            "I discovered the story of a journey where I experienced and realized many things."
-        )
-        score, _ = analyze_style_consistency(content, "narrative")
-        assert score >= 0.5
-
-    def test_listicle_detected_by_structure(self):
-        content = "- Item one\n- Item two\n- Item three\n- Item four\n- Item five"
-        score, _ = analyze_style_consistency(content, "listicle")
-        assert score >= 0.3
-
-    def test_feedback_includes_style_name(self):
-        _, feedback = analyze_style_consistency("Some content", "educational")
-        assert "educational" in feedback
-
-    def test_feedback_includes_score(self):
-        _, feedback = analyze_style_consistency("Some content", "technical")
-        assert "%" in feedback
-
-    def test_below_threshold_feedback_mentions_threshold(self):
-        # Short generic content won't match technical keywords well
-        score, feedback = analyze_style_consistency("hello world", "technical", min_score=0.99)
-        if score < 0.99:
-            assert "Below" in feedback
-
-
-# ---------------------------------------------------------------------------
-# Tier 3: calculate_cost_impact
-# ---------------------------------------------------------------------------
-
-
-class TestCalculateCostImpact:
-    """Tests for calculate_cost_impact."""
-
-    def _content(self, word_count: int) -> str:
-        return " ".join(["word"] * word_count)
-
-    def test_returns_expected_keys(self):
-        content = self._content(1000)
-        result = calculate_cost_impact(content, 1000, 800)
-        assert "tokens_estimated" in result
-        assert "cost_estimated" in result
-        assert "cost_savings_from_reduction" in result
-        assert "word_reduction" in result
-        assert "efficiency_ratio" in result
-
-    def test_word_reduction_computed(self):
-        content = self._content(800)
-        result = calculate_cost_impact(content, 1000, 800)
-        assert result["word_reduction"] == 200  # 1000 - 800
-
-    def test_efficiency_ratio_computed(self):
-        content = self._content(800)
-        result = calculate_cost_impact(content, 1000, 800)
-        assert result["efficiency_ratio"] == pytest.approx(0.8)
-
-    def test_zero_word_reduction_no_savings(self):
-        content = self._content(1000)
-        result = calculate_cost_impact(content, 1000, 1000)
-        assert result["cost_savings_from_reduction"] == 0
-
-    def test_cost_estimated_is_positive(self):
-        content = self._content(500)
-        result = calculate_cost_impact(content, 1000, 800)
-        assert result["cost_estimated"] >= 0
-
-    def test_zero_original_efficiency_ratio_is_one(self):
-        content = self._content(0)
-        result = calculate_cost_impact(content, 0, 0)
-        assert result["efficiency_ratio"] == 1.0
-
-
-# ---------------------------------------------------------------------------
-# format_compliance_report
-# ---------------------------------------------------------------------------
-
-
-class TestFormatComplianceReport:
-    """Tests for format_compliance_report."""
-
-    def test_returns_string(self):
-        compliance = _make_compliance(actual=1000, target=1000, within=True)
-        result = format_compliance_report(compliance)
-        assert isinstance(result, str)
-
-    def test_includes_target_word_count(self):
-        compliance = _make_compliance(actual=1000, target=1500, within=False)
-        result = format_compliance_report(compliance)
-        assert "1500" in result
-
-    def test_includes_actual_word_count(self):
-        compliance = _make_compliance(actual=800, target=1000, within=False)
-        result = format_compliance_report(compliance)
-        assert "800" in result
-
-    def test_includes_writing_style(self):
-        compliance = _make_compliance(style="narrative")
-        result = format_compliance_report(compliance)
-        assert "narrative" in result
-
-    def test_pass_indicator_when_within_tolerance(self):
-        compliance = _make_compliance(within=True)
-        result = format_compliance_report(compliance)
-        assert "PASS" in result
-
-    def test_fail_indicator_when_outside_tolerance(self):
-        compliance = _make_compliance(within=False, violation="Content too short")
-        result = format_compliance_report(compliance)
-        assert "FAIL" in result
-
-    def test_includes_violation_message_when_present(self):
-        compliance = _make_compliance(within=False, violation="Content too short: 500 words")
-        result = format_compliance_report(compliance)
-        assert "500 words" in result
-
-    def test_no_violation_section_when_none(self):
-        compliance = _make_compliance(within=True)
-        result = format_compliance_report(compliance)
-        assert "Violation:" not in result
-
-    def test_strict_mode_shown(self):
-        compliance = _make_compliance(strict=True)
-        result = format_compliance_report(compliance)
-        assert "ENABLED" in result
-
-    def test_non_strict_mode_shown(self):
-        compliance = _make_compliance(strict=False)
-        result = format_compliance_report(compliance)
-        assert "disabled" in result

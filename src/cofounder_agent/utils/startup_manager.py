@@ -30,7 +30,6 @@ class StartupManager:
         self.redis_cache = None
         self.orchestrator = None
         self.task_executor = None
-        self.training_data_service = None
         self.custom_workflows_service = None
         self.template_execution_service = None
         self.startup_error = None
@@ -70,7 +69,6 @@ class StartupManager:
         {
             'database': DatabaseService,
             'task_executor': TaskExecutor,
-            'training_data_service': TrainingDataService,
         }
         """
         try:
@@ -98,10 +96,7 @@ class StartupManager:
             # Step 6: Initialize background task executor
             await self._initialize_task_executor()
 
-            # Step 7: Initialize training data services
-            await self._initialize_training_services()
-
-            # Step 9: Verify connections
+            # Step 7: Verify connections
             await self._verify_connections()
 
             # Step 10: Register services with routes
@@ -137,7 +132,6 @@ class StartupManager:
                 "database": self.database_service,
                 "redis_cache": self.redis_cache,
                 "task_executor": self.task_executor,
-                "training_data_service": self.training_data_service,
                 "custom_workflows_service": self.custom_workflows_service,
                 "template_execution_service": self.template_execution_service,
                 "startup_error": self.startup_error,
@@ -311,24 +305,6 @@ class StartupManager:
             logger.error(f"   {error_msg}", exc_info=True)
             # Don't fail startup - task processing is optional
             self.task_executor = None
-
-    async def _initialize_training_services(self) -> None:
-        """Initialize training data management services (Phase 6)"""
-        logger.info("  📚 Initializing training data management services...")
-
-        try:
-            from services.training_data_service import TrainingDataService
-
-            if self.database_service:
-                self.training_data_service = TrainingDataService(self.database_service.pool)
-                logger.info("   Training data service initialized")
-            else:
-                logger.warning("   Training services not available - database service required")
-                self.training_data_service = None
-        except Exception as e:
-            error_msg = f"Training services initialization failed: {str(e)}"
-            logger.warning(f"   {error_msg}", exc_info=True)
-            self.training_data_service = None
 
     async def _verify_connections(self) -> None:
         """Verify all connections are healthy"""
@@ -504,7 +480,6 @@ class StartupManager:
         logger.info(
             f"  - Task Executor: {self.task_executor is not None and self.task_executor.running}"
         )
-        logger.info(f"  - Training Data Service: {self.training_data_service is not None}")
         logger.info(f"  - Startup Error: {self.startup_error}")
 
     async def shutdown(self) -> None:

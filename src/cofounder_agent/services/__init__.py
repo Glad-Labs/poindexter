@@ -2,7 +2,6 @@
 
 from .ai_content_generator import AIContentGenerator, get_content_generator
 from .content_router_service import (
-    ContentGenerationService,
     get_content_task_store,
     process_content_generation_task,
 )
@@ -12,7 +11,6 @@ __all__ = [
     "get_content_generator",
     "AIContentGenerator",
     "get_seo_content_generator",
-    "ContentGenerationService",
     "get_content_task_store",
     "process_content_generation_task",
 ]

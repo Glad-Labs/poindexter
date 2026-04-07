@@ -8,9 +8,7 @@ Covers:
 - _run_migrations(): success (ok=True), success (ok=False), Exception, content store failure
 - _setup_redis_cache(): enabled, disabled, Exception
 - _initialize_model_consolidation(): success, Exception (non-fatal)
-- _initialize_workflow_history(): with DB, without DB, Exception
 - _initialize_task_executor(): success, Exception (non-fatal)
-- _initialize_training_services(): with DB, without DB, Exception
 - _verify_connections(): healthy, unhealthy status, Exception
 - _initialize_agent_registry(): dev mode skip, success, Exception
 - _initialize_custom_workflows_service(): with DB, without DB, Exception
@@ -62,9 +60,6 @@ class TestInit:
         assert mgr.redis_cache is None
         assert mgr.orchestrator is None
         assert mgr.task_executor is None
-        assert mgr.workflow_history_service is None
-        assert mgr.training_data_service is None
-        assert mgr.fine_tuning_service is None
         assert mgr.custom_workflows_service is None
         assert mgr.template_execution_service is None
         assert mgr.startup_error is None
@@ -489,79 +484,6 @@ class TestInitializeTaskExecutor:
 
 
 # ---------------------------------------------------------------------------
-# _initialize_training_services
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestInitializeTrainingServices:
-    def test_with_database_sets_both_services(self):
-        mgr = _make_manager()
-        mgr.database_service = MagicMock()
-        mgr.database_service.pool = MagicMock()
-
-        mock_training = MagicMock()
-        mock_finetuning = MagicMock()
-        mock_training_cls = MagicMock(return_value=mock_training)
-        mock_finetuning_cls = MagicMock(return_value=mock_finetuning)
-
-        mock_ft_module = MagicMock(FineTuningService=mock_finetuning_cls)
-        mock_td_module = MagicMock(TrainingDataService=mock_training_cls)
-
-        with patch.dict(
-            "sys.modules",
-            {
-                "services.fine_tuning_service": mock_ft_module,
-                "services.training_data_service": mock_td_module,
-            },
-        ):
-            _run(mgr._initialize_training_services())
-
-        assert mgr.training_data_service is mock_training
-        assert mgr.fine_tuning_service is mock_finetuning
-
-    def test_without_database_leaves_none(self):
-        mgr = _make_manager()
-        mgr.database_service = None
-
-        mock_ft_module = MagicMock()
-        mock_td_module = MagicMock()
-
-        with patch.dict(
-            "sys.modules",
-            {
-                "services.fine_tuning_service": mock_ft_module,
-                "services.training_data_service": mock_td_module,
-            },
-        ):
-            _run(mgr._initialize_training_services())
-
-        assert mgr.training_data_service is None
-        assert mgr.fine_tuning_service is None
-
-    def test_exception_sets_both_to_none(self):
-        mgr = _make_manager()
-        mgr.database_service = MagicMock()
-        mgr.database_service.pool = MagicMock()
-
-        mock_training_cls = MagicMock(side_effect=Exception("training fail"))
-        mock_ft_module = MagicMock()
-        mock_td_module = MagicMock(TrainingDataService=mock_training_cls)
-
-        with patch.dict(
-            "sys.modules",
-            {
-                "services.fine_tuning_service": mock_ft_module,
-                "services.training_data_service": mock_td_module,
-            },
-        ):
-            _run(mgr._initialize_training_services())
-
-        assert mgr.training_data_service is None
-        assert mgr.fine_tuning_service is None
-
-
-# ---------------------------------------------------------------------------
 # _verify_connections
 # ---------------------------------------------------------------------------
 
@@ -745,8 +667,6 @@ class TestLogStartupSummary:
         mgr.orchestrator = MagicMock()
         mgr.task_executor = MagicMock()
         mgr.task_executor.running = True
-        mgr.workflow_history_service = MagicMock()
-        mgr.training_data_service = MagicMock()
         mgr.fine_tuning_service = MagicMock()
         mgr._log_startup_summary()  # Must not raise
 
@@ -923,9 +843,7 @@ class TestInitializeAllServices:
         mgr._run_migrations = AsyncMock()
         mgr._setup_redis_cache = AsyncMock()
         mgr._initialize_model_consolidation = AsyncMock()
-        mgr._initialize_workflow_history = AsyncMock()
         mgr._initialize_task_executor = AsyncMock()
-        mgr._initialize_training_services = AsyncMock()
         mgr._verify_connections = AsyncMock()
         mgr._initialize_agent_registry = AsyncMock()
         mgr._initialize_custom_workflows_service = AsyncMock()
@@ -943,9 +861,6 @@ class TestInitializeAllServices:
             "database",
             "redis_cache",
             "task_executor",
-            "workflow_history",
-            "training_data_service",
-            "fine_tuning_service",
             "custom_workflows_service",
             "template_execution_service",
             "startup_error",
@@ -1006,13 +921,7 @@ class TestInitializeAllServices:
         mgr._initialize_model_consolidation = AsyncMock(
             side_effect=lambda: call_order.append("model")
         )
-        mgr._initialize_workflow_history = AsyncMock(
-            side_effect=lambda: call_order.append("wf_history")
-        )
         mgr._initialize_task_executor = AsyncMock(side_effect=lambda: call_order.append("executor"))
-        mgr._initialize_training_services = AsyncMock(
-            side_effect=lambda: call_order.append("training")
-        )
         mgr._verify_connections = AsyncMock(side_effect=lambda: call_order.append("verify"))
         mgr._initialize_agent_registry = AsyncMock(side_effect=lambda: call_order.append("agents"))
         mgr._initialize_custom_workflows_service = AsyncMock(
@@ -1031,9 +940,7 @@ class TestInitializeAllServices:
             "migrations",
             "redis",
             "model",
-            "wf_history",
             "executor",
-            "training",
             "verify",
             "agents",
             "custom_wf",
