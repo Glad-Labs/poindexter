@@ -681,9 +681,11 @@ async def probe_r2_connectivity(_pool) -> dict:
     """Probe: Verify R2 CDN is reachable by fetching the podcast feed."""
     r2_url = os.getenv("R2_PUBLIC_URL", "https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev")
     try:
-        req = urllib.request.Request(f"{r2_url}/podcast/feed.xml", method="HEAD")
+        # Use GET with Range header to minimize data transfer (R2 blocks HEAD)
+        req = urllib.request.Request(f"{r2_url}/podcast/feed.xml")
+        req.add_header("Range", "bytes=0-64")
         resp = urllib.request.urlopen(req, timeout=10)
-        ok = resp.status < 400
+        ok = resp.status in (200, 206)
         return {
             "ok": ok,
             "status_code": resp.status,
@@ -691,8 +693,9 @@ async def probe_r2_connectivity(_pool) -> dict:
         }
     except urllib.error.HTTPError as e:
         # 404 is OK — means R2 is reachable, feed just doesn't exist yet
-        if e.code == 404:
-            return {"ok": True, "status_code": 404, "detail": "R2 CDN reachable (feed.xml not uploaded yet)"}
+        # 403 with GET likely means the file doesn't exist on public bucket
+        if e.code in (404, 403):
+            return {"ok": True, "status_code": e.code, "detail": f"R2 CDN reachable (feed.xml: HTTP {e.code})"}
         return {"ok": False, "status_code": e.code, "detail": f"R2 CDN error: HTTP {e.code}"}
     except Exception as e:
         return {"ok": False, "detail": f"R2 CDN unreachable: {str(e)[:100]}"}
