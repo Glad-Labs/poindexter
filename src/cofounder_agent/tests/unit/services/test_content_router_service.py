@@ -26,6 +26,7 @@ import pytest
 
 from services.content_router_service import (
     ContentTaskStore,
+    _check_title_originality,
     _is_stage_enabled,
     _normalize_text,
     _parse_model_preferences,
@@ -608,3 +609,93 @@ class TestRunStageWithTimeout:
 
         result = await _run_stage_with_timeout(fast_stage(), "unknown_stage", "task-123")
         assert result == "ok"
+
+
+# ===========================================================================
+# _check_title_originality
+# ===========================================================================
+
+
+@pytest.mark.unit
+class TestCheckTitleOriginality:
+    """Tests for title originality checking via web search."""
+
+    @pytest.mark.asyncio
+    async def test_original_title_passes(self):
+        """Title with no web matches should be marked original."""
+        mock_researcher = MagicMock()
+        mock_researcher.search_simple = AsyncMock(return_value=[])
+
+        with patch("services.web_research.WebResearcher", return_value=mock_researcher):
+            with patch("services.site_config.site_config") as mock_cfg:
+                mock_cfg.get_float.return_value = 0.6
+                mock_cfg.get_bool.return_value = True
+                result = await _check_title_originality(
+                    "A Completely Unique Title Nobody Has Written", "unique topic"
+                )
+
+        assert result["is_original"] is True
+        assert result["similar_titles"] == []
+
+    @pytest.mark.asyncio
+    async def test_duplicate_title_fails(self):
+        """Title matching a web result above threshold should fail."""
+        mock_researcher = MagicMock()
+        mock_researcher.search_simple = AsyncMock(return_value=[
+            {"title": "How AI Is Changing Healthcare in 2026", "url": "https://example.com/1", "snippet": ""},
+            {"title": "AI and Healthcare: 2026 Update", "url": "https://example.com/2", "snippet": ""},
+        ])
+
+        with patch("services.web_research.WebResearcher", return_value=mock_researcher):
+            with patch("services.site_config.site_config") as mock_cfg:
+                mock_cfg.get_float.return_value = 0.6
+                mock_cfg.get_bool.return_value = True
+                result = await _check_title_originality(
+                    "How AI Is Changing Healthcare in 2026", "AI healthcare"
+                )
+
+        assert result["is_original"] is False
+        assert len(result["similar_titles"]) >= 1
+        assert result["max_similarity"] >= 0.6
+
+    @pytest.mark.asyncio
+    async def test_disabled_returns_original(self):
+        """When disabled via config, should always return original."""
+        with patch("services.site_config.site_config") as mock_cfg:
+            mock_cfg.get_float.return_value = 0.6
+            mock_cfg.get_bool.return_value = False
+            result = await _check_title_originality("Any Title", "any topic")
+
+        assert result["is_original"] is True
+
+    @pytest.mark.asyncio
+    async def test_search_failure_returns_original(self):
+        """Web search errors should not block the pipeline."""
+        mock_researcher = MagicMock()
+        mock_researcher.search_simple = AsyncMock(side_effect=Exception("Network error"))
+
+        with patch("services.web_research.WebResearcher", return_value=mock_researcher):
+            with patch("services.site_config.site_config") as mock_cfg:
+                mock_cfg.get_float.return_value = 0.6
+                mock_cfg.get_bool.return_value = True
+                result = await _check_title_originality("Test Title", "test")
+
+        assert result["is_original"] is True
+
+    @pytest.mark.asyncio
+    async def test_low_similarity_passes(self):
+        """Titles with low similarity should pass."""
+        mock_researcher = MagicMock()
+        mock_researcher.search_simple = AsyncMock(return_value=[
+            {"title": "Something Completely Different About Dogs", "url": "https://x.com/1", "snippet": ""},
+        ])
+
+        with patch("services.web_research.WebResearcher", return_value=mock_researcher):
+            with patch("services.site_config.site_config") as mock_cfg:
+                mock_cfg.get_float.return_value = 0.6
+                mock_cfg.get_bool.return_value = True
+                result = await _check_title_originality(
+                    "Understanding GPU Architecture for ML Workloads", "GPU ML"
+                )
+
+        assert result["is_original"] is True

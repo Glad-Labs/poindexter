@@ -503,6 +503,68 @@ class ContentGenerationService:
 # ============================================================================
 
 
+async def _check_title_originality(title: str, topic: str) -> dict:
+    """Check if a proposed title is too similar to existing content online.
+
+    Uses free DuckDuckGo search to find existing articles with similar titles.
+    Returns {is_original: bool, similar_titles: list[str], max_similarity: float}.
+
+    Similarity threshold is tunable via app_settings key: qa_title_similarity_threshold.
+    """
+    from difflib import SequenceMatcher
+
+    result = {"is_original": True, "similar_titles": [], "max_similarity": 0.0}
+
+    try:
+        from services.site_config import site_config
+        threshold = site_config.get_float("qa_title_similarity_threshold", 0.6)
+        enabled = site_config.get_bool("qa_title_originality_enabled", True)
+        if not enabled:
+            return result
+    except Exception:
+        threshold = 0.6
+
+    try:
+        from services.web_research import WebResearcher
+        researcher = WebResearcher()
+        search_results = await researcher.search_simple(f'"{title}"', num_results=8)
+
+        if not search_results:
+            # Also try without quotes for broader match
+            search_results = await researcher.search_simple(title, num_results=8)
+
+        title_lower = title.lower().strip()
+        for r in search_results:
+            ext_title = (r.get("title") or "").lower().strip()
+            if not ext_title:
+                continue
+
+            sim = SequenceMatcher(None, title_lower, ext_title).ratio()
+            if sim > result["max_similarity"]:
+                result["max_similarity"] = sim
+            if sim >= threshold:
+                result["similar_titles"].append(r.get("title", ""))
+
+        result["is_original"] = len(result["similar_titles"]) == 0
+        if not result["is_original"]:
+            logger.warning(
+                "[TITLE] Originality check FAILED (%.0f%% similar): '%s' vs '%s'",
+                result["max_similarity"] * 100,
+                title,
+                result["similar_titles"][0] if result["similar_titles"] else "?",
+            )
+        else:
+            logger.info(
+                "[TITLE] Originality check passed (max %.0f%% similarity)",
+                result["max_similarity"] * 100,
+            )
+
+    except Exception as e:
+        logger.warning("[TITLE] Originality check skipped (non-fatal): %s", e)
+
+    return result
+
+
 async def _generate_canonical_title(
     topic: str, primary_keyword: str, content_excerpt: str, existing_titles: str = ""
 ) -> Optional[str]:
@@ -888,6 +950,35 @@ async def _stage_generate_content(
     if not title:
         title = topic  # Fallback to topic if title generation fails
     logger.info(f"✅ Title generated: {title}")
+
+    # Title originality check — search the web for duplicate/near-duplicate titles
+    originality = await _check_title_originality(title, topic)
+    if not originality["is_original"]:
+        logger.warning(
+            "[TITLE] Title too similar to existing content — regenerating with stronger uniqueness prompt"
+        )
+        # Build avoidance list from both our titles AND the web duplicates
+        avoid_list = existing_titles
+        for dup_title in originality["similar_titles"][:5]:
+            avoid_list += f"\n- {dup_title}"
+        # Retry with stronger uniqueness constraint
+        title_v2 = await _generate_canonical_title(
+            topic, primary_keyword, content_text[:500],
+            existing_titles=avoid_list,
+        )
+        if title_v2:
+            # Verify the new title is better
+            originality_v2 = await _check_title_originality(title_v2, topic)
+            if originality_v2["max_similarity"] < originality["max_similarity"]:
+                logger.info(
+                    "[TITLE] Regenerated title is more original (%.0f%% → %.0f%%): %s",
+                    originality["max_similarity"] * 100,
+                    originality_v2["max_similarity"] * 100,
+                    title_v2,
+                )
+                title = title_v2
+            else:
+                logger.info("[TITLE] Keeping original title — regeneration wasn't more unique")
 
     # Normalize smart quotes / special chars before persisting
     content_text = _normalize_text(content_text)
