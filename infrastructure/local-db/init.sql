@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS affiliate_links (
     url TEXT NOT NULL,
     merchant VARCHAR(100),
     commission_rate NUMERIC(5,2),
-    active BOOLEAN DEFAULT true,
+    is_active BOOLEAN DEFAULT true,
     click_count INTEGER DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
