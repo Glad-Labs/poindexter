@@ -248,15 +248,19 @@ class TopicDiscovery:
                 gap_value = row["value"]
                 if not gap_value or len(gap_value) < 10:
                     continue
-                category = self._classify_category(gap_value)
+                # Apply same quality filters as scraped topics
+                rewritten = self._rewrite_as_blog_topic(gap_value)
+                if not rewritten or not self._is_brand_relevant(rewritten):
+                    continue
+                category = self._classify_category(rewritten)
                 if categories and category not in categories:
                     continue
                 topics.append(DiscoveredTopic(
-                    title=gap_value,
+                    title=rewritten,
                     category=category,
                     source="brain_knowledge_gap",
                     source_url="",
-                    relevance_score=4.0,  # High score — gaps are high value
+                    relevance_score=4.0,
                 ))
 
             # Generate topics from knowledge entities + underserved categories
@@ -277,7 +281,12 @@ class TopicDiscovery:
                 if len(candidate) < 10:
                     continue
 
-                category = self._classify_category(candidate)
+                # Apply quality filters before queuing
+                rewritten = self._rewrite_as_blog_topic(candidate)
+                if not rewritten or not self._is_brand_relevant(rewritten):
+                    continue
+
+                category = self._classify_category(rewritten)
                 if categories and category not in categories:
                     continue
 
@@ -287,7 +296,7 @@ class TopicDiscovery:
                 base_score = 2.5 + gap_boost
 
                 topics.append(DiscoveredTopic(
-                    title=self._rewrite_as_blog_topic(candidate),
+                    title=rewritten,
                     category=category,
                     source="brain_knowledge",
                     source_url="",
@@ -364,9 +373,12 @@ class TopicDiscovery:
                     if not title or reactions < 20:
                         continue
 
-                    category = self._classify_category(title)
+                    rewritten = self._rewrite_as_blog_topic(title)
+                    if not rewritten:
+                        continue
+                    category = self._classify_category(rewritten)
                     topics.append(DiscoveredTopic(
-                        title=self._rewrite_as_blog_topic(title),
+                        title=rewritten,
                         category=category,
                         source="devto",
                         source_url=url,
@@ -401,12 +413,15 @@ class TopicDiscovery:
                     title = r.get("title", "")
                     if not title:
                         continue
+                    rewritten = self._rewrite_as_blog_topic(title)
+                    if not rewritten:
+                        continue
                     topics.append(DiscoveredTopic(
-                        title=self._rewrite_as_blog_topic(title),
+                        title=rewritten,
                         category=cat,
                         source="ddg_search",
                         source_url=r.get("url", ""),
-                        relevance_score=2.0,  # Medium baseline for search results
+                        relevance_score=2.0,
                     ))
 
             logger.info("[TOPIC_DISCOVERY] DuckDuckGo: %d topics", len(topics))
@@ -541,15 +556,39 @@ class TopicDiscovery:
         best = max(scores, key=scores.get) if scores else "technology"
         return best if scores.get(best, 0) > 0 else "technology"
 
+    # Patterns that indicate news/current events (not evergreen editorial content)
+    _NEWS_PATTERNS = [
+        r"\b(?:police|arrest|charged|sentenced|indicted|convicted|alleged)\b",
+        r"\b(?:lawsuit|sued|court|judge|ruling|verdict)\b",
+        r"\b(?:killed|dead|dies|died|shooting|crash)\b",
+        r"\b(?:election|voted|senator|congress|parliament|president)\b",
+        r"\b(?:earthquake|hurricane|flood|wildfire|tornado)\b",
+        r"\b(?:shirt|merch|sticker|swag|coupon|discount|sale|buy now)\b",
+        r"\b(?:my experience|my journey|i tried|i built|dear diary)\b",
+    ]
+    _NEWS_RE = [re.compile(p, re.IGNORECASE) for p in _NEWS_PATTERNS]
+
+    @staticmethod
+    def _is_news_or_junk(title: str) -> bool:
+        """Reject breaking news, current events, personal anecdotes, and merch."""
+        for pattern in TopicDiscovery._NEWS_RE:
+            if pattern.search(title):
+                return True
+        # Too short to be a real topic
+        if len(title.split()) < 4:
+            return True
+        return False
+
     def _rewrite_as_blog_topic(self, title: str) -> str:
         """Clean up a scraped title into a good blog topic.
 
-        Strips HN/Reddit prefixes, product names, and site suffixes.
-        Returns empty string for titles that are product launches or
-        announcements (these should be filtered out, not rewritten).
+        Returns empty string for titles that should be filtered out.
         """
-        # Reject product launches/announcements — these aren't editorial topics
+        # Reject product launches/announcements
         if re.match(r"^(?:Launch|Show|Ask|Tell)\s+HN\b", title, re.IGNORECASE):
+            return ""
+        # Reject news/current events/junk
+        if self._is_news_or_junk(title):
             return ""
         # Remove bracket prefixes: [Show HN], [OC], etc.
         title = re.sub(r'^\[.*?\]\s*', '', title)
@@ -557,6 +596,5 @@ class TopicDiscovery:
         title = re.sub(r'\s*\|.*$', '', title)
         title = re.sub(r'\s*[-–—]\s*\w+\.?\w*$', '', title)
         # Remove leading product name + colon ("Freestyle: Sandboxes..." → "Sandboxes...")
-        # Only if the first word looks like a product name (capitalized, ≤2 words before colon)
         title = re.sub(r'^[A-Z][\w]*(?:\s+[A-Z][\w]*)?\s*[:–—]\s*', '', title)
         return title.strip()
