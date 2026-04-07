@@ -288,7 +288,7 @@ PODCAST SCRIPT:"""
                     "model": model,
                     "prompt": prompt,
                     "stream": False,
-                    "options": {"num_predict": 8192, "temperature": 0.4},
+                    "options": {"num_predict": 8192, "temperature": 0.4, "num_ctx": 16384},
                 },
             )
             resp.raise_for_status()

@@ -332,8 +332,11 @@ class TopicDiscovery:
                     # Classify category
                     category = self._classify_category(title)
 
+                    rewritten = self._rewrite_as_blog_topic(title)
+                    if not rewritten:
+                        continue  # Skip product launches (Show HN, Launch HN, etc.)
                     topics.append(DiscoveredTopic(
-                        title=self._rewrite_as_blog_topic(title),
+                        title=rewritten,
                         category=category,
                         source="hackernews",
                         source_url=url or f"https://news.ycombinator.com/item?id={story.get('id')}",
@@ -525,9 +528,21 @@ class TopicDiscovery:
         return best if scores.get(best, 0) > 0 else "technology"
 
     def _rewrite_as_blog_topic(self, title: str) -> str:
-        """Clean up a scraped title into a good blog topic."""
-        # Remove common prefixes/suffixes
-        title = re.sub(r'^\[.*?\]\s*', '', title)  # [Show HN] etc
-        title = re.sub(r'\s*\|.*$', '', title)  # | Site Name
-        title = re.sub(r'\s*[-–—]\s*\w+\.?\w*$', '', title)  # - Site
+        """Clean up a scraped title into a good blog topic.
+
+        Strips HN/Reddit prefixes, product names, and site suffixes.
+        Returns empty string for titles that are product launches or
+        announcements (these should be filtered out, not rewritten).
+        """
+        # Reject product launches/announcements — these aren't editorial topics
+        if re.match(r"^(?:Launch|Show|Ask|Tell)\s+HN\b", title, re.IGNORECASE):
+            return ""
+        # Remove bracket prefixes: [Show HN], [OC], etc.
+        title = re.sub(r'^\[.*?\]\s*', '', title)
+        # Remove site name suffixes: | Site Name, - Blog Name
+        title = re.sub(r'\s*\|.*$', '', title)
+        title = re.sub(r'\s*[-–—]\s*\w+\.?\w*$', '', title)
+        # Remove leading product name + colon ("Freestyle: Sandboxes..." → "Sandboxes...")
+        # Only if the first word looks like a product name (capitalized, ≤2 words before colon)
+        title = re.sub(r'^[A-Z][\w]*(?:\s+[A-Z][\w]*)?\s*[:–—]\s*', '', title)
         return title.strip()
