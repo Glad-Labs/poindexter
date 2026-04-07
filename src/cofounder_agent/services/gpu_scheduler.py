@@ -41,11 +41,29 @@ NVIDIA_EXPORTER_URL = os.getenv("NVIDIA_EXPORTER_URL", "http://host.docker.inter
 # Models under this VRAM threshold (in GB) skip the lock — they can coexist.
 SMALL_MODEL_THRESHOLD_GB = 2.0
 
-# Gaming detection thresholds
-GPU_BUSY_THRESHOLD_PERCENT = 30  # GPU utilization % to consider "in use"
-GAMING_CHECK_INTERVAL = 15  # seconds between checks while waiting
-GAMING_CONFIRM_CHECKS = 2  # consecutive checks above threshold to confirm gaming
-GAMING_CLEAR_CHECKS = 3  # consecutive checks below threshold to resume
+# Gaming detection defaults — all overridable via app_settings (DB-first config)
+_DEFAULT_GPU_BUSY_THRESHOLD = 30  # GPU utilization % to consider "in use"
+_DEFAULT_GAMING_CHECK_INTERVAL = 15  # seconds between checks while waiting
+_DEFAULT_GAMING_CONFIRM_CHECKS = 2  # consecutive checks above threshold to confirm
+_DEFAULT_GAMING_CLEAR_CHECKS = 3  # consecutive checks below threshold to resume
+
+
+def _cfg_int(key: str, default: int) -> int:
+    """Read an int from site_config (DB) with fallback."""
+    try:
+        from services.site_config import site_config
+        return site_config.get_int(key, default)
+    except Exception:
+        return default
+
+
+def _cfg_float(key: str, default: float) -> float:
+    """Read a float from site_config (DB) with fallback."""
+    try:
+        from services.site_config import site_config
+        return site_config.get_float(key, default)
+    except Exception:
+        return default
 
 
 class GPUScheduler:
@@ -58,6 +76,7 @@ class GPUScheduler:
         self._acquired_at: float = 0
         self._gaming_detected: bool = False
         self._gaming_paused_since: float = 0
+        self._total_gaming_paused_s: float = 0  # cumulative for metrics
 
     @asynccontextmanager
     async def lock(self, owner: str, model: Optional[str] = None):
@@ -120,22 +139,29 @@ class GPUScheduler:
         """Block until GPU is not being used by an external workload (gaming).
 
         Uses consecutive checks to avoid false positives from brief GPU spikes.
+        All thresholds are DB-configurable via app_settings.
         """
+        threshold = _cfg_int("gpu_busy_threshold_percent", _DEFAULT_GPU_BUSY_THRESHOLD)
+        check_interval = _cfg_int("gpu_gaming_check_interval", _DEFAULT_GAMING_CHECK_INTERVAL)
+        confirm_checks = _cfg_int("gpu_gaming_confirm_checks", _DEFAULT_GAMING_CONFIRM_CHECKS)
+        clear_checks = _cfg_int("gpu_gaming_clear_checks", _DEFAULT_GAMING_CLEAR_CHECKS)
+
         # Quick check — if GPU is idle, proceed immediately
         util = await self._get_gpu_utilization()
-        if util is None or util < GPU_BUSY_THRESHOLD_PERCENT:
+        if util is None or util < threshold:
             if self._gaming_detected:
-                logger.info("[GPU] Gaming ended — resuming pipeline (paused %.0fs)",
-                            time.monotonic() - self._gaming_paused_since)
+                pause_duration = time.monotonic() - self._gaming_paused_since
+                self._total_gaming_paused_s += pause_duration
+                logger.info("[GPU] Gaming ended — resuming pipeline (paused %.0fs)", pause_duration)
                 self._gaming_detected = False
             return
 
         # GPU is busy — confirm it's sustained (not a brief spike)
         busy_count = 1
-        while busy_count < GAMING_CONFIRM_CHECKS:
-            await asyncio.sleep(GAMING_CHECK_INTERVAL)
+        while busy_count < confirm_checks:
+            await asyncio.sleep(check_interval)
             util = await self._get_gpu_utilization()
-            if util is not None and util >= GPU_BUSY_THRESHOLD_PERCENT:
+            if util is not None and util >= threshold:
                 busy_count += 1
             else:
                 return  # Was just a spike, proceed
@@ -146,17 +172,18 @@ class GPUScheduler:
             self._gaming_paused_since = time.monotonic()
             logger.info("[GPU] Gaming/external workload detected (util=%.0f%%) — pausing pipeline", util)
 
-        # Wait until GPU usage drops for GAMING_CLEAR_CHECKS consecutive checks
+        # Wait until GPU usage drops for clear_checks consecutive checks
         clear_count = 0
-        while clear_count < GAMING_CLEAR_CHECKS:
-            await asyncio.sleep(GAMING_CHECK_INTERVAL)
+        while clear_count < clear_checks:
+            await asyncio.sleep(check_interval)
             util = await self._get_gpu_utilization()
-            if util is None or util < GPU_BUSY_THRESHOLD_PERCENT:
+            if util is None or util < threshold:
                 clear_count += 1
             else:
                 clear_count = 0  # Reset — still gaming
 
         pause_duration = time.monotonic() - self._gaming_paused_since
+        self._total_gaming_paused_s += pause_duration
         logger.info("[GPU] Gaming ended — resuming pipeline (paused %.0fs)", pause_duration)
         self._gaming_detected = False
 
@@ -189,13 +216,21 @@ class GPUScheduler:
 
     @property
     def status(self) -> dict:
+        current_pause = round(time.monotonic() - self._gaming_paused_since, 1) if self._gaming_detected else 0
         return {
             "busy": self._lock.locked(),
             "owner": self._current_owner,
             "model": self._current_model,
             "duration_s": round(time.monotonic() - self._acquired_at, 1) if self._lock.locked() else 0,
             "gaming_detected": self._gaming_detected,
-            "gaming_paused_s": round(time.monotonic() - self._gaming_paused_since, 1) if self._gaming_detected else 0,
+            "gaming_paused_s": current_pause,
+            "total_gaming_paused_s": round(self._total_gaming_paused_s + current_pause, 1),
+            "config": {
+                "threshold_percent": _cfg_int("gpu_busy_threshold_percent", _DEFAULT_GPU_BUSY_THRESHOLD),
+                "check_interval_s": _cfg_int("gpu_gaming_check_interval", _DEFAULT_GAMING_CHECK_INTERVAL),
+                "confirm_checks": _cfg_int("gpu_gaming_confirm_checks", _DEFAULT_GAMING_CONFIRM_CHECKS),
+                "clear_checks": _cfg_int("gpu_gaming_clear_checks", _DEFAULT_GAMING_CLEAR_CHECKS),
+            },
         }
 
 

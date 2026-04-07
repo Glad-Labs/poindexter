@@ -543,6 +543,178 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "id": 20,
+      "type": "stat",
+      "title": "Gaming Detected",
+      "description": "Pipeline pauses automatically when external GPU workload (gaming) is detected",
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 39 },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "options": { "0": { "text": "Clear", "color": "green" } },
+              "type": "value"
+            },
+            {
+              "options": { "1": { "text": "Gaming", "color": "orange" } },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "expr": "gladlabs_gpu_gaming_detected",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "stat",
+      "title": "Gaming Pause Duration",
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 39 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 300 },
+              { "color": "orange", "value": 3600 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "expr": "gladlabs_gpu_gaming_paused_seconds",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "Gaming Detection & Pipeline Status",
+      "description": "Shows when gaming pauses the pipeline vs active GPU usage",
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 39 },
+      "fieldConfig": {
+        "defaults": { "custom": { "fillOpacity": 20 } },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Gaming" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "fixedColor": "orange", "mode": "fixed" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "GPU Busy" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "fixedColor": "blue", "mode": "fixed" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "GPU Util %" },
+            "properties": [
+              { "id": "custom.axisPlacement", "value": "right" },
+              { "id": "unit", "value": "percent" }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "expr": "gladlabs_gpu_gaming_detected",
+          "legendFormat": "Gaming",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "expr": "gladlabs_gpu_busy",
+          "legendFormat": "GPU Busy",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "expr": "nvidia_gpu_utilization_percent",
+          "legendFormat": "GPU Util %",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "type": "stat",
+      "title": "Total Gaming Pause",
+      "description": "Cumulative time pipeline has been paused for gaming since worker start",
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 44 },
+      "fieldConfig": {
+        "defaults": { "unit": "s" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "expr": "gladlabs_gpu_gaming_paused_total_seconds",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "type": "stat",
+      "title": "Pipeline Tasks",
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 44 },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 10 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "expr": "gladlabs_tasks_pending",
+          "legendFormat": "Pending",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "expr": "gladlabs_tasks_in_progress",
+          "legendFormat": "In Progress",
+          "refId": "B"
+        }
+      ]
     }
   ]
 }
