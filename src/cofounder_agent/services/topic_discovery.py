@@ -423,11 +423,12 @@ class TopicDiscovery:
             )
             published_titles = {r["title"].lower() for r in rows}
 
-            # Also check pending/in-progress tasks
+            # Also check all recent tasks (last 48h) regardless of status — prevents
+            # re-generating the same topic after rejection or completion
             task_rows = await self.pool.fetch(
-                "SELECT topic FROM content_tasks WHERE status IN ('pending', 'approved', 'in_progress', 'awaiting_approval')"
+                "SELECT topic FROM content_tasks WHERE created_at > NOW() - INTERVAL '48 hours'"
             )
-            pending_topics = {r["topic"].lower() for r in task_rows}
+            pending_topics = {r["topic"].lower() for r in task_rows if r.get("topic")}
 
             for topic in topics:
                 title_lower = topic.title.lower()

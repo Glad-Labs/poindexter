@@ -278,11 +278,29 @@ async def _handle_blog_post_creation(
     effective_tone = cc.get("tone") or request.tone or "professional"
     effective_length = cc.get("word_count") or request.target_length or 1500
 
+    # Resolve "auto" topic to a fresh discovered topic
+    resolved_topic = request.topic.strip()
+    if resolved_topic.lower() == "auto":
+        try:
+            from services.topic_discovery import TopicDiscovery
+            pool = db_service.pool if db_service else None
+            discovery = TopicDiscovery(pool)
+            topics = await discovery.discover(max_topics=3)
+            fresh = [t for t in topics if not t.is_duplicate]
+            if fresh:
+                resolved_topic = fresh[0].title
+                logger.info(f"[create_task] Resolved 'auto' topic → '{resolved_topic}'")
+            else:
+                raise ValueError("No fresh topics found — all discovered topics are duplicates of recent content")
+        except Exception as e:
+            logger.warning(f"[create_task] Auto-topic resolution failed: {e}")
+            raise HTTPException(status_code=422, detail=f"Could not resolve auto topic: {e}")
+
     task_data = {
         "id": task_id,
-        "task_name": f"Blog Post: {request.topic}",
+        "task_name": f"Blog Post: {resolved_topic}",
         "task_type": "blog_post",
-        "topic": request.topic.strip(),
+        "topic": resolved_topic,
         "category": request.category or "general",
         "target_audience": request.target_audience or "General",
         "primary_keyword": request.primary_keyword,
