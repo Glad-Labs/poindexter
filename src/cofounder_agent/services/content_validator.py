@@ -80,6 +80,20 @@ FAKE_QUOTE_PATTERNS = [
     r'(?:says?|said|explains?|recalled)\s+[A-Z][a-z]+\s+[A-Z][a-z]+(?:,\s*(?:CEO|CTO|VP|founder|director))',
 ]
 
+# Hallucinated internal links — phrases that claim internal content exists
+HALLUCINATED_LINK_PATTERNS = [
+    r"\b(?:our|my|the)\s+(?:guide|article|post|tutorial|deep.dive|report)\s+on\s+[a-z]",
+    r"(?:as\s+(?:we|I)\s+(?:discussed|explored|covered|explained|wrote))\s+in\s+(?:our|a\s+previous)",
+    r"(?:check\s+out|see|read)\s+our\s+(?:guide|post|article|tutorial)",
+]
+
+# Brand contradiction — we are Ollama-only, never promote paid cloud APIs
+BRAND_CONTRADICTION_PATTERNS = [
+    r"(?:pay(?:ing)?\s+(?:for|per)\s+(?:token|API|inference))\s+(?:to|with|from)\s+(?:OpenAI|Anthropic|Google)",
+    r"(?:OpenAI|Anthropic)\s+(?:API|pricing|bill|invoice|subscription|cost)",
+    r"(?:bill|invoice|cost)\s+from\s+(?:OpenAI|Anthropic|Google\s+Cloud)",
+]
+
 
 @dataclass
 class ValidationIssue:
@@ -175,7 +189,19 @@ def validate_content(title: str, content: str, topic: str = "") -> ValidationRes
         "Fabricated quote detected: '{matched}'"
     ))
 
-    # 5. Check title for impossible claims (numeric and written-out years)
+    # 5. Check for hallucinated internal links
+    issues.extend(_check_patterns(
+        full_text, HALLUCINATED_LINK_PATTERNS, "warning", "hallucinated_link",
+        "Possible hallucinated internal link: '{matched}'"
+    ))
+
+    # 6. Check for brand contradictions (promoting paid cloud APIs)
+    issues.extend(_check_patterns(
+        full_text, BRAND_CONTRADICTION_PATTERNS, "warning", "brand_contradiction",
+        "Brand contradiction — references paid cloud API: '{matched}'"
+    ))
+
+    # 7. Check title for impossible claims (numeric and written-out years)
     WRITTEN_YEARS = {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
     for word, num in WRITTEN_YEARS.items():
         if re.search(rf"\b{word}\s+years?\b", title, re.IGNORECASE) and num > 1:

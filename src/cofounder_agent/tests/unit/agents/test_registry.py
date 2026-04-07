@@ -170,11 +170,10 @@ class TestListCategories:
 
     def test_populated_categories_included(self, registry):
         registry.register("a", _FakeAgent, category="content")
-        registry.register("b", _OtherAgent, category="financial")
+        registry.register("b", _OtherAgent, category="utility")
         cats = registry.list_categories()
         assert "content" in cats
-        assert "financial" in cats
-        assert "compliance" not in cats  # empty
+        assert "utility" in cats
 
 
 # ---------------------------------------------------------------------------

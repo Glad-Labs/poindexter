@@ -351,6 +351,100 @@ async def monitor_external_services(pool) -> list:
     return issues
 
 
+async def enqueue_brain_item(pool, item_type: str, content: str, context: dict = None, priority: int = 5):
+    """Put an item into the brain queue. Callable by any service with a pool handle."""
+    await pool.execute("""
+        INSERT INTO brain_queue (item_type, content, context, priority, status)
+        VALUES ($1, $2, $3::jsonb, $4, 'pending')
+    """, item_type, content, json.dumps(context or {}), priority)
+    logger.info("[BRAIN] Enqueued %s item (priority %d): %s", item_type, priority, content[:80])
+
+
+# Brand pillars for topic relevance checks
+BRAND_PILLARS = {"ai", "ml", "machine learning", "artificial intelligence", "hardware",
+                 "gpu", "cpu", "gaming", "pc", "build", "benchmark", "linux", "llm",
+                 "deep learning", "neural", "tech", "automation", "pipeline", "content"}
+
+
+def _is_brand_relevant(text: str) -> bool:
+    """Quick keyword check — does the topic touch at least one brand pillar?"""
+    lower = text.lower()
+    return any(kw in lower for kw in BRAND_PILLARS)
+
+
+async def _handle_topic_suggestion(pool, item):
+    """Validate a suggested topic and queue as content task if on-brand."""
+    topic = item["content"]
+    ctx = json.loads(item["context"]) if isinstance(item["context"], str) else (item["context"] or {})
+
+    if not _is_brand_relevant(topic):
+        logger.info("[BRAIN] Topic rejected (off-brand): %s", topic[:80])
+        return {"action": "rejected", "reason": "off-brand"}
+
+    # Check for duplicate topics already in the pipeline
+    existing = await pool.fetchval(
+        "SELECT COUNT(*) FROM content_tasks WHERE topic ILIKE $1 AND status NOT IN ('failed', 'rejected')",
+        f"%{topic[:60]}%",
+    )
+    if existing:
+        logger.info("[BRAIN] Topic rejected (duplicate): %s", topic[:80])
+        return {"action": "rejected", "reason": "duplicate_topic"}
+
+    # Queue as a content task
+    metadata = json.dumps({"source": ctx.get("source", "brain_queue"), "suggested_by": ctx.get("suggested_by", "unknown")})
+    await pool.execute("""
+        INSERT INTO content_tasks (task_id, task_type, content_type, topic, status, metadata)
+        VALUES (gen_random_uuid()::text, 'blog_post', 'blog_post', $1::text, 'pending', $2::jsonb)
+    """, topic, metadata)
+    logger.info("[BRAIN] Topic accepted and queued: %s", topic[:80])
+    return {"action": "queued_as_content_task"}
+
+
+async def _handle_alert(pool, item):
+    """Forward alert content to Telegram."""
+    ctx = json.loads(item["context"]) if isinstance(item["context"], str) else (item["context"] or {})
+    severity = ctx.get("severity", "info")
+    source = ctx.get("source", "unknown")
+    send_telegram(f"[{severity.upper()}] {source}: {item['content']}")
+    return {"action": "forwarded_to_telegram", "severity": severity}
+
+
+async def _handle_config_change(pool, item):
+    """Log a config change into brain_knowledge for audit trail."""
+    ctx = json.loads(item["context"]) if isinstance(item["context"], str) else (item["context"] or {})
+    key = ctx.get("key", "unknown_key")
+    await pool.execute("""
+        INSERT INTO brain_knowledge (entity, attribute, value, confidence, source, tags)
+        VALUES ($1, 'config_change', $2, 1.0, 'brain_queue', $3)
+        ON CONFLICT (entity, attribute) DO UPDATE SET
+            value = EXCLUDED.value, updated_at = NOW()
+    """, f"config.{key}", item["content"][:500], ["audit", "config"])
+    logger.info("[BRAIN] Config change logged: %s", key)
+    return {"action": "logged_to_knowledge", "key": key}
+
+
+async def _handle_observation(pool, item):
+    """Store an observation as a brain_knowledge fact."""
+    ctx = json.loads(item["context"]) if isinstance(item["context"], str) else (item["context"] or {})
+    entity = ctx.get("entity", "general")
+    await pool.execute("""
+        INSERT INTO brain_knowledge (entity, attribute, value, confidence, source, tags)
+        VALUES ($1, 'observation', $2, $3, 'brain_queue', $4)
+        ON CONFLICT (entity, attribute) DO UPDATE SET
+            value = EXCLUDED.value, updated_at = NOW()
+    """, entity, item["content"][:1000], ctx.get("confidence", 0.7), ctx.get("tags", ["observation"]))
+    logger.info("[BRAIN] Observation stored for entity '%s'", entity)
+    return {"action": "stored_as_knowledge", "entity": entity}
+
+
+_QUEUE_HANDLERS = {
+    "topic_suggestion": _handle_topic_suggestion,
+    "alert": _handle_alert,
+    "config_change": _handle_config_change,
+    "observation": _handle_observation,
+}
+
+
 async def process_queue(pool, max_items: int = 5):
     """Process pending items in the brain queue."""
     try:
@@ -362,11 +456,16 @@ async def process_queue(pool, max_items: int = 5):
 
         for item in items:
             try:
-                # Simple processing — extract facts from observations
-                # Log as processed
+                handler = _QUEUE_HANDLERS.get(item["item_type"])
+                if handler:
+                    result = await handler(pool, item)
+                else:
+                    logger.info("[BRAIN] Unknown item_type '%s' — marking processed", item["item_type"])
+                    result = {"processed_by": "brain_daemon", "note": "unknown_item_type"}
+
                 await pool.execute(
                     "UPDATE brain_queue SET status = 'processed', processed_at = NOW(), result = $1 WHERE id = $2",
-                    json.dumps({"processed_by": "brain_daemon"}), item["id"],
+                    json.dumps(result), item["id"],
                 )
             except Exception as e:
                 await pool.execute(

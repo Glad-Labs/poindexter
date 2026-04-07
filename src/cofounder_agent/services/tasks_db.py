@@ -539,12 +539,19 @@ class TasksDatabase(DatabaseServiceMixin):
             # Use single connection for resolve + update (#1206)
             async with self.pool.acquire() as conn:
                 # Resolve the actual task_id — caller may pass either id or task_id column value
-                resolved = await conn.fetchval(
-                    "SELECT task_id FROM content_tasks WHERE task_id = $1 OR id::text = $1 LIMIT 1",
+                resolved = await conn.fetchrow(
+                    "SELECT task_id, status FROM content_tasks WHERE task_id = $1 OR id::text = $1 LIMIT 1",
                     str(task_id),
                 )
                 if resolved:
-                    task_id = str(resolved)
+                    task_id = str(resolved["task_id"])
+                    # Guard: never overwrite cancelled/rejected tasks with pipeline updates.
+                    # This prevents zombie tasks from resurrecting after manual cancellation.
+                    current_status = resolved["status"]
+                    if current_status in ("cancelled", "rejected") and serialized_updates.get("status") not in ("cancelled", "rejected", None):
+                        logger.info("[GUARD] Skipping update for %s task %s (attempted status: %s)",
+                                    current_status, task_id, serialized_updates.get("status"))
+                        return None
 
                 builder = ParameterizedQueryBuilder()
                 sql, params = builder.update(

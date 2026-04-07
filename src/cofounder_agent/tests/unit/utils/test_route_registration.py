@@ -7,10 +7,6 @@ Covers:
 - register_all_routes: ImportError for a route sets status to False (no crash)
 - register_all_routes: unknown Exception for a route sets status to False (no crash)
 - register_all_routes: deployment_mode selects correct manifest
-- register_workflow_history_routes: returns False when either service is None
-- register_workflow_history_routes: returns False on ImportError
-- register_workflow_history_routes: returns False on generic Exception
-- register_workflow_history_routes: success path calls initialize_history_service + include_router
 - _ROUTE_MANIFEST / _COORDINATOR_ROUTES / _WORKER_ROUTES: structure is valid
 """
 
@@ -21,7 +17,6 @@ from utils.route_registration import (
     _ROUTE_MANIFEST,
     _WORKER_ROUTES,
     register_all_routes,
-    register_workflow_history_routes,
 )
 
 
@@ -62,32 +57,32 @@ class TestRouteManifestStructure:
         keys = [entry[2] for entry in _ROUTE_MANIFEST]
         assert len(keys) == len(set(keys)), "Duplicate status keys found in manifest"
 
-    def test_approval_router_precedes_task_router(self):
-        """Approval router must precede task router (concrete path before wildcard)."""
-        status_keys = [entry[2] for entry in _ROUTE_MANIFEST]
+    def test_approval_router_precedes_task_router_in_worker(self):
+        """Approval router must precede task router (concrete path before wildcard) in worker manifest."""
+        status_keys = [entry[2] for entry in _WORKER_ROUTES]
         assert status_keys.index("approval_router") < status_keys.index("task_router")
 
     def test_coordinator_manifest_has_expected_routes(self):
-        """Coordinator manifest should have 9 route entries (public site + video)."""
-        assert len(_COORDINATOR_ROUTES) == 9
+        """Coordinator manifest should have 4 route entries (public site only)."""
+        assert len(_COORDINATOR_ROUTES) == 4
 
     def test_manifest_alias_equals_coordinator(self):
         """_ROUTE_MANIFEST should be an alias for _COORDINATOR_ROUTES."""
         assert _ROUTE_MANIFEST is _COORDINATOR_ROUTES
 
-    def test_worker_manifest_is_subset_of_coordinator(self):
-        """Every worker route should also exist in coordinator manifest."""
-        coordinator_keys = {entry[2] for entry in _COORDINATOR_ROUTES}
-        for entry in _WORKER_ROUTES:
-            assert entry[2] in coordinator_keys, f"Worker route {entry[2]} not in coordinator"
+    def test_coordinator_is_subset_of_worker(self):
+        """Every coordinator route should also exist in worker manifest."""
+        worker_keys = {entry[2] for entry in _WORKER_ROUTES}
+        for entry in _COORDINATOR_ROUTES:
+            assert entry[2] in worker_keys, f"Coordinator route {entry[2]} not in worker"
 
-    def test_worker_manifest_has_6_routes(self):
-        """Worker manifest should have exactly 6 route entries (including CMS for preview)."""
-        assert len(_WORKER_ROUTES) == 6
+    def test_worker_manifest_has_9_routes(self):
+        """Worker manifest should have exactly 9 route entries."""
+        assert len(_WORKER_ROUTES) == 9
 
-    def test_worker_task_router_is_first(self):
-        """Task router should be first in the worker manifest."""
-        assert _WORKER_ROUTES[0][2] == "task_router"
+    def test_worker_approval_router_is_first(self):
+        """Approval router should be first in the worker manifest."""
+        assert _WORKER_ROUTES[0][2] == "approval_router"
 
     def test_worker_manifest_structure_valid(self):
         """All worker manifest entries should be valid 4-tuples."""
@@ -114,7 +109,6 @@ class TestRegisterAllRoutes:
             result = register_all_routes(app)
         # These are intentionally excluded
         assert result["sample_upload_router"] is False
-        assert result["workflow_history_router"] is False
 
     def test_successful_route_status_is_true(self):
         app = _make_app()
@@ -199,10 +193,10 @@ class TestRegisterAllRoutes:
         assert any(
             v
             for k, v in result.items()
-            if k != first_key and k not in ("sample_upload_router", "workflow_history_router")
+            if k != first_key and k not in ("sample_upload_router",)
         )
 
-    def test_worker_mode_registers_fewer_routes(self):
+    def test_worker_mode_registers_all_worker_routes(self):
         app = _make_app()
         with patch("utils.route_registration.importlib.import_module") as mock_import:
             mock_module = MagicMock()
@@ -237,94 +231,3 @@ class TestRegisterAllRoutes:
             result = register_all_routes(app)
         # Default should register coordinator route count
         assert app.include_router.call_count == len(_COORDINATOR_ROUTES)
-
-
-class TestRegisterWorkflowHistoryRoutes:
-    def test_returns_false_when_database_service_is_none(self):
-        app = _make_app()
-        result = register_workflow_history_routes(
-            app, database_service=None, workflow_history_service=MagicMock()
-        )
-        assert result is False
-
-    def test_returns_false_when_workflow_history_service_is_none(self):
-        app = _make_app()
-        result = register_workflow_history_routes(
-            app, database_service=MagicMock(), workflow_history_service=None
-        )
-        assert result is False
-
-    def test_returns_false_when_both_services_are_none(self):
-        app = _make_app()
-        result = register_workflow_history_routes(
-            app, database_service=None, workflow_history_service=None
-        )
-        assert result is False
-
-    def test_returns_false_on_import_error(self):
-        """When routes.workflow_history cannot be imported, return False."""
-        import sys
-
-        app = _make_app()
-        mock_db = MagicMock()
-        mock_wh = MagicMock()
-
-        # Force an ImportError by injecting None for the module (simulates missing module)
-        with patch.dict("sys.modules", {"routes.workflow_history": None}):  # type: ignore[dict-item]
-            result = register_workflow_history_routes(
-                app, database_service=mock_db, workflow_history_service=mock_wh
-            )
-        assert result is False
-
-    def test_returns_false_on_exception(self):
-        """A generic Exception in the try block should return False."""
-        app = _make_app()
-        mock_db = MagicMock()
-        mock_db.pool = MagicMock()
-        mock_wh = MagicMock()
-
-        # Simulate an exception by making the app raise on include_router
-        app.include_router.side_effect = RuntimeError("db schema error")
-
-        # Patch the workflow_history import chain
-        mock_router = MagicMock()
-        mock_alias_router = MagicMock()
-        mock_init_fn = MagicMock()
-        mock_wh_module = MagicMock(
-            router=mock_router,
-            alias_router=mock_alias_router,
-            initialize_history_service=mock_init_fn,
-        )
-
-        with patch.dict(
-            "sys.modules",
-            {"routes.workflow_history": mock_wh_module},
-        ):
-            result = register_workflow_history_routes(
-                app, database_service=mock_db, workflow_history_service=mock_wh
-            )
-
-        assert result is False
-
-    def test_success_path_calls_initialize_and_include_router(self):
-        app = _make_app()
-        mock_db = MagicMock()
-        mock_db.pool = MagicMock(name="pool")
-        mock_wh = MagicMock()
-
-        mock_router = MagicMock()
-        mock_alias = MagicMock()
-        mock_init = MagicMock()
-        mock_wh_module = MagicMock()
-        mock_wh_module.router = mock_router
-        mock_wh_module.alias_router = mock_alias
-        mock_wh_module.initialize_history_service = mock_init
-
-        with patch.dict("sys.modules", {"routes.workflow_history": mock_wh_module}):
-            result = register_workflow_history_routes(
-                app, database_service=mock_db, workflow_history_service=mock_wh
-            )
-
-        assert result is True
-        mock_init.assert_called_once_with(mock_db.pool)
-        assert app.include_router.call_count == 1

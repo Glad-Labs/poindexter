@@ -450,9 +450,14 @@ class TopicDiscovery:
             except Exception:
                 dedup_hours = 48
             task_rows = await self.pool.fetch(
-                f"SELECT topic FROM content_tasks WHERE created_at > NOW() - INTERVAL '{dedup_hours} hours'"
+                f"SELECT topic, title FROM content_tasks WHERE created_at > NOW() - INTERVAL '{dedup_hours} hours'"
             )
-            pending_topics = {r["topic"].lower() for r in task_rows if r.get("topic")}
+            pending_topics = set()
+            for r in task_rows:
+                if r.get("topic"):
+                    pending_topics.add(r["topic"].lower())
+                if r.get("title"):
+                    pending_topics.add(r["title"].lower())
 
             all_existing = published_titles | pending_topics
 
@@ -475,7 +480,7 @@ class TopicDiscovery:
                     overlap = len(topic_words & existing_words)
                     fwd = overlap / len(topic_words)
                     rev = overlap / len(existing_words)
-                    if fwd > 0.5 or rev > 0.5:
+                    if fwd >= 0.5 or rev >= 0.5:
                         topic.is_duplicate = True
                         logger.debug(
                             "[DEDUP] '%s' matches '%s' (fwd=%.0f%% rev=%.0f%%)",

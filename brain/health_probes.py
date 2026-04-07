@@ -96,6 +96,8 @@ PROBE_SCHEDULES = {
     "r2_connectivity": 3600,        # 1 hour
     "traffic_anomaly": 21600,       # 6 hours
     "quality_trend": 21600,         # 6 hours
+    "topic_quality": 21600,          # 6 hours
+    "pipeline_throughput": 21600,    # 6 hours
 }
 
 # Track last run times
@@ -782,6 +784,69 @@ async def probe_quality_trend(pool) -> dict:
         return {"ok": False, "detail": str(e)[:200]}
 
 
+async def probe_topic_quality(pool) -> dict:
+    """Probe: Monitor topic discovery quality via rejection and low-score rates (7d)."""
+    try:
+        row = await pool.fetchrow("""
+            SELECT
+                COUNT(*) as total,
+                COUNT(*) FILTER (WHERE status = 'rejected') as rejected,
+                COUNT(*) FILTER (WHERE quality_score IS NOT NULL AND quality_score < 70) as low_quality
+            FROM content_tasks
+            WHERE created_at > NOW() - INTERVAL '7 days'
+        """)
+        total = row["total"] if row else 0
+        rejected = row["rejected"] if row else 0
+        low_quality = row["low_quality"] if row else 0
+        if total == 0:
+            return {"ok": True, "detail": "no tasks created in last 7 days (pipeline idle)"}
+        rejection_rate = rejected / total * 100
+        low_quality_rate = low_quality / total * 100
+        healthy = rejection_rate <= 30
+        return {
+            "ok": healthy,
+            "total_tasks": total,
+            "rejected": rejected,
+            "rejection_rate": round(rejection_rate, 1),
+            "low_quality_count": low_quality,
+            "low_quality_rate": round(low_quality_rate, 1),
+            "detail": f"{rejection_rate:.0f}% rejected, {low_quality_rate:.0f}% below 70 quality ({total} tasks)"
+            + ("" if healthy else " — topics too low quality"),
+        }
+    except Exception as e:
+        return {"ok": False, "detail": str(e)[:200]}
+
+
+async def probe_pipeline_throughput(pool) -> dict:
+    """Probe: Compare 7-day publish throughput vs prior 7 days."""
+    try:
+        row = await pool.fetchrow("""
+            SELECT
+                (SELECT COUNT(*) FROM posts
+                 WHERE status = 'published' AND published_at > NOW() - INTERVAL '7 days') as recent,
+                (SELECT COUNT(*) FROM posts
+                 WHERE status = 'published'
+                   AND published_at BETWEEN NOW() - INTERVAL '14 days' AND NOW() - INTERVAL '7 days') as prior
+        """)
+        recent = row["recent"] if row else 0
+        prior = row["prior"] if row else 0
+        if prior == 0:
+            return {"ok": True, "recent_7d": recent, "prior_7d": prior,
+                    "detail": f"{recent} posts this week, no prior data to compare"}
+        change_pct = (recent - prior) / prior * 100
+        concerning = change_pct < -50
+        return {
+            "ok": not concerning,
+            "recent_7d": recent,
+            "prior_7d": prior,
+            "change_pct": round(change_pct, 1),
+            "detail": f"{recent} posts (was {prior}), {change_pct:+.0f}% change"
+            + ("" if not concerning else " — throughput dropped >50%"),
+        }
+    except Exception as e:
+        return {"ok": False, "detail": str(e)[:200]}
+
+
 # All probes in execution order
 PROBES = {
     # Infrastructure
@@ -812,6 +877,9 @@ PROBES = {
     "embeddings_freshness": probe_embeddings_freshness,
     # Analytics
     "traffic_anomaly": probe_traffic_anomaly,
+    # Topic & throughput monitoring
+    "topic_quality": probe_topic_quality,
+    "pipeline_throughput": probe_pipeline_throughput,
 }
 
 # Track consecutive failures for alerting

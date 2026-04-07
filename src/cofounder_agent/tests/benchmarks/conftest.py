@@ -22,8 +22,6 @@ from fastapi.testclient import TestClient
 
 # Benchmarks require a real app instance which needs database connectivity.
 # Skip the entire module if pytest-benchmark is not installed or DB is unavailable.
-pytest_plugins: list[str] = []
-
 DEV_TOKEN = "dev-token"
 AUTH_HEADERS = {"Authorization": f"Bearer {DEV_TOKEN}"}
 
