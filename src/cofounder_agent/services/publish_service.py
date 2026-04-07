@@ -624,6 +624,21 @@ async def publish_post_from_task(
         asyncio.ensure_future(_upload_media_to_r2(post_id))
 
     # ---------------------------------------------------------------
+    # 11f. Newsletter to subscribers (fire-and-forget)
+    # ---------------------------------------------------------------
+    if _should_run_post_publish_hooks():
+        async def _send_newsletter(pid: str, ptitle: str, pexcerpt: str, pslug: str) -> None:
+            try:
+                from services.newsletter_service import send_post_newsletter
+                _pool = getattr(db_service, "cloud_pool", None) or db_service.pool
+                result = await send_post_newsletter(_pool, ptitle, pexcerpt, pslug)
+                logger.info("[NEWSLETTER] Result: %s", result)
+            except Exception as e:
+                logger.debug("[NEWSLETTER] Failed (non-fatal): %s", e)
+
+        asyncio.ensure_future(_send_newsletter(post_id, post_title, seo_description, slug))
+
+    # ---------------------------------------------------------------
     # 12. Send notification
     # ---------------------------------------------------------------
     try:
