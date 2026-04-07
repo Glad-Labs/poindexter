@@ -191,8 +191,15 @@ def _build_rss_xml(episodes: list[dict]) -> str:
 
         # Enclosure (the MP3 file)
         enclosure = SubElement(item, "enclosure")
+        # Version prefix allows cache-busting when episodes are re-recorded.
+        # Bump via: UPDATE app_settings SET value = 'v3' WHERE key = 'podcast_cdn_version';
+        try:
+            from services.site_config import site_config as _sc
+            _cdn_ver = _sc.get("podcast_cdn_version", "v2")
+        except Exception:
+            _cdn_ver = "v2"
         enclosure.set(
-            "url", f"{_r2_url()}/podcast/{ep['post_id']}.mp3"
+            "url", f"{_r2_url()}/podcast/{_cdn_ver}/{ep['post_id']}.mp3"
         )
         enclosure.set("length", str(ep.get("file_size_bytes", 0)))
         enclosure.set("type", "audio/mpeg")

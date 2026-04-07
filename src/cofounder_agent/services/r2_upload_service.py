@@ -103,11 +103,17 @@ async def upload_to_r2(
 
 
 async def upload_podcast_episode(post_id: str) -> Optional[str]:
-    """Upload a podcast episode MP3 to R2. Returns public URL or None."""
+    """Upload a podcast episode MP3 to R2. Returns public URL or None.
+    Uses versioned path (podcast_cdn_version) for cache-busting."""
+    try:
+        from services.site_config import site_config
+        cdn_ver = site_config.get("podcast_cdn_version", "v2")
+    except Exception:
+        cdn_ver = "v2"
     podcast_dir = Path(os.path.expanduser("~")) / ".gladlabs" / "podcast"
     mp3_path = podcast_dir / f"{post_id}.mp3"
     if mp3_path.exists():
-        return await upload_to_r2(str(mp3_path), f"podcast/{post_id}.mp3")
+        return await upload_to_r2(str(mp3_path), f"podcast/{cdn_ver}/{post_id}.mp3")
     return None
 
 
