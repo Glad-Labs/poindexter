@@ -423,10 +423,16 @@ class TopicDiscovery:
             )
             published_titles = {r["title"].lower() for r in rows}
 
-            # Also check all recent tasks (last 48h) regardless of status — prevents
-            # re-generating the same topic after rejection or completion
+            # Also check all recent tasks regardless of status — prevents
+            # re-generating the same topic after rejection or completion.
+            # Window is tunable via app_settings key: qa_topic_dedup_hours (default 48).
+            try:
+                from services.site_config import site_config
+                dedup_hours = site_config.get_int("qa_topic_dedup_hours", 48)
+            except Exception:
+                dedup_hours = 48
             task_rows = await self.pool.fetch(
-                "SELECT topic FROM content_tasks WHERE created_at > NOW() - INTERVAL '48 hours'"
+                f"SELECT topic FROM content_tasks WHERE created_at > NOW() - INTERVAL '{dedup_hours} hours'"
             )
             pending_topics = {r["topic"].lower() for r in task_rows if r.get("topic")}
 
