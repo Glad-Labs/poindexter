@@ -116,23 +116,35 @@ def create_post(topic: str, category: str = "technology", target_audience: str =
 
 
 @mcp.tool()
-def list_tasks(status: str = "all", limit: int = 10) -> str:
+async def list_tasks(status: str = "all", limit: int = 10) -> str:
     """List content tasks with their status and quality scores."""
-    path = f"/api/tasks?limit={limit}"
-    if status != "all":
-        path += f"&status={status}"
-    result = _api("GET", path)
-    if "error" in result:
-        return f"Error: {result['error']}"
-    tasks = result.get("tasks", [])
-    if not tasks:
-        return "No tasks found."
-    lines = [f"Tasks ({len(tasks)}):"]
-    for t in tasks:
-        tid = t.get('task_id', t.get('id', '?'))
-        tid_short = tid[:8] if isinstance(tid, str) and len(tid) > 8 else tid
-        lines.append(f"  {tid_short} | {t.get('status', '?'):20s} | Q:{str(t.get('quality_score', '-')):5s} | {t.get('title', t.get('topic', '?'))[:50]}")
-    return "\n".join(lines)
+    try:
+        pool = await _get_pool()
+        limit = min(limit, 100)
+        if status != "all":
+            rows = await pool.fetch(
+                "SELECT task_id, topic, status, quality_score, created_at "
+                "FROM content_tasks WHERE status = $1 ORDER BY created_at DESC LIMIT $2",
+                status, limit,
+            )
+        else:
+            rows = await pool.fetch(
+                "SELECT task_id, topic, status, quality_score, created_at "
+                "FROM content_tasks ORDER BY created_at DESC LIMIT $1",
+                limit,
+            )
+        if not rows:
+            return "No tasks found."
+        lines = [f"Tasks ({len(rows)}):"]
+        for r in rows:
+            tid = str(r["task_id"])
+            tid_short = tid[:8] if len(tid) > 8 else tid
+            qs = str(r["quality_score"]) if r["quality_score"] is not None else "-"
+            topic = (r["topic"] or "?")[:50]
+            lines.append(f"  {tid_short} | {r['status'] or '?':20s} | Q:{qs:5s} | {topic}")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error: {e}"
 
 
 @mcp.tool()
@@ -159,10 +171,14 @@ def publish_post(task_id: str) -> str:
 
 
 @mcp.tool()
-def get_post_count() -> str:
+async def get_post_count() -> str:
     """Get the total number of published posts on gladlabs.io."""
-    result = _api("GET", "/api/posts?limit=1")
-    return f"Published posts: {result.get('total', result.get('error', '?'))}"
+    try:
+        pool = await _get_pool()
+        count = await pool.fetchval("SELECT COUNT(*) FROM posts WHERE status = 'published'")
+        return f"Published posts: {count}"
+    except Exception as e:
+        return f"Error: {e}"
 
 
 # ============================================================================
@@ -223,12 +239,24 @@ def check_health() -> str:
 
 
 @mcp.tool()
-def get_budget() -> str:
+async def get_budget() -> str:
     """Get current AI spending status (daily and monthly)."""
-    result = _api("GET", "/api/metrics/costs/budget")
-    if "error" in result:
-        return f"Error: {result['error']}"
-    return json.dumps(result, indent=2)
+    try:
+        pool = await _get_pool()
+        monthly = await pool.fetchval(
+            "SELECT COALESCE(SUM(cost_usd), 0) FROM cost_logs "
+            "WHERE created_at >= date_trunc('month', NOW())"
+        )
+        daily = await pool.fetchval(
+            "SELECT COALESCE(SUM(cost_usd), 0) FROM cost_logs "
+            "WHERE created_at >= date_trunc('day', NOW())"
+        )
+        return json.dumps({
+            "monthly_total_usd": float(monthly),
+            "daily_total_usd": float(daily),
+        }, indent=2)
+    except Exception as e:
+        return f"Error: {e}"
 
 
 # ============================================================================
@@ -236,12 +264,19 @@ def get_budget() -> str:
 # ============================================================================
 
 @mcp.tool()
-def get_setting(key: str) -> str:
+async def get_setting(key: str) -> str:
     """Get a configuration setting value from the database."""
-    result = _api("GET", f"/api/settings/{key}")
-    if "error" in result:
-        return f"Error: {result['error']}"
-    return f"{key} = {result.get('value', '?')} (category: {result.get('category', '?')})"
+    try:
+        pool = await _get_pool()
+        row = await pool.fetchrow(
+            "SELECT key, value, category, is_secret FROM app_settings WHERE key = $1", key
+        )
+        if not row:
+            return f"Setting '{key}' not found."
+        val = "********" if row["is_secret"] else row["value"]
+        return f"{row['key']} = {val} (category: {row['category'] or '?'})"
+    except Exception as e:
+        return f"Error: {e}"
 
 
 @mcp.tool()
@@ -267,33 +302,44 @@ async def set_setting(key: str, value: str) -> str:
                 return f"Permission denied: change to {key} queued for approval"
             return f"Permission denied: mcp_server cannot write to app_settings"
     except Exception:
-        pass  # Permission check failed — fall through to API (which has its own auth)
+        pass  # Permission check failed — fall through to direct DB write
 
-    result = _api("PUT", f"/api/settings/{key}", {"value": value})
-    if "error" in result:
-        return f"Error: {result['error']}"
-    return f"Updated: {key} = {value}"
+    try:
+        pool = await _get_pool()
+        await pool.execute(
+            "INSERT INTO app_settings (key, value) VALUES ($1, $2) "
+            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
+            key, value,
+        )
+        return f"Updated: {key} = {value}"
+    except Exception as e:
+        return f"Error: {e}"
 
 
 @mcp.tool()
-def list_settings(category: str = "") -> str:
+async def list_settings(category: str = "") -> str:
     """List all configuration settings, optionally filtered by category."""
-    path = "/api/settings"
-    if category:
-        path += f"?category={category}"
-    result = _api("GET", path)
-    if "error" in result:
-        return f"Error: {result['error']}"
-    settings = result.get("settings", result.get("data", []))
-    if not settings:
-        return "No settings found."
-    lines = [f"Settings ({len(settings)}):"]
-    for s in settings:
-        val = s.get("value", "")
-        if s.get("is_secret") and val:
-            val = "********"
-        lines.append(f"  {s.get('category', '?')}/{s.get('key', '?')} = {val}")
-    return "\n".join(lines)
+    try:
+        pool = await _get_pool()
+        if category:
+            rows = await pool.fetch(
+                "SELECT key, value, category, is_secret FROM app_settings "
+                "WHERE category = $1 ORDER BY key",
+                category,
+            )
+        else:
+            rows = await pool.fetch(
+                "SELECT key, value, category, is_secret FROM app_settings ORDER BY key"
+            )
+        if not rows:
+            return "No settings found."
+        lines = [f"Settings ({len(rows)}):"]
+        for r in rows:
+            val = "********" if r["is_secret"] else (r["value"] or "")
+            lines.append(f"  {r['category'] or '?'}/{r['key']} = {val}")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error: {e}"
 
 
 # ============================================================================

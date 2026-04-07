@@ -68,43 +68,18 @@ def register_all_routes(
     app: FastAPI,
     deployment_mode: str = "coordinator",
     database_service: Optional[Any] = None,
-    workflow_history_service: Optional[Any] = None,
     training_data_service: Optional[Any] = None,
-    fine_tuning_service: Optional[Any] = None,
 ) -> Dict[str, bool]:
     """
     Register route routers with the FastAPI application based on deployment mode.
-
-    This function consolidates all route registration into one place,
-    making it easy to see which routes are available and to add/remove
-    routes without cluttering the main.py file.
 
     Args:
         app: FastAPI application instance
         deployment_mode: "coordinator" (default) or "worker"
         database_service: Optional database service to inject into routes
-        workflow_history_service: Optional workflow history service
 
     Returns:
         Dictionary with route registration status for each router
-
-    Example:
-        from utils.route_registration import register_all_routes
-        from services.database_service import DatabaseService
-
-        app = FastAPI()
-        db = DatabaseService()
-
-        registration_status = register_all_routes(
-            app,
-            deployment_mode="coordinator",
-            database_service=db,
-            workflow_history_service=wh,
-        )
-
-        # Check which routes were registered
-        if registration_status['task_router']:
-            logger.info("Task routes available")
     """
     if deployment_mode == "worker":
         manifest = _WORKER_ROUTES
@@ -119,11 +94,9 @@ def register_all_routes(
 
     status: Dict[str, bool] = {}
 
-    # Routes that are intentionally absent (module removed or registered elsewhere)
+    # Routes that are intentionally absent (module removed)
     # sample_upload_routes.py removed — functionality moved to writing_style_routes.py
     status["sample_upload_router"] = False
-    # workflow_history registered via register_workflow_history_routes() in lifespan
-    status["workflow_history_router"] = False
 
     for module_path, router_attr, status_key, description in manifest:
         try:
@@ -147,32 +120,3 @@ def register_all_routes(
     return status
 
 
-def register_workflow_history_routes(
-    app: FastAPI, database_service: Any, workflow_history_service: Any
-) -> bool:
-    """
-    Register workflow history routes once services are available during lifespan.
-
-    Called from main.py lifespan after database and workflow_history services are initialized.
-    Separated from register_all_routes because those services aren't available at module load time.
-    """
-    try:
-        from routes.workflow_history import initialize_history_service
-        from routes.workflow_history import router as workflow_history_router
-
-        if not database_service or not workflow_history_service:
-            logger.warning(
-                "workflow_history routes skipped: database or workflow_history service not available"
-            )
-            return False
-
-        initialize_history_service(database_service.pool)
-        app.include_router(workflow_history_router)
-        logger.info("workflow_history_router registered (/api/workflows/* paths)")
-        return True
-    except ImportError as e:
-        logger.warning(f"workflow_history routes not available: {e}", exc_info=True)
-        return False
-    except Exception as e:
-        logger.error(f"workflow_history route registration failed: {e}", exc_info=True)
-        return False

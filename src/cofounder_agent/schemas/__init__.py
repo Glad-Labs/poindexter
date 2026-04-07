@@ -99,12 +99,6 @@ from .unified_task_response import CreateBlogPostResponse, ProgressInfo, Unified
 # Webhook schemas
 from .webhooks_schemas import ContentWebhookPayload, WebhookEntry, WebhookResponse
 
-# Workflow history schemas
-from .workflow_history_schemas import (
-    WorkflowExecutionDetail,
-    WorkflowHistoryResponse,
-    WorkflowStatistics,
-)
 
 __all__ = [
     # Quality
@@ -163,10 +157,6 @@ __all__ = [
     "WebhookEntry",
     "ContentWebhookPayload",
     "WebhookResponse",
-    # Workflow history
-    "WorkflowExecutionDetail",
-    "WorkflowHistoryResponse",
-    "WorkflowStatistics",
     "PerformanceMetrics",
     # Models
     "ModelInfo",
