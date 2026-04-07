@@ -397,6 +397,66 @@ class TestNormalizeText:
 
 
 # ===========================================================================
+# _scrub_fabricated_links
+# ===========================================================================
+
+
+@pytest.mark.unit
+class TestScrubFabricatedLinks:
+    """Tests for link scrubbing that removes hallucinated URLs."""
+
+    def test_keeps_trusted_markdown_links(self):
+        from services.content_router_service import _scrub_fabricated_links
+        content = "Check out [this repo](https://github.com/user/project) for details."
+        assert "github.com/user/project" in _scrub_fabricated_links(content)
+
+    def test_removes_fabricated_markdown_links(self):
+        from services.content_router_service import _scrub_fabricated_links
+        content = "See [definition](https://www.dictionary.com/browse/example) for more."
+        result = _scrub_fabricated_links(content)
+        assert "dictionary.com" not in result
+        assert "definition" in result  # Link text preserved
+
+    def test_removes_bare_fabricated_urls(self):
+        from services.content_router_service import _scrub_fabricated_links
+        content = "Visit https://www.randomsite.com/fake-article for info."
+        result = _scrub_fabricated_links(content)
+        assert "randomsite.com" not in result
+
+    def test_keeps_bare_trusted_urls(self):
+        from services.content_router_service import _scrub_fabricated_links
+        content = "See https://arxiv.org/abs/2301.12345 for the paper."
+        result = _scrub_fabricated_links(content)
+        assert "arxiv.org" in result
+
+    def test_keeps_gladlabs_links(self):
+        from services.content_router_service import _scrub_fabricated_links
+        content = "Read [our post](https://www.gladlabs.io/posts/ai-trends) about this."
+        assert "gladlabs.io" in _scrub_fabricated_links(content)
+
+    def test_empty_content_returns_empty(self):
+        from services.content_router_service import _scrub_fabricated_links
+        assert _scrub_fabricated_links("") == ""
+
+    def test_no_links_returns_unchanged(self):
+        from services.content_router_service import _scrub_fabricated_links
+        content = "This is plain text with no links at all."
+        assert _scrub_fabricated_links(content) == content
+
+    def test_multiple_fabricated_links_all_removed(self):
+        from services.content_router_service import _scrub_fabricated_links
+        content = (
+            "See [tools](https://www.techtools.io/list) and "
+            "[guide](https://www.fakesite.com/guide) for more."
+        )
+        result = _scrub_fabricated_links(content)
+        assert "techtools.io" not in result
+        assert "fakesite.com" not in result
+        assert "tools" in result  # Link texts kept
+        assert "guide" in result
+
+
+# ===========================================================================
 # _parse_model_preferences
 # ===========================================================================
 

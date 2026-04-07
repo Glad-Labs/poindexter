@@ -105,14 +105,20 @@ class TestNormalizeTags:
         assert DevToCrossPostService._normalize_tags(["LLM", "AI"]) == ["llm", "ai"]
 
     def test_max_four_tags(self):
-        tags = ["a", "b", "c", "d", "e", "f"]
+        tags = ["python", "javascript", "docker", "kubernetes", "react", "fastapi"]
         result = DevToCrossPostService._normalize_tags(tags)
         assert len(result) == 4
 
     def test_alphanumeric_only(self):
         tags = ["self-hosting", "machine learning", "c++"]
         result = DevToCrossPostService._normalize_tags(tags)
-        assert result == ["selfhosting", "machinelearning", "c"]
+        # "c" is rejected (single char after stripping ++)
+        assert result == ["selfhosting", "machinelearning"]
+
+    def test_single_char_tags_rejected(self):
+        tags = ["a", "b", "ai", "ml"]
+        result = DevToCrossPostService._normalize_tags(tags)
+        assert result == ["ai", "ml"]
 
     def test_duplicates_removed(self):
         tags = ["AI", "ai", "Ai"]
@@ -221,7 +227,7 @@ class TestCrossPostSuccess:
         assert call_kwargs[0][0] == "https://dev.to/api/articles"
         payload = call_kwargs[1]["json"]
         assert payload["article"]["title"] == "Test Article"
-        assert payload["article"]["published"] is False
+        assert payload["article"]["published"] is True  # Auto-publish by default
         assert payload["article"]["canonical_url"] == "https://www.gladlabs.io/posts/test-article"
         assert payload["article"]["tags"] == ["ai", "python"]
         # Verify markdown was cleaned (relative link -> absolute)

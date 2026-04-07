@@ -396,6 +396,7 @@ class PodcastService:
         content: str,
         *,
         force: bool = False,
+        pre_generated_script: Optional[str] = None,
     ) -> EpisodeResult:
         """Generate a podcast episode MP3 from blog post content.
 
@@ -404,6 +405,7 @@ class PodcastService:
             title: Post title (used in the intro).
             content: Full post content (markdown — will be stripped).
             force: Regenerate even if the episode already exists.
+            pre_generated_script: If provided, skip LLM script generation and use this script directly.
 
         Returns:
             EpisodeResult with file path and duration info.
@@ -421,7 +423,11 @@ class PodcastService:
                 duration_seconds=_estimate_duration_from_text(content),
             )
 
-        script = await _build_script_with_llm(title, content)
+        if pre_generated_script and len(pre_generated_script) > 200:
+            script = pre_generated_script
+            logger.info("[PODCAST] Using pre-generated script (%d chars)", len(script))
+        else:
+            script = await _build_script_with_llm(title, content)
 
         if not script.strip():
             return EpisodeResult(success=False, error="Empty content after markdown stripping")
@@ -511,11 +517,16 @@ async def generate_podcast_episode(
     post_id: str,
     title: str,
     content: str,
+    *,
+    pre_generated_script: Optional[str] = None,
 ) -> None:
     """Fire-and-forget podcast generation. Logs errors but never raises."""
     try:
         svc = PodcastService()
-        result = await svc.generate_episode(post_id, title, content)
+        result = await svc.generate_episode(
+            post_id, title, content,
+            pre_generated_script=pre_generated_script,
+        )
         if not result.success:
             logger.warning("[PODCAST] Failed for post %s: %s", post_id, result.error)
     except Exception as e:

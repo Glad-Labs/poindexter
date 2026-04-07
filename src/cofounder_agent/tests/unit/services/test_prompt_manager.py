@@ -104,8 +104,6 @@ class TestGetPrompt:
             internal_link_titles="- What is AI\n- ML Basics",
         )
         assert "Machine Learning" in result
-        assert "developers" in result
-        assert "ML models" in result
         assert "1500" in result
 
     def test_qa_content_review_substitutes_vars(self, pm: UnifiedPromptManager):

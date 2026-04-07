@@ -534,7 +534,7 @@ class TestGenerateVideoEpisode:
             mock_gen.return_value = VideoResult(success=True, file_path="/tmp/v.mp4")
             await generate_video_episode("post1", "Title", "Content")
 
-        mock_gen.assert_awaited_once_with("post1", "Title", "Content")
+        mock_gen.assert_awaited_once_with("post1", "Title", "Content", pre_generated_scenes=None)
 
     @pytest.mark.asyncio
     async def test_logs_failure_without_raising(self):

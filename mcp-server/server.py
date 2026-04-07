@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import subprocess
+import urllib.parse
 import urllib.request
 from typing import Any
 
@@ -128,7 +129,9 @@ def list_tasks(status: str = "all", limit: int = 10) -> str:
         return "No tasks found."
     lines = [f"Tasks ({len(tasks)}):"]
     for t in tasks:
-        lines.append(f"  {t.get('status', '?'):20s} Q:{str(t.get('quality_score', '-')):5s} {t.get('topic', '?')[:55]}")
+        tid = t.get('task_id', t.get('id', '?'))
+        tid_short = tid[:8] if isinstance(tid, str) and len(tid) > 8 else tid
+        lines.append(f"  {tid_short} | {t.get('status', '?'):20s} | Q:{str(t.get('quality_score', '-')):5s} | {t.get('title', t.get('topic', '?'))[:50]}")
     return "\n".join(lines)
 
 
@@ -137,6 +140,15 @@ def approve_post(task_id: str) -> str:
     """Approve a content task for publishing."""
     result = _api("POST", f"/api/tasks/{task_id}/approve")
     return f"Status: {result.get('status', result.get('error', '?'))}"
+
+
+@mcp.tool()
+def reject_post(task_id: str, reason: str = "Rejected by reviewer") -> str:
+    """Reject a content task. Provide a reason for feedback to the pipeline."""
+    encoded_reason = urllib.parse.quote(reason)
+    result = _api("POST", f"/api/tasks/{task_id}/approve?approved=false&human_feedback={encoded_reason}")
+    status = result.get("status", result.get("error", "?"))
+    return f"Rejected: {status} — {reason}"
 
 
 @mcp.tool()

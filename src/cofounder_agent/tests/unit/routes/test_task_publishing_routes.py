@@ -321,6 +321,9 @@ class TestApproveTask:
         )
         mock_db.get_task = AsyncMock(side_effect=[task, task])
         mock_db.create_post = AsyncMock(return_value=MagicMock(id="post-abc"))
+        # Idempotency guard in publish_service checks cloud_pool.fetchrow for existing post
+        mock_db.cloud_pool = AsyncMock()
+        mock_db.cloud_pool.fetchrow = AsyncMock(return_value=None)
 
         app = _build_app(mock_db)
         with (

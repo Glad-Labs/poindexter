@@ -41,6 +41,7 @@ _DEFAULT_STAGE_TIMEOUTS = {
     "source_featured_image": 120, # Stage 3: Image search — 2 min
     "cross_model_qa": 180,        # Stage 3.5+3.7: Multi-model QA — 3 min
     "generate_seo_metadata": 60,  # Stage 4: SEO — 1 min
+    "generate_media_scripts": 300, # Stage 4B: Podcast script + video scenes — 5 min
     "capture_training_data": 30,  # Stage 5: Training data — 30s
     "finalize_task": 30,          # Stage 6: Finalize — 30s
 }
@@ -61,6 +62,7 @@ def _load_stage_timeouts() -> dict:
         "stage_timeout_featured_image": "source_featured_image",
         "stage_timeout_cross_model_qa": "cross_model_qa",
         "stage_timeout_seo": "generate_seo_metadata",
+        "stage_timeout_media_scripts": "generate_media_scripts",
         "stage_timeout_training_data": "capture_training_data",
         "stage_timeout_finalize": "finalize_task",
     }
@@ -137,6 +139,100 @@ def _normalize_text(text: str) -> str:
         .replace("\u00a0", " ")   # non-breaking space
         .replace("\u2011", "-")   # non-breaking hyphen
     )
+
+
+def _scrub_fabricated_links(content: str) -> str:
+    """Remove fabricated/hallucinated URLs from LLM-generated content.
+
+    Local LLMs hallucinate URLs that don't exist — linking to random domains
+    like dictionary.com, example.com, or made-up paths on real domains.
+    This scrubs markdown links whose domains aren't in the trusted allowlist,
+    keeping the link text but removing the bogus href.
+    """
+    import re
+
+    # Domains we trust (our own site + major reference sites)
+    trusted_domains = {
+        "github.com", "arxiv.org", "docs.python.org", "docs.rs",
+        "developer.mozilla.org", "stackoverflow.com", "wikipedia.org",
+        "en.wikipedia.org", "news.ycombinator.com", "dev.to",
+        "kubernetes.io", "docker.com", "docs.docker.com",
+        "vercel.com", "nextjs.org", "react.dev", "go.dev",
+        "pytorch.org", "huggingface.co", "openai.com",
+        "www.rust-lang.org", "blog.rust-lang.org", "crates.io",
+        "pypi.org", "npmjs.com", "www.npmjs.com",
+        "gladlabs.io", "www.gladlabs.io",
+        "youtube.com", "www.youtube.com",
+    }
+
+    # Cache of real internal post slugs (populated lazily)
+    _real_slugs: set = set()
+
+    def _is_trusted(url: str) -> bool:
+        try:
+            from urllib.parse import urlparse
+            host = urlparse(url).hostname or ""
+            return any(host == d or host.endswith("." + d) for d in trusted_domains)
+        except Exception:
+            return False
+
+    def _is_real_internal_link(url: str) -> bool:
+        """Check if a gladlabs.io link points to an actual published post."""
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        host = parsed.hostname or ""
+        if "gladlabs.io" not in host:
+            return True  # Not our link, don't check
+        path = parsed.path or ""
+        if not path.startswith("/posts/"):
+            return True  # Not a post link (could be /about, /archive, etc.)
+        slug = path.split("/posts/")[-1].strip("/")
+        if not slug:
+            return True
+        # Lazy-load real slugs from the internal links cache
+        if not _real_slugs:
+            try:
+                _cache = getattr(_scrub_fabricated_links, "_slug_cache", None)
+                if _cache:
+                    _real_slugs.update(_cache)
+            except Exception:
+                pass
+        if _real_slugs:
+            return slug in _real_slugs
+        # If no cache, accept it (will be caught at URL validation stage)
+        return True
+
+    scrubbed_count = 0
+
+    # Handle markdown links: [text](url)
+    def _replace_md_link(m):
+        nonlocal scrubbed_count
+        text, url = m.group(1), m.group(2)
+        if not _is_trusted(url):
+            scrubbed_count += 1
+            return text  # Keep text, drop fake link
+        if not _is_real_internal_link(url):
+            scrubbed_count += 1
+            return text  # Drop fabricated internal link, keep text
+        return m.group(0)  # Keep valid link
+
+    content = re.sub(r"\[([^\]]+)\]\((https?://[^\)]+)\)", _replace_md_link, content)
+
+    # Handle bare URLs that aren't in markdown links
+    def _replace_bare_url(m):
+        nonlocal scrubbed_count
+        url = m.group(0)
+        if _is_trusted(url):
+            return url
+        scrubbed_count += 1
+        return ""  # Remove bare fabricated URLs entirely
+
+    content = re.sub(r"(?<!\()https?://[^\s\)\]\"'>,]+", _replace_bare_url, content)
+
+    if scrubbed_count > 0:
+        logger.info(f"[LINK_SCRUB] Removed {scrubbed_count} fabricated link(s) from generated content")
+
+    return content
 
 
 # ============================================================================
@@ -704,12 +800,43 @@ async def _stage_generate_content(
     writing_style_context = await _build_writing_style_context(database_service)
 
     # Build research context — real links, internal posts, web sources
+    # First check if the task already has research_context from the API caller
     research_context = ""
+    try:
+        _task_row = await database_service.get_task(task_id) if database_service else None
+        if _task_row:
+            import json as _json
+            _task_meta = _task_row.get("task_metadata") or "{}"
+            if isinstance(_task_meta, str):
+                try:
+                    _task_meta = _json.loads(_task_meta)
+                except Exception:
+                    _task_meta = {}
+            # Check task_metadata, then metadata JSONB, then top-level field
+            _metadata_jsonb = _task_row.get("metadata") or {}
+            if isinstance(_metadata_jsonb, str):
+                try:
+                    _metadata_jsonb = _json.loads(_metadata_jsonb)
+                except Exception:
+                    _metadata_jsonb = {}
+            _caller_context = (
+                _task_meta.get("research_context")
+                or _metadata_jsonb.get("research_context")
+                or _task_row.get("research_context")
+                or ""
+            )
+            if _caller_context:
+                research_context = _caller_context
+                logger.info("📚 Research context from task: %d chars", len(research_context))
+    except Exception as e:
+        logger.debug("Failed to load task research_context: %s", e)
+
     try:
         from services.research_service import ResearchService
         research_svc = ResearchService(pool=database_service.pool if database_service else None)
-        research_context = await research_svc.build_context(topic)
-        if research_context:
+        auto_context = await research_svc.build_context(topic)
+        if auto_context:
+            research_context = f"{research_context}\n\n{auto_context}" if research_context else auto_context
             logger.info("📚 Research context built: %d chars", len(research_context))
     except Exception as e:
         logger.warning("Research context skipped: %s", e)
@@ -765,6 +892,21 @@ async def _stage_generate_content(
     # Normalize smart quotes / special chars before persisting
     content_text = _normalize_text(content_text)
     title = _normalize_text(title)
+
+    # Populate real slug cache for link validation, then scrub fabricated links
+    try:
+        _links_cache = getattr(content_generator, "_internal_links_cache", [])
+        _real_slug_set = set()
+        for _link_line in _links_cache:
+            # Format: '- "Title" -> https://www.gladlabs.io/posts/slug-here'
+            if "/posts/" in _link_line:
+                _slug = _link_line.split("/posts/")[-1].strip().strip('"')
+                if _slug:
+                    _real_slug_set.add(_slug)
+        _scrub_fabricated_links._slug_cache = _real_slug_set
+    except Exception:
+        pass
+    content_text = _scrub_fabricated_links(content_text)
 
     # Update content_task with generated content, title, and model tracking
     await database_service.update_task(
@@ -860,8 +1002,8 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
     # dynamically based on word count: 1 image per ~500 words, evenly distributed
     if not image_placeholders:
         word_count = len(content_text.split())
-        target_images = max(1, word_count // 500)
-        headings = list(_re.finditer(r"^## .+$", content_text, _re.MULTILINE))
+        target_images = max(2, word_count // 300)  # ~5 images per 1500-word post
+        headings = list(_re.finditer(r"^#{2,4} .+$", content_text, _re.MULTILINE))
 
         if headings:
             # Distribute images evenly across available headings
@@ -876,7 +1018,7 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
                 para_end = content_text.find("\n\n", h.end())
                 if para_end > 0:
                     # Use heading text as context for image generation
-                    heading_text = h.group().lstrip("# ").strip()
+                    heading_text = _re.sub(r'^#+\s*', '', h.group()).strip()
                     insert_positions.append((para_end, i + 1, heading_text))
 
             # Insert in reverse order to preserve positions
@@ -913,14 +1055,13 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
             import os as _os
             import tempfile as _tf
             import httpx as _hx2
+            from services.gpu_scheduler import gpu as _gpu
 
             sdxl_url = _os.environ.get("SDXL_SERVER_URL", "http://host.docker.internal:9836")
             ollama_url = _os.environ.get("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
-            _model = _os.environ.get("DEFAULT_OLLAMA_MODEL", "llama3:latest")
-            if _model == "auto":
-                _model = "llama3:latest"
+            _model = "llama3:latest"  # Fast model for prompt generation
 
-            # Generate SDXL prompt via Ollama — inline images use all styles including flat/isometric
+            # Generate SDXL prompt via Ollama with GPU lock
             import random as _inline_rnd
             _INLINE_STYLES = [
                 "photorealistic scene, cinematic lighting",
@@ -936,53 +1077,61 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
                 f"Requirements: {_inline_style}, no people, no text, no faces. "
                 "Describe a specific scene. 1 sentence only. Output ONLY the prompt."
             )
-            async with _hx2.AsyncClient(timeout=30) as _c2:
-                _pr = await _c2.post(f"{ollama_url}/api/generate", json={
-                    "model": _model, "prompt": _img_prompt_req, "stream": False,
-                    "options": {"num_predict": 100, "temperature": 0.8, "num_ctx": 4096},
-                })
-                _pr.raise_for_status()
-                sdxl_inline_prompt = _pr.json().get("response", "").strip().strip('"')
+            async with _gpu.lock("ollama", model=_model):
+                async with _hx2.AsyncClient(timeout=90) as _c2:
+                    _pr = await _c2.post(f"{ollama_url}/api/generate", json={
+                        "model": _model, "prompt": _img_prompt_req, "stream": False,
+                        "options": {"num_predict": 100, "temperature": 0.8, "num_ctx": 4096},
+                    })
+                    _pr.raise_for_status()
+                    sdxl_inline_prompt = _pr.json().get("response", "").strip().strip('"')
 
             if sdxl_inline_prompt and len(sdxl_inline_prompt) > 20:
-                # Generate the image
+                logger.info(f"  [IMAGE-{num}] SDXL prompt: {sdxl_inline_prompt[:60]}...")
+                # Generate the image with GPU lock
                 neg = "text, words, letters, watermark, face, person, hands, blurry, low quality, distorted, ugly, deformed"
-                async with _hx2.AsyncClient(timeout=120) as _c3:
-                    _ir = await _c3.post(f"{sdxl_url}/generate", json={
-                        "prompt": sdxl_inline_prompt, "negative_prompt": neg,
-                        "steps": 4, "guidance_scale": 1.0,
-                    })
-                    if _ir.status_code == 200 and _ir.headers.get("content-type", "").startswith("image/"):
-                        # Save and upload to Cloudinary
-                        output_dir = _os.path.join(_os.path.expanduser("~"), "Downloads", "glad-labs-generated-images")
-                        _os.makedirs(output_dir, exist_ok=True)
-                        with _tf.NamedTemporaryFile(suffix=".png", delete=False, dir=output_dir) as _tmp:
-                            _tmp.write(_ir.content)
-                            tmp_path = _tmp.name
+                async with _gpu.lock("sdxl", model="sdxl_lightning"):
+                    async with _hx2.AsyncClient(timeout=120) as _c3:
+                        _ir = await _c3.post(f"{sdxl_url}/generate", json={
+                            "prompt": sdxl_inline_prompt, "negative_prompt": neg,
+                            "steps": 4, "guidance_scale": 1.0,
+                        })
+                if _ir.status_code == 200 and _ir.headers.get("content-type", "").startswith("image/"):
+                    output_dir = _os.path.join(_os.path.expanduser("~"), "Downloads", "glad-labs-generated-images")
+                    _os.makedirs(output_dir, exist_ok=True)
+                    with _tf.NamedTemporaryFile(suffix=".png", delete=False, dir=output_dir) as _tmp:
+                        _tmp.write(_ir.content)
+                        tmp_path = _tmp.name
 
-                        # Upload to R2 CDN
-                        img_url = tmp_path
-                        try:
-                            from services.r2_upload_service import upload_to_r2
-                            import uuid as _uuid
-                            r2_key = f"images/inline/{_uuid.uuid4().hex[:12]}.png"
-                            r2_url = await upload_to_r2(tmp_path, r2_key, content_type="image/png")
-                            if r2_url:
-                                img_url = r2_url
-                                _os.remove(tmp_path)
-                        except Exception:
-                            logger.debug("[IMAGE] R2 upload failed for inline, using local path")
+                    # Upload to R2 CDN
+                    img_url = tmp_path
+                    try:
+                        from services.r2_upload_service import upload_to_r2
+                        import uuid as _uuid
+                        r2_key = f"images/inline/{_uuid.uuid4().hex[:12]}.png"
+                        r2_url = await upload_to_r2(tmp_path, r2_key, content_type="image/png")
+                        if r2_url:
+                            img_url = r2_url
+                            _os.remove(tmp_path)
+                    except Exception:
+                        logger.debug("[IMAGE] R2 upload failed for inline, using local path")
 
-                        if img_url not in used_image_ids:
-                            used_image_ids.add(img_url)
-                            markdown_img = f"\n\n![{alt_text}]({img_url})\n\n"
-                            content_text = _re.sub(
-                                rf"\[IMAGE-{num}[^\]]*\]", markdown_img, content_text, count=1
-                            )
-                            logger.info(f"  ✅ [IMAGE-{num}] → SDXL generated")
-                            image_replaced = True
+                    # Rewrite local paths to serveable URLs
+                    if img_url.startswith("/") and "/glad-labs-generated-images/" in img_url:
+                        img_url = f"/images/generated/{_os.path.basename(img_url)}"
+
+                    if img_url not in used_image_ids:
+                        used_image_ids.add(img_url)
+                        markdown_img = f"\n\n![{alt_text}]({img_url})\n\n"
+                        content_text = _re.sub(
+                            rf"\[IMAGE-{num}[^\]]*\]", markdown_img, content_text, count=1
+                        )
+                        logger.info(f"  ✅ [IMAGE-{num}] → SDXL generated + R2 uploaded")
+                        image_replaced = True
+                else:
+                    logger.warning(f"  [IMAGE-{num}] SDXL returned {_ir.status_code}")
         except Exception as sdxl_err:
-            logger.debug(f"  [IMAGE-{num}] SDXL inline failed: {sdxl_err}")
+            logger.warning(f"  [IMAGE-{num}] SDXL inline failed: {sdxl_err}")
 
         # Strategy 2: Pexels fallback
         if not image_replaced:
@@ -1011,6 +1160,10 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
             content_text = _re.sub(rf"\[IMAGE-{num}[^\]]*\]", "", content_text, count=1)
             logger.warning(f"  ⚠️ [IMAGE-{num}] — no image source available, removed placeholder")
 
+    # Clean up leaked SDXL prompts — lines starting with ': ' right after image tags
+    content_text = _re.sub(r'(!\[[^\]]*\]\([^\)]+\))\s*\n\s*:\s+[^\n]+', r'\1', content_text)
+    # Strip photo attribution lines — "*Photo by X on Pexels*" etc.
+    content_text = _re.sub(r'\n\s*\*?Photo by [^\n]+(?:Pexels|Unsplash|Pixabay)\*?\s*\n', '\n', content_text, flags=_re.IGNORECASE)
     # Normalize again after image placeholder substitution
     content_text = _normalize_text(content_text)
     # Update DB with image-populated content
@@ -1023,7 +1176,7 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
     return content_text
 
 
-async def _stage_source_featured_image(topic, tags, generate_featured_image, image_service, result):
+async def _stage_source_featured_image(topic, tags, generate_featured_image, image_service, result, task_id=None):
     """Stage 3: Source a featured image — try SDXL generation first, fall back to Pexels.
 
     Returns the featured_image object (or None).
@@ -1133,7 +1286,9 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
                 image_url = output_path  # Fallback to local path
                 try:
                     from services.r2_upload_service import upload_to_r2
-                    r2_key = f"images/featured/{task_id}.jpg"
+                    import uuid as _r2_uuid
+                    _r2_id = task_id or _r2_uuid.uuid4().hex[:12]
+                    r2_key = f"images/featured/{_r2_id}.jpg"
                     r2_url = await upload_to_r2(output_path, r2_key, content_type="image/jpeg")
                     if r2_url:
                         image_url = r2_url
@@ -1151,6 +1306,11 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
                     url: str
                     photographer: str
                     source: str
+
+                # Rewrite local paths to serveable URLs
+                if "/glad-labs-generated-images/" in image_url and not image_url.startswith("http"):
+                    import os as _img_os
+                    image_url = f"/images/generated/{_img_os.path.basename(image_url)}"
 
                 featured_image = GeneratedImage(
                     url=image_url,
@@ -1243,6 +1403,114 @@ async def _stage_generate_seo_metadata(topic, tags, content_text, content_genera
     logger.info(f"   Keywords: {', '.join(seo_keywords[:5])}...\n")
 
     return seo_title, seo_description, seo_keywords
+
+
+async def _stage_generate_media_scripts(
+    database_service, task_id, title, content_text, result
+):
+    """Stage 4B: Generate podcast script, video scenes, and short summary.
+
+    Uses two separate LLM calls for reliability:
+    1. Podcast script (reuses proven podcast_service logic)
+    2. Video scenes + short summary (single call, simpler parsing)
+
+    Non-critical — pipeline continues on failure.
+    """
+    logger.info("🎙️  STAGE 4B: Generating media scripts (podcast + video scenes)...")
+
+    import httpx
+    import os
+    import re
+
+    ollama_url = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+    model = os.getenv("DEFAULT_OLLAMA_MODEL", "llama3:latest")
+    if model == "auto":
+        model = "llama3:latest"
+
+    from services.podcast_service import _strip_markdown, _normalize_for_speech
+    clean_content = _strip_markdown(content_text)
+
+    podcast_script = ""
+    video_scenes = []
+    short_summary = ""
+
+    try:
+        from services.gpu_scheduler import gpu
+
+        # --- Call 1: Podcast script (use proven podcast_service approach) ---
+        from services.podcast_service import _build_script_with_llm
+        async with gpu.lock("ollama", model=model):
+            podcast_script = await _build_script_with_llm(title, content_text)
+
+        if podcast_script and len(podcast_script) > 200:
+            logger.info("[MEDIA] Podcast script: %d chars", len(podcast_script))
+        else:
+            logger.warning("[MEDIA] Podcast script too short (%d chars)", len(podcast_script or ""))
+            podcast_script = ""
+
+        # --- Call 2: Video scenes + short summary ---
+        scene_prompt = f"""Generate TWO things for a blog post video:
+
+PART 1 — Write 6-8 numbered lines, each describing a photorealistic image for a video slideshow about this article. Each line is a Stable Diffusion XL prompt. Requirements: cinematic lighting, no people, no text, no faces, no hands, 4K quality. One scene per line.
+
+PART 2 — After a blank line, write "SHORT:" on its own line, then write a 60-second narration (about 150 words) summarizing the article for TikTok/YouTube Shorts. Start with a hook, cover 2-3 key takeaways, end with "Full article at glad labs dot io."
+
+ARTICLE: {title}
+
+{clean_content[:3000]}
+
+SCENES:"""
+
+        async with gpu.lock("ollama", model=model):
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                resp = await client.post(
+                    f"{ollama_url}/api/generate",
+                    json={
+                        "model": model,
+                        "prompt": scene_prompt,
+                        "stream": False,
+                        "options": {"num_predict": 2048, "temperature": 0.7},
+                    },
+                )
+                resp.raise_for_status()
+                scene_output = resp.json().get("response", "").strip()
+
+        if scene_output:
+            # Split on "SHORT:" line
+            short_split = re.split(r'(?:^|\n)\s*SHORT:\s*\n', scene_output, maxsplit=1, flags=re.IGNORECASE)
+            scenes_raw = short_split[0].strip()
+            if len(short_split) >= 2:
+                short_summary = _normalize_for_speech(short_split[1].strip())
+
+            # Parse numbered scene lines
+            for line in scenes_raw.split("\n"):
+                line = line.strip()
+                if not line:
+                    continue
+                cleaned = re.sub(r"^\d+[.):\-]\s*", "", line).strip().strip('"')
+                if len(cleaned) > 20:
+                    video_scenes.append(cleaned)
+
+            logger.info("[MEDIA] Video scenes: %d, Short summary: %d chars",
+                        len(video_scenes), len(short_summary))
+
+        # Store in result dict so finalize stage includes them in task_metadata
+        result["podcast_script"] = podcast_script
+        result["video_scenes"] = video_scenes
+        result["short_summary_script"] = short_summary
+        result["podcast_script_length"] = len(podcast_script)
+        result["video_scenes_count"] = len(video_scenes)
+        result["short_summary_length"] = len(short_summary)
+        result["stages"]["4b_media_scripts"] = True
+
+        logger.info(
+            "[MEDIA] Generated podcast script (%d chars) + %d video scenes for '%s'",
+            len(podcast_script), len(video_scenes), title[:50],
+        )
+
+    except Exception as e:
+        logger.warning("[MEDIA] Script generation failed (non-fatal): %s", e)
+        result["stages"]["4b_media_scripts"] = False
 
 
 async def _stage_capture_training_data(
@@ -1384,6 +1652,10 @@ async def _stage_finalize_task(
                 "quality_score": quality_result.overall_score,
                 "content_length": len(content_text),
                 "word_count": len(content_text.split()),
+                # Media scripts from Stage 4B
+                "podcast_script": result.get("podcast_script", ""),
+                "video_scenes": result.get("video_scenes", []),
+                "short_summary_script": result.get("short_summary_script", ""),
             },
         },
     )
@@ -1554,7 +1826,7 @@ async def process_content_generation_task(
         if await _is_stage_enabled(_pool, "featured_image"):
             featured_image = await _run_stage_with_timeout(
                 _stage_source_featured_image(
-                    topic, tags, generate_featured_image, image_service, result
+                    topic, tags, generate_featured_image, image_service, result, task_id=task_id
                 ),
                 "source_featured_image", task_id,
             )
@@ -1639,6 +1911,14 @@ async def process_content_generation_task(
         else:
             logger.warning("SEO metadata timed out for task %s — using topic as fallback", task_id[:8])
             seo_title, seo_description, seo_keywords = topic[:60], topic[:160], tags or []
+
+        # Stage 4B: Generate media scripts (podcast + video scenes)
+        await _run_stage_with_timeout(
+            _stage_generate_media_scripts(
+                database_service, task_id, title, content_text, result
+            ),
+            "generate_media_scripts", task_id,
+        )
 
         # Stage 5/6: Capture training data (non-critical — skip on timeout)
         await _run_stage_with_timeout(

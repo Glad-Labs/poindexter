@@ -205,6 +205,7 @@ services:
       DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-gladlabs}:${LOCAL_POSTGRES_PASSWORD:-gladlabs-brain-local}@postgres-local:5432/${LOCAL_POSTGRES_DB:-gladlabs_brain}"
       CLOUD_DATABASE_URL: ${CLOUD_DATABASE_URL:-}
       OLLAMA_BASE_URL: "http://host.docker.internal:11434"
+      PEXELS_API_KEY: ${PEXELS_API_KEY:-}
       DEFAULT_OLLAMA_MODEL: ${DEFAULT_OLLAMA_MODEL:-auto}
       # No Telegram tokens — OpenClaw owns Telegram/Discord connections
       SITE_NAME: "Glad Labs"
@@ -213,8 +214,10 @@ services:
       API_BASE_URL: "http://localhost:8002"
       COMPANY_NAME: "Glad Labs"
       HOST_HOME: "C:/Users/mattm"
+      API_TOKEN: "gladlabs-api-2026"
     volumes:
       - ${USERPROFILE:-.}/.gladlabs:/root/.gladlabs
+      - ${USERPROFILE:-.}/Downloads/glad-labs-generated-images:/root/Downloads/glad-labs-generated-images
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

@@ -515,24 +515,10 @@ class TaskExecutor:
                     logger.warning("[WEBHOOK] Failed to emit completion event", exc_info=True)
 
                 # Notify via direct Discord webhook + Telegram bot API
+                # NOTE: publish_post_from_task already sends its own notification,
+                # so we only notify here for the non-published (awaiting_approval) path.
                 if auto_published:
-                    # Get the slug from the posts table for the direct link
-                    slug = ""
-                    try:
-                        slug_row = await self.database_service.pool.fetchrow(
-                            "SELECT slug FROM posts WHERE task_id = $1", task_id
-                        )
-                        if slug_row:
-                            slug = slug_row["slug"]
-                    except Exception as e:
-                        logger.warning("[TASK_SINGLE] Failed to fetch slug for task %s: %s", task_id, e)
-                    from services.site_config import site_config as _sc
-                    _site_url = _sc.get("site_url", "https://localhost:3000")
-                    link = f"{_site_url}/posts/{slug}" if slug else _site_url
-                    await _notify_openclaw(
-                        f"Published: \"{topic}\" (score: {quality_score:.0f})\n{link}",
-                        critical=True,
-                    )
+                    pass  # publish_service.py handles the notification
                 else:
                     # Generate preview token so Matt can see the post before approving
                     # NOTE: At this point, no post row exists yet (post is created on approval).

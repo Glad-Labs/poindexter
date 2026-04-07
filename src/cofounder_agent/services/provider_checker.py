@@ -60,27 +60,13 @@ class ProviderChecker:
 
     @classmethod
     def is_openai_available(cls) -> bool:
-        """Check if OpenAI API is available and configured."""
-        if "openai" not in cls._cache:
-            key = cls._get_env("OPENAI_API_KEY")
-            cls._cache["openai"] = bool(key)
-            if cls._cache["openai"]:
-                logger.debug("✅ OpenAI provider available")
-            else:
-                logger.debug("❌ OpenAI provider not configured")
-        return cls._cache["openai"]
+        """OpenAI API disabled — using local Ollama only to avoid API costs."""
+        return False
 
     @classmethod
     def is_anthropic_available(cls) -> bool:
-        """Check if Anthropic Claude API is available and configured."""
-        if "anthropic" not in cls._cache:
-            key = cls._get_env("ANTHROPIC_API_KEY")
-            cls._cache["anthropic"] = bool(key)
-            if cls._cache["anthropic"]:
-                logger.debug("✅ Anthropic provider available")
-            else:
-                logger.debug("❌ Anthropic provider not configured")
-        return cls._cache["anthropic"]
+        """Anthropic Claude API disabled — using local Ollama only to avoid API costs."""
+        return False
 
     @classmethod
     def is_huggingface_available(cls) -> bool:
@@ -107,12 +93,9 @@ class ProviderChecker:
 
         if cls.is_gemini_available():
             providers.add("gemini")
-        if cls.is_openai_available():
-            providers.add("openai")
-        if cls.is_anthropic_available():
-            providers.add("anthropic")
         if cls.is_huggingface_available():
             providers.add("huggingface")
+        # Anthropic and OpenAI removed — local Ollama only
 
         return providers
 
@@ -123,16 +106,11 @@ class ProviderChecker:
 
         Priority:
         1. Ollama (free, local, preferred)
-        2. Anthropic (quality fallback)
-        3. OpenAI
-        4. HuggingFace (rate limited)
+        2. HuggingFace (free tier, rate limited)
+        Paid APIs (Anthropic, OpenAI) removed to avoid costs.
         """
         if cls.is_ollama_available():
             return "ollama"
-        if cls.is_openai_available():
-            return "openai"
-        if cls.is_anthropic_available():
-            return "anthropic"
         if cls.is_huggingface_available():
             return "huggingface"
 

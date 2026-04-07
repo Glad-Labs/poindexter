@@ -102,7 +102,7 @@ class OllamaClient:
     Model profiles are discovered dynamically from the Ollama server.
     """
 
-    def __init__(self, base_url: str | None = None, model: str | None = None, timeout: int = 120):
+    def __init__(self, base_url: str | None = None, model: str | None = None, timeout: int = 300):
         self.base_url = (base_url or DEFAULT_BASE_URL).rstrip("/")
         self.model = model or DEFAULT_MODEL
         self.timeout = timeout

@@ -316,6 +316,28 @@ async def publish_post_from_task(
         return PublishResult(success=False, error=msg)
 
     # ---------------------------------------------------------------
+    # 1b. Idempotency guard — prevent duplicate posts for the same task
+    #     Slugs contain task_id[:8] suffix, so we can match on that.
+    # ---------------------------------------------------------------
+    _task_suffix = task_id[:8]
+    pool = getattr(db_service, "cloud_pool", None) or db_service.pool
+    existing = await pool.fetchrow(
+        "SELECT id, slug, title FROM posts WHERE slug LIKE '%' || $1", _task_suffix
+    )
+    if existing:
+        logger.warning(
+            "[publish_service] Post already exists for task %s (post_id=%s, slug=%s) — skipping duplicate",
+            task_id, existing["id"], existing["slug"],
+        )
+        return PublishResult(
+            success=True,
+            post_id=str(existing["id"]),
+            post_slug=existing["slug"],
+            published_url=f"/posts/{existing['slug']}",
+            post_title=existing.get("title", topic),
+        )
+
+    # ---------------------------------------------------------------
     # 2. Extract title from content (LLM often puts # Title at top)
     # ---------------------------------------------------------------
     extracted_title, cleaned_content = extract_title_from_content(draft_content)
@@ -368,7 +390,7 @@ async def publish_post_from_task(
         "status": "draft" if draft_mode else "published",
         "seo_title": post_title,
         "seo_description": seo_description,
-        "seo_keywords": ",".join(seo_keywords) if seo_keywords else "",
+        "seo_keywords": ", ".join(seo_keywords) if isinstance(seo_keywords, list) else (seo_keywords or ""),
         "metadata": metadata,
     }
     if scheduled_at:
@@ -511,17 +533,22 @@ async def publish_post_from_task(
     # ---------------------------------------------------------------
     # 11b. Generate podcast episode (fire-and-forget, local worker only)
     # ---------------------------------------------------------------
+    _pre_script = merged.get("podcast_script") or ""
+    _video_scenes = merged.get("video_scenes") or []
+    _short_summary = merged.get("short_summary_script") or ""
     if _should_run_post_publish_hooks():
         try:
             from services.podcast_service import generate_podcast_episode
 
             if background_tasks:
                 background_tasks.add_task(
-                    generate_podcast_episode, post_id, post_title, post_content
+                    generate_podcast_episode, post_id, post_title, post_content,
+                    pre_generated_script=_pre_script,
                 )
             else:
                 asyncio.ensure_future(
-                    generate_podcast_episode(post_id, post_title, post_content)
+                    generate_podcast_episode(post_id, post_title, post_content,
+                                            pre_generated_script=_pre_script)
                 )
             logger.info("[PODCAST] Queued episode generation for post %s", post_id)
         except Exception as e:
@@ -536,28 +563,63 @@ async def publish_post_from_task(
 
             if background_tasks:
                 background_tasks.add_task(
-                    generate_video_episode, post_id, post_title, post_content
+                    generate_video_episode, post_id, post_title, post_content,
+                    pre_generated_scenes=_video_scenes,
                 )
             else:
                 asyncio.ensure_future(
-                    generate_video_episode(post_id, post_title, post_content)
+                    generate_video_episode(post_id, post_title, post_content,
+                                          pre_generated_scenes=_video_scenes)
                 )
             logger.info("[VIDEO] Queued video generation for post %s", post_id)
         except Exception as e:
             logger.debug("[VIDEO] Failed to queue video (non-fatal): %s", e)
 
     # ---------------------------------------------------------------
-    # 11d. Upload media to R2 CDN (fire-and-forget, after generation)
+    # 11d. Generate short-form video (fire-and-forget, local worker only)
+    # ---------------------------------------------------------------
+    if _should_run_post_publish_hooks():
+        try:
+            from services.video_service import generate_short_video_for_post
+
+            async def _gen_short(pid, ptitle, pcontent, scenes, short_script):
+                """Wait for podcast, then generate short video."""
+                import asyncio as _aio
+                await _aio.sleep(180)  # Wait for podcast to finish first
+                try:
+                    result = await generate_short_video_for_post(
+                        pid, ptitle, pcontent,
+                        pre_generated_scenes=scenes,
+                        pre_generated_summary=short_script,
+                    )
+                    if not result.success:
+                        logger.warning("[SHORT] Failed for post %s: %s", pid, result.error)
+                except Exception as e:
+                    logger.warning("[SHORT] Unexpected error for post %s: %s", pid, e)
+
+            asyncio.ensure_future(_gen_short(post_id, post_title, post_content, _video_scenes, _short_summary))
+            logger.info("[SHORT] Queued short video generation for post %s", post_id)
+        except Exception as e:
+            logger.debug("[SHORT] Failed to queue short video (non-fatal): %s", e)
+
+    # ---------------------------------------------------------------
+    # 11e. Upload media to R2 CDN (fire-and-forget, after generation)
     # ---------------------------------------------------------------
     if _should_run_post_publish_hooks():
         async def _upload_media_to_r2(pid: str) -> None:
             """Wait for media files to appear, then upload to R2."""
             import asyncio as _aio
             from services.r2_upload_service import upload_podcast_episode, upload_video_episode
-            # Give podcast/video generation time to complete
-            await _aio.sleep(120)
+            from services.r2_upload_service import upload_to_r2
+            from pathlib import Path
+            # Give podcast/video/short generation time to complete
+            await _aio.sleep(240)
             await upload_podcast_episode(pid)
             await upload_video_episode(pid)
+            # Upload short video if it exists
+            short_path = Path(os.path.expanduser("~")) / ".gladlabs" / "video" / f"{pid}-short.mp4"
+            if short_path.exists():
+                await upload_to_r2(str(short_path), f"video/{pid}-short.mp4", "video/mp4")
 
         asyncio.ensure_future(_upload_media_to_r2(post_id))
 
@@ -567,8 +629,9 @@ async def publish_post_from_task(
     try:
         from services.task_executor import _notify_openclaw
 
+        _q_score = task.get("quality_score") or merged.get("quality_score") or "N/A"
         await _notify_openclaw(
-            f"Published: {post_title}\n/posts/{slug}\nScore: {merged.get('quality_score', 'N/A')}",
+            f"Published: {post_title}\n/posts/{slug}\nScore: {_q_score}",
             critical=True,
         )
     except Exception:

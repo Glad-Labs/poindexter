@@ -487,6 +487,15 @@ class ImageService:
         Falls back to PEXELS_API_KEY env var (already checked in __init__).
         Only queries the DB once per service lifetime to avoid repeated lookups.
         """
+        # Refresh from site_config in case it loaded after __init__
+        if not self.pexels_api_key:
+            from services.site_config import site_config
+            self.pexels_api_key = site_config.get("pexels_api_key") or os.getenv("PEXELS_API_KEY", "")
+            if self.pexels_api_key:
+                self.pexels_available = True
+                self.pexels_headers = {"Authorization": self.pexels_api_key}
+                return
+
         if self.pexels_api_key or self._pexels_key_checked_db:
             return
 

@@ -118,8 +118,7 @@ class TestFallbackChain:
         service.adapters[ProviderType.OLLAMA] = _unavailable_adapter()
         service.adapters[ProviderType.HUGGINGFACE] = _available_adapter(hf_response)
 
-        for p in [ProviderType.GOOGLE, ProviderType.ANTHROPIC, ProviderType.OPENAI]:
-            service.adapters[p] = _unavailable_adapter()
+        # Other paid providers removed from fallback chain
 
         result = await service.generate("test prompt")
 
@@ -128,23 +127,16 @@ class TestFallbackChain:
 
     async def test_generate_raises_walks_chain(self, service):
         """When first available adapter raises, the next provider is tried."""
-        anthropic_response = _make_response(ProviderType.ANTHROPIC, "hello from anthropic")
+        hf_response = _make_response(ProviderType.HUGGINGFACE, "hello from hf")
 
         service.adapters[ProviderType.OLLAMA] = _failing_adapter(
             ConnectionError("Ollama not running")
         )
-        service.adapters[ProviderType.HUGGINGFACE] = _failing_adapter(
-            RuntimeError("HF quota exceeded")
-        )
-        service.adapters[ProviderType.ANTHROPIC] = _available_adapter(anthropic_response)
-
-        # Google removed from fallback chain; only OpenAI remains after Anthropic
-        for p in [ProviderType.OPENAI]:
-            service.adapters[p] = _unavailable_adapter()
+        service.adapters[ProviderType.HUGGINGFACE] = _available_adapter(hf_response)
 
         result = await service.generate("test prompt")
 
-        assert result.text == "hello from anthropic"
+        assert result.text == "hello from hf"
 
     async def test_all_providers_fail_raises_service_error(self, service):
         """When every provider either fails or is unavailable, ServiceError is raised."""
@@ -164,17 +156,14 @@ class TestFallbackChain:
 
     async def test_preferred_provider_goes_first(self, service):
         """preferred_provider is tried before Ollama in the chain."""
-        anthropic_response = _make_response(ProviderType.ANTHROPIC, "hello from anthropic")
+        hf_response = _make_response(ProviderType.HUGGINGFACE, "hello from hf preferred")
 
         service.adapters[ProviderType.OLLAMA] = _unavailable_adapter()
-        service.adapters[ProviderType.ANTHROPIC] = _available_adapter(anthropic_response)
+        service.adapters[ProviderType.HUGGINGFACE] = _available_adapter(hf_response)
 
-        for p in [ProviderType.HUGGINGFACE, ProviderType.GOOGLE, ProviderType.OPENAI]:
-            service.adapters[p] = _unavailable_adapter()
+        result = await service.generate("test prompt", preferred_provider=ProviderType.HUGGINGFACE)
 
-        result = await service.generate("test prompt", preferred_provider=ProviderType.ANTHROPIC)
-
-        assert result.provider == ProviderType.ANTHROPIC
+        assert result.provider == ProviderType.HUGGINGFACE
 
     async def test_metrics_updated_on_success(self, service):
         """Successful generation increments successful_requests and per-provider count."""

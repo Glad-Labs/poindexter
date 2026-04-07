@@ -75,6 +75,8 @@ def _make_db(
     ctx.__aexit__ = AsyncMock(return_value=False)
     pool.acquire = MagicMock(return_value=ctx)
 
+    # Idempotency guard in publish_service calls pool.fetchrow directly
+    pool.fetchrow = AsyncMock(return_value=None)
     db.pool = pool
     db.cloud_pool = None  # Ensure cloud_pool fallback uses db.pool
 
@@ -287,7 +289,26 @@ class TestPublishHappyPath:
         assert post_data["category_id"] == "cat-1"
         assert post_data["status"] == "published"
         assert post_data["seo_description"] == "A great post"
-        assert post_data["seo_keywords"] == "ai,ml"
+        assert post_data["seo_keywords"] == "ai, ml"
+
+    @pytest.mark.asyncio
+    async def test_idempotency_guard_skips_duplicate(self):
+        """If a post already exists for this task, return success without creating another."""
+        db = _make_db()
+        # Simulate existing post matching the task_id suffix in slug
+        task_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        existing_row = {"id": "existing-post-id", "slug": f"great-title-{task_id[:8]}", "title": "Great Title"}
+        db.pool.fetchrow = AsyncMock(return_value=existing_row)
+        task = _make_task()
+
+        result = await publish_post_from_task(
+            db_service=db, task=task, task_id=task_id, queue_social=False,
+        )
+
+        assert result.success is True
+        assert result.post_id == "existing-post-id"
+        assert result.post_slug == f"great-title-{task_id[:8]}"
+        db.create_post.assert_not_awaited()  # No new post created
 
     @pytest.mark.asyncio
     @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)

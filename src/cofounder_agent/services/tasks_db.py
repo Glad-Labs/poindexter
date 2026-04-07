@@ -212,6 +212,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 "message": metadata.get("message"),
                 "tags": json.dumps(task_data.get("tags", [])),
                 "task_metadata": json.dumps(metadata or {}),
+                "metadata": json.dumps(task_data.get("metadata") or {}),
                 "model_used": task_data.get("model_used"),
                 "models_used_by_phase": json.dumps(task_data.get("models_used_by_phase", {})),
                 "model_selection_log": json.dumps(task_data.get("model_selection_log", {})),

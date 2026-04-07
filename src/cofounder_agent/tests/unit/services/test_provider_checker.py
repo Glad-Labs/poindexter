@@ -65,16 +65,9 @@ class TestIsGeminiAvailable:
 
 @pytest.mark.unit
 class TestIsOpenAIAvailable:
-    def test_returns_false_when_no_key(self, monkeypatch):
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        assert ProviderChecker.is_openai_available() is False
+    """OpenAI is permanently disabled to avoid API costs."""
 
-    def test_returns_true_when_key_set(self, monkeypatch):
-        monkeypatch.setenv("OPENAI_API_KEY", "sk-test-key")
-        assert ProviderChecker.is_openai_available() is True
-
-    def test_empty_string_treated_as_unavailable(self, monkeypatch):
-        monkeypatch.setenv("OPENAI_API_KEY", "")
+    def test_always_returns_false(self):
         assert ProviderChecker.is_openai_available() is False
 
 
@@ -85,13 +78,10 @@ class TestIsOpenAIAvailable:
 
 @pytest.mark.unit
 class TestIsAnthropicAvailable:
-    def test_returns_false_when_no_key(self, monkeypatch):
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        assert ProviderChecker.is_anthropic_available() is False
+    """Anthropic is permanently disabled to avoid API costs."""
 
-    def test_returns_true_when_key_set(self, monkeypatch):
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-test-key")
-        assert ProviderChecker.is_anthropic_available() is True
+    def test_always_returns_false(self):
+        assert ProviderChecker.is_anthropic_available() is False
 
 
 # ---------------------------------------------------------------------------
@@ -143,15 +133,15 @@ class TestGetAvailableProviders:
         providers = ProviderChecker.get_available_providers()
         assert "gemini" in providers
 
-    def test_openai_included_when_key_set(self, monkeypatch):
+    def test_openai_excluded_even_when_key_set(self, monkeypatch):
         monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
         providers = ProviderChecker.get_available_providers()
-        assert "openai" in providers
+        assert "openai" not in providers  # Paid APIs disabled
 
-    def test_anthropic_included_when_key_set(self, monkeypatch):
+    def test_anthropic_excluded_even_when_key_set(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "ant-test")
         providers = ProviderChecker.get_available_providers()
-        assert "anthropic" in providers
+        assert "anthropic" not in providers  # Paid APIs disabled
 
     def test_huggingface_included_when_token_set(self, monkeypatch):
         monkeypatch.setenv("HUGGINGFACE_API_TOKEN", "hf-test")

@@ -263,7 +263,7 @@ class SyncService:
             INSERT INTO posts (
                 id, title, slug, content, excerpt,
                 featured_image_url, cover_image_url,
-                author_id, category_id, tag_ids, status,
+                author_id, category_id, status,
                 seo_title, seo_description, seo_keywords,
                 created_by, updated_by,
                 created_at, updated_at, published_at
@@ -271,10 +271,10 @@ class SyncService:
             VALUES (
                 $1, $2, $3, $4, $5,
                 $6, $7,
-                $8, $9, $10, $11,
-                $12, $13, $14,
-                $15, $16,
-                $17, $18, $19
+                $8, $9, $10,
+                $11, $12, $13,
+                $14, $15,
+                $16, $17, $18
             )
             ON CONFLICT (id) DO UPDATE SET
                 title              = EXCLUDED.title,
@@ -285,7 +285,6 @@ class SyncService:
                 cover_image_url    = EXCLUDED.cover_image_url,
                 author_id          = EXCLUDED.author_id,
                 category_id        = EXCLUDED.category_id,
-                tag_ids            = EXCLUDED.tag_ids,
                 status             = EXCLUDED.status,
                 seo_title          = EXCLUDED.seo_title,
                 seo_description    = EXCLUDED.seo_description,
@@ -296,7 +295,7 @@ class SyncService:
             """,
             post["id"], post["title"], post["slug"], post["content"], post.get("excerpt"),
             post.get("featured_image_url"), post.get("cover_image_url"),
-            post.get("author_id"), post.get("category_id"), post.get("tag_ids", []),
+            post.get("author_id"), post.get("category_id"),
             post.get("status", "draft"),
             post.get("seo_title"), post.get("seo_description"), post.get("seo_keywords"),
             post.get("created_by"), post.get("updated_by"),

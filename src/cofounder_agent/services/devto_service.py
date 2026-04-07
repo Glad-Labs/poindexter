@@ -98,12 +98,28 @@ class DevToCrossPostService:
 
     @staticmethod
     def _normalize_tags(tags: List[str]) -> List[str]:
-        """Normalize tags for Dev.to: max 4, lowercase, no spaces, alphanumeric only."""
+        """Normalize tags for Dev.to: max 4, lowercase, no spaces, alphanumeric only.
+
+        Handles edge case where seo_keywords are stored as individual characters
+        (e.g., 'g,o,o,g,l,e' instead of 'google'). Detects and reconstructs words.
+        """
+        # Detect character-level split: if most tags are 1 char, reconstruct words
+        if len(tags) > 5 and sum(1 for t in tags if len(t.strip()) <= 1) > len(tags) * 0.5:
+            # Reconstruct: join all chars, split on double-space or triple-comma patterns
+            raw = "".join(t for t in tags)
+            # Try splitting on spaces that were preserved as empty entries
+            words = [w.strip() for w in raw.split("  ") if w.strip()]
+            if len(words) <= 2:
+                # Fallback: just use the raw joined string and split on common delimiters
+                words = [w.strip() for w in raw.replace("   ", ",").split(",") if len(w.strip()) > 2]
+            if words:
+                tags = words
+
         cleaned = []
         for tag in tags:
             # Lowercase, strip spaces, keep only alphanumeric
             normalized = re.sub(r'[^a-z0-9]', '', tag.lower().strip())
-            if normalized and normalized not in cleaned:
+            if len(normalized) >= 2 and normalized not in cleaned:  # Min 2 chars
                 cleaned.append(normalized)
             if len(cleaned) >= 4:
                 break
@@ -135,11 +151,22 @@ class DevToCrossPostService:
         cleaned_content = self._clean_markdown(content_markdown)
         normalized_tags = self._normalize_tags(tags or [])
 
+        # Auto-publish on Dev.to if configured (default: True — one approval is enough)
+        auto_publish = True
+        try:
+            row = await self.pool.fetchrow(
+                "SELECT value FROM app_settings WHERE key = 'devto_publish_immediately'"
+            )
+            if row and row["value"].lower() in ("false", "0", "no"):
+                auto_publish = False
+        except Exception:
+            pass
+
         payload = {
             "article": {
                 "title": title,
                 "body_markdown": cleaned_content,
-                "published": False,
+                "published": auto_publish,
                 "canonical_url": canonical_url,
                 "tags": normalized_tags,
             }

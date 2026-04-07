@@ -21,6 +21,22 @@ logger = get_logger(__name__)
 router = APIRouter(tags=["cms"])
 
 
+@router.get("/images/generated/{filename}")
+async def serve_generated_image(filename: str):
+    """Serve SDXL-generated images from the local output directory."""
+    import os
+    from fastapi.responses import FileResponse
+
+    # Sanitize filename to prevent directory traversal
+    safe_name = os.path.basename(filename)
+    image_dir = os.path.join(os.path.expanduser("~"), "Downloads", "glad-labs-generated-images")
+    path = os.path.join(image_dir, safe_name)
+
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="Image not found")
+    return FileResponse(path, media_type="image/png")
+
+
 def convert_markdown_to_html(markdown_content: str) -> str:
     """
     Convert markdown content to HTML for safe rendering (#956).
@@ -348,8 +364,31 @@ async def preview_post_html(preview_token: str):
         media_html += f'<div style="margin:16px 0;padding:12px;background:#1a2332;border:1px solid #3b82f644;border-radius:8px"><h3 style="color:#3b82f6;font-size:12px;text-transform:uppercase;margin:0 0 8px">Video</h3><video controls style="width:100%;border-radius:6px" preload="metadata" playsinline><source src="{video_url}" type="video/mp4"></video></div>'
 
     img_html = ""
-    if featured_img and featured_img.startswith("http"):
+    if featured_img:
         img_html = f'<img src="{featured_img}" style="width:100%;border-radius:12px;margin:16px 0" alt="{title}">'
+
+    # Clean up preview content — strip the same junk the publish pipeline removes
+    import re as _clean_re
+    # Remove "External Resources" / "Further Reading" sections with empty links
+    content = _clean_re.sub(
+        r'(?:^|\n)#{1,4}\s*(?:External\s+Resources|Further\s+Reading|References|Suggested\s+Resources)[^\n]*\n(?:\s*[-*]\s+[^\n]*\n)*',
+        '\n', content, flags=_clean_re.IGNORECASE,
+    )
+    # Remove bullet items that are just labels with colons but no URLs
+    content = _clean_re.sub(r'^\s*[-*]\s+[^(\[]*:\s*$', '', content, flags=_clean_re.MULTILINE)
+    # Remove leaked SDXL prompts after images
+    content = _clean_re.sub(r'(!\[[^\]]*\]\([^\)]+\))\s*\n\s*:\s+[^\n]+', r'\1', content)
+    # Remove unresolved placeholders
+    content = _clean_re.sub(r'\[IMAGE-\d+[^\]]*\]', '', content)
+    # Remove dead link references (title with colon but no URL following)
+    content = _clean_re.sub(r'^\s*[-*]\s+\[[^\]]+\]\s*$', '', content, flags=_clean_re.MULTILINE)
+    # Strip photo attribution lines
+    content = _clean_re.sub(r'\n\s*\*?Photo by [^\n]+(?:Pexels|Unsplash|Pixabay)\*?\s*\n', '\n', content, flags=_clean_re.IGNORECASE)
+    # Strip empty "External Resources" / "Suggested Resources" sections with no URLs
+    content = _clean_re.sub(
+        r'(?:^|\n)#{1,4}\s*(?:Suggested\s+)?(?:External\s+)?(?:Resources?|References?|Further\s+Reading)[^\n]*\n(?:\s*[-*]\s+[^\n]*\n)*',
+        '\n', content, flags=_clean_re.IGNORECASE,
+    )
 
     html = f"""<!DOCTYPE html>
 <html><head>

@@ -231,10 +231,14 @@ PARAMETER learning_rate {learning_rate}
     ) -> Dict[str, Any]:
         """
         Fine-tune using Anthropic Claude (API-based).
-
-        Requires: ANTHROPIC_API_KEY environment variable or api_key parameter
+        DISABLED — paid API removed to avoid costs. Use Ollama fine-tuning instead.
         """
         job_id = f"claude_finetune_{datetime.now().timestamp()}"
+        return {
+            "job_id": job_id,
+            "status": "failed",
+            "error": "Anthropic Claude API disabled — use Ollama fine-tuning instead",
+        }
 
         try:
             import anthropic

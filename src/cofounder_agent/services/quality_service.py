@@ -154,9 +154,15 @@ class QualityDimensions:
 
         # Enforce minimum-dimension constraint on critical dimensions only.
         # readability excluded (#1238) — Flesch penalizes technical vocabulary.
+        # CRITICAL_FLOOR is tunable via app_settings (qa_critical_floor).
+        try:
+            from services.site_config import site_config
+            effective_floor = site_config.get_float("qa_critical_floor", self.CRITICAL_FLOOR)
+        except Exception:
+            effective_floor = self.CRITICAL_FLOOR
         critical_values = {dim: getattr(self, dim) for dim in self.CRITICAL_DIMENSIONS}
         for dim_name, dim_value in critical_values.items():
-            if dim_value < self.CRITICAL_FLOOR:
+            if dim_value < effective_floor:
                 logger.debug(
                     f"Quality cap applied: {dim_name}={dim_value:.1f} < "
                     f"CRITICAL_FLOOR={self.CRITICAL_FLOOR} — "
@@ -269,6 +275,66 @@ class UnifiedQualityService:
         self.average_score = 0.0
 
         logger.info("✅ UnifiedQualityService initialized")
+
+    @staticmethod
+    def _qa_cfg() -> dict:
+        """Load all QA pipeline thresholds from DB via site_config.
+
+        Every threshold in the QA pipeline is tunable via app_settings
+        (key prefix: qa_). Returns a dict of all values with sensible defaults.
+        Change any value with a simple SQL UPDATE on app_settings.
+        """
+        from services.site_config import site_config
+
+        return {
+            # --- Overall pipeline ---
+            "pass_threshold": site_config.get_float("qa_pass_threshold", 70.0),
+            "critical_floor": site_config.get_float("qa_critical_floor", 50.0),
+            "artifact_penalty_per": site_config.get_float("qa_artifact_penalty_per", 5.0),
+            "artifact_penalty_max": site_config.get_float("qa_artifact_penalty_max", 20.0),
+            # --- Flesch-Kincaid target ---
+            "fk_target_min": site_config.get_float("qa_fk_target_min", 8.0),
+            "fk_target_max": site_config.get_float("qa_fk_target_max", 12.0),
+            # --- Clarity ---
+            "clarity_ideal_min": site_config.get_int("qa_clarity_ideal_min_wps", 15),
+            "clarity_ideal_max": site_config.get_int("qa_clarity_ideal_max_wps", 20),
+            "clarity_good_min": site_config.get_int("qa_clarity_good_min_wps", 10),
+            "clarity_good_max": site_config.get_int("qa_clarity_good_max_wps", 25),
+            "clarity_ok_min": site_config.get_int("qa_clarity_ok_min_wps", 8),
+            "clarity_ok_max": site_config.get_int("qa_clarity_ok_max_wps", 30),
+            # --- Accuracy ---
+            "accuracy_baseline": site_config.get_float("qa_accuracy_baseline", 7.0),
+            "accuracy_good_link_bonus": site_config.get_float("qa_accuracy_good_link_bonus", 0.3),
+            "accuracy_good_link_max": site_config.get_float("qa_accuracy_good_link_max_bonus", 1.0),
+            "accuracy_bad_link_penalty": site_config.get_float("qa_accuracy_bad_link_penalty", 0.5),
+            "accuracy_bad_link_max": site_config.get_float("qa_accuracy_bad_link_max_penalty", 2.0),
+            "accuracy_citation_bonus": site_config.get_float("qa_accuracy_citation_bonus", 0.3),
+            "accuracy_first_person_penalty": site_config.get_float("qa_accuracy_first_person_penalty", 1.0),
+            "accuracy_first_person_max": site_config.get_float("qa_accuracy_first_person_max_penalty", 3.0),
+            "accuracy_meta_commentary_penalty": site_config.get_float("qa_accuracy_meta_commentary_penalty", 0.5),
+            "accuracy_meta_commentary_max": site_config.get_float("qa_accuracy_meta_commentary_max_penalty", 2.0),
+            # --- Completeness ---
+            "completeness_word_2000": site_config.get_float("qa_completeness_word_2000_score", 6.5),
+            "completeness_word_1500": site_config.get_float("qa_completeness_word_1500_score", 6.0),
+            "completeness_word_1000": site_config.get_float("qa_completeness_word_1000_score", 5.0),
+            "completeness_word_500": site_config.get_float("qa_completeness_word_500_score", 3.5),
+            "completeness_word_min": site_config.get_float("qa_completeness_word_min_score", 2.0),
+            "completeness_heading_bonus": site_config.get_float("qa_completeness_heading_bonus", 0.3),
+            "completeness_heading_max": site_config.get_float("qa_completeness_heading_max_bonus", 1.5),
+            "completeness_truncation_penalty": site_config.get_float("qa_completeness_truncation_penalty", 3.0),
+            # --- Relevance ---
+            "relevance_no_topic_default": site_config.get_float("qa_relevance_no_topic_default", 6.0),
+            "relevance_high_coverage": site_config.get_float("qa_relevance_high_coverage_score", 8.5),
+            "relevance_med_coverage": site_config.get_float("qa_relevance_med_coverage_score", 7.0),
+            "relevance_low_coverage": site_config.get_float("qa_relevance_low_coverage_score", 5.5),
+            "relevance_none_coverage": site_config.get_float("qa_relevance_none_coverage_score", 3.0),
+            "relevance_stuffing_hard": site_config.get_float("qa_relevance_stuffing_hard_density", 5.0),
+            "relevance_stuffing_soft": site_config.get_float("qa_relevance_stuffing_soft_density", 3.0),
+            # --- SEO ---
+            "seo_baseline": site_config.get_float("qa_seo_baseline", 6.0),
+            # --- Engagement ---
+            "engagement_baseline": site_config.get_float("qa_engagement_baseline", 6.0),
+        }
 
     async def evaluate(
         self,
@@ -387,23 +453,56 @@ class UnifiedQualityService:
 
         truncated = self.detect_truncation(content)
 
+        # Artifact detection: photo metadata, leaked prompts, placeholders, etc.
+        cfg = self._qa_cfg()
+        artifacts = self._detect_artifacts(content)
+        if artifacts:
+            artifact_penalty = min(
+                len(artifacts) * cfg["artifact_penalty_per"],
+                cfg["artifact_penalty_max"],
+            )
+            overall_score = max(0, overall_score - artifact_penalty)
+            logger.warning(
+                "[QA] Artifacts detected (-%d pts): %s",
+                artifact_penalty, "; ".join(artifacts),
+            )
+
+        # LLM pattern detection: buzzwords, filler, cliché openers, etc.
+        llm_penalty, llm_issues = self._score_llm_patterns(content)
+        if llm_issues:
+            overall_score = max(0, overall_score + llm_penalty)  # penalty is negative
+            logger.warning(
+                "[QA] LLM patterns detected (%+.0f pts): %s",
+                llm_penalty, "; ".join(llm_issues),
+            )
+
         # Flesch-Kincaid Grade Level (complementary readability metric)
         fk_grade = self.flesch_kincaid_grade_level(content)
 
         # Truncated content cannot pass quality — it's incomplete by definition
-        passing = overall_score >= 70 and not truncated
+        passing = overall_score >= cfg["pass_threshold"] and not truncated
 
         suggestions = self._generate_suggestions(dimensions)
 
-        # Add FK-based suggestion when outside target range (grade 8-12)
-        if fk_grade > 12:
+        # Add artifact-specific suggestions
+        for artifact in artifacts:
+            suggestions.insert(0, f"Content contains {artifact} — must be cleaned before publishing.")
+
+        # Add LLM pattern suggestions
+        for issue in llm_issues:
+            suggestions.insert(0, f"AI writing pattern: {issue} — rewrite to sound more natural.")
+
+        # Add FK-based suggestion when outside target range
+        if fk_grade > cfg["fk_target_max"]:
             suggestions.append(
-                f"Flesch-Kincaid grade level is {fk_grade:.1f} (target: 8-12). "
+                f"Flesch-Kincaid grade level is {fk_grade:.1f} "
+                f"(target: {cfg['fk_target_min']:.0f}-{cfg['fk_target_max']:.0f}). "
                 "Simplify vocabulary and shorten sentences for broader readability."
             )
-        elif fk_grade < 8 and word_count > 100:
+        elif fk_grade < cfg["fk_target_min"] and word_count > 100:
             suggestions.append(
-                f"Flesch-Kincaid grade level is {fk_grade:.1f} (target: 8-12). "
+                f"Flesch-Kincaid grade level is {fk_grade:.1f} "
+                f"(target: {cfg['fk_target_min']:.0f}-{cfg['fk_target_max']:.0f}). "
                 "Content may be too simplistic; consider adding more depth."
             )
 
@@ -496,7 +595,7 @@ class UnifiedQualityService:
             return QualityAssessment(
                 dimensions=dimensions,
                 overall_score=overall_score,
-                passing=overall_score >= 70,
+                passing=overall_score >= self._qa_cfg()["pass_threshold"],
                 feedback=feedback,
                 suggestions=suggestions,
                 evaluation_method=EvaluationMethod.LLM_BASED,
@@ -551,7 +650,7 @@ class UnifiedQualityService:
         return QualityAssessment(
             dimensions=combined_dims,
             overall_score=overall,
-            passing=overall >= 70,
+            passing=overall >= self._qa_cfg()["pass_threshold"],
             feedback=llm_assessment.feedback,
             suggestions=llm_assessment.suggestions,
             evaluation_method=EvaluationMethod.HYBRID,
@@ -622,29 +721,43 @@ class UnifiedQualityService:
     # ========================================================================
 
     def _score_clarity(self, content: str, sentence_count: int, word_count: int) -> float:
-        """Score clarity based on sentence structure and word count"""
+        """Score clarity based on sentence structure and word count.
+        Thresholds tunable via qa_clarity_* app_settings keys."""
+        cfg = self._qa_cfg()
         if word_count == 0 or sentence_count == 0:
             return 5.0
 
         avg_words_per_sentence = word_count / sentence_count
 
-        # Ideal: 15-20 words per sentence
-        if 15 <= avg_words_per_sentence <= 20:
+        if cfg["clarity_ideal_min"] <= avg_words_per_sentence <= cfg["clarity_ideal_max"]:
             return 9.0
-        if 10 <= avg_words_per_sentence <= 25:
+        if cfg["clarity_good_min"] <= avg_words_per_sentence <= cfg["clarity_good_max"]:
             return 8.0
-        if 8 <= avg_words_per_sentence <= 30:
+        if cfg["clarity_ok_min"] <= avg_words_per_sentence <= cfg["clarity_ok_max"]:
             return 7.0
         return 5.0
 
     def _score_accuracy(self, content: str, context: Dict[str, Any]) -> float:
-        """Score accuracy based on citation patterns and factual anchors."""
-        score = 7.0  # Baseline: generated content is generally accurate unless proven otherwise
+        """Score accuracy based on citation patterns and factual anchors.
+        Thresholds tunable via qa_accuracy_* app_settings keys."""
+        cfg = self._qa_cfg()
+        score = cfg["accuracy_baseline"]
         content_lower = content.lower()
 
-        # External links are a strong accuracy signal
-        link_count = len(re.findall(r"https?://\S+", content))
-        score += min(link_count * 0.3, 1.0)
+        # External links: only count links to known reputable domains.
+        all_links = re.findall(r"https?://([^\s\)\]\"'>]+)", content)
+        reputable_domains = {
+            "github.com", "arxiv.org", "docs.python.org", "docs.rs",
+            "developer.mozilla.org", "stackoverflow.com", "wikipedia.org",
+            "news.ycombinator.com", "devto.dev", "dev.to", "blog.rust-lang.org",
+            "go.dev", "kubernetes.io", "docker.com", "vercel.com", "nextjs.org",
+            "react.dev", "pytorch.org", "huggingface.co", "openai.com",
+            "gladlabs.io", "www.gladlabs.io",
+        }
+        good_links = sum(1 for link in all_links if any(d in link for d in reputable_domains))
+        bad_links = len(all_links) - good_links
+        score += min(good_links * cfg["accuracy_good_link_bonus"], cfg["accuracy_good_link_max"])
+        score -= min(bad_links * cfg["accuracy_bad_link_penalty"], cfg["accuracy_bad_link_max"])
 
         # Citation/reference patterns: [1], (Smith 2023), Source:, References:
         citation_patterns = [
@@ -658,14 +771,39 @@ class UnifiedQualityService:
         ]
         for pat in citation_patterns:
             if re.search(pat, content_lower):
-                score += 0.3
+                score += cfg["accuracy_citation_bonus"]
 
         # Named quotes in proper context (not decorative use of quotation marks)
         named_quote = re.search(r'"[^"]{10,}"[,\s]+(?:said|wrote|noted|according)', content)
         if named_quote:
             score += 0.5
 
-        return min(score, 10.0)
+        # Voice violation: penalize first-person claims about building/creating things
+        # (Glad Labs is a publication, not a builder — "I built" is almost always wrong)
+        first_person_claims = len(re.findall(
+            r"\b(?:I|we)\s+(?:built|created|developed|designed|made|launched|shipped|released|wrote)\b",
+            content, re.IGNORECASE,
+        ))
+        if first_person_claims > 0:
+            score -= min(
+                first_person_claims * cfg["accuracy_first_person_penalty"],
+                cfg["accuracy_first_person_max"],
+            )
+
+        # Meta-commentary penalty: "this post explores", "in this article we will", etc.
+        meta_commentary = len(re.findall(
+            r"\b(?:this\s+(?:post|article|blog|piece)\s+(?:explores?|examines?|discusses?|looks\s+at|covers?|delves?))"
+            r"|\b(?:in\s+this\s+(?:post|article|blog|piece))"
+            r"|\b(?:(?:we.ll|let.s|we\s+will)\s+(?:explore|discuss|examine|look\s+at|dive\s+into))",
+            content, re.IGNORECASE,
+        ))
+        if meta_commentary > 0:
+            score -= min(
+                meta_commentary * cfg["accuracy_meta_commentary_penalty"],
+                cfg["accuracy_meta_commentary_max"],
+            )
+
+        return min(max(score, 0.0), 10.0)
 
     @staticmethod
     def detect_truncation(content: str) -> bool:
@@ -713,28 +851,26 @@ class UnifiedQualityService:
 
     def _score_completeness(self, content: str, context: Dict[str, Any]) -> float:
         """Score completeness based on depth signals beyond raw word count.
-
-        Calibrated so that our default target length (1500 words) with decent
-        structure scores 7.5-8.5/10 (75-85/100), not 6.5/10 as before.
-        """
+        Thresholds tunable via qa_completeness_* app_settings keys."""
+        cfg = self._qa_cfg()
         word_count = len(content.split())
         score = 0.0
 
-        # Word-count baseline — calibrated to default target of 1500 words
+        # Word-count baseline
         if word_count >= 2000:
-            score += 6.5
+            score += cfg["completeness_word_2000"]
         elif word_count >= 1500:
-            score += 6.0
+            score += cfg["completeness_word_1500"]
         elif word_count >= 1000:
-            score += 5.0
+            score += cfg["completeness_word_1000"]
         elif word_count >= 500:
-            score += 3.5
+            score += cfg["completeness_word_500"]
         else:
-            score += 2.0
+            score += cfg["completeness_word_min"]
 
         # Structural depth signals
         heading_count = len(re.findall(r"^#{1,3}\s", content, re.MULTILINE))
-        score += min(heading_count * 0.3, 1.5)  # Up to +1.5 for 5+ headings
+        score += min(heading_count * cfg["completeness_heading_bonus"], cfg["completeness_heading_max"])
 
         paragraphs = [p.strip() for p in content.split("\n\n") if p.strip()]
         if len(paragraphs) >= 5:
@@ -752,51 +888,50 @@ class UnifiedQualityService:
 
         # Truncation penalty — content cut off mid-sentence by LLM token limit
         if self.detect_truncation(content):
-            score = max(score - 3.0, 0.0)
+            score = max(score - cfg["completeness_truncation_penalty"], 0.0)
 
         return min(score, 10.0)
 
     def _score_relevance(self, content: str, context: Dict[str, Any]) -> float:
-        """Score relevance using topic-word family matching to resist keyword stuffing."""
+        """Score relevance using topic-word family matching to resist keyword stuffing.
+        Thresholds tunable via qa_relevance_* app_settings keys."""
+        cfg = self._qa_cfg()
         topic = context.get("topic", "") or context.get("primary_keyword", "")
         if not topic:
-            return 6.0
+            return cfg["relevance_no_topic_default"]
 
         content_lower = content.lower()
         topic_words = [w.lower() for w in re.findall(r"\b\w{4,}\b", topic)]
         word_count = len(content.split())
 
         if not topic_words or word_count == 0:
-            return 6.0
+            return cfg["relevance_no_topic_default"]
 
-        # Match each meaningful topic word (≥4 chars) — broader family
         matched_words = sum(1 for w in topic_words if w in content_lower)
         coverage = matched_words / len(topic_words)
 
-        # Density of exact topic phrase (penalise over-stuffing)
         exact_count = content_lower.count(topic.lower())
-        density = exact_count / (word_count / 100)  # per 100 words
+        density = exact_count / (word_count / 100)
 
         if coverage >= 0.8:
-            base = 8.5
+            base = cfg["relevance_high_coverage"]
         elif coverage >= 0.5:
-            base = 7.0
+            base = cfg["relevance_med_coverage"]
         elif coverage >= 0.25:
-            base = 5.5
+            base = cfg["relevance_low_coverage"]
         else:
-            base = 3.0
+            base = cfg["relevance_none_coverage"]
 
-        # Penalise keyword stuffing (>5% density is suspicious)
-        if density > 5:
+        if density > cfg["relevance_stuffing_hard"]:
             base = min(base, 5.5)
-        elif density > 3:
+        elif density > cfg["relevance_stuffing_soft"]:
             base = min(base, 7.0)
 
         return min(base, 10.0)
 
     def _score_seo(self, content: str, context: Dict[str, Any]) -> float:
-        """Score SEO quality"""
-        score = 6.0
+        """Score SEO quality. Baseline tunable via qa_seo_baseline."""
+        score = self._qa_cfg()["seo_baseline"]
 
         # Check for headers
         if "#" in content or re.search(r"#+\s", content):
@@ -842,9 +977,279 @@ class UnifiedQualityService:
         else:
             return max(7.0, 7.0 + flesch * 0.017)  # 0→7.0, 30→7.5
 
+    @staticmethod
+    def _detect_artifacts(content: str) -> list[str]:
+        """Detect junk artifacts that should never appear in published content.
+
+        Returns list of artifact descriptions found. Each one should penalize the score.
+        """
+        artifacts = []
+
+        # Photo metadata / attribution junk (may be wrapped in *italic* markdown)
+        photo_meta = re.findall(
+            r"(?i)(?:\*?\s*photo\s+by\s+[\w\s]+\s+on\s+(?:pexels|unsplash|pixabay|shutterstock)\s*\*?)"
+            r"|(?:image\s+(?:credit|source|courtesy|by)\s*:)"
+            r"|(?:shutterstock\s+(?:id|#))"
+            r"|(?:getty\s+images)"
+            r"|(?:EXIF|IPTC|XMP)\b"
+            r"|(?:alt\s*=\s*[\"'])"
+            r"|(?:photographer:\s)",
+            content,
+        )
+        if photo_meta:
+            artifacts.append(f"Photo metadata/attribution ({len(photo_meta)} instances)")
+
+        # Leaked SDXL/image generation prompts
+        sdxl_leaks = re.findall(
+            r"(?i)(?:stable\s+diffusion|SDXL|negative\s+prompt|guidance.scale|cinematic\s+lighting,\s+no\s+(?:people|text|faces))"
+            r"|(?::\s+A\s+(?:diagram|flowchart|illustration|visualization)\s+(?:showing|comparing|depicting))",
+            content,
+        )
+        if sdxl_leaks:
+            artifacts.append(f"Leaked image generation prompts ({len(sdxl_leaks)} instances)")
+
+        # Unresolved placeholders
+        placeholders = re.findall(
+            r"\[IMAGE-\d+[^\]]*\]|\[TODO[^\]]*\]|\[PLACEHOLDER[^\]]*\]|\[INSERT[^\]]*\]|\[TBD\]",
+            content, re.IGNORECASE,
+        )
+        if placeholders:
+            artifacts.append(f"Unresolved placeholders ({len(placeholders)} instances)")
+
+        # Raw markdown/rendering artifacts that shouldn't be visible
+        raw_artifacts = re.findall(
+            r"\\n\\n|\\\\n|&amp;|&lt;|&gt;|<br\s*/?>|</?(?:div|span|p)\b",
+            content,
+        )
+        if raw_artifacts:
+            artifacts.append(f"Raw HTML/markdown artifacts ({len(raw_artifacts)} instances)")
+
+        # Empty sections (heading followed immediately by another heading or end)
+        empty_sections = re.findall(r"^#{1,4}\s+.+\n\s*#{1,4}\s+", content, re.MULTILINE)
+        if empty_sections:
+            artifacts.append(f"Empty sections ({len(empty_sections)} instances)")
+
+        # Empty reference/resource sections (section with bullet labels but no URLs)
+        ref_sections = re.findall(
+            r"(?i)(?:#{1,4}\s+(?:Suggested\s+)?(?:External\s+)?(?:Resources?|References?|Further\s+Reading|Links?))"
+            r"[^\n]*\n(?:\s*[\*\-]\s+\*?\*?[^\n]+:\*?\*?\s*(?:$|\n))+",
+            content, re.MULTILINE,
+        )
+        for ref in ref_sections:
+            if not re.search(r"https?://", ref):
+                artifacts.append("Empty reference section (labels without URLs)")
+
+        # Repeated consecutive sentences (copy-paste or LLM loop)
+        sentences = [s.strip() for s in re.split(r'[.!?]+', content) if len(s.strip()) > 30]
+        seen = set()
+        dupes = 0
+        for s in sentences:
+            normalized = s.lower().strip()
+            if normalized in seen:
+                dupes += 1
+            seen.add(normalized)
+        if dupes > 0:
+            artifacts.append(f"Duplicate sentences ({dupes} repeated)")
+
+        return artifacts
+
+    @staticmethod
+    def _score_llm_patterns(content: str) -> tuple[float, list[str]]:
+        """Detect and penalize common LLM-generated content patterns.
+
+        Returns (penalty, list_of_issues) where penalty is a NEGATIVE number
+        to subtract from the overall score (0 to -25 range).
+
+        All thresholds are tunable via app_settings (key prefix: qa_llm_).
+        """
+        from services.site_config import site_config
+
+        # Load tunable thresholds from DB (with sensible defaults)
+        _t = {
+            "buzzword_warn": site_config.get_int("qa_llm_buzzword_warn_threshold", 3),
+            "buzzword_fail": site_config.get_int("qa_llm_buzzword_fail_threshold", 5),
+            "buzzword_penalty": site_config.get_float("qa_llm_buzzword_penalty_per", 0.5),
+            "buzzword_max": site_config.get_float("qa_llm_buzzword_max_penalty", 5.0),
+            "buzzword_warn_penalty": site_config.get_float("qa_llm_buzzword_warn_penalty_per", 0.3),
+            "buzzword_warn_max": site_config.get_float("qa_llm_buzzword_warn_max_penalty", 2.0),
+            "filler_warn": site_config.get_int("qa_llm_filler_warn_threshold", 2),
+            "filler_fail": site_config.get_int("qa_llm_filler_fail_threshold", 4),
+            "filler_penalty": site_config.get_float("qa_llm_filler_penalty_per", 0.5),
+            "filler_max": site_config.get_float("qa_llm_filler_max_penalty", 4.0),
+            "filler_warn_penalty": site_config.get_float("qa_llm_filler_warn_penalty_per", 0.3),
+            "opener_penalty": site_config.get_float("qa_llm_opener_penalty", 5.0),
+            "transition_penalty": site_config.get_float("qa_llm_transition_penalty_per", 1.0),
+            "listicle_penalty": site_config.get_float("qa_llm_listicle_title_penalty", 2.0),
+            "hedge_ratio": site_config.get_float("qa_llm_hedge_ratio_threshold", 0.02),
+            "hedge_penalty": site_config.get_float("qa_llm_hedge_penalty", 2.0),
+            "repetitive_penalty": site_config.get_float("qa_llm_repetitive_starter_penalty_per", 1.0),
+            "repetitive_max": site_config.get_float("qa_llm_repetitive_starter_max_penalty", 4.0),
+            "formulaic_penalty": site_config.get_float("qa_llm_formulaic_structure_penalty", 2.0),
+            "formulaic_min_avg": site_config.get_int("qa_llm_formulaic_min_avg_words", 50),
+            "formulaic_variance": site_config.get_float("qa_llm_formulaic_variance", 0.2),
+            "exclamation_threshold": site_config.get_int("qa_llm_exclamation_threshold", 5),
+            "exclamation_penalty": site_config.get_float("qa_llm_exclamation_penalty_per", 0.3),
+            "exclamation_max": site_config.get_float("qa_llm_exclamation_max_penalty", 2.0),
+            "repetitive_min_count": site_config.get_int("qa_llm_repetitive_min_count", 3),
+            "transition_min_count": site_config.get_int("qa_llm_transition_min_count", 2),
+            "enabled": site_config.get_bool("qa_llm_patterns_enabled", True),
+        }
+
+        issues = []
+        penalty = 0.0
+
+        if not _t["enabled"]:
+            return penalty, issues
+
+        content_lower = content.lower()
+
+        # --- 1. CLICHÉ OPENERS (the biggest AI slop tell) ---
+        slop_openers = [
+            r"^#[^\n]*\n+\s*in today.s (?:digital|fast-paced|ever-changing|rapidly evolving)",
+            r"^#[^\n]*\n+\s*in the (?:world|realm|landscape|arena) of",
+            r"^#[^\n]*\n+\s*(?:as|with) (?:artificial intelligence|AI|technology) continues to",
+            r"^#[^\n]*\n+\s*in an era (?:of|where)",
+            r"^#[^\n]*\n+\s*the (?:world|landscape|field) of .{5,30} is (?:evolving|changing|transforming)",
+            r"^#[^\n]*\n+\s*imagine a world where",
+        ]
+        for pat in slop_openers:
+            if re.search(pat, content, re.IGNORECASE | re.MULTILINE):
+                issues.append("Cliché AI opener detected")
+                penalty -= _t["opener_penalty"]
+                break
+
+        # --- 2. CORPORATE BUZZWORDS (density check) ---
+        buzzwords = [
+            "leverage", "synergy", "paradigm", "game-changer", "game changer",
+            "cutting-edge", "cutting edge", "innovative", "robust", "seamless",
+            "harness", "unlock the power", "unleash", "revolutionize",
+            "transformative", "disruptive", "scalable solution", "empower",
+            "drive innovation", "holistic approach", "best-in-class",
+            "next-generation", "next generation", "world-class",
+        ]
+        buzz_count = sum(1 for b in buzzwords if b in content_lower)
+        if buzz_count >= _t["buzzword_fail"]:
+            issues.append(f"Heavy buzzword usage ({buzz_count} instances)")
+            penalty -= min(buzz_count * _t["buzzword_penalty"], _t["buzzword_max"])
+        elif buzz_count >= _t["buzzword_warn"]:
+            issues.append(f"Moderate buzzword usage ({buzz_count} instances)")
+            penalty -= min(buzz_count * _t["buzzword_warn_penalty"], _t["buzzword_warn_max"])
+
+        # --- 3. FILLER PHRASES (padding that adds no information) ---
+        fillers = [
+            r"it.s (?:important|worth|crucial|essential) to (?:note|mention|understand|remember) that",
+            r"it should be (?:noted|mentioned) that",
+            r"it.s no secret that",
+            r"needless to say",
+            r"it goes without saying",
+            r"at the end of the day",
+            r"when it comes to",
+            r"in order to",  # just use "to"
+            r"the fact (?:that|of the matter)",
+            r"as (?:we all know|everyone knows)",
+            r"in today.s (?:world|age|landscape|environment)",
+            r"the bottom line is",
+            r"all things considered",
+            r"at its core",
+            r"when all is said and done",
+        ]
+        filler_count = sum(len(re.findall(pat, content_lower)) for pat in fillers)
+        if filler_count >= _t["filler_fail"]:
+            issues.append(f"Excessive filler phrases ({filler_count} instances)")
+            penalty -= min(filler_count * _t["filler_penalty"], _t["filler_max"])
+        elif filler_count >= _t["filler_warn"]:
+            issues.append(f"Filler phrases detected ({filler_count} instances)")
+            penalty -= filler_count * _t["filler_warn_penalty"]
+
+        # --- 4. GENERIC TRANSITIONS (LLMs love these) ---
+        generic_transitions = [
+            r"(?:^|\n)\s*in conclusion[,.]",
+            r"(?:^|\n)\s*to (?:summarize|sum up)[,.]",
+            r"(?:^|\n)\s*in summary[,.]",
+            r"(?:^|\n)\s*(?:all in all|overall)[,.]",
+            r"(?:^|\n)\s*(?:wrapping up|to wrap up)[,.]",
+            r"(?:^|\n)\s*(?:final thoughts|closing thoughts)[,.]",
+            r"(?:^|\n)\s*(?:moving forward|going forward)[,.]",
+        ]
+        transition_count = sum(1 for pat in generic_transitions if re.search(pat, content_lower))
+        if transition_count >= _t["transition_min_count"]:
+            issues.append(f"Generic transitions ({transition_count} instances)")
+            penalty -= transition_count * _t["transition_penalty"]
+
+        # --- 5. REPETITIVE SENTENCE STARTERS ---
+        sentences = [s.strip() for s in re.split(r'[.!?]\s+', content) if len(s.strip()) > 10]
+        if len(sentences) >= 5:
+            # Get first 3 words of each sentence
+            starters = []
+            for s in sentences:
+                words = s.split()[:3]
+                if words:
+                    starters.append(" ".join(words).lower())
+
+            # Check for repeated starters
+            from collections import Counter
+            starter_counts = Counter(starters)
+            repeated = {k: v for k, v in starter_counts.items() if v >= _t["repetitive_min_count"]}
+            if repeated:
+                worst = max(repeated.values())
+                issues.append(f"Repetitive sentence starters ({worst}x same opening)")
+                penalty -= min(worst * _t["repetitive_penalty"], _t["repetitive_max"])
+
+        # --- 6. LISTICLE TITLE PATTERNS (overused AI format) ---
+        title_match = re.match(r'^#\s*(.+)$', content, re.MULTILINE)
+        if title_match:
+            title = title_match.group(1)
+            listicle_patterns = [
+                r"^\d+\s+(?:ways?|things?|tips?|tricks?|reasons?|secrets?|mistakes?|hacks?)\s",
+                r"(?:ultimate|definitive|complete|comprehensive)\s+guide",
+                r"everything you need to know",
+                r"you need to know about",
+                r"a deep dive into",
+            ]
+            for pat in listicle_patterns:
+                if re.search(pat, title, re.IGNORECASE):
+                    issues.append(f"Generic listicle/guide title pattern")
+                    penalty -= _t["listicle_penalty"]
+                    break
+
+        # --- 7. OVER-HEDGING (non-committal language density) ---
+        hedges = re.findall(
+            r"\b(?:arguably|somewhat|potentially|perhaps|possibly|might|may|could)\b",
+            content_lower,
+        )
+        hedge_ratio = len(hedges) / max(len(content_lower.split()), 1)
+        if hedge_ratio > _t["hedge_ratio"]:
+            issues.append(f"Over-hedging ({len(hedges)} non-committal words)")
+            penalty -= _t["hedge_penalty"]
+
+        # --- 8. EMOJI/EXCLAMATION SPAM ---
+        exclamation_count = content.count("!")
+        if exclamation_count > _t["exclamation_threshold"]:
+            issues.append(f"Exclamation spam ({exclamation_count} instances)")
+            penalty -= min(
+                (exclamation_count - _t["exclamation_threshold"]) * _t["exclamation_penalty"],
+                _t["exclamation_max"],
+            )
+
+        # --- 9. FORMULAIC STRUCTURE ---
+        # Check if every section follows the same pattern (intro sentence + 3 paras + summary)
+        sections = re.split(r'\n#{2,4}\s+', content)
+        if len(sections) >= 4:
+            section_lengths = [len(s.split()) for s in sections[1:]]  # skip pre-first-heading
+            if section_lengths:
+                avg = sum(section_lengths) / len(section_lengths)
+                # If all sections are within 20% of the same length, it's formulaic
+                if avg > _t["formulaic_min_avg"] and all(
+                    abs(l - avg) / avg < _t["formulaic_variance"] for l in section_lengths
+                ):
+                    issues.append("Formulaic structure (all sections same length)")
+                    penalty -= _t["formulaic_penalty"]
+
+        return penalty, issues
+
     def _score_engagement(self, content: str) -> float:
-        """Score engagement based on structure and style"""
-        score = 6.0  # Baseline: structured blog content starts at 6.0
+        """Score engagement based on structure and style. Baseline tunable via qa_engagement_baseline."""
+        score = self._qa_cfg()["engagement_baseline"]
 
         # Bullet points / lists
         if "- " in content or "* " in content:

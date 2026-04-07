@@ -563,12 +563,10 @@ class ModelConsolidationService:
     """
 
     # Fallback chain (order matters!)
+    # Anthropic/OpenAI removed — using local Ollama only to avoid API costs
     FALLBACK_CHAIN = [
         ProviderType.OLLAMA,
         ProviderType.HUGGINGFACE,
-        ProviderType.ANTHROPIC,
-        ProviderType.OPENAI,
-        # Google/Gemini removed — using local Ollama instead
     ]
 
     def __init__(self):
@@ -589,12 +587,11 @@ class ModelConsolidationService:
 
     def _initialize_adapters(self):
         """Initialize all provider adapters"""
+        # Only initialize local/free providers — paid APIs (Anthropic, OpenAI) removed
         adapters_to_init = [
             (ProviderType.OLLAMA, OllamaAdapter),
             (ProviderType.HUGGINGFACE, HuggingFaceAdapter),
             (ProviderType.GOOGLE, GoogleAdapter),
-            (ProviderType.ANTHROPIC, AnthropicAdapter),
-            (ProviderType.OPENAI, OpenAIAdapter),
         ]
 
         for provider_type, adapter_class in adapters_to_init:

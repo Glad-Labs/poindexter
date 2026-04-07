@@ -95,6 +95,34 @@ class AIContentGenerator:
         finally:
             self.ollama_checked = True
 
+    async def _populate_internal_links_cache(self):
+        """Fetch published post titles + slugs so the LLM can include real internal links."""
+        try:
+            from services.site_config import site_config as _sc
+            site_url = _sc.get("site_url", "https://www.gladlabs.io")
+
+            import asyncpg
+            dsn = os.getenv("DATABASE_URL", "")
+            if not dsn:
+                self._internal_links_cache = []
+                return
+
+            conn = await asyncpg.connect(dsn)
+            try:
+                rows = await conn.fetch(
+                    "SELECT title, slug FROM posts WHERE status = 'published' ORDER BY published_at DESC LIMIT 20"
+                )
+                self._internal_links_cache = [
+                    f"- \"{row['title']}\" -> {site_url}/posts/{row['slug']}"
+                    for row in rows
+                ]
+                logger.info(f"[INTERNAL_LINKS] Loaded {len(rows)} published posts for linking")
+            finally:
+                await conn.close()
+        except Exception as e:
+            logger.debug(f"[INTERNAL_LINKS] Failed to load internal links: {e}")
+            self._internal_links_cache = []
+
     def _validate_content(
         self, content: str, topic: str, target_length: int
     ) -> ContentValidationResult:
@@ -232,11 +260,9 @@ class AIContentGenerator:
 
         try:
             logger.info("📝 Loading generation prompt...")
-            # Format internal_link_titles as a string for template
-            internal_link_titles = (
-                []
-            )  # Initialize empty list for internal links (future: fetch from existing posts)
-            internal_links_str = "\n".join(internal_link_titles) if internal_link_titles else ""
+            # Internal links populated by caller (generate_blog_post) via self._internal_links_cache
+            internal_link_titles = getattr(self, "_internal_links_cache", [])
+            internal_links_str = "\n".join(internal_link_titles) if internal_link_titles else "No existing articles to link to."
 
             generation_prompt = pm.get_prompt(
                 "blog_generation.initial_draft",
@@ -1475,6 +1501,9 @@ class AIContentGenerator:
         Returns:
             Tuple of (content, model_used, metrics_dict)
         """
+        # Populate internal links cache so the prompt includes real links to our posts
+        await self._populate_internal_links_cache()
+
         ctx = await self._prepare_generation_context(
             topic, style, tone, target_length, tags, preferred_model, preferred_provider,
             writing_style_context=writing_style_context,
@@ -1498,20 +1527,8 @@ class AIContentGenerator:
         if result:
             return result
 
-        # 3. Try Anthropic Claude (paid cloud)
-        result = await self._try_anthropic(ctx)
-        if result:
-            return result
-
-        # 4. Try Google Gemini fallback (paid cloud)
-        result = await self._try_gemini_fallback(ctx)
-        if result:
-            return result
-
-        # 5. Try OpenAI (paid cloud)
-        result = await self._try_openai(ctx)
-        if result:
-            return result
+        # Paid cloud providers (Anthropic, OpenAI, Gemini) removed to avoid API costs.
+        # All content generation uses local Ollama or free HuggingFace tier.
 
         # All providers failed — return fallback template
         return self._handle_all_providers_failed(ctx)
