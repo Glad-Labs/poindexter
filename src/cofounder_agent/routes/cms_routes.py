@@ -552,7 +552,7 @@ async def get_post_by_slug(
             try:
                 tag_rows = await conn.fetch(
                     """
-                    SELECT t.id, t.name, t.slug, t.color
+                    SELECT t.id, t.name, t.slug
                     FROM tags t
                     JOIN post_tags pt ON t.id = pt.tag_id
                     WHERE pt.post_id = $1
