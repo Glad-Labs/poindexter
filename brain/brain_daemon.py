@@ -434,6 +434,72 @@ async def update_system_metrics(pool):
         logger.debug("[BRAIN] Metrics update failed: %s", e)
 
 
+async def log_electricity_cost(pool):
+    """Log electricity cost for this 5-minute cycle based on real power data or estimates."""
+    try:
+        # Try to get real power data from nvidia-smi-exporter (local only)
+        watts = None
+        if not IS_RAILWAY:
+            exporter_url = "http://host.docker.internal:9835/metrics" if IS_DOCKER else "http://localhost:9835/metrics"
+            try:
+                resp = urllib.request.urlopen(exporter_url, timeout=3)
+                body = resp.read().decode()
+                for line in body.split("\n"):
+                    if line.startswith("system_total_power_estimate_watts"):
+                        watts = float(line.split()[-1])
+                        break
+                    if line.startswith("psu_total_power_watts"):
+                        watts = float(line.split()[-1])
+                        # Prefer PSU reading, don't break — keep looking for system_total
+            except Exception:
+                pass  # Exporter not running, use estimate
+
+        if watts is None:
+            # Estimate: ~80W idle (Railway containers + local standby)
+            watts = 80.0 if IS_RAILWAY else 150.0  # Local PC idles higher
+
+        # Load electricity rate from DB, fallback to default
+        rate_per_kwh = 0.29  # $/kWh default
+        try:
+            row = await pool.fetchrow(
+                "SELECT value FROM app_settings WHERE key = 'electricity_rate_kwh'"
+            )
+            if row:
+                rate_per_kwh = float(row["value"])
+        except Exception:
+            pass
+
+        # Calculate cost for this 5-minute interval
+        hours = CYCLE_SECONDS / 3600.0
+        kwh = (watts / 1000.0) * hours
+        cost_usd = kwh * rate_per_kwh
+
+        # Determine if system is actively generating (check for in_progress tasks)
+        active_row = await pool.fetchrow(
+            "SELECT COUNT(*) as c FROM content_tasks WHERE status = 'in_progress'"
+        )
+        is_generating = (active_row["c"] or 0) > 0
+        cost_type = "electricity_active" if is_generating else "electricity_idle"
+        phase = "generation" if is_generating else "idle"
+
+        await pool.execute("""
+            INSERT INTO cost_logs (
+                task_id, phase, model, provider, cost_usd,
+                input_tokens, output_tokens, total_tokens,
+                duration_ms, success, cost_type, created_at, updated_at
+            ) VALUES (
+                NULL, $1, 'system', 'electricity', $2,
+                0, 0, 0, $3, true, $4, NOW(), NOW()
+            )
+        """, phase, cost_usd, int(CYCLE_SECONDS * 1000), cost_type)
+
+        logger.debug("[BRAIN] Electricity: %.0fW, %.4f kWh, $%.6f (%s)",
+                     watts, kwh, cost_usd, cost_type)
+
+    except Exception as e:
+        logger.debug("[BRAIN] Electricity cost logging failed: %s", e)
+
+
 async def run_cycle(pool):
     """One full brain cycle: monitor → process → maintain → update."""
     logger.info("[BRAIN] === Cycle start ===")
@@ -443,6 +509,7 @@ async def run_cycle(pool):
     await process_queue(pool)
     await self_maintain(pool)
     await update_system_metrics(pool)
+    await log_electricity_cost(pool)
 
     # Health probes — exercise services with real inputs (each on its own schedule)
     probe_results = await run_health_probes(pool, send_telegram_fn=send_telegram)
