@@ -436,19 +436,33 @@ class TopicDiscovery:
             )
             pending_topics = {r["topic"].lower() for r in task_rows if r.get("topic")}
 
+            all_existing = published_titles | pending_topics
+
             for topic in topics:
                 title_lower = topic.title.lower()
-                # Exact or near-exact match
-                if title_lower in published_titles or title_lower in pending_topics:
+                # Exact match
+                if title_lower in all_existing:
                     topic.is_duplicate = True
                     continue
-                # Substring match (catches rephrased versions)
-                for pub_title in published_titles:
-                    # Check if >60% of words overlap
-                    topic_words = set(title_lower.split())
-                    pub_words = set(pub_title.split())
-                    if len(topic_words) > 3 and len(topic_words & pub_words) / len(topic_words) > 0.6:
+                # Fuzzy word overlap (catches rephrased versions)
+                topic_words = set(title_lower.split())
+                if len(topic_words) <= 3:
+                    continue
+                for existing_title in all_existing:
+                    existing_words = set(existing_title.split())
+                    # Check overlap in both directions — either title
+                    # sharing >50% of meaningful words is a duplicate
+                    if len(existing_words) <= 3:
+                        continue
+                    overlap = len(topic_words & existing_words)
+                    fwd = overlap / len(topic_words)
+                    rev = overlap / len(existing_words)
+                    if fwd > 0.5 or rev > 0.5:
                         topic.is_duplicate = True
+                        logger.debug(
+                            "[DEDUP] '%s' matches '%s' (fwd=%.0f%% rev=%.0f%%)",
+                            topic.title[:40], existing_title[:40], fwd * 100, rev * 100,
+                        )
                         break
 
         except Exception as e:
