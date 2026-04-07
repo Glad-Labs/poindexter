@@ -329,7 +329,7 @@ async def _handle_blog_post_creation(
         "id": returned_task_id,
         "task_id": returned_task_id,
         "task_type": "blog_post",
-        "topic": request.topic,
+        "topic": resolved_topic,
         "status": "pending",
         "created_at": task_data["created_at"],
         "message": "Blog post task created and queued",
