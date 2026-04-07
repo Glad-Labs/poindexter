@@ -86,24 +86,14 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # app.state.orchestrator will be set to UnifiedOrchestrator below
         # (removed legacy Orchestrator)
         app.state.task_executor = services["task_executor"]
-        app.state.workflow_history = services["workflow_history"]
         app.state.training_data_service = services.get("training_data_service")
-        app.state.fine_tuning_service = services.get("fine_tuning_service")
         app.state.custom_workflows_service = services.get("custom_workflows_service")
         app.state.legacy_data_service = services.get("legacy_data_service")
         app.state.startup_error = services["startup_error"]
         app.state.startup_complete = True
         logger.debug("[LIFESPAN] ✅ All services injected into app.state")
 
-        # Initialize capability system
-        logger.info("[LIFESPAN] Initializing capability system. ..")
-        try:
-            from services.capability_examples import register_example_capabilities
-
-            register_example_capabilities()
-            logger.info("[LIFESPAN] ✅ Capability system initialized with example capabilities")
-        except Exception as e:
-            logger.warning(f"[LIFESPAN] ⚠️ Failed to initialize capabilities: {e}", exc_info=True)
+        # Capability system removed (dead code, no consumers)
 
         # Initialize settings service (DB-backed key-value config)
         logger.info("[LIFESPAN] Initializing settings service. ..")
@@ -166,7 +156,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             orchestrator=services.get("orchestrator"),
             task_executor=services["task_executor"],
             intelligent_orchestrator=services.get("intelligent_orchestrator"),
-            workflow_history=services["workflow_history"],
+            workflow_history=services.get("workflow_history"),
             custom_workflows_service=services.get("custom_workflows_service"),
             template_execution_service=template_execution_service,
         )

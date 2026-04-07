@@ -30,9 +30,7 @@ class StartupManager:
         self.redis_cache = None
         self.orchestrator = None
         self.task_executor = None
-        self.workflow_history_service = None
         self.training_data_service = None
-        self.fine_tuning_service = None
         self.custom_workflows_service = None
         self.template_execution_service = None
         self.startup_error = None
@@ -71,12 +69,8 @@ class StartupManager:
         Returns dict with all initialized services:
         {
             'database': DatabaseService,
-            'orchestrator': Orchestrator,
             'task_executor': TaskExecutor,
-            'intelligent_orchestrator': IntelligentOrchestrator,
-            'workflow_history': WorkflowHistoryService,
             'training_data_service': TrainingDataService,
-            'fine_tuning_service': FineTuningService
         }
         """
         try:
@@ -98,16 +92,13 @@ class StartupManager:
             # Step 4: Initialize model consolidation
             await self._initialize_model_consolidation()
 
-            # Step 5: Initialize workflow history service
-            await self._initialize_workflow_history()
-
-            # Step 6: Initialize content critique loop
+            # Step 5: Initialize content critique loop
             await self._initialize_content_critique()
 
-            # Step 7: Initialize background task executor
+            # Step 6: Initialize background task executor
             await self._initialize_task_executor()
 
-            # Step 8: Initialize training data services
+            # Step 7: Initialize training data services
             await self._initialize_training_services()
 
             # Step 9: Verify connections
@@ -146,9 +137,7 @@ class StartupManager:
                 "database": self.database_service,
                 "redis_cache": self.redis_cache,
                 "task_executor": self.task_executor,
-                "workflow_history": self.workflow_history_service,
                 "training_data_service": self.training_data_service,
-                "fine_tuning_service": self.fine_tuning_service,
                 "custom_workflows_service": self.custom_workflows_service,
                 "template_execution_service": self.template_execution_service,
                 "startup_error": self.startup_error,
@@ -275,28 +264,6 @@ class StartupManager:
             logger.error(f"   {error_msg}", exc_info=True)
             # Don't fail startup - models are optional
 
-    async def _initialize_workflow_history(self) -> None:
-        """Initialize workflow history service (Phase 6)"""
-        logger.info("  📊 Initializing workflow history service...")
-        try:
-            from routes.workflow_history import initialize_history_service
-            from services.workflow_history import WorkflowHistoryService
-
-            if self.database_service:
-                self.workflow_history_service = WorkflowHistoryService(self.database_service.pool)
-                initialize_history_service(self.database_service.pool)
-                logger.info(
-                    "   Workflow history service initialized - executions will be persisted to PostgreSQL"
-                )
-            else:
-                logger.warning(
-                    "   Workflow history service not available - executions will not be persisted"
-                )
-        except Exception as e:
-            error_msg = f"Workflow history service initialization failed: {str(e)}"
-            logger.warning(f"   {error_msg}", exc_info=True)
-            self.workflow_history_service = None
-
     async def _initialize_content_critique(self) -> None:
         """DEPRECATED: Content critique is now handled by UnifiedQualityService in TaskExecutor"""
         logger.debug(
@@ -350,30 +317,18 @@ class StartupManager:
         logger.info("  📚 Initializing training data management services...")
 
         try:
-            from services.fine_tuning_service import FineTuningService
             from services.training_data_service import TrainingDataService
 
             if self.database_service:
-                # Initialize training data service
                 self.training_data_service = TrainingDataService(self.database_service.pool)
                 logger.info("   Training data service initialized")
-
-                # Initialize fine-tuning service
-                self.fine_tuning_service = FineTuningService()
-                logger.info(
-                    "   Fine-tuning service initialized (Ollama, Gemini, Claude, GPT-4 support)"
-                )
-
-                logger.info("   All training services initialized successfully")
             else:
                 logger.warning("   Training services not available - database service required")
                 self.training_data_service = None
-                self.fine_tuning_service = None
         except Exception as e:
             error_msg = f"Training services initialization failed: {str(e)}"
             logger.warning(f"   {error_msg}", exc_info=True)
             self.training_data_service = None
-            self.fine_tuning_service = None
 
     async def _verify_connections(self) -> None:
         """Verify all connections are healthy"""
@@ -551,9 +506,7 @@ class StartupManager:
         logger.info(
             f"  - Task Executor: {self.task_executor is not None and self.task_executor.running}"
         )
-        logger.info(f"  - Workflow History: {self.workflow_history_service is not None}")
         logger.info(f"  - Training Data Service: {self.training_data_service is not None}")
-        logger.info(f"  - Fine-Tuning Service: {self.fine_tuning_service is not None}")
         logger.info(f"  - Startup Error: {self.startup_error}")
 
     async def shutdown(self) -> None:

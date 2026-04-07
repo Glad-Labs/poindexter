@@ -29,7 +29,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 
 from middleware.api_token_auth import verify_api_token
-from schemas.task_schemas import MetricsResponse, TaskListResponse, UnifiedTaskRequest
+from schemas.task_schemas import TaskListResponse, UnifiedTaskRequest
 from schemas.unified_task_response import UnifiedTaskResponse
 
 # Import async database service
@@ -698,69 +698,6 @@ async def list_tasks(
     except Exception as e:
         logger.error(f"Failed to list tasks: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to list tasks") from e
-
-
-# ============================================================================
-# METRICS ENDPOINTS (MUST BE BEFORE /{task_id} TO AVOID PATH PARAM SHADOWING)
-# ============================================================================
-
-
-@router.get(
-    "/metrics",
-    summary="[Deprecated] Use GET /api/tasks/metrics/summary instead",
-    include_in_schema=False,
-)
-async def get_metrics_alias(
-    time_range: Optional[str] = Query(None, description="Time range filter (optional)"),
-    token: str = Depends(verify_api_token),
-):
-    """Deprecated alias. Use GET /api/tasks/metrics/summary."""
-    from urllib.parse import urlencode
-
-    from fastapi.responses import RedirectResponse
-
-    query = f"?{urlencode({'time_range': time_range})}" if time_range else ""
-    return RedirectResponse(url=f"/api/tasks/metrics/summary{query}", status_code=308)
-
-
-@router.get("/metrics/summary", response_model=MetricsResponse, summary="Get task metrics")
-async def get_metrics(
-    time_range: Optional[str] = Query(None, description="Time range filter (optional)"),
-    token: str = Depends(verify_api_token),
-):
-    """
-    Get aggregated metrics for all tasks.
-
-    **Returns:**
-    - Total tasks, completed, failed, pending
-    - Success rate percentage
-    - Average execution time
-    - Total estimated cost
-
-    **Query Parameters:**
-    - `time_range` (optional): Time range filter (e.g., "7d", "30d", "90d") - for future use
-
-    **Example cURL:**
-    ```bash
-    curl -X GET http://localhost:8000/api/tasks/metrics/summary \
-      -H "Authorization: Bearer YOUR_JWT_TOKEN"
-    ```
-    """
-    try:
-        # ✅ FIXED: Return operational metrics
-        # Note: Database integration available via get_services() but wrapped to avoid dependency injection issues
-        return MetricsResponse(
-            total_tasks=100,
-            completed_tasks=80,
-            failed_tasks=5,
-            pending_tasks=15,
-            success_rate=94.1,
-            avg_execution_time=45.2,
-            total_cost=125.50,
-        )
-    except Exception as e:
-        logger.error(f"Failed to fetch metrics: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to fetch metrics") from e
 
 
 # ============================================================================
