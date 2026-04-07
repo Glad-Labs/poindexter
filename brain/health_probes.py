@@ -82,6 +82,20 @@ PROBE_SCHEDULES = {
     "public_site": 300,          # 5 min
     "scheduled_tasks": 3600,     # 1 hour
     "disk_space": 3600,          # 1 hour
+    # P0 — pipeline health
+    "stuck_tasks": 1800,         # 30 min
+    "approval_queue": 3600,      # 1 hour
+    "failed_task_spike": 3600,   # 1 hour
+    # P1 — business continuity
+    "publish_rate": 21600,       # 6 hours
+    "cost_freshness": 3600,      # 1 hour
+    "podcast_health": 21600,     # 6 hours
+    "newsletter_health": 21600,  # 6 hours
+    # P2 — quality & reliability
+    "embeddings_freshness": 21600,  # 6 hours
+    "r2_connectivity": 3600,        # 1 hour
+    "traffic_anomaly": 21600,       # 6 hours
+    "quality_trend": 21600,         # 6 hours
 }
 
 # Track last run times
@@ -423,19 +437,354 @@ async def probe_disk_space(_pool) -> dict:
         return {"ok": False, "detail": f"disk check failed: {str(e)[:150]}"}
 
 
+# ---------------------------------------------------------------------------
+# P0 — Pipeline health probes
+# ---------------------------------------------------------------------------
+
+
+async def probe_stuck_tasks(pool) -> dict:
+    """Probe: Detect tasks stuck in_progress for more than 4 hours."""
+    try:
+        rows = await pool.fetch("""
+            SELECT task_id, topic, updated_at
+            FROM content_tasks
+            WHERE status = 'in_progress'
+              AND updated_at < NOW() - INTERVAL '4 hours'
+            ORDER BY updated_at ASC LIMIT 5
+        """)
+        if rows:
+            stuck = [f"{r['task_id'][:8]} ({r.get('topic', 'unknown')[:30]})" for r in rows]
+            return {
+                "ok": False,
+                "stuck_count": len(rows),
+                "stuck_tasks": stuck,
+                "detail": f"{len(rows)} task(s) stuck in_progress > 4h: {', '.join(stuck[:3])}",
+            }
+        return {"ok": True, "detail": "no stuck tasks"}
+    except Exception as e:
+        return {"ok": False, "detail": str(e)[:200]}
+
+
+async def probe_approval_queue(pool) -> dict:
+    """Probe: Alert if approval queue backs up beyond threshold."""
+    try:
+        row = await pool.fetchrow("""
+            SELECT COUNT(*) as c FROM content_tasks
+            WHERE status = 'awaiting_approval'
+        """)
+        count = row["c"] if row else 0
+        threshold = 5
+        return {
+            "ok": count <= threshold,
+            "queue_size": count,
+            "threshold": threshold,
+            "detail": f"{count} tasks awaiting approval" + (f" (exceeds {threshold})" if count > threshold else ""),
+        }
+    except Exception as e:
+        return {"ok": False, "detail": str(e)[:200]}
+
+
+async def probe_failed_task_spike(pool) -> dict:
+    """Probe: Detect spike in task failures (24h vs 7d average)."""
+    try:
+        row = await pool.fetchrow("""
+            SELECT
+                (SELECT COUNT(*) FROM content_tasks
+                 WHERE status = 'failed' AND updated_at > NOW() - INTERVAL '24 hours') as recent_failures,
+                (SELECT COUNT(*) FROM content_tasks
+                 WHERE status = 'failed' AND updated_at > NOW() - INTERVAL '7 days') as week_failures
+        """)
+        recent = row["recent_failures"] if row else 0
+        week = row["week_failures"] if row else 0
+        daily_avg = week / 7.0 if week > 0 else 0
+        spike = recent > max(daily_avg * 2, 3)  # 2x average or 3+ failures
+        return {
+            "ok": not spike,
+            "recent_24h": recent,
+            "weekly_total": week,
+            "daily_avg": round(daily_avg, 1),
+            "detail": f"{recent} failures in 24h (avg {daily_avg:.1f}/day)" + (" — SPIKE" if spike else ""),
+        }
+    except Exception as e:
+        return {"ok": False, "detail": str(e)[:200]}
+
+
+# ---------------------------------------------------------------------------
+# P1 — Business continuity probes
+# ---------------------------------------------------------------------------
+
+
+async def probe_publish_rate(pool) -> dict:
+    """Probe: Alert if no posts published in 3 days."""
+    try:
+        row = await pool.fetchrow("""
+            SELECT COUNT(*) as c, MAX(published_at) as last_published
+            FROM posts
+            WHERE published_at > NOW() - INTERVAL '3 days' AND status = 'published'
+        """)
+        count = row["c"] if row else 0
+        last = row["last_published"] if row else None
+        if count == 0:
+            return {
+                "ok": False,
+                "posts_3d": 0,
+                "last_published": str(last) if last else "never",
+                "detail": f"0 posts published in 3 days (last: {last or 'never'})",
+            }
+        return {
+            "ok": True,
+            "posts_3d": count,
+            "last_published": str(last),
+            "detail": f"{count} post(s) published in last 3 days",
+        }
+    except Exception as e:
+        return {"ok": False, "detail": str(e)[:200]}
+
+
+async def probe_cost_freshness(pool) -> dict:
+    """Probe: Alert if cost_logs haven't been written in 24 hours."""
+    try:
+        row = await pool.fetchrow("""
+            SELECT MAX(created_at) as last_entry FROM cost_logs
+        """)
+        if not row or not row["last_entry"]:
+            return {"ok": True, "detail": "no cost_logs entries yet (pipeline idle)"}
+        from datetime import datetime, timezone
+        last = row["last_entry"]
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        age_hours = (datetime.now(timezone.utc) - last).total_seconds() / 3600
+        stale = age_hours > 24
+        return {
+            "ok": not stale,
+            "age_hours": round(age_hours, 1),
+            "detail": f"cost_logs last entry {age_hours:.1f}h ago" + (" — STALE" if stale else ""),
+        }
+    except Exception as e:
+        return {"ok": False, "detail": str(e)[:200]}
+
+
+async def probe_podcast_health(pool) -> dict:
+    """Probe: Check podcast generation is active (episode in last 7 days or no episodes expected)."""
+    try:
+        # Check if any podcast episodes exist at all
+        row = await pool.fetchrow("""
+            SELECT COUNT(*) as total,
+                   MAX(updated_at) as last_gen
+            FROM content_tasks
+            WHERE task_type = 'podcast' OR topic ILIKE '%podcast%'
+        """)
+        total = row["total"] if row else 0
+        if total == 0:
+            return {"ok": True, "detail": "no podcast tasks found (feature may not be active)"}
+        last = row["last_gen"]
+        if last:
+            from datetime import datetime, timezone
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            age_days = (datetime.now(timezone.utc) - last).total_seconds() / 86400
+            stale = age_days > 7
+            return {
+                "ok": not stale,
+                "total_episodes": total,
+                "last_activity_days": round(age_days, 1),
+                "detail": f"podcast last activity {age_days:.1f}d ago" + (" — stale" if stale else ""),
+            }
+        return {"ok": True, "total_episodes": total, "detail": f"{total} podcast tasks, activity ongoing"}
+    except Exception as e:
+        return {"ok": False, "detail": str(e)[:200]}
+
+
+async def probe_newsletter_health(pool) -> dict:
+    """Probe: Check newsletter delivery is working if subscribers exist."""
+    try:
+        # Check subscriber count
+        sub_row = await pool.fetchrow("""
+            SELECT COUNT(*) as c FROM newsletter_subscribers
+            WHERE confirmed = true
+        """)
+        subs = sub_row["c"] if sub_row else 0
+        if subs == 0:
+            return {"ok": True, "subscribers": 0, "detail": "no confirmed subscribers yet"}
+
+        # Check last send
+        send_row = await pool.fetchrow("""
+            SELECT MAX(sent_at) as last_sent FROM campaign_email_logs
+        """)
+        if not send_row or not send_row["last_sent"]:
+            return {
+                "ok": False,
+                "subscribers": subs,
+                "detail": f"{subs} subscribers but no sends recorded — check newsletter service",
+            }
+        from datetime import datetime, timezone
+        last = send_row["last_sent"]
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        age_days = (datetime.now(timezone.utc) - last).total_seconds() / 86400
+        stale = age_days > 7
+        return {
+            "ok": not stale,
+            "subscribers": subs,
+            "last_send_days": round(age_days, 1),
+            "detail": f"{subs} subs, last send {age_days:.1f}d ago" + (" — overdue" if stale else ""),
+        }
+    except Exception as e:
+        # Table might not exist yet
+        if "does not exist" in str(e):
+            return {"ok": True, "detail": "newsletter tables not created yet"}
+        return {"ok": False, "detail": str(e)[:200]}
+
+
+# ---------------------------------------------------------------------------
+# P2 — Quality & reliability probes
+# ---------------------------------------------------------------------------
+
+
+async def probe_embeddings_freshness(pool) -> dict:
+    """Probe: Check embeddings are up to date with published posts."""
+    try:
+        row = await pool.fetchrow("""
+            SELECT
+                (SELECT COUNT(*) FROM posts WHERE status = 'published') as total_posts,
+                (SELECT COUNT(DISTINCT source_id) FROM embeddings WHERE source_type = 'post') as embedded_posts,
+                (SELECT MAX(created_at) FROM embeddings) as last_embedding
+        """)
+        total = row["total_posts"] if row else 0
+        embedded = row["embedded_posts"] if row else 0
+        last = row["last_embedding"]
+        gap = total - embedded
+        stale = gap > 3  # Allow small buffer
+        detail = f"{embedded}/{total} posts embedded"
+        if last:
+            from datetime import datetime, timezone
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            age_hours = (datetime.now(timezone.utc) - last).total_seconds() / 3600
+            detail += f", last {age_hours:.0f}h ago"
+        if stale:
+            detail += f" — {gap} posts missing embeddings"
+        return {
+            "ok": not stale,
+            "total_posts": total,
+            "embedded_posts": embedded,
+            "gap": gap,
+            "detail": detail,
+        }
+    except Exception as e:
+        if "does not exist" in str(e):
+            return {"ok": True, "detail": "embeddings table not created yet"}
+        return {"ok": False, "detail": str(e)[:200]}
+
+
+async def probe_r2_connectivity(_pool) -> dict:
+    """Probe: Verify R2 CDN is reachable by fetching the podcast feed."""
+    r2_url = os.getenv("R2_PUBLIC_URL", "https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev")
+    try:
+        req = urllib.request.Request(f"{r2_url}/podcast/feed.xml", method="HEAD")
+        resp = urllib.request.urlopen(req, timeout=10)
+        ok = resp.status < 400
+        return {
+            "ok": ok,
+            "status_code": resp.status,
+            "detail": f"R2 CDN reachable (HTTP {resp.status})",
+        }
+    except urllib.error.HTTPError as e:
+        # 404 is OK — means R2 is reachable, feed just doesn't exist yet
+        if e.code == 404:
+            return {"ok": True, "status_code": 404, "detail": "R2 CDN reachable (feed.xml not uploaded yet)"}
+        return {"ok": False, "status_code": e.code, "detail": f"R2 CDN error: HTTP {e.code}"}
+    except Exception as e:
+        return {"ok": False, "detail": f"R2 CDN unreachable: {str(e)[:100]}"}
+
+
+async def probe_traffic_anomaly(pool) -> dict:
+    """Probe: Alert if daily traffic drops >60% vs 7-day average."""
+    try:
+        row = await pool.fetchrow("""
+            SELECT
+                (SELECT COUNT(*) FROM page_views
+                 WHERE created_at >= date_trunc('day', NOW())) as today,
+                (SELECT COUNT(*) / 7.0 FROM page_views
+                 WHERE created_at >= NOW() - INTERVAL '7 days') as daily_avg
+        """)
+        today = row["today"] if row else 0
+        avg = float(row["daily_avg"]) if row and row["daily_avg"] else 0
+        if avg < 10:
+            return {"ok": True, "today": today, "avg": round(avg, 1), "detail": "not enough history for anomaly detection"}
+        drop_pct = ((avg - today) / avg * 100) if avg > 0 else 0
+        anomaly = drop_pct > 60
+        return {
+            "ok": not anomaly,
+            "today": today,
+            "daily_avg": round(avg, 1),
+            "drop_pct": round(drop_pct, 1),
+            "detail": f"{today} views today vs {avg:.0f}/day avg ({drop_pct:.0f}% {'drop — ANOMALY' if anomaly else 'change'})",
+        }
+    except Exception as e:
+        return {"ok": False, "detail": str(e)[:200]}
+
+
+async def probe_quality_trend(pool) -> dict:
+    """Probe: Detect declining quality scores (7d vs prior 7d)."""
+    try:
+        row = await pool.fetchrow("""
+            SELECT
+                (SELECT AVG(quality_score) FROM content_tasks
+                 WHERE quality_score IS NOT NULL AND updated_at > NOW() - INTERVAL '7 days') as recent_avg,
+                (SELECT AVG(quality_score) FROM content_tasks
+                 WHERE quality_score IS NOT NULL
+                   AND updated_at BETWEEN NOW() - INTERVAL '14 days' AND NOW() - INTERVAL '7 days') as prior_avg
+        """)
+        recent = float(row["recent_avg"]) if row and row["recent_avg"] else None
+        prior = float(row["prior_avg"]) if row and row["prior_avg"] else None
+        if recent is None:
+            return {"ok": True, "detail": "no quality scores in last 7 days (pipeline idle)"}
+        if prior is None:
+            return {"ok": True, "recent_avg": round(recent, 1), "detail": f"recent avg {recent:.1f}, no prior data to compare"}
+        decline = prior - recent
+        declining = decline > 10
+        return {
+            "ok": not declining,
+            "recent_avg": round(recent, 1),
+            "prior_avg": round(prior, 1),
+            "decline": round(decline, 1),
+            "detail": f"quality {recent:.1f} (was {prior:.1f})" + (f" — declining {decline:.0f}pts" if declining else ""),
+        }
+    except Exception as e:
+        return {"ok": False, "detail": str(e)[:200]}
+
+
 # All probes in execution order
 PROBES = {
+    # Infrastructure
     "db_ping": probe_db_ping,
     "ollama_models": probe_ollama_models,
     "content_gen": probe_content_gen,
-    "quality_score": probe_quality_score,
-    "affiliate_linker": probe_affiliate_linker,
-    "research_service": probe_research_service,
-    "image_search": probe_image_search,
     "grafana_datasources": probe_grafana_datasources,
     "public_site": probe_public_site,
     "scheduled_tasks": probe_scheduled_tasks,
     "disk_space": probe_disk_space,
+    "r2_connectivity": probe_r2_connectivity,
+    # Pipeline health (P0)
+    "stuck_tasks": probe_stuck_tasks,
+    "approval_queue": probe_approval_queue,
+    "failed_task_spike": probe_failed_task_spike,
+    # Content quality
+    "quality_score": probe_quality_score,
+    "quality_trend": probe_quality_trend,
+    # Business continuity (P1)
+    "publish_rate": probe_publish_rate,
+    "cost_freshness": probe_cost_freshness,
+    "podcast_health": probe_podcast_health,
+    "newsletter_health": probe_newsletter_health,
+    # Data health
+    "affiliate_linker": probe_affiliate_linker,
+    "research_service": probe_research_service,
+    "image_search": probe_image_search,
+    "embeddings_freshness": probe_embeddings_freshness,
+    # Analytics
+    "traffic_anomaly": probe_traffic_anomaly,
 }
 
 # Track consecutive failures for alerting
