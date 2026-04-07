@@ -86,8 +86,8 @@ class CreateBlogPostRequest(BaseModel):
     )
     llm_provider: Optional[str] = Field(
         None,
-        description="Optional: LLM provider override (ollama, openai, anthropic, gemini). If not specified, uses default from config.",
-        examples=["ollama", "openai", "anthropic"],
+        description="Optional: LLM provider override (ollama). If not specified, uses default from config.",
+        examples=["ollama"],
     )
     model: Optional[str] = Field(
         None,

@@ -30,49 +30,11 @@ from .provider_checker import ProviderChecker
 
 logger = get_logger(__name__)
 
-# Legacy provider checks are kept for backward compatibility during migration
-# but new code should use unified model_router and prompt_manager
-
-# Check for Anthropic availability and API key
-try:
-    from anthropic import Anthropic
-
-    ANTHROPIC_AVAILABLE = ProviderChecker.is_anthropic_available()
-    if ANTHROPIC_AVAILABLE:
-        anthropic_client = Anthropic(api_key=ProviderChecker.get_anthropic_api_key())
-    else:
-        anthropic_client = None
-        logger.debug("⚠️  ANTHROPIC_API_KEY not set in environment")
-except ImportError:
-    ANTHROPIC_AVAILABLE = False
-    anthropic_client = None
-    logger.debug("⚠️  Anthropic package not installed")
-
-# Check for OpenAI availability and API key
-try:
-    import openai
-
-    OPENAI_AVAILABLE = ProviderChecker.is_openai_available()
-    if OPENAI_AVAILABLE:
-        openai.api_key = ProviderChecker.get_openai_api_key()
-    else:
-        logger.debug("⚠️  OPENAI_API_KEY not set in environment")
-except ImportError:
-    OPENAI_AVAILABLE = False
-    logger.debug("⚠️  OpenAI package not installed")
-
-# Check for Google Gemini availability and API key
-try:
-    import google.genai as genai
-
-    GOOGLE_AVAILABLE = ProviderChecker.is_gemini_available()
-    if GOOGLE_AVAILABLE:
-        genai.api_key = ProviderChecker.get_gemini_api_key()
-    else:
-        logger.debug("⚠️  GOOGLE_API_KEY not set in environment")
-except ImportError:
-    GOOGLE_AVAILABLE = False
-    logger.debug("⚠️  Google genai package not installed")
+# Paid APIs (Anthropic, OpenAI, Gemini) permanently removed — Ollama-only policy.
+ANTHROPIC_AVAILABLE = False
+anthropic_client = None
+OPENAI_AVAILABLE = False
+GOOGLE_AVAILABLE = False
 
 
 @dataclass
@@ -130,12 +92,10 @@ class UnifiedMetadataService:
             model: "auto" (use best available), "claude-3-haiku", "gpt-4", etc.
         """
         self.model = model
-        self.llm_available = ANTHROPIC_AVAILABLE or OPENAI_AVAILABLE or GOOGLE_AVAILABLE
+        self.llm_available = False  # Paid APIs removed; metadata uses fallback strategies
 
         if not self.llm_available:
-            logger.warning(
-                "⚠️  No LLM available (Anthropic, OpenAI, or Google Gemini). Using fallback strategies only."
-            )
+            logger.debug("Metadata service using fallback strategies (Ollama-only policy).")
 
     # ========================================================================
     # BATCH METADATA GENERATION (Most Efficient)

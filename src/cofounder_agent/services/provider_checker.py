@@ -17,12 +17,8 @@ class ProviderChecker:
     """
     Utility class for checking provider availability.
 
-    This eliminates the need to repeat env var checks throughout the codebase.
-    Usage:
-        if ProviderChecker.is_gemini_available():
-            # Use Gemini
-        if ProviderChecker.is_openai_available():
-            # Use OpenAI
+    Policy: Ollama-only (local, zero-cost). HuggingFace as emergency fallback.
+    Paid APIs (Gemini, Anthropic, OpenAI) permanently removed.
     """
 
     # Cache for provider status (updated on first check)
@@ -47,25 +43,17 @@ class ProviderChecker:
 
     @classmethod
     def is_gemini_available(cls) -> bool:
-        """Check if Gemini (Google) API is available and configured."""
-        if "gemini" not in cls._cache:
-            # Check both GEMINI_API_KEY and GOOGLE_API_KEY (aliases)
-            key = cls._get_env("GEMINI_API_KEY", "GOOGLE_API_KEY")
-            cls._cache["gemini"] = bool(key)
-            if cls._cache["gemini"]:
-                logger.debug("✅ Gemini provider available")
-            else:
-                logger.debug("❌ Gemini provider not configured")
-        return cls._cache["gemini"]
+        """Gemini API permanently disabled — using local Ollama only to avoid API costs."""
+        return False
 
     @classmethod
     def is_openai_available(cls) -> bool:
-        """OpenAI API disabled — using local Ollama only to avoid API costs."""
+        """OpenAI API permanently disabled — using local Ollama only to avoid API costs."""
         return False
 
     @classmethod
     def is_anthropic_available(cls) -> bool:
-        """Anthropic Claude API disabled — using local Ollama only to avoid API costs."""
+        """Anthropic Claude API permanently disabled — using local Ollama only to avoid API costs."""
         return False
 
     @classmethod
@@ -88,14 +76,11 @@ class ProviderChecker:
 
     @classmethod
     def get_available_providers(cls) -> Set[str]:
-        """Get set of all available providers."""
+        """Get set of all available providers. Ollama-only policy."""
         providers = {"ollama"}  # Ollama always available
 
-        if cls.is_gemini_available():
-            providers.add("gemini")
         if cls.is_huggingface_available():
             providers.add("huggingface")
-        # Anthropic and OpenAI removed — local Ollama only
 
         return providers
 
@@ -107,7 +92,6 @@ class ProviderChecker:
         Priority:
         1. Ollama (free, local, preferred)
         2. HuggingFace (free tier, rate limited)
-        Paid APIs (Anthropic, OpenAI) removed to avoid costs.
         """
         if cls.is_ollama_available():
             return "ollama"
@@ -116,21 +100,6 @@ class ProviderChecker:
 
         logger.warning("No providers configured, falling back to Ollama")
         return "ollama"
-
-    @classmethod
-    def get_gemini_api_key(cls) -> str:
-        """Get Gemini API key (checks both GEMINI_API_KEY and GOOGLE_API_KEY)."""
-        return cls._get_env("GEMINI_API_KEY", "GOOGLE_API_KEY")
-
-    @classmethod
-    def get_openai_api_key(cls) -> str:
-        """Get OpenAI API key."""
-        return cls._get_env("OPENAI_API_KEY")
-
-    @classmethod
-    def get_anthropic_api_key(cls) -> str:
-        """Get Anthropic API key."""
-        return cls._get_env("ANTHROPIC_API_KEY")
 
     @classmethod
     def get_huggingface_token(cls) -> str:

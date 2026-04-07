@@ -126,12 +126,10 @@ class TestProvidersStatusResponse:
         resp = ProvidersStatusResponse(
             ollama=provider,
             huggingface=ProviderStatus(available=False),
-            gemini=ProviderStatus(available=True, hasKey=True),
             timestamp="2026-01-01T00:00:00Z",
         )
         assert resp.ollama.available is True
         assert resp.ollama.models == 2
-        assert resp.gemini.hasKey is True
 
 
 # ---------------------------------------------------------------------------

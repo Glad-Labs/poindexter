@@ -164,12 +164,12 @@ def log_api_call(provider: str, operation: str):
     Decorator to log API call performance (for LLM providers, external services).
 
     Args:
-        provider: API provider name (e.g., "openai", "anthropic", "ollama")
+        provider: API provider name (e.g., "ollama")
         operation: Operation name (e.g., "chat_completion", "embeddings")
 
     Example:
-        @log_api_call(provider="openai", operation="chat_completion")
-        async def call_openai_api(self, prompt):
+        @log_api_call(provider="ollama", operation="chat_completion")
+        async def call_ollama_api(self, prompt):
             # API call here
             return response
     """

@@ -289,8 +289,8 @@ class CostLogResponse(BaseModel):
         "research", "outline", "draft", "assess", "refine", "finalize", "content_generation", "qa_review"
     ] = Field(..., description="Execution phase")
     model: str = Field(..., description="LLM model used (gpt-4, claude-3-opus, etc.)")
-    provider: Literal["ollama", "openai", "anthropic", "google", "gemini", "unknown"] = Field(
-        ..., description="LLM provider"
+    provider: Literal["ollama", "google", "openai", "anthropic", "gemini", "unknown"] = Field(
+        ..., description="LLM provider (legacy records may contain paid API providers)"
     )
     input_tokens: int = Field(default=0, ge=0, description="Input token count")
     output_tokens: int = Field(default=0, ge=0, description="Output token count")

@@ -1469,7 +1469,7 @@ class TaskExecutor:
         Uses AIContentGenerator to create structured blog content with:
         - Real Ollama support (free local LLM)
         - HuggingFace integration
-        - Google Gemini fallback
+        - HuggingFace emergency fallback
         - Self-validation and quality checking
 
         Args:

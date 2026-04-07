@@ -631,7 +631,7 @@ class TestCheckTitleOriginality:
                 mock_cfg.get_float.return_value = 0.6
                 mock_cfg.get_bool.return_value = True
                 result = await _check_title_originality(
-                    "A Completely Unique Title Nobody Has Written", "unique topic"
+                    "A Completely Unique Title Nobody Has Written"
                 )
 
         assert result["is_original"] is True
@@ -651,7 +651,7 @@ class TestCheckTitleOriginality:
                 mock_cfg.get_float.return_value = 0.6
                 mock_cfg.get_bool.return_value = True
                 result = await _check_title_originality(
-                    "How AI Is Changing Healthcare in 2026", "AI healthcare"
+                    "How AI Is Changing Healthcare in 2026"
                 )
 
         assert result["is_original"] is False
@@ -664,7 +664,7 @@ class TestCheckTitleOriginality:
         with patch("services.site_config.site_config") as mock_cfg:
             mock_cfg.get_float.return_value = 0.6
             mock_cfg.get_bool.return_value = False
-            result = await _check_title_originality("Any Title", "any topic")
+            result = await _check_title_originality("Any Title")
 
         assert result["is_original"] is True
 
@@ -678,7 +678,7 @@ class TestCheckTitleOriginality:
             with patch("services.site_config.site_config") as mock_cfg:
                 mock_cfg.get_float.return_value = 0.6
                 mock_cfg.get_bool.return_value = True
-                result = await _check_title_originality("Test Title", "test")
+                result = await _check_title_originality("Test Title")
 
         assert result["is_original"] is True
 
@@ -695,7 +695,7 @@ class TestCheckTitleOriginality:
                 mock_cfg.get_float.return_value = 0.6
                 mock_cfg.get_bool.return_value = True
                 result = await _check_title_originality(
-                    "Understanding GPU Architecture for ML Workloads", "GPU ML"
+                    "Understanding GPU Architecture for ML Workloads"
                 )
 
         assert result["is_original"] is True

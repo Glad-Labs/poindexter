@@ -68,7 +68,7 @@ class AdminDatabase(DatabaseServiceMixin):
                 - user_id (UUID or str, optional)
                 - phase (str): research, outline, draft, assess, refine, finalize
                 - model (str): cost tier (ultra_cheap, cheap, balanced, premium) or resolved model name
-                - provider (str): ollama, openai, anthropic, google
+                - provider (str): ollama
                 - cost_usd (float): Cost in USD
                 - input_tokens (int, optional): Input token count
                 - output_tokens (int, optional): Output token count

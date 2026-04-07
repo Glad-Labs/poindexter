@@ -170,74 +170,14 @@ class MultiModelQA:
     async def _review_with_cloud_model(
         self, title: str, content: str, topic: str, model_override: Optional[str] = None,
     ):
-        """Review content using local Ollama first. Cloud APIs are emergency-only.
-
-        Priority:
-        1. Ollama (free, local) — always first
-        2. Skip — if Ollama unavailable and cloud_api_mode != emergency_only
-        3. Emergency cloud (Gemini/Anthropic) — only if mode allows AND daily limit not hit
-        """
-        # 1. Try Ollama first (free, local)
+        """Review content using local Ollama. Paid cloud APIs removed (Ollama-only policy)."""
+        # Try Ollama (free, local)
         ollama_result = await self._review_with_ollama(title, content, topic, model_override)
         if ollama_result is not None:
             return ollama_result
 
-        # 2. Check if emergency cloud is allowed
-        cloud_mode = "emergency_only"
-        daily_limit = 5
-        notify = True
-        if self.settings:
-            cloud_mode = await self.settings.get("cloud_api_mode") or "emergency_only"
-            daily_limit = int(await self.settings.get("cloud_api_daily_limit") or 5)
-            notify = (await self.settings.get("cloud_api_notify_on_use") or "true").lower() == "true"
-
-        if cloud_mode == "disabled":
-            logger.info("[MULTI_QA] Ollama unavailable, cloud APIs disabled — skipping review")
-            return None
-
-        if cloud_mode not in ("emergency_only", "fallback", "always"):
-            logger.info("[MULTI_QA] Ollama unavailable, unknown cloud mode '%s' — skipping", cloud_mode)
-            return None
-
-        # Check daily limit
-        if self.pool:
-            try:
-                row = await self.pool.fetchrow(
-                    "SELECT COUNT(*) as c FROM cost_logs WHERE provider != 'ollama' AND created_at >= date_trunc('day', NOW())"
-                )
-                today_calls = row["c"] if row else 0
-                if today_calls >= daily_limit:
-                    logger.warning("[MULTI_QA] Cloud API daily limit reached (%d/%d) — skipping", today_calls, daily_limit)
-                    return None
-            except Exception as e:
-                logger.error("[MULTI_QA] Cost limit check failed — blocking cloud API to be safe: %s", e, exc_info=True)
-                return None  # Fail safe: don't call cloud API if we can't verify the budget
-
-        # 3. Emergency cloud fallback
-        logger.warning("[MULTI_QA] Using EMERGENCY cloud API (Ollama unavailable)")
-        gemini_result = await self._review_with_gemini(title, content, topic, model_override)
-
-        # Notify via Telegram if configured
-        if notify and gemini_result:
-            try:
-                from services.site_config import site_config
-                import urllib.request
-                import json as _json
-                bot_token = site_config.get("telegram_bot_token")
-                chat_id = site_config.get("telegram_chat_id")
-                if bot_token and chat_id:
-                    provider = gemini_result[0].provider if gemini_result else "cloud"
-                    msg = f"⚠️ Emergency cloud API used: {provider} for QA review (Ollama was down)"
-                    data = _json.dumps({"chat_id": chat_id, "text": msg}).encode()
-                    req = urllib.request.Request(
-                        f"https://api.telegram.org/bot{bot_token}/sendMessage",
-                        data=data, headers={"Content-Type": "application/json"}, method="POST"
-                    )
-                    urllib.request.urlopen(req, timeout=5)
-            except Exception:
-                pass
-
-        return gemini_result
+        logger.info("[MULTI_QA] Ollama unavailable, no cloud fallback — skipping review")
+        return None
 
     async def _review_with_ollama(
         self, title: str, content: str, topic: str, model_override: Optional[str] = None,
@@ -344,89 +284,4 @@ class MultiModelQA:
             logger.warning("[MULTI_QA] Ollama review failed (non-critical): %s", e)
             return None
 
-    async def _review_with_gemini(
-        self, title: str, content: str, topic: str, model_override: Optional[str] = None,
-    ) -> Optional[ReviewerResult]:
-        """Review content using Gemini Flash (paid fallback).
-
-        Only called when Ollama is unavailable.
-        """
-        import json
-        import os
-        import re
-
-        try:
-            from services.site_config import site_config
-            api_key = site_config.get("google_api_key") or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-        except Exception:
-            api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            logger.debug("[MULTI_QA] No Google API key, skipping cloud review")
-            return None
-
-        try:
-            import google.genai as genai
-
-            client = genai.Client(api_key=api_key)
-            prompt = QA_PROMPT.format(
-                title=title,
-                topic=topic or title,
-                content=content[:8000],
-            )
-
-            model_name = model_override or "gemini-2.5-flash"
-            response = client.models.generate_content(
-                model=f"models/{model_name}",
-                contents=prompt,
-                config={"max_output_tokens": 300, "temperature": 0.3},
-            )
-
-            text = response.text
-            if not text:
-                return None
-
-            # Parse JSON response
-            json_match = text
-            if "```" in text:
-                match = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, re.DOTALL)
-                if match:
-                    json_match = match.group(1)
-
-            try:
-                data = json.loads(json_match)
-            except json.JSONDecodeError:
-                match = re.search(r"\{[^{}]*\"approved\"[^{}]*\}", text)
-                if match:
-                    data = json.loads(match.group(0))
-                else:
-                    return None
-
-            # Track cost from usage metadata
-            cost_log = None
-            usage = getattr(response, "usage_metadata", None)
-            if usage:
-                in_tok = getattr(usage, "prompt_token_count", 0) or 0
-                out_tok = getattr(usage, "candidates_token_count", 0) or 0
-                cost = in_tok / 1000 * 0.0001 + out_tok / 1000 * 0.0004
-                cost_log = {
-                    "provider": "google", "model": model_name,
-                    "input_tokens": in_tok, "output_tokens": out_tok,
-                    "cost_usd": round(cost, 6), "phase": "qa_review",
-                }
-                logger.info("[MULTI_QA] Gemini cost: $%.4f (%d in + %d out)", cost, in_tok, out_tok)
-
-            result = ReviewerResult(
-                reviewer="gemini_critic",
-                approved=data.get("approved", False),
-                score=float(data.get("quality_score", 0)),
-                feedback=data.get("feedback", "No feedback"),
-                provider="google",
-            )
-            return result, cost_log
-
-        except ImportError:
-            logger.debug("[MULTI_QA] google-genai not installed")
-            return None
-        except Exception as e:
-            logger.warning("[MULTI_QA] Gemini review failed (non-critical): %s", e)
-            return None
+    # _review_with_gemini removed — Ollama-only policy

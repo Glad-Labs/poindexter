@@ -30,10 +30,8 @@ logger = get_logger(__name__)
 
 
 class ModelProvider(str, Enum):
-    """AI model provider types."""
+    """AI model provider types. Ollama-only policy."""
 
-    OPENAI = "openai"
-    ANTHROPIC = "anthropic"
     OLLAMA = "ollama"  # Zero-cost local option
 
 

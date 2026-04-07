@@ -7,7 +7,7 @@ Consolidates functionality from:
 - routes/enhanced_content.py (SEO-optimized generation)
 
 Provides centralized blog post generation with:
-- Multi-model AI support (Ollama → HuggingFace → Gemini)
+- Multi-model AI support (Ollama → HuggingFace)
 - Featured image search (Pexels - free)
 - SEO optimization and metadata
 - Draft management
@@ -445,8 +445,8 @@ class ContentGenerationService:
             target_length: Target word count
             tags: Tags for categorization
             enhanced: Whether to use SEO enhancement
-            preferred_model: User-selected model name (e.g., 'gpt-4', 'gemini-pro')
-            preferred_provider: User-selected provider ('openai', 'anthropic', 'gemini', 'ollama')
+            preferred_model: User-selected model name (e.g., 'qwen3.5:35b')
+            preferred_provider: User-selected provider ('ollama')
             writing_style_context: Optional writing style excerpts for voice matching
 
         Returns:
@@ -503,7 +503,7 @@ class ContentGenerationService:
 # ============================================================================
 
 
-async def _check_title_originality(title: str, topic: str) -> dict:
+async def _check_title_originality(title: str) -> dict:
     """Check if a proposed title is too similar to existing content online.
 
     Uses free DuckDuckGo search to find existing articles with similar titles.
@@ -660,48 +660,29 @@ def _parse_model_preferences(models_by_phase):
     if not draft_model or draft_model == "auto":
         return preferred_model, preferred_provider
 
-    # Clean up malformed model names (e.g., "gemini-gemini-pro" → "gemini-pro")
     draft_model = draft_model.strip()
 
     # Parse provider and model from selection
-    # Format can be: "gemini", "gemini/gemini-pro", "gpt-4", "claude-3-opus", etc.
     if "/" in draft_model:
         preferred_provider, preferred_model = draft_model.split("/", 1)
     else:
-        # Infer provider from model name
+        # Infer provider from model name — Ollama-only policy
         draft_model_lower = draft_model.lower()
 
-        # Handle duplicate provider prefixes (e.g., "gemini-gemini-pro", "gpt-gpt-4")
-        if draft_model_lower.startswith("gemini-gemini-"):
-            # "gemini-gemini-1.5-pro" → provider: "gemini", model: "gemini-1.5-pro"
-            preferred_provider = "gemini"
-            preferred_model = draft_model_lower[7:]  # Strip first "gemini-"
-        elif draft_model_lower.startswith("gpt-gpt-"):
-            # "gpt-gpt-4" → provider: "openai", model: "gpt-4"
-            preferred_provider = "openai"
-            preferred_model = draft_model_lower[4:]  # Strip first "gpt-"
-        elif draft_model_lower.startswith("claude-claude-"):
-            # "claude-claude-opus" → provider: "anthropic", model: "claude-opus"
-            preferred_provider = "anthropic"
-            preferred_model = draft_model_lower[7:]  # Strip first "claude-"
-        elif "gemini" in draft_model_lower:
-            preferred_provider = "gemini"
-            preferred_model = draft_model
-        elif "gpt" in draft_model_lower or "openai" in draft_model_lower:
-            preferred_provider = "openai"
-            preferred_model = draft_model
-        elif "claude" in draft_model_lower or "anthropic" in draft_model_lower:
-            preferred_provider = "anthropic"
-            preferred_model = draft_model
-        elif (
+        if (
             "ollama" in draft_model_lower
             or "mistral" in draft_model_lower
             or "llama" in draft_model_lower
+            or "qwen" in draft_model_lower
+            or "gemma" in draft_model_lower
+            or "deepseek" in draft_model_lower
+            or "phi" in draft_model_lower
         ):
             preferred_provider = "ollama"
             preferred_model = draft_model
         else:
-            # Default to model name as-is
+            # Default to ollama with model name as-is
+            preferred_provider = "ollama"
             preferred_model = draft_model
 
     logger.info(
@@ -952,7 +933,7 @@ async def _stage_generate_content(
     logger.info(f"✅ Title generated: {title}")
 
     # Title originality check — search the web for duplicate/near-duplicate titles
-    originality = await _check_title_originality(title, topic)
+    originality = await _check_title_originality(title)
     if not originality["is_original"]:
         logger.warning(
             "[TITLE] Title too similar to existing content — regenerating with stronger uniqueness prompt"
@@ -968,7 +949,7 @@ async def _stage_generate_content(
         )
         if title_v2:
             # Verify the new title is better
-            originality_v2 = await _check_title_originality(title_v2, topic)
+            originality_v2 = await _check_title_originality(title_v2)
             if originality_v2["max_similarity"] < originality["max_similarity"]:
                 logger.info(
                     "[TITLE] Regenerated title is more original (%.0f%% → %.0f%%): %s",
@@ -1289,7 +1270,6 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
             from services.site_config import site_config
 
             # Use LLM-generated image prompt if available, otherwise fall back to generic
-            category = result.get("category", "technology")
             negative = site_config.get("image_negative_prompt", "text, words, letters, watermark, face, person, hands, blurry, low quality, distorted, ugly, deformed")
 
             # Check if the content pipeline already generated an image prompt
@@ -1337,7 +1317,6 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
                 try:
                     import httpx as _hx
                     _ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
-                    content_excerpt = result.get("content", "")[:300]
                     _img_prompt = (
                         f"Write a Stable Diffusion XL image prompt for a magazine-style editorial cover image.\n"
                         f"The article is about: {topic}\n"

@@ -71,26 +71,15 @@ class UsageTracker:
     """Track and aggregate usage metrics"""
 
     # Default pricing per 1K tokens (in USD)
+    # Ollama-only policy — all models are local, zero API cost
     MODEL_PRICING = {
-        # OpenAI models
-        "gpt-4": {"input": 0.03, "output": 0.06},
-        "gpt-4-turbo": {"input": 0.01, "output": 0.03},
-        "gpt-4o": {"input": 0.005, "output": 0.015},
-        "gpt-3.5-turbo": {"input": 0.0005, "output": 0.0015},
-        # Anthropic models
-        "claude-3-opus": {"input": 0.015, "output": 0.075},
-        "claude-3-sonnet": {"input": 0.003, "output": 0.015},
-        "claude-3-haiku": {"input": 0.00025, "output": 0.00125},
-        # Google models
-        "gemini-pro": {"input": 0.0005, "output": 0.0015},
-        "gemini-pro-vision": {"input": 0.001, "output": 0.002},
-        # Meta models
-        "llama-2-70b": {"input": 0.001, "output": 0.003},
         # Ollama (self-hosted — electricity cost, not free)
         # ~300W GPU, ~40 tok/s, $0.12/kWh => ~$0.00025/1K tokens
         "ollama": {"input": 0.00025, "output": 0.00025},
-        # Mistral
+        # Mistral (via Ollama)
         "mistral-7b": {"input": 0.0002, "output": 0.0006},
+        # Meta models (via Ollama)
+        "llama-2-70b": {"input": 0.001, "output": 0.003},
     }
 
     def __init__(self):

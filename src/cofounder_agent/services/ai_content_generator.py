@@ -4,9 +4,6 @@ Unified AI Content Generator Service
 Handles blog post generation with fallback through multiple providers:
 1. Local Ollama (free, RTX 5070 optimized)
 2. HuggingFace (free tier)
-3. Anthropic Claude (paid cloud)
-4. Google Gemini (paid cloud)
-5. OpenAI (paid cloud)
 
 Features:
 - Intelligent provider fallback strategy
@@ -67,9 +64,6 @@ class AIContentGenerator:
         logger.info("AIContentGenerator initialized (Ollama check deferred to first async call)")
         logger.debug(
             f"   HuggingFace token: {'✓ set' if ProviderChecker.is_huggingface_available() else '✗ not set'}"
-        )
-        logger.debug(
-            f"   Gemini/Google key: {'✓ set' if ProviderChecker.is_gemini_available() else '✗ not set'}"
         )
 
     async def _check_ollama_async(self):
@@ -323,25 +317,12 @@ class AIContentGenerator:
         logger.info(f"📌 Quality threshold: {self.quality_threshold}")
         logger.info(f"📌 Preferred model: {preferred_model or 'auto'}")
         logger.info(f"📌 Preferred provider: {preferred_provider or 'auto'}")
-        logger.info(f"📌 Anthropic key: {'✓' if ProviderChecker.is_anthropic_available() else '✗'}")
-        logger.info(f"📌 Gemini key: {'✓' if ProviderChecker.is_gemini_available() else '✗'}")
-        logger.info(f"📌 OpenAI key: {'✓' if ProviderChecker.is_openai_available() else '✗'}")
         logger.info(
             f"📌 HuggingFace token: {'✓' if ProviderChecker.is_huggingface_available() else '✗'}"
         )
         logger.info(f"{'='*80}\n")
 
-        # Check if Ollama is available (async check, happens once)
-        # IMPORTANT: Default provider priority when none specified:
-        # 1. Ollama (if available) - local, free
-        # 2. HuggingFace (if token available) - free tier
-        # 3. Anthropic Claude (if key available) - paid cloud
-        # 4. Google Gemini (if key available) - paid cloud
-        # 5. OpenAI (if key available) - paid cloud
-
-        # Determine effective provider preference
-        # When no provider specified, let the fallback chain handle it:
-        # Ollama → HuggingFace → Anthropic → OpenAI → template
+        # Provider priority: Ollama → HuggingFace → template
         effective_provider = preferred_provider
         if not effective_provider:
             logger.info("📌 No provider specified, will try fallback chain (Ollama first)")
@@ -398,10 +379,6 @@ class AIContentGenerator:
                 "attempted_providers": [],
                 "skipped_ollama": skip_ollama,
                 "decision_tree": {
-                    "gemini_key_available": ProviderChecker.is_gemini_available(),
-                    "gemini_attempted": False,
-                    "gemini_succeeded": False,
-                    "gemini_error": None,
                     "ollama_available": use_ollama,
                     "huggingface_token_available": ProviderChecker.is_huggingface_available(),
                 },
@@ -418,15 +395,6 @@ class AIContentGenerator:
         logger.info(f"   Effective provider: {effective_provider}")
         logger.info("")
         logger.info("   Provider Status:")
-        logger.info(
-            f"   ├─ Anthropic (cloud):  {'✓ key set' if ProviderChecker.is_anthropic_available() else '✗ no key'}"
-        )
-        logger.info(
-            f"   ├─ Gemini (cloud):     {'✓ key set' if ProviderChecker.is_gemini_available() else '✗ no key'}"
-        )
-        logger.info(
-            f"   ├─ OpenAI (cloud):     {'✓ key set' if ProviderChecker.is_openai_available() else '✗ no key'}"
-        )
         logger.info(
             f"   ├─ Ollama (local):     {'✓ available' if use_ollama else '✗ not available/skipped'}"
         )
@@ -453,190 +421,6 @@ class AIContentGenerator:
             "tags": tags,
             "preferred_model": preferred_model,
         }
-
-    async def _try_gemini_user_selected(
-        self, ctx: Dict[str, Any]
-    ) -> Optional[Tuple[str, str, Dict[str, Any]]]:
-        """Try user-selected Gemini provider. Returns result tuple or None."""
-        effective_provider = ctx["effective_provider"]
-        preferred_model = ctx["preferred_model"]
-        metrics = ctx["metrics"]
-        system_prompt = ctx["system_prompt"]
-        generation_prompt = ctx["generation_prompt"]
-        target_length = ctx["target_length"]
-        topic = ctx["topic"]
-        attempts = ctx["attempts"]
-        start_time = ctx["start_time"]
-
-        if not (
-            effective_provider
-            and effective_provider.lower() == "gemini"
-            and ProviderChecker.is_gemini_available()
-        ):
-            return None
-
-        logger.info("🎯 PLAN: Will attempt Gemini (user selection)\n")
-        logger.info(
-            f"🎯 Attempting Gemini (provider: {effective_provider}, model: {preferred_model or 'auto'})..."
-        )
-        metrics["model_selection_log"]["decision_tree"]["gemini_attempted"] = True
-        try:
-            # Import google-genai library (official SDK)
-            import google.genai as genai
-
-            genai.api_key = ProviderChecker.get_gemini_api_key()
-
-            # Map generic model names to actual Gemini API models
-            model_name = (
-                preferred_model
-                if preferred_model
-                and "gemini" in preferred_model.lower()
-                and preferred_model.lower() != "gemini"
-                else "gemini-2.5-flash"
-            )
-
-            # Handle old/generic names → real Gemini models
-            # NOTE: For this environment, use 2.5-flash as default
-            model_mapping = {
-                "gemini": "gemini-2.5-flash",
-                "gemini-pro": "gemini-2.5-pro",
-                "gemini-flash": "gemini-2.5-flash",
-                "gemini-1.5-pro": "gemini-2.5-pro",
-                "gemini-1.5-flash": "gemini-2.5-flash",
-                "gemini-2.0-flash": "gemini-2.5-flash",
-            }
-
-            # Apply mapping if model is in the mapping dict
-            if model_name.lower() in model_mapping:
-                mapped_model = model_mapping[model_name.lower()]
-                logger.info(
-                    f"   Model name mapped: {preferred_model} → {mapped_model} (reason: availability)"
-                )
-                model_name = mapped_model
-            else:
-                logger.info(f"   Model name no mapping needed: {model_name}")
-
-            logger.info(f"   Using Gemini model: {model_name}")
-
-            metrics["generation_attempts"] += 1
-            metrics["model_selection_log"]["attempted_providers"].append("gemini")
-
-            # Run blocking Gemini call in a thread to avoid blocking the event loop
-            def _gemini_generate():
-                # Calculate max tokens: For Gemini, use MUCH higher multiplier for large outputs
-                # Gemini sometimes throttles long outputs, so we need to give it extra room
-                # Using 6x multiplier to ensure Gemini has enough token budget to complete full response
-                max_tokens = int(target_length * 6.0)  # Using 6x for large outputs (3000+ words)
-                # Cap at Gemini's reasonable maximum to avoid API issues
-                max_tokens = min(max_tokens, 32000)  # Gemini-pro-15 supports up to 32k output
-                logger.debug(
-                    f"   Gemini max_output_tokens: {max_tokens} (target_length: {target_length}, multiplier: 6.0x, capped at 32k)"
-                )
-
-                # google.genai SDK: Use client.models.generate_content()
-                client = genai.Client(api_key=ProviderChecker.get_gemini_api_key())
-                response = client.models.generate_content(
-                    model=f"models/{model_name}",
-                    contents=f"{system_prompt}\n\n{generation_prompt}",
-                    config={
-                        "max_output_tokens": max_tokens,
-                        "temperature": 0.7,
-                    },
-                )
-
-                return response
-
-            response = await asyncio.to_thread(_gemini_generate)
-
-            # Extract text from response
-            generated_content = ""
-            try:
-                if hasattr(response, "text"):
-                    generated_content = response.text or ""
-                elif hasattr(response, "content"):
-                    generated_content = response.content or ""
-                else:
-                    logger.error(
-                        f"Gemini response missing text/content attribute. Keys: {dir(response)}"
-                    )
-                    generated_content = ""
-            except AttributeError as e:
-                logger.error(f"Failed to extract text from Gemini response: {e}", exc_info=True)
-                generated_content = ""
-
-            # Track cost from Gemini usage metadata
-            usage_meta = getattr(response, "usage_metadata", None)
-            if usage_meta:
-                input_tokens = getattr(usage_meta, "prompt_token_count", 0) or 0
-                output_tokens = getattr(usage_meta, "candidates_token_count", 0) or 0
-                cost_usd = input_tokens / 1000 * 0.0001 + output_tokens / 1000 * 0.0004
-                metrics["cost_log"] = {
-                    "provider": "google", "model": model_name,
-                    "input_tokens": input_tokens, "output_tokens": output_tokens,
-                    "cost_usd": round(cost_usd, 6), "phase": "content_generation",
-                }
-                logger.info("💰 Gemini cost: $%.4f (%d in + %d out tokens)", cost_usd, input_tokens, output_tokens)
-
-            if generated_content and len(generated_content) > 100:
-                validation = self._validate_content(generated_content, topic, target_length)
-
-                # Check if content is significantly under target (less than 60% of target)
-                word_count = len(generated_content.split())
-                min_acceptable = int(target_length * 0.6)
-
-                if word_count < min_acceptable:
-                    logger.warning(
-                        f"⚠️ Gemini returned short content: {word_count} words (target: {target_length}, minimum acceptable: {min_acceptable})"
-                    )
-                    attempts.append(
-                        (
-                            "Gemini (undershoot)",
-                            f"Content too short: {word_count} words vs {target_length} target",
-                        )
-                    )
-                    # Continue to next provider instead of accepting short content
-                    pass  # Fall through to try next provider
-                else:
-                    # Content is acceptable length
-                    metrics["validation_results"].append(
-                        {
-                            "attempt": metrics["generation_attempts"],
-                            "score": validation.quality_score,
-                            "issues": validation.issues,
-                            "passed": validation.is_valid,
-                        }
-                    )
-
-                    metrics["model_used"] = f"Google Gemini ({model_name})"
-                    metrics["models_used_by_phase"]["draft"] = metrics[
-                        "model_used"
-                    ]  # NEW: Track phase
-                    metrics["final_quality_score"] = validation.quality_score
-                    metrics["generation_time_seconds"] = time.time() - start_time
-                    metrics["model_selection_log"]["decision_tree"]["gemini_succeeded"] = True
-                    logger.info(
-                        f"✓ Content generated with Gemini: {validation.feedback} ({word_count} words)"
-                    )
-                    return generated_content, metrics["model_used"], metrics
-            else:
-                logger.warning(
-                    f"Gemini returned empty or very short content: {len(generated_content) if generated_content else 0} chars"
-                )
-                attempts.append(("Gemini", "Empty or very short response"))
-
-        except Exception as e:
-            import traceback
-
-            logger.warning(
-                f"User-selected Gemini failed: {type(e).__name__}: {str(e)}", exc_info=True
-            )
-            logger.debug(f"Gemini error traceback: {traceback.format_exc()}")
-            metrics["model_selection_log"]["decision_tree"]["gemini_error"] = str(e)[
-                :200
-            ]  # Store error
-            attempts.append(("Gemini (user-selected)", str(e)))
-
-        return None
 
     def _extract_ollama_response(self, response) -> str:
         """Extract text content from an Ollama response (dict or string)."""
@@ -1069,346 +853,8 @@ class AIContentGenerator:
 
         return None
 
-    async def _try_anthropic(
-        self, ctx: Dict[str, Any]
-    ) -> Optional[Tuple[str, str, Dict[str, Any]]]:
-        """Try Anthropic Claude provider. Returns result tuple or None."""
-        effective_provider = ctx["effective_provider"]
-        preferred_model = ctx["preferred_model"]
-        metrics = ctx["metrics"]
-        system_prompt = ctx["system_prompt"]
-        generation_prompt = ctx["generation_prompt"]
-        target_length = ctx["target_length"]
-        topic = ctx["topic"]
-        attempts = ctx["attempts"]
-        start_time = ctx["start_time"]
-
-        # ========================================================================
-        # 3. ANTHROPIC CLAUDE: Try if key available (fallback after local providers)
-        # ========================================================================
-        if not (
-            (
-                effective_provider
-                and effective_provider.lower() in ("anthropic", "claude")
-                and ProviderChecker.is_anthropic_available()
-            )
-            or (
-                ProviderChecker.is_anthropic_available()
-                and not any(p.startswith("Anthropic") for p, _ in attempts)
-            )
-        ):
-            return None
-
-        logger.info("🔄 Trying Anthropic Claude...")
-        metrics["model_selection_log"]["attempted_providers"].append("anthropic")
-        try:
-            from anthropic import AsyncAnthropic
-
-            client = AsyncAnthropic(api_key=ProviderChecker.get_anthropic_api_key())
-
-            # Map model names
-            model_name = preferred_model or "claude-sonnet-4-20250514"
-            model_mapping = {
-                "claude": "claude-sonnet-4-20250514",
-                "anthropic": "claude-sonnet-4-20250514",
-                "claude-sonnet": "claude-sonnet-4-20250514",
-                "claude-haiku": "claude-haiku-4-5-20251001",
-                "claude-opus": "claude-opus-4-20250514",
-                "claude-3-sonnet": "claude-sonnet-4-20250514",
-                "claude-3-haiku": "claude-haiku-4-5-20251001",
-                "claude-3-opus": "claude-opus-4-20250514",
-            }
-            if model_name.lower() in model_mapping:
-                model_name = model_mapping[model_name.lower()]
-            logger.info(f"   Using Anthropic model: {model_name}")
-
-            metrics["generation_attempts"] += 1
-            max_tokens = min(int(target_length * 5.0), 8192)
-
-            response = await client.messages.create(
-                model=model_name,
-                max_tokens=max_tokens,
-                system=system_prompt,
-                messages=[{"role": "user", "content": generation_prompt}],
-                temperature=0.7,
-            )
-
-            generated_content = response.content[0].text if response.content else ""
-
-            # Track cost from usage data
-            usage = getattr(response, "usage", None)
-            if usage:
-                input_tokens = getattr(usage, "input_tokens", 0) or 0
-                output_tokens = getattr(usage, "output_tokens", 0) or 0
-                # Anthropic pricing: Haiku ~$0.001/1K, Sonnet ~$0.015/1K
-                rate = 0.015 if "sonnet" in model_name.lower() else 0.001
-                cost_usd = (input_tokens + output_tokens) / 1000 * rate
-                metrics["cost_log"] = {
-                    "provider": "anthropic", "model": model_name,
-                    "input_tokens": input_tokens, "output_tokens": output_tokens,
-                    "cost_usd": round(cost_usd, 6), "phase": "content_generation",
-                }
-                logger.info("💰 Anthropic cost: $%.4f (%d in + %d out tokens)", cost_usd, input_tokens, output_tokens)
-
-            if generated_content and len(generated_content) > 100:
-                validation = self._validate_content(generated_content, topic, target_length)
-                word_count = len(generated_content.split())
-                min_acceptable = int(target_length * 0.6)
-
-                if word_count < min_acceptable:
-                    logger.warning(
-                        f"⚠️ Anthropic returned short content: {word_count} words (target: {target_length})"
-                    )
-                    attempts.append(
-                        ("Anthropic (undershoot)", f"{word_count} words vs {target_length} target")
-                    )
-                else:
-                    metrics["validation_results"].append(
-                        {
-                            "attempt": metrics["generation_attempts"],
-                            "score": validation.quality_score,
-                            "issues": validation.issues,
-                            "passed": validation.is_valid,
-                        }
-                    )
-                    metrics["model_used"] = f"Anthropic Claude ({model_name})"
-                    metrics["models_used_by_phase"]["draft"] = metrics["model_used"]
-                    metrics["final_quality_score"] = validation.quality_score
-                    metrics["generation_time_seconds"] = time.time() - start_time
-                    logger.info(
-                        f"✓ Content generated with Anthropic: {validation.feedback} ({word_count} words)"
-                    )
-                    return generated_content, metrics["model_used"], metrics
-            else:
-                logger.warning("Anthropic returned empty/short content")
-                attempts.append(("Anthropic", "Empty or very short response"))
-
-        except ImportError:
-            logger.warning("anthropic SDK not installed")
-            attempts.append(("Anthropic", "SDK not installed"))
-        except Exception as e:
-            logger.warning(f"Anthropic generation failed: {type(e).__name__}: {e}", exc_info=True)
-            attempts.append(("Anthropic", str(e)[:150]))
-
-        return None
-
-    async def _try_gemini_fallback(
-        self, ctx: Dict[str, Any]
-    ) -> Optional[Tuple[str, str, Dict[str, Any]]]:
-        """Try Gemini as fallback provider. Returns result tuple or None."""
-        metrics = ctx["metrics"]
-        system_prompt = ctx["system_prompt"]
-        generation_prompt = ctx["generation_prompt"]
-        target_length = ctx["target_length"]
-        topic = ctx["topic"]
-        attempts = ctx["attempts"]
-        start_time = ctx["start_time"]
-
-        # 4. Fall back to Google Gemini (paid, but reliable)
-        if not ProviderChecker.is_gemini_available():
-            return None
-
-        logger.info("🔄 [ATTEMPT 3/3] Trying Google Gemini (Fallback)...")
-        logger.info(
-            f"   ├─ API Key: {'✓ set' if ProviderChecker.is_gemini_available() else '✗ not set'}"
-        )
-        logger.info("   ├─ Model: gemini-2.5-flash")
-        logger.info("   └─ Status: Initializing...\n")
-        try:
-            # Import google-genai SDK
-            import google.genai as genai
-
-            logger.debug("Configuring Gemini with API key...")
-            client = genai.Client(api_key=ProviderChecker.get_gemini_api_key())
-            logger.debug("✓ Gemini client initialized")
-
-            metrics["generation_attempts"] += 1
-            logger.info("   Generating content...")
-            # Calculate max tokens for fallback generation - 3x multiplier for full content
-            max_tokens_fallback = int(target_length * 3.0)
-
-            # Use model from environment or default to latest flash
-            try:
-                from services.site_config import site_config
-                gemini_model_name = site_config.get("gemini_fallback_model") or os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash")
-            except Exception:
-                gemini_model_name = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash")
-            response = client.models.generate_content(
-                model=f"models/{gemini_model_name}",
-                contents=f"{system_prompt}\n\n{generation_prompt}",
-                config={
-                    "max_output_tokens": max_tokens_fallback,
-                    "temperature": 0.7,
-                },
-            )
-
-            generated_content = response.text
-            # Track cost from Gemini usage metadata
-            usage_meta = getattr(response, "usage_metadata", None)
-            if usage_meta:
-                input_tokens = getattr(usage_meta, "prompt_token_count", 0) or 0
-                output_tokens = getattr(usage_meta, "candidates_token_count", 0) or 0
-                # Gemini Flash: ~$0.0001/1K input, ~$0.0004/1K output
-                cost_usd = input_tokens / 1000 * 0.0001 + output_tokens / 1000 * 0.0004
-                metrics["cost_log"] = {
-                    "provider": "google", "model": gemini_model_name,
-                    "input_tokens": input_tokens, "output_tokens": output_tokens,
-                    "cost_usd": round(cost_usd, 6), "phase": "content_generation",
-                }
-                logger.info("💰 Gemini cost: $%.4f (%d in + %d out tokens)", cost_usd, input_tokens, output_tokens)
-
-            logger.info(f"   Generated {len(generated_content)} characters")
-            if generated_content and len(generated_content) > 100:
-                # Self-check: Validate content quality
-                validation = self._validate_content(generated_content, topic, target_length)
-                metrics["validation_results"].append(
-                    {
-                        "attempt": metrics["generation_attempts"],
-                        "score": validation.quality_score,
-                        "issues": validation.issues,
-                        "passed": validation.is_valid,
-                    }
-                )
-
-                metrics["model_used"] = "Google Gemini 2.5 Flash"
-                metrics["models_used_by_phase"]["draft"] = metrics["model_used"]  # Track phase
-                metrics["final_quality_score"] = validation.quality_score
-                metrics["generation_time_seconds"] = time.time() - start_time
-                logger.info(f"✓ Content generated with Gemini: {validation.feedback}")
-                return generated_content, metrics["model_used"], metrics
-            else:
-                logger.warning(f"Gemini content too short or empty: {len(generated_content)} chars")
-                attempts.append(("Gemini", f"Content too short: {len(generated_content)} chars"))
-
-        except ImportError as e:
-            logger.warning(f"google-genai not installed: {e}", exc_info=True)
-            attempts.append(("Gemini", "SDK not installed"))
-        except Exception as e:
-            logger.warning(f"Gemini generation failed: {e}", exc_info=True)
-            attempts.append(("Gemini", str(e)[:150]))
-
-        return None
-
-    async def _try_openai(self, ctx: Dict[str, Any]) -> Optional[Tuple[str, str, Dict[str, Any]]]:
-        """Try OpenAI provider. Returns result tuple or None."""
-        effective_provider = ctx["effective_provider"]
-        preferred_model = ctx["preferred_model"]
-        metrics = ctx["metrics"]
-        system_prompt = ctx["system_prompt"]
-        generation_prompt = ctx["generation_prompt"]
-        target_length = ctx["target_length"]
-        topic = ctx["topic"]
-        attempts = ctx["attempts"]
-        start_time = ctx["start_time"]
-
-        # ========================================================================
-        # 5. OPENAI: Last paid fallback before template
-        # ========================================================================
-        if not (
-            (
-                effective_provider
-                and effective_provider.lower() == "openai"
-                and ProviderChecker.is_openai_available()
-            )
-            or (
-                ProviderChecker.is_openai_available()
-                and not any(p.startswith("OpenAI") for p, _ in attempts)
-            )
-        ):
-            return None
-
-        logger.info("🔄 Trying OpenAI...")
-        metrics["model_selection_log"]["attempted_providers"].append("openai")
-        try:
-            from openai import AsyncOpenAI
-
-            client = AsyncOpenAI(api_key=ProviderChecker.get_openai_api_key())
-
-            model_name = preferred_model or "gpt-4o-mini"
-            model_mapping = {
-                "openai": "gpt-4o-mini",
-                "gpt-4": "gpt-4o",
-                "gpt-4-turbo": "gpt-4o",
-                "gpt-3.5-turbo": "gpt-4o-mini",
-                "gpt-4o": "gpt-4o",
-                "gpt-4o-mini": "gpt-4o-mini",
-            }
-            if model_name.lower() in model_mapping:
-                model_name = model_mapping[model_name.lower()]
-            logger.info(f"   Using OpenAI model: {model_name}")
-
-            metrics["generation_attempts"] += 1
-            max_tokens = min(int(target_length * 5.0), 16384)
-
-            response = await client.chat.completions.create(
-                model=model_name,
-                max_tokens=max_tokens,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": generation_prompt},
-                ],
-                temperature=0.7,
-            )
-
-            generated_content = response.choices[0].message.content or ""
-
-            # Track cost from OpenAI usage
-            usage = getattr(response, "usage", None)
-            if usage:
-                input_tokens = getattr(usage, "prompt_tokens", 0) or 0
-                output_tokens = getattr(usage, "completion_tokens", 0) or 0
-                # GPT-4o-mini: ~$0.00015/1K input, ~$0.0006/1K output
-                rate_in = 0.00015 if "mini" in model_name else 0.005
-                rate_out = 0.0006 if "mini" in model_name else 0.015
-                cost_usd = input_tokens / 1000 * rate_in + output_tokens / 1000 * rate_out
-                metrics["cost_log"] = {
-                    "provider": "openai", "model": model_name,
-                    "input_tokens": input_tokens, "output_tokens": output_tokens,
-                    "cost_usd": round(cost_usd, 6), "phase": "content_generation",
-                }
-                logger.info("💰 OpenAI cost: $%.4f (%d in + %d out tokens)", cost_usd, input_tokens, output_tokens)
-
-            if generated_content and len(generated_content) > 100:
-                validation = self._validate_content(generated_content, topic, target_length)
-                word_count = len(generated_content.split())
-                min_acceptable = int(target_length * 0.6)
-
-                if word_count < min_acceptable:
-                    logger.warning(
-                        f"⚠️ OpenAI returned short content: {word_count} words (target: {target_length})"
-                    )
-                    attempts.append(
-                        ("OpenAI (undershoot)", f"{word_count} words vs {target_length} target")
-                    )
-                else:
-                    metrics["validation_results"].append(
-                        {
-                            "attempt": metrics["generation_attempts"],
-                            "score": validation.quality_score,
-                            "issues": validation.issues,
-                            "passed": validation.is_valid,
-                        }
-                    )
-                    metrics["model_used"] = f"OpenAI ({model_name})"
-                    metrics["models_used_by_phase"]["draft"] = metrics["model_used"]
-                    metrics["final_quality_score"] = validation.quality_score
-                    metrics["generation_time_seconds"] = time.time() - start_time
-                    logger.info(
-                        f"✓ Content generated with OpenAI: {validation.feedback} ({word_count} words)"
-                    )
-                    return generated_content, metrics["model_used"], metrics
-            else:
-                logger.warning("OpenAI returned empty/short content")
-                attempts.append(("OpenAI", "Empty or very short response"))
-
-        except ImportError:
-            logger.warning("openai SDK not installed")
-            attempts.append(("OpenAI", "SDK not installed"))
-        except Exception as e:
-            logger.warning(f"OpenAI generation failed: {type(e).__name__}: {e}", exc_info=True)
-            attempts.append(("OpenAI", str(e)[:150]))
-
-        return None
+    # Paid provider methods (_try_anthropic, _try_gemini_fallback, _try_openai) removed.
+    # Policy: Ollama-only. See session 55 notes.
 
     def _handle_all_providers_failed(self, ctx: Dict[str, Any]) -> Tuple[str, str, Dict[str, Any]]:
         """Handle the case where all AI providers failed. Returns fallback content."""
@@ -1429,11 +875,6 @@ class AIContentGenerator:
         for provider, error in attempts:
             logger.error(f"   ✗ {provider}: {error}")
         logger.error("Provider summary:")
-        logger.error(
-            f"   - Anthropic:   {ProviderChecker.is_anthropic_available()} (key available)"
-        )
-        logger.error(f"   - Gemini:      {ProviderChecker.is_gemini_available()} (key available)")
-        logger.error(f"   - OpenAI:      {ProviderChecker.is_openai_available()} (key available)")
         logger.error(f"   - Ollama:      {use_ollama} (tried/available)")
         logger.error(
             f"   - HuggingFace: {ProviderChecker.is_huggingface_available()} (token available)"
@@ -1482,7 +923,7 @@ class AIContentGenerator:
 
         Features:
         - User-selected model support (respects frontend UI choices)
-        - Intelligent provider fallback (Ollama → HuggingFace → Gemini)
+        - Intelligent provider fallback (Ollama → HuggingFace)
         - Self-validation and quality checking
         - Refinement loop for rejected content
         - Full metrics tracking
@@ -1493,8 +934,8 @@ class AIContentGenerator:
             tone: Content tone (professional, casual, etc.)
             target_length: Target word count
             tags: Content tags
-            preferred_model: User-selected model (e.g., 'gpt-4', 'claude-3-opus', 'gemini-pro')
-            preferred_provider: User-selected provider ('openai', 'anthropic', 'gemini', 'ollama', 'huggingface')
+            preferred_model: User-selected model (e.g., 'qwen3.5:35b')
+            preferred_provider: User-selected provider ('ollama', 'huggingface')
             writing_style_context: Optional writing style excerpts to include in the prompt
                 for voice/tone matching
 
@@ -1510,13 +951,6 @@ class AIContentGenerator:
             research_context=research_context,
         )
 
-        # ========================================================================
-        # USER SELECTION: Try user-selected provider/model first if specified
-        # ========================================================================
-        result = await self._try_gemini_user_selected(ctx)
-        if result:
-            return result
-
         # 1. Try Ollama (local, free, no internet, RTX 5070 optimized)
         result = await self._try_ollama(ctx)
         if result:
@@ -1526,9 +960,6 @@ class AIContentGenerator:
         result = await self._try_huggingface(ctx)
         if result:
             return result
-
-        # Paid cloud providers (Anthropic, OpenAI, Gemini) removed to avoid API costs.
-        # All content generation uses local Ollama or free HuggingFace tier.
 
         # All providers failed — return fallback template
         return self._handle_all_providers_failed(ctx)
@@ -1622,7 +1053,6 @@ async def test_generation():
     logger.info("Testing content generation...")
     logger.debug(f"Ollama available: {generator.ollama_available}")
     logger.debug(f"HuggingFace token: {'✓' if generator.hf_token else '✗'}")
-    logger.debug(f"Gemini key: {'✓' if generator.gemini_key else '✗'}")
 
     logger.info("Generating blog post...")
     content, model, metrics = await generator.generate_blog_post(

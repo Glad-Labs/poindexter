@@ -45,5 +45,4 @@ class ProvidersStatusResponse(BaseModel):
 
     ollama: ProviderStatus
     huggingface: ProviderStatus
-    gemini: ProviderStatus
     timestamp: str

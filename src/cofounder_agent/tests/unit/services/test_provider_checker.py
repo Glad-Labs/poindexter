@@ -3,6 +3,8 @@ Unit tests for ProviderChecker service.
 
 Tests provider availability checks, env-var reading, cache behaviour,
 preferred-provider selection, and API key retrieval — no network calls.
+
+Policy: Ollama-only. Gemini, OpenAI, Anthropic permanently disabled.
 """
 
 import pytest
@@ -23,43 +25,20 @@ def clear_provider_cache():
 
 
 # ---------------------------------------------------------------------------
-# is_gemini_available
+# is_gemini_available — permanently disabled
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestIsGeminiAvailable:
-    def test_returns_false_when_no_key_set(self, monkeypatch):
-        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    """Gemini is permanently disabled to avoid API costs."""
+
+    def test_always_returns_false(self):
         assert ProviderChecker.is_gemini_available() is False
-
-    def test_returns_true_with_gemini_api_key(self, monkeypatch):
-        monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
-        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-        assert ProviderChecker.is_gemini_available() is True
-
-    def test_returns_true_with_google_api_key(self, monkeypatch):
-        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-        monkeypatch.setenv("GOOGLE_API_KEY", "test-google-key")
-        assert ProviderChecker.is_gemini_available() is True
-
-    def test_gemini_takes_precedence_over_google(self, monkeypatch):
-        monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
-        monkeypatch.setenv("GOOGLE_API_KEY", "google-key")
-        assert ProviderChecker.is_gemini_available() is True
-
-    def test_result_cached_after_first_call(self, monkeypatch):
-        monkeypatch.setenv("GEMINI_API_KEY", "initial-key")
-        result1 = ProviderChecker.is_gemini_available()
-        # Change env but cache should hold
-        monkeypatch.setenv("GEMINI_API_KEY", "")
-        result2 = ProviderChecker.is_gemini_available()
-        assert result1 == result2
 
 
 # ---------------------------------------------------------------------------
-# is_openai_available
+# is_openai_available — permanently disabled
 # ---------------------------------------------------------------------------
 
 
@@ -72,7 +51,7 @@ class TestIsOpenAIAvailable:
 
 
 # ---------------------------------------------------------------------------
-# is_anthropic_available
+# is_anthropic_available — permanently disabled
 # ---------------------------------------------------------------------------
 
 
@@ -120,18 +99,14 @@ class TestIsOllamaAvailable:
 @pytest.mark.unit
 class TestGetAvailableProviders:
     def test_ollama_always_in_set(self, monkeypatch):
-        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         monkeypatch.delenv("HUGGINGFACE_API_TOKEN", raising=False)
         providers = ProviderChecker.get_available_providers()
         assert "ollama" in providers
 
-    def test_gemini_included_when_key_set(self, monkeypatch):
+    def test_gemini_excluded_even_when_key_set(self, monkeypatch):
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
         providers = ProviderChecker.get_available_providers()
-        assert "gemini" in providers
+        assert "gemini" not in providers  # Paid APIs disabled
 
     def test_openai_excluded_even_when_key_set(self, monkeypatch):
         monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
@@ -149,20 +124,11 @@ class TestGetAvailableProviders:
         assert "huggingface" in providers
 
     def test_returns_set_type(self, monkeypatch):
-        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
         providers = ProviderChecker.get_available_providers()
         assert isinstance(providers, set)
 
     def test_no_cloud_keys_returns_only_ollama(self, monkeypatch):
-        for key in (
-            "GEMINI_API_KEY",
-            "GOOGLE_API_KEY",
-            "OPENAI_API_KEY",
-            "ANTHROPIC_API_KEY",
-            "HUGGINGFACE_API_TOKEN",
-        ):
-            monkeypatch.delenv(key, raising=False)
+        monkeypatch.delenv("HUGGINGFACE_API_TOKEN", raising=False)
         providers = ProviderChecker.get_available_providers()
         assert providers == {"ollama"}
 
@@ -174,35 +140,11 @@ class TestGetAvailableProviders:
 
 @pytest.mark.unit
 class TestGetPreferredProvider:
-    def test_ollama_preferred_when_available(self, monkeypatch):
-        monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
-        monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-key")
-        # Ollama is always available and now has highest priority (local, free)
+    def test_ollama_always_preferred(self):
+        """Ollama is always available and always preferred (local, free)."""
         assert ProviderChecker.get_preferred_provider() == "ollama"
 
-    def test_ollama_when_no_cloud_providers(self, monkeypatch):
-        for key in (
-            "GEMINI_API_KEY",
-            "GOOGLE_API_KEY",
-            "OPENAI_API_KEY",
-            "ANTHROPIC_API_KEY",
-            "HUGGINGFACE_API_TOKEN",
-        ):
-            monkeypatch.delenv(key, raising=False)
-        # Ollama is always available
-        assert ProviderChecker.get_preferred_provider() == "ollama"
-
-    def test_openai_when_no_gemini(self, monkeypatch):
-        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-        # Ollama takes priority over OpenAI (always available)
-        result = ProviderChecker.get_preferred_provider()
-        # Ollama is before openai in the priority chain
-        assert result in ("ollama", "openai")
-
-    def test_returns_string(self, monkeypatch):
+    def test_returns_string(self):
         result = ProviderChecker.get_preferred_provider()
         assert isinstance(result, str)
         assert len(result) > 0
@@ -215,33 +157,6 @@ class TestGetPreferredProvider:
 
 @pytest.mark.unit
 class TestApiKeyRetrieval:
-    def test_get_gemini_api_key_from_gemini_env(self, monkeypatch):
-        monkeypatch.setenv("GEMINI_API_KEY", "gemini-secret")
-        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-        assert ProviderChecker.get_gemini_api_key() == "gemini-secret"
-
-    def test_get_gemini_api_key_falls_back_to_google(self, monkeypatch):
-        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-        monkeypatch.setenv("GOOGLE_API_KEY", "google-secret")
-        assert ProviderChecker.get_gemini_api_key() == "google-secret"
-
-    def test_get_gemini_api_key_empty_when_none_set(self, monkeypatch):
-        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-        assert ProviderChecker.get_gemini_api_key() == ""
-
-    def test_get_openai_api_key(self, monkeypatch):
-        monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
-        assert ProviderChecker.get_openai_api_key() == "sk-openai"
-
-    def test_get_openai_api_key_empty_when_not_set(self, monkeypatch):
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        assert ProviderChecker.get_openai_api_key() == ""
-
-    def test_get_anthropic_api_key(self, monkeypatch):
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "ant-secret")
-        assert ProviderChecker.get_anthropic_api_key() == "ant-secret"
-
     def test_get_huggingface_token(self, monkeypatch):
         monkeypatch.setenv("HUGGINGFACE_API_TOKEN", "hf-token")
         assert ProviderChecker.get_huggingface_token() == "hf-token"
@@ -259,16 +174,6 @@ class TestApiKeyRetrieval:
 
 @pytest.mark.unit
 class TestClearCache:
-    def test_clear_cache_allows_fresh_check(self, monkeypatch):
-        monkeypatch.setenv("OPENAI_API_KEY", "first-key")
-        ProviderChecker.is_openai_available()  # Populate cache
-
-        ProviderChecker.clear_cache()
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-
-        # After clearing cache and removing env var, should return False
-        assert ProviderChecker.is_openai_available() is False
-
     def test_clear_cache_empties_internal_dict(self):
         ProviderChecker._cache["test_key"] = True
         ProviderChecker.clear_cache()

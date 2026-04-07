@@ -61,9 +61,9 @@ class ContentService(ServiceBase):
             user_id="user-123",
             quality_threshold=0.75,
             model_selections={
-                "research": "gemini",
-                "draft": "claude-3-sonnet",
-                "refine": "claude-3-sonnet"
+                "research": "ollama/qwen3:8b",
+                "draft": "ollama/qwen3.5:35b",
+                "refine": "ollama/qwen3.5:35b"
             }
         )
         ```

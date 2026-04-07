@@ -23,10 +23,7 @@ class Config:
     database_url: str = ""
     local_database_url: Optional[str] = None
 
-    # LLM API keys
-    openai_api_key: Optional[str] = None
-    anthropic_api_key: Optional[str] = None
-    google_api_key: Optional[str] = None
+    # LLM configuration (Ollama-only policy)
     ollama_base_url: Optional[str] = None
 
     # Environment settings
@@ -157,9 +154,6 @@ def get_config() -> Config:
     return Config(
         database_url=os.getenv("DATABASE_URL", ""),
         local_database_url=os.getenv("LOCAL_DATABASE_URL") or None,
-        openai_api_key=os.getenv("OPENAI_API_KEY"),
-        anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
-        google_api_key=os.getenv("GOOGLE_API_KEY"),
         ollama_base_url=os.getenv("OLLAMA_BASE_URL"),
         environment=environment,
         log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
