@@ -439,18 +439,26 @@ async def log_electricity_cost(pool):
     try:
         # Try to get real power data from nvidia-smi-exporter (local only)
         watts = None
+        power_source = "default"
         if not IS_RAILWAY:
             exporter_url = "http://host.docker.internal:9835/metrics" if IS_DOCKER else "http://localhost:9835/metrics"
             try:
                 resp = urllib.request.urlopen(exporter_url, timeout=3)
                 body = resp.read().decode()
+                psu_watts = None
+                estimate_watts = None
                 for line in body.split("\n"):
-                    if line.startswith("system_total_power_estimate_watts"):
-                        watts = float(line.split()[-1])
-                        break
                     if line.startswith("psu_total_power_watts"):
-                        watts = float(line.split()[-1])
-                        # Prefer PSU reading, don't break — keep looking for system_total
+                        psu_watts = float(line.split()[-1])
+                    elif line.startswith("system_total_power_estimate_watts"):
+                        estimate_watts = float(line.split()[-1])
+                # HX1500i wall power is ground truth; fall back to software estimate
+                if psu_watts:
+                    watts = psu_watts
+                    power_source = "hx1500i"
+                elif estimate_watts:
+                    watts = estimate_watts
+                    power_source = "estimate"
             except Exception:
                 pass  # Exporter not running, use estimate
 
@@ -493,8 +501,8 @@ async def log_electricity_cost(pool):
             )
         """, phase, cost_usd, int(CYCLE_SECONDS * 1000), cost_type)
 
-        logger.debug("[BRAIN] Electricity: %.0fW, %.4f kWh, $%.6f (%s)",
-                     watts, kwh, cost_usd, cost_type)
+        logger.debug("[BRAIN] Electricity: %.0fW (%s), %.4f kWh, $%.6f (%s)",
+                     watts, power_source, kwh, cost_usd, cost_type)
 
     except Exception as e:
         logger.debug("[BRAIN] Electricity cost logging failed: %s", e)
