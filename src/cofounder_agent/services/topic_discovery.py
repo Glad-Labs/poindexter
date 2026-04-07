@@ -506,15 +506,29 @@ class TopicDiscovery:
         "cyber", "vulnerability", "exploit", "ransomware", "zero-day",
         "self-healing", "monitoring", "grafana",
         "productivity", "workflow", "database", "postgres", "data",
-        "startup", "indie", "solo", "founder", "saas", "business",
+        "startup", "indie", "solo founder", "solo developer", "founder", "saas", "business",
         "local", "self-host", "self host",
     }
 
     @staticmethod
     def _is_brand_relevant(title: str) -> bool:
-        """Check if a topic is relevant to Glad Labs' niche."""
+        """Check if a topic is relevant to Glad Labs' niche.
+
+        Uses word-boundary matching to avoid false positives like
+        'farmer' matching 'arm' or 'autocross' matching 'solo'.
+        Multi-word keywords use substring match (they're specific enough).
+        """
         title_lower = title.lower()
-        return any(kw in title_lower for kw in TopicDiscovery._BRAND_KEYWORDS)
+        for kw in TopicDiscovery._BRAND_KEYWORDS:
+            if " " in kw or "-" in kw:
+                # Multi-word keywords: substring match is fine
+                if kw in title_lower:
+                    return True
+            else:
+                # Single-word keywords: require word boundary
+                if re.search(rf"\b{re.escape(kw)}\b", title_lower):
+                    return True
+        return False
 
     def _classify_category(self, title: str) -> str:
         """Classify a title into a category."""
