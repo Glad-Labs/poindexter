@@ -98,14 +98,8 @@ class TestFallbackChain:
         ollama_response = _make_response(ProviderType.OLLAMA, "hello from ollama")
         service.adapters[ProviderType.OLLAMA] = _available_adapter(ollama_response)
 
-        # All other adapters should not be called
-        for p in [
-            ProviderType.HUGGINGFACE,
-            ProviderType.GOOGLE,
-            ProviderType.ANTHROPIC,
-            ProviderType.OPENAI,
-        ]:
-            service.adapters[p] = _unavailable_adapter()
+        # HuggingFace should not be called
+        service.adapters[ProviderType.HUGGINGFACE] = _unavailable_adapter()
 
         result = await service.generate("test prompt")
 

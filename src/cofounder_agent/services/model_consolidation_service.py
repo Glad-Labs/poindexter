@@ -1,23 +1,13 @@
 """
 Unified Model Consolidation Service
 
-Consolidates 5 independent model providers into a single unified interface with
-intelligent fallback chain:
+Routes LLM requests through a unified interface with automatic fallback.
+Policy: Ollama-only (local, zero-cost). HuggingFace kept as emergency fallback.
+Paid APIs (Anthropic, OpenAI, Gemini) removed per no-paid-APIs policy.
 
-Fallback Chain (in order):
-1. Ollama (local, zero-cost) ← Primary
-2. HuggingFace (free tier available)
-3. Google Gemini (paid tier)
-4. Anthropic Claude (paid tier)
-5. OpenAI GPT (expensive, last resort)
-
-Features:
-- Unified interface across all providers
-- Automatic fallback on provider failure
-- Availability caching (5 minute TTL)
-- Metrics tracking per provider
-- Easy provider addition
-- Graceful degradation
+Fallback Chain:
+1. Ollama (local, zero-cost) ← Primary and only provider in normal operation
+2. HuggingFace (free tier) ← Emergency fallback if Ollama is down
 
 Usage:
     service = get_model_consolidation_service()
@@ -51,13 +41,10 @@ logger = get_logger(__name__)
 
 
 class ProviderType(str, Enum):
-    """Available model providers"""
+    """Available model providers (Ollama-only policy; HuggingFace as emergency fallback)"""
 
-    OLLAMA = "ollama"  # Local, zero-cost
-    HUGGINGFACE = "huggingface"  # Free tier, rate limited
-    GOOGLE = "google"  # Gemini API
-    ANTHROPIC = "anthropic"  # Claude API
-    OPENAI = "openai"  # GPT API (expensive)
+    OLLAMA = "ollama"  # Local, zero-cost — primary and only provider
+    HUGGINGFACE = "huggingface"  # Free tier, rate limited — emergency fallback
 
 
 @dataclass
@@ -287,262 +274,9 @@ class HuggingFaceAdapter(ProviderAdapter):
         ]
 
 
-class GoogleAdapter(ProviderAdapter):
-    """Adapter for Google Gemini API"""
 
-    def __init__(self):
-        from .gemini_client import GeminiClient
-
-        try:
-            from services.site_config import site_config
-            self.api_key = site_config.get("google_api_key") or site_config.get("gemini_api_key")
-        except Exception:
-            self.api_key = None
-        self.api_key = self.api_key or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-        self.client = GeminiClient(api_key=self.api_key)
-        self.provider_type = ProviderType.GOOGLE
-
-    async def is_available(self) -> bool:
-        """Check if Google Gemini API is available"""
-        if not self.api_key:
-            return False
-
-        try:
-            models = await self.client.list_models()
-            is_available = len(models) > 0
-            if is_available:
-                logger.debug("Google Gemini available", model_count=len(models))
-            return is_available
-        except Exception as e:
-            logger.debug("Google Gemini unavailable", error=str(e))
-            return False
-
-    async def generate(
-        self,
-        prompt: str,
-        model: Optional[str] = None,
-        max_tokens: int = 2000,
-        temperature: float = 0.7,
-        **kwargs,
-    ) -> ModelResponse:
-        """Generate text using Google Gemini"""
-        model = model or "gemini-pro"
-        start_time = datetime.now(timezone.utc)
-
-        try:
-            response = await self.client.generate(
-                prompt=prompt,
-                model=model,
-                max_tokens=max_tokens,
-                temperature=temperature,
-            )
-
-            elapsed_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
-            tokens_used = len(prompt.split()) + len(response.split())  # Rough estimate
-
-            logger.info(
-                "LLM call completed",
-                provider="google",
-                model=model,
-                response_time_ms=elapsed_ms,
-                tokens_used=tokens_used,
-            )
-
-            return ModelResponse(
-                text=response,
-                provider=self.provider_type,
-                model=model,
-                tokens_used=tokens_used,
-                cost=0.0001,  # Gemini is relatively cheap
-                response_time_ms=elapsed_ms,
-            )
-        except Exception as e:
-            logger.warning(
-                "Google Gemini generation failed", error=str(e), model=model, exc_info=True
-            )
-            raise
-
-    def list_models(self) -> List[str]:
-        """List available Google models"""
-        # Return known available Gemini models
-        # Note: We don't try to fetch dynamically because we're in an async context (FastAPI)
-        # and creating a new event loop while one exists causes "event loop already running" errors
-        return [
-            "gemini-2.5-flash",
-            "gemini-2.5-pro",
-            "gemini-2.0-flash",
-            "gemini-pro-latest",
-            "gemini-flash-latest",
-        ]
-
-
-class AnthropicAdapter(ProviderAdapter):
-    """Adapter for Anthropic Claude API"""
-
-    def __init__(self):
-        if not ProviderChecker.is_anthropic_available():
-            logger.warning("Anthropic API key not configured")
-            self.client = None
-        else:
-            try:
-                from anthropic import AsyncAnthropic
-
-                self.api_key = ProviderChecker.get_anthropic_api_key()
-                self.client = AsyncAnthropic(api_key=self.api_key)
-            except ImportError:
-                logger.warning(
-                    "Anthropic SDK not installed. Install with: pip install anthropic",
-                    exc_info=True,
-                )
-                self.client = None
-
-        self.provider_type = ProviderType.ANTHROPIC
-
-    async def is_available(self) -> bool:
-        """Check if Anthropic Claude API is available"""
-        return self.client is not None
-
-    async def generate(
-        self,
-        prompt: str,
-        model: Optional[str] = None,
-        max_tokens: int = 2000,
-        temperature: float = 0.7,
-        **kwargs,
-    ) -> ModelResponse:
-        """Generate text using Anthropic Claude"""
-        if not self.client:
-            raise Exception(
-                "Anthropic client not configured. Set ANTHROPIC_API_KEY environment variable."
-            )
-
-        model = model or "claude-3-sonnet-20240229"
-        start_time = datetime.now(timezone.utc)
-
-        try:
-            response = await self.client.messages.create(
-                model=model,
-                max_tokens=max_tokens,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=temperature,
-            )
-
-            elapsed_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
-
-            text = response.content[0].text if response.content else ""
-            tokens_used = response.usage.input_tokens + response.usage.output_tokens
-
-            logger.info(
-                "LLM call completed",
-                provider="anthropic",
-                model=model,
-                response_time_ms=elapsed_ms,
-                tokens_used=tokens_used,
-            )
-
-            return ModelResponse(
-                text=text,
-                provider=self.provider_type,
-                model=model,
-                tokens_used=tokens_used,
-                cost=0.0003,  # Approximate cost per token
-                response_time_ms=elapsed_ms,
-            )
-        except Exception as e:
-            logger.warning("Anthropic generation failed", error=str(e), model=model, exc_info=True)
-            raise
-
-    def list_models(self) -> List[str]:
-        """List available Anthropic models"""
-        return [
-            "claude-3-opus-20240229",
-            "claude-3-sonnet-20240229",
-            "claude-3-haiku-20240307",
-        ]
-
-
-class OpenAIAdapter(ProviderAdapter):
-    """Adapter for OpenAI GPT API"""
-
-    def __init__(self):
-        if not ProviderChecker.is_openai_available():
-            logger.warning("OpenAI API key not configured")
-            self.client = None
-        else:
-            try:
-                from openai import AsyncOpenAI
-
-                self.api_key = ProviderChecker.get_openai_api_key()
-                self.client = AsyncOpenAI(api_key=self.api_key)
-            except ImportError:
-                logger.warning(
-                    "OpenAI SDK not installed. Install with: pip install openai", exc_info=True
-                )
-                self.client = None
-
-        self.provider_type = ProviderType.OPENAI
-
-    async def is_available(self) -> bool:
-        """Check if OpenAI API is available"""
-        return self.client is not None
-
-    async def generate(
-        self,
-        prompt: str,
-        model: Optional[str] = None,
-        max_tokens: int = 2000,
-        temperature: float = 0.7,
-        **kwargs,
-    ) -> ModelResponse:
-        """Generate text using OpenAI GPT"""
-        if not self.client:
-            raise Exception(
-                "OpenAI client not configured. Set OPENAI_API_KEY environment variable."
-            )
-
-        model = model or "gpt-4-turbo"
-        start_time = datetime.now(timezone.utc)
-
-        try:
-            response = await self.client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
-                temperature=temperature,
-            )
-
-            elapsed_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
-
-            text = response.choices[0].message.content if response.choices else ""
-            tokens_used = response.usage.prompt_tokens + response.usage.completion_tokens
-
-            logger.info(
-                "LLM call completed",
-                provider="openai",
-                model=model,
-                response_time_ms=elapsed_ms,
-                tokens_used=tokens_used,
-            )
-
-            return ModelResponse(
-                text=text,
-                provider=self.provider_type,
-                model=model,
-                tokens_used=tokens_used,
-                cost=0.0006,  # Approximate cost per token (GPT-4 is expensive!)
-                response_time_ms=elapsed_ms,
-            )
-        except Exception as e:
-            logger.warning("OpenAI generation failed", error=str(e), model=model, exc_info=True)
-            raise
-
-    def list_models(self) -> List[str]:
-        """List available OpenAI models"""
-        return [
-            "gpt-4-turbo",
-            "gpt-4",
-            "gpt-3.5-turbo",
-        ]
+# NOTE: GoogleAdapter, AnthropicAdapter, OpenAIAdapter removed — Ollama-only policy.
+# See git history (session 55+) for paid API adapter code if ever needed again.
 
 
 # ============================================================================
@@ -552,18 +286,13 @@ class OpenAIAdapter(ProviderAdapter):
 
 class ModelConsolidationService:
     """
-    Unified model service with intelligent fallback chain.
+    Unified model service with fallback chain.
 
-    Fallback Order:
-    1. Ollama (local, zero-cost) ← Primary
-    2. HuggingFace (free tier)
-    3. Google Gemini
-    4. Anthropic Claude
-    5. OpenAI GPT (expensive, last resort)
+    Fallback Order (Ollama-only policy):
+    1. Ollama (local, zero-cost) ← Primary and only provider
+    2. HuggingFace (free tier) ← Emergency fallback
     """
 
-    # Fallback chain (order matters!)
-    # Anthropic/OpenAI removed — using local Ollama only to avoid API costs
     FALLBACK_CHAIN = [
         ProviderType.OLLAMA,
         ProviderType.HUGGINGFACE,
@@ -586,12 +315,10 @@ class ModelConsolidationService:
         logger.info("Model consolidation service initialized")
 
     def _initialize_adapters(self):
-        """Initialize all provider adapters"""
-        # Only initialize local/free providers — paid APIs (Anthropic, OpenAI) removed
+        """Initialize provider adapters (Ollama + HuggingFace only)"""
         adapters_to_init = [
             (ProviderType.OLLAMA, OllamaAdapter),
             (ProviderType.HUGGINGFACE, HuggingFaceAdapter),
-            (ProviderType.GOOGLE, GoogleAdapter),
         ]
 
         for provider_type, adapter_class in adapters_to_init:

@@ -38,22 +38,9 @@ async def serve_generated_image(filename: str):
 
 
 def convert_markdown_to_html(markdown_content: str) -> str:
-    """
-    Convert markdown content to HTML for safe rendering (#956).
+    """Convert markdown content to HTML. Falls back to raw content on error.
 
-    Uses the ``markdown`` library for reliable conversion (handles links,
-    images, code blocks, blockquotes, tables, etc.) instead of fragile
-    regex patterns.  Falls back to the raw content on error.
-
-    The canonical content boundary is: **markdown in, HTML out**.
-    Content is stored as markdown in the database; this function converts
-    on read so the frontend always receives HTML.
-
-    Args:
-        markdown_content: Markdown formatted text
-
-    Returns:
-        HTML content safe for rendering
+    Content is stored as markdown in the DB; converted to HTML on read.
     """
     if not markdown_content:
         return ""
@@ -78,18 +65,7 @@ def convert_markdown_to_html(markdown_content: str) -> str:
 
 
 def generate_excerpt_from_content(content: str, length: int = 200) -> str:
-    """
-    Generate an excerpt from markdown content while preserving **basic markdown formatting**.
-
-    This keeps the excerpt as markdown so it can be rendered with formatting on the frontend.
-
-    Args:
-        content: Markdown content
-        length: Maximum length of excerpt in characters (before markdown)
-
-    Returns:
-        Excerpt with markdown formatting preserved (e.g., **bold**, *italic*)
-    """
+    """Generate an excerpt from markdown content, preserving basic formatting."""
     if not content:
         return ""
 

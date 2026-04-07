@@ -67,15 +67,15 @@ class TestModelResponse:
     def test_construction(self):
         r = ModelResponse(
             text="hello",
-            provider=ProviderType.ANTHROPIC,
-            model="claude-3",
+            provider=ProviderType.OLLAMA,
+            model="qwen3:8b",
             tokens_used=100,
-            cost=0.005,
+            cost=0.0,
             response_time_ms=350.0,
         )
         assert r.text == "hello"
-        assert r.provider == ProviderType.ANTHROPIC
-        assert r.cost == 0.005
+        assert r.provider == ProviderType.OLLAMA
+        assert r.cost == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -152,12 +152,12 @@ class TestCheckProviderAvailability:
     @pytest.mark.asyncio
     async def test_returns_false_when_no_adapter(self):
         svc = make_service_no_adapters()
-        svc.provider_status[ProviderType.OPENAI] = ProviderStatus(
-            provider=ProviderType.OPENAI,
+        svc.provider_status[ProviderType.HUGGINGFACE] = ProviderStatus(
+            provider=ProviderType.HUGGINGFACE,
             is_available=False,
             last_checked=datetime.now(timezone.utc) - timedelta(hours=1),
         )
-        result = await svc._check_provider_availability(ProviderType.OPENAI)
+        result = await svc._check_provider_availability(ProviderType.HUGGINGFACE)
         assert result is False
 
     @pytest.mark.asyncio
@@ -165,19 +165,19 @@ class TestCheckProviderAvailability:
         svc = make_service_no_adapters()
         adapter = AsyncMock()
         adapter.is_available = AsyncMock(side_effect=RuntimeError("network error"))
-        svc.adapters[ProviderType.GOOGLE] = adapter
-        svc.provider_status[ProviderType.GOOGLE] = ProviderStatus(
-            provider=ProviderType.GOOGLE,
+        svc.adapters[ProviderType.HUGGINGFACE] = adapter
+        svc.provider_status[ProviderType.HUGGINGFACE] = ProviderStatus(
+            provider=ProviderType.HUGGINGFACE,
             is_available=True,
             last_checked=datetime.now(timezone.utc) - timedelta(hours=1),
         )
-        result = await svc._check_provider_availability(ProviderType.GOOGLE)
+        result = await svc._check_provider_availability(ProviderType.HUGGINGFACE)
         assert result is False
 
     @pytest.mark.asyncio
     async def test_returns_false_when_provider_not_in_status(self):
         svc = make_service_no_adapters()
-        result = await svc._check_provider_availability(ProviderType.OPENAI)
+        result = await svc._check_provider_availability(ProviderType.HUGGINGFACE)
         assert result is False
 
 
@@ -203,34 +203,35 @@ class TestGenerate:
     async def test_skips_unavailable_providers(self):
         svc = make_service_no_adapters()
         add_adapter(svc, ProviderType.OLLAMA, is_available=False)
-        response = make_response(provider=ProviderType.ANTHROPIC)
-        add_adapter(svc, ProviderType.ANTHROPIC, is_available=True, response=response)
-        svc.FALLBACK_CHAIN = [ProviderType.OLLAMA, ProviderType.ANTHROPIC]
+        response = make_response(provider=ProviderType.HUGGINGFACE)
+        add_adapter(svc, ProviderType.HUGGINGFACE, is_available=True, response=response)
+        svc.FALLBACK_CHAIN = [ProviderType.OLLAMA, ProviderType.HUGGINGFACE]
 
         result = await svc.generate("hello")
-        assert result.provider == ProviderType.ANTHROPIC
+        assert result.provider == ProviderType.HUGGINGFACE
 
     @pytest.mark.asyncio
     async def test_skips_missing_adapters(self):
         svc = make_service_no_adapters()
-        response = make_response(provider=ProviderType.OPENAI)
-        add_adapter(svc, ProviderType.OPENAI, is_available=True, response=response)
-        # OLLAMA not in adapters
-        svc.FALLBACK_CHAIN = [ProviderType.OLLAMA, ProviderType.OPENAI]
+        response = make_response(provider=ProviderType.HUGGINGFACE)
+        add_adapter(svc, ProviderType.HUGGINGFACE, is_available=True, response=response)
+        # OLLAMA not in adapters — remove it so only HuggingFace exists
+        svc.adapters.pop(ProviderType.OLLAMA, None)
+        svc.FALLBACK_CHAIN = [ProviderType.OLLAMA, ProviderType.HUGGINGFACE]
 
         result = await svc.generate("hello")
-        assert result.provider == ProviderType.OPENAI
+        assert result.provider == ProviderType.HUGGINGFACE
 
     @pytest.mark.asyncio
     async def test_preferred_provider_tried_first(self):
         svc = make_service_no_adapters()
-        response = make_response(provider=ProviderType.ANTHROPIC)
-        add_adapter(svc, ProviderType.ANTHROPIC, is_available=True, response=response)
+        response = make_response(provider=ProviderType.HUGGINGFACE)
+        add_adapter(svc, ProviderType.HUGGINGFACE, is_available=True, response=response)
         add_adapter(svc, ProviderType.OLLAMA, is_available=True, response=make_response())
-        svc.FALLBACK_CHAIN = [ProviderType.OLLAMA, ProviderType.ANTHROPIC]
+        svc.FALLBACK_CHAIN = [ProviderType.OLLAMA, ProviderType.HUGGINGFACE]
 
-        result = await svc.generate("hello", preferred_provider=ProviderType.ANTHROPIC)
-        assert result.provider == ProviderType.ANTHROPIC
+        result = await svc.generate("hello", preferred_provider=ProviderType.HUGGINGFACE)
+        assert result.provider == ProviderType.HUGGINGFACE
 
     @pytest.mark.asyncio
     async def test_all_fail_raises_service_error(self):
@@ -249,12 +250,12 @@ class TestGenerate:
         svc.adapters[ProviderType.OLLAMA].generate = AsyncMock(
             side_effect=RuntimeError("ollama crash")
         )
-        response = make_response(provider=ProviderType.ANTHROPIC)
-        add_adapter(svc, ProviderType.ANTHROPIC, is_available=True, response=response)
-        svc.FALLBACK_CHAIN = [ProviderType.OLLAMA, ProviderType.ANTHROPIC]
+        response = make_response(provider=ProviderType.HUGGINGFACE)
+        add_adapter(svc, ProviderType.HUGGINGFACE, is_available=True, response=response)
+        svc.FALLBACK_CHAIN = [ProviderType.OLLAMA, ProviderType.HUGGINGFACE]
 
         result = await svc.generate("hello")
-        assert result.provider == ProviderType.ANTHROPIC
+        assert result.provider == ProviderType.HUGGINGFACE
 
     @pytest.mark.asyncio
     async def test_metrics_updated_on_success(self):
@@ -299,14 +300,14 @@ class TestGetStatus:
 
     def test_provider_dict_has_expected_keys(self):
         svc = make_service_no_adapters()
-        svc.provider_status[ProviderType.ANTHROPIC] = ProviderStatus(
-            provider=ProviderType.ANTHROPIC,
+        svc.provider_status[ProviderType.HUGGINGFACE] = ProviderStatus(
+            provider=ProviderType.HUGGINGFACE,
             is_available=False,
             last_checked=datetime.now(timezone.utc),
-            last_error="API key missing",
+            last_error="API token missing",
         )
         status = svc.get_status()
-        provider_info = status["providers"]["anthropic"]
+        provider_info = status["providers"]["huggingface"]
         assert "available" in provider_info
         assert "last_checked" in provider_info
         assert "last_error" in provider_info
@@ -322,10 +323,10 @@ class TestListModels:
     async def test_no_filter_returns_all_adapters(self):
         svc = make_service_no_adapters()
         add_adapter(svc, ProviderType.OLLAMA, is_available=True, response=None)
-        add_adapter(svc, ProviderType.ANTHROPIC, is_available=True, response=None)
+        add_adapter(svc, ProviderType.HUGGINGFACE, is_available=True, response=None)
         models = await svc.list_models()
         assert "ollama" in models
-        assert "anthropic" in models
+        assert "huggingface" in models
 
     @pytest.mark.asyncio
     async def test_with_filter_returns_only_that_provider(self):
@@ -338,8 +339,9 @@ class TestListModels:
     @pytest.mark.asyncio
     async def test_unknown_provider_returns_empty_list(self):
         svc = make_service_no_adapters()
-        models = await svc.list_models(provider=ProviderType.OPENAI)
-        assert models.get("openai", []) == []
+        # Provider exists in enum but has no adapter registered
+        models = await svc.list_models(provider=ProviderType.HUGGINGFACE)
+        assert models.get("huggingface", []) == []
 
 
 # ---------------------------------------------------------------------------

@@ -71,27 +71,7 @@ async def list_settings(
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
-    """
-    List all settings with role-based filtering.
-
-    **Filtering Rules:**
-    - Admin: Can see all settings
-    - Editor: Can see all settings but cannot modify system-critical ones
-    - Viewer: Can only see non-sensitive settings marked as public
-
-    **Response includes:**
-    - Setting details with encrypted values masked
-    - Pagination information
-    - Total count
-
-    **Query Parameters:**
-    - `category`: Filter by setting category (database, authentication, etc.)
-    - `environment`: Filter by environment (development, staging, production, all)
-    - `tags`: Comma-separated tags to filter by
-    - `search`: Search in setting keys and descriptions
-    - `page`: Page number for pagination
-    - `per_page`: Number of items per page (max 100)
-    """
+    """List all settings with optional category/environment filtering and pagination."""
     try:
         # Get all active settings from database (optionally filtered by category)
         all_settings = await db_service.get_all_settings(
@@ -155,22 +135,7 @@ async def get_setting(
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
-    """
-    Get details of a specific setting.
-
-    **Permission Check:**
-    - Viewer: Can only access non-sensitive settings
-    - Editor: Can access all settings except read-only ones
-    - Admin: Can access all settings including read-only ones
-
-    **Response:**
-    - Full setting details including metadata
-    - Encrypted values shown as preview (masked for security)
-    - Audit trail availability metadata
-
-    **Path Parameters:**
-    - `setting_id`: ID or key name of the setting to retrieve
-    """
+    """Get details of a specific setting by ID or key name."""
     try:
         # Try to get setting from database by key
         setting = await db_service.get_setting(setting_id)
@@ -221,39 +186,7 @@ async def create_setting(
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
-    """
-    Create a new setting (admin only).
-
-    **Permission Requirements:**
-    - Admin role required
-    - Returns 403 Forbidden if user is not admin
-
-    **Validation:**
-    - Key must be unique
-    - Key must match pattern: `[a-zA-Z0-9._-]+`
-    - Value cannot be empty
-    - If encrypted, value will be encrypted before storage
-
-    **Audit Logging:**
-    - Creates entry in SettingAuditLog
-    - Records user_id, timestamp, new value (encrypted if applicable)
-    - Description: "Created setting"
-
-    **Request Body:**
-    ```json
-    {
-        "key": "database_connection_timeout",
-        "value": "30",
-        "data_type": "integer",
-        "category": "database",
-        "environment": "production",
-        "description": "Database connection timeout in seconds",
-        "is_encrypted": false,
-        "is_read_only": false,
-        "tags": ["connection", "timeout"]
-    }
-    ```
-    """
+    """Create a new setting. Key must be unique."""
     try:
         # Validate key is provided
         if not setting_data.key:

@@ -69,63 +69,22 @@ async def reject_task(
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
-    """
-       Reject a task and send it back for revisions.
+    """Reject a task and send it back for revisions.
 
-       **Parameters:**
-       - task_id: UUID of the task to reject
-       - reason: Short reason (e.g., "Content quality", "Factual errors",
-    "Tone mismatch")
-       - feedback: Detailed feedback for the content team
-       - allow_revisions: true/false - allow re-submission with revisions
-
-       **Returns:**
-       ```json
-       {
-         "task_id": "uuid",
-         "status": "failed",
-         "rejection_date": "2026-01-21T...",
-         "rejected_by": "user_id",
-         "reason": "Content quality",
-         "message": "Task rejected - feedback provided"
-       }
-       ```
-
-       **Status Transitions:**
-       - awaiting_approval → failed ❌
-       - Other statuses → 400 Bad Request
-
-       **Side Effects:**
-       - Task marked as failed/rejected
-       - Rejection reason stored in metadata
-       - Rejection feedback stored
-       - Rejection timestamp recorded
-       - Task removed from publishing queue
-       - Task appears in failed/archived section
-
-       **Revision Workflow (Optional):**
-       If allow_revisions=true:
-       - Task status: "failed_revisions_requested"
-       - Content team receives email: "Task rejected, revisions requested"
-       - User can edit + resubmit
-       - Returns to awaiting_approval on resubmission
+    Only tasks with status 'awaiting_approval' can be rejected.
+    If allow_revisions=true, status becomes 'failed_revisions_requested'.
     """
     try:
         operator = get_operator_identity()
-        logger.info(f"👤 [REJECTION] User {operator['id']} rejecting task {task_id}")
 
         # Fetch task
         task = await db_service.get_task(task_id)
         if not task:
-            logger.warning(f"❌ [REJECTION] Task not found: {task_id}")
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
         # Verify task is awaiting approval
         current_status = task.get("status")
         if current_status != "awaiting_approval":
-            logger.warning(
-                f"❌ [REJECTION] Task {task_id} has status '{current_status}', not awaiting_approval"
-            )
             raise HTTPException(
                 status_code=400,
                 detail=f"Cannot reject task with status '{current_status}' — expected 'awaiting_approval'",
@@ -156,9 +115,7 @@ async def reject_task(
             },
         )
 
-        logger.info(
-            f"❌ [REJECTION] Task {task_id} rejected by {operator['id']} (reason: {request.reason})"
-        )
+        logger.info(f"Task {task_id} rejected by {operator['id']}: {request.reason}")
 
         # Broadcast rejection status to connected WebSocket clients
         try:
@@ -194,7 +151,7 @@ async def reject_task(
     except AppError:
         raise
     except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
-        logger.error(f"❌ [REJECTION] Failed to reject task {task_id}: {str(e)}", exc_info=True)
+        logger.error(f"Failed to reject task {task_id}: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail="Failed to reject task",
@@ -221,61 +178,9 @@ async def get_pending_approvals(
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
-    """
-    Get all tasks awaiting human approval.
-
-    **Query Parameters:**
-    - limit: Number of results per page (default 20, max 100)
-    - offset: Pagination offset (0 = first page, 20 = second page)
-    - task_type: Filter by task type (optional)
-    - sort_by: Sort by created_at|quality_score|topic (default: created_at)
-    - sort_order: asc|desc (default: desc = newest first)
-
-    **Returns:**
-    ```json
-    {
-      "total": 5,
-      "limit": 20,
-      "offset": 0,
-      "count": 5,
-      "tasks": [
-        {
-          "task_id": "uuid",
-          "task_name": "Blog Post: AI Trends",
-          "topic": "AI Trends",
-          "task_type": "blog_post",
-          "status": "awaiting_approval",
-          "created_at": "2026-01-21T10:30:00Z",
-          "quality_score": 8.5,
-          "content_preview": "Lorem ipsum dolor sit amet...",
-          "featured_image_url": "https://pexels.com/...",
-          "metadata": { ... }
-        }
-      ]
-    }
-    ```
-
-    **Filters:**
-    - Only returns tasks with status = "awaiting_approval"
-    - Owner matches current_user or is admin
-    - Optionally filtered by task_type
-
-    **Sorting:**
-    - created_at: Newest tasks first (default)
-    - quality_score: Highest quality first
-    - topic: Alphabetical (A-Z)
-
-    **Use Cases:**
-    - Dashboard: Load first 20 pending tasks (limit=20, offset=0)
-    - Next page: Same request with offset=20, 40, etc.
-    - Filter: Only blog posts - task_type=blog_post
-    - Sort: By quality - sort_by=quality_score&sort_order=desc
-    """
+    """Get all tasks awaiting human approval, with pagination and optional task_type filter."""
     try:
         operator = get_operator_identity()
-        logger.info(
-            f"📋 [PENDING_APPROVAL] User {operator['id']} fetching pending approvals"
-        )
 
         # Fetch pending tasks from database with pagination
         # Use get_tasks_paginated which handles status filtering and pagination
@@ -296,7 +201,7 @@ async def get_pending_approvals(
                 pending_tasks = result.get("tasks", []) if isinstance(result, dict) else []
                 total = result.get("total", 0) if isinstance(result, dict) else 0
         except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
-            logger.error(f"❌ [PENDING_APPROVAL] Database query failed: {e}", exc_info=True)
+            logger.error(f"Pending approval query failed: {e}", exc_info=True)
             pending_tasks = []
             total = 0
 
@@ -310,7 +215,7 @@ async def get_pending_approvals(
                 if not task.get("task_name") and task.get("title"):
                     task["task_name"] = task["title"]
 
-        logger.info(f"📋 [PENDING_APPROVAL] Found {total} tasks, returning {len(pending_tasks)}")
+        logger.info(f"Pending approvals: {total} total, returning {len(pending_tasks)}")
 
         return {
             "total": total,
@@ -342,10 +247,7 @@ async def get_pending_approvals(
         }
 
     except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
-        logger.error(
-            f"❌ [PENDING_APPROVAL] Failed to fetch pending approvals: {str(e)}",
-            exc_info=True,
-        )
+        logger.error(f"Failed to fetch pending approvals: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail="Failed to fetch pending approvals",

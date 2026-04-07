@@ -53,19 +53,7 @@ class NewsletterUnsubscribeRequest(BaseModel):
 async def subscribe_to_newsletter(
     request: Request, payload: NewsletterSubscribeRequest, db=Depends(get_database_dependency)
 ):
-    """
-    Subscribe email to newsletter campaign list.
-
-    Endpoint for "Get Updates" button on public site.
-
-    Args:
-        request: HTTP request (for IP/user agent logging)
-        payload: Subscription data
-        db: Database service
-
-    Returns:
-        Subscription confirmation with ID
-    """
+    """Subscribe email to newsletter. Used by the public site 'Get Updates' button."""
     try:
         # Basic email validation
         if not payload.email or "@" not in payload.email:
@@ -125,7 +113,7 @@ async def subscribe_to_newsletter(
             True,  # Mark as verified immediately on public signup
         )
 
-        logger.info(f"✅ New newsletter subscriber: {payload.email} (ID: {subscriber_id})")
+        logger.info(f"Newsletter subscriber added: {payload.email} (ID: {subscriber_id})")
 
         return NewsletterSubscribeResponse(
             success=True,
@@ -134,7 +122,7 @@ async def subscribe_to_newsletter(
         )
 
     except Exception as e:
-        logger.error(f"❌ Newsletter subscription error: {str(e)}", exc_info=True)
+        logger.error(f"Newsletter subscription error: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to process subscription",
@@ -146,16 +134,7 @@ async def subscribe_to_newsletter(
 async def unsubscribe_from_newsletter(
     request: Request, payload: NewsletterUnsubscribeRequest, db=Depends(get_database_dependency)
 ):
-    """
-    Unsubscribe email from newsletter.
-
-    Args:
-        payload: Email and optional unsubscribe reason
-        db: Database service
-
-    Returns:
-        Unsubscribe confirmation
-    """
+    """Unsubscribe email from newsletter. Returns generic response to prevent email enumeration."""
     try:
         # Update subscriber as unsubscribed
         result = await (getattr(db, "cloud_pool", None) or db.pool).execute(
@@ -183,7 +162,7 @@ async def unsubscribe_from_newsletter(
         )
 
     except Exception as e:
-        logger.error(f"❌ Unsubscribe error: {str(e)}", exc_info=True)
+        logger.error(f"Unsubscribe error: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to process unsubscribe",
@@ -204,7 +183,7 @@ async def get_subscriber_count(
 
         return {"success": True, "subscriber_count": count or 0}
     except Exception as e:
-        logger.error(f"❌ Error fetching subscriber count: {str(e)}", exc_info=True)
+        logger.error(f"Subscriber count error: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch subscriber count",

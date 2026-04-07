@@ -1,24 +1,8 @@
 """
-Task Management Routes - Async Implementation
+Task Management Routes
 
-Provides REST API endpoints for creating, retrieving, and managing tasks.
-Uses asyncpg DatabaseService (no SQLAlchemy ORM).
-
-ENTERPRISE-LEVEL FEATURES:
-- Comprehensive status lifecycle with transition validation
-- Audit trail for all status changes
-- Async/await throughout for performance
-- Input validation with Pydantic
-- Error handling with detailed error responses
-
-Endpoints:
-- POST /api/tasks - Create new task
-- GET /api/tasks - List tasks with pagination
-- GET /api/tasks/{task_id} - Get task details
-- PUT /api/tasks/{task_id}/status - Update task status with validation
-- GET /api/tasks/{task_id}/status-history - Get status audit trail
-- GET /api/tasks/status/info - Get status information
-- GET /api/metrics - Aggregated task metrics
+REST API endpoints for creating, retrieving, and managing tasks.
+Uses asyncpg DatabaseService for async database access.
 """
 
 import json
@@ -46,16 +30,7 @@ logger = get_logger(__name__)
 
 
 def _normalize_seo_keywords_in_task(task: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Normalize seo_keywords from JSON strings to lists in task dicts.
-    Handles conversion at top level, in result field, and in task_metadata field.
-
-    Args:
-        task: Task dictionary from database
-
-    Returns:
-        Task dictionary with seo_keywords normalized to lists
-    """
+    """Normalize seo_keywords from JSON strings to lists at top level, result, and task_metadata."""
     if not isinstance(task, dict):
         return task
 
@@ -142,97 +117,21 @@ async def create_task(
     db_service: DatabaseService = Depends(get_database_dependency),
     background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
 ):
-    """
-    Unified task creation endpoint - routes to appropriate handler based on task_type.
+    """Unified task creation endpoint - routes to appropriate handler based on task_type.
 
-    **Supported Task Types:**
-    - blog_post: Blog content generation with self-critiquing pipeline
-    - social_media: Multi-platform social content (Twitter, LinkedIn, Instagram)
-    - email: Email campaign generation
-    - newsletter: Newsletter content generation
-    - business_analytics: Business metrics analysis and insights
-    - data_retrieval: Data extraction from multiple sources
-    - market_research: Competitive intelligence and market analysis
-    - financial_analysis: Financial data analysis and reporting
-
-    **Common Parameters (all tasks):**
-    - task_type: REQUIRED - Type of task to create
-    - topic: REQUIRED - Task topic/subject/query
-    - models_by_phase: Optional per-phase model selection
-    - quality_preference: fast|balanced|quality (default: balanced)
-    - metadata: Optional additional metadata
-
-    **Content Task Parameters (blog_post, social_media, email, newsletter):**
-    - style: technical|narrative|listicle|educational|thought-leadership
-    - tone: professional|casual|academic|inspirational
-    - target_length: 200-5000 words (blog_post)
-    - generate_featured_image: true|false (blog_post)
-    - platforms: List of platforms (social_media)
-    - tags: Content tags
-
-    **Analytics Task Parameters (business_analytics):**
-    - metrics: List of metrics to analyze (revenue, churn, conversion_rate)
-    - time_period: Analysis period (last_month, last_quarter, ytd)
-    - business_context: Industry, size, goals context
-
-    **Data Task Parameters (data_retrieval):**
-    - data_sources: List of source types (postgres, s3, api)
-    - filters: Query filters and parameters
-
-    **Returns:**
-    - task_id: UUID of created task
-    - status: pending (will be picked up by TaskExecutor)
-    - created_at: ISO timestamp
-
-    **Example Requests:**
-
-    Blog Post:
-    ```json
-    {
-      "task_type": "blog_post",
-      "topic": "AI in Healthcare",
-      "style": "technical",
-      "tone": "professional",
-      "target_length": 2000,
-      "generate_featured_image": true,
-      "quality_preference": "balanced"
-    }
-    ```
-
-    Social Media:
-    ```json
-    {
-      "task_type": "social_media",
-      "topic": "New Product Launch",
-      "platforms": ["twitter", "linkedin"],
-      "tone": "casual",
-      "quality_preference": "fast"
-    }
-    ```
-
-    Business Analytics:
-    ```json
-    {
-      "task_type": "business_analytics",
-      "topic": "Q4 Revenue Analysis",
-      "metrics": ["revenue", "churn_rate", "customer_acquisition"],
-      "time_period": "last_quarter",
-      "business_context": {"industry": "SaaS", "size": "mid-market"}
-    }
-    ```
+    Supported types: blog_post, social_media, email, newsletter,
+    business_analytics, data_retrieval, market_research, financial_analysis.
+    See UnifiedTaskRequest schema for all parameters.
     """
     try:
         # Validate required fields
         if not task_request.topic or not str(task_request.topic).strip():
-            logger.error("❌ Task creation failed: topic is empty")
             raise HTTPException(
                 status_code=422,
                 detail="topic is required and cannot be empty",
             )
 
-        logger.info(
-            f"📥 [UNIFIED_TASK_CREATE] Received: task_type={task_request.task_type}, topic={task_request.topic}"
-        )
+        logger.info(f"Creating task: type={task_request.task_type}, topic={task_request.topic}")
 
         # Route based on task_type using registry dict (Open/Closed — add new
         # task types by registering a handler below, not by editing this block).
@@ -249,7 +148,7 @@ async def create_task(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ [UNIFIED_TASK_CREATE] Exception: {str(e)}", exc_info=True)
+        logger.error(f"Task creation failed: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail="Failed to create task",
@@ -321,9 +220,7 @@ async def _handle_blog_post_creation(
 
     # Store in database as pending — task executor will pick it up
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(
-        f"✅ [BLOG_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')}"
-    )
+    logger.info(f"Blog task created: {returned_task_id}")
 
     return {
         "id": returned_task_id,
@@ -363,9 +260,7 @@ async def _handle_social_media_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(
-        f"✅ [SOCIAL_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')} - Platforms: {request.platforms}"
-    )
+    logger.info(f"Social task created: {returned_task_id} platforms={request.platforms}")
 
     return {
         "id": returned_task_id,
@@ -400,9 +295,7 @@ async def _handle_email_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(
-        f"✅ [EMAIL_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')}"
-    )
+    logger.info(f"Email task created: {returned_task_id}")
 
     return {
         "id": returned_task_id,
@@ -435,9 +328,7 @@ async def _handle_newsletter_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(
-        f"✅ [NEWSLETTER_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')}"
-    )
+    logger.info(f"Newsletter task created: {returned_task_id}")
 
     return {
         "id": returned_task_id,
@@ -475,9 +366,7 @@ async def _handle_business_analytics_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(
-        f"✅ [ANALYTICS_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')} - Metrics: {request.metrics}"
-    )
+    logger.info(f"Analytics task created: {returned_task_id} metrics={request.metrics}")
 
     return {
         "id": returned_task_id,
@@ -513,9 +402,7 @@ async def _handle_data_retrieval_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(
-        f"✅ [DATA_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')} - Sources: {request.data_sources}"
-    )
+    logger.info(f"Data retrieval task created: {returned_task_id} sources={request.data_sources}")
 
     return {
         "id": returned_task_id,
@@ -548,9 +435,7 @@ async def _handle_market_research_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(
-        f"✅ [MARKET_RESEARCH_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')}"
-    )
+    logger.info(f"Market research task created: {returned_task_id}")
 
     return {
         "id": returned_task_id,
@@ -583,9 +468,7 @@ async def _handle_financial_analysis_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(
-        f"✅ [FINANCIAL_ANALYSIS_TASK] Created: {returned_task_id} user_id={current_user.get('id', 'unknown')}"
-    )
+    logger.info(f"Financial analysis task created: {returned_task_id}")
 
     return {
         "id": returned_task_id,
@@ -634,25 +517,7 @@ async def list_tasks(
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
-    """
-    List all tasks with pagination and optional filtering.
-
-    **Parameters:**
-    - offset: Pagination offset (default: 0)
-    - limit: Pagination limit (default: 20, max: 1000)
-    - status: Optional status filter
-    - category: Optional category filter
-    - search: Optional keyword search (uses pg_trgm trigram index for efficiency)
-
-    **Returns:**
-    - List of tasks with total count
-
-    **Example cURL:**
-    ```bash
-    curl -X GET "http://localhost:8000/api/tasks?offset=0&limit=20&search=blog" \\
-      -H "Authorization: Bearer TOKEN"
-    ```
-    """
+    """List all tasks with pagination and optional filtering."""
     try:
         # get_tasks_paginated returns a tuple (tasks, total)
         tasks, total = await db_service.get_tasks_paginated(
@@ -711,21 +576,7 @@ async def get_task(
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
-    """
-    Get details of a specific task.
-
-    **Parameters:**
-    - task_id: Task UUID
-
-    **Returns:**
-    - Complete task object with all details
-
-    **Example cURL:**
-    ```bash
-    curl -X GET "http://localhost:8000/api/tasks/{task_id}" \\
-      -H "Authorization: Bearer TOKEN"
-    ```
-    """
+    """Get details of a specific task by ID."""
     try:
         task = await db_service.get_task(task_id)
         if not task:
@@ -758,27 +609,7 @@ async def delete_task(
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
-    """
-    **Delete a task by ID (soft delete).**
-
-    Marks a task as deleted without removing it from the database.
-    This preserves audit trail and allows for recovery if needed.
-
-    **Parameters:**
-    - task_id: Task ID (can be UUID string or numeric ID)
-
-    **Returns:**
-    - 204 No Content on success
-
-    **Example cURL:**
-    ```bash
-    curl -X DELETE "http://localhost:8000/api/tasks/{task_id}" \
-      -H "Authorization: Bearer TOKEN"
-    ```
-
-    **Error Responses:**
-    - 404: Task not found
-    """
+    """Soft-delete a task by ID (sets status to 'cancelled' with deleted_at metadata)."""
     try:
         # Fetch task to verify it exists
         task = await db_service.get_task(task_id)
