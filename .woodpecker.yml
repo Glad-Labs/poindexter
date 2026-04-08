@@ -16,6 +16,13 @@ when:
   branch: main
   event: push
 
+clone:
+  git:
+    image: woodpeckerci/plugin-git:2.8.1
+    settings:
+      remote: http://gitea:3000/gladlabs/glad-labs-codebase.git
+      depth: 1
+
 steps:
   # ===========================================================================
   # TEST PHASE — all must pass before deploy
