@@ -50,8 +50,8 @@ VOICE_POOL = [
     "en-US-AvaMultilingualNeural",       # Female, American (default)
     "en-US-AndrewMultilingualNeural",     # Male, American
     "en-US-BrianMultilingualNeural",      # Male, American (deeper)
-    "en-AU-WilliamNeural",               # Male, Australian
     # Removed: en-GB-RyanNeural — too robotic per Matt's feedback
+    # Removed: en-AU-WilliamNeural — accent doesn't fit brand voice
 ]
 VOICE_FALLBACKS = [
     "en-US-GuyNeural",
