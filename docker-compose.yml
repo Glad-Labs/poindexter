@@ -105,7 +105,7 @@ services:
       # Auth
       API_TOKEN: ${API_TOKEN:?Set API_TOKEN in .env}
       DEVELOPMENT_MODE: ${DEVELOPMENT_MODE:-false}
-      REVALIDATE_SECRET: ${REVALIDATE_SECRET:-dev-secret-key}
+      REVALIDATE_SECRET: ${REVALIDATE_SECRET:?REVALIDATE_SECRET must be set}
 
       # LLM Providers (at least one required)
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}

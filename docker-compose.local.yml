@@ -36,7 +36,7 @@ services:
     environment:
       POSTGRES_DB: ${LOCAL_POSTGRES_DB:-gladlabs_brain}
       POSTGRES_USER: ${LOCAL_POSTGRES_USER:-gladlabs}
-      POSTGRES_PASSWORD: ${LOCAL_POSTGRES_PASSWORD:-gladlabs-brain-local}
+      POSTGRES_PASSWORD: ${LOCAL_POSTGRES_PASSWORD:?LOCAL_POSTGRES_PASSWORD must be set}
     volumes:
       - postgres-local-data:/var/lib/postgresql/data
       - ./infrastructure/local-db/init.sql:/docker-entrypoint-initdb.d/01-init.sql
@@ -76,7 +76,7 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?Set GRAFANA_PASSWORD in .env}
       GF_INSTALL_PLUGINS: grafana-clock-panel
-      LOCAL_POSTGRES_PASSWORD: ${LOCAL_POSTGRES_PASSWORD:-gladlabs-brain-local}
+      LOCAL_POSTGRES_PASSWORD: ${LOCAL_POSTGRES_PASSWORD:?LOCAL_POSTGRES_PASSWORD must be set}
     volumes:
       - grafana-data:/var/lib/grafana
       - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning
@@ -104,7 +104,7 @@ services:
       GITEA__database__HOST: postgres-local:5432
       GITEA__database__NAME: gladlabs_brain
       GITEA__database__USER: gladlabs
-      GITEA__database__PASSWD: ${LOCAL_POSTGRES_PASSWORD:-gladlabs-brain-local}
+      GITEA__database__PASSWD: ${LOCAL_POSTGRES_PASSWORD:?LOCAL_POSTGRES_PASSWORD must be set}
       GITEA__server__ROOT_URL: http://localhost:3001
       GITEA__server__SSH_DOMAIN: localhost
       GITEA__server__SSH_PORT: 2222
@@ -166,7 +166,7 @@ services:
     restart: unless-stopped
     environment:
       # Primary DB is local Postgres. Railway kept for public API sync only.
-      DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-gladlabs}:${LOCAL_POSTGRES_PASSWORD:-gladlabs-brain-local}@postgres-local:5432/${LOCAL_POSTGRES_DB:-gladlabs_brain}"
+      DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-gladlabs}:${LOCAL_POSTGRES_PASSWORD:?LOCAL_POSTGRES_PASSWORD must be set}@postgres-local:5432/${LOCAL_POSTGRES_DB:-gladlabs_brain}"
       CLOUD_DATABASE_URL: ${CLOUD_DATABASE_URL:-}
       # No Telegram tokens — OpenClaw owns Telegram/Discord connections
       API_URL: "http://worker:8002"
@@ -174,7 +174,7 @@ services:
       SITE_URL: "https://www.gladlabs.io"
       OLLAMA_URL: "http://host.docker.internal:11434"
       GRAFANA_URL: "http://grafana:3000"
-      GRAFANA_PASSWORD: ${GRAFANA_PASSWORD:-gladlabs}
+      GRAFANA_PASSWORD: ${GRAFANA_PASSWORD:?GRAFANA_PASSWORD must be set}
       GITEA_URL: "http://gitea:3000"
       GITEA_USER: ${GITEA_USER:-gladlabs}
       GITEA_PASS: ${GITEA_PASSWORD:-}
@@ -201,8 +201,9 @@ services:
       ENVIRONMENT: production
       DEVELOPMENT_MODE: "true"
       PORT: "8002"
+      # Secrets loaded from DB (app_settings) at startup — no env vars needed
       # Primary DB is local Postgres. Railway kept for public API sync only.
-      DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-gladlabs}:${LOCAL_POSTGRES_PASSWORD:-gladlabs-brain-local}@postgres-local:5432/${LOCAL_POSTGRES_DB:-gladlabs_brain}"
+      DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-gladlabs}:${LOCAL_POSTGRES_PASSWORD:?LOCAL_POSTGRES_PASSWORD must be set}@postgres-local:5432/${LOCAL_POSTGRES_DB:-gladlabs_brain}"
       CLOUD_DATABASE_URL: ${CLOUD_DATABASE_URL:-}
       OLLAMA_BASE_URL: "http://host.docker.internal:11434"
       PEXELS_API_KEY: ${PEXELS_API_KEY:-}
@@ -214,7 +215,7 @@ services:
       API_BASE_URL: "http://localhost:8002"
       COMPANY_NAME: "Glad Labs"
       HOST_HOME: "C:/Users/mattm"
-      API_TOKEN: "gladlabs-api-2026"
+      API_TOKEN: ${API_TOKEN:?API_TOKEN must be set}
     volumes:
       - ${USERPROFILE:-.}/.gladlabs:/root/.gladlabs
       - ${USERPROFILE:-.}/Downloads/glad-labs-generated-images:/root/Downloads/glad-labs-generated-images
@@ -240,7 +241,7 @@ services:
       - "5050:80"
     environment:
       PGADMIN_DEFAULT_EMAIL: mattg@gladlabs.io
-      PGADMIN_DEFAULT_PASSWORD: gladlabs
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:?PGADMIN_PASSWORD must be set}
       PGADMIN_CONFIG_SERVER_MODE: "False"
       PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
     volumes:

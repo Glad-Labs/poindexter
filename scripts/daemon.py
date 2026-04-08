@@ -4,6 +4,7 @@ Glad Labs Daemon — single long-lived process that runs all background tasks.
 Replaces separate Windows Scheduled Tasks with one process that handles:
 - Auto-publisher (every 5 minutes)
 - Content generator (every 8 hours)
+- DB sync between local and Railway prod (every 15 minutes)
 
 Run alongside the worker (which handles content generation via Ollama).
 The daemon handles the orchestration tasks that don't need GPU.
@@ -49,7 +50,7 @@ os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 # by any subsequent root logger reconfiguration.
 logger = logging.getLogger("daemon")
 logger.setLevel(logging.INFO)
-_file_handler = logging.FileHandler(LOG_FILE)
+_file_handler = logging.FileHandler(LOG_FILE, encoding="utf-8")
 _file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
 logger.addHandler(_file_handler)
 if sys.stdout is not None and not sys.stdout.name == os.devnull:
@@ -59,9 +60,27 @@ API_URL = "http://localhost:8002"
 API_TOKEN = load_api_token()
 AUTH = f"Bearer {API_TOKEN}"
 
+def _api_request(url, method="GET", data=None, timeout=30, retries=2):
+    """Make an API request with simple retry logic."""
+    headers = {"Authorization": AUTH}
+    if data is not None:
+        headers["Content-Type"] = "application/json"
+    last_err: Exception = RuntimeError("no attempts made")
+    for attempt in range(retries + 1):
+        try:
+            req = urllib.request.Request(url, data=data, headers=headers, method=method)
+            return json.loads(urllib.request.urlopen(req, timeout=timeout).read())
+        except Exception as e:
+            last_err = e
+            if attempt < retries:
+                time.sleep(2 ** attempt)  # 1s, 2s backoff
+    raise last_err
+
+
 PUBLISH_INTERVAL = 300  # 5 minutes
 GENERATE_INTERVAL = 28800  # 8 hours
 OPPORTUNISTIC_INTERVAL = 120  # 2 minutes — check for idle GPU work
+SYNC_INTERVAL = 900  # 15 minutes — bidirectional DB sync
 
 
 def auto_publish():
@@ -80,14 +99,10 @@ def auto_publish():
 
     for status in ["awaiting_approval", "approved"]:
         try:
-            req = urllib.request.Request(
-                f"{API_URL}/api/tasks?status={status}&limit=30",
-                headers={"Authorization": AUTH},
-            )
-            data = json.loads(urllib.request.urlopen(req, timeout=10).read())
+            data = _api_request(f"{API_URL}/api/tasks?status={status}&limit=30", timeout=10)
             tasks = data.get("tasks", [])
         except Exception as _e:
-            logger.debug("API request failed: %s", _e)
+            logger.warning("API request failed (after retries): %s", _e)
             continue
 
         for t in tasks:
@@ -124,7 +139,8 @@ def auto_publish():
             # quality_score is a top-level field on the task response;
             # qa_final_score lives inside result dict (when multi-model QA ran)
             qa_score = full.get("quality_score", 0) or 0
-            result_data = full.get("result") if isinstance(full.get("result"), dict) else {}
+            result_raw = full.get("result")
+            result_data = result_raw if isinstance(result_raw, dict) else {}
             qa_final = result_data.get("qa_final_score", 0) or 0
             # Use the higher of the two scores (multi-model QA or quality eval)
             qa_score = max(qa_score, qa_final)
@@ -138,16 +154,12 @@ def auto_publish():
             # Both gates passed — approve + publish
             try:
                 if status == "awaiting_approval":
-                    urllib.request.urlopen(urllib.request.Request(
-                        f"{API_URL}/api/tasks/{tid}/approve", method="POST",
-                        headers={"Authorization": AUTH}), timeout=10)
-                urllib.request.urlopen(urllib.request.Request(
-                    f"{API_URL}/api/tasks/{tid}/publish", method="POST",
-                    headers={"Authorization": AUTH}), timeout=10)
+                    _api_request(f"{API_URL}/api/tasks/{tid}/approve", method="POST", timeout=30)
+                _api_request(f"{API_URL}/api/tasks/{tid}/publish", method="POST", timeout=30)
                 published += 1
                 logger.info("PUBLISHED: %s (QA: %.0f)", topic[:50], qa_score)
             except Exception as _e:
-                logger.debug("Operation failed: %s", _e)
+                logger.warning("Approve/publish failed (after retries): %s", _e)
             time.sleep(0.3)
 
     if published or rejected or held:
@@ -199,14 +211,12 @@ def generate_content(count=3):
         try:
             payload = json.dumps({"task_name": f"Blog post: {topic}", "topic": topic,
                                   "category": "technology", "target_audience": "developers and founders"}).encode()
-            urllib.request.urlopen(urllib.request.Request(
-                f"{API_URL}/api/tasks", data=payload,
-                headers={"Authorization": AUTH, "Content-Type": "application/json"}), timeout=10)
+            _api_request(f"{API_URL}/api/tasks", method="POST", data=payload, timeout=30)
             created += 1
             existing.add(topic)
             logger.info("Created task: %s", topic[:60])
         except Exception as _e:
-            logger.debug("Operation failed: %s", _e)
+            logger.warning("Task creation failed (after retries): %s", _e)
 
     return created
 
@@ -214,9 +224,15 @@ def generate_content(count=3):
 def get_gpu_utilization():
     """Get current GPU utilization percentage (0-100)."""
     try:
+        kwargs = {}
+        if sys.platform == "win32":
+            si = subprocess.STARTUPINFO()
+            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            si.wShowWindow = 0
+            kwargs = {"startupinfo": si, "creationflags": subprocess.CREATE_NO_WINDOW}
         result = subprocess.run(
             ["nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=5
+            capture_output=True, text=True, timeout=5, **kwargs
         )
         return int(result.stdout.strip()) if result.returncode == 0 else -1
     except Exception:
@@ -311,6 +327,51 @@ def run_opportunistic_task():
     logger.debug("GPU idle (%d%%) but no opportunistic work available", gpu_util)
 
 
+def run_db_sync():
+    """Bidirectional sync between local DB and Railway prod.
+
+    Push: local published posts → cloud (so Railway serves latest content)
+    Pull: cloud metrics/views/subscribers → local (so Grafana dashboards are current)
+    """
+    import asyncio as _asyncio
+
+    async def _sync():
+        from services.sync_service import SyncService
+        # Load .env so CLOUD_DATABASE_URL is available outside Docker
+        env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+        if os.path.exists(env_path):
+            with open(env_path, encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        os.environ.setdefault(k.strip(), v.strip())
+        async with SyncService() as sync:
+            push = await sync.push_all_posts()
+            pull_metrics = await sync.pull_metrics()
+            pull_views = await sync.pull_page_views()
+            pull_subs = await sync.pull_newsletter_subscribers()
+            return {
+                "push": push,
+                "pull_metrics": pull_metrics,
+                "pull_views": pull_views,
+                "pull_subs": pull_subs,
+            }
+
+    try:
+        result = _asyncio.run(_sync())
+        pushed = result["push"].get("pushed", 0)
+        failed = result["push"].get("failed", 0)
+        views = result["pull_views"].get("inserted", 0)
+        subs = result["pull_subs"].get("inserted", 0)
+        logger.info("DB sync: pushed=%d (fail=%d), pulled views=%d subs=%d",
+                     pushed, failed, views, subs)
+        return result
+    except Exception as e:
+        logger.warning("DB sync error: %s", e)
+        return None
+
+
 def main():
     one_shot = "--once" in sys.argv
     logger.info("Glad Labs Daemon starting (once=%s)", one_shot)
@@ -318,6 +379,7 @@ def main():
     last_publish = 0
     last_generate = 0
     last_opportunistic = 0
+    last_sync = 0
 
     while not _shutdown:
         now = time.time()
@@ -349,7 +411,7 @@ def main():
                     last_generate = now
                     continue
             except Exception as _e:
-                logger.debug("Operation failed: %s", _e)  # If cost API unavailable, proceed with generation (Ollama is free)
+                logger.warning("Operation failed: %s", _e)  # If cost API unavailable, proceed with generation (Ollama is free)
 
             try:
                 generate_content(3)
@@ -364,6 +426,14 @@ def main():
             except Exception as e:
                 logger.warning("Opportunistic task error: %s", e)
             last_opportunistic = now
+
+        # Bidirectional DB sync (local ↔ Railway prod)
+        if now - last_sync >= SYNC_INTERVAL:
+            try:
+                run_db_sync()
+            except Exception as e:
+                logger.error("DB sync error: %s", e)
+            last_sync = now
 
         if one_shot:
             break

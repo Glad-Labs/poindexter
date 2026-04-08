@@ -8,13 +8,28 @@ API_TOKEN environment variable.
 OpenClaw skills and Grafana alerts use this token.
 """
 
+import logging
 import os
 from typing import Optional
 
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+logger = logging.getLogger(__name__)
+
 security = HTTPBearer(auto_error=False)
+
+# Startup safety check: refuse dev-token bypass in production
+_dev_mode = os.getenv("DEVELOPMENT_MODE", "").lower() == "true"
+_environment = os.getenv("ENVIRONMENT", "").lower()
+_dev_token_blocked = False
+
+if _dev_mode and _environment == "production":
+    logger.critical(
+        "DEVELOPMENT_MODE is enabled in a PRODUCTION environment! "
+        "Dev-token bypass will be REFUSED. Unset DEVELOPMENT_MODE or fix ENVIRONMENT."
+    )
+    _dev_token_blocked = True
 
 
 async def verify_api_token(
@@ -37,6 +52,15 @@ async def verify_api_token(
 
     # Dev mode bypass: only accept the explicit dev-token
     if dev_mode and token == "dev-token":
+        if _dev_token_blocked:
+            raise HTTPException(
+                status_code=401,
+                detail="Dev-token rejected: DEVELOPMENT_MODE is not allowed in production",
+            )
+        logger.warning(
+            "REQUEST AUTHENTICATED VIA DEV-TOKEN BYPASS. "
+            "This is insecure and must not be used in production."
+        )
         return token
 
     if not api_token:
@@ -83,6 +107,12 @@ async def verify_api_token_optional(
     token = credentials.credentials
 
     if dev_mode and token == "dev-token":
+        if _dev_token_blocked:
+            return None
+        logger.warning(
+            "REQUEST AUTHENTICATED VIA DEV-TOKEN BYPASS (optional auth). "
+            "This is insecure and must not be used in production."
+        )
         return token
 
     import hmac

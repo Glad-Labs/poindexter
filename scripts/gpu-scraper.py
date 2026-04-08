@@ -59,15 +59,17 @@ async def scrape_and_store():
     }
 
     conn = await asyncpg.connect(LOCAL_DB)
-    await conn.execute(
-        """INSERT INTO gpu_metrics (utilization, temperature, power_draw,
-           memory_used, memory_total, fan_speed, clock_graphics, clock_memory)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)""",
-        vals["utilization"], vals["temperature"], vals["power_draw"],
-        vals["memory_used"], vals["memory_total"], vals["fan_speed"],
-        vals["clock_graphics"], vals["clock_memory"],
-    )
-    await conn.close()
+    try:
+        await conn.execute(
+            """INSERT INTO gpu_metrics (utilization, temperature, power_draw,
+               memory_used, memory_total, fan_speed, clock_graphics, clock_memory)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)""",
+            vals["utilization"], vals["temperature"], vals["power_draw"],
+            vals["memory_used"], vals["memory_total"], vals["fan_speed"],
+            vals["clock_graphics"], vals["clock_memory"],
+        )
+    finally:
+        await conn.close()
     return vals
 
 

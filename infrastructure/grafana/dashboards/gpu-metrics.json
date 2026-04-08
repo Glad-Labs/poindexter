@@ -222,7 +222,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "gpu-prometheus" },
-          "expr": "psu_power_watts{sensor=\"estimated_input_power\"}",
+          "expr": "hwinfo_power_watts{sensor=\"psu_power_in__est_\"}",
           "refId": "A"
         }
       ]
@@ -260,7 +260,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "gpu-prometheus" },
-          "expr": "psu_power_watts{sensor=\"total_power_output\"}",
+          "expr": "hwinfo_power_watts{sensor=\"psu_power_out\"}",
           "refId": "A"
         }
       ]
@@ -369,13 +369,13 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "gpu-prometheus" },
-          "expr": "psu_power_watts{sensor=\"estimated_input_power\"}",
+          "expr": "hwinfo_power_watts{sensor=\"psu_power_in__est_\"}",
           "legendFormat": "Wall Power",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "gpu-prometheus" },
-          "expr": "psu_power_watts{sensor=\"total_power_output\"}",
+          "expr": "hwinfo_power_watts{sensor=\"psu_power_out\"}",
           "legendFormat": "DC Output",
           "refId": "B"
         },
@@ -424,7 +424,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "gpu-prometheus" },
-          "expr": "psu_power_watts{sensor=\"estimated_input_power\"} / 1000 * 0.14 * 24",
+          "expr": "hwinfo_power_watts{sensor=\"psu_power_in__est_\"} / 1000 * 0.14 * 24",
           "legendFormat": "Est. Daily Cost",
           "refId": "A"
         }
@@ -478,13 +478,13 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "gpu-prometheus" },
-          "expr": "psu_temperature_celsius{sensor=\"vrm_temperature\"}",
+          "expr": "hwinfo_temperature_celsius{sensor=\"psu_temperature\"}",
           "legendFormat": "PSU VRM",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "gpu-prometheus" },
-          "expr": "psu_temperature_celsius{sensor=\"case_temperature\"}",
+          "expr": "hwinfo_temperature_celsius{sensor=\"psu_temperature2\"}",
           "legendFormat": "PSU Case",
           "refId": "B"
         }

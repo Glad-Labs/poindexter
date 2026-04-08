@@ -94,7 +94,13 @@ async def get_operational_metrics(
         try:
             if db_service and db_service.tasks:
                 raw = await db_service.tasks.get_task_counts()
-                task_counts = {str(k): int(v) for k, v in (raw or {}).items()}
+                # raw may be a Pydantic model or a dict
+                if hasattr(raw, "model_dump"):
+                    task_counts = {str(k): int(v) for k, v in raw.model_dump().items() if isinstance(v, (int, float))}
+                elif isinstance(raw, dict):
+                    task_counts = {str(k): int(v) for k, v in raw.items()}
+                else:
+                    task_counts = {}
         except Exception as db_err:
             logger.warning(
                 f"[operational_metrics] DB task count unavailable: {db_err}", exc_info=True

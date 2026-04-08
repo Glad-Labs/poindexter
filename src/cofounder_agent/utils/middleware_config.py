@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from config import get_config
 from services.logger_config import get_logger
 
 logger = get_logger(__name__)
@@ -210,6 +211,8 @@ class MiddlewareConfig:
         - X-XSS-Protection: 0 — disable legacy XSS auditors (CSP is preferred)
         """
 
+        _is_production = get_config().environment == "production"
+
         class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             async def dispatch(self, request: Request, call_next):
                 response: Response = await call_next(request)
@@ -219,9 +222,11 @@ class MiddlewareConfig:
                 # Disable legacy XSS auditor; CSP is the modern protection
                 response.headers["X-XSS-Protection"] = "0"
                 # HSTS: enforce HTTPS for 1 year, include subdomains
-                response.headers["Strict-Transport-Security"] = (
-                    "max-age=31536000; includeSubDomains"
-                )
+                # Only in production to avoid HSTS pinning on dev/localhost
+                if _is_production:
+                    response.headers["Strict-Transport-Security"] = (
+                        "max-age=31536000; includeSubDomains"
+                    )
                 return response
 
         app.add_middleware(SecurityHeadersMiddleware)

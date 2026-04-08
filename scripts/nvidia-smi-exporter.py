@@ -17,6 +17,14 @@ import subprocess
 import sys
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
+# Hide console windows when spawning subprocesses on Windows
+_SUBPROCESS_KWARGS = {}
+if sys.platform == "win32":
+    _si = subprocess.STARTUPINFO()
+    _si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    _si.wShowWindow = 0  # SW_HIDE
+    _SUBPROCESS_KWARGS = {"startupinfo": _si, "creationflags": subprocess.CREATE_NO_WINDOW}
+
 PORT = 9835
 
 def get_gpu_metrics():
@@ -25,7 +33,7 @@ def get_gpu_metrics():
         result = subprocess.run(
             ["nvidia-smi", "--query-gpu=utilization.gpu,utilization.memory,memory.used,memory.total,temperature.gpu,power.draw,power.limit,fan.speed,clocks.current.graphics,clocks.current.memory",
              "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=5
+            capture_output=True, text=True, timeout=5, **_SUBPROCESS_KWARGS
         )
         if result.returncode != 0:
             return "# nvidia-smi failed\n"
@@ -87,7 +95,7 @@ def get_cpu_power_metrics():
         )
         result = subprocess.run(
             ["powershell", "-NoProfile", "-Command", ps_script],
-            capture_output=True, text=True, timeout=10
+            capture_output=True, text=True, timeout=10, **_SUBPROCESS_KWARGS
         )
         if result.returncode != 0:
             return "# cpu power: counter read failed\n"
@@ -298,6 +306,137 @@ def get_aida64_metrics():
     return "\n".join(lines) + "\n"
 
 
+def _read_hwinfo_shm():
+    """Read sensor data from HWiNFO64 shared memory (binary format).
+
+    HWiNFO exposes sensors via a memory-mapped file named
+    'Global\\HWiNFO_SENS_SM2'. Requires SensorsSM=1 in HWiNFO64.INI.
+
+    Returns list of dicts: {type, sensor_index, id, label, unit, value}
+    or None if unavailable.
+    """
+    import ctypes
+    import struct
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.MapViewOfFile.restype = ctypes.c_void_p
+    kernel32.MapViewOfFile.argtypes = [
+        wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD, wintypes.DWORD, ctypes.c_size_t,
+    ]
+    kernel32.UnmapViewOfFile.argtypes = [ctypes.c_void_p]
+    kernel32.UnmapViewOfFile.restype = wintypes.BOOL
+
+    handle = kernel32.OpenFileMappingW(0x0004, False, "Global\\HWiNFO_SENS_SM2")
+    if not handle:
+        return None
+
+    buf = kernel32.MapViewOfFile(handle, 0x0004, 0, 0, 0)
+    if not buf:
+        kernel32.CloseHandle(handle)
+        return None
+
+    try:
+        # Read header (first 40 bytes)
+        header_raw = (ctypes.c_char * 48).from_address(buf)
+        header = bytes(header_raw)
+
+        sig = struct.unpack_from("<I", header, 0)[0]
+        if sig != 0x53695748:  # "HWiS" (little-endian)
+            return None
+
+        # Header: sig(4) ver(4) rev(4) poll_time(8) sensor_off(4) sensor_sz(4)
+        #         num_sensors(4) reading_off(4) reading_sz(4) num_readings(4)
+        fields = struct.unpack_from("<IIIqIIIIII", header, 0)
+        offset_reading = fields[7]
+        size_reading = fields[8]
+        num_readings = fields[9]
+
+        # Reading type map: HWiNFO type enum → (prometheus_suffix, unit_label)
+        TYPE_MAP = {
+            1: "temperature_celsius",
+            2: "voltage_volts",
+            3: "fan_rpm",
+            4: "current_amps",
+            5: "power_watts",
+            6: "clock_mhz",
+            7: "usage_percent",
+            8: "other",
+        }
+
+        readings = []
+        for i in range(num_readings):
+            offset = offset_reading + i * size_reading
+            elem_raw = (ctypes.c_char * min(size_reading, 512)).from_address(buf + offset)
+            elem = bytes(elem_raw)
+
+            reading_type = struct.unpack_from("<I", elem, 0)[0]
+            sensor_index = struct.unpack_from("<I", elem, 4)[0]
+            reading_id = struct.unpack_from("<I", elem, 8)[0]
+
+            label_orig = elem[12:140].split(b"\x00")[0].decode("utf-8", errors="ignore")
+            label_user = elem[140:268].split(b"\x00")[0].decode("utf-8", errors="ignore")
+            unit = elem[268:284].split(b"\x00")[0].decode("utf-8", errors="ignore")
+
+            value = struct.unpack_from("<d", elem, 284)[0]
+
+            label = label_user if label_user else label_orig
+            type_name = TYPE_MAP.get(reading_type)
+            if type_name and label:
+                readings.append({
+                    "type": type_name,
+                    "sensor_index": sensor_index,
+                    "id": reading_id,
+                    "label": label,
+                    "unit": unit,
+                    "value": value,
+                })
+
+        return readings
+    finally:
+        kernel32.UnmapViewOfFile(buf)
+        kernel32.CloseHandle(handle)
+
+
+def get_hwinfo_metrics():
+    """Read all sensors from HWiNFO64 shared memory.
+
+    Exposes Corsair HXi PSU telemetry (via iCUE → HWiNFO) plus any other
+    hardware sensors HWiNFO provides. Focuses on PSU data since GPU/CPU
+    metrics come from nvidia-smi and RAPL.
+    """
+    if sys.platform != "win32":
+        return ""
+
+    try:
+        readings = _read_hwinfo_shm()
+    except Exception as e:
+        return f"# hwinfo: error reading shared memory: {e}\n"
+
+    if readings is None:
+        return "# hwinfo: shared memory not available (enable in HWiNFO Settings > Shared Memory)\n"
+    if not readings:
+        return "# hwinfo: no sensor readings found\n"
+
+    lines = []
+    headers_emitted = set()
+
+    for r in readings:
+        metric_type = r["type"]
+        metric_name = f"hwinfo_{metric_type}"
+        safe_label = r["label"].replace('"', '\\"')
+        safe_id = re.sub(r"[^a-zA-Z0-9_]", "_", r["label"]).lower()
+
+        if metric_name not in headers_emitted:
+            headers_emitted.add(metric_name)
+            lines.append(f"# HELP {metric_name} HWiNFO64 {metric_type} sensors")
+            lines.append(f"# TYPE {metric_name} gauge")
+
+        lines.append(f'{metric_name}{{sensor="{safe_id}",label="{safe_label}"}} {r["value"]}')
+
+    return "\n".join(lines) + "\n" if lines else ""
+
+
 def get_liquidctl_psu_metrics():
     """Read Corsair HXi PSU metrics via liquidctl (cross-platform).
 
@@ -429,11 +568,12 @@ class MetricsHandler(BaseHTTPRequestHandler):
             gpu = get_gpu_metrics()
             cpu = get_cpu_power_metrics()
             aida = get_aida64_metrics()
-            psu = get_liquidctl_psu_metrics()
+            hwinfo = get_hwinfo_metrics()
             lm = get_lm_sensors_metrics()
             total = get_total_power_metrics(gpu, cpu)
-            # Combine all sources — AIDA64/lm-sensors/liquidctl complement each other
-            body = (gpu + cpu + aida + psu + lm + total).encode()
+            # Combine all sources — AIDA64/HWiNFO/lm-sensors complement each other
+            # liquidctl removed: fights iCUE/AIDA64 for Corsair USB; HWiNFO covers PSU via shared memory
+            body = (gpu + cpu + aida + hwinfo + lm + total).encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; version=0.0.4")
             self.send_header("Content-Length", str(len(body)))

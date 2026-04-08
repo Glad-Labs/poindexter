@@ -104,6 +104,39 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             app.state.settings_service = settings_service
             service_container.register("settings", settings_service)
             logger.info("[LIFESPAN] Settings service initialized")
+
+            # Sync secrets: DB is the source of truth.
+            # On first run, auto-generated secrets are saved to DB.
+            # On subsequent runs, DB values override the auto-generated ones.
+            _secret_keys = {
+                "secret_key": ("SECRET_KEY", "auth"),
+                "jwt_secret_key": ("JWT_SECRET_KEY", "auth"),
+                "jwt_secret": ("JWT_SECRET", "auth"),
+                "revalidate_secret": ("REVALIDATE_SECRET", "integrations"),
+                "api_auth_token": ("API_TOKEN", "security"),
+            }
+            secrets_loaded = 0
+            secrets_saved = 0
+            for db_key, (env_var, category) in _secret_keys.items():
+                db_val = await settings_service.get(db_key)
+                env_val = os.environ.get(env_var, "")
+                if db_val:
+                    # DB has a value — use it (source of truth)
+                    os.environ[env_var] = db_val
+                    secrets_loaded += 1
+                elif env_val:
+                    # DB empty but env has a value — persist to DB
+                    await settings_service.set(
+                        db_key, env_val, category=category,
+                        description=f"Auto-persisted from env var {env_var}",
+                        is_secret=True,
+                    )
+                    secrets_saved += 1
+            if secrets_loaded or secrets_saved:
+                logger.info(
+                    "[LIFESPAN] Secrets synced: %d loaded from DB, %d saved to DB",
+                    secrets_loaded, secrets_saved,
+                )
         except Exception as e:
             logger.warning(f"[LIFESPAN] Settings service failed (non-critical): {e}", exc_info=True)
             app.state.settings_service = None
@@ -418,6 +451,34 @@ async def api_health():
         else:
             health_data["components"]["database"] = "unavailable"
 
+        # Connection pool stats (#140)
+        pool_health: Optional[ConnectionPoolHealth] = getattr(app.state, "pool_health", None)
+        if database_service and getattr(database_service, "pool", None):
+            pool = database_service.pool
+            pool_stats = {
+                "size": pool.get_size(),
+                "idle": pool.get_idle_size(),
+                "min_size": pool.get_min_size(),
+                "max_size": pool.get_max_size(),
+            }
+            # Include local pool stats if it's a separate pool
+            local_pool = getattr(database_service, "local_pool", None)
+            if local_pool and local_pool is not pool:
+                pool_stats["local"] = {
+                    "size": local_pool.get_size(),
+                    "idle": local_pool.get_idle_size(),
+                    "min_size": local_pool.get_min_size(),
+                    "max_size": local_pool.get_max_size(),
+                }
+            health_data["components"]["connection_pool"] = pool_stats
+            # Flag degraded if pool health monitor reports issues
+            if pool_health and pool_health.is_pool_degraded():
+                if health_data["status"] == "healthy":
+                    health_data["status"] = "degraded"
+                health_data["components"]["connection_pool"]["degraded"] = True
+            if pool_health and pool_health.is_pool_critical():
+                health_data["components"]["connection_pool"]["critical"] = True
+
         # Include task executor liveness and queue depth (#580)
         task_executor = getattr(app.state, "task_executor", None)
         if task_executor is not None:
@@ -559,6 +620,33 @@ async def prometheus_metrics():
         lines.append("# HELP gladlabs_gpu_busy Whether the GPU lock is held by the pipeline")
         lines.append("# TYPE gladlabs_gpu_busy gauge")
         lines.append(f'gladlabs_gpu_busy {1 if s["busy"] else 0}')
+    except Exception:
+        pass
+
+    # Connection pool metrics (#140)
+    try:
+        database_service = getattr(app.state, "database", None)
+        if database_service and getattr(database_service, "pool", None):
+            pool = database_service.pool
+            lines.append("# HELP gladlabs_db_pool_size Current number of connections in pool")
+            lines.append("# TYPE gladlabs_db_pool_size gauge")
+            lines.append(f'gladlabs_db_pool_size{{pool="cloud"}} {pool.get_size()}')
+            lines.append("# HELP gladlabs_db_pool_idle Number of idle connections in pool")
+            lines.append("# TYPE gladlabs_db_pool_idle gauge")
+            lines.append(f'gladlabs_db_pool_idle{{pool="cloud"}} {pool.get_idle_size()}')
+            lines.append("# HELP gladlabs_db_pool_min_size Minimum pool size setting")
+            lines.append("# TYPE gladlabs_db_pool_min_size gauge")
+            lines.append(f'gladlabs_db_pool_min_size{{pool="cloud"}} {pool.get_min_size()}')
+            lines.append("# HELP gladlabs_db_pool_max_size Maximum pool size setting")
+            lines.append("# TYPE gladlabs_db_pool_max_size gauge")
+            lines.append(f'gladlabs_db_pool_max_size{{pool="cloud"}} {pool.get_max_size()}')
+            # Local pool (if separate)
+            local_pool = getattr(database_service, "local_pool", None)
+            if local_pool and local_pool is not pool:
+                lines.append(f'gladlabs_db_pool_size{{pool="local"}} {local_pool.get_size()}')
+                lines.append(f'gladlabs_db_pool_idle{{pool="local"}} {local_pool.get_idle_size()}')
+                lines.append(f'gladlabs_db_pool_min_size{{pool="local"}} {local_pool.get_min_size()}')
+                lines.append(f'gladlabs_db_pool_max_size{{pool="local"}} {local_pool.get_max_size()}')
     except Exception:
         pass
 

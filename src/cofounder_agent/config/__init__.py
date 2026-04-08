@@ -135,8 +135,10 @@ def get_config() -> Config:
 
     environment = os.getenv("ENVIRONMENT", "development")
 
-    # Auto-generate secrets if missing or placeholder — never crash on startup.
-    # Generated values are written to os.environ so all downstream code sees them.
+    # Auto-generate secrets if missing or placeholder.
+    # These are temporary — once the DB is available during lifespan startup,
+    # secrets are read from app_settings (persisted) and written back to os.environ.
+    # On first run, auto-generated values are saved to DB for future restarts.
     secret_key = _auto_secret("SECRET_KEY", _PLACEHOLDER_SECRET)
     _auto_secret("JWT_SECRET_KEY", "development-secret-key-change-in-production")
     _auto_secret("JWT_SECRET", "development-secret-key-change-in-production")
@@ -145,9 +147,9 @@ def get_config() -> Config:
     if _AUTO_SECRETS:
         import logging
 
-        logging.getLogger(__name__).warning(
-            "[Config] Auto-generated secrets for: %s. "
-            "Set these env vars explicitly for stable values across restarts.",
+        logging.getLogger(__name__).info(
+            "[Config] Temporary secrets generated for: %s. "
+            "Will load persisted values from DB once connected.",
             ", ".join(_AUTO_SECRETS.keys()),
         )
 
