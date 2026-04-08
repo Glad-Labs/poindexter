@@ -386,7 +386,7 @@ class TaskExecutor:
                         generate_featured_image=True,
                         database_service=self.database_service,
                         task_id=task_id,
-                        models_by_phase=task.get("model_selections", {}),
+                        models_by_phase=task.get("model_selections") or await self._get_model_selections(task_id),
                         quality_preference=task.get("quality_preference", "balanced"),
                         category=task.get("category", "general"),
                         target_audience=task.get("target_audience", "General"),
@@ -646,6 +646,22 @@ class TaskExecutor:
             return default
         except Exception:
             return default
+
+    async def _get_model_selections(self, task_id: str) -> dict:
+        """Read model_selections directly from DB (bypasses TaskResponse serialization)."""
+        if not self.database_service or not self.database_service.pool:
+            return {}
+        try:
+            import json as _json
+            row = await self.database_service.pool.fetchrow(
+                "SELECT model_selections FROM content_tasks WHERE task_id = $1", task_id
+            )
+            if row and row["model_selections"]:
+                ms = row["model_selections"]
+                return _json.loads(ms) if isinstance(ms, str) else ms
+        except Exception:
+            pass
+        return {}
 
     async def _sweep_stale_tasks(self) -> None:
         """Reset tasks stuck in processing state back to pending."""
