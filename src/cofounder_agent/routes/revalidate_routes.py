@@ -59,7 +59,24 @@ async def trigger_nextjs_revalidation(paths: Optional[list] = None) -> bool:
         nextjs_url = nextjs_url[:-4]
 
     revalidate_url = f"{nextjs_url}/api/revalidate"
-    revalidate_secret = site_config.get("revalidate_secret") or os.getenv("REVALIDATE_SECRET", "")
+
+    # site_config excludes secrets (is_secret=true), so fetch directly from DB
+    revalidate_secret = ""
+    try:
+        from utils.route_utils import get_database_dependency
+        db_service = get_database_dependency()
+        pool = getattr(db_service, "pool", None)
+        if pool:
+            row = await pool.fetchrow(
+                "SELECT value FROM app_settings WHERE key = 'revalidate_secret'"
+            )
+            if row and row["value"]:
+                revalidate_secret = row["value"]
+    except Exception as e:
+        logger.warning("Failed to fetch revalidate_secret from DB: %s", e)
+
+    if not revalidate_secret:
+        revalidate_secret = site_config.get("revalidate_secret") or os.getenv("REVALIDATE_SECRET", "")
     environment = os.getenv("ENVIRONMENT", "development").lower()
 
     if not revalidate_secret:
