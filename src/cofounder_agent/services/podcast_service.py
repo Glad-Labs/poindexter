@@ -295,6 +295,8 @@ RULES:
 - Don't include any markdown formatting, asterisks, brackets, or special characters
 - Keep the same depth, arguments, and structure — don't summarize or shorten
 - Write in a warm, conversational but authoritative tone
+- NEVER use first person ("I", "my", "I think", "what I call") — the narrator is presenting facts, not opinions
+- Use "we" sparingly and only when the original article does — prefer impersonal phrasing ("the industry is seeing", "developers are finding")
 - Do NOT add any meta-commentary like "Here's the script:" — just output the script text directly
 
 ARTICLE TITLE: {title}
