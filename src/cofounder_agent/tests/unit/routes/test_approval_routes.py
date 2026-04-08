@@ -3,13 +3,11 @@ Unit tests for routes/approval_routes.py.
 
 Tests cover:
 - POST /api/tasks/{task_id}/reject        — reject_task
-- POST /api/tasks/bulk-approve            — bulk_approve_tasks
-- POST /api/tasks/bulk-reject             — bulk_reject_tasks
 - GET  /api/tasks/pending-approval        — get_pending_approvals
-- GET  /api/tasks/{task_id}/approval-status — get_task_approval_status
 
 NOTE: POST /api/tasks/{task_id}/approve is tested in test_task_publishing_routes.py
 (the approve endpoint was moved there per issue #1335).
+Bulk approve, bulk reject, and approval-status endpoints have been removed.
 
 Auth and DB are overridden so no real I/O occurs.
 broadcast_approval_status is patched so WebSocket calls don't fail.
@@ -165,107 +163,6 @@ class TestRejectTask:
         assert updates["approval_status"] == "rejected"
 
 
-# ---------------------------------------------------------------------------
-# POST /api/tasks/bulk-approve
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestBulkApprove:
-    def test_bulk_approve_all_awaiting_tasks(self):
-        task_a = {**AWAITING_TASK, "id": "t1", "task_id": "t1"}
-        task_b = {**AWAITING_TASK, "id": "t2", "task_id": "t2"}
-
-        mock_db = make_mock_db()
-        # get_tasks_by_ids returns a dict keyed by task_id (#665 — replaces N get_task calls)
-        mock_db.get_tasks_by_ids = AsyncMock(return_value={"t1": task_a, "t2": task_b})
-        client = TestClient(_build_app(mock_db))
-
-        with patch.object(approval_module, "broadcast_approval_status", new=AsyncMock()):
-            resp = client.post(
-                "/api/tasks/bulk-approve",
-                json={"task_ids": ["t1", "t2"], "feedback": "All good"},
-            )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["approved_count"] == 2
-        assert data["failed_count"] == 0
-        assert set(data["successful_task_ids"]) == {"t1", "t2"}
-
-    def test_bulk_approve_skips_nonexistent_tasks(self):
-        mock_db = make_mock_db()
-        # Empty dict = no tasks found
-        mock_db.get_tasks_by_ids = AsyncMock(return_value={})
-        client = TestClient(_build_app(mock_db))
-
-        with patch.object(approval_module, "broadcast_approval_status", new=AsyncMock()):
-            resp = client.post(
-                "/api/tasks/bulk-approve",
-                json={"task_ids": ["missing-1", "missing-2"]},
-            )
-        data = resp.json()
-        assert data["approved_count"] == 0
-        assert data["failed_count"] == 2
-
-    def test_bulk_approve_skips_tasks_with_wrong_status(self):
-        already_approved = {**AWAITING_TASK, "status": "approved", "task_id": "t1"}
-        mock_db = make_mock_db()
-        mock_db.get_tasks_by_ids = AsyncMock(return_value={"t1": already_approved})
-        client = TestClient(_build_app(mock_db))
-
-        with patch.object(approval_module, "broadcast_approval_status", new=AsyncMock()):
-            resp = client.post(
-                "/api/tasks/bulk-approve",
-                json={"task_ids": ["t1"]},
-            )
-        data = resp.json()
-        assert data["approved_count"] == 0
-        assert data["failed_count"] == 1
-
-    def test_bulk_approve_empty_task_ids_succeeds(self):
-        client = TestClient(_build_app())
-        with patch.object(approval_module, "broadcast_approval_status", new=AsyncMock()):
-            resp = client.post("/api/tasks/bulk-approve", json={"task_ids": []})
-        assert resp.status_code == 200
-        assert resp.json()["approved_count"] == 0
-
-
-# ---------------------------------------------------------------------------
-# POST /api/tasks/bulk-reject
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestBulkReject:
-    def test_bulk_reject_awaiting_tasks(self):
-        task_a = {**AWAITING_TASK, "id": "r1", "task_id": "r1"}
-        task_b = {**AWAITING_TASK, "id": "r2", "task_id": "r2"}
-
-        mock_db = make_mock_db()
-        # get_tasks_by_ids returns a dict keyed by task_id (#665 — replaces N get_task calls)
-        mock_db.get_tasks_by_ids = AsyncMock(return_value={"r1": task_a, "r2": task_b})
-        client = TestClient(_build_app(mock_db))
-
-        with patch.object(approval_module, "broadcast_approval_status", new=AsyncMock()):
-            resp = client.post(
-                "/api/tasks/bulk-reject",
-                json={
-                    "task_ids": ["r1", "r2"],
-                    "reason": "Quality issues",
-                    "feedback": "Needs revision",
-                    "allow_revisions": True,
-                },
-            )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["rejected_count"] == 2
-        assert data["failed_count"] == 0
-
-    def test_bulk_reject_missing_required_fields_returns_422(self):
-        client = TestClient(_build_app())
-        # "reason" and "feedback" are required
-        resp = client.post("/api/tasks/bulk-reject", json={"task_ids": ["t1"]})
-        assert resp.status_code == 422
 
 
 # ---------------------------------------------------------------------------
@@ -338,52 +235,6 @@ class TestGetPendingApprovals:
 
 
 # ---------------------------------------------------------------------------
-# GET /api/tasks/{task_id}/approval-status
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestGetTaskApprovalStatus:
-    def test_returns_404_for_missing_task(self):
-        mock_db = make_mock_db()
-        mock_db.get_task = AsyncMock(return_value=None)
-        client = TestClient(_build_app(mock_db))
-
-        resp = client.get("/api/tasks/nonexistent/approval-status")
-        assert resp.status_code == 404
-
-    def test_returns_approval_status_fields(self):
-        task = {
-            **AWAITING_TASK,
-            "metadata": {
-                "approval_date": "2026-01-01",
-                "approved_by": "user-xyz",
-                "rejection_reason": None,
-            },
-        }
-        mock_db = make_mock_db()
-        mock_db.get_task = AsyncMock(return_value=task)
-        client = TestClient(_build_app(mock_db))
-
-        resp = client.get("/api/tasks/task-001/approval-status")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["task_id"] == "task-001"
-        assert data["status"] == "awaiting_approval"
-        assert data["can_be_approved"] is True
-
-    def test_can_be_approved_false_for_non_awaiting_task(self):
-        task = {**AWAITING_TASK, "status": "approved", "metadata": {}}
-        mock_db = make_mock_db()
-        mock_db.get_task = AsyncMock(return_value=task)
-        client = TestClient(_build_app(mock_db))
-
-        resp = client.get("/api/tasks/task-001/approval-status")
-        assert resp.status_code == 200
-        assert resp.json()["can_be_approved"] is False
-
-
-# ---------------------------------------------------------------------------
 # Integration-level approval lifecycle tests (Issue #560)
 # ---------------------------------------------------------------------------
 
@@ -391,39 +242,6 @@ class TestGetTaskApprovalStatus:
 @pytest.mark.unit
 class TestApprovalLifecycle:
     """Multi-step approval lifecycle — simulates the real approval flow."""
-
-    def test_reject_then_status_reflects_rejected(self):
-        """After reject, approval-status shows non-approvable state."""
-        awaiting = {**AWAITING_TASK}
-        rejected = {
-            **AWAITING_TASK,
-            "status": "failed",
-            "metadata": {"rejection_reason": "Off-topic"},
-        }
-
-        call_counts = {"n": 0}
-
-        async def _get_task(task_id):
-            call_counts["n"] += 1
-            if call_counts["n"] == 1:
-                return awaiting
-            return rejected
-
-        mock_db = make_mock_db()
-        mock_db.get_task = AsyncMock(side_effect=_get_task)
-        client = TestClient(_build_app(mock_db))
-
-        with patch.object(approval_module, "broadcast_approval_status", new=AsyncMock()):
-            reject_resp = client.post(
-                "/api/tasks/task-001/reject",
-                json={"reason": "Off-topic", "feedback": "Not relevant", "allow_revisions": False},
-            )
-        assert reject_resp.status_code == 200
-        assert reject_resp.json()["status"] == "failed"
-
-        status_resp = client.get("/api/tasks/task-001/approval-status")
-        assert status_resp.status_code == 200
-        assert status_resp.json()["can_be_approved"] is False
 
     def test_feedback_field_persisted_in_db_update(self):
         """Reject: feedback text must be included in the DB update call."""

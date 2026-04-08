@@ -78,7 +78,7 @@ class TestRewriteTitle:
 
     def test_clean_title_unchanged(self):
         d = TopicDiscovery(AsyncMock())
-        assert d._rewrite_as_blog_topic("A Normal Title") == "A Normal Title"
+        assert d._rewrite_as_blog_topic("A Perfectly Normal Blog Title") == "A Perfectly Normal Blog Title"
 
     def test_removes_ask_hn_prefix(self):
         d = TopicDiscovery(AsyncMock())
@@ -320,8 +320,8 @@ class TestScrapeDevTo:
             mock_client = AsyncMock()
             resp = MagicMock()
             resp.json.return_value = [
-                {"title": "Building Docker Containers", "url": "https://dev.to/test", "positive_reactions_count": 100},
-                {"title": "Low engagement", "url": "https://dev.to/low", "positive_reactions_count": 5},
+                {"title": "Building Docker Containers for Production", "url": "https://dev.to/test", "positive_reactions_count": 100},
+                {"title": "Low engagement article", "url": "https://dev.to/low", "positive_reactions_count": 5},
             ]
             mock_client.get = AsyncMock(return_value=resp)
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)

@@ -31,23 +31,18 @@ class TestModelCosts:
         for key in ollama_keys:
             assert MODEL_COSTS[key] == 0.0, f"{key} should be free (0.0)"
 
-    def test_openai_models_present(self):
-        assert "gpt-4" in MODEL_COSTS
-        assert "gpt-3.5-turbo" in MODEL_COSTS
+    def test_ollama_qwen_models_present(self):
+        qwen_keys = [k for k in MODEL_COSTS if "qwen" in k]
+        assert len(qwen_keys) > 0, "Expected at least one Qwen model"
 
-    def test_anthropic_models_present(self):
-        assert "claude-opus-3" in MODEL_COSTS or "claude-sonnet-3" in MODEL_COSTS
+    def test_ollama_gemma_models_present(self):
+        gemma_keys = [k for k in MODEL_COSTS if "gemma" in k]
+        assert len(gemma_keys) > 0, "Expected at least one Gemma model"
 
-    def test_gemini_models_present(self):
-        gemini_keys = [k for k in MODEL_COSTS if k.startswith("gemini-")]
-        assert len(gemini_keys) > 0, "Expected at least one Gemini model"
-
-    def test_premium_models_cost_more_than_cheap_models(self):
-        """Rough sanity check: gpt-4 should cost more than gpt-3.5-turbo."""
-        gpt4_cost = MODEL_COSTS.get("gpt-4", 0)
-        gpt35_cost = MODEL_COSTS.get("gpt-3.5-turbo", 0)
-        if gpt4_cost and gpt35_cost:
-            assert gpt4_cost > gpt35_cost
+    def test_all_models_are_free(self):
+        """Ollama-only policy: all models should be free (0.0)."""
+        for model, cost in MODEL_COSTS.items():
+            assert cost == 0.0, f"{model} should be free but costs {cost}"
 
 
 # ---------------------------------------------------------------------------
@@ -82,7 +77,7 @@ class TestProviderIcons:
             assert len(icon) > 0, f"{provider} icon is empty"
 
     def test_known_providers_present(self):
-        for provider in ("ollama", "anthropic", "openai", "google"):
+        for provider in ("ollama",):
             assert provider in PROVIDER_ICONS, f"Missing icon for {provider}"
 
 
@@ -110,5 +105,5 @@ class TestModelFamilies:
                 assert isinstance(model, str), f"{model} in {provider} is not a string"
 
     def test_known_providers_present(self):
-        for provider in ("openai", "anthropic", "google", "ollama"):
+        for provider in ("ollama",):
             assert provider in MODEL_FAMILIES, f"Missing family entry for {provider}"

@@ -5,14 +5,7 @@ Tests cover:
 - GET    /api/settings              — list_settings
 - GET    /api/settings/{id}         — get_setting
 - POST   /api/settings              — create_setting
-- PATCH  /api/settings             — batch_update_settings
-- DELETE /api/settings             — batch_delete_settings
 - PUT    /api/settings/{id}        — update_setting
-- DELETE /api/settings/{id}        — delete_setting (single)
-- GET    /api/settings/{id}/history — get_setting_history
-- POST   /api/settings/{id}/rollback — rollback_setting
-- POST   /api/settings/bulk/update  — bulk_update_settings
-- GET    /api/settings/export/all   — export_settings
 """
 
 from datetime import datetime, timezone
@@ -231,44 +224,6 @@ class TestCreateSetting:
 
 
 # ---------------------------------------------------------------------------
-# PATCH /api/settings (batch update)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestBatchUpdateSettings:
-    def test_patch_returns_200(self):
-        client = TestClient(_build_app())
-        resp = client.patch("/api/settings", json={"value": "updated_value"})
-        assert resp.status_code == 200
-
-    def test_patch_returns_setting_response(self):
-        client = TestClient(_build_app())
-        data = client.patch("/api/settings", json={"value": "updated_value"}).json()
-        assert "key" in data
-        assert "value" in data
-
-    def test_patch_calls_set_setting(self):
-        mock_db = _make_settings_db()
-        client = TestClient(_build_app(mock_db))
-        client.patch("/api/settings", json={"value": "updated_value"})
-        mock_db.set_setting.assert_awaited_once()
-
-
-# ---------------------------------------------------------------------------
-# DELETE /api/settings (batch delete)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestBatchDeleteSettings:
-    def test_delete_returns_204(self):
-        client = TestClient(_build_app())
-        resp = client.delete("/api/settings")
-        assert resp.status_code == 204
-
-
-# ---------------------------------------------------------------------------
 # PUT /api/settings/{setting_id}  (update_setting)
 # ---------------------------------------------------------------------------
 
@@ -278,7 +233,7 @@ class TestUpdateSetting:
     def test_existing_key_returns_200(self):
         """Update existing setting by key name."""
         client = TestClient(_build_app())
-        resp = client.patch(
+        resp = client.put(
             "/api/settings/log_level",
             json={"value": "new_value"},
         )
@@ -286,7 +241,7 @@ class TestUpdateSetting:
 
     def test_response_has_key_field(self):
         client = TestClient(_build_app())
-        data = client.patch("/api/settings/log_level", json={"value": "x"}).json()
+        data = client.put("/api/settings/log_level", json={"value": "x"}).json()
         assert "key" in data
 
     def test_missing_key_returns_404(self):
@@ -294,7 +249,7 @@ class TestUpdateSetting:
         mock_db = _make_settings_db()
         mock_db.get_setting = AsyncMock(return_value=None)
         client = TestClient(_build_app(mock_db))
-        resp = client.patch("/api/settings/nonexistent_key", json={"value": "x"})
+        resp = client.put("/api/settings/nonexistent_key", json={"value": "x"})
         assert resp.status_code == 404
 
     def test_value_reflected_in_response(self):
@@ -303,13 +258,13 @@ class TestUpdateSetting:
         updated_setting = {**SETTING_DICT, "value": "my_value"}
         mock_db.get_setting = AsyncMock(side_effect=[SETTING_DICT, updated_setting])
         client = TestClient(_build_app(mock_db))
-        data = client.patch("/api/settings/log_level", json={"value": "my_value"}).json()
+        data = client.put("/api/settings/log_level", json={"value": "my_value"}).json()
         assert data["value"] == "my_value"
 
     def test_set_setting_called_with_correct_key(self):
         mock_db = _make_settings_db()
         client = TestClient(_build_app(mock_db))
-        client.patch("/api/settings/log_level", json={"value": "info"})
+        client.put("/api/settings/log_level", json={"value": "info"})
         mock_db.set_setting.assert_awaited_once()
         call_kwargs = mock_db.set_setting.call_args
         assert (
@@ -320,168 +275,5 @@ class TestUpdateSetting:
         mock_db = _make_settings_db()
         mock_db.set_setting = AsyncMock(return_value=False)
         client = TestClient(_build_app(mock_db))
-        resp = client.patch("/api/settings/log_level", json={"value": "x"})
+        resp = client.put("/api/settings/log_level", json={"value": "x"})
         assert resp.status_code == 500
-
-
-# ---------------------------------------------------------------------------
-# DELETE /api/settings/{setting_id}  (delete_setting single)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestDeleteSingleSetting:
-    def test_returns_204_on_success(self):
-        mock_db = _make_settings_db()
-        mock_db.get_setting = AsyncMock(return_value=SETTING_DICT)
-        mock_db.delete_setting = AsyncMock(return_value=True)
-        client = TestClient(_build_app(mock_db))
-        resp = client.delete("/api/settings/log_level")
-        assert resp.status_code == 204
-
-    def test_returns_404_when_not_found(self):
-        mock_db = _make_settings_db()
-        mock_db.get_setting = AsyncMock(return_value=None)
-        client = TestClient(_build_app(mock_db))
-        resp = client.delete("/api/settings/missing_key")
-        assert resp.status_code == 404
-
-    def test_delete_service_called_on_success(self):
-        mock_db = _make_settings_db()
-        mock_db.get_setting = AsyncMock(return_value=SETTING_DICT)
-        mock_db.delete_setting = AsyncMock(return_value=True)
-        client = TestClient(_build_app(mock_db))
-        client.delete("/api/settings/log_level")
-        mock_db.delete_setting.assert_awaited_once()
-
-    def test_db_failure_returns_500(self):
-        mock_db = _make_settings_db()
-        mock_db.get_setting = AsyncMock(return_value=SETTING_DICT)
-        mock_db.delete_setting = AsyncMock(return_value=False)
-        client = TestClient(_build_app(mock_db))
-        resp = client.delete("/api/settings/log_level")
-        assert resp.status_code == 500
-
-
-# ---------------------------------------------------------------------------
-# GET /api/settings/{setting_id}/history  (get_setting_history)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestGetSettingHistory:
-    def test_existing_setting_returns_200(self):
-        client = TestClient(_build_app())
-        resp = client.get("/api/settings/log_level/history")
-        assert resp.status_code == 200
-
-    def test_response_is_list(self):
-        client = TestClient(_build_app())
-        data = client.get("/api/settings/log_level/history").json()
-        assert isinstance(data, list)
-
-    def test_missing_setting_returns_404(self):
-        mock_db = _make_settings_db()
-        mock_db.get_setting = AsyncMock(return_value=None)
-        client = TestClient(_build_app(mock_db))
-        resp = client.get("/api/settings/nonexistent/history")
-        assert resp.status_code == 404
-
-    def test_limit_param_accepted(self):
-        client = TestClient(_build_app())
-        resp = client.get("/api/settings/log_level/history?limit=10")
-        assert resp.status_code == 200
-
-
-# ---------------------------------------------------------------------------
-# POST /api/settings/{setting_id}/rollback  (rollback_setting)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestRollbackSetting:
-    def test_returns_501_not_implemented(self):
-        client = TestClient(_build_app())
-        resp = client.post("/api/settings/log_level/rollback?history_id=1")
-        assert resp.status_code == 501
-
-    def test_missing_history_id_returns_422(self):
-        client = TestClient(_build_app())
-        resp = client.post("/api/settings/log_level/rollback")
-        assert resp.status_code == 422
-
-
-# ---------------------------------------------------------------------------
-# POST /api/settings/bulk/update  (bulk_update_settings)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestBulkUpdateSettings:
-    def test_returns_200(self):
-        client = TestClient(_build_app())
-        resp = client.post(
-            "/api/settings/bulk/update",
-            json={"updates": [{"setting_id": 1, "value": "60"}]},
-        )
-        assert resp.status_code == 200
-
-    def test_response_has_success_true(self):
-        client = TestClient(_build_app())
-        data = client.post(
-            "/api/settings/bulk/update",
-            json={"updates": [{"setting_id": 1, "value": "true"}]},
-        ).json()
-        assert data["success"] is True
-
-    def test_set_setting_called_for_each_update(self):
-        mock_db = _make_settings_db()
-        client = TestClient(_build_app(mock_db))
-        client.post(
-            "/api/settings/bulk/update",
-            json={
-                "updates": [
-                    {"setting_id": 1, "value": "a"},
-                    {"setting_id": 2, "value": "b"},
-                ]
-            },
-        )
-        assert mock_db.set_setting.await_count == 2
-
-    def test_missing_updates_field_returns_422(self):
-        client = TestClient(_build_app())
-        resp = client.post("/api/settings/bulk/update", json={})
-        assert resp.status_code == 422
-
-
-# ---------------------------------------------------------------------------
-# GET /api/settings/export/all  (export_settings)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestExportSettings:
-    def test_returns_200(self):
-        client = TestClient(_build_app())
-        resp = client.get("/api/settings/export/all")
-        assert resp.status_code == 200
-
-    def test_response_has_success_true(self):
-        client = TestClient(_build_app())
-        data = client.get("/api/settings/export/all").json()
-        assert data["success"] is True
-
-    def test_format_param_echoed(self):
-        client = TestClient(_build_app())
-        data = client.get("/api/settings/export/all?format=yaml").json()
-        assert data["format"] == "yaml"
-
-    def test_invalid_format_returns_422(self):
-        client = TestClient(_build_app())
-        resp = client.get("/api/settings/export/all?format=xml")
-        assert resp.status_code == 422
-
-    def test_include_secrets_echoed(self):
-        client = TestClient(_build_app())
-        data = client.get("/api/settings/export/all?include_secrets=true").json()
-        assert data["include_secrets"] is True

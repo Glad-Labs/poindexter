@@ -488,15 +488,18 @@ class TestParseModelPreferences:
 
     def test_infers_gemini_provider(self):
         model, provider = _parse_model_preferences({"draft": "gemini-1.5-flash"})
-        assert provider == "gemini"
+        # Ollama-only policy: all models default to ollama provider
+        assert provider == "ollama"
 
     def test_infers_openai_provider_from_gpt(self):
         model, provider = _parse_model_preferences({"draft": "gpt-4"})
-        assert provider == "openai"
+        # Ollama-only policy: all models default to ollama provider
+        assert provider == "ollama"
 
     def test_infers_anthropic_provider(self):
         model, provider = _parse_model_preferences({"draft": "claude-3-opus"})
-        assert provider == "anthropic"
+        # Ollama-only policy: all models default to ollama provider
+        assert provider == "ollama"
 
     def test_infers_ollama_provider_from_llama(self):
         model, provider = _parse_model_preferences({"draft": "llama3"})
@@ -508,35 +511,39 @@ class TestParseModelPreferences:
 
     def test_duplicate_gemini_prefix(self):
         model, provider = _parse_model_preferences({"draft": "gemini-gemini-1.5-pro"})
-        assert provider == "gemini"
-        assert model == "gemini-1.5-pro"
+        # Ollama-only policy: all models default to ollama provider
+        assert provider == "ollama"
 
     def test_duplicate_gpt_prefix(self):
         model, provider = _parse_model_preferences({"draft": "gpt-gpt-4"})
-        assert provider == "openai"
-        assert model == "gpt-4"
+        # Ollama-only policy: all models default to ollama provider
+        assert provider == "ollama"
 
     def test_duplicate_claude_prefix(self):
         model, provider = _parse_model_preferences({"draft": "claude-claude-opus"})
-        assert provider == "anthropic"
-        assert model == "claude-opus"
+        # Ollama-only policy: all models default to ollama provider
+        assert provider == "ollama"
 
     def test_fallback_phase_generate(self):
         model, provider = _parse_model_preferences({"generate": "gpt-4"})
-        assert provider == "openai"
+        # Ollama-only policy: all models default to ollama provider
+        assert provider == "ollama"
 
     def test_fallback_phase_content(self):
         model, provider = _parse_model_preferences({"content": "gpt-4"})
-        assert provider == "openai"
+        # Ollama-only policy: all models default to ollama provider
+        assert provider == "ollama"
 
     def test_unknown_model_sets_model_only(self):
         model, provider = _parse_model_preferences({"draft": "my-custom-model"})
         assert model == "my-custom-model"
-        assert provider is None
+        # Ollama-only policy: all models default to ollama provider
+        assert provider == "ollama"
 
     def test_strips_whitespace(self):
         model, provider = _parse_model_preferences({"draft": "  gpt-4  "})
-        assert provider == "openai"
+        # Ollama-only policy: all models default to ollama provider
+        assert provider == "ollama"
 
 
 # ===========================================================================

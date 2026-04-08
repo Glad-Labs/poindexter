@@ -70,30 +70,32 @@ class TestGPUScheduler:
         mock_response.status_code = 200
         mock_response.json.return_value = {"models": [{"name": "qwen3.5:latest"}]}
 
-        with patch("services.gpu_scheduler.httpx.AsyncClient") as mock_client_cls:
-            mock_client = AsyncMock()
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-            mock_client.get = AsyncMock(return_value=mock_response)
-            mock_client.post = AsyncMock(return_value=MagicMock(status_code=200))
-            mock_client_cls.return_value = mock_client
+        with patch.object(self.gpu, "_wait_for_gaming_clear", new=AsyncMock()):
+            with patch("services.gpu_scheduler.httpx.AsyncClient") as mock_client_cls:
+                mock_client = AsyncMock()
+                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_client.__aexit__ = AsyncMock(return_value=False)
+                mock_client.get = AsyncMock(return_value=mock_response)
+                mock_client.post = AsyncMock(return_value=MagicMock(status_code=200))
+                mock_client_cls.return_value = mock_client
 
-            async with self.gpu.lock("sdxl"):
-                pass
+                async with self.gpu.lock("sdxl"):
+                    pass
 
-            # Should have called GET /api/ps and POST /api/generate with keep_alive=0
-            mock_client.get.assert_called_once()
-            mock_client.post.assert_called_once()
-            call_args = mock_client.post.call_args
-            assert call_args[1]["json"]["keep_alive"] == 0
+                # Should have called GET /api/ps and POST /api/generate with keep_alive=0
+                mock_client.get.assert_called_once()
+                mock_client.post.assert_called_once()
+                call_args = mock_client.post.call_args
+                assert call_args[1]["json"]["keep_alive"] == 0
 
     @pytest.mark.asyncio
     async def test_ollama_does_not_unload(self):
-        """Acquiring for Ollama should NOT unload models."""
-        with patch("services.gpu_scheduler.httpx.AsyncClient") as mock_client_cls:
-            async with self.gpu.lock("ollama"):
-                pass
-            mock_client_cls.assert_not_called()
+        """Acquiring for Ollama should NOT call httpx to unload models."""
+        with patch.object(self.gpu, "_wait_for_gaming_clear", new=AsyncMock()):
+            with patch("services.gpu_scheduler.httpx.AsyncClient") as mock_client_cls:
+                async with self.gpu.lock("ollama"):
+                    pass
+                mock_client_cls.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_unload_failure_does_not_block(self):

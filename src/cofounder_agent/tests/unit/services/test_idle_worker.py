@@ -71,10 +71,12 @@ class TestIsDue:
 
 
 class TestMarkRun:
-    def test_updates_timestamp(self):
-        worker = IdleWorker(AsyncMock())
+    @pytest.mark.asyncio
+    async def test_updates_timestamp(self):
+        pool = _make_pool()
+        worker = IdleWorker(pool)
         before = time.time()
-        worker._mark_run("test_task")
+        await worker._persist_mark_run("test_task")
         assert worker._last_run["test_task"] >= before
 
 

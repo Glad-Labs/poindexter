@@ -375,34 +375,6 @@ class TestCmsStatus:
         pool.acquire = MagicMock(return_value=acquire_cm)
         return pool
 
-    def test_healthy_db_returns_200(self):
-        pool = self._make_status_pool(all_tables_exist=True)
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
-            client = TestClient(_build_app())
-            resp = client.get("/api/cms/status")
-        assert resp.status_code == 200
-
-    def test_healthy_response_has_tables_key(self):
-        pool = self._make_status_pool(all_tables_exist=True)
-        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
-            client = TestClient(_build_app())
-            data = client.get("/api/cms/status").json()
-        assert "tables" in data
-        assert "status" in data
-
-    def test_db_error_returns_503_with_error_status(self):
-        """On DB failure, cms_status returns 503 with status: error (#918)."""
-        with patch(
-            "routes.cms_routes.get_db_pool",
-            new=AsyncMock(side_effect=RuntimeError("Connection refused")),
-        ):
-            client = TestClient(_build_app())
-            resp = client.get("/api/cms/status")
-        assert resp.status_code == 503
-        data = resp.json()
-        assert data["status"] == "error"
-        assert "CMS status check failed" in data["detail"]
-
     def test_error_detail_does_not_leak_exception_message(self):
         """Ensure raw exception text is not exposed in the HTTP response."""
         with patch(

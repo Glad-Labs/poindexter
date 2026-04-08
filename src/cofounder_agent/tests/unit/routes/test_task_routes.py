@@ -270,31 +270,6 @@ class TestGetTaskStatus:
         assert "allowed_transitions" in data
 
 
-# ---------------------------------------------------------------------------
-# GET /api/tasks/metrics  (get_metrics — static stub response)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestGetMetrics:
-    def test_metrics_returns_200(self):
-        client = TestClient(_build_app())
-        resp = client.get("/api/tasks/metrics")
-        assert resp.status_code == 200
-
-    def test_metrics_contains_expected_fields(self):
-        client = TestClient(_build_app())
-        resp = client.get("/api/tasks/metrics")
-        data = resp.json()
-        assert "total_tasks" in data
-        assert "completed_tasks" in data
-        assert "failed_tasks" in data
-        assert "success_rate" in data
-
-    def test_metrics_summary_returns_200(self):
-        client = TestClient(_build_app())
-        resp = client.get("/api/tasks/metrics/summary")
-        assert resp.status_code == 200
 
 
 # ---------------------------------------------------------------------------
