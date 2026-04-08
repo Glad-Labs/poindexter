@@ -32,212 +32,34 @@ Critical Floor = 50/100 — if clarity, readability, or relevance falls below th
 
 import json
 import re
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from services.logger_config import get_logger
+from services.quality_models import (  # noqa: F401 — re-exported below
+    EvaluationMethod,
+    QualityAssessment,
+    QualityDimensions,
+    QualityScore,
+    RefinementType,
+)
+from services.quality_scorers import (
+    check_keywords as _check_keywords_fn,
+    count_syllables as _count_syllables_fn,
+    detect_truncation as _detect_truncation_fn,
+    flesch_kincaid_grade_level as _fk_grade_level_fn,
+    generate_feedback as _generate_feedback_fn,
+    generate_suggestions as _generate_suggestions_fn,
+    qa_cfg as _qa_cfg_fn,
+    score_accuracy as _score_accuracy_fn,
+    score_clarity as _score_clarity_fn,
+    score_completeness as _score_completeness_fn,
+    score_engagement as _score_engagement_fn,
+    score_readability as _score_readability_fn,
+    score_relevance as _score_relevance_fn,
+    score_seo as _score_seo_fn,
+)
 
 logger = get_logger(__name__)
-
-
-class EvaluationMethod(str, Enum):
-    """Supported evaluation methods"""
-
-    PATTERN_BASED = "pattern-based"  # Fast, deterministic
-    LLM_BASED = "llm-based"  # Accurate, uses language model
-    HYBRID = "hybrid"  # Combines both
-
-
-@dataclass
-class QualityScore:
-    """Detailed quality evaluation result (backward compatibility with QualityEvaluator)"""
-
-    overall_score: float  # 0-100 (average of 7 criteria)
-    clarity: float  # 0-100
-    accuracy: float  # 0-100
-    completeness: float  # 0-100
-    relevance: float  # 0-100
-    seo_quality: float  # 0-100
-    readability: float  # 0-100
-    engagement: float  # 0-100
-
-    # Feedback
-    passing: bool  # True if overall_score >= 70.0 (70/100 = passing for 0-100 scale)
-    feedback: str  # Human-readable feedback
-    suggestions: List[str]  # Improvement suggestions
-
-    # Metadata
-    evaluation_timestamp: str
-    evaluated_by: str = "QualityEvaluator"
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for database storage"""
-        return {
-            "overall_score": self.overall_score,
-            "clarity": self.clarity,
-            "accuracy": self.accuracy,
-            "completeness": self.completeness,
-            "relevance": self.relevance,
-            "seo_quality": self.seo_quality,
-            "readability": self.readability,
-            "engagement": self.engagement,
-            "passing": self.passing,
-            "feedback": self.feedback,
-            "suggestions": self.suggestions,
-            "evaluation_timestamp": self.evaluation_timestamp,
-            "evaluated_by": self.evaluated_by,
-        }
-
-
-class RefinementType(str, Enum):
-    """Types of refinements that can be applied"""
-
-    CLARITY = "clarity"
-    ACCURACY = "accuracy"
-    COMPLETENESS = "completeness"
-    RELEVANCE = "relevance"
-    SEO = "seo"
-    READABILITY = "readability"
-    ENGAGEMENT = "engagement"
-
-
-@dataclass
-class QualityDimensions:
-    """7-criteria quality assessment"""
-
-    clarity: float  # 0-100
-    accuracy: float  # 0-100
-    completeness: float  # 0-100
-    relevance: float  # 0-100
-    seo_quality: float  # 0-100
-    readability: float  # 0-100
-    engagement: float  # 0-100
-
-    # Critical dimensions that, if severely low, cap the overall score.
-    # Any critical dimension below CRITICAL_FLOOR causes overall score to be
-    # capped at that dimension's value, preventing high scores in other
-    # dimensions from masking critical weaknesses (issue #127).
-    # NOTE: readability removed from critical dims (#1238) — Flesch formula
-    # penalizes technical vocabulary, causing valid technical content to score
-    # 10-30 and cap the entire score. Readability still contributes to the
-    # weighted average but no longer triggers the hard cap.
-    CRITICAL_FLOOR: float = 50.0
-    CRITICAL_DIMENSIONS: tuple = ("clarity", "relevance")
-
-    def average(self) -> float:
-        """Calculate overall score with minimum-dimension enforcement.
-
-        Returns the arithmetic mean of all 7 dimensions, but caps the result
-        at the lowest critical dimension score if that score is below
-        CRITICAL_FLOOR. This prevents content with critically weak clarity
-        or relevance from receiving a passing overall score solely because
-        other dimensions scored well.
-
-        Note: readability is excluded from critical caps (#1238) because the
-        Flesch formula penalizes technical vocabulary unfairly.
-
-        Examples:
-            clarity=80, relevance=48 → overall capped at 48 → FAIL
-            clarity=80, relevance=70 → normal average → may PASS
-        """
-        raw_average = (
-            self.clarity
-            + self.accuracy
-            + self.completeness
-            + self.relevance
-            + self.seo_quality
-            + self.readability
-            + self.engagement
-        ) / 7.0
-
-        # Enforce minimum-dimension constraint on critical dimensions only.
-        # readability excluded (#1238) — Flesch penalizes technical vocabulary.
-        # CRITICAL_FLOOR is tunable via app_settings (qa_critical_floor).
-        try:
-            from services.site_config import site_config
-            effective_floor = site_config.get_float("qa_critical_floor", self.CRITICAL_FLOOR)
-        except Exception:
-            effective_floor = self.CRITICAL_FLOOR
-        critical_values = {dim: getattr(self, dim) for dim in self.CRITICAL_DIMENSIONS}
-        for dim_name, dim_value in critical_values.items():
-            if dim_value < effective_floor:
-                logger.debug(
-                    f"Quality cap applied: {dim_name}={dim_value:.1f} < "
-                    f"CRITICAL_FLOOR={self.CRITICAL_FLOOR} — "
-                    f"overall capped from {raw_average:.1f} to {dim_value:.1f}"
-                )
-                raw_average = min(raw_average, dim_value)
-
-        return raw_average
-
-    def to_dict(self) -> Dict[str, float]:
-        """Convert to dictionary"""
-        return {
-            "clarity": self.clarity,
-            "accuracy": self.accuracy,
-            "completeness": self.completeness,
-            "relevance": self.relevance,
-            "seo_quality": self.seo_quality,
-            "readability": self.readability,
-            "engagement": self.engagement,
-        }
-
-
-@dataclass
-class QualityAssessment:
-    """Complete quality assessment result"""
-
-    # Dimensions
-    dimensions: QualityDimensions
-
-    # Overall score
-    overall_score: float  # Average of dimensions (0-100)
-    passing: bool  # True if >= 70
-
-    # Feedback
-    feedback: str  # Summary feedback
-    suggestions: List[str]  # Improvement suggestions
-
-    # Evaluation details
-    evaluation_method: EvaluationMethod
-    evaluation_timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    evaluated_by: str = "UnifiedQualityService"
-
-    # Content metadata
-    content_length: Optional[int] = None
-    word_count: Optional[int] = None
-
-    # Flesch-Kincaid Grade Level (complementary readability metric)
-    flesch_kincaid_grade_level: Optional[float] = None
-
-    # Truncation detection
-    truncation_detected: bool = False
-
-    # Refinement tracking
-    refinement_attempts: int = 0
-    max_refinements: int = 3
-    needs_refinement: bool = False
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for database storage"""
-        return {
-            **self.dimensions.to_dict(),
-            "overall_score": self.overall_score,
-            "passing": self.passing,
-            "feedback": self.feedback,
-            "suggestions": self.suggestions,
-            "evaluation_method": self.evaluation_method.value,
-            "evaluation_timestamp": self.evaluation_timestamp.isoformat(),
-            "evaluated_by": self.evaluated_by,
-            "content_length": self.content_length,
-            "word_count": self.word_count,
-            "flesch_kincaid_grade_level": self.flesch_kincaid_grade_level,
-            "truncation_detected": self.truncation_detected,
-            "refinement_attempts": self.refinement_attempts,
-            "needs_refinement": self.needs_refinement,
-        }
 
 
 class UnifiedQualityService:
@@ -280,61 +102,9 @@ class UnifiedQualityService:
     def _qa_cfg() -> dict:
         """Load all QA pipeline thresholds from DB via site_config.
 
-        Every threshold in the QA pipeline is tunable via app_settings
-        (key prefix: qa_). Returns a dict of all values with sensible defaults.
-        Change any value with a simple SQL UPDATE on app_settings.
+        Delegates to :func:`quality_scorers.qa_cfg`.
         """
-        from services.site_config import site_config
-
-        return {
-            # --- Overall pipeline ---
-            "pass_threshold": site_config.get_float("qa_pass_threshold", 70.0),
-            "critical_floor": site_config.get_float("qa_critical_floor", 50.0),
-            "artifact_penalty_per": site_config.get_float("qa_artifact_penalty_per", 5.0),
-            "artifact_penalty_max": site_config.get_float("qa_artifact_penalty_max", 20.0),
-            # --- Flesch-Kincaid target ---
-            "fk_target_min": site_config.get_float("qa_fk_target_min", 8.0),
-            "fk_target_max": site_config.get_float("qa_fk_target_max", 12.0),
-            # --- Clarity ---
-            "clarity_ideal_min": site_config.get_int("qa_clarity_ideal_min_wps", 15),
-            "clarity_ideal_max": site_config.get_int("qa_clarity_ideal_max_wps", 20),
-            "clarity_good_min": site_config.get_int("qa_clarity_good_min_wps", 10),
-            "clarity_good_max": site_config.get_int("qa_clarity_good_max_wps", 25),
-            "clarity_ok_min": site_config.get_int("qa_clarity_ok_min_wps", 8),
-            "clarity_ok_max": site_config.get_int("qa_clarity_ok_max_wps", 30),
-            # --- Accuracy ---
-            "accuracy_baseline": site_config.get_float("qa_accuracy_baseline", 7.0),
-            "accuracy_good_link_bonus": site_config.get_float("qa_accuracy_good_link_bonus", 0.3),
-            "accuracy_good_link_max": site_config.get_float("qa_accuracy_good_link_max_bonus", 1.0),
-            "accuracy_bad_link_penalty": site_config.get_float("qa_accuracy_bad_link_penalty", 0.5),
-            "accuracy_bad_link_max": site_config.get_float("qa_accuracy_bad_link_max_penalty", 2.0),
-            "accuracy_citation_bonus": site_config.get_float("qa_accuracy_citation_bonus", 0.3),
-            "accuracy_first_person_penalty": site_config.get_float("qa_accuracy_first_person_penalty", 1.0),
-            "accuracy_first_person_max": site_config.get_float("qa_accuracy_first_person_max_penalty", 3.0),
-            "accuracy_meta_commentary_penalty": site_config.get_float("qa_accuracy_meta_commentary_penalty", 0.5),
-            "accuracy_meta_commentary_max": site_config.get_float("qa_accuracy_meta_commentary_max_penalty", 2.0),
-            # --- Completeness ---
-            "completeness_word_2000": site_config.get_float("qa_completeness_word_2000_score", 6.5),
-            "completeness_word_1500": site_config.get_float("qa_completeness_word_1500_score", 6.0),
-            "completeness_word_1000": site_config.get_float("qa_completeness_word_1000_score", 5.0),
-            "completeness_word_500": site_config.get_float("qa_completeness_word_500_score", 3.5),
-            "completeness_word_min": site_config.get_float("qa_completeness_word_min_score", 2.0),
-            "completeness_heading_bonus": site_config.get_float("qa_completeness_heading_bonus", 0.3),
-            "completeness_heading_max": site_config.get_float("qa_completeness_heading_max_bonus", 1.5),
-            "completeness_truncation_penalty": site_config.get_float("qa_completeness_truncation_penalty", 3.0),
-            # --- Relevance ---
-            "relevance_no_topic_default": site_config.get_float("qa_relevance_no_topic_default", 6.0),
-            "relevance_high_coverage": site_config.get_float("qa_relevance_high_coverage_score", 8.5),
-            "relevance_med_coverage": site_config.get_float("qa_relevance_med_coverage_score", 7.0),
-            "relevance_low_coverage": site_config.get_float("qa_relevance_low_coverage_score", 5.5),
-            "relevance_none_coverage": site_config.get_float("qa_relevance_none_coverage_score", 3.0),
-            "relevance_stuffing_hard": site_config.get_float("qa_relevance_stuffing_hard_density", 5.0),
-            "relevance_stuffing_soft": site_config.get_float("qa_relevance_stuffing_soft_density", 3.0),
-            # --- SEO ---
-            "seo_baseline": site_config.get_float("qa_seo_baseline", 6.0),
-            # --- Engagement ---
-            "engagement_baseline": site_config.get_float("qa_engagement_baseline", 6.0),
-        }
+        return _qa_cfg_fn()
 
     async def evaluate(
         self,
@@ -665,317 +435,41 @@ class UnifiedQualityService:
 
     @staticmethod
     def flesch_kincaid_grade_level(text: str) -> float:
-        """Compute the Flesch-Kincaid Grade Level for *text*.
-
-        Formula:
-            0.39 * (total_words / total_sentences)
-            + 11.8 * (total_syllables / total_words)
-            - 15.59
-
-        Syllable counting uses a simple vowel-group heuristic: each
-        consecutive run of vowels (a, e, i, o, u) in a word counts as
-        one syllable, with a minimum of 1 syllable per word.
-
-        Returns the grade level as a float.  Lower values indicate easier
-        readability (target: 8-12 for general audience content).
-        """
-        if not text or not text.strip():
-            return 0.0
-
-        # Strip HTML/markdown for cleaner analysis
-        clean = re.sub(r"<[^>]+>", "", text)
-        clean = re.sub(r"#{1,6}\s", "", clean)
-
-        words = re.findall(r"[A-Za-z]+(?:'[A-Za-z]+)?", clean)
-        total_words = len(words)
-        if total_words == 0:
-            return 0.0
-
-        # Sentence splitting: split on . ! ? (ignore abbreviations as noise)
-        sentences = [s for s in re.split(r"[.!?]+", clean) if s.strip()]
-        total_sentences = max(len(sentences), 1)
-
-        # Count syllables using vowel-group heuristic
-        def _count_syllables(word: str) -> int:
-            word = word.lower()
-            count = 0
-            prev_vowel = False
-            for ch in word:
-                is_vowel = ch in "aeiou"
-                if is_vowel and not prev_vowel:
-                    count += 1
-                prev_vowel = is_vowel
-            return max(count, 1)
-
-        total_syllables = sum(_count_syllables(w) for w in words)
-
-        grade = (
-            0.39 * (total_words / total_sentences)
-            + 11.8 * (total_syllables / total_words)
-            - 15.59
-        )
-        return round(grade, 2)
+        """Compute the Flesch-Kincaid Grade Level. Delegates to quality_scorers."""
+        return _fk_grade_level_fn(text)
 
     # ========================================================================
     # SCORING METHODS (Pattern-Based Heuristics)
     # ========================================================================
 
     def _score_clarity(self, content: str, sentence_count: int, word_count: int) -> float:
-        """Score clarity based on sentence structure and word count.
-        Thresholds tunable via qa_clarity_* app_settings keys."""
-        cfg = self._qa_cfg()
-        if word_count == 0 or sentence_count == 0:
-            return 5.0
-
-        avg_words_per_sentence = word_count / sentence_count
-
-        if cfg["clarity_ideal_min"] <= avg_words_per_sentence <= cfg["clarity_ideal_max"]:
-            return 9.0
-        if cfg["clarity_good_min"] <= avg_words_per_sentence <= cfg["clarity_good_max"]:
-            return 8.0
-        if cfg["clarity_ok_min"] <= avg_words_per_sentence <= cfg["clarity_ok_max"]:
-            return 7.0
-        return 5.0
+        """Score clarity. Delegates to quality_scorers."""
+        return _score_clarity_fn(content, sentence_count, word_count)
 
     def _score_accuracy(self, content: str, context: Dict[str, Any]) -> float:
-        """Score accuracy based on citation patterns and factual anchors.
-        Thresholds tunable via qa_accuracy_* app_settings keys."""
-        cfg = self._qa_cfg()
-        score = cfg["accuracy_baseline"]
-        content_lower = content.lower()
-
-        # External links: only count links to known reputable domains.
-        all_links = re.findall(r"https?://([^\s\)\]\"'>]+)", content)
-        reputable_domains = {
-            "github.com", "arxiv.org", "docs.python.org", "docs.rs",
-            "developer.mozilla.org", "stackoverflow.com", "wikipedia.org",
-            "news.ycombinator.com", "devto.dev", "dev.to", "blog.rust-lang.org",
-            "go.dev", "kubernetes.io", "docker.com", "vercel.com", "nextjs.org",
-            "react.dev", "pytorch.org", "huggingface.co", "openai.com",
-            "gladlabs.io", "www.gladlabs.io",
-        }
-        good_links = sum(1 for link in all_links if any(d in link for d in reputable_domains))
-        bad_links = len(all_links) - good_links
-        score += min(good_links * cfg["accuracy_good_link_bonus"], cfg["accuracy_good_link_max"])
-        score -= min(bad_links * cfg["accuracy_bad_link_penalty"], cfg["accuracy_bad_link_max"])
-
-        # Citation/reference patterns: [1], (Smith 2023), Source:, References:
-        citation_patterns = [
-            r"\[\d+\]",  # [1], [12]
-            r"\(\w[^)]{1,40}\d{4}\)",  # (Author 2023)
-            r"(?:source|reference|cited|per|via):",
-            r"according to\b",
-            r"research (?:shows?|suggests?|finds?|indicates?)\b",
-            r"studies? (?:show|suggest|find|indicate)\b",
-            r"published (?:in|by)\b",
-        ]
-        for pat in citation_patterns:
-            if re.search(pat, content_lower):
-                score += cfg["accuracy_citation_bonus"]
-
-        # Named quotes in proper context (not decorative use of quotation marks)
-        named_quote = re.search(r'"[^"]{10,}"[,\s]+(?:said|wrote|noted|according)', content)
-        if named_quote:
-            score += 0.5
-
-        # Voice violation: penalize first-person claims about building/creating things
-        # (Glad Labs is a publication, not a builder — "I built" is almost always wrong)
-        first_person_claims = len(re.findall(
-            r"\b(?:I|we)\s+(?:built|created|developed|designed|made|launched|shipped|released|wrote)\b",
-            content, re.IGNORECASE,
-        ))
-        if first_person_claims > 0:
-            score -= min(
-                first_person_claims * cfg["accuracy_first_person_penalty"],
-                cfg["accuracy_first_person_max"],
-            )
-
-        # Meta-commentary penalty: "this post explores", "in this article we will", etc.
-        meta_commentary = len(re.findall(
-            r"\b(?:this\s+(?:post|article|blog|piece)\s+(?:explores?|examines?|discusses?|looks\s+at|covers?|delves?))"
-            r"|\b(?:in\s+this\s+(?:post|article|blog|piece))"
-            r"|\b(?:(?:we.ll|let.s|we\s+will)\s+(?:explore|discuss|examine|look\s+at|dive\s+into))",
-            content, re.IGNORECASE,
-        ))
-        if meta_commentary > 0:
-            score -= min(
-                meta_commentary * cfg["accuracy_meta_commentary_penalty"],
-                cfg["accuracy_meta_commentary_max"],
-            )
-
-        return min(max(score, 0.0), 10.0)
+        """Score accuracy. Delegates to quality_scorers."""
+        return _score_accuracy_fn(content, context)
 
     @staticmethod
     def detect_truncation(content: str) -> bool:
-        """Detect if content was truncated by LLM token limits.
-
-        Checks whether the content ends mid-sentence, which is a strong signal
-        that the LLM hit its output token limit before completing the article.
-        """
-        if not content or len(content.strip()) < 100:
-            return False
-
-        # Strip HTML tags for analysis
-        text = re.sub(r"<[^>]+>", "", content).strip()
-        if not text:
-            return False
-
-        # Get the last non-empty line
-        lines = [l.strip() for l in text.split("\n") if l.strip()]
-        if not lines:
-            return False
-
-        last_line = lines[-1]
-
-        # Content ending with terminal punctuation is complete
-        if last_line[-1] in ".!?)\"'":
-            return False
-
-        # Content ending with a URL or link is likely a references section (OK)
-        if re.search(r"https?://\S+$", last_line):
-            return False
-
-        # Content ending with a markdown/HTML heading is truncated
-        if re.match(r"^#{1,6}\s", last_line):
-            return True
-
-        # If the last line is very short and looks like a fragment, it's truncated
-        # (e.g., "The Ingress controller uses labels and selectors to")
-        if not last_line[-1] in ".!?)\"':*" and len(last_line) > 20:
-            logger.warning(
-                f"[TRUNCATION] Content appears truncated — last line: ...{last_line[-80:]}"
-            )
-            return True
-
-        return False
+        """Detect if content was truncated. Delegates to quality_scorers."""
+        return _detect_truncation_fn(content)
 
     def _score_completeness(self, content: str, context: Dict[str, Any]) -> float:
-        """Score completeness based on depth signals beyond raw word count.
-        Thresholds tunable via qa_completeness_* app_settings keys."""
-        cfg = self._qa_cfg()
-        word_count = len(content.split())
-        score = 0.0
-
-        # Word-count baseline
-        if word_count >= 2000:
-            score += cfg["completeness_word_2000"]
-        elif word_count >= 1500:
-            score += cfg["completeness_word_1500"]
-        elif word_count >= 1000:
-            score += cfg["completeness_word_1000"]
-        elif word_count >= 500:
-            score += cfg["completeness_word_500"]
-        else:
-            score += cfg["completeness_word_min"]
-
-        # Structural depth signals
-        heading_count = len(re.findall(r"^#{1,3}\s", content, re.MULTILINE))
-        score += min(heading_count * cfg["completeness_heading_bonus"], cfg["completeness_heading_max"])
-
-        paragraphs = [p.strip() for p in content.split("\n\n") if p.strip()]
-        if len(paragraphs) >= 5:
-            score += 0.5
-
-        # Intro/conclusion present (first and last paragraphs are non-trivial)
-        if paragraphs and len(paragraphs[0].split()) >= 30:
-            score += 0.5
-        if len(paragraphs) > 1 and len(paragraphs[-1].split()) >= 20:
-            score += 0.5
-
-        # Contains lists (signals structured coverage)
-        if re.search(r"^[-*]\s", content, re.MULTILINE):
-            score += 0.5
-
-        # Truncation penalty — content cut off mid-sentence by LLM token limit
-        if self.detect_truncation(content):
-            score = max(score - cfg["completeness_truncation_penalty"], 0.0)
-
-        return min(score, 10.0)
+        """Score completeness. Delegates to quality_scorers."""
+        return _score_completeness_fn(content, context)
 
     def _score_relevance(self, content: str, context: Dict[str, Any]) -> float:
-        """Score relevance using topic-word family matching to resist keyword stuffing.
-        Thresholds tunable via qa_relevance_* app_settings keys."""
-        cfg = self._qa_cfg()
-        topic = context.get("topic", "") or context.get("primary_keyword", "")
-        if not topic:
-            return cfg["relevance_no_topic_default"]
-
-        content_lower = content.lower()
-        topic_words = [w.lower() for w in re.findall(r"\b\w{4,}\b", topic)]
-        word_count = len(content.split())
-
-        if not topic_words or word_count == 0:
-            return cfg["relevance_no_topic_default"]
-
-        matched_words = sum(1 for w in topic_words if w in content_lower)
-        coverage = matched_words / len(topic_words)
-
-        exact_count = content_lower.count(topic.lower())
-        density = exact_count / (word_count / 100)
-
-        if coverage >= 0.8:
-            base = cfg["relevance_high_coverage"]
-        elif coverage >= 0.5:
-            base = cfg["relevance_med_coverage"]
-        elif coverage >= 0.25:
-            base = cfg["relevance_low_coverage"]
-        else:
-            base = cfg["relevance_none_coverage"]
-
-        if density > cfg["relevance_stuffing_hard"]:
-            base = min(base, 5.5)
-        elif density > cfg["relevance_stuffing_soft"]:
-            base = min(base, 7.0)
-
-        return min(base, 10.0)
+        """Score relevance. Delegates to quality_scorers."""
+        return _score_relevance_fn(content, context)
 
     def _score_seo(self, content: str, context: Dict[str, Any]) -> float:
-        """Score SEO quality. Baseline tunable via qa_seo_baseline."""
-        score = self._qa_cfg()["seo_baseline"]
-
-        # Check for headers
-        if "#" in content or re.search(r"#+\s", content):
-            score += 1.0
-
-        # Check for internal structure
-        if "\n\n" in content:
-            score += 1.0
-
-        # Check keyword in beginning
-        topic = context.get("topic", "")
-        if topic and content.lower().startswith(topic.lower()):
-            score += 1.0
-
-        return min(score, 10.0)
+        """Score SEO quality. Delegates to quality_scorers."""
+        return _score_seo_fn(content, context)
 
     def _score_readability(self, content: str) -> float:
-        """Score readability using Flesch Reading Ease with technical content adjustment.
-
-        The raw Flesch formula heavily penalizes polysyllabic technical terms
-        (PostgreSQL, Kubernetes, infrastructure) causing valid technical writing
-        to score 20-40. We apply a floor of 5.5/10 for technical content and
-        compress the scale so technical writing lands in 5.5-8.5 range.
-        """
-        words = content.split()
-        sentences = len(re.split(r"[.!?]+", content))
-        syllables = sum(self._count_syllables(word) for word in words)
-
-        if len(words) == 0 or sentences == 0:
-            return 7.0
-
-        # Flesch Reading Ease approximation (0-100 scale)
-        flesch = 206.835 - 1.015 * (len(words) / sentences) - 84.6 * (syllables / len(words))
-
-        # Technical content floor: Flesch scores below 30 are normal for
-        # technical writing (PostgreSQL, Kubernetes, microservices). Don't let
-        # readability tank the overall score for valid technical prose.
-        # Scale: Flesch 0→7.0, 30→7.5, 60→8.0, 100→9.0
-        if flesch >= 60:
-            return min(10.0, 8.0 + (flesch - 60) * 0.025)  # 60→8.0, 100→9.0
-        elif flesch >= 30:
-            return 7.5 + (flesch - 30) * 0.017  # 30→7.5, 60→8.0
-        else:
-            return max(7.0, 7.0 + flesch * 0.017)  # 0→7.0, 30→7.5
+        """Score readability. Delegates to quality_scorers."""
+        return _score_readability_fn(content)
 
     @staticmethod
     def _detect_artifacts(content: str) -> list[str]:
@@ -1248,107 +742,28 @@ class UnifiedQualityService:
         return penalty, issues
 
     def _score_engagement(self, content: str) -> float:
-        """Score engagement based on structure and style. Baseline tunable via qa_engagement_baseline."""
-        score = self._qa_cfg()["engagement_baseline"]
-
-        # Bullet points / lists
-        if "- " in content or "* " in content:
-            score += 1.0
-
-        # Questions (hooks the reader)
-        question_count = content.count("?")
-        if question_count >= 3:
-            score += 1.0
-        elif question_count >= 1:
-            score += 0.5
-
-        # Varied paragraph length (good pacing)
-        paragraphs = [p for p in content.split("\n\n") if p.strip()]
-        if len(paragraphs) >= 4:
-            score += 0.5
-        if len(set(len(p.split()) // 10 for p in paragraphs)) > 2:
-            score += 0.5
-
-        # Code blocks (technical engagement signal)
-        if "```" in content:
-            score += 0.5
-
-        # Bold/emphasis (highlights key points)
-        if "**" in content or "__" in content:
-            score += 0.5
-
-        return min(score, 10.0)
+        """Score engagement. Delegates to quality_scorers."""
+        return _score_engagement_fn(content)
 
     # ========================================================================
     # UTILITY METHODS
     # ========================================================================
 
     def _check_keywords(self, content: str, context: Dict[str, Any]) -> bool:
-        """Check if keywords are present in content"""
-        context = context or {}
-        keywords = context.get("keywords")
-        if keywords is None:
-            keywords = []
-        elif isinstance(keywords, str):
-            keywords = [keywords]
-        elif not isinstance(keywords, list):
-            keywords = [str(keywords)]
-
-        keywords = [kw for kw in keywords if isinstance(kw, str) and kw.strip()]
-        content_lower = content.lower()
-
-        return any(kw.lower() in content_lower for kw in keywords)
+        """Check if keywords are present in content. Delegates to quality_scorers."""
+        return _check_keywords_fn(content, context)
 
     def _count_syllables(self, word: str) -> int:
-        """Estimate syllable count"""
-        word = word.lower()
-        syllable_count = 0
-        vowels = "aeiou"
-        previous_was_vowel = False
-
-        for char in word:
-            is_vowel = char in vowels
-            if is_vowel and not previous_was_vowel:
-                syllable_count += 1
-            previous_was_vowel = is_vowel
-
-        return max(1, syllable_count)
+        """Estimate syllable count. Delegates to quality_scorers."""
+        return _count_syllables_fn(word)
 
     def _generate_feedback(self, dimensions: QualityDimensions, context: Dict[str, Any]) -> str:
-        """Generate human-readable feedback"""
-        overall = dimensions.average()
-
-        if overall >= 85:
-            return "Excellent content quality - publication ready"
-        if overall >= 75:
-            return "Good quality - minor improvements recommended"
-        if overall >= 70:
-            return "Acceptable quality - some improvements suggested"
-        if overall >= 60:
-            return "Fair quality - significant improvements needed"
-        return "Poor quality - major revisions required"
+        """Generate human-readable feedback. Delegates to quality_scorers."""
+        return _generate_feedback_fn(dimensions, context)
 
     def _generate_suggestions(self, dimensions: QualityDimensions) -> List[str]:
-        """Generate improvement suggestions based on weak dimensions"""
-        suggestions = []
-        threshold = 70  # 0-100 scale
-
-        if dimensions.clarity < threshold:
-            suggestions.append("Simplify sentence structure and use shorter sentences")
-        if dimensions.accuracy < threshold:
-            suggestions.append("Fact-check claims and add citations where appropriate")
-        if dimensions.completeness < threshold:
-            suggestions.append("Add more detail and cover the topic more thoroughly")
-        if dimensions.relevance < threshold:
-            suggestions.append("Keep content focused on the main topic")
-        if dimensions.seo_quality < threshold:
-            suggestions.append("Improve SEO with better headers, keywords, and structure")
-        if dimensions.readability < threshold:
-            suggestions.append("Improve grammar and readability")
-        if dimensions.engagement < threshold:
-            suggestions.append("Add engaging elements like questions, lists, or examples")
-
-        return suggestions or ["Content meets quality standards"]
+        """Generate improvement suggestions. Delegates to quality_scorers."""
+        return _generate_suggestions_fn(dimensions)
 
     async def _store_evaluation(
         self, assessment: QualityAssessment, context: Dict[str, Any]
@@ -1449,3 +864,16 @@ def get_content_quality_service(
 
 # Backward compatibility alias for class name
 ContentQualityService = UnifiedQualityService
+
+# Re-export data models so existing callers don't need to update imports.
+__all__ = [
+    "EvaluationMethod",
+    "QualityAssessment",
+    "QualityDimensions",
+    "QualityScore",
+    "RefinementType",
+    "UnifiedQualityService",
+    "ContentQualityService",
+    "get_quality_service",
+    "get_content_quality_service",
+]
