@@ -48,22 +48,22 @@ class TestInitialization:
             "blog_generation.initial_draft",
             "blog_generation.seo_and_social",
             "blog_generation.iterative_refinement",
+            "blog_generation.blog_system_prompt",
+            "blog_generation.blog_generation_request",
             "qa.content_review",
             "qa.self_critique",
             "seo.generate_title",
             "seo.generate_meta_description",
             "seo.extract_keywords",
+            "seo.generate_excerpt",
+            "seo.match_category",
+            "seo.extract_tags",
             "research.analyze_search_results",
             "social.research_trends",
             "social.create_post",
             "image.featured_image",
             "image.search_queries",
             "system.content_writer",
-            "seo.generate_excerpt",
-            "seo.match_category",
-            "seo.extract_tags",
-            "blog_generation.blog_system_prompt",
-            "blog_generation.blog_generation_request",
             "task.creative_blog_generation",
             "task.qa_content_evaluation",
             "task.business_financial_impact",
@@ -85,23 +85,17 @@ class TestInitialization:
 @pytest.mark.unit
 class TestGetPrompt:
     def test_seo_title_formats_correctly(self, pm: UnifiedPromptManager):
-        result = pm.get_prompt(
-            "seo.generate_title",
-            content="Article about AI in healthcare",
-            primary_keyword="AI healthcare",
-        )
+        result = pm.get_prompt("seo.generate_title", topic="AI healthcare")
         assert "AI healthcare" in result
-        assert "Article about AI in healthcare" in result
 
     def test_blog_initial_draft_substitutes_all_vars(self, pm: UnifiedPromptManager):
         result = pm.get_prompt(
             "blog_generation.initial_draft",
             topic="Machine Learning",
-            target_audience="developers",
-            primary_keyword="ML models",
-            word_count=1500,
+            style="professional",
+            tone="informative",
+            target_length=1500,
             research_context="Recent advances in transformers",
-            internal_link_titles="- What is AI\n- ML Basics",
         )
         assert "Machine Learning" in result
         assert "1500" in result
@@ -109,45 +103,30 @@ class TestGetPrompt:
     def test_qa_content_review_substitutes_vars(self, pm: UnifiedPromptManager):
         result = pm.get_prompt(
             "qa.content_review",
-            target_audience="executives",
-            primary_keyword="ROI",
-            draft="This blog post discusses return on investment...",
+            content="This blog post discusses return on investment...",
         )
-        assert "executives" in result
-        assert "ROI" in result
         assert "return on investment" in result
 
     def test_returns_string(self, pm: UnifiedPromptManager):
-        result = pm.get_prompt(
-            "seo.generate_excerpt",
-            content="Some content here",
-            max_length=300,
-        )
+        result = pm.get_prompt("seo.generate_excerpt", content="Some content here")
         assert isinstance(result, str)
         assert len(result) > 0
 
-    def test_image_search_queries_formats_num_images(self, pm: UnifiedPromptManager):
-        result = pm.get_prompt(
-            "image.search_queries",
-            title="AI in Healthcare",
-            num_images=3,
-            content="Content about healthcare AI",
-        )
-        assert "3" in result
+    def test_image_search_queries_formats_topic(self, pm: UnifiedPromptManager):
+        result = pm.get_prompt("image.search_queries", topic="AI in Healthcare")
+        assert "AI in Healthcare" in result
 
-    def test_blog_system_prompt_formats_word_bounds(self, pm: UnifiedPromptManager):
+    def test_blog_system_prompt_formats_vars(self, pm: UnifiedPromptManager):
         result = pm.get_prompt(
             "blog_generation.blog_system_prompt",
             style="balanced",
+            target_audience="developers",
+            domain="technology",
             tone="professional",
-            target_length=2000,
-            min_words=1800,
-            max_words=2200,
-            tags="AI, technology",
         )
-        assert "2000" in result
-        assert "1800" in result
-        assert "2200" in result
+        assert "balanced" in result
+        assert "developers" in result
+        assert "technology" in result
 
 
 # ---------------------------------------------------------------------------
@@ -165,13 +144,15 @@ class TestGetPromptErrors:
 
     def test_missing_variable_raises_key_error_with_hint(self, pm: UnifiedPromptManager):
         with pytest.raises(KeyError) as exc_info:
-            pm.get_prompt("seo.generate_title")  # missing content + primary_keyword
+            pm.get_prompt("blog_generation.initial_draft")  # missing all vars
         error_msg = str(exc_info.value)
         assert "missing required variable" in error_msg
 
     def test_partial_variables_raises_key_error(self, pm: UnifiedPromptManager):
         with pytest.raises(KeyError):
-            pm.get_prompt("seo.generate_title", content="only content provided")
+            # blog_generation.initial_draft needs topic, style, tone,
+            # target_length, research_context
+            pm.get_prompt("blog_generation.initial_draft", topic="only topic provided")
 
 
 # ---------------------------------------------------------------------------
@@ -248,8 +229,7 @@ class TestListPrompts:
 
     def test_filter_nonexistent_category_returns_empty(self, pm: UnifiedPromptManager):
         result = pm.list_prompts(category=PromptCategory.FINANCIAL)
-        # Only task.business_* prompts have FINANCIAL category
-        # This may return results or empty — either is valid; just check type
+        # task.business_* prompts have FINANCIAL category
         assert isinstance(result, dict)
 
 

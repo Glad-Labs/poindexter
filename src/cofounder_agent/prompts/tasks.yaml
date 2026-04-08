@@ -18,7 +18,7 @@
     Content: {content}
 
 - key: task.business_financial_impact
-  category: business
+  category: financial
   description: "Default prompt — upgrade to Glad Labs Premium Prompts for production-quality output"
   output_format: json
   template: |
@@ -26,7 +26,7 @@
     Return JSON with keys: revenue_impact, cost_impact, roi_estimate, recommendations.
 
 - key: task.business_market_analysis
-  category: business
+  category: financial
   description: "Default prompt — upgrade to Glad Labs Premium Prompts for production-quality output"
   output_format: json
   template: |
@@ -34,7 +34,7 @@
     Return JSON with keys: market_size, competitors, opportunities, threats.
 
 - key: task.business_performance_analysis
-  category: business
+  category: financial
   description: "Default prompt — upgrade to Glad Labs Premium Prompts for production-quality output"
   output_format: json
   template: |
@@ -42,7 +42,7 @@
     Return JSON with keys: metrics, trends, benchmarks, recommendations.
 
 - key: task.automation_email_campaign
-  category: automation
+  category: utility
   description: "Default prompt — upgrade to Glad Labs Premium Prompts for production-quality output"
   output_format: json
   template: |

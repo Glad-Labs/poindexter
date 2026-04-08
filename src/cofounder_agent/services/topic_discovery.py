@@ -450,7 +450,8 @@ class TopicDiscovery:
             except Exception:
                 dedup_hours = 48
             task_rows = await self.pool.fetch(
-                f"SELECT topic, title FROM content_tasks WHERE created_at > NOW() - INTERVAL '{dedup_hours} hours'"
+                "SELECT topic, title FROM content_tasks WHERE created_at > NOW() - ($1 || ' hours')::interval",
+                str(dedup_hours),
             )
             pending_topics = set()
             for r in task_rows:

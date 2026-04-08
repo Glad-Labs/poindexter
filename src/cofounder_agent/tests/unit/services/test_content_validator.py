@@ -99,6 +99,57 @@ class TestFabricatedQuotes:
                     for i in result.issues)
 
 
+class TestImagePlaceholders:
+    """Detect LLM image placeholder artifacts left in content."""
+
+    def test_catches_image_placeholder(self):
+        content = "Here is some text.\n[IMAGE-1: A futuristic cityscape with AI robots]\nMore text follows."
+        result = validate_content("AI Future", content, "AI")
+        assert not result.passed
+        assert any("placeholder" in i.description.lower() for i in result.issues)
+        assert any(i.category == "image_placeholder" for i in result.issues)
+
+    def test_catches_figure_placeholder(self):
+        content = "The architecture is shown below.\n[FIGURE: System architecture diagram]\nAs you can see..."
+        result = validate_content("Architecture", content, "tech")
+        assert any(i.category == "image_placeholder" for i in result.issues)
+
+    def test_catches_diagram_placeholder(self):
+        content = "[DIAGRAM: Flow chart showing the data pipeline]"
+        result = validate_content("Pipeline", content, "tech")
+        assert any(i.category == "image_placeholder" for i in result.issues)
+
+    def test_catches_screenshot_placeholder(self):
+        content = "[SCREENSHOT: Dashboard showing metrics]"
+        result = validate_content("Metrics", content, "tech")
+        assert any(i.category == "image_placeholder" for i in result.issues)
+
+    def test_no_false_positive_on_markdown_links(self):
+        content = "Check out [this article](https://example.com) for more details."
+        result = validate_content("Links", content, "tech")
+        assert not any(i.category == "image_placeholder" for i in result.issues)
+
+    def test_image_placeholder_is_critical(self):
+        content = "[IMAGE-1: A beautiful sunset over the ocean]"
+        result = validate_content("Sunset", content, "nature")
+        image_issues = [i for i in result.issues if i.category == "image_placeholder"]
+        assert all(i.severity == "critical" for i in image_issues)
+
+
+class TestLeakedImagePrompts:
+    """Detect leaked image generation prompts in content."""
+
+    def test_catches_italic_image_prompt(self):
+        content = "Here is the header image.\n*A split-screen comparison showing old vs new architecture with dramatic lighting*"
+        result = validate_content("Architecture", content, "tech")
+        assert any(i.category == "leaked_image_prompt" for i in result.issues)
+
+    def test_no_false_positive_on_short_italic(self):
+        content = "This is *important* text."
+        result = validate_content("Test", content, "test")
+        assert not any(i.category == "leaked_image_prompt" for i in result.issues)
+
+
 class TestValidationResult:
     """Test the ValidationResult data structure."""
 

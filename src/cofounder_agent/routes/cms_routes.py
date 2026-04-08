@@ -895,3 +895,25 @@ async def get_view_stats(
         return {"error": "analytics_unavailable"}
 
 
+# ============================================================================
+# STATIC EXPORT — push-only headless CMS output
+# ============================================================================
+
+
+@router.post("/api/export/rebuild", dependencies=[Depends(verify_api_token)])
+async def rebuild_static_export(db_service=Depends(get_database_dependency)):
+    """Full rebuild of all static JSON files on CDN.
+
+    Regenerates: posts index, individual post files, JSON feed,
+    categories, authors, sitemap, and manifest.
+    """
+    pool = getattr(db_service, "cloud_pool", None) or db_service.pool
+
+    try:
+        from services.static_export_service import export_full_rebuild
+        result = await export_full_rebuild(pool)
+        status_code = 200 if result.get("success") else 207
+        return JSONResponse(content=result, status_code=status_code)
+    except Exception as e:
+        logger.error("[STATIC_EXPORT] Rebuild failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))

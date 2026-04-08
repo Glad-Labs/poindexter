@@ -570,6 +570,33 @@ async def get_audit_summary(hours: int = 24) -> str:
 
 
 # ============================================================================
+# STATIC EXPORT TOOLS
+# ============================================================================
+
+@mcp.tool()
+def rebuild_static_export() -> str:
+    """Rebuild all static JSON files on CDN (posts, feed, sitemap, categories, authors).
+
+    Triggers a full export of the headless CMS data to R2/S3 storage.
+    Any frontend can consume these files without needing the API.
+    """
+    result = _api("POST", "/api/export/rebuild")
+    if "error" in result:
+        return f"Export failed: {result['error']}"
+    posts = result.get("posts_exported", 0)
+    errors = result.get("errors", [])
+    status = "with errors" if errors else "successfully"
+    return (
+        f"Static export completed {status}.\n"
+        f"  Posts: {posts}\n"
+        f"  Categories: {result.get('categories_exported', 0)}\n"
+        f"  Authors: {result.get('authors_exported', 0)}\n"
+        f"  Total files: {result.get('total_files', 0)}\n"
+        + (f"  Errors: {', '.join(errors)}\n" if errors else "")
+    )
+
+
+# ============================================================================
 # BRAIN KNOWLEDGE TOOLS
 # ============================================================================
 

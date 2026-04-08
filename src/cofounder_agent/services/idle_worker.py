@@ -626,79 +626,80 @@ class IdleWorker:
                 self._mark_completed("image_regen")
                 return {"regenerated": 0, "note": "all posts have AI images"}
 
-            # Get styles from local settings
-            styles = {}
-            rows = await self.pool.fetch("SELECT key, value FROM app_settings WHERE key LIKE 'image_style_%'")
-            for r in rows:
-                styles[r["key"].replace("image_style_", "")] = r["value"]
-            negative = await self.pool.fetchval("SELECT value FROM app_settings WHERE key = 'image_negative_prompt'") or ""
+            try:
+                # Get styles from local settings
+                styles = {}
+                rows = await self.pool.fetch("SELECT key, value FROM app_settings WHERE key LIKE 'image_style_%'")
+                for r in rows:
+                    styles[r["key"].replace("image_style_", "")] = r["value"]
+                negative = await self.pool.fetchval("SELECT value FROM app_settings WHERE key = 'image_negative_prompt'") or ""
 
-            from services.image_service import get_image_service
-            svc = get_image_service()
+                from services.image_service import get_image_service
+                svc = get_image_service()
 
-            import cloudinary
-            import cloudinary.uploader
-            cloudinary.config(
-                cloud_name=site_config.get("cloudinary_cloud_name"),
-                api_key=site_config.get("cloudinary_api_key"),
-                api_secret=site_config.get("cloudinary_api_secret"),
-            )
+                import cloudinary
+                import cloudinary.uploader
+                cloudinary.config(
+                    cloud_name=site_config.get("cloudinary_cloud_name"),
+                    api_key=site_config.get("cloudinary_api_key"),
+                    api_secret=site_config.get("cloudinary_api_secret"),
+                )
 
-            regenerated = 0
-            for post in posts:
-                cat = (post["category"] or "technology").lower()
-                # Use Ollama to generate a proper SDXL prompt
-                prompt = f"photorealistic scene related to {post['title'][:50]}, cinematic lighting, 4k, detailed, no people, no text"
-                try:
-                    import httpx
-                    _ollama = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
-                    async with httpx.AsyncClient(timeout=30) as _c:
-                        _r = await _c.post(f"{_ollama}/api/generate", json={
-                            "model": "llama3:latest",
-                            "prompt": f"Write a Stable Diffusion XL prompt for a blog featured image about: {post['title'][:80]}\nRequirements: photorealistic scene, cinematic lighting, no people, no text. 1 sentence only. Output ONLY the prompt.",
-                            "stream": False, "options": {"num_predict": 100, "temperature": 0.7},
-                        })
-                        _r.raise_for_status()
-                        _gen = _r.json().get("response", "").strip().strip('"')
-                        if len(_gen) > 20:
-                            prompt = _gen
-                except Exception:
-                    pass  # Use fallback prompt
-
-                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-                    output_path = tmp.name
-
-                try:
-                    success = await svc.generate_image(
-                        prompt=prompt, output_path=output_path,
-                        negative_prompt=negative, high_quality=False,
-                    )
-                    if success and os.path.exists(output_path):
-                        import asyncio
-                        result = await asyncio.get_event_loop().run_in_executor(
-                            None,
-                            lambda p=output_path, c=cat: cloudinary.uploader.upload(
-                                p, folder="generated/",
-                                resource_type="image", tags=["featured", c],
-                            ),
-                        )
-                        image_url = result.get("secure_url", "")
-                        if image_url:
-                            await cloud.execute(
-                                "UPDATE posts SET featured_image_url = $1, updated_at = NOW() WHERE id = $2",
-                                image_url, post["id"],
-                            )
-                            regenerated += 1
-                            logger.info("[IDLE] Regenerated image for: %s", post["title"][:40])
-                        os.remove(output_path)
-                except Exception as e:
-                    logger.warning("[IDLE] Image regen failed for %s: %s", post["title"][:30], e)
+                regenerated = 0
+                for post in posts:
+                    cat = (post["category"] or "technology").lower()
+                    # Use Ollama to generate a proper SDXL prompt
+                    prompt = f"photorealistic scene related to {post['title'][:50]}, cinematic lighting, 4k, detailed, no people, no text"
                     try:
-                        os.remove(output_path)
+                        import httpx
+                        _ollama = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+                        async with httpx.AsyncClient(timeout=30) as _c:
+                            _r = await _c.post(f"{_ollama}/api/generate", json={
+                                "model": "llama3:latest",
+                                "prompt": f"Write a Stable Diffusion XL prompt for a blog featured image about: {post['title'][:80]}\nRequirements: photorealistic scene, cinematic lighting, no people, no text. 1 sentence only. Output ONLY the prompt.",
+                                "stream": False, "options": {"num_predict": 100, "temperature": 0.7},
+                            })
+                            _r.raise_for_status()
+                            _gen = _r.json().get("response", "").strip().strip('"')
+                            if len(_gen) > 20:
+                                prompt = _gen
                     except Exception:
-                        pass
+                        pass  # Use fallback prompt
 
-            await cloud.close()
+                    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                        output_path = tmp.name
+
+                    try:
+                        success = await svc.generate_image(
+                            prompt=prompt, output_path=output_path,
+                            negative_prompt=negative, high_quality=False,
+                        )
+                        if success and os.path.exists(output_path):
+                            import asyncio
+                            result = await asyncio.get_event_loop().run_in_executor(
+                                None,
+                                lambda p=output_path, c=cat: cloudinary.uploader.upload(
+                                    p, folder="generated/",
+                                    resource_type="image", tags=["featured", c],
+                                ),
+                            )
+                            image_url = result.get("secure_url", "")
+                            if image_url:
+                                await cloud.execute(
+                                    "UPDATE posts SET featured_image_url = $1, updated_at = NOW() WHERE id = $2",
+                                    image_url, post["id"],
+                                )
+                                regenerated += 1
+                                logger.info("[IDLE] Regenerated image for: %s", post["title"][:40])
+                            os.remove(output_path)
+                    except Exception as e:
+                        logger.warning("[IDLE] Image regen failed for %s: %s", post["title"][:30], e)
+                        try:
+                            os.remove(output_path)
+                        except Exception:
+                            pass
+            finally:
+                await cloud.close()
 
             if regenerated:
                 await self._create_gitea_issue(

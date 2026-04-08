@@ -68,8 +68,19 @@ class TestNormalizeSeoKeywordsInTask:
         result = _normalize_seo_keywords_in_task(task)
         assert result["seo_keywords"] == ["ai", "ml"]
 
-    def test_invalid_json_becomes_empty_list(self):
+    def test_invalid_json_treated_as_comma_separated(self):
         task = {"seo_keywords": "not-json{{{"}
+        result = _normalize_seo_keywords_in_task(task)
+        # Not valid JSON, so treated as comma-separated (single item)
+        assert result["seo_keywords"] == ["not-json{{{"]
+
+    def test_comma_separated_string_parsed(self):
+        task = {"seo_keywords": "AI, healthcare, technology"}
+        result = _normalize_seo_keywords_in_task(task)
+        assert result["seo_keywords"] == ["AI", "healthcare", "technology"]
+
+    def test_empty_string_becomes_empty_list(self):
+        task = {"seo_keywords": ""}
         result = _normalize_seo_keywords_in_task(task)
         assert result["seo_keywords"] == []
 

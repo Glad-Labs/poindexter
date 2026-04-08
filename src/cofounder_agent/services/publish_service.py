@@ -524,6 +524,21 @@ async def publish_post_from_task(
             logger.warning("[publish_service] ISR revalidation error (non-fatal): %s", reval_err)
 
     # ---------------------------------------------------------------
+    # 10b. Static JSON export to CDN (fire-and-forget)
+    # ---------------------------------------------------------------
+    try:
+        from services.static_export_service import export_post
+
+        _pool = getattr(db_service, "cloud_pool", None) or db_service.pool
+        if background_tasks:
+            background_tasks.add_task(export_post, _pool, slug)
+        else:
+            asyncio.ensure_future(export_post(_pool, slug))
+        logger.info("[STATIC_EXPORT] Queued export for %s", slug)
+    except Exception as e:
+        logger.debug("[STATIC_EXPORT] Failed to queue export (non-fatal): %s", e)
+
+    # ---------------------------------------------------------------
     # 11. Ping search engines (fire-and-forget)
     # ---------------------------------------------------------------
     site_url = "https://www.gladlabs.io"

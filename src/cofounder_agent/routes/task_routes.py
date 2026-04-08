@@ -29,49 +29,38 @@ logger = get_logger(__name__)
 # ============================================================================
 
 
+def _parse_seo_keywords(value: str) -> list:
+    """Parse seo_keywords from either JSON array string or comma-separated string."""
+    if not value or not value.strip():
+        return []
+    try:
+        parsed = json.loads(value)
+        if isinstance(parsed, list):
+            return parsed
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return [kw.strip() for kw in value.split(",") if kw.strip()]
+
+
 def _normalize_seo_keywords_in_task(task: Dict[str, Any]) -> Dict[str, Any]:
-    """Normalize seo_keywords from JSON strings to lists at top level, result, and task_metadata."""
+    """Normalize seo_keywords from strings to lists at top level, result, and task_metadata."""
     if not isinstance(task, dict):
         return task
 
-    # Parse seo_keywords at top level if it's a JSON string
     if "seo_keywords" in task and isinstance(task["seo_keywords"], str):
-        try:
-            task["seo_keywords"] = json.loads(task["seo_keywords"])
-        except (json.JSONDecodeError, TypeError):
-            logger.warning(
-                "[normalize_task_seo_keywords] seo_keywords is not valid JSON for task %s — defaulting to []",
-                task.get("id"),
-            )
-            task["seo_keywords"] = []
+        task["seo_keywords"] = _parse_seo_keywords(task["seo_keywords"])
 
-    # Parse seo_keywords inside result field if present
     if "result" in task and isinstance(task["result"], dict):
         if "seo_keywords" in task["result"] and isinstance(task["result"]["seo_keywords"], str):
-            try:
-                task["result"]["seo_keywords"] = json.loads(task["result"]["seo_keywords"])
-            except (json.JSONDecodeError, TypeError):
-                logger.warning(
-                    "[normalize_task_seo_keywords] result.seo_keywords is not valid JSON for task %s — defaulting to []",
-                    task.get("id"),
-                )
-                task["result"]["seo_keywords"] = []
+            task["result"]["seo_keywords"] = _parse_seo_keywords(task["result"]["seo_keywords"])
 
-    # Parse seo_keywords inside task_metadata field if present
     if "task_metadata" in task and isinstance(task["task_metadata"], dict):
         if "seo_keywords" in task["task_metadata"] and isinstance(
             task["task_metadata"]["seo_keywords"], str
         ):
-            try:
-                task["task_metadata"]["seo_keywords"] = json.loads(
-                    task["task_metadata"]["seo_keywords"]
-                )
-            except (json.JSONDecodeError, TypeError):
-                logger.warning(
-                    "[normalize_task_seo_keywords] task_metadata.seo_keywords is not valid JSON for task %s — defaulting to []",
-                    task.get("id"),
-                )
-                task["task_metadata"]["seo_keywords"] = []
+            task["task_metadata"]["seo_keywords"] = _parse_seo_keywords(
+                task["task_metadata"]["seo_keywords"]
+            )
 
     return task
 

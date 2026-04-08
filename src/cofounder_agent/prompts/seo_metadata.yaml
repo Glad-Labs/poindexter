@@ -1,42 +1,42 @@
 # Default prompts — functional but basic. Premium prompts available at gladlabs.io
 
 - key: seo.generate_title
-  category: seo
+  category: seo_metadata
   description: "Default prompt — upgrade to Glad Labs Premium Prompts for production-quality output"
   output_format: text
   template: |
     Generate an SEO-friendly title for: {topic}
 
 - key: seo.generate_meta_description
-  category: seo
+  category: seo_metadata
   description: "Default prompt — upgrade to Glad Labs Premium Prompts for production-quality output"
   output_format: text
   template: |
     Generate a meta description (150-160 chars) for: {topic}
 
 - key: seo.extract_keywords
-  category: seo
+  category: seo_metadata
   description: "Default prompt — upgrade to Glad Labs Premium Prompts for production-quality output"
   output_format: text
   template: |
     Extract 5-10 SEO keywords from this content: {content}
 
 - key: seo.generate_excerpt
-  category: seo
+  category: seo_metadata
   description: "Default prompt — upgrade to Glad Labs Premium Prompts for production-quality output"
   output_format: text
   template: |
     Generate a 2-3 sentence excerpt for: {content}
 
 - key: seo.match_category
-  category: seo
+  category: seo_metadata
   description: "Default prompt — upgrade to Glad Labs Premium Prompts for production-quality output"
   output_format: text
   template: |
     Match this content to the best category from: {categories}. Content topic: {topic}
 
 - key: seo.extract_tags
-  category: seo
+  category: seo_metadata
   description: "Default prompt — upgrade to Glad Labs Premium Prompts for production-quality output"
   output_format: text
   template: |
