@@ -100,6 +100,15 @@ LEAKED_IMAGE_PROMPT_PATTERNS = [
     r"(?:^|\n)\s*\*(?:A |An |Imagine |Visual |Split|Close)[^*]{40,}\*",  # standalone `*A description...*`
 ]
 
+# LLM image placeholder artifacts — [IMAGE-1: description], [IMAGE: ...], etc.
+IMAGE_PLACEHOLDER_PATTERNS = [
+    r"\[IMAGE(?:-\d+)?:\s*[^\]]+\]",  # [IMAGE-1: description] or [IMAGE: description]
+    r"\[FIGURE(?:-\d+)?:\s*[^\]]+\]",  # [FIGURE-1: description]
+    r"\[DIAGRAM(?:-\d+)?:\s*[^\]]+\]",  # [DIAGRAM: description]
+    r"\[CHART(?:-\d+)?:\s*[^\]]+\]",  # [CHART: description]
+    r"\[SCREENSHOT(?:-\d+)?:\s*[^\]]+\]",  # [SCREENSHOT: description]
+]
+
 
 @dataclass
 class ValidationIssue:
@@ -211,6 +220,12 @@ def validate_content(title: str, content: str, topic: str = "") -> ValidationRes
     issues.extend(_check_patterns(
         full_text, LEAKED_IMAGE_PROMPT_PATTERNS, "warning", "leaked_image_prompt",
         "Leaked image generation prompt in content: '{matched}'"
+    ))
+
+    # 7b. Check for LLM image placeholder artifacts ([IMAGE-1: ...], [FIGURE: ...], etc.)
+    issues.extend(_check_patterns(
+        full_text, IMAGE_PLACEHOLDER_PATTERNS, "critical", "image_placeholder",
+        "LLM image placeholder left in content: '{matched}'"
     ))
 
     # 8. Check title for impossible claims (numeric and written-out years)
