@@ -143,9 +143,7 @@ _SPOKEN_REPLACEMENTS = [
 
 # Regex-based replacements for patterns
 _SPOKEN_REGEX = [
-    # Hyphenated TECHNICAL terms only — common compounds like "cutting-edge" sound fine hyphenated
-    # Only split camelCase-style tech terms and multi-word technical phrases
-    (re.compile(r"\b(non|pre|post|re|multi|self|co|auto|semi|cross|open|cloud|on|off)-(\w+)"), r"\1 \2"),
+    # Hyphens: TTS handles "cutting-edge" and "cutting edge" the same — no transformation needed
     # File paths and URLs — skip entirely
     (re.compile(r"https?://\S+"), ""),
     (re.compile(r"[\w/\\]+\.\w{2,4}(?:\s|$)"), " "),  # file.ext
