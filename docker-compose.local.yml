@@ -153,6 +153,7 @@ services:
       WOODPECKER_SERVER: woodpecker-server:9000
       WOODPECKER_AGENT_SECRET: "ZSUZYFMJVQBIUKMC7NVEAFL536C37XUYIRKGR4BUPJQACQCNDI4Q===="
       WOODPECKER_BACKEND_DOCKER_NETWORK: glad-labs-website_default
+      WOODPECKER_BACKEND_DOCKER_EXTRA_HOSTS: "localhost:host-gateway"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     extra_hosts:
