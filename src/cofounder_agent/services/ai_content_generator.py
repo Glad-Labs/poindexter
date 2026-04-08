@@ -643,7 +643,7 @@ class AIContentGenerator:
                     logger.info(f"   └─ Testing model {model_idx}/{len(model_list)}: {model_name}")
                     metrics["generation_attempts"] += 1
 
-                    logger.info("      ⏱️  Generating content (timeout: 120s)...")
+                    logger.info("      ⏱️  Generating content...")
 
                     # Calculate max tokens: markdown content + headers + lists need ~2-2.5 tokens per word
                     # Using 4x multiplier to prevent truncation mid-sentence
@@ -755,7 +755,7 @@ class AIContentGenerator:
 
                 except asyncio.TimeoutError as e:
                     # Explicitly catch timeout - model too slow or server unresponsive
-                    error_msg = f"Timeout (120s exceeded) with {model_name}"
+                    error_msg = f"Timeout exceeded with {model_name}"
                     logger.warning(
                         f"Ollama model {model_name} timed out: {error_msg}", exc_info=True
                     )
