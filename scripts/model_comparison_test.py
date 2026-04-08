@@ -23,7 +23,7 @@ MODELS = [
 TOPIC = "Building a Self-Hosted AI Content Pipeline on Consumer Hardware"
 RUNS_PER_MODEL = 2
 POLL_INTERVAL = 15  # seconds
-MAX_WAIT = 600  # 10 min max per task
+MAX_WAIT = 900  # 15 min max per task (content + image + QA + SEO + media)
 
 
 async def set_writer_model(pool, model: str):
@@ -116,11 +116,11 @@ async def main():
                   f"{result.get('content_len', 0)} chars | {result['elapsed_s']}s | "
                   f"Model used: {result.get('model_used', '--')}")
             if result.get("cloud_api_refs"):
-                print(f"  ⚠️  Cloud API references detected!")
+                print(f"  WARNING: Cloud API references detected!")
             if result.get("hallucinated_links"):
-                print(f"  ⚠️  Hallucinated internal links detected!")
+                print(f"  WARNING: Hallucinated internal links detected!")
             if result.get("error"):
-                print(f"  ❌ Error: {result['error'][:100]}")
+                print(f"  ERROR: {result['error'][:100]}")
 
     # Summary table
     print("\n" + "=" * 100)

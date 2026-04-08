@@ -532,7 +532,7 @@ class AIContentGenerator:
 
             if refined_validation.is_valid:
                 logger.info("      ✅ Refined content APPROVED")
-                metrics["model_used"] = f"Ollama - {model_name} (refined)"
+                metrics["model_used"] = model_name
                 metrics["models_used_by_phase"]["draft"] = metrics["model_used"]  # Track phase
                 metrics["final_quality_score"] = refined_validation.quality_score
                 metrics["generation_time_seconds"] = time.time() - start_time
@@ -735,7 +735,7 @@ class AIContentGenerator:
                             logger.warning(
                                 "      ⚠️  Content below quality threshold but no more refinements available"
                             )
-                            metrics["model_used"] = f"Ollama - {model_name} (below threshold)"
+                            metrics["model_used"] = model_name
                             metrics["models_used_by_phase"]["draft"] = metrics[
                                 "model_used"
                             ]  # Track phase
@@ -831,7 +831,7 @@ class AIContentGenerator:
                         )
 
                         if validation.is_valid:
-                            metrics["model_used"] = f"HuggingFace - {model_id.split('/')[-1]}"
+                            metrics["model_used"] = model_id.split("/")[-1]
                             metrics["models_used_by_phase"]["draft"] = metrics[
                                 "model_used"
                             ]  # Track phase
