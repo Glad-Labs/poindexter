@@ -22,6 +22,8 @@ clone:
     settings:
       remote: http://gitea:3000/gladlabs/glad-labs-codebase.git
       depth: 1
+    environment:
+      CI_NETRC_MACHINE: gitea
 
 steps:
   # ===========================================================================
