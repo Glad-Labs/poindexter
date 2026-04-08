@@ -233,6 +233,20 @@ def validate_content(title: str, content: str, topic: str = "") -> ValidationRes
                 matched_text=title,
             ))
 
+    # 9. Check for late acronym expansions — e.g. "CRM (Customer Relationship Management)"
+    #    when the acronym was already used earlier without expansion
+    for m in re.finditer(r'\b([A-Z]{2,6})\s*\(([A-Z][a-z][\w\s]{5,50})\)', content):
+        acronym = m.group(1)
+        # Check if the acronym appears earlier in the content (before this match)
+        prior_text = content[:m.start()]
+        prior_uses = len(re.findall(rf'\b{re.escape(acronym)}\b', prior_text))
+        if prior_uses >= 2:
+            issues.append(ValidationIssue(
+                severity="warning", category="late_acronym_expansion",
+                description=f"Acronym '{acronym}' expanded after {prior_uses} prior uses — expand on first use or not at all",
+                matched_text=m.group(0)[:80],
+            ))
+
     # Calculate score penalty
     score_penalty = sum(10 for i in issues if i.severity == "critical")
     score_penalty += sum(3 for i in issues if i.severity == "warning")
