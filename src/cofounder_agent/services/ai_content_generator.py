@@ -63,28 +63,29 @@ class AIContentGenerator:
 
         logger.info("AIContentGenerator initialized (Ollama check deferred to first async call)")
         logger.debug(
-            f"   HuggingFace token: {'✓ set' if ProviderChecker.is_huggingface_available() else '✗ not set'}"
+            "   HuggingFace token: %s",
+            "set" if ProviderChecker.is_huggingface_available() else "not set",
         )
 
     async def _check_ollama_async(self):
         """Async check if Ollama is running - call this once before using Ollama"""
         if self.ollama_checked:
-            logger.debug(f"ℹ️ Ollama already checked previously: {self.ollama_available}")
+            logger.debug("Ollama already checked previously: %s", self.ollama_available)
             return
 
         ollama_url = os.getenv("OLLAMA_BASE_URL", os.getenv("OLLAMA_HOST", "http://host.docker.internal:11434"))
-        logger.info(f"🔍 Checking if Ollama server is running at {ollama_url}...")
+        logger.info("Checking if Ollama server is running at %s...", ollama_url)
         try:
             async with httpx.AsyncClient(timeout=5) as client:
                 response = await client.get(f"{ollama_url}/api/tags")
                 self.ollama_available = response.status_code == 200
 
             if self.ollama_available:
-                logger.info(f"✅ Ollama IS running at {ollama_url}")
+                logger.info("[OK] Ollama IS running at %s", ollama_url)
             else:
-                logger.warning(f"⚠️ Ollama returned non-200 status: {response.status_code}")
+                logger.warning("Ollama returned non-200 status: %s", response.status_code)
         except Exception as e:
-            logger.warning(f"⚠️ Ollama health check failed: {type(e).__name__}: {e}")
+            logger.warning("Ollama health check failed: %s: %s", type(e).__name__, e)
             self.ollama_available = False
         finally:
             self.ollama_checked = True
@@ -110,11 +111,11 @@ class AIContentGenerator:
                     f"- \"{row['title']}\" -> {site_url}/posts/{row['slug']}"
                     for row in rows
                 ]
-                logger.info(f"[INTERNAL_LINKS] Loaded {len(rows)} published posts for linking")
+                logger.info("[INTERNAL_LINKS] Loaded %d published posts for linking", len(rows))
             finally:
                 await conn.close()
         except Exception as e:
-            logger.debug(f"[INTERNAL_LINKS] Failed to load internal links: {e}")
+            logger.debug("[INTERNAL_LINKS] Failed to load internal links: %s", e)
             self._internal_links_cache = []
 
     def _validate_content(
@@ -199,13 +200,13 @@ class AIContentGenerator:
 
         feedback = ""
         if is_valid:
-            feedback = f"✓ Content approved (quality score: {score:.1f}/10)"
+            feedback = f"[OK] Content approved (quality score: {score:.1f}/10)"
         else:
-            feedback = f"✗ Content needs improvement (quality score: {score:.1f}/10, threshold: {self.quality_threshold})"
+            feedback = f"[FAIL] Content needs improvement (quality score: {score:.1f}/10, threshold: {self.quality_threshold})"
 
-        logger.info(f"Content validation: {feedback}")
+        logger.info("Content validation: %s", feedback)
         if issues:
-            logger.debug(f"Issues found: {issues}")
+            logger.debug("Issues found: %s", issues)
 
         return ContentValidationResult(
             is_valid=is_valid, quality_score=score, issues=issues, feedback=feedback
@@ -227,15 +228,15 @@ class AIContentGenerator:
         # Get prompt manager for centralized prompt management
         try:
             pm = get_prompt_manager()
-            logger.info("✓ Prompt manager loaded successfully")
+            logger.info("[OK] Prompt manager loaded successfully")
         except Exception as e:
-            logger.error(f"Failed to load prompt manager: {e}", exc_info=True)
+            logger.error("Failed to load prompt manager: %s", e, exc_info=True)
             raise
 
         # Fetch prompts from centralized manager instead of hardcoding
         # This ensures all prompts are versioned, documented, and easy to maintain
         try:
-            logger.info("📝 Loading system prompt...")
+            logger.info("Loading system prompt...")
             min_words = int(target_length * 0.9)
             max_words = int(target_length * 1.1)
             system_prompt = pm.get_prompt(
@@ -247,13 +248,13 @@ class AIContentGenerator:
                 max_words=max_words,
                 tags=", ".join(tags) if tags else "general",
             )
-            logger.info(f"✓ System prompt loaded ({len(system_prompt)} chars)")
+            logger.info("[OK] System prompt loaded (%d chars)", len(system_prompt))
         except Exception as e:
-            logger.error(f"Failed to load system prompt: {e}", exc_info=True)
+            logger.error("Failed to load system prompt: %s", e, exc_info=True)
             raise
 
         try:
-            logger.info("📝 Loading generation prompt...")
+            logger.info("Loading generation prompt...")
             # Internal links populated by caller (generate_blog_post) via self._internal_links_cache
             internal_link_titles = getattr(self, "_internal_links_cache", [])
             internal_links_str = "\n".join(internal_link_titles) if internal_link_titles else "No existing articles to link to."
@@ -269,10 +270,10 @@ class AIContentGenerator:
                 style=style,
                 tone=tone,
             )
-            logger.info(f"✓ Generation prompt loaded ({len(generation_prompt)} chars)")
+            logger.info("[OK] Generation prompt loaded (%d chars)", len(generation_prompt))
         except Exception as e:
             logger.error(
-                f"Failed to load generation prompt: {type(e).__name__}: {e}", exc_info=True
+                "Failed to load generation prompt: %s: %s", type(e).__name__, e, exc_info=True
             )
             raise
 
@@ -287,7 +288,7 @@ class AIContentGenerator:
                     target_audience=style,
                 )
             except Exception as e:
-                logger.error(f"Failed to load refinement prompt: {e}", exc_info=True)
+                logger.error("Failed to load refinement prompt: %s", e, exc_info=True)
                 raise
 
         return system_prompt, generation_prompt, get_refinement_prompt
@@ -309,35 +310,36 @@ class AIContentGenerator:
         Returns a context dict containing all shared state needed by provider methods.
         """
         logger.info(f"\n{'='*80}")
-        logger.info("🎬 BLOG GENERATION STARTED")
+        logger.info("BLOG GENERATION STARTED")
         logger.info(f"{'='*80}")
-        logger.info(f"📌 Topic: {topic}")
-        logger.info(f"📌 Style: {style} | Tone: {tone}")
-        logger.info(f"📌 Target length: {target_length} words | Tags: {tags}")
-        logger.info(f"📌 Quality threshold: {self.quality_threshold}")
-        logger.info(f"📌 Preferred model: {preferred_model or 'auto'}")
-        logger.info(f"📌 Preferred provider: {preferred_provider or 'auto'}")
+        logger.info("Topic: %s", topic)
+        logger.info("Style: %s | Tone: %s", style, tone)
+        logger.info("Target length: %d words | Tags: %s", target_length, tags)
+        logger.info("Quality threshold: %s", self.quality_threshold)
+        logger.info("Preferred model: %s", preferred_model or "auto")
+        logger.info("Preferred provider: %s", preferred_provider or "auto")
         logger.info(
-            f"📌 HuggingFace token: {'✓' if ProviderChecker.is_huggingface_available() else '✗'}"
+            "HuggingFace token: %s",
+            "yes" if ProviderChecker.is_huggingface_available() else "no",
         )
         logger.info(f"{'='*80}\n")
 
         # Provider priority: Ollama → HuggingFace → template
         effective_provider = preferred_provider
         if not effective_provider:
-            logger.info("📌 No provider specified, will try fallback chain (Ollama first)")
+            logger.info("No provider specified, will try fallback chain (Ollama first)")
 
         skip_ollama = effective_provider and effective_provider.lower() not in ["ollama", "auto"]
 
         # Use local variable to avoid polluting instance state across requests
         use_ollama = False
         if skip_ollama:
-            logger.info(f"📌 Skipping Ollama (user selected: {effective_provider})\n")
+            logger.info("Skipping Ollama (user selected: %s)", effective_provider)
             use_ollama = False
         else:
             await self._check_ollama_async()
             use_ollama = self.ollama_available
-            logger.info(f"📌 Ollama check result: {use_ollama}\n")
+            logger.info("Ollama check result: %s", use_ollama)
 
         # Load all prompts (research context injected into generation prompt)
         system_prompt, generation_prompt, get_refinement_prompt = self._load_generation_prompts(
@@ -389,17 +391,19 @@ class AIContentGenerator:
 
         # Log provider decision tree
         logger.info(f"\n{'='*80}")
-        logger.info("🔍 PROVIDER DECISION TREE:")
+        logger.info("PROVIDER DECISION TREE:")
         logger.info(f"{'='*80}")
-        logger.info(f"   User selection: provider={preferred_provider}, model={preferred_model}")
-        logger.info(f"   Effective provider: {effective_provider}")
+        logger.info("   User selection: provider=%s, model=%s", preferred_provider, preferred_model)
+        logger.info("   Effective provider: %s", effective_provider)
         logger.info("")
         logger.info("   Provider Status:")
         logger.info(
-            f"   ├─ Ollama (local):     {'✓ available' if use_ollama else '✗ not available/skipped'}"
+            "   ├─ Ollama (local):     %s",
+            "available" if use_ollama else "not available/skipped",
         )
         logger.info(
-            f"   ├─ HuggingFace (cloud): {'✓ token set' if ProviderChecker.is_huggingface_available() else '✗ no token'}"
+            "   ├─ HuggingFace (cloud): %s",
+            "token set" if ProviderChecker.is_huggingface_available() else "no token",
         )
         logger.info("   └─ Fallback:           Available (generic template)")
         logger.info(f"{'='*80}\n")
@@ -425,9 +429,9 @@ class AIContentGenerator:
     def _extract_ollama_response(self, response) -> str:
         """Extract text content from an Ollama response (dict or string)."""
         # OllamaClient.generate() returns dict with 'text' key (not 'response')
-        logger.info(f"      📦 Raw response type: {type(response)}")
+        logger.info("      Raw response type: %s", type(response))
         if isinstance(response, dict):
-            logger.info(f"      📦 Response is dict with keys: {list(response.keys())}")
+            logger.info("      Response is dict with keys: %s", list(response.keys()))
 
         generated_content = ""
         if isinstance(response, dict):
@@ -437,21 +441,21 @@ class AIContentGenerator:
                 or response.get("response", "")
                 or response.get("content", "")
             )
-            logger.info(f"      📦 Extracted from dict: {len(generated_content)} chars")
+            logger.info("      Extracted from dict: %d chars", len(generated_content))
             if generated_content:
                 logger.debug(
-                    f"      📦 Response type: dict | Extracted text: {len(generated_content)} chars"
+                    "      Response type: dict | Extracted text: %d chars", len(generated_content)
                 )
             else:
                 logger.warning(
-                    f"      ⚠️  No text found in response dict keys: {list(response.keys())}"
+                    "      No text found in response dict keys: %s", list(response.keys())
                 )
         elif isinstance(response, str):
             generated_content = response
-            logger.info(f"      📦 Got direct string: {len(generated_content)} chars")
-            logger.debug(f"      📦 Response type: str | Content: {len(generated_content)} chars")
+            logger.info("      Got direct string: %d chars", len(generated_content))
+            logger.debug("      Response type: str | Content: %d chars", len(generated_content))
         else:
-            logger.warning(f"      ⚠️  Unexpected response type: {type(response)}")
+            logger.warning("      Unexpected response type: %s", type(response))
             generated_content = ""
 
         return generated_content
@@ -475,7 +479,8 @@ class AIContentGenerator:
             return None
 
         logger.info(
-            f"      ⚙️  Content below threshold. Refining ({metrics['refinement_attempts'] + 1}/{self.max_refinement_attempts})..."
+            "      Content below threshold. Refining (%d/%d)...",
+            metrics["refinement_attempts"] + 1, self.max_refinement_attempts,
         )
 
         metrics["refinement_attempts"] += 1
@@ -501,19 +506,19 @@ class AIContentGenerator:
         if isinstance(response, dict):
             refined_content = response.get("response", "")
             logger.debug(
-                f"      📦 Refined response type: dict | Content: {len(refined_content)} chars"
+                "      Refined response type: dict | Content: %d chars", len(refined_content)
             )
         elif isinstance(response, str):
             refined_content = response
             logger.debug(
-                f"      📦 Refined response type: str | Content: {len(refined_content)} chars"
+                "      Refined response type: str | Content: %d chars", len(refined_content)
             )
 
         if refined_content and len(refined_content) > 100:
-            logger.info(f"      ✓ Refined content generated: {len(refined_content)} characters")
+            logger.info("      [OK] Refined content generated: %d characters", len(refined_content))
 
             # Validate refined content
-            logger.info("      🔍 Validating refined content...")
+            logger.info("      Validating refined content...")
             refined_validation = self._validate_content(refined_content, topic, target_length)
             metrics["validation_results"].append(
                 {
@@ -527,18 +532,18 @@ class AIContentGenerator:
 
             refined_word_count = len(refined_content.split())
             logger.info(
-                f"      📊 Refined Quality: {refined_validation.quality_score:.1f}/{self.quality_threshold} | Words: {refined_word_count} | Issues: {len(refined_validation.issues)}"
+                f"      Refined Quality: {refined_validation.quality_score:.1f}/{self.quality_threshold} | Words: {refined_word_count} | Issues: {len(refined_validation.issues)}"
             )
 
             if refined_validation.is_valid:
-                logger.info("      ✅ Refined content APPROVED")
+                logger.info("      [OK] Refined content APPROVED")
                 metrics["model_used"] = model_name
                 metrics["models_used_by_phase"]["draft"] = metrics["model_used"]  # Track phase
                 metrics["final_quality_score"] = refined_validation.quality_score
                 metrics["generation_time_seconds"] = time.time() - start_time
                 logger.info(f"\n{'='*80}")
-                logger.info("✅ GENERATION COMPLETE (with refinement)")
-                logger.info(f"   Model: {metrics['model_used']}")
+                logger.info("[OK] GENERATION COMPLETE (with refinement)")
+                logger.info("   Model: %s", metrics["model_used"])
                 logger.info(
                     f"   Quality: {refined_validation.quality_score:.1f}/{self.quality_threshold}"
                 )
@@ -569,11 +574,12 @@ class AIContentGenerator:
         # 1. Try Ollama (local, free, no internet, RTX 5070 optimized)
         if not use_ollama:
             logger.info(
-                f"⏭️ SKIPPING Ollama (skip_ollama={skip_ollama}, effective_provider={effective_provider})\n"
+                "SKIPPING Ollama (skip_ollama=%s, effective_provider=%s)",
+                skip_ollama, effective_provider,
             )
             return None
 
-        logger.info("🔄 [ATTEMPT 1/3] Trying Ollama (Local, GPU-accelerated)...")
+        logger.info("[ATTEMPT 1/3] Trying Ollama (Local, GPU-accelerated)...")
         ollama_endpoint = os.getenv("OLLAMA_BASE_URL", os.getenv("OLLAMA_HOST", "http://host.docker.internal:11434"))
         logger.info("   ├─ Endpoint: %s", ollama_endpoint)
         logger.info("   └─ Status: Connecting...\n")
@@ -581,7 +587,7 @@ class AIContentGenerator:
             from .ollama_client import OllamaClient
 
             ollama = OllamaClient()
-            logger.info("   ✓ OllamaClient initialized")
+            logger.info("   [OK] OllamaClient initialized")
 
             # Model selection priority:
             # 1. UI-selected model (preferred_model from task request)
@@ -590,7 +596,7 @@ class AIContentGenerator:
             # No hardcoded model names — if nothing works, falls through to cloud providers.
             if preferred_model:
                 model_list = [preferred_model]
-                logger.info(f"   ├─ Using UI-selected model: {preferred_model}")
+                logger.info("   ├─ Using UI-selected model: %s", preferred_model)
             else:
                 # Read pipeline_writer_model from DB first (DB-first config)
                 try:
@@ -604,10 +610,10 @@ class AIContentGenerator:
 
                 if db_model:
                     resolved = db_model
-                    logger.info(f"   ├─ Primary model (from DB): {resolved}")
+                    logger.info("   ├─ Primary model (from DB): %s", resolved)
                 else:
                     resolved = await ollama.resolve_model()
-                    logger.info(f"   ├─ Primary model (auto): {resolved}")
+                    logger.info("   ├─ Primary model (auto): %s", resolved)
                 model_list = [resolved]
 
                 # Read fallback model from DB
@@ -633,22 +639,22 @@ class AIContentGenerator:
                     ]
                     model_list.extend(fallbacks)
                 except Exception as e:
-                    logger.warning(f"   ⚠️ Could not discover fallback models: {e}")
+                    logger.warning("   Could not discover fallback models: %s", e)
 
                 logger.info(
                     f"   ├─ Will try {len(model_list)} model(s): {[m.split(':')[0] for m in model_list[:5]]}"
                 )
             for model_idx, model_name in enumerate(model_list, 1):
                 try:
-                    logger.info(f"   └─ Testing model {model_idx}/{len(model_list)}: {model_name}")
+                    logger.info("   └─ Testing model %d/%d: %s", model_idx, len(model_list), model_name)
                     metrics["generation_attempts"] += 1
 
-                    logger.info("      ⏱️  Generating content...")
+                    logger.info("      Generating content...")
 
                     # Calculate max tokens: markdown content + headers + lists need ~2-2.5 tokens per word
                     # Using 4x multiplier to prevent truncation mid-sentence
                     max_tokens = int(target_length * 4.0)
-                    logger.debug(f"      Max tokens: {max_tokens} (target_length: {target_length})")
+                    logger.debug("      Max tokens: %d (target_length: %d)", max_tokens, target_length)
 
                     response = await ollama.generate(
                         prompt=generation_prompt,
@@ -661,15 +667,16 @@ class AIContentGenerator:
                     generated_content = self._extract_ollama_response(response)
 
                     logger.info(
-                        f"      🔍 Final check: bool(content)={bool(generated_content)}, len={len(generated_content)}, threshold=100"
+                        "      Final check: bool(content)=%s, len=%d, threshold=100",
+                        bool(generated_content), len(generated_content),
                     )
                     if generated_content and len(generated_content) > 100:
                         logger.info(
-                            f"      ✓ Content generated: {len(generated_content)} characters"
+                            "      [OK] Content generated: %d characters", len(generated_content)
                         )
 
                         # Self-check: Validate content quality
-                        logger.info("      🔍 Validating content quality...")
+                        logger.info("      Validating content quality...")
                         validation = self._validate_content(generated_content, topic, target_length)
                         metrics["validation_results"].append(
                             {
@@ -682,16 +689,16 @@ class AIContentGenerator:
 
                         word_count = len(generated_content.split())
                         logger.info(
-                            f"      📊 Quality Score: {validation.quality_score:.1f}/{self.quality_threshold} | Words: {word_count} | Issues: {len(validation.issues)}"
+                            f"      Quality Score: {validation.quality_score:.1f}/{self.quality_threshold} | Words: {word_count} | Issues: {len(validation.issues)}"
                         )
 
                         if validation.issues:
                             for issue in validation.issues:
-                                logger.debug(f"         ⚠️  {issue}")
+                                logger.debug("         %s", issue)
 
                         # If content passes QA, return it
                         if validation.is_valid:
-                            logger.info("      ✅ Content APPROVED by QA")
+                            logger.info("      [OK] Content APPROVED by QA")
                             metrics["model_used"] = model_name
                             metrics["models_used_by_phase"]["draft"] = metrics["model_used"]
                             metrics["final_quality_score"] = validation.quality_score
@@ -710,8 +717,8 @@ class AIContentGenerator:
                                 "duration_seconds": round(duration_s, 2),
                             }
                             logger.info(f"\n{'='*80}")
-                            logger.info("✅ GENERATION COMPLETE")
-                            logger.info(f"   Model: {metrics['model_used']}")
+                            logger.info("[OK] GENERATION COMPLETE")
+                            logger.info("   Model: %s", metrics["model_used"])
                             logger.info(
                                 f"   Quality: {validation.quality_score:.1f}/{self.quality_threshold}"
                             )
@@ -733,7 +740,7 @@ class AIContentGenerator:
                         # If still not passing after refinement, return best attempt
                         if metrics["generation_attempts"] == len(model_list):
                             logger.warning(
-                                "      ⚠️  Content below quality threshold but no more refinements available"
+                                "      Content below quality threshold but no more refinements available"
                             )
                             metrics["model_used"] = model_name
                             metrics["models_used_by_phase"]["draft"] = metrics[
@@ -742,8 +749,8 @@ class AIContentGenerator:
                             metrics["final_quality_score"] = validation.quality_score
                             metrics["generation_time_seconds"] = time.time() - start_time
                             logger.info(f"\n{'='*80}")
-                            logger.warning("⚠️  GENERATION COMPLETE (below quality threshold)")
-                            logger.info(f"   Model: {metrics['model_used']}")
+                            logger.warning("GENERATION COMPLETE (below quality threshold)")
+                            logger.info("   Model: %s", metrics["model_used"])
                             logger.info(
                                 f"   Quality: {validation.quality_score:.1f}/{self.quality_threshold}"
                             )
@@ -751,25 +758,25 @@ class AIContentGenerator:
                             logger.info(f"{'='*80}\n")
                             return generated_content, metrics["model_used"], metrics
                     else:
-                        logger.warning("      ❌ Generated content too short or empty")
+                        logger.warning("      [FAIL] Generated content too short or empty")
 
                 except asyncio.TimeoutError as e:
                     # Explicitly catch timeout - model too slow or server unresponsive
                     error_msg = f"Timeout exceeded with {model_name}"
                     logger.warning(
-                        f"Ollama model {model_name} timed out: {error_msg}", exc_info=True
+                        "Ollama model %s timed out: %s", model_name, error_msg, exc_info=True
                     )
                     attempts.append(("Ollama", error_msg))
                     continue
                 except Exception as e:
                     # Catch other errors (500 errors, connection issues, etc.)
                     error_msg = str(e)[:150]  # Truncate long error messages
-                    logger.warning(f"Ollama model {model_name} failed: {error_msg}", exc_info=True)
+                    logger.warning("Ollama model %s failed: %s", model_name, error_msg, exc_info=True)
                     attempts.append(("Ollama", f"{model_name}: {error_msg}"))
                     continue
 
         except Exception as e:
-            logger.warning(f"Ollama generation failed: {e}", exc_info=True)
+            logger.warning("Ollama generation failed: %s", e, exc_info=True)
             if not attempts:  # Only append if attempts list is still empty
                 attempts.append(("Ollama", str(e)[:150]))
 
@@ -803,7 +810,7 @@ class AIContentGenerator:
                 "tiiuae/falcon-7b-instruct",
             ]:
                 try:
-                    logger.debug(f"Trying HuggingFace model: {model_id}")
+                    logger.debug("Trying HuggingFace model: %s", model_id)
                     metrics["generation_attempts"] += 1
 
                     # Calculate max tokens for HuggingFace generation (2.5x multiplier)
@@ -837,7 +844,7 @@ class AIContentGenerator:
                             ]  # Track phase
                             metrics["final_quality_score"] = validation.quality_score
                             metrics["generation_time_seconds"] = time.time() - start_time
-                            logger.info("✓ Content generated and approved with HuggingFace")
+                            logger.info("[OK] Content generated and approved with HuggingFace")
                             return generated_content, metrics["model_used"], metrics
 
                 except asyncio.TimeoutError:

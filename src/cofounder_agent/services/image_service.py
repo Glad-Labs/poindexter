@@ -56,7 +56,7 @@ try:
     DIFFUSERS_AVAILABLE = True
 except (ImportError, RuntimeError) as e:
     StableDiffusionXLPipeline = None
-    logging.warning(f"Diffusers library not available: {e}")
+    logging.warning("Diffusers library not available: %s", e)
 
 # Optional optimization packages
 try:
@@ -142,7 +142,7 @@ def get_default_image_model() -> ImageModel:
     try:
         return ImageModel(model_name)
     except ValueError:
-        logger.warning(f"Unknown IMAGE_MODEL '{model_name}', falling back to sdxl_lightning")
+        logger.warning("Unknown IMAGE_MODEL '%s', falling back to sdxl_lightning", model_name)
         return ImageModel.SDXL_LIGHTNING
 
 
@@ -255,7 +255,7 @@ class ImageService:
 
         # Already loaded — nothing to do
         if self._active_model == model and self._gen_pipe is not None:
-            logger.debug(f"Model {model.value} already loaded, skipping init")
+            logger.debug("Model %s already loaded, skipping init", model.value)
             return
 
         # Check prerequisites
@@ -272,7 +272,9 @@ class ImageService:
         # Unload any previously loaded model first
         if self._gen_pipe is not None:
             logger.info(
-                f"Switching model: {self._active_model.value if self._active_model else 'none'} -> {model.value}"
+                "Switching model: %s -> %s",
+                self._active_model.value if self._active_model else 'none',
+                model.value,
             )
             self._unload_model()
 
@@ -301,21 +303,23 @@ class ImageService:
                     ]
 
                     logger.info(
-                        f"GPU: {device_name}, Capability: sm_{capability[0]}{capability[1]}"
+                        "GPU: %s, Capability: sm_%s%s",
+                        device_name, capability[0], capability[1],
                     )
 
                     if current_cap in supported_caps:
                         use_device = "cuda"
                         gpu_memory = torch.cuda.get_device_properties(0).total_memory / (1024**3)
-                        logger.info(f"GPU Memory: {gpu_memory:.1f}GB - Using CUDA acceleration")
+                        logger.info("GPU Memory: %.1fGB - Using CUDA acceleration", gpu_memory)
                     else:
                         logger.warning(
-                            f"GPU capability sm_{capability[0]}{capability[1]} not officially supported. "
-                            f"Falling back to CPU mode."
+                            "GPU capability sm_%s%s not officially supported. "
+                            "Falling back to CPU mode.",
+                            capability[0], capability[1],
                         )
                 except Exception as e:
                     logger.warning(
-                        f"Could not verify GPU capability: {e}. Using CPU mode.", exc_info=True
+                        "Could not verify GPU capability: %s. Using CPU mode.", e, exc_info=True
                     )
             else:
                 logger.warning("CUDA not available - using CPU mode (slower)")
@@ -335,7 +339,7 @@ class ImageService:
             pipeline_cls = self._import_pipeline_class(config.pipeline_class)
 
             # Load model
-            logger.info(f"Loading {config.display_name} ({config.model_id}) on {use_device}...")
+            logger.info("Loading %s (%s) on %s...", config.display_name, config.model_id, use_device)
             load_kwargs = {
                 "torch_dtype": torch_dtype,
                 "use_safetensors": True,
@@ -348,14 +352,14 @@ class ImageService:
 
             # Apply LoRA weights if configured (e.g. SDXL Lightning)
             if config.lora_repo:
-                logger.info(f"Loading LoRA weights from {config.lora_repo}...")
+                logger.info("Loading LoRA weights from %s...", config.lora_repo)
                 pipe.load_lora_weights(config.lora_repo, weight_name=config.lora_weight_name)
                 pipe.fuse_lora()
                 logger.info("LoRA weights fused successfully")
 
             # Override scheduler if configured (e.g. EulerDiscreteScheduler for Lightning)
             if config.scheduler_override:
-                logger.info(f"Applying scheduler override: {config.scheduler_override}")
+                logger.info("Applying scheduler override: %s", config.scheduler_override)
                 from diffusers import EulerDiscreteScheduler
 
                 sched_kwargs = config.scheduler_kwargs or {}
@@ -372,17 +376,19 @@ class ImageService:
             self.use_device = use_device
             self.sdxl_available = True
 
-            logger.info(f"{config.display_name} loaded successfully")
-            logger.info(f"   Device: {use_device.upper()}")
+            logger.info("%s loaded successfully", config.display_name)
+            logger.info("   Device: %s", use_device.upper())
             logger.info(
-                f"   Default steps: {config.default_steps}, guidance: {config.default_guidance_scale}"
+                "   Default steps: %s, guidance: %s",
+                config.default_steps, config.default_guidance_scale,
             )
             logger.info(
-                f"   Optimizations: {'ENABLED (xformers)' if XFORMERS_AVAILABLE else 'BASIC (no xformers)'}"
+                "   Optimizations: %s",
+                'ENABLED (xformers)' if XFORMERS_AVAILABLE else 'BASIC (no xformers)',
             )
 
         except Exception as e:
-            logger.error(f"Failed to load {config.display_name}: {e}", exc_info=True)
+            logger.error("Failed to load %s: %s", config.display_name, e, exc_info=True)
             self.sdxl_available = False
 
     def _initialize_sdxl(self) -> None:
@@ -393,7 +399,7 @@ class ImageService:
         """Unload the current model and free VRAM/RAM."""
         if self._gen_pipe is not None:
             model_name = self._active_model.value if self._active_model else "unknown"
-            logger.info(f"Unloading model: {model_name}")
+            logger.info("Unloading model: %s", model_name)
             del self._gen_pipe
 
         self._gen_pipe = None
@@ -437,31 +443,31 @@ class ImageService:
         try:
             # 1. Enable attention slicing for memory efficiency
             pipe.enable_attention_slicing()
-            logger.info("   ✓ Attention slicing enabled")
+            logger.info("   Attention slicing enabled")
 
             # 2. Use xformers memory efficient attention if available
             if XFORMERS_AVAILABLE:
                 try:
                     pipe.enable_xformers_memory_efficient_attention()
-                    logger.info("   ✓ xformers memory-efficient attention enabled (2-4x faster)")
+                    logger.info("   xformers memory-efficient attention enabled (2-4x faster)")
                 except Exception as e:
-                    logger.warning(f"   ⚠️  Could not enable xformers: {e}", exc_info=True)
+                    logger.warning("   Could not enable xformers: %s", e, exc_info=True)
 
             # 3. Enable Flash Attention v2 if available (PyTorch 2.0+)
             try:
                 if hasattr(pipe.unet, "enable_flash_attn"):
                     pipe.unet.enable_flash_attn(use_flash_attention_v2=True)
-                    logger.info("   ✓ Flash Attention v2 enabled (30-50% faster)")
+                    logger.info("   Flash Attention v2 enabled (30-50% faster)")
             except Exception as e:
-                logger.debug(f"   Flash Attention v2 not available: {e}")
+                logger.debug("   Flash Attention v2 not available: %s", e)
 
             # 4. Enable sequential CPU offloading for GPU mode (frees VRAM between steps)
             if device == "cuda":
                 try:
                     pipe.enable_sequential_cpu_offload()
-                    logger.info("   ✓ Sequential CPU offloading enabled (GPU memory saver)")
+                    logger.info("   Sequential CPU offloading enabled (GPU memory saver)")
                 except Exception as e:
-                    logger.debug(f"   Sequential CPU offload not available: {e}")
+                    logger.debug("   Sequential CPU offload not available: %s", e)
 
             # 5. Enable model CPU offload for memory-constrained GPUs
             if device == "cuda":
@@ -469,12 +475,12 @@ class ImageService:
                     gpu_mem = torch.cuda.get_device_properties(0).total_memory / (1024**3)
                     if gpu_mem < 20:
                         pipe.enable_model_cpu_offload()
-                        logger.info("   ✓ Model CPU offload enabled (constrained GPU memory)")
+                        logger.info("   Model CPU offload enabled (constrained GPU memory)")
                 except Exception as e:
-                    logger.debug(f"   Model CPU offload not available: {e}")
+                    logger.debug("   Model CPU offload not available: %s", e)
 
         except Exception as e:
-            logger.warning(f"Error applying optimizations: {e}", exc_info=True)
+            logger.warning("Error applying optimizations: %s", e, exc_info=True)
 
     # =========================================================================
     # DB-FIRST KEY LOADING
@@ -606,7 +612,7 @@ class ImageService:
 
         for query in search_queries:
             try:
-                logger.info(f"Searching Pexels for: '{query}' (page {page})")
+                logger.info("Searching Pexels for: '%s' (page %s)", query, page)
                 images = await self._pexels_search(
                     query, per_page=5, orientation=orientation, size=size, page=page
                 )
@@ -615,13 +621,14 @@ class ImageService:
                     # This prevents all posts from using the same image when topics are similar
                     metadata = random.choice(images)
                     logger.info(
-                        f"✅ Found featured image for '{topic}' using query '{query}' (page {page}) - randomly selected from {len(images)} results"
+                        "Found featured image for '%s' using query '%s' (page %s) - randomly selected from %s results",
+                        topic, query, page, len(images),
                     )
                     return metadata
             except Exception as e:
-                logger.warning(f"Error searching for '{query}': {e}", exc_info=True)
+                logger.warning("Error searching for '%s': %s", query, e, exc_info=True)
 
-        logger.warning(f"No featured image found for topic: {topic}")
+        logger.warning("No featured image found for topic: %s", topic)
         return None
 
     async def get_images_for_gallery(
@@ -659,13 +666,13 @@ class ImageService:
                 all_images.extend(images)
 
                 if len(all_images) >= count:
-                    logger.info(f"Found {len(all_images)} gallery images")
+                    logger.info("Found %s gallery images", len(all_images))
                     return all_images[:count]
 
             except Exception as e:
-                logger.warning(f"Error searching for gallery images '{query}': {e}", exc_info=True)
+                logger.warning("Error searching for gallery images '%s': %s", query, e, exc_info=True)
 
-        logger.info(f"Found {len(all_images)} gallery images (less than requested)")
+        logger.info("Found %s gallery images (less than requested)", len(all_images))
         return all_images
 
     async def _pexels_search(
@@ -691,7 +698,7 @@ class ImageService:
         """
         # Skip search if API key is not configured
         if not self.pexels_api_key:
-            logger.debug(f"Pexels API key not configured - skipping search for '{query}'")
+            logger.debug("Pexels API key not configured - skipping search for '%s'", query)
             return []
 
         try:
@@ -714,7 +721,8 @@ class ImageService:
 
                 photos = data.get("photos", [])
                 logger.info(
-                    f"Pexels search for '{query}' (page {page}) returned {len(photos)} results"
+                    "Pexels search for '%s' (page %s) returned %s results",
+                    query, page, len(photos),
                 )
 
                 return [
@@ -733,7 +741,7 @@ class ImageService:
                 ]
 
         except Exception as e:
-            logger.error(f"Pexels search error: {e}", exc_info=True)
+            logger.error("Pexels search error: %s", e, exc_info=True)
             return []
 
     # =========================================================================
@@ -782,18 +790,18 @@ class ImageService:
                     with open(output_path, "wb") as f:
                         f.write(resp.content)
                     elapsed = resp.headers.get("X-Elapsed-Seconds", "?")
-                    logger.info(f"SDXL image generated via host server in {elapsed}s: {output_path}")
+                    logger.info("SDXL image generated via host server in %ss: %s", elapsed, output_path)
                     return True
                 else:
-                    logger.warning(f"SDXL server returned {resp.status_code}: {resp.text[:200]}")
+                    logger.warning("SDXL server returned %s: %s", resp.status_code, resp.text[:200])
         except Exception as e:
-            logger.info(f"SDXL host server unavailable ({e}), trying local diffusers...")
+            logger.info("SDXL host server unavailable (%s), trying local diffusers...", e)
 
         # Strategy 2: Try local diffusers (if available)
         # Lazy initialize on first generation request
         if not self.sdxl_initialized or (model is not None and model != self._active_model):
             target = model or get_default_image_model()
-            logger.info(f"First generation request detected - initializing {target.value}...")
+            logger.info("First generation request detected - initializing %s...", target.value)
             self._initialize_model(target)
             self.sdxl_initialized = True
 
@@ -809,10 +817,10 @@ class ImageService:
             guidance_scale = config.default_guidance_scale
 
         try:
-            logger.info(f"Generating image for prompt: '{prompt}'")
+            logger.info("Generating image for prompt: '%s'", prompt)
             logger.info(
-                f"   Model: {config.display_name}, steps={num_inference_steps}, "
-                f"guidance={guidance_scale}, device={self.use_device.upper()}"
+                "   Model: %s, steps=%s, guidance=%s, device=%s",
+                config.display_name, num_inference_steps, guidance_scale, self.use_device.upper(),
             )
 
             # Run generation in thread pool to avoid blocking
@@ -828,7 +836,7 @@ class ImageService:
                 task_id,
             )
 
-            logger.info(f"Image saved to {output_path}")
+            logger.info("Image saved to %s", output_path)
 
             # Mark progress as complete if tracking
             if task_id:
@@ -846,7 +854,7 @@ class ImageService:
             return True
 
         except Exception as e:
-            logger.error(f"Error generating image: {e}", exc_info=True)
+            logger.error("Error generating image: %s", e, exc_info=True)
 
             # Mark progress as failed if tracking
             if task_id:
@@ -906,7 +914,7 @@ class ImageService:
                 )
 
         model_name = self._active_model.value if self._active_model else "unknown"
-        logger.info(f"   Generating with {model_name} ({num_inference_steps} steps)...")
+        logger.info("   Generating with %s (%s steps)...", model_name, num_inference_steps)
 
         if progress_service and task_id:
             progress_service.update_progress(
@@ -929,9 +937,9 @@ class ImageService:
         try:
             image.save(output_path)
             elapsed = time.time() - start_time
-            logger.info(f"   Image saved to {output_path} ({elapsed:.1f}s)")
+            logger.info("   Image saved to %s (%.1fs)", output_path, elapsed)
         except Exception as save_error:
-            logger.error(f"   Save failed: {save_error}", exc_info=True)
+            logger.error("   Save failed: %s", save_error, exc_info=True)
             raise
 
     # =========================================================================
@@ -987,7 +995,7 @@ class ImageService:
         # Placeholder for future image optimization
         # Could integrate with imgix, Cloudinary, or local optimization
         logger.warning("[image_service] optimize_image called but not implemented — returning unoptimized")
-        logger.info(f"Image optimization placeholder for {image_url}")
+        logger.info("Image optimization placeholder for %s", image_url)
         return {
             "url": image_url,
             "optimized": False,

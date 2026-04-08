@@ -216,7 +216,7 @@ def _scrub_fabricated_links(content: str) -> str:
     content = re.sub(r"(?<!\()https?://[^\s\)\]\"'>,]+", _replace_bare_url, content)
 
     if scrubbed_count > 0:
-        logger.info(f"[LINK_SCRUB] Removed {scrubbed_count} fabricated link(s) from generated content")
+        logger.info("[LINK_SCRUB] Removed %d fabricated link(s) from generated content", scrubbed_count)
 
     return content
 
@@ -250,22 +250,22 @@ class ContentTaskStore:
         metadata: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Create a new task in persistent storage. Returns task ID."""
-        logger.info("📋 [CONTENT_TASK_STORE] Creating task (async)")
-        logger.info(f"   Topic: {topic[:60]}{'...' if len(topic) > 60 else ''}")
-        logger.info(f"   Style: {style} | Tone: {tone} | Length: {target_length}w")
-        logger.info(f"   Tags: {', '.join(tags) if tags else 'none'}")
-        logger.debug(f"   Type: {request_type} | Image: {generate_featured_image}")
+        logger.info("[CONTENT_TASK_STORE] Creating task (async)")
+        logger.info("   Topic: %s%s", topic[:60], '...' if len(topic) > 60 else '')
+        logger.info("   Style: %s | Tone: %s | Length: %sw", style, tone, target_length)
+        logger.info("   Tags: %s", ', '.join(tags) if tags else 'none')
+        logger.debug("   Type: %s | Image: %s", request_type, generate_featured_image)
 
         # Add generate_featured_image to metadata
         metadata = {"generate_featured_image": generate_featured_image}
-        logger.debug(f"   Metadata: {metadata}")
+        logger.debug("   Metadata: %s", metadata)
 
         try:
             # Check if we have database service
             if not self.database_service:
                 raise ValueError("DatabaseService not initialized - cannot persist tasks")
 
-            logger.debug("   📝 Calling database_service.add_task() (async)...")
+            logger.debug("   Calling database_service.add_task() (async)...")
 
             # Generate task_name from topic
             task_name = f"{topic[:50]}" if len(topic) <= 50 else f"{topic[:47]}..."
@@ -284,10 +284,10 @@ class ContentTaskStore:
                 }
             )
 
-            logger.info("✅ [CONTENT_TASK_STORE] Task CREATED and PERSISTED (async)")
-            logger.info(f"   Task ID: {task_id}")
+            logger.info("[CONTENT_TASK_STORE] Task CREATED and PERSISTED (async)")
+            logger.info("   Task ID: %s", task_id)
             logger.info("   Status: pending")
-            logger.debug("   🎯 Ready for processing")
+            logger.debug("   Ready for processing")
             audit_log_bg("task_created", "content_router", {
                 "topic": topic[:100], "style": style, "tone": tone,
                 "target_length": target_length, "request_type": request_type,
@@ -295,7 +295,7 @@ class ContentTaskStore:
             return task_id
 
         except Exception as e:
-            logger.error(f"❌ [CONTENT_TASK_STORE] ERROR: {e}", exc_info=True)
+            logger.error("[CONTENT_TASK_STORE] ERROR: %s", e, exc_info=True)
             raise
 
     async def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
@@ -456,31 +456,31 @@ async def _generate_canonical_title(
             # Truncate if too long
             if len(title) > 100:
                 title = title[:97] + "..."
-            logger.debug(f"Generated title: {title}")
+            logger.debug("Generated title: %s", title)
             return title
 
         return None
 
     except Exception as e:
-        logger.warning(f"Error generating canonical title: {e}", exc_info=True)
+        logger.warning("Error generating canonical title: %s", e, exc_info=True)
         return None
 
 
 async def _stage_verify_task(database_service, task_id, result):
     """Stage 1: Verify task record exists in database."""
-    logger.info("📋 STAGE 1: Verifying task record exists...")
-    logger.debug(f"[BG-TASK] Verifying task {task_id} exists in database...")
+    logger.info("STAGE 1: Verifying task record exists...")
+    logger.debug("[BG-TASK] Verifying task %s exists in database...", task_id)
     try:
         existing_task = await database_service.get_task(task_id)
         if existing_task:
-            logger.info(f"✅ Task verified in database: {task_id}\n")
+            logger.info("Task verified in database: %s", task_id)
             result["content_task_id"] = task_id
             result["stages"]["1_content_task_created"] = True
         else:
-            logger.warning(f"⚠️  Task {task_id} not found - this should not happen")
+            logger.warning("Task %s not found - this should not happen", task_id)
             result["stages"]["1_content_task_created"] = False
     except Exception as e:
-        logger.error(f"❌ Failed to verify task: {e}", exc_info=True)
+        logger.error("Failed to verify task: %s", e, exc_info=True)
         result["stages"]["1_content_task_created"] = False
 
 
@@ -491,8 +491,8 @@ def _parse_model_preferences(models_by_phase):
     """
     preferred_model = None
     preferred_provider = None
-    logger.info("🔍 STEP 2A: Processing model selections from UI")
-    logger.info(f"   models_by_phase = {models_by_phase}")
+    logger.info("STEP 2A: Processing model selections from UI")
+    logger.info("   models_by_phase = %s", models_by_phase)
     if not models_by_phase:
         return preferred_model, preferred_provider
 
@@ -502,7 +502,7 @@ def _parse_model_preferences(models_by_phase):
         or models_by_phase.get("generate")
         or models_by_phase.get("content")
     )
-    logger.info(f"   draft_model = {draft_model}")
+    logger.info("   draft_model = %s", draft_model)
     if not draft_model or draft_model == "auto":
         return preferred_model, preferred_provider
 
@@ -532,10 +532,12 @@ def _parse_model_preferences(models_by_phase):
             preferred_model = draft_model
 
     logger.info(
-        f"   ✅ FINAL: preferred_model='{preferred_model}', preferred_provider='{preferred_provider}'"
+        "   FINAL: preferred_model='%s', preferred_provider='%s'",
+        preferred_model, preferred_provider,
     )
     logger.info(
-        f"🎯 User selected model: {preferred_model or 'auto'} (provider: {preferred_provider or 'auto'})"
+        "User selected model: %s (provider: %s)",
+        preferred_model or 'auto', preferred_provider or 'auto',
     )
     return preferred_model, preferred_provider
 
@@ -666,7 +668,7 @@ async def _stage_generate_content(
 
     Returns (content_text, model_used, metrics, title).
     """
-    logger.info("✍️  STAGE 2: Generating blog content...")
+    logger.info("STAGE 2: Generating blog content...")
 
     content_generator = get_content_generator()
     preferred_model, preferred_provider = _parse_model_preferences(models_by_phase)
@@ -702,7 +704,7 @@ async def _stage_generate_content(
             )
             if _caller_context:
                 research_context = _caller_context
-                logger.info("📚 Research context from task: %d chars", len(research_context))
+                logger.info("Research context from task: %d chars", len(research_context))
     except Exception as e:
         logger.debug("Failed to load task research_context: %s", e)
 
@@ -712,7 +714,7 @@ async def _stage_generate_content(
         auto_context = await research_svc.build_context(topic)
         if auto_context:
             research_context = f"{research_context}\n\n{auto_context}" if research_context else auto_context
-            logger.info("📚 Research context built: %d chars", len(research_context))
+            logger.info("Research context built: %d chars", len(research_context))
     except Exception as e:
         logger.warning("Research context skipped: %s", e)
 
@@ -721,7 +723,7 @@ async def _stage_generate_content(
         rag_context = await _build_rag_context(database_service, topic)
         if rag_context:
             research_context = f"{research_context}\n\n{rag_context}" if research_context else rag_context
-            logger.info("🔍 RAG context injected: %d chars", len(rag_context))
+            logger.info("RAG context injected: %d chars", len(rag_context))
     except Exception as e:
         logger.warning("RAG context skipped (non-fatal): %s", e)
 
@@ -741,12 +743,12 @@ async def _stage_generate_content(
 
     # Validate content_text is not None
     if not content_text:
-        logger.error("❌ Content generation returned None or empty")
+        logger.error("Content generation returned None or empty")
         raise ValueError("Content generation failed: no content produced")
 
     # Generate canonical title based on topic and content
     # Inject recent titles so the LLM avoids repetition
-    logger.info("📌 Generating title from content...")
+    logger.info("Generating title from content...")
     primary_keyword = tags[0] if tags else topic
     existing_titles = ""
     try:
@@ -762,7 +764,7 @@ async def _stage_generate_content(
     title = await _generate_canonical_title(topic, primary_keyword, content_text[:500], existing_titles=existing_titles)
     if not title:
         title = topic  # Fallback to topic if title generation fails
-    logger.info(f"✅ Title generated: {title}")
+    logger.info("Title generated: %s", title)
 
     # Title originality check — search the web for duplicate/near-duplicate titles
     originality = await _check_title_originality(title)
@@ -832,7 +834,7 @@ async def _stage_generate_content(
     result["models_used_by_phase"] = metrics.get("models_used_by_phase", {})
     result["model_selection_log"] = metrics.get("model_selection_log", {})
     result["stages"]["2_content_generated"] = True
-    logger.info(f"✅ Content generated ({len(content_text)} chars) using {model_used}\n")
+    logger.info("Content generated (%d chars) using %s", len(content_text), model_used)
 
     # Log cloud API cost if tracked by the generator
     cost_log = metrics.get("cost_log")
@@ -840,7 +842,7 @@ async def _stage_generate_content(
         try:
             cost_log["task_id"] = task_id
             await database_service.log_cost(cost_log)
-            logger.info("💰 Cost logged: $%.4f (%s/%s)", cost_log["cost_usd"], cost_log["provider"], cost_log["model"])
+            logger.info("Cost logged: $%.4f (%s/%s)", cost_log["cost_usd"], cost_log["provider"], cost_log["model"])
         except Exception as e:
             logger.warning("Cost logging failed (non-critical): %s", e)
 
@@ -852,7 +854,7 @@ async def _stage_quality_evaluation(topic, tags, content_text, quality_service, 
 
     Returns the quality_result object.
     """
-    logger.info("⭐ STAGE 2B: Early quality evaluation...")
+    logger.info("STAGE 2B: Early quality evaluation...")
 
     quality_result = await quality_service.evaluate(
         content=content_text,
@@ -866,7 +868,7 @@ async def _stage_quality_evaluation(topic, tags, content_text, quality_service, 
 
     # Validate quality_result is not None
     if not quality_result:
-        logger.error("❌ Quality evaluation returned None")
+        logger.error("Quality evaluation returned None")
         raise ValueError("Quality evaluation failed: no result produced")
 
     result["quality_score"] = quality_result.overall_score
@@ -883,12 +885,11 @@ async def _stage_quality_evaluation(topic, tags, content_text, quality_service, 
         "truncation_detected": quality_result.truncation_detected,
     }
     result["stages"]["2b_quality_evaluated_initial"] = True
-    logger.info("✅ Initial quality evaluation complete:")
-    logger.info(f"   Overall Score: {quality_result.overall_score:.1f}/100")
-    logger.info(f"   Passing: {quality_result.passing} (threshold ≥70.0)")
+    logger.info("Initial quality evaluation complete:")
+    logger.info("   Overall Score: %.1f/100", quality_result.overall_score)
+    logger.info("   Passing: %s (threshold >=70.0)", quality_result.passing)
     if quality_result.truncation_detected:
-        logger.warning("   ⚠️  TRUNCATION DETECTED — content appears cut off mid-sentence")
-    logger.info("")
+        logger.warning("   TRUNCATION DETECTED -- content appears cut off mid-sentence")
 
     return quality_result
 
@@ -934,17 +935,18 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
             image_placeholders = _re.findall(r"\[IMAGE-(\d+)(?::\s*([^\]]*))?\]", content_text)
             if image_placeholders:
                 logger.info(
-                    "📌 Injected %d image placeholders (%d words, 1 per 500 words)",
+                    "Injected %d image placeholders (%d words, 1 per 500 words)",
                     len(image_placeholders), word_count,
                 )
 
     if not image_placeholders:
         result["stages"]["2c_inline_images_replaced"] = False
-        logger.info("⏭️  No [IMAGE-N] placeholders to replace\n")
+        logger.info("No [IMAGE-N] placeholders to replace")
         return content_text
 
     logger.info(
-        f"🖼️  STAGE 2C: Replacing {len(image_placeholders)} inline image placeholders..."
+        "STAGE 2C: Replacing %d inline image placeholders...",
+        len(image_placeholders),
     )
     used_image_ids = set()  # Avoid duplicate images
 
@@ -991,7 +993,7 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
                     sdxl_inline_prompt = _pr.json().get("response", "").strip().strip('"')
 
             if sdxl_inline_prompt and len(sdxl_inline_prompt) > 20:
-                logger.info(f"  [IMAGE-{num}] SDXL prompt: {sdxl_inline_prompt[:60]}...")
+                logger.info("  [IMAGE-%s] SDXL prompt: %s...", num, sdxl_inline_prompt[:60])
                 # Generate the image with GPU lock
                 neg = "text, words, letters, watermark, face, person, hands, blurry, low quality, distorted, ugly, deformed"
                 async with _gpu.lock("sdxl", model="sdxl_lightning"):
@@ -1030,12 +1032,12 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
                         content_text = _re.sub(
                             rf"\[IMAGE-{num}[^\]]*\]", markdown_img, content_text, count=1
                         )
-                        logger.info(f"  ✅ [IMAGE-{num}] → SDXL generated + R2 uploaded")
+                        logger.info("  [IMAGE-%s] SDXL generated + R2 uploaded", num)
                         image_replaced = True
                 else:
-                    logger.warning(f"  [IMAGE-{num}] SDXL returned {_ir.status_code}")
+                    logger.warning("  [IMAGE-%s] SDXL returned %s", num, _ir.status_code)
         except Exception as sdxl_err:
-            logger.warning(f"  [IMAGE-{num}] SDXL inline failed: {sdxl_err}")
+            logger.warning("  [IMAGE-%s] SDXL inline failed: %s", num, sdxl_err)
 
         # Strategy 2: Pexels fallback
         if not image_replaced:
@@ -1055,14 +1057,14 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
                     content_text = _re.sub(
                         rf"\[IMAGE-{num}[^\]]*\]", markdown_img, content_text, count=1
                     )
-                    logger.info(f"  ✅ [IMAGE-{num}] → Pexels image by {photographer}")
+                    logger.info("  [IMAGE-%s] Pexels image by %s", num, photographer)
                     image_replaced = True
             except Exception as e:
-                logger.error(f"  ❌ [IMAGE-{num}] Pexels search failed: {e}")
+                logger.error("  [IMAGE-%s] Pexels search failed: %s", num, e)
 
         if not image_replaced:
             content_text = _re.sub(rf"\[IMAGE-{num}[^\]]*\]", "", content_text, count=1)
-            logger.warning(f"  ⚠️ [IMAGE-{num}] — no image source available, removed placeholder")
+            logger.warning("  [IMAGE-%s] no image source available, removed placeholder", num)
 
     # Clean up leaked SDXL/image prompts after image tags
     # Pattern 1: `: *description*` right after an image
@@ -1086,7 +1088,7 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
     result["content"] = content_text
     result["stages"]["2c_inline_images_replaced"] = True
     result["inline_images_replaced"] = len(used_image_ids)
-    logger.info(f"✅ Replaced {len(used_image_ids)} inline images in content\n")
+    logger.info("Replaced %d inline images in content", len(used_image_ids))
 
     return content_text
 
@@ -1096,13 +1098,13 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
 
     Returns the featured_image object (or None).
     """
-    logger.info("🖼️  STAGE 3: Sourcing featured image...")
+    logger.info("STAGE 3: Sourcing featured image...")
 
     featured_image = None
 
     if not generate_featured_image:
         result["stages"]["3_featured_image_found"] = False
-        logger.info("⏭️  Image search skipped (disabled)\n")
+        logger.info("Image search skipped (disabled)")
         return featured_image
 
     # Strategy 1: Try SDXL generation with category-specific style from DB
@@ -1253,13 +1255,14 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
             result["stages"]["3_featured_image_found"] = True
             result["stages"]["3_image_source"] = "pexels"
             logger.info(
-                f"✅ Featured image found: {featured_image.photographer} (Pexels)\n"
+                "Featured image found: %s (Pexels)",
+                featured_image.photographer,
             )
         else:
             result["stages"]["3_featured_image_found"] = False
-            logger.warning(f"⚠️  No featured image found for '{topic}'\n")
+            logger.warning("No featured image found for '%s'", topic)
     except Exception as e:
-        logger.error(f"❌ Image search failed: {e}", exc_info=True)
+        logger.error("Image search failed: %s", e, exc_info=True)
         result["stages"]["3_featured_image_found"] = False
 
     return featured_image
@@ -1270,7 +1273,7 @@ async def _stage_generate_seo_metadata(topic, tags, content_text, content_genera
 
     Returns (seo_title, seo_description, seo_keywords).
     """
-    logger.info("📊 STAGE 4: Generating SEO metadata...")
+    logger.info("STAGE 4: Generating SEO metadata...")
 
     seo_generator = get_seo_content_generator(content_generator)
     # SEOOptimizedContentGenerator wraps ContentMetadataGenerator which has generate_seo_assets
@@ -1280,7 +1283,7 @@ async def _stage_generate_seo_metadata(topic, tags, content_text, content_genera
 
     # Validate seo_assets is not None and is a dict
     if not seo_assets or not isinstance(seo_assets, dict):
-        logger.error("❌ SEO generation returned None or invalid format")
+        logger.error("SEO generation returned None or invalid format")
         raise ValueError("SEO metadata generation failed: invalid result")
 
     seo_keywords = seo_assets.get("meta_keywords") or (tags or [])
@@ -1310,10 +1313,10 @@ async def _stage_generate_seo_metadata(topic, tags, content_text, content_genera
     result["seo_description"] = seo_description
     result["seo_keywords"] = ", ".join(seo_keywords) if isinstance(seo_keywords, list) else (seo_keywords or "")
     result["stages"]["4_seo_metadata_generated"] = True
-    logger.info("✅ SEO metadata generated:")
-    logger.info(f"   Title: {seo_title}")
-    logger.info(f"   Description: {seo_description[:80]}...")
-    logger.info(f"   Keywords: {', '.join(seo_keywords[:5])}...\n")
+    logger.info("SEO metadata generated:")
+    logger.info("   Title: %s", seo_title)
+    logger.info("   Description: %s...", seo_description[:80])
+    logger.info("   Keywords: %s...", ', '.join(seo_keywords[:5]))
 
     return seo_title, seo_description, seo_keywords
 
@@ -1329,7 +1332,7 @@ async def _stage_generate_media_scripts(
 
     Non-critical — pipeline continues on failure.
     """
-    logger.info("🎙️  STAGE 4B: Generating media scripts (podcast + video scenes)...")
+    logger.info("STAGE 4B: Generating media scripts (podcast + video scenes)...")
 
     import httpx
     import os
@@ -1434,7 +1437,7 @@ async def _stage_capture_training_data(
 
     This entire stage is non-critical — failures must never crash the pipeline.
     """
-    logger.info("🎓 STAGE 6: Capturing training data...")
+    logger.info("STAGE 6: Capturing training data...")
 
     try:
         # Capture readability metrics for context_data
@@ -1508,7 +1511,7 @@ async def _stage_capture_training_data(
         logger.warning("Training data insert skipped (likely re-processed task): %s", _td_err)
 
     result["stages"]["6_training_data_captured"] = True
-    logger.info("✅ Training data captured for learning pipeline\n")
+    logger.info("Training data captured for learning pipeline")
 
 
 async def _stage_finalize_task(
@@ -1520,12 +1523,12 @@ async def _stage_finalize_task(
     # ⚠️ STAGE 5 NOTE: Posts record creation is SKIPPED here.
     # Posts should ONLY be created when task is approved via POST /api/tasks/{task_id}/approve.
     # This maintains clean separation: generation != publishing.
-    logger.info("📝 STAGE 5: Posts record creation SKIPPED")
-    logger.info("   ℹ️  Posts will be created when task is approved by user")
+    logger.info("STAGE 5: Posts record creation SKIPPED")
+    logger.info("   Posts will be created when task is approved by user")
     result["post_id"] = None
     result["post_slug"] = None
     result["stages"]["5_post_created"] = False
-    logger.info("ℹ️  Skipping automatic post creation\n")
+    logger.info("Skipping automatic post creation")
 
     # Normalize SEO text fields before final persist
     seo_title = _normalize_text(seo_title) if seo_title else seo_title
@@ -1600,34 +1603,36 @@ async def process_content_generation_task(
         task_id = str(uuid4())
 
     if not database_service:
-        logger.error("❌ DatabaseService not provided - cannot persist content")
+        logger.error("DatabaseService not provided - cannot persist content")
         raise ValueError("DatabaseService is required for content_tasks persistence")
 
-    logger.info(f"\n{'='*80}")
-    logger.info("🚀 COMPLETE CONTENT GENERATION PIPELINE")
-    logger.info(f"{'='*80}")
-    logger.info(f"   Task ID: {task_id}")
-    logger.info(f"   Topic: {topic}")
-    logger.info(f"   Style: {style} | Tone: {tone}")
-    logger.info(f"   Target Length: {target_length} words")
-    logger.info(f"   Tags: {', '.join(tags) if tags else 'none'}")
-    logger.info(f"   Image Search: {generate_featured_image}")
-    logger.info(f"{'='*80}\n")
+    logger.info("=" * 80)
+    logger.info("COMPLETE CONTENT GENERATION PIPELINE")
+    logger.info("=" * 80)
+    logger.info("   Task ID: %s", task_id)
+    logger.info("   Topic: %s", topic)
+    logger.info("   Style: %s | Tone: %s", style, tone)
+    logger.info("   Target Length: %s words", target_length)
+    logger.info("   Tags: %s", ', '.join(tags) if tags else 'none')
+    logger.info("   Image Search: %s", generate_featured_image)
+    logger.info("=" * 80)
 
     result = {"task_id": task_id, "topic": topic, "status": "pending", "stages": {}, "category": category or "technology"}
 
     try:
         # Initialize unified services
-        logger.info(f"[BG-TASK] Starting content generation for task {task_id[:8]}...")
-        logger.debug(f"[BG-TASK] database_service = {database_service}")
+        logger.info("[BG-TASK] Starting content generation for task %s...", task_id[:8])
+        logger.debug("[BG-TASK] database_service = %s", database_service)
         logger.debug(
-            f"[BG-TASK] database_service.tasks = {database_service.tasks if database_service else None}"
+            "[BG-TASK] database_service.tasks = %s",
+            database_service.tasks if database_service else None,
         )
 
         image_service = get_image_service()
         quality_service = UnifiedQualityService(database_service=database_service)
         logger.debug(
-            f"[BG-TASK] Services initialized: image_service={image_service}, quality_service={quality_service}"
+            "[BG-TASK] Services initialized: image_service=%s, quality_service=%s",
+            image_service, quality_service,
         )
 
         # Stage 1: Verify task record
@@ -1829,18 +1834,19 @@ async def process_content_generation_task(
             "status": result["status"],
         }, task_id=task_id)
 
-        logger.info(f"{'='*80}")
-        logger.info("✅ COMPLETE CONTENT GENERATION PIPELINE FINISHED")
-        logger.info(f"{'='*80}")
-        logger.info(f"   Task ID: {task_id}")
-        logger.info(f"   Post ID: {result.get('post_id', 'NOT_YET_CREATED')}")
+        logger.info("=" * 80)
+        logger.info("COMPLETE CONTENT GENERATION PIPELINE FINISHED")
+        logger.info("=" * 80)
+        logger.info("   Task ID: %s", task_id)
+        logger.info("   Post ID: %s", result.get('post_id', 'NOT_YET_CREATED'))
         logger.info(
-            f"   Featured Image: {result.get('featured_image_url', 'NONE')[:100] if result.get('featured_image_url') else 'NONE'}"
+            "   Featured Image: %s",
+            result.get('featured_image_url', 'NONE')[:100] if result.get('featured_image_url') else 'NONE',
         )
-        logger.info(f"   Quality Score: {quality_result.overall_score:.1f}/100")
-        logger.info(f"   Status: {result['status']}")
+        logger.info("   Quality Score: %.1f/100", quality_result.overall_score)
+        logger.info("   Status: %s", result['status'])
         logger.info("   Next: Human review & approval")
-        logger.info(f"{'='*80}\n")
+        logger.info("=" * 80)
 
         return result
 

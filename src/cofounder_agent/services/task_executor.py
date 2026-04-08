@@ -34,13 +34,13 @@ async def _notify_discord(message: str) -> None:
             return
 
         async with _httpx.AsyncClient(timeout=10) as client:
-            _logger.info(f"[NOTIFY:discord] {message[:80]}")
+            _logger.info("[NOTIFY:discord] %s", message[:80])
             await client.post(
                 webhook_url,
                 json={"content": message},
             )
     except Exception as e:
-        _logger.warning(f"[NOTIFY:discord] Failed: {e}")
+        _logger.warning("[NOTIFY:discord] Failed: %s", e)
 
 
 async def _notify_telegram(message: str) -> None:
@@ -48,13 +48,13 @@ async def _notify_telegram(message: str) -> None:
     _logger = get_logger(__name__)
     try:
         async with _httpx.AsyncClient(timeout=10) as client:
-            _logger.info(f"[NOTIFY:telegram] {message[:80]}")
+            _logger.info("[NOTIFY:telegram] %s", message[:80])
             await client.post(
                 f"https://api.telegram.org/bot{_TELEGRAM_BOT_TOKEN}/sendMessage",
                 json={"chat_id": _TELEGRAM_CHAT_ID, "text": message},
             )
     except Exception as e:
-        _logger.warning(f"[NOTIFY:telegram] Failed: {e}")
+        _logger.warning("[NOTIFY:telegram] Failed: %s", e)
 
 
 async def _notify_openclaw(message: str, critical: bool = False) -> None:
@@ -113,9 +113,8 @@ class TaskExecutor:
         self._last_sweep: float = 0.0
 
         logger.info(
-            f"TaskExecutor initialized: orchestrator={'✅' if orchestrator else '❌'}, "
-            f"quality_service={'✅'}, "
-            f"content_generator={'✅'}"
+            "TaskExecutor initialized: orchestrator=%s, quality_service=yes, content_generator=yes",
+            "yes" if orchestrator else "no",
         )
 
     @property
@@ -134,21 +133,22 @@ class TaskExecutor:
     async def start(self):
         """Start the background task processor"""
         if self.running:
-            logger.warning("❌ Task executor already running")
+            logger.warning("Task executor already running")
             return
 
         self.running = True
-        logger.info("🚀 Starting task executor background processor...")
-        logger.info(f"   Poll interval: {self.poll_interval} seconds")
-        logger.info(f"   Database service: {self.database_service is not None}")
-        logger.info(f"   Orchestrator: {self.orchestrator is not None}")
+        logger.info("Starting task executor background processor...")
+        logger.info("   Poll interval: %s seconds", self.poll_interval)
+        logger.info("   Database service: %s", self.database_service is not None)
+        logger.info("   Orchestrator: %s", self.orchestrator is not None)
         logger.info(
-            f"   Orchestrator type: {type(self.orchestrator).__name__ if self.orchestrator else 'None'}"
+            "   Orchestrator type: %s",
+            type(self.orchestrator).__name__ if self.orchestrator else "None",
         )
 
         # Create background task
         self._processor_task = asyncio.create_task(self._process_loop())
-        logger.info("✅ Task executor background processor started")
+        logger.info("[OK] Task executor background processor started")
 
     async def stop(self):
         """Stop the background task processor"""
@@ -156,7 +156,7 @@ class TaskExecutor:
             return
 
         self.running = False
-        logger.info("🛑 Stopping task executor...")
+        logger.info("Stopping task executor...")
 
         if self._processor_task:
             self._processor_task.cancel()
@@ -166,19 +166,20 @@ class TaskExecutor:
                 logger.debug("Task processor task cancelled successfully")
 
         logger.info(
-            f"✅ Task executor stopped (processed: {self.task_count}, success: {self.success_count}, errors: {self.error_count})"
+            "[OK] Task executor stopped (processed: %s, success: %s, errors: %s)",
+            self.task_count, self.success_count, self.error_count,
         )
 
     async def _process_loop(self):
         """Main processing loop - runs continuously in background"""
-        logger.info("📋 Task executor processor loop started")
+        logger.info("Task executor processor loop started")
 
         while self.running:
             try:
                 self.last_poll_at = time.monotonic()
                 self._poll_cycle += 1
                 # Get pending tasks from database
-                logger.debug("🔍 [TASK_EXEC_LOOP] Polling for pending tasks...")
+                logger.debug("[TASK_EXEC_LOOP] Polling for pending tasks...")
                 pending_tasks = await self.database_service.get_pending_tasks(limit=10)
 
                 # Throttle: don't process new tasks if approval queue is too full
@@ -199,10 +200,11 @@ class TaskExecutor:
                         pass  # On error, proceed normally
 
                 if pending_tasks:
-                    logger.info(f"📋 [TASK_EXEC_LOOP] Found {len(pending_tasks)} pending task(s)")
+                    logger.info("[TASK_EXEC_LOOP] Found %s pending task(s)", len(pending_tasks))
                     for idx, task in enumerate(pending_tasks, 1):
                         logger.info(
-                            f"   [{idx}] Task ID: {task.get('id')}, Name: {task.get('task_name')}, Status: {task.get('status')}"
+                            "   [%s] Task ID: %s, Name: %s, Status: %s",
+                            idx, task.get("id"), task.get("task_name"), task.get("status"),
                         )
 
                     # Check whether this executor has been sitting on pending tasks
@@ -211,9 +213,10 @@ class TaskExecutor:
                         idle_s = time.monotonic() - self._last_task_started_at
                         if idle_s > self._IDLE_ALERT_THRESHOLD_S:
                             logger.critical(
-                                f"[task_executor] Executor has not started a task in "
-                                f"{idle_s:.0f}s with {len(pending_tasks)} pending task(s) "
-                                f"in the queue — possible stall or hang"
+                                "[task_executor] Executor has not started a task in "
+                                "%.0fs with %s pending task(s) "
+                                "in the queue — possible stall or hang",
+                                idle_s, len(pending_tasks),
                             )
 
                     # Process each task
@@ -225,16 +228,18 @@ class TaskExecutor:
                         task_id = task.get("id")
 
                         try:
-                            logger.info(f"⚡ [TASK_EXEC_LOOP] Starting to process task: {task_id}")
+                            logger.info("[TASK_EXEC_LOOP] Starting to process task: %s", task_id)
                             self._last_task_started_at = time.monotonic()
                             await self._process_single_task(task)
                             self.success_count += 1
                             logger.info(
-                                f"✅ [TASK_EXEC_LOOP] Task succeeded (total success: {self.success_count})"
+                                "[OK] [TASK_EXEC_LOOP] Task succeeded (total success: %s)",
+                                self.success_count,
                             )
                         except Exception as e:
                             logger.error(
-                                f"❌ [TASK_EXEC_LOOP] Error processing task {task_id}: {str(e)}",
+                                "[FAIL] [TASK_EXEC_LOOP] Error processing task %s: %s",
+                                task_id, e,
                                 exc_info=True,
                             )
                             # Update task as failed
@@ -250,22 +255,25 @@ class TaskExecutor:
                                     },
                                 )
                                 logger.info(
-                                    f"📝 [TASK_EXEC_LOOP] Updated task {task_id} status to failed"
+                                    "[TASK_EXEC_LOOP] Updated task %s status to failed",
+                                    task_id,
                                 )
                             except Exception as update_err:
                                 logger.error(
-                                    f"❌ [TASK_EXEC_LOOP] Failed to update task status: {str(update_err)}",
+                                    "[FAIL] [TASK_EXEC_LOOP] Failed to update task status: %s",
+                                    update_err,
                                     exc_info=True,
                                 )
                             self.error_count += 1
                             logger.info(
-                                f"❌ [TASK_EXEC_LOOP] Task failed (total errors: {self.error_count})"
+                                "[FAIL] [TASK_EXEC_LOOP] Task failed (total errors: %s)",
+                                self.error_count,
                             )
                         finally:
                             self.task_count += 1
                 else:
                     logger.debug(
-                        f"⏳ [TASK_EXEC_LOOP] No pending tasks - running idle work"
+                        "[TASK_EXEC_LOOP] No pending tasks - running idle work"
                     )
                     # Run background maintenance when pipeline is idle
                     try:
@@ -296,18 +304,21 @@ class TaskExecutor:
                 break
             except Exception as e:
                 logger.error(
-                    f"❌ [TASK_EXEC_LOOP] Unexpected error in task executor loop: {str(e)}",
+                    "[FAIL] [TASK_EXEC_LOOP] Unexpected error in task executor loop: %s",
+                    e,
                     exc_info=True,
                 )
                 logger.info(
-                    f"⏳ [TASK_EXEC_LOOP] Sleeping for {self.poll_interval}s before retry..."
+                    "[TASK_EXEC_LOOP] Sleeping for %ss before retry...",
+                    self.poll_interval,
                 )
                 await asyncio.sleep(self.poll_interval)
 
         # Log at CRITICAL so Sentry alerts fire immediately on loop exit (issue #556).
         logger.critical(
             "[TASK_EXEC_LOOP] Task executor processor loop stopped — "
-            f"processed={self.task_count} success={self.success_count} errors={self.error_count}"
+            "processed=%s success=%s errors=%s",
+            self.task_count, self.success_count, self.error_count,
         )
 
     async def _process_single_task(self, task: Dict[str, Any]):
@@ -336,10 +347,10 @@ class TaskExecutor:
         # when this task finishes — prevents the synthetic trace ID from leaking
         # into the next task processed by the same asyncio worker.
         try:
-            logger.info(f"⏳ [TASK_SINGLE] Processing task: {task_id}")
-            logger.info(f"   Name: {task_name}")
-            logger.info(f"   Topic: {topic}")
-            logger.info(f"   Category: {category}")
+            logger.info("[TASK_SINGLE] Processing task: %s", task_id)
+            logger.info("   Name: %s", task_name)
+            logger.info("   Topic: %s", topic)
+            logger.info("   Category: %s", category)
 
             # Pre-generation brand relevance check — reject off-topic before wasting GPU
             from services.topic_discovery import TopicDiscovery
@@ -354,7 +365,7 @@ class TaskExecutor:
             TASK_TIMEOUT_SECONDS = 900  # 15 minutes
 
             # 1. Update task status to 'in_progress'
-            logger.info("📝 [TASK_SINGLE] Marking task as in_progress...")
+            logger.info("[TASK_SINGLE] Marking task as in_progress...")
             await self.database_service.update_task(
                 task_id,
                 {
@@ -366,11 +377,12 @@ class TaskExecutor:
                 },
             )
             await self.database_service.tasks.log_status_change(task_id, "pending", "in_progress")
-            logger.info("✅ [TASK_SINGLE] Task marked as in_progress")
+            logger.info("[OK] [TASK_SINGLE] Task marked as in_progress")
 
             # 2. Run through content router pipeline (the full 6-stage pipeline)
             logger.info(
-                f"🚀 [TASK_SINGLE] Executing content router pipeline (timeout: {TASK_TIMEOUT_SECONDS}s)..."
+                "[TASK_SINGLE] Executing content router pipeline (timeout: %ss)...",
+                TASK_TIMEOUT_SECONDS,
             )
             await _notify_openclaw(f"Processing: \"{topic}\"...")
             try:
@@ -400,7 +412,8 @@ class TaskExecutor:
                 result.setdefault("status", "awaiting_approval")
             except asyncio.TimeoutError:
                 logger.error(
-                    f"⏱️  [TASK_SINGLE] Task execution timed out after {TASK_TIMEOUT_SECONDS}s: {task_id}",
+                    "[TIMEOUT] [TASK_SINGLE] Task execution timed out after %ss: %s",
+                    TASK_TIMEOUT_SECONDS, task_id,
                     exc_info=True,
                 )
                 result = {
@@ -408,7 +421,7 @@ class TaskExecutor:
                     "orchestrator_error": f"Task execution timeout ({TASK_TIMEOUT_SECONDS}s exceeded)",
                 }
 
-            logger.info("✅ [TASK_SINGLE] Task execution completed")
+            logger.info("[OK] [TASK_SINGLE] Task execution completed")
 
             # The content router pipeline updates the task directly in DB at each stage.
             # Only do additional updates here if the pipeline failed or timed out.
@@ -422,8 +435,9 @@ class TaskExecutor:
                 # Content router already set the task to awaiting_approval with all fields.
                 # No additional DB update needed — just log and return.
                 logger.info(
-                    f"✅ [TASK_SINGLE] Content router completed — task already updated in DB "
-                    f"(status={final_status}, task_id={task_id})"
+                    "[OK] [TASK_SINGLE] Content router completed — task already updated in DB "
+                    "(status=%s, task_id=%s)",
+                    final_status, task_id,
                 )
 
                 # Emit task.completed webhook unconditionally for all successful completions
@@ -449,8 +463,9 @@ class TaskExecutor:
                         auto_threshold = await self._get_auto_publish_threshold()
                         if auto_threshold > 0 and quality_score >= auto_threshold:
                             logger.info(
-                                f"🚀 [AUTO_PUBLISH] Quality score {quality_score} >= threshold {auto_threshold}, "
-                                f"auto-publishing task {task_id}"
+                                "[AUTO_PUBLISH] Quality score %s >= threshold %s, "
+                                "auto-publishing task %s",
+                                quality_score, auto_threshold, task_id,
                             )
                             await self._auto_publish_task(task_id, quality_score)
                             auto_published = True
@@ -515,7 +530,7 @@ class TaskExecutor:
                 return
 
             # --- FAILURE PATH ONLY below this point ---
-            logger.info("💾 [TASK_SINGLE] Updating failed task status...")
+            logger.info("[TASK_SINGLE] Updating failed task status...")
 
             # Extract relevant fields from result for task_metadata (don't store entire result)
             # This prevents the entire result dict from being treated as metadata
@@ -547,24 +562,26 @@ class TaskExecutor:
                 task_metadata_updates["output"] = str(result)
 
             # DEBUG: Log all extracted metadata
-            logger.debug(f"🔍 Extracted metadata for task {task_id}:")
-            logger.info(f"   - Fields extracted: {list(task_metadata_updates.keys())}")
-            logger.info(f"   - Has 'content': {'content' in task_metadata_updates}")
+            logger.debug("Extracted metadata for task %s:", task_id)
+            logger.info("   - Fields extracted: %s", list(task_metadata_updates.keys()))
+            logger.info("   - Has 'content': %s", "content" in task_metadata_updates)
             if "content" in task_metadata_updates:
                 content_val = task_metadata_updates.get("content")
-                logger.info(f"   - Content type: {type(content_val).__name__}")
+                logger.info("   - Content type: %s", type(content_val).__name__)
                 logger.info(
-                    f"   - Content length: {len(content_val) if isinstance(content_val, str) else 'N/A'} chars"
+                    "   - Content length: %s chars",
+                    len(content_val) if isinstance(content_val, str) else "N/A",
                 )
                 if isinstance(content_val, str):
-                    logger.info(f"   - Content preview: {content_val[:100]}...")
+                    logger.info("   - Content preview: %s...", content_val[:100])
 
             # ⚠️ IMPORTANT: Don't store incomplete content for failed tasks
             # Only store content if task is approved/successful
             # This prevents partial/truncated content from appearing in the database
             if final_status == "failed" or final_status == "rejected":
                 logger.warning(
-                    f"⚠️  Task status is '{final_status}' - NOT storing content to prevent partial/truncated data"
+                    "[WARN] Task status is '%s' - NOT storing content to prevent partial/truncated data",
+                    final_status,
                 )
                 # Remove content fields for failed tasks
                 task_metadata_updates.pop("content", None)
@@ -574,17 +591,18 @@ class TaskExecutor:
 
             # Use update_task to ensure normalization of content into columns
             logger.debug(
-                f"📝 Calling update_task with status={final_status}, metadata keys={list(task_metadata_updates.keys())}"
+                "Calling update_task with status=%s, metadata keys=%s",
+                final_status, list(task_metadata_updates.keys()),
             )
 
             # Also store model_used in the normalized column if it's in the result
             update_payload = {"status": final_status, "task_metadata": task_metadata_updates}
             if isinstance(result, dict) and "model_used" in result:
                 update_payload["model_used"] = result["model_used"]
-                logger.debug(f"📝 Including model_used in database update: {result['model_used']}")
+                logger.debug("Including model_used in database update: %s", result["model_used"])
 
             await self.database_service.update_task(task_id, update_payload)
-            logger.debug(f"✅ update_task completed for {task_id}")
+            logger.debug("[OK] update_task completed for %s", task_id)
 
             quality_score_preview = (
                 task_metadata_updates.get("quality_score")
@@ -599,7 +617,7 @@ class TaskExecutor:
                     else "Unknown error"
                 )
                 logger.error(
-                    "❌ [TASK_SINGLE] Task failed: task_id=%s user_id=%s category=%s error=%r",
+                    "[FAIL] [TASK_SINGLE] Task failed: task_id=%s user_id=%s category=%s error=%r",
                     task_id,
                     user_id,
                     category,
@@ -615,7 +633,7 @@ class TaskExecutor:
                 await _notify_openclaw(f"Failed: \"{topic}\" - {str(error_msg)[:100]}", critical=True)
             else:
                 logger.info(
-                    "✅ [TASK_SINGLE] Task %s: task_id=%s user_id=%s category=%s quality_score=%s",
+                    "[OK] [TASK_SINGLE] Task %s: task_id=%s user_id=%s category=%s quality_score=%s",
                     final_status,
                     task_id,
                     user_id,
@@ -626,7 +644,7 @@ class TaskExecutor:
         except ServiceError:
             raise
         except Exception as e:
-            logger.error(f"❌ [TASK_SINGLE] Task failed: {task_id} - {str(e)}", exc_info=True)
+            logger.error("[FAIL] [TASK_SINGLE] Task failed: %s - %s", task_id, e, exc_info=True)
             raise ServiceError(message=str(e), details={"task_id": task_id}) from e
         finally:
             # Reset the ContextVar so the synthetic trace ID does not bleed into
@@ -676,11 +694,11 @@ class TaskExecutor:
             )
             if result and result.get("total_stale", 0) > 0:
                 logger.warning(
-                    f"[_sweep_stale_tasks] Reset {result['reset']} stale tasks "
-                    f"(timeout: {timeout}m)"
+                    "[_sweep_stale_tasks] Reset %s stale tasks (timeout: %sm)",
+                    result["reset"], timeout,
                 )
         except Exception:
-            logger.error("[_sweep_stale_tasks] Failed to sweep stale tasks", exc_info=True)
+            logger.warning("[_sweep_stale_tasks] Failed to sweep stale tasks", exc_info=True)
 
         # Also auto-retry recently failed/rejected tasks with adjusted params
         await self._auto_retry_failed_tasks()
