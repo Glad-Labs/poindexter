@@ -142,9 +142,8 @@ _SPOKEN_REPLACEMENTS = [
     ("$0", "zero dollars"),
 ]
 
-# Regex-based replacements for patterns
-_SPOKEN_REGEX = [
-    # Hyphens: TTS handles "cutting-edge" and "cutting edge" the same — no transformation needed
+# Regex-based replacements (not DB-configurable — structural patterns)
+_SPOKEN_REGEX_STATIC = [
     # File paths and URLs — skip entirely
     (re.compile(r"https?://\S+"), ""),
     (re.compile(r"[\w/\\]+\.\w{2,4}(?:\s|$)"), " "),  # file.ext
@@ -153,25 +152,70 @@ _SPOKEN_REGEX = [
     # Acronym with expansion in parentheses — use plain language instead
     # "SOC (Security Operations Center)" → "security operations center"
     (re.compile(r"\b[A-Z]{2,6}\s*\(([A-Z][a-z][\w\s]{5,50})\)"), lambda m: m.group(1).lower()),
-    # Standalone acronyms that sound unnatural spoken — replace with plain English
-    (re.compile(r"\bSOC\b"), "security operations"),
-    (re.compile(r"\bCRM\b"), "customer relationship management"),
-    (re.compile(r"\bSLA\b"), "service level agreement"),
-    (re.compile(r"\bKPI\b"), "key performance indicator"),
-    (re.compile(r"\bROI\b"), "return on investment"),
-    (re.compile(r"\bMVP\b"), "minimum viable product"),
-    (re.compile(r"\bPOC\b"), "proof of concept"),
-    (re.compile(r"\bEOL\b"), "end of life"),
     # Parenthetical asides — convert to commas for natural pause
     (re.compile(r"\s*\(([^)]{1,50})\)\s*"), r", \1, "),
 ]
 
+# Default acronym-to-plain-English mappings (overridden by DB key: tts_acronym_replacements)
+_DEFAULT_ACRONYM_REPLACEMENTS = {
+    "SOC": "security operations",
+    "CRM": "customer relationship management",
+    "SLA": "service level agreement",
+    "KPI": "key performance indicator",
+    "ROI": "return on investment",
+    "MVP": "minimum viable product",
+    "POC": "proof of concept",
+    "EOL": "end of life",
+}
+
+
+def _get_tts_replacements() -> list:
+    """Load TTS pronunciation replacements, merging DB overrides with defaults."""
+    import json as _json
+
+    # Simple replacements: DB key tts_pronunciations (JSON object: {"written": "spoken"})
+    db_pronunciations = site_config.get("tts_pronunciations", "")
+    if db_pronunciations:
+        try:
+            db_map = _json.loads(db_pronunciations)
+            # Merge: DB entries override defaults with same key
+            merged = dict(_SPOKEN_REPLACEMENTS)
+            merged.update(db_map.items())
+            simple = list(merged.items())
+        except (ValueError, TypeError):
+            simple = list(_SPOKEN_REPLACEMENTS)
+    else:
+        simple = list(_SPOKEN_REPLACEMENTS)
+
+    return simple
+
+
+def _get_acronym_regex() -> list:
+    """Load acronym replacements from DB, compile to regex list."""
+    import json as _json
+
+    db_acronyms = site_config.get("tts_acronym_replacements", "")
+    if db_acronyms:
+        try:
+            acronyms = _json.loads(db_acronyms)
+        except (ValueError, TypeError):
+            acronyms = _DEFAULT_ACRONYM_REPLACEMENTS
+    else:
+        acronyms = _DEFAULT_ACRONYM_REPLACEMENTS
+
+    return [(re.compile(rf"\b{re.escape(k)}\b"), v) for k, v in acronyms.items()]
+
 
 def _normalize_for_speech(text: str) -> str:
     """Convert written English conventions to natural spoken form."""
-    for written, spoken in _SPOKEN_REPLACEMENTS:
+    # Simple replacements (DB-configurable via tts_pronunciations)
+    for written, spoken in _get_tts_replacements():
         text = text.replace(written, spoken)
-    for pattern, replacement in _SPOKEN_REGEX:
+    # Structural regex patterns (static)
+    for pattern, replacement in _SPOKEN_REGEX_STATIC:
+        text = pattern.sub(replacement, text)
+    # Acronym replacements (DB-configurable via tts_acronym_replacements)
+    for pattern, replacement in _get_acronym_regex():
         text = pattern.sub(replacement, text)
     # Smart quotes → straight quotes (TTS handles these better)
     text = text.replace("\u201c", '"').replace("\u201d", '"')
