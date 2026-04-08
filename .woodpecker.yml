@@ -32,13 +32,12 @@ steps:
 
   backend-unit-tests:
     image: python:3.12-bookworm
+    directory: src/cofounder_agent
     commands:
-      - ls -la
-      - pwd
       - pip install --upgrade pip poetry
       - poetry config virtualenvs.create false
-      - cd src/cofounder_agent && poetry install --no-root
-      - cd src/cofounder_agent && poetry run pytest tests/unit/ -q --tb=short --ignore=tests/unit/services/test_web_research.py
+      - poetry install --no-root
+      - poetry run pytest tests/unit/ -q --tb=short --ignore=tests/unit/services/test_web_research.py
 
   frontend-tests:
     image: node:22-bookworm
