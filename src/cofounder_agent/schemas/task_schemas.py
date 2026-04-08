@@ -299,6 +299,7 @@ class TaskResponse(BaseModel):
     result: Optional[Dict[str, Any]] = None
     error_message: Optional[str] = None
     error_details: Optional[Dict[str, Any]] = None
+    model_selections: Optional[Dict[str, str]] = Field(default_factory=dict)
 
     @property
     def title(self) -> str:
