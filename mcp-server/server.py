@@ -157,8 +157,11 @@ def approve_post(task_id: str) -> str:
 @mcp.tool()
 def reject_post(task_id: str, reason: str = "Rejected by reviewer") -> str:
     """Reject a content task. Provide a reason for feedback to the pipeline."""
-    encoded_reason = urllib.parse.quote(reason)
-    result = _api("POST", f"/api/tasks/{task_id}/approve?approved=false&human_feedback={encoded_reason}")
+    result = _api("POST", f"/api/tasks/{task_id}/reject", data={
+        "reason": reason,
+        "feedback": reason,
+        "allow_revisions": False,
+    })
     status = result.get("status", result.get("error", "?"))
     return f"Rejected: {status} — {reason}"
 

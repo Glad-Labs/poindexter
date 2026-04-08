@@ -248,11 +248,16 @@ async def _build_script_with_llm(title: str, content: str) -> str:
 
     ollama_url = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
     try:
-        model = site_config.get("default_ollama_model") or os.getenv("DEFAULT_OLLAMA_MODEL", "llama3:latest")
+        # Use the podcast-specific model, fall back to writer model, then default
+        model = (
+            site_config.get("podcast_script_model")
+            or site_config.get("pipeline_writer_model", "").replace("ollama/", "")
+            or os.getenv("DEFAULT_OLLAMA_MODEL", "gemma3:27b")
+        )
     except Exception:
-        model = os.getenv("DEFAULT_OLLAMA_MODEL", "llama3:latest")
-    if model == "auto":
-        model = "llama3:latest"
+        model = os.getenv("DEFAULT_OLLAMA_MODEL", "gemma3:27b")
+    if model == "auto" or not model:
+        model = "gemma3:27b"
 
     prompt = f"""Rewrite the following blog article as a podcast script for a single narrator.
 
@@ -281,7 +286,7 @@ ARTICLE CONTENT:
 PODCAST SCRIPT:"""
 
     try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=300.0) as client:
             resp = await client.post(
                 f"{ollama_url}/api/generate",
                 json={
