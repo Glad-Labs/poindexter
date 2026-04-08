@@ -1,44 +1,117 @@
-# Glad Labs — AI-Operated Content Business
+# Glad Labs Engine
 
-**License:** [AGPL-3.0](LICENSE) | **Copyright:** 2025-2026 Matthew M. Gladding
+**Your PC is a content factory.** An open-source AI content pipeline that researches, writes, reviews, and publishes — autonomously.
 
-An autonomous AI system that operates a content media business. One person + AI = unlimited scale.
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-4%2C007_passing-brightgreen)]()
 
-**Live site:** [gladlabs.io](https://www.gladlabs.io)
+## What It Does
 
-## What This Is
+One engine that runs your entire content operation:
 
-A fully autonomous content pipeline that:
+1. **Discovers** trending topics from HackerNews, Dev.to, and your niche
+2. **Researches** each topic with deep web search and source verification
+3. **Writes** long-form posts with real code examples using local LLMs (Ollama)
+4. **Reviews** every draft with multi-model QA scoring on 7 quality dimensions
+5. **Validates** against hallucinations — catches fake people, stats, quotes, and impossible claims
+6. **Publishes** to any frontend via static JSON export (push-only headless CMS)
+7. **Generates** podcast episodes, social posts, and video from each article
+8. **Monitors** itself with 7 Grafana dashboards, auto-heals via brain daemon
 
-- Discovers trending topics from the web
-- Generates quality-scored blog posts using local LLMs
-- Publishes across multiple channels (website, podcast, Dev.to)
-- Monitors itself and self-heals
-- Tracks all costs including GPU electricity
-- Runs 24/7 with zero human intervention
-
-Built for solo operators who want professional media operations without the team.
-
-## Stack
-
-- **Backend:** Python / FastAPI on Railway
-- **Frontend:** Next.js 15 on Vercel
-- **AI:** Local Ollama (RTX 5090) + cloud fallback
-- **Database:** PostgreSQL (Railway + local pgvector)
-- **Monitoring:** Grafana + Prometheus + Telegram alerts
-- **CI/CD:** Woodpecker CI (self-hosted)
-- **Infrastructure:** Docker Compose (9 containers)
+Run it on your machine. Own your data. No cloud lock-in.
 
 ## Quick Start
 
 ```bash
-cp .env.example .env.local    # Configure secrets
-docker compose -f docker-compose.local.yml up -d  # Start everything
-npm run dev                   # Start dev servers
+# 1. Clone and configure
+git clone https://github.com/Glad-Labs/glad-labs-engine.git
+cd glad-labs-engine
+cp .env.example .env          # Edit with your settings
+
+# 2. Start everything (Postgres, Grafana, Prometheus, API, worker)
+docker compose up -d
+
+# 3. Install Ollama (if not already)
+# https://ollama.ai — then pull a model:
+ollama pull llama3.3:70b
+
+# 4. Your first post
+curl -X POST http://localhost:8002/api/tasks \
+  -H "Authorization: Bearer YOUR_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"topic": "Why Docker changed everything", "task_type": "blog_post"}'
 ```
+
+The pipeline runs automatically. Check progress at `http://localhost:3000` (Grafana).
+
+## Architecture
+
+```
+Your PC (the engine)
+├── Content Pipeline (FastAPI)     — researches, writes, scores, publishes
+├── Brain Daemon                   — monitors health, self-heals, auto-restarts
+├── MCP Server                     — control from Claude Desktop / Telegram
+├── Static Export                  — pushes JSON/RSS/Feed to any S3-compatible storage
+├── Grafana + Prometheus           — 7 dashboards, 90+ panels, alerting
+└── PostgreSQL + pgvector          — config, content, embeddings, knowledge graph
+
+Any Frontend (reads static JSON from CDN)
+├── Next.js, Hugo, Astro, custom...
+└── Zero API dependency — just fetch JSON files
+```
+
+## Key Features
+
+| Feature                   | Description                                                                      |
+| ------------------------- | -------------------------------------------------------------------------------- |
+| **Local AI**              | Ollama for inference. Your GPU, your data, zero API costs.                       |
+| **Anti-Hallucination**    | 3 layers: prompt engineering, cross-model QA, deterministic validator            |
+| **Push-Only Output**      | Static JSON + RSS + JSON Feed 1.1 to any S3-compatible storage                   |
+| **DB-as-Config**          | Every setting, prompt, and threshold in PostgreSQL. Change with SQL, no deploys. |
+| **Multi-Site**            | One daemon manages N sites. Each site = config row + storage bucket.             |
+| **Self-Healing**          | Brain daemon monitors all services, restarts failures, alerts via Telegram       |
+| **Production Monitoring** | 7 Grafana dashboards included out of the box                                     |
+| **4,000+ Tests**          | Comprehensive unit test coverage across all services                             |
+
+## Stack
+
+- **Backend:** Python 3.12 / FastAPI / asyncpg
+- **AI:** Ollama (local) + optional cloud fallback (Anthropic, OpenAI, Google)
+- **Database:** PostgreSQL 16 + pgvector for embeddings
+- **Monitoring:** Grafana + Prometheus + Telegram alerts
+- **Storage:** Any S3-compatible (Cloudflare R2, AWS S3, MinIO)
+- **CI/CD:** Woodpecker CI (self-hosted) or GitHub Actions
+- **Infrastructure:** Docker Compose (10 containers)
+
+## Configuration
+
+Everything lives in the `app_settings` database table — not environment variables. The `.env` file bootstraps the system; after that, all config is managed via API or SQL.
+
+```bash
+# View all settings
+curl http://localhost:8002/api/settings -H "Authorization: Bearer $TOKEN"
+
+# Change a setting
+curl -X PUT http://localhost:8002/api/settings/auto_publish_threshold \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"value": "80"}'
+```
+
+## Premium Add-Ons
+
+The engine is free and open-source. For production-quality output:
+
+- **Quick Start Guide ($29)** — Setup to first post in 30 minutes
+- **Premium Prompts ($9/mo)** — Production-grade prompt templates, updated monthly
+
+Available at [gladlabs.io](https://www.gladlabs.io)
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
-GNU Affero General Public License v3.0 — see [LICENSE](LICENSE).
+[GNU Affero General Public License v3.0](LICENSE) — Copyright 2025-2026 Matthew M. Gladding
 
-For documentation, guides, and prompt templates: [gladlabs.io](https://www.gladlabs.io)
+For commercial licensing inquiries: sales@gladlabs.io
