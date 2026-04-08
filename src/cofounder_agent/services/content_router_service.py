@@ -1064,8 +1064,19 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
             content_text = _re.sub(rf"\[IMAGE-{num}[^\]]*\]", "", content_text, count=1)
             logger.warning(f"  ⚠️ [IMAGE-{num}] — no image source available, removed placeholder")
 
-    # Clean up leaked SDXL prompts — lines starting with ': ' right after image tags
+    # Clean up leaked SDXL/image prompts after image tags
+    # Pattern 1: `: *description*` right after an image
     content_text = _re.sub(r'(!\[[^\]]*\]\([^\)]+\))\s*\n\s*:\s+[^\n]+', r'\1', content_text)
+    # Pattern 2: standalone `*A description...*` or `*Imagine a...*` lines (italic image prompts)
+    content_text = _re.sub(
+        r'\n\s*\*(?:A |An |Imagine |Visual |The |Split|Close)[^*]{40,}\*\s*\n',
+        '\n', content_text
+    )
+    # Pattern 3: unclosed `*A description...` (missing closing *) — cap at next blank line
+    content_text = _re.sub(
+        r'\n\s*\*(?:A |An |Imagine |Visual |Split|Close)[^*\n]{40,}(?=\n\n)',
+        '', content_text
+    )
     # Strip photo attribution lines — "*Photo by X on Pexels*" etc.
     content_text = _re.sub(r'\n\s*\*?Photo by [^\n]+(?:Pexels|Unsplash|Pixabay)\*?\s*\n', '\n', content_text, flags=_re.IGNORECASE)
     # Normalize again after image placeholder substitution

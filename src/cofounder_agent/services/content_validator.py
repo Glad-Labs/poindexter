@@ -94,6 +94,12 @@ BRAND_CONTRADICTION_PATTERNS = [
     r"(?:bill|invoice|cost)\s+from\s+(?:OpenAI|Anthropic|Google\s+Cloud)",
 ]
 
+# Leaked image generation prompts — italic descriptions after images
+LEAKED_IMAGE_PROMPT_PATTERNS = [
+    r"(?:^|\n)\s*:\s*\*[A-Z][^*]{30,}\*",  # `: *A split-screen comparison...*`
+    r"(?:^|\n)\s*\*(?:A |An |Imagine |Visual |Split|Close)[^*]{40,}\*",  # standalone `*A description...*`
+]
+
 
 @dataclass
 class ValidationIssue:
@@ -201,7 +207,13 @@ def validate_content(title: str, content: str, topic: str = "") -> ValidationRes
         "Brand contradiction — references paid cloud API: '{matched}'"
     ))
 
-    # 7. Check title for impossible claims (numeric and written-out years)
+    # 7. Check for leaked image generation prompts
+    issues.extend(_check_patterns(
+        full_text, LEAKED_IMAGE_PROMPT_PATTERNS, "warning", "leaked_image_prompt",
+        "Leaked image generation prompt in content: '{matched}'"
+    ))
+
+    # 8. Check title for impossible claims (numeric and written-out years)
     WRITTEN_YEARS = {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
     for word, num in WRITTEN_YEARS.items():
         if re.search(rf"\b{word}\s+years?\b", title, re.IGNORECASE) and num > 1:
