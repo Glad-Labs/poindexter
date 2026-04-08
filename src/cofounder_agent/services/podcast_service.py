@@ -149,8 +149,18 @@ _SPOKEN_REGEX = [
     (re.compile(r"[\w/\\]+\.\w{2,4}(?:\s|$)"), " "),  # file.ext
     # Version numbers — say naturally (v2.0 → version 2.0)
     (re.compile(r"\bv(\d)"), r"version \1"),
-    # Acronym expansions in parentheses — strip entirely (e.g. "CRM (Customer Relationship Management)" → "CRM")
-    (re.compile(r"\b([A-Z]{2,6})\s*\([A-Z][a-z][\w\s]{5,50}\)"), r"\1"),
+    # Acronym with expansion in parentheses — use plain language instead
+    # "SOC (Security Operations Center)" → "security operations center"
+    (re.compile(r"\b[A-Z]{2,6}\s*\(([A-Z][a-z][\w\s]{5,50})\)"), lambda m: m.group(1).lower()),
+    # Standalone acronyms that sound unnatural spoken — replace with plain English
+    (re.compile(r"\bSOC\b"), "security operations"),
+    (re.compile(r"\bCRM\b"), "customer relationship management"),
+    (re.compile(r"\bSLA\b"), "service level agreement"),
+    (re.compile(r"\bKPI\b"), "key performance indicator"),
+    (re.compile(r"\bROI\b"), "return on investment"),
+    (re.compile(r"\bMVP\b"), "minimum viable product"),
+    (re.compile(r"\bPOC\b"), "proof of concept"),
+    (re.compile(r"\bEOL\b"), "end of life"),
     # Parenthetical asides — convert to commas for natural pause
     (re.compile(r"\s*\(([^)]{1,50})\)\s*"), r", \1, "),
 ]
