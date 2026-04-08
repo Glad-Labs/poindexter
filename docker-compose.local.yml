@@ -129,9 +129,9 @@ services:
       - "8280:8000"
     environment:
       WOODPECKER_OPEN: "true"
-      WOODPECKER_HOST: http://localhost:8280
+      WOODPECKER_HOST: http://woodpecker-server:8000
       WOODPECKER_GITEA: "true"
-      WOODPECKER_GITEA_URL: http://localhost:3001
+      WOODPECKER_GITEA_URL: http://gitea:3000
       WOODPECKER_GITEA_SKIP_VERIFY: "true"
       WOODPECKER_GITEA_CLIENT: ${WOODPECKER_GITEA_CLIENT:?Set in .env}
       WOODPECKER_GITEA_SECRET: ${WOODPECKER_GITEA_SECRET:?Set in .env}
