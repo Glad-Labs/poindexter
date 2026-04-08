@@ -122,19 +122,19 @@ services:
   # Woodpecker CI — pipelines (replaces GitHub Actions)
   # ===========================================
   woodpecker-server:
-    image: woodpeckerci/woodpecker-server:v3
+    image: woodpeckerci/woodpecker-server:next
     container_name: gladlabs-woodpecker
     restart: unless-stopped
     ports:
       - "8280:8000"
     environment:
       WOODPECKER_OPEN: "true"
-      WOODPECKER_HOST: http://woodpecker-server:8000
+      WOODPECKER_HOST: http://100.81.93.12:8280
       WOODPECKER_GITEA: "true"
       WOODPECKER_GITEA_URL: http://gitea:3000
       WOODPECKER_GITEA_SKIP_VERIFY: "true"
-      WOODPECKER_GITEA_CLIENT: ${WOODPECKER_GITEA_CLIENT:?Set in .env}
-      WOODPECKER_GITEA_SECRET: ${WOODPECKER_GITEA_SECRET:?Set in .env}
+      WOODPECKER_GITEA_CLIENT: "8fd6377e-3f73-4e47-a75c-37a819d9d5d5"
+      WOODPECKER_GITEA_SECRET: "gto_7yrceuebfnzdak7adsmxq4gwccsougpz7t2zyjz4fl7jpgxj5sta"
       WOODPECKER_SECRET: ${WOODPECKER_SECRET:?Set in .env}
       WOODPECKER_ADMIN: gladlabs
     extra_hosts:
@@ -146,14 +146,17 @@ services:
       - gitea
 
   woodpecker-agent:
-    image: woodpeckerci/woodpecker-agent:v3
+    image: woodpeckerci/woodpecker-agent:next
     container_name: gladlabs-woodpecker-agent
     restart: unless-stopped
     environment:
       WOODPECKER_SERVER: woodpecker-server:9000
-      WOODPECKER_AGENT_SECRET: ${WOODPECKER_SECRET:?Set in .env}
+      WOODPECKER_AGENT_SECRET: "ZSUZYFMJVQBIUKMC7NVEAFL536C37XUYIRKGR4BUPJQACQCNDI4Q===="
+      WOODPECKER_BACKEND_DOCKER_NETWORK: glad-labs-website_default
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - woodpecker-server
 
