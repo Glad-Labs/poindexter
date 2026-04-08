@@ -210,7 +210,8 @@ def _normalize_for_speech(text: str) -> str:
     """Convert written English conventions to natural spoken form."""
     # Simple replacements (DB-configurable via tts_pronunciations)
     for written, spoken in _get_tts_replacements():
-        text = text.replace(written, spoken)
+        # Case-insensitive replace for pronunciation fixes
+        text = re.sub(re.escape(written), spoken, text, flags=re.IGNORECASE)
     # Structural regex patterns (static)
     for pattern, replacement in _SPOKEN_REGEX_STATIC:
         text = pattern.sub(replacement, text)
