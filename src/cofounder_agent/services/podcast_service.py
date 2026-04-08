@@ -124,7 +124,9 @@ _SPOKEN_REPLACEMENTS = [
     ("w/o", "without"),
     # Symbols people don't say
     ("&", "and"),
-    (" - ", ", "),  # em dash as pause
+    ("\u2014", "; "),  # em dash — as pause
+    ("\u2013", "; "),  # en dash – as pause
+    (" - ", ", "),  # ASCII dash as pause
     (" -- ", ", "),
     ("->", "to"),
     ("=>", "becomes"),
@@ -159,9 +161,15 @@ def _normalize_for_speech(text: str) -> str:
         text = text.replace(written, spoken)
     for pattern, replacement in _SPOKEN_REGEX:
         text = pattern.sub(replacement, text)
+    # Smart quotes → straight quotes (TTS handles these better)
+    text = text.replace("\u201c", '"').replace("\u201d", '"')
+    text = text.replace("\u2018", "'").replace("\u2019", "'")
+    # Ellipsis → pause
+    text = text.replace("\u2026", "...")
     # Clean up double spaces and comma-space issues
     text = re.sub(r"  +", " ", text)
     text = re.sub(r",\s*,", ",", text)
+    text = re.sub(r";\s*;", ";", text)
     return text
 
 
