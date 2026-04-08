@@ -60,6 +60,58 @@ API_URL = "http://localhost:8002"
 API_TOKEN = load_api_token()
 AUTH = f"Bearer {API_TOKEN}"
 
+# ---------------------------------------------------------------------------
+# Dynamic settings — loaded from API, refreshed periodically
+# ---------------------------------------------------------------------------
+_SETTINGS_DEFAULTS = {
+    "auto_publish_threshold": 75,
+    "daily_spend_limit": 5.0,
+    "publish_interval": 300,       # 5 minutes
+    "generate_interval": 28800,    # 8 hours
+    "sync_interval": 900,          # 15 minutes
+    "content_gen_count": 3,
+}
+_cached_settings: dict = {}
+_settings_fetched_at: float = 0
+_SETTINGS_REFRESH = 300  # re-fetch every 5 minutes
+
+
+def _load_settings():
+    """Fetch settings from the API and cache them.  Falls back to defaults."""
+    global _cached_settings, _settings_fetched_at
+    try:
+        resp = _api_request(f"{API_URL}/api/settings", timeout=10, retries=1)
+        # API may return a dict or a list of {key, value} rows
+        if isinstance(resp, list):
+            _cached_settings = {item["key"]: item["value"] for item in resp}
+        elif isinstance(resp, dict):
+            _cached_settings = resp
+        else:
+            _cached_settings = {}
+        _settings_fetched_at = time.time()
+        logger.info("Settings loaded from API (%d keys)", len(_cached_settings))
+    except Exception as e:
+        logger.warning("Could not load settings from API, using defaults: %s", e)
+        # Keep stale cache if we had one; otherwise empty → defaults kick in
+
+
+def _setting(key: str):
+    """Return a setting value, refreshing from the API when stale."""
+    if time.time() - _settings_fetched_at > _SETTINGS_REFRESH:
+        _load_settings()
+    raw = _cached_settings.get(key, _SETTINGS_DEFAULTS[key])
+    # Coerce to same type as the default
+    default = _SETTINGS_DEFAULTS[key]
+    try:
+        if isinstance(default, float):
+            return float(raw)
+        if isinstance(default, int):
+            return int(float(raw))  # int(float()) handles "75.0" strings
+    except (ValueError, TypeError):
+        return default
+    return raw
+
+
 def _api_request(url, method="GET", data=None, timeout=30, retries=2):
     """Make an API request with simple retry logic."""
     headers = {"Authorization": AUTH}
@@ -77,10 +129,7 @@ def _api_request(url, method="GET", data=None, timeout=30, retries=2):
     raise last_err
 
 
-PUBLISH_INTERVAL = 300  # 5 minutes
-GENERATE_INTERVAL = 28800  # 8 hours
-OPPORTUNISTIC_INTERVAL = 120  # 2 minutes — check for idle GPU work
-SYNC_INTERVAL = 900  # 15 minutes — bidirectional DB sync
+OPPORTUNISTIC_INTERVAL = 120  # 2 minutes — check for idle GPU work (not worth making configurable)
 
 
 def auto_publish():
@@ -91,7 +140,7 @@ def auto_publish():
     2. QA score threshold — only publishes content scoring >= MIN_PUBLISH_SCORE
        (pipeline multi-model QA already ran; this is a safety net)
     """
-    MIN_PUBLISH_SCORE = 75  # Auto-publish quality content (recalibrated scoring)
+    MIN_PUBLISH_SCORE = _setting("auto_publish_threshold")
 
     published = 0
     rejected = 0
@@ -376,6 +425,9 @@ def main():
     one_shot = "--once" in sys.argv
     logger.info("Glad Labs Daemon starting (once=%s)", one_shot)
 
+    # Load configurable settings from API at startup
+    _load_settings()
+
     last_publish = 0
     last_generate = 0
     last_opportunistic = 0
@@ -385,7 +437,7 @@ def main():
         now = time.time()
 
         # Auto-publish check
-        if now - last_publish >= PUBLISH_INTERVAL:
+        if now - last_publish >= _setting("publish_interval"):
             try:
                 pub, rej = auto_publish()
                 logger.info("Publish cycle done (published=%d, rejected=%d)", pub, rej)
@@ -396,7 +448,7 @@ def main():
             last_publish = now
 
         # Content generation check (with cost guard)
-        if now - last_generate >= GENERATE_INTERVAL:
+        if now - last_generate >= _setting("generate_interval"):
             # Check daily cost before creating more tasks
             # Each task can cost $0.50-5.00 if it hits cloud models
             try:
@@ -406,15 +458,16 @@ def main():
                     timeout=10,
                 ).read())
                 daily_spend = cost_check.get("total_cost", 0) or 0
-                if daily_spend >= 5.0:
-                    logger.warning("COST GUARD: Daily spend $%.2f >= $5.00 — skipping content gen", daily_spend)
+                spend_limit = _setting("daily_spend_limit")
+                if daily_spend >= spend_limit:
+                    logger.warning("COST GUARD: Daily spend $%.2f >= $%.2f — skipping content gen", daily_spend, spend_limit)
                     last_generate = now
                     continue
             except Exception as _e:
                 logger.warning("Operation failed: %s", _e)  # If cost API unavailable, proceed with generation (Ollama is free)
 
             try:
-                generate_content(3)
+                generate_content(int(_setting("content_gen_count")))
             except Exception as e:
                 logger.error("Content generation error: %s", e)
             last_generate = now
@@ -428,7 +481,7 @@ def main():
             last_opportunistic = now
 
         # Bidirectional DB sync (local ↔ Railway prod)
-        if now - last_sync >= SYNC_INTERVAL:
+        if now - last_sync >= _setting("sync_interval"):
             try:
                 run_db_sync()
             except Exception as e:
