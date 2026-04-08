@@ -96,6 +96,7 @@ _SPOKEN_REPLACEMENTS = [
     ("GitFlow", "git flow"),
     ("GitHub", "git hub"),
     ("GitLab", "git lab"),
+    ("DevSecOps", "dev sec ops"),
     ("DevOps", "dev ops"),
     ("DevEx", "dev ex"),
     ("FastAPI", "fast A P I"),
