@@ -391,9 +391,12 @@ def run_opportunistic_task():
         data = json.loads(urllib.request.urlopen(req, timeout=10).read())
         ready_count = len(data.get("tasks", []))
 
-        if ready_count < 10:
-            logger.info("🔋 [OPPORTUNISTIC] Content buffer low (%d), pre-generating 1 task", ready_count)
+        if ready_count < 3:
+            logger.info("[OPPORTUNISTIC] Content buffer low (%d), pre-generating 1 task", ready_count)
             generate_content(1)
+            return
+        else:
+            logger.debug("[OPPORTUNISTIC] Buffer has %d posts, skipping generation", ready_count)
             return
     except Exception:
         pass

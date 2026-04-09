@@ -450,6 +450,27 @@ class TaskExecutor:
                 except Exception:
                     logger.warning("[WEBHOOK] Failed to emit task.completed event", exc_info=True)
 
+                # Auto-curation: reject posts that don't meet minimum quality bar
+                # before bothering the human with a review notification.
+                # Tunable via app_settings key: min_curation_score (default 70)
+                min_curation_score = float(await self._get_setting("min_curation_score", "70"))
+                if 0 < quality_score < min_curation_score:
+                    logger.info(
+                        "[CURATE] Auto-rejecting low-quality post: %s (score %.0f < %.0f)",
+                        topic[:40], quality_score, min_curation_score,
+                    )
+                    await self.database_service.update_task(task_id, {"status": "rejected"})
+                    try:
+                        await emit_webhook_event(
+                            getattr(self.database_service, "cloud_pool", None) or self.database_service.pool,
+                            "task.auto_rejected",
+                            {"task_id": task_id, "topic": topic, "quality_score": quality_score,
+                             "reason": f"score {quality_score:.0f} < {min_curation_score:.0f}"},
+                        )
+                    except Exception:
+                        pass
+                    return
+
                 # Check if human approval is required before publishing
                 auto_published = False
                 try:
