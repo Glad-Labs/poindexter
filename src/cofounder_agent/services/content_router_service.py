@@ -1044,6 +1044,13 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
                     if ct.startswith("application/json"):
                         _sdxl_data = _ir.json()
                         tmp_path = _sdxl_data.get("image_path", "")
+                        # SDXL runs on host — translate host path to container path
+                        from services.site_config import site_config as _sc_img
+                        _host_home = _sc_img.get("host_home", "")
+                        if _host_home and tmp_path.startswith(_host_home):
+                            tmp_path = tmp_path.replace(_host_home, _os.path.expanduser("~"), 1)
+                        # Normalize Windows backslashes to forward slashes
+                        tmp_path = tmp_path.replace("\\", "/")
                         if not tmp_path or not _os.path.exists(tmp_path):
                             raise RuntimeError(f"SDXL returned JSON but image_path missing or invalid: {tmp_path}")
                         logger.info("  [IMAGE-%s] SDXL generated: %s (%dms)", num, _os.path.basename(tmp_path), _sdxl_data.get("generation_time_ms", 0))
