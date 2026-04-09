@@ -1036,7 +1036,7 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
                     async with _hx2.AsyncClient(timeout=120) as _c3:
                         _ir = await _c3.post(f"{sdxl_url}/generate", json={
                             "prompt": sdxl_inline_prompt, "negative_prompt": neg,
-                            "steps": 4, "guidance_scale": 1.0,
+                            "steps": 8, "guidance_scale": 2.0,
                         })
                 if _ir.status_code == 200:
                     # SDXL server returns JSON with image_path, or raw image bytes
