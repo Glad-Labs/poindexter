@@ -142,6 +142,15 @@ async def generate(req: GenerateRequest):
                             width=req.width, height=req.height,
                             model=_model_name, generation_time_ms=elapsed_ms, seed=seed)
 
+@app.post("/unload")
+async def unload():
+    """Explicitly unload the SDXL model from VRAM. Called by the GPU scheduler
+    when the pipeline is switching back to Ollama mode."""
+    if _pipeline is None:
+        return {"status": "already_unloaded"}
+    _unload_pipeline()
+    return {"status": "unloaded", "vram_used_mb": torch.cuda.memory_allocated(0) // 1024 // 1024}
+
 @app.get("/images/{filename}")
 async def get_image(filename: str):
     path = OUTPUT_DIR / filename
