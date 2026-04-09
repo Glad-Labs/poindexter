@@ -72,7 +72,7 @@ class ContentDatabase(DatabaseServiceMixin):
         # Validate and fix data types before insert
         seo_keywords = post_data.get("seo_keywords", "")
         if isinstance(seo_keywords, list):
-            logger.warning(f"⚠️  seo_keywords is list, converting to string: {seo_keywords}")
+            logger.warning("seo_keywords is list, converting to string: %s", seo_keywords)
             seo_keywords = ", ".join(str(kw) for kw in seo_keywords)  # Ensure each item is string
         elif isinstance(seo_keywords, str):
             # Already a string, no conversion needed (was causing character splitting)
@@ -83,7 +83,7 @@ class ContentDatabase(DatabaseServiceMixin):
 
         tag_ids = post_data.get("tag_ids")
         if tag_ids and isinstance(tag_ids, str):
-            logger.warning(f"⚠️  tag_ids is string, converting to list: {tag_ids}")
+            logger.warning("tag_ids is string, converting to list: %s", tag_ids)
             tag_ids = [tag_ids]
 
         # Log insert details at DEBUG to avoid flooding INFO logs (#1327)
@@ -181,7 +181,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 )
                 return ModelConverter.to_post_response(row)
             except Exception as db_error:
-                logger.error(f"❌ DATABASE ERROR while creating post: {db_error}", exc_info=True)
+                logger.error("DATABASE ERROR while creating post: %s", db_error, exc_info=True)
                 raise DatabaseError(f"Failed to create post in database: {str(db_error)}") from db_error
 
     @log_query_performance(
@@ -220,7 +220,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 return ModelConverter.to_post_response(row) if row else None
         except Exception as e:
             logger.error(
-                f"[_get_post_by_slug] ❌ Error getting post by slug '{slug}': {e}", exc_info=True
+                "[_get_post_by_slug] Error getting post by slug '%s': %s", slug, e, exc_info=True
             )
             return None
 
@@ -288,7 +288,7 @@ class ContentDatabase(DatabaseServiceMixin):
                     return False
 
         except Exception as e:
-            logger.error(f"[_update_post] ❌ Error updating post {post_id}: {e}", exc_info=True)
+            logger.error("[_update_post] Error updating post %s: %s", post_id, e, exc_info=True)
             return False
 
     def _cache_get(self, key: str):
@@ -322,7 +322,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 self._cache_set("categories", result)
                 return result
         except Exception as e:
-            logger.error(f"[_get_all_categories] Failed to fetch categories: {e}", exc_info=True)
+            logger.error("[_get_all_categories] Failed to fetch categories: %s", e, exc_info=True)
             return []
 
     @log_query_performance(operation="get_all_tags", category="content_retrieval")
@@ -345,7 +345,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 self._cache_set("tags", result)
                 return result
         except Exception as e:
-            logger.error(f"[_get_all_tags] Failed to fetch tags: {e}", exc_info=True)
+            logger.error("[_get_all_tags] Failed to fetch tags: %s", e, exc_info=True)
             return []
 
     @log_query_performance(operation="get_author_by_name", category="content_retrieval")
@@ -366,7 +366,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 return ModelConverter.to_author_response(row) if row else None
         except Exception as e:
             logger.error(
-                f"[_get_author_by_name] Failed to fetch author by name: {e}", exc_info=True
+                "[_get_author_by_name] Failed to fetch author by name: %s", e, exc_info=True
             )
             return None
 
@@ -429,11 +429,11 @@ class ContentDatabase(DatabaseServiceMixin):
 
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(sql, *params)
-                logger.info(f"✅ Created quality_evaluation for {eval_data['content_id']}")
+                logger.info("Created quality_evaluation for %s", eval_data['content_id'])
                 return ModelConverter.to_quality_evaluation_response(row)
         except Exception as e:
             logger.error(
-                f"[_create_quality_evaluation] ❌ Error creating quality_evaluation: {e}",
+                "[_create_quality_evaluation] Error creating quality_evaluation: %s", e,
                 exc_info=True,
             )
             raise
@@ -475,11 +475,11 @@ class ContentDatabase(DatabaseServiceMixin):
 
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(sql, *params)
-                logger.info(f"✅ Created quality_improvement_log: {initial:.0f} → {improved:.0f}")
+                logger.info("Created quality_improvement_log: %.0f -> %.0f", initial, improved)
                 return ModelConverter.to_quality_improvement_log_response(row)
         except Exception as e:
             logger.error(
-                f"[_create_quality_improvement_log] ❌ Error creating quality_improvement_log: {e}",
+                "[_create_quality_improvement_log] Error creating quality_improvement_log: %s", e,
                 exc_info=True,
             )
             raise
@@ -527,7 +527,7 @@ class ContentDatabase(DatabaseServiceMixin):
                         avg_execution_time = round(float(raw_avg), 2)
                 except (ValueError, TypeError, AttributeError) as e:
                     logger.error(
-                        f"Could not calculate avg execution time (data type error): {e}",
+                        "Could not calculate avg execution time (data type error): %s", e,
                         exc_info=True,
                     )
 
@@ -542,18 +542,18 @@ class ContentDatabase(DatabaseServiceMixin):
                         total_cost = round(float(cost_result["total"]), 2)
                 except (ValueError, TypeError, AttributeError) as e:
                     logger.error(
-                        f"Could not calculate total cost (data type error): {e}",
+                        "Could not calculate total cost (data type error): %s", e,
                         exc_info=True,
                     )
                 except asyncpg.PostgresError as e:
                     # Table may not exist or permissions issue
                     logger.error(
-                        f"Cost tracking not available (database error): {type(e).__name__}",
+                        "Cost tracking not available (database error): %s", type(e).__name__,
                         exc_info=True,
                     )
                 except Exception as e:
                     logger.error(
-                        f"[get_metrics] Unexpected error calculating total cost: {type(e).__name__}: {e}",
+                        "[get_metrics] Unexpected error calculating total cost: %s: %s", type(e).__name__, e,
                         exc_info=True,
                     )
 
@@ -566,7 +566,7 @@ class ContentDatabase(DatabaseServiceMixin):
                     totalCost=total_cost,
                 )
         except Exception as e:
-            logger.error(f"[_get_metrics] ❌ Failed to get metrics: {e}", exc_info=True)
+            logger.error("[_get_metrics] Failed to get metrics: %s", e, exc_info=True)
             return MetricsResponse(
                 totalTasks=0,
                 completedTasks=0,
@@ -626,11 +626,11 @@ class ContentDatabase(DatabaseServiceMixin):
 
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(sql, *params)
-                logger.info(f"✅ Upserted orchestrator_training_data: {train_data['execution_id']}")
+                logger.info("Upserted orchestrator_training_data: %s", train_data['execution_id'])
                 return ModelConverter.to_orchestrator_training_data_response(row)
         except Exception as e:
             logger.error(
-                f"[_create_orchestrator_training_data] ❌ Error creating orchestrator_training_data: {e}",
+                "[_create_orchestrator_training_data] Error creating orchestrator_training_data: %s", e,
                 exc_info=True,
             )
             raise
