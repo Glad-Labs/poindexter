@@ -895,49 +895,83 @@ async def _stage_quality_evaluation(topic, tags, content_text, quality_service, 
 
 
 async def _stage_replace_inline_images(database_service, task_id, topic, content_text, image_service, result):
-    """Stage 2C: Replace [IMAGE-N] placeholders with Pexels images.
+    """Stage 2C: Use Image Decision Agent to plan and generate inline images.
 
+    The agent analyzes the finished article, reasons about what images
+    would best serve each section, and decides SDXL vs Pexels per image.
     Returns the (possibly modified) content_text.
     """
     import re as _re
 
+    # First check for any existing [IMAGE-N] placeholders from the writer
     image_placeholders = _re.findall(r"\[IMAGE-(\d+)(?::\s*([^\]]*))?\]", content_text)
 
-    # If LLM didn't produce placeholders (common with local models), inject them
-    # dynamically based on word count: 1 image per ~500 words, evenly distributed
+    # Use the Image Decision Agent to plan images intelligently
     if not image_placeholders:
-        word_count = len(content_text.split())
-        target_images = max(2, word_count // 300)  # ~5 images per 1500-word post
-        headings = list(_re.finditer(r"^#{2,4} .+$", content_text, _re.MULTILINE))
+        try:
+            from services.image_decision_agent import plan_images
 
-        if headings:
-            # Distribute images evenly across available headings
-            # Skip the first heading (too close to featured image), use the rest
-            usable_headings = headings[1:] if len(headings) > 1 else headings
-            # Pick evenly spaced headings
-            step = max(1, len(usable_headings) // target_images)
-            selected = usable_headings[::step][:target_images]
+            category = result.get("category", "technology")
+            plan = await plan_images(content_text, topic, category, max_images=3)
 
-            insert_positions = []
-            for i, h in enumerate(selected):
-                para_end = content_text.find("\n\n", h.end())
-                if para_end > 0:
-                    # Use heading text as context for image generation
-                    heading_text = _re.sub(r'^#+\s*', '', h.group()).strip()
-                    insert_positions.append((para_end, i + 1, heading_text))
+            if plan.images:
+                # Store the featured image plan for stage 3
+                if plan.featured_image:
+                    result["featured_image_plan"] = {
+                        "source": plan.featured_image.source,
+                        "style": plan.featured_image.style,
+                        "prompt": plan.featured_image.prompt,
+                    }
 
-            # Insert in reverse order to preserve positions
-            for pos, img_num, heading_ctx in reversed(insert_positions):
-                placeholder = f"\n[IMAGE-{img_num}: {heading_ctx} illustration]\n"
-                content_text = content_text[:pos] + placeholder + content_text[pos:]
+                # Inject placeholders at the agent-selected positions
+                headings = list(_re.finditer(r"^#{2,4}\s+(.+)$", content_text, _re.MULTILINE))
+                heading_map = {_re.sub(r'^#+\s*', '', h.group()).strip().lower(): h for h in headings}
 
-            # Re-scan for the injected placeholders
-            image_placeholders = _re.findall(r"\[IMAGE-(\d+)(?::\s*([^\]]*))?\]", content_text)
-            if image_placeholders:
-                logger.info(
-                    "Injected %d image placeholders (%d words, 1 per 500 words)",
-                    len(image_placeholders), word_count,
-                )
+                insert_positions = []
+                for i, img in enumerate(plan.images):
+                    # Find the matching heading
+                    for heading_text, h_match in heading_map.items():
+                        if img.section_heading.lower() in heading_text or heading_text in img.section_heading.lower():
+                            para_end = content_text.find("\n\n", h_match.end())
+                            if para_end > 0:
+                                # Encode source preference in the placeholder
+                                source_hint = f"{img.source}:{img.style}"
+                                insert_positions.append((para_end, i + 1, img.prompt, source_hint))
+                            break
+
+                # Insert in reverse order to preserve positions
+                for pos, img_num, prompt, source_hint in reversed(insert_positions):
+                    placeholder = f"\n[IMAGE-{img_num}: {prompt} ||{source_hint}||]\n"
+                    content_text = content_text[:pos] + placeholder + content_text[pos:]
+
+                image_placeholders = _re.findall(r"\[IMAGE-(\d+)(?::\s*([^\]]*))?\]", content_text)
+                if image_placeholders:
+                    logger.info(
+                        "[IMAGE_AGENT] Injected %d image placeholders via decision agent",
+                        len(image_placeholders),
+                    )
+        except Exception as _agent_err:
+            logger.warning("[IMAGE_AGENT] Decision agent failed, falling back to heuristic: %s", _agent_err)
+            # Fall back to simple heuristic placement
+            word_count = len(content_text.split())
+            target_images = max(2, min(word_count // 400, 4))
+            headings = list(_re.finditer(r"^#{2,4} .+$", content_text, _re.MULTILINE))
+            if headings:
+                usable_headings = headings[1:] if len(headings) > 1 else headings
+                step = max(1, len(usable_headings) // target_images)
+                selected = usable_headings[::step][:target_images]
+                insert_positions = []
+                for i, h in enumerate(selected):
+                    para_end = content_text.find("\n\n", h.end())
+                    if para_end > 0:
+                        heading_text = _re.sub(r'^#+\s*', '', h.group()).strip()
+                        insert_positions.append((para_end, i + 1, heading_text))
+                for pos, img_num, heading_ctx in reversed(insert_positions):
+                    placeholder = f"\n[IMAGE-{img_num}: {heading_ctx} illustration]\n"
+                    content_text = content_text[:pos] + placeholder + content_text[pos:]
+                image_placeholders = _re.findall(r"\[IMAGE-(\d+)(?::\s*([^\]]*))?\]", content_text)
+                if image_placeholders:
+                    logger.info("Injected %d image placeholders (heuristic fallback)", len(image_placeholders))
 
     if not image_placeholders:
         result["stages"]["2c_inline_images_replaced"] = False
