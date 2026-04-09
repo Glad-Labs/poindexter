@@ -226,24 +226,45 @@ def generate_content(count=3):
     import random
 
     TEMPLATES = [
-        "The Developer's Guide to {tech}",
-        "{tech} vs {alt}: Which One Should You Choose?",
-        "Why {domain} Teams Are Adopting {tech}",
-        "Building Production-Ready {tech} Applications",
-        "The Hidden Costs of {tech} Nobody Talks About",
-        "{num} Mistakes Developers Make With {tech}",
-        "The Business Case for {tech} in {domain}",
-        "A Practical Introduction to {tech} for {domain}",
-        "When to Use {tech} Instead of {alt}",
-        "How {tech} Is Reshaping {domain} in 2026",
+        # Question-driven (curiosity)
+        "Why {tech} Is the Secret Weapon for {domain}",
+        "What Happens When You Run {tech} on Your Own Hardware?",
+        "Is {tech} Worth It for Solo Developers in 2026?",
+        "{tech} vs {alt}: The Real Trade-offs Nobody Mentions",
+        # How-to / practical
+        "How to Set Up {tech} for {domain} in Under an Hour",
+        "The {domain} Guide to {tech}: What Actually Works",
+        "{num} Lessons From Running {tech} in Production",
+        "From Zero to {tech}: A Weekend Project That Pays Off",
+        # Opinion / insight
+        "Why I Switched From {alt} to {tech} (And Never Looked Back)",
+        "The Hidden Cost of NOT Using {tech} in Your {domain} Stack",
+        "Stop Overthinking {tech} — Here's What Matters",
+        "What {domain} Gets Wrong About {tech}",
+        # Comparison / decision
+        "When {tech} Beats {alt} (And When It Doesn't)",
+        "{tech} for {domain}: Overkill or Exactly Right?",
     ]
-    TECHS = ["Local LLMs", "AI Agents", "RAG Pipelines", "FastAPI", "PostgreSQL",
-             "Next.js", "Grafana", "Docker", "Prompt Engineering", "AI Orchestration",
-             "Edge Computing", "GraphQL", "Redis", "CI/CD Pipelines", "Terraform"]
-    ALTS = ["Cloud APIs", "REST APIs", "MySQL", "Django", "Manual Deployment", "SaaS Tools"]
-    DOMAINS = ["Startups", "Content Creation", "DevOps", "Small Businesses", "SaaS Companies",
-               "Solo Founders", "E-commerce", "Marketing"]
-    NUMS = ["3", "5", "7", "10"]
+    TECHS = [
+        # AI/ML (core)
+        "Local LLMs", "AI Agents", "RAG Pipelines", "Prompt Engineering",
+        "Ollama", "Fine-Tuning", "Vector Databases", "AI Content Pipelines",
+        # Dev tools
+        "FastAPI", "PostgreSQL", "Next.js", "Docker", "Grafana",
+        "Cloudflare Workers", "Redis", "CI/CD",
+        # Hardware
+        "RTX 5090", "Local GPU Inference", "Self-Hosted AI",
+        # Gaming adjacent
+        "Game Servers", "Unreal Engine", "Godot",
+    ]
+    ALTS = ["Cloud APIs", "OpenAI API", "Managed Services", "SaaS Platforms",
+            "Manual Workflows", "Traditional CMS", "WordPress"]
+    DOMAINS = [
+        "Solo Founders", "Content Creators", "Indie Hackers",
+        "Small Studios", "Side Projects", "AI Startups",
+        "PC Builders", "Self-Hosters", "Open Source Projects",
+    ]
+    NUMS = ["3", "5", "7"]
 
     # Get recent topics AND published post titles to avoid duplicates
     existing = fetch_existing_topics(API_URL, AUTH)
