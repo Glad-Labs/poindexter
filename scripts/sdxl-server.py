@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 
 OUTPUT_DIR = Path(os.path.expanduser("~")) / ".gladlabs" / "generated-images"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-DEFAULT_MODEL = os.getenv("SDXL_MODEL", "ByteDance/SDXL-Lightning")
+DEFAULT_MODEL = os.getenv("SDXL_MODEL", "stabilityai/sdxl-turbo")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("sdxl-server")
 app = FastAPI(title="SDXL Image Server", version="1.0")
