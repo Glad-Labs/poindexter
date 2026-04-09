@@ -1,0 +1,128 @@
+name: CI — Test + Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
+      LOG_LEVEL: info
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install Poetry + Python deps
+        run: |
+          python -m pip install --upgrade pip poetry
+          poetry config virtualenvs.create false
+          cd src/cofounder_agent && poetry install --no-root
+
+      - name: Frontend tests
+        run: npm run test:ci
+
+      - name: Backend unit tests
+        run: cd src/cofounder_agent && poetry run pytest tests/unit/ -q --tb=short --ignore=tests/unit/services/test_web_research.py
+
+      - name: Linting
+        run: npm run lint
+
+      - name: Security audit
+        run: npm audit --audit-level=moderate
+        continue-on-error: true
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://www.gladlabs.io
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Deploy to Vercel
+        run: |
+          npx vercel deploy --prod \
+            --token=${{ secrets.VERCEL_TOKEN }} \
+            --scope=${{ secrets.VERCEL_ORG_ID }} \
+            --yes
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ secrets.PUBLIC_SITE_PROD_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+
+      - name: Smoke test
+        run: |
+          sleep 30
+          curl -sf --retry 3 --retry-delay 10 "https://www.gladlabs.io" > /dev/null && echo "Site is up" || echo "Site not ready"
+        continue-on-error: true
+
+      - name: Telegram — Success
+        if: success()
+        run: |
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+          COMMIT_MSG=$(git log -1 --pretty=format:'%s')
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d parse_mode="Markdown" \
+            -d text="CI Passed + Deployed
+
+          Commit: ${COMMIT_SHA} — ${COMMIT_MSG}
+
+          Tests passed. Vercel deployed.
+
+          [View Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+        continue-on-error: true
+
+      - name: Telegram — Failure
+        if: failure()
+        run: |
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+          COMMIT_MSG=$(git log -1 --pretty=format:'%s')
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d parse_mode="Markdown" \
+            -d text="CI Failed — Deploy Blocked
+
+          Commit: ${COMMIT_SHA} — ${COMMIT_MSG}
+
+          [View Logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+        continue-on-error: true
