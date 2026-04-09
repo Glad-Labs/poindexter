@@ -41,7 +41,7 @@ def _get_company_facts() -> dict:
         "founder_name": _sc.get("company_founder_name", "Founder"),
         "known_employees": set(),
         "real_products": set(_sc.get("company_products", "").split(",")) if _sc.get("company_products") else set(),
-        "real_tech": {"fastapi", "next.js", "postgresql", "ollama", "railway", "vercel", "grafana"},
+        "real_tech": {"fastapi", "next.js", "postgresql", "ollama", "vercel", "grafana"},
     }
 
 

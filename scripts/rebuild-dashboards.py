@@ -4,7 +4,7 @@ import json, subprocess, os
 os.chdir(os.path.join(os.path.dirname(__file__), "..", "infrastructure", "grafana", "dashboards"))
 
 L = {"type": "grafana-postgresql-datasource", "uid": "local-brain-db"}
-R = {"type": "grafana-postgresql-datasource", "uid": "railway-prod-db"}
+R = {"type": "grafana-postgresql-datasource", "uid": "local-postgres"}
 
 def mk(uid, title, desc, panels):
     return {"uid": uid, "title": title, "description": desc, "tags": ["glad-labs"],

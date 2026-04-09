@@ -111,7 +111,7 @@ import asyncpg
 import os
 
 async def migrate():
-    url = os.getenv('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5432/railway')
+    url = os.getenv('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5432/glad_labs_dev')
     try:
         conn = await asyncpg.connect(url)
         print('Connected to production database — migrations will run on app startup')

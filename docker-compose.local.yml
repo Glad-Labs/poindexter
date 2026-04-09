@@ -171,7 +171,7 @@ services:
     container_name: gladlabs-brain-daemon
     restart: unless-stopped
     environment:
-      # Primary DB is local Postgres. Railway kept for public API sync only.
+      # Primary DB is local Postgres.
       DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-gladlabs}:${LOCAL_POSTGRES_PASSWORD:?LOCAL_POSTGRES_PASSWORD must be set}@postgres-local:5432/${LOCAL_POSTGRES_DB:-gladlabs_brain}"
       # CLOUD_DATABASE_URL removed — Railway eliminated. All data on local Postgres + R2.
       # No Telegram tokens — OpenClaw owns Telegram/Discord connections
@@ -208,7 +208,7 @@ services:
       DEVELOPMENT_MODE: "true"
       PORT: "8002"
       # Secrets loaded from DB (app_settings) at startup — no env vars needed
-      # Primary DB is local Postgres. Railway kept for public API sync only.
+      # Primary DB is local Postgres.
       DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-gladlabs}:${LOCAL_POSTGRES_PASSWORD:?LOCAL_POSTGRES_PASSWORD must be set}@postgres-local:5432/${LOCAL_POSTGRES_DB:-gladlabs_brain}"
       # CLOUD_DATABASE_URL removed — Railway eliminated. All data on local Postgres + R2.
       OLLAMA_BASE_URL: "http://host.docker.internal:11434"

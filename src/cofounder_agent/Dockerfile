@@ -32,7 +32,7 @@ RUN chown -R appuser:appgroup /app
 # Switch to non-root user
 USER appuser
 
-# Health check — use /api/health to match Railway's healthcheckPath in railway.json
+# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
     CMD curl -f http://localhost:${PORT:-8000}/api/health || exit 1
 
