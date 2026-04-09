@@ -160,7 +160,7 @@ class OllamaClient:
             preferred = os.getenv("PREFERRED_OLLAMA_MODEL", "")
             if preferred and preferred in installed_names:
                 self._resolved_default = preferred
-                logger.info(f"Auto-resolved model from PREFERRED_OLLAMA_MODEL: {preferred}")
+                logger.info("Auto-resolved model from PREFERRED_OLLAMA_MODEL: %s", preferred)
                 return self._resolved_default
 
             # Filter out embedding models
@@ -170,10 +170,10 @@ class OllamaClient:
                 # Pick largest by file size as a reasonable default
                 best = sorted(gen_models, key=lambda x: x.get("size", 0), reverse=True)[0]
                 self._resolved_default = best["name"]
-                logger.info(f"Auto-resolved default model (largest): {self._resolved_default}")
+                logger.info("Auto-resolved default model (largest): %s", self._resolved_default)
                 return self._resolved_default
         except Exception as e:
-            logger.warning(f"Could not auto-resolve model: {e}")
+            logger.warning("Could not auto-resolve model: %s", e)
 
         # Absolute last resort — caller should handle this model not existing
         return "llama3:latest"
@@ -193,7 +193,7 @@ class OllamaClient:
             response = await self.client.get(f"{self.base_url}/api/tags", timeout=5.0)
             return response.status_code == 200
         except Exception as e:
-            logger.error(f"[check_health] Ollama health check failed: {e}", exc_info=True)
+            logger.error("[check_health] Ollama health check failed: %s", e, exc_info=True)
             return False
 
     async def list_models(self) -> List[Dict[str, Any]]:
@@ -203,7 +203,7 @@ class OllamaClient:
             response.raise_for_status()
             data = response.json()
             models = data.get("models", [])
-            logger.info(f"Found {len(models)} Ollama models")
+            logger.info("Found %d Ollama models", len(models))
             return models
         except Exception as e:
             logger.error("[list_models] Failed to list models", error=str(e), exc_info=True)
@@ -245,7 +245,7 @@ class OllamaClient:
         self._model_cache = profiles
         self._cache_ts = time.time()
 
-        logger.info(f"Built {len(profiles)} model profiles from Ollama")
+        logger.info("Built %d model profiles from Ollama", len(profiles))
         return profiles
 
     def get_model_profile(self, model: str) -> Optional[Dict[str, Any]]:
@@ -366,7 +366,7 @@ class OllamaClient:
             }
 
         except httpx.HTTPError as e:
-            logger.error(f"[generate] Ollama generation failed: {e}", exc_info=True, model=model)
+            logger.error("[generate] Ollama generation failed: %s", e, exc_info=True, model=model)
             raise
 
     async def chat(
@@ -428,7 +428,7 @@ class OllamaClient:
             }
 
         except httpx.HTTPError as e:
-            logger.error(f"[chat] Ollama chat failed: {e}", exc_info=True, model=model)
+            logger.error("[chat] Ollama chat failed: %s", e, exc_info=True, model=model)
             raise
 
     # ========================================================================
@@ -438,17 +438,17 @@ class OllamaClient:
     async def pull_model(self, model: str) -> bool:
         """Pull a model from the Ollama library."""
         try:
-            logger.info(f"Pulling Ollama model: {model}")
+            logger.info("Pulling Ollama model: %s", model)
             response = await self.client.post(
                 f"{self.base_url}/api/pull",
                 json={"name": model},
                 timeout=3600.0,
             )
             response.raise_for_status()
-            logger.info(f"Successfully pulled model: {model}")
+            logger.info("Successfully pulled model: %s", model)
             return True
         except Exception as e:
-            logger.error(f"[pull_model] Failed to pull model {model}", error=str(e), exc_info=True)
+            logger.error("[pull_model] Failed to pull model %s", model, error=str(e), exc_info=True)
             return False
 
     # ========================================================================
@@ -487,7 +487,9 @@ class OllamaClient:
                 if attempt < max_retries - 1:
                     delay = base_delay * (2**attempt)
                     logger.warning(
-                        f"[generate_with_retry] Attempt {attempt + 1} failed, retrying in {delay}s",
+                        "[generate_with_retry] Attempt %d failed, retrying in %ss",
+                        attempt + 1,
+                        delay,
                         error=str(e),
                         model=model,
                     )
@@ -498,7 +500,9 @@ class OllamaClient:
                 if attempt < max_retries - 1:
                     delay = base_delay * (2**attempt)
                     logger.warning(
-                        f"[generate_with_retry] Attempt {attempt + 1} failed, retrying in {delay}s",
+                        "[generate_with_retry] Attempt %d failed, retrying in %ss",
+                        attempt + 1,
+                        delay,
                         error=str(e),
                         model=model,
                     )
@@ -557,7 +561,7 @@ class OllamaClient:
 
         except httpx.HTTPError as e:
             logger.error(
-                f"[stream_generate] Ollama streaming failed: {e}", exc_info=True, model=model
+                "[stream_generate] Ollama streaming failed: %s", e, exc_info=True, model=model
             )
             raise
 
@@ -597,7 +601,7 @@ class OllamaClient:
             return embeddings[0]
 
         except httpx.HTTPError as e:
-            logger.error(f"[embed] Ollama embedding failed: {e}", exc_info=True, model=model)
+            logger.error("[embed] Ollama embedding failed: %s", e, exc_info=True, model=model)
             raise
 
     async def embed_batch(
@@ -637,7 +641,8 @@ class OllamaClient:
 
         except httpx.HTTPError as e:
             logger.error(
-                f"[embed_batch] Ollama batch embedding failed: {e}",
+                "[embed_batch] Ollama batch embedding failed: %s",
+                e,
                 exc_info=True,
                 model=model,
             )
