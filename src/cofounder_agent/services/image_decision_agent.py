@@ -122,7 +122,15 @@ Output ONLY valid JSON (no markdown, no explanation):
 }}"""
 
     try:
-        async with httpx.AsyncClient(timeout=60) as client:
+        async with httpx.AsyncClient(timeout=90) as client:
+            # Verify Ollama is reachable before generating
+            try:
+                health = await client.get(f"{ollama_url}/api/tags", timeout=5)
+                if health.status_code != 200:
+                    raise RuntimeError(f"Ollama not healthy: {health.status_code}")
+            except Exception as conn_err:
+                raise RuntimeError(f"Ollama unavailable at {ollama_url}: {conn_err}") from conn_err
+
             resp = await client.post(f"{ollama_url}/api/generate", json={
                 "model": model,
                 "prompt": prompt,

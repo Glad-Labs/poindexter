@@ -951,27 +951,10 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
                         len(image_placeholders),
                     )
         except Exception as _agent_err:
-            logger.warning("[IMAGE_AGENT] Decision agent failed, falling back to heuristic: %s", _agent_err)
-            # Fall back to simple heuristic placement
-            word_count = len(content_text.split())
-            target_images = max(2, min(word_count // 400, 4))
-            headings = list(_re.finditer(r"^#{2,4} .+$", content_text, _re.MULTILINE))
-            if headings:
-                usable_headings = headings[1:] if len(headings) > 1 else headings
-                step = max(1, len(usable_headings) // target_images)
-                selected = usable_headings[::step][:target_images]
-                insert_positions = []
-                for i, h in enumerate(selected):
-                    para_end = content_text.find("\n\n", h.end())
-                    if para_end > 0:
-                        heading_text = _re.sub(r'^#+\s*', '', h.group()).strip()
-                        insert_positions.append((para_end, i + 1, heading_text))
-                for pos, img_num, heading_ctx in reversed(insert_positions):
-                    placeholder = f"\n[IMAGE-{img_num}: {heading_ctx} illustration]\n"
-                    content_text = content_text[:pos] + placeholder + content_text[pos:]
-                image_placeholders = _re.findall(r"\[IMAGE-(\d+)(?::\s*([^\]]*))?\]", content_text)
-                if image_placeholders:
-                    logger.info("Injected %d image placeholders (heuristic fallback)", len(image_placeholders))
+            # Fail loud — no silent heuristic fallback. If the Image Decision Agent
+            # can't run, that's a pipeline orchestration bug (Ollama not loaded).
+            logger.error("[IMAGE_AGENT] Image Decision Agent FAILED: %s", _agent_err)
+            result["stages"]["2c_image_agent_error"] = str(_agent_err)
 
     if not image_placeholders:
         result["stages"]["2c_inline_images_replaced"] = False
