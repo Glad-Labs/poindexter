@@ -111,12 +111,14 @@ class AdminDatabase(DatabaseServiceMixin):
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(sql, *params)
                 logger.info(
-                    f"✅ Logged cost for {cost_log['phase']}: ${cost_log.get('cost_usd', 0):.6f} ({cost_log['model']})"
+                    "Logged cost for %s: $%.6f (%s)",
+                    cost_log['phase'], cost_log.get('cost_usd', 0), cost_log['model'],
                 )
                 return ModelConverter.to_cost_log_response(row)
         except Exception as e:
             logger.error(
-                f"[log_cost] Error logging cost for task_id={cost_log.get('task_id')}, phase={cost_log.get('phase')}, model={cost_log.get('model')}: {str(e)}",
+                "[log_cost] Error logging cost for task_id=%s, phase=%s, model=%s: %s",
+                cost_log.get('task_id'), cost_log.get('phase'), cost_log.get('model'), e,
                 exc_info=True,
             )
             raise
@@ -186,12 +188,14 @@ class AdminDatabase(DatabaseServiceMixin):
                         response_data[phase] = breakdown[phase]
 
                 logger.info(
-                    f"✅ Retrieved costs for task {task_id}: ${total_cost:.6f} across {len(entries)} entries"
+                    "Retrieved costs for task %s: $%.6f across %d entries",
+                    task_id, total_cost, len(entries),
                 )
                 return TaskCostBreakdownResponse(**response_data)
         except Exception as e:
             logger.error(
-                f"[get_task_costs] Error getting task costs for task_id={task_id}: {str(e)}",
+                "[get_task_costs] Error getting task costs for task_id=%s: %s",
+                task_id, e,
                 exc_info=True,
             )
             return TaskCostBreakdownResponse(total=0.0, entries=[])  # type: ignore[call-arg]
@@ -223,9 +227,8 @@ class AdminDatabase(DatabaseServiceMixin):
 
             if pool_utilization > 0.8:
                 logger.warning(
-                    f"[db_pool] Connection pool near exhaustion: "
-                    f"used={pool_used} total={pool_size} "
-                    f"utilization={pool_utilization:.1%}"
+                    "[db_pool] Connection pool near exhaustion: used=%d total=%d utilization=%.1f%%",
+                    pool_used, pool_size, pool_utilization * 100,
                 )
 
             return {
@@ -242,7 +245,8 @@ class AdminDatabase(DatabaseServiceMixin):
             }
         except Exception as e:
             logger.error(
-                f"[health_check] Health check failed for service={service}: {str(e)}",
+                "[health_check] Health check failed for service=%s: %s",
+                service, e,
                 exc_info=True,
             )
             return {
@@ -281,7 +285,8 @@ class AdminDatabase(DatabaseServiceMixin):
                 return result
         except Exception as e:
             logger.error(
-                f"[get_setting] Failed to get setting key={key}: {str(e)}",
+                "[get_setting] Failed to get setting key=%s: %s",
+                key, e,
                 exc_info=True,
             )
             return None
@@ -317,7 +322,8 @@ class AdminDatabase(DatabaseServiceMixin):
                 return result
         except Exception as e:
             logger.error(
-                f"[get_all_settings] Failed to get settings for category={category}: {str(e)}",
+                "[get_all_settings] Failed to get settings for category=%s: %s",
+                category, e,
                 exc_info=True,
             )
             return []
@@ -366,11 +372,12 @@ class AdminDatabase(DatabaseServiceMixin):
                     description,
                 )
                 self._invalidate_settings_cache()
-                logger.info(f"✅ Setting saved: {key} = {value_str[:50]}")
+                logger.info("Setting saved: %s = %s", key, value_str[:50])
                 return True
         except Exception as e:
             logger.error(
-                f"[set_setting] Failed to set setting key={key}: {str(e)}",
+                "[set_setting] Failed to set setting key=%s: %s",
+                key, e,
                 exc_info=True,
             )
             return False
@@ -392,11 +399,12 @@ class AdminDatabase(DatabaseServiceMixin):
                     "UPDATE settings SET is_active = false, modified_at = NOW() WHERE key = $1", key
                 )
                 self._invalidate_settings_cache()
-                logger.info(f"✅ Setting deleted: {key}")
+                logger.info("Setting deleted: %s", key)
                 return True
         except Exception as e:
             logger.error(
-                f"[delete_setting] Failed to delete setting key={key}: {str(e)}",
+                "[delete_setting] Failed to delete setting key=%s: %s",
+                key, e,
                 exc_info=True,
             )
             return False
@@ -446,7 +454,8 @@ class AdminDatabase(DatabaseServiceMixin):
                 return result or False
         except Exception as e:
             logger.error(
-                f"[setting_exists] Failed to check setting key={key}: {str(e)}",
+                "[setting_exists] Failed to check setting key=%s: %s",
+                key, e,
                 exc_info=True,
             )
             return False
