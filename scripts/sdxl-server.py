@@ -1,157 +1,119 @@
-"""SDXL Image Generation Server — runs on host GPU, serves via HTTP.
+"""
+SDXL Image Generation Server - standalone HTTP service on the host GPU.
 
-Listens on port 9836. Worker calls POST /generate with a prompt to get images.
-Uses SDXL Lightning (4-step) for fast generation on RTX 5090.
+One service, one GPU, unlimited callers.
+Runs on host machine with direct RTX 5090 access.
+Docker containers call via host.docker.internal:9836.
 
 Usage:
-    pythonw scripts/sdxl-server.py     # windowless background
-    python scripts/sdxl-server.py      # interactive
+    python scripts/sdxl-server.py
+    pythonw scripts/sdxl-server.py
+
+API:
+    POST /generate  - generate image from prompt
+    GET  /health    - check GPU status
+    GET  /images/{filename} - serve generated image
 """
-import json
-import os
-import sys
-import time
-import uuid
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import argparse, logging, os, time, uuid
 from pathlib import Path
+import torch, uvicorn
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 
-import torch
-
-PORT = 9836
-OUTPUT_DIR = Path.home() / "Downloads" / "glad-labs-generated-images"
+OUTPUT_DIR = Path(os.path.expanduser("~")) / ".gladlabs" / "generated-images"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-# Lazy-load pipeline on first request
+DEFAULT_MODEL = "stabilityai/sdxl-turbo"
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger("sdxl-server")
+app = FastAPI(title="SDXL Image Server", version="1.0")
 _pipeline = None
-_device = "cuda" if torch.cuda.is_available() else "cpu"
+_model_name = None
 
+class GenerateRequest(BaseModel):
+    prompt: str
+    negative_prompt: str = Field(default="text, words, letters, watermark, face, person, hands, blurry, low quality, deformed")
+    width: int = Field(default=1024, ge=256, le=2048)
+    height: int = Field(default=1024, ge=256, le=2048)
+    steps: int = Field(default=4, ge=1, le=50)
+    guidance_scale: float = Field(default=0.0, ge=0, le=20)
+    seed: int = Field(default=-1)
 
-def _get_pipeline():
-    """Load SDXL Lightning pipeline (first call takes ~30s to download/load)."""
-    global _pipeline
+class GenerateResponse(BaseModel):
+    image_path: str
+    filename: str
+    width: int
+    height: int
+    model: str
+    generation_time_ms: int
+    seed: int
+
+def _load_pipeline():
+    global _pipeline, _model_name
     if _pipeline is not None:
         return _pipeline
-
-    print(f"Loading SDXL Lightning on {_device}...")
     from diffusers import StableDiffusionXLPipeline, EulerDiscreteScheduler
-    from huggingface_hub import hf_hub_download
-
-    # Load base SDXL
+    logger.info("Loading %s on %s (%d MB VRAM)", DEFAULT_MODEL,
+                torch.cuda.get_device_name(0),
+                torch.cuda.get_device_properties(0).total_mem // 1024 // 1024)
     pipe = StableDiffusionXLPipeline.from_pretrained(
-        "stabilityai/stable-diffusion-xl-base-1.0",
-        torch_dtype=torch.float16 if _device == "cuda" else torch.float32,
-        variant="fp16" if _device == "cuda" else None,
-    )
-
-    # Apply Lightning LoRA for 4-step generation
-    pipe.load_lora_weights(
-        hf_hub_download(
-            "ByteDance/SDXL-Lightning",
-            "sdxl_lightning_4step_lora.safetensors",
-        )
-    )
-    pipe.fuse_lora()
-
-    # Use Euler scheduler for Lightning
-    pipe.scheduler = EulerDiscreteScheduler.from_config(
-        pipe.scheduler.config, timestep_spacing="trailing"
-    )
-
-    pipe = pipe.to(_device)
-
-    # Memory optimizations
-    if _device == "cuda":
-        pipe.enable_attention_slicing()
-
+        DEFAULT_MODEL, torch_dtype=torch.float16, variant="fp16", use_safetensors=True)
+    pipe.scheduler = EulerDiscreteScheduler.from_config(pipe.scheduler.config)
+    pipe = pipe.to("cuda")
+    pipe.enable_attention_slicing()
+    try:
+        pipe.enable_xformers_memory_efficient_attention()
+    except Exception:
+        pass
     _pipeline = pipe
-    print(f"SDXL Lightning loaded on {_device} ({torch.cuda.get_device_name(0)})")
-    return _pipeline
+    _model_name = DEFAULT_MODEL
+    logger.info("SDXL ready")
+    return pipe
 
+@app.get("/health")
+async def health():
+    gpu_ok = torch.cuda.is_available()
+    return {"status": "ready" if _pipeline else "idle", "model": _model_name,
+            "gpu": torch.cuda.get_device_name(0) if gpu_ok else None,
+            "vram_total_mb": torch.cuda.get_device_properties(0).total_mem // 1024 // 1024 if gpu_ok else 0,
+            "gpu_available": gpu_ok}
 
-def _generate(prompt: str, negative_prompt: str = "", steps: int = 4, guidance: float = 1.0) -> str:
-    """Generate an image and return the file path."""
-    pipe = _get_pipeline()
+@app.post("/generate", response_model=GenerateResponse)
+async def generate(req: GenerateRequest):
+    pipe = _load_pipeline()
+    seed = req.seed if req.seed >= 0 else int(torch.randint(0, 2**32, (1,)).item())
+    generator = torch.Generator(device="cuda").manual_seed(seed)
+    filename = f"sdxl_{uuid.uuid4().hex[:8]}.png"
+    output_path = OUTPUT_DIR / filename
+    logger.info("Generating: %s... (%dx%d, %d steps)", req.prompt[:60], req.width, req.height, req.steps)
+    start = time.time()
+    try:
+        result = pipe(prompt=req.prompt, negative_prompt=req.negative_prompt,
+                      width=req.width, height=req.height, num_inference_steps=req.steps,
+                      guidance_scale=req.guidance_scale, generator=generator)
+        result.images[0].save(str(output_path))
+    except torch.cuda.OutOfMemoryError:
+        torch.cuda.empty_cache()
+        raise HTTPException(status_code=503, detail="GPU OOM")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    elapsed_ms = int((time.time() - start) * 1000)
+    logger.info("Generated: %s (%d ms)", filename, elapsed_ms)
+    return GenerateResponse(image_path=str(output_path), filename=filename,
+                            width=req.width, height=req.height,
+                            model=_model_name, generation_time_ms=elapsed_ms, seed=seed)
 
-    default_negative = "blurry, low quality, distorted, watermark, text, ugly, deformed"
-    neg = f"{default_negative}, {negative_prompt}" if negative_prompt else default_negative
-
-    with torch.no_grad():
-        image = pipe(
-            prompt=prompt,
-            negative_prompt=neg,
-            num_inference_steps=steps,
-            guidance_scale=guidance,
-            width=1024,
-            height=576,  # 16:9 for blog headers
-        ).images[0]
-
-    filename = f"{uuid.uuid4().hex[:12]}.png"
-    filepath = OUTPUT_DIR / filename
-    image.save(str(filepath))
-    return str(filepath)
-
-
-class SDXLHandler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        if self.path == "/generate":
-            content_length = int(self.headers.get("Content-Length", 0))
-            body = json.loads(self.rfile.read(content_length)) if content_length else {}
-
-            prompt = body.get("prompt", "")
-            if not prompt:
-                self._respond(400, {"error": "prompt is required"})
-                return
-
-            negative = body.get("negative_prompt", "")
-            steps = body.get("steps", 4)
-            guidance = body.get("guidance_scale", 1.0)
-
-            try:
-                start = time.time()
-                filepath = _generate(prompt, negative, steps, guidance)
-                elapsed = time.time() - start
-
-                # Return image bytes directly
-                with open(filepath, "rb") as f:
-                    img_data = f.read()
-                self.send_response(200)
-                self.send_header("Content-Type", "image/png")
-                self.send_header("Content-Length", str(len(img_data)))
-                self.send_header("X-Elapsed-Seconds", str(round(elapsed, 2)))
-                self.send_header("X-Local-Path", filepath)
-                self.end_headers()
-                self.wfile.write(img_data)
-            except Exception as e:
-                self._respond(500, {"error": str(e)})
-        else:
-            self._respond(200, {"service": "SDXL Lightning", "device": _device, "endpoint": "POST /generate"})
-
-    def do_GET(self):
-        if self.path == "/health":
-            self._respond(200, {
-                "status": "ok",
-                "model_loaded": _pipeline is not None,
-                "device": _device,
-                "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "N/A",
-            })
-        else:
-            self._respond(200, {"service": "SDXL Lightning Server", "port": PORT})
-
-    def _respond(self, code, data):
-        body = json.dumps(data).encode()
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def log_message(self, format, *args):
-        pass  # Silence request logging
-
+@app.get("/images/{filename}")
+async def get_image(filename: str):
+    path = OUTPUT_DIR / filename
+    if not path.exists():
+        raise HTTPException(status_code=404)
+    return FileResponse(str(path), media_type="image/png")
 
 if __name__ == "__main__":
-    server = HTTPServer(("0.0.0.0", PORT), SDXLHandler)
-    print(f"SDXL Lightning server on :{PORT} (device: {_device})")
-    print(f"Output dir: {OUTPUT_DIR}")
-    print("Model loads lazily on first /generate request")
-    server.serve_forever()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--port", type=int, default=9836)
+    parser.add_argument("--host", default="0.0.0.0")
+    args = parser.parse_args()
+    logger.info("SDXL server starting on %s:%d", args.host, args.port)
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
