@@ -1,0 +1,31 @@
+name: Release Please
+
+on:
+    push:
+        branches:
+            - main
+
+permissions:
+    contents: write
+    pull-requests: write
+
+jobs:
+    release-please:
+        runs-on: ubuntu-latest
+
+        # Skip version bump commits from the old auto-bump system
+        if: "!contains(github.event.head_commit.message, '[skip ci]')"
+
+        steps:
+            - name: "\U0001F4E6 Run Release Please"
+              id: release
+              uses: googleapis/release-please-action@c3fc4de07084f75a2b61a5b933069bda6edf3d5c # v4
+              with:
+                  release-type: node
+                  # Manifest mode: reads config from release-please-config.json
+                  # and tracks versions in .release-please-manifest.json
+                  config-file: release-please-config.json
+                  manifest-file: .release-please-manifest.json
+
+            # Version bumps are handled by extra-files in release-please-config.json
+            # GitHub Release + tag is created on main by deploy-production-with-environments.yml
