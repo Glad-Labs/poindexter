@@ -2,7 +2,7 @@
 Dev.to Cross-Posting Service
 
 Automatically cross-posts published blog content to Dev.to with a canonical URL
-pointing back to gladlabs.io. Articles are created as drafts so they can be
+pointing back to the site. Articles are created as drafts so they can be
 reviewed before going live on Dev.to.
 
 The Dev.to API key is stored in app_settings (key: devto_api_key). If not
@@ -15,7 +15,7 @@ Usage:
     result = await svc.cross_post(
         title="Why Local LLMs Beat Cloud APIs",
         content_markdown="## Introduction\n\nLocal LLMs are...",
-        canonical_url="https://www.gladlabs.io/posts/why-local-llms-beat-cloud-apis",
+        canonical_url="https://example.com/posts/why-local-llms-beat-cloud-apis",
         tags=["llm", "selfhosting", "ai"],
     )
 """
@@ -64,7 +64,7 @@ class DevToCrossPostService:
     def _clean_markdown(content: str) -> str:
         """Prepare markdown for Dev.to.
 
-        - Converts relative internal links to absolute gladlabs.io URLs
+        - Converts relative internal links to absolute URLs
         - Strips HTML-only elements (iframes, script tags, custom components)
         - Removes any HTML comments
         """
@@ -137,7 +137,7 @@ class DevToCrossPostService:
         Args:
             title: Article title
             content_markdown: Full markdown body
-            canonical_url: The gladlabs.io URL (set as canonical for SEO)
+            canonical_url: The original post URL (set as canonical for SEO)
             tags: Up to 4 tags (will be normalized)
 
         Returns:

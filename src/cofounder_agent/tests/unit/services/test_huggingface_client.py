@@ -64,7 +64,7 @@ class TestHuggingFaceClientInit:
     def test_no_token_allowed(self, monkeypatch):
         monkeypatch.delenv("HUGGINGFACE_API_TOKEN", raising=False)
         client = HuggingFaceClient()
-        assert client.api_token is None
+        assert not client.api_token  # empty string or None
 
     def test_base_url_set(self):
         client = HuggingFaceClient()

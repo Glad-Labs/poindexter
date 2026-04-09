@@ -33,10 +33,14 @@ from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL") or os.getenv("OLLAMA_HOST") or "http://host.docker.internal:11434"
+def _sc_get(key: str, default: str = "") -> str:
+    from services.site_config import site_config
+    return site_config.get(key, default)
+
+OLLAMA_BASE_URL = _sc_get("ollama_base_url") or _sc_get("ollama_host") or "http://host.docker.internal:11434"
 
 # nvidia-smi prometheus exporter on the host
-NVIDIA_EXPORTER_URL = os.getenv("NVIDIA_EXPORTER_URL", "http://host.docker.internal:9835/metrics")
+NVIDIA_EXPORTER_URL = _sc_get("nvidia_exporter_url", "http://host.docker.internal:9835/metrics")
 
 # Models under this VRAM threshold (in GB) skip the lock — they can coexist.
 SMALL_MODEL_THRESHOLD_GB = 2.0
@@ -230,7 +234,7 @@ class GPUScheduler:
 
     async def _unload_sdxl(self):
         """Tell the SDXL server to unload its model and free VRAM immediately."""
-        sdxl_url = os.getenv("SDXL_SERVER_URL", "http://localhost:9836")
+        sdxl_url = _sc_get("sdxl_server_url", "http://localhost:9836")
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.post(f"{sdxl_url}/unload")

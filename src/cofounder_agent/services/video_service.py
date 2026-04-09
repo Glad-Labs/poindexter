@@ -24,12 +24,13 @@ from typing import Optional
 import httpx
 
 from services.logger_config import get_logger
+from services.site_config import site_config
 
 logger = get_logger(__name__)
 
 VIDEO_DIR = Path(os.path.expanduser("~")) / ".gladlabs" / "video"
-VIDEO_SERVER_URL = os.getenv("VIDEO_SERVER_URL", "http://host.docker.internal:9837")
-SDXL_SERVER_URL = os.getenv("SDXL_SERVER_URL", "http://host.docker.internal:9836")
+VIDEO_SERVER_URL = site_config.get("video_server_url", "http://host.docker.internal:9837")
+SDXL_SERVER_URL = site_config.get("sdxl_server_url", "http://host.docker.internal:9836")
 
 
 @dataclass
@@ -51,7 +52,7 @@ async def _generate_images_for_video(
     Uses Ollama to create topic-specific prompts, then SDXL to generate images.
     Returns list of local file paths to generated images.
     """
-    ollama_url = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+    ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
     # Use llama3 for prompt generation — some models (glm, qwen thinking mode) return empty
     model = "llama3:latest"
 
@@ -283,7 +284,7 @@ async def generate_video_for_post(
 
     # Convert container paths to host paths for the video server
     # Container mount: /root/.gladlabs → C:/Users/mattm/.gladlabs (bind mount)
-    host_home = os.getenv("HOST_HOME", "C:/Users/mattm")
+    host_home = site_config.get("host_home", "C:/Users/mattm")
     def _to_host_path(container_path: str) -> str:
         return container_path.replace("/root/.gladlabs", f"{host_home}/.gladlabs")
 
@@ -341,7 +342,7 @@ async def _generate_short_summary_audio(
     Uses Ollama to write a tight ~150-word hook + key takeaways,
     then Edge TTS to convert to speech.
     """
-    ollama_url = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+    ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
     model = "llama3:latest"
 
     # Strip markdown for cleaner input
@@ -466,7 +467,7 @@ async def generate_short_video_for_post(
     if not image_paths:
         return VideoResult(success=False, error="No images could be generated")
 
-    host_home = os.getenv("HOST_HOME", "C:/Users/mattm")
+    host_home = site_config.get("host_home", "C:/Users/mattm")
     def _to_host_path(container_path: str) -> str:
         return container_path.replace("/root/.gladlabs", f"{host_home}/.gladlabs")
 

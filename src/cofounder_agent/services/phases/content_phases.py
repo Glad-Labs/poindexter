@@ -543,13 +543,8 @@ class CaptureTrainingDataPhase(BasePhase):
         scores = inputs.get("scores", {})
 
         # Feature flag: opt-out via config or environment variable
-        import os
-
-        try:
-            from services.site_config import site_config
-            _capture_flag = site_config.get("enable_training_capture") or os.getenv("ENABLE_TRAINING_CAPTURE", "true")
-        except Exception:
-            _capture_flag = os.getenv("ENABLE_TRAINING_CAPTURE", "true")
+        from services.site_config import site_config
+        _capture_flag = site_config.get("enable_training_capture", "true")
         if str(_capture_flag).lower() == "false":
             logger.info("[CaptureTrainingDataPhase] Skipped (ENABLE_TRAINING_CAPTURE=false)")
             self.status = "completed"

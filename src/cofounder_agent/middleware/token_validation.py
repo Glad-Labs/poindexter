@@ -9,7 +9,6 @@ Uses:
 - TokenManager for OAuth token status checking (optional)
 """
 
-import os
 from typing import Callable
 
 from fastapi import Request, status
@@ -17,6 +16,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 
 from services.logger_config import get_logger
+from services.site_config import site_config
 
 logger = get_logger(__name__)
 
@@ -74,8 +74,8 @@ class TokenValidationMiddleware(BaseHTTPMiddleware):
             # Guard: DISABLE_AUTH_FOR_DEV only honoured when DEVELOPMENT_MODE=true,
             # ensuring it never works on staging or production (#1219).
             if (
-                os.getenv("DISABLE_AUTH_FOR_DEV", "false").lower() == "true"
-                and os.getenv("DEVELOPMENT_MODE", "false").lower() == "true"
+                site_config.get("disable_auth_for_dev", "false").lower() == "true"
+                and site_config.get("development_mode", "false").lower() == "true"
             ):
                 logger.info(
                     f"[TokenValidation] DISABLE_AUTH_FOR_DEV=true, bypassing auth for {request.url.path}"

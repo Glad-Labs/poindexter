@@ -30,28 +30,22 @@ logger = get_logger(__name__)
 # ============================================================================
 
 def _sc_get(key: str, default: str = "") -> str:
-    """Get from site_config with env fallback (lazy import to avoid circular deps)."""
-    try:
-        from services.site_config import site_config
-        val = site_config.get(key)
-        if val:
-            return val
-    except Exception:
-        pass
-    return os.getenv(key.upper(), default)
+    """Get from site_config (falls back to env automatically)."""
+    from services.site_config import site_config
+    return site_config.get(key, default)
 
-DEFAULT_MODEL = _sc_get("default_ollama_model", os.getenv("DEFAULT_OLLAMA_MODEL", "auto"))
+DEFAULT_MODEL = _sc_get("default_ollama_model", "auto")
 DEFAULT_BASE_URL = (
-    os.getenv("OLLAMA_BASE_URL") or os.getenv("OLLAMA_HOST") or "http://host.docker.internal:11434"
+    _sc_get("ollama_base_url") or _sc_get("ollama_host") or "http://host.docker.internal:11434"
 )
 
 # GPU electricity cost defaults (RTX 5090: 575W TDP, ~300W typical inference)
-DEFAULT_GPU_POWER_WATTS = float(_sc_get("gpu_inference_watts", os.getenv("GPU_POWER_WATTS", "300")))
-DEFAULT_ELECTRICITY_RATE_KWH = float(_sc_get("electricity_rate_kwh", os.getenv("ELECTRICITY_RATE_KWH", "0.12")))
+DEFAULT_GPU_POWER_WATTS = float(_sc_get("gpu_inference_watts", "300"))
+DEFAULT_ELECTRICITY_RATE_KWH = float(_sc_get("electricity_rate_kwh", "0.12"))
 
 # Context window limit — prevents models from allocating massive KV caches.
 # Default 8192 is plenty for article generation and saves ~15GB VRAM vs 65K context.
-DEFAULT_NUM_CTX = int(_sc_get("ollama_num_ctx", os.getenv("OLLAMA_NUM_CTX", "8192")))
+DEFAULT_NUM_CTX = int(_sc_get("ollama_num_ctx", "8192"))
 
 
 # ============================================================================
@@ -156,8 +150,8 @@ class OllamaClient:
             models = await self.list_models()
             installed_names = {m.get("name", "") for m in models}
 
-            # Check env var first — user knows which model is best for their hardware
-            preferred = os.getenv("PREFERRED_OLLAMA_MODEL", "")
+            # Check config first — user knows which model is best for their hardware
+            preferred = _sc_get("preferred_ollama_model", "")
             if preferred and preferred in installed_names:
                 self._resolved_default = preferred
                 logger.info("Auto-resolved model from PREFERRED_OLLAMA_MODEL: %s", preferred)

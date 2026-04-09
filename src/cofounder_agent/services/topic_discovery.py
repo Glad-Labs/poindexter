@@ -494,10 +494,11 @@ class TopicDiscovery:
 
         return topics
 
-    # Keywords that indicate a topic is relevant to Glad Labs' niche.
+    # Keywords that indicate a topic is relevant to this site's niche.
     # KEEP THIS TIGHT — overly broad terms like "software", "code", "data",
     # "model", "cloud", "server" match nearly everything from HN and produce
     # off-brand content. Use multi-word phrases when possible.
+    # Override via app_settings key "brand_keywords" (comma-separated).
     _BRAND_KEYWORDS = {
         # AI / ML (core niche)
         "ai", "artificial intelligence", "llm", "language model", "gpt", "claude",
@@ -544,7 +545,7 @@ class TopicDiscovery:
 
     @staticmethod
     def _is_brand_relevant(title: str) -> bool:
-        """Check if a topic is relevant to Glad Labs' niche.
+        """Check if a topic is relevant to the site's niche.
 
         Uses word-boundary matching to avoid false positives like
         'farmer' matching 'arm' or 'autocross' matching 'solo'.

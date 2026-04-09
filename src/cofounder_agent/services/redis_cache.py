@@ -28,6 +28,7 @@ import os
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 
 from services.logger_config import get_logger
+from services.site_config import site_config
 
 try:
     import redis.asyncio as aioredis  # type: ignore[import-untyped]
@@ -108,9 +109,9 @@ class RedisCache:
             logger.warning("Redis not available - caching disabled")
             return cls(redis_instance=None, enabled=False)
 
-        # Get configuration from environment
-        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-        redis_enabled = os.getenv("REDIS_ENABLED", "true").lower() in ("true", "1", "yes")
+        # Get configuration from site_config (falls back to env vars)
+        redis_url = site_config.get("redis_url", "redis://localhost:6379/0")
+        redis_enabled = site_config.get("redis_enabled", "true").lower() in ("true", "1", "yes")
 
         if not redis_enabled:
             logger.info("Redis disabled via REDIS_ENABLED=false")

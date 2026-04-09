@@ -218,8 +218,8 @@ def _build_sitemap(posts: List[Dict], categories: List[Dict], site_url: str) -> 
 
 async def export_post(pool, slug: str) -> bool:
     """Incremental export — called when a single post is published or updated."""
-    site_url = site_config.get("public_site_url", "https://www.gladlabs.io")
-    site_title = site_config.get("site_title", "Glad Labs")
+    site_url = site_config.get("public_site_url") or site_config.require("site_url")
+    site_title = site_config.get("site_title") or site_config.require("site_name")
     success = True
 
     try:
@@ -280,8 +280,8 @@ async def export_post(pool, slug: str) -> bool:
 
 async def export_full_rebuild(pool) -> Dict[str, Any]:
     """Full rebuild — regenerate ALL static files from scratch."""
-    site_url = site_config.get("public_site_url", "https://www.gladlabs.io")
-    site_title = site_config.get("site_title", "Glad Labs")
+    site_url = site_config.get("public_site_url") or site_config.require("site_url")
+    site_title = site_config.get("site_title") or site_config.require("site_name")
     errors = []
 
     try:

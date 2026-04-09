@@ -745,7 +745,7 @@ async def root():
     Root endpoint to confirm the server is running.
     """
     return {
-        "message": "Glad Labs AI Co-Founder is running",
+        "message": f"{_site_cfg.get('site_name', 'App')} AI Co-Founder is running",
         "version": config.app_version,
         "database_enabled": hasattr(app.state, "database") and app.state.database is not None,
     }

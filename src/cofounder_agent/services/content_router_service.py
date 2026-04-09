@@ -136,6 +136,7 @@ def _scrub_fabricated_links(content: str) -> str:
     keeping the link text but removing the bogus href.
     """
     import re
+    from services.site_config import site_config
 
     # Domains we trust (our own site + major reference sites)
     trusted_domains = {
@@ -147,9 +148,13 @@ def _scrub_fabricated_links(content: str) -> str:
         "pytorch.org", "huggingface.co", "openai.com",
         "www.rust-lang.org", "blog.rust-lang.org", "crates.io",
         "pypi.org", "npmjs.com", "www.npmjs.com",
-        "gladlabs.io", "www.gladlabs.io",
         "youtube.com", "www.youtube.com",
     }
+    # Add own domain dynamically from config
+    _own_domain = site_config.get("site_domain", "")
+    if _own_domain:
+        trusted_domains.add(_own_domain)
+        trusted_domains.add(f"www.{_own_domain}")
 
     # Cache of real internal post slugs (populated lazily)
     _real_slugs: set = set()
@@ -163,11 +168,11 @@ def _scrub_fabricated_links(content: str) -> str:
             return False
 
     def _is_real_internal_link(url: str) -> bool:
-        """Check if a gladlabs.io link points to an actual published post."""
+        """Check if an internal link points to an actual published post."""
         from urllib.parse import urlparse
         parsed = urlparse(url)
         host = parsed.hostname or ""
-        if "gladlabs.io" not in host:
+        if _own_domain and _own_domain not in host:
             return True  # Not our link, don't check
         path = parsed.path or ""
         if not path.startswith("/posts/"):
@@ -814,6 +819,19 @@ async def _stage_generate_content(
         pass
     content_text = _scrub_fabricated_links(content_text)
 
+    # Strip leaked image prompts/descriptions (LLMs sometimes output visual placeholders)
+    import re as _re_img
+    # Remove standalone italic scene descriptions: *A dramatic scene of...*
+    content_text = _re_img.sub(r'(?m)^\s*\*(?:A |An |Imagine |Visual |Split|Close)[^*]{40,}\*\s*$', '', content_text)
+    # Remove `: *description*` image caption patterns
+    content_text = _re_img.sub(r'(?m)^\s*:\s*\*[A-Z][^*]{30,}\*\s*$', '', content_text)
+    # Remove [IMAGE-N: description] placeholders
+    content_text = _re_img.sub(r'\[IMAGE(?:-\d+)?:\s*[^\]]+\]', '', content_text)
+    # Remove [FIGURE: description] placeholders
+    content_text = _re_img.sub(r'\[FIGURE:\s*[^\]]+\]', '', content_text)
+    # Clean up any double blank lines left behind
+    content_text = _re_img.sub(r'\n{3,}', '\n\n', content_text)
+
     # Update content_task with generated content, title, and model tracking
     await database_service.update_task(
         task_id=task_id,
@@ -980,8 +998,9 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
             import httpx as _hx2
             from services.gpu_scheduler import gpu as _gpu
 
-            sdxl_url = _os.environ.get("SDXL_SERVER_URL", "http://host.docker.internal:9836")
-            ollama_url = _os.environ.get("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+            from services.site_config import site_config as _sc2
+            sdxl_url = _sc2.get("sdxl_server_url", "http://host.docker.internal:9836")
+            ollama_url = _sc2.get("ollama_base_url", "http://host.docker.internal:11434")
             _model = "llama3:latest"  # Fast model for prompt generation
 
             # Generate SDXL prompt via Ollama with GPU lock
@@ -1178,7 +1197,7 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
                 # Generate SDXL prompt via Ollama with the chosen style
                 try:
                     import httpx as _hx
-                    _ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+                    _ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
                     _img_prompt = (
                         f"Write a Stable Diffusion XL image prompt for a magazine-style editorial cover image.\n"
                         f"The article is about: {topic}\n"
@@ -1356,8 +1375,8 @@ async def _stage_generate_media_scripts(
     import re
     from services.site_config import site_config
 
-    ollama_url = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
-    model = os.getenv("DEFAULT_OLLAMA_MODEL", "llama3:latest")
+    ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
+    model = site_config.get("default_ollama_model", "llama3:latest")
     if model == "auto":
         model = "llama3:latest"
 

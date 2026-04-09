@@ -70,7 +70,7 @@ async def plan_images(
     import httpx
 
     ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
-    model = site_config.get("model_role_image_decision", "qwen3:8b")
+    model = site_config.get("model_role_image_decision", "qwen3:8b").removeprefix("ollama/")
 
     # Extract section headings for context
     headings = re.findall(r'^(#{2,3})\s+(.+)$', content, re.MULTILINE)
@@ -123,22 +123,49 @@ Output ONLY valid JSON (no markdown, no explanation):
 
     try:
         async with httpx.AsyncClient(timeout=90) as client:
-            # Verify Ollama is reachable before generating
+            # Verify Ollama is reachable AND the model exists
             try:
                 health = await client.get(f"{ollama_url}/api/tags", timeout=5)
                 if health.status_code != 200:
                     raise RuntimeError(f"Ollama not healthy: {health.status_code}")
+                available_models = [m["name"] for m in health.json().get("models", [])]
+                # Check model exists (match with or without :latest tag)
+                model_found = any(
+                    model == m or model == m.split(":")[0] or f"{model}:latest" == m
+                    for m in available_models
+                )
+                if not model_found:
+                    raise RuntimeError(
+                        f"Model '{model}' not found in Ollama. "
+                        f"Available: {', '.join(available_models[:10])}. "
+                        f"Pull it with: ollama pull {model}"
+                    )
+            except RuntimeError:
+                raise
             except Exception as conn_err:
                 raise RuntimeError(f"Ollama unavailable at {ollama_url}: {conn_err}") from conn_err
 
-            resp = await client.post(f"{ollama_url}/api/generate", json={
-                "model": model,
-                "prompt": prompt,
-                "stream": False,
-                "options": {"num_predict": 800, "temperature": 0.7},
-            })
-            resp.raise_for_status()
-            raw = resp.json().get("response", "").strip()
+            logger.info("[IMAGE_AGENT] Calling Ollama model '%s' for image planning", model)
+
+            # Ollama may need to load the model into VRAM on first call.
+            # Retry with backoff on 404 (model not loaded yet).
+            raw = ""
+            for _attempt in range(3):
+                resp = await client.post(f"{ollama_url}/api/generate", json={
+                    "model": model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"num_predict": 800, "temperature": 0.7},
+                })
+                if resp.status_code == 404 and _attempt < 2:
+                    import asyncio
+                    wait_s = 3 * (_attempt + 1)
+                    logger.info("[IMAGE_AGENT] Model not loaded yet (404), retrying in %ds...", wait_s)
+                    await asyncio.sleep(wait_s)
+                    continue
+                resp.raise_for_status()
+                raw = resp.json().get("response", "").strip()
+                break
 
         # Parse the JSON response
         # Strip markdown code fences if present

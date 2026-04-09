@@ -8,7 +8,6 @@ Endpoints:
     POST /api/podcast/generate/{post_id} — Manually trigger episode generation
 """
 
-import os
 from datetime import datetime, timezone
 from xml.etree.ElementTree import Element, SubElement, tostring
 
@@ -28,8 +27,11 @@ router = APIRouter(prefix="/api/podcast", tags=["podcast"])
 # Helpers
 # ---------------------------------------------------------------------------
 
-SITE_URL = "https://www.gladlabs.io"
 _R2_FALLBACK = "https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev"
+
+
+def _site_url() -> str:
+    return site_config.require("site_url")
 
 
 def _r2_url() -> str:
@@ -130,16 +132,15 @@ def _build_rss_xml(episodes: list[dict]) -> str:
     channel = SubElement(rss, "channel")
 
     # Channel metadata
-    SubElement(channel, "title").text = "Glad Labs Podcast"
-    SubElement(channel, "link").text = SITE_URL
+    SubElement(channel, "title").text = site_config.get("podcast_name", "Podcast")
+    SubElement(channel, "link").text = _site_url()
     SubElement(channel, "language").text = "en-us"
-    SubElement(channel, "description").text = (
-        "AI development insights, local LLM guides, and behind-the-scenes of "
-        "building an AI-operated content business. Powered by Glad Labs."
+    SubElement(channel, "description").text = site_config.get(
+        "podcast_description", "Podcast feed"
     )
     SubElement(
         channel, "{http://www.itunes.com/dtds/podcast-1.0.dtd}author"
-    ).text = "Glad Labs"
+    ).text = site_config.get("site_name", "Author")
     SubElement(
         channel, "{http://www.itunes.com/dtds/podcast-1.0.dtd}summary"
     ).text = (
@@ -152,10 +153,10 @@ def _build_rss_xml(episodes: list[dict]) -> str:
     )
     SubElement(
         owner, "{http://www.itunes.com/dtds/podcast-1.0.dtd}name"
-    ).text = "Matt Gladding"
+    ).text = site_config.get("owner_name", "Owner")
     SubElement(
         owner, "{http://www.itunes.com/dtds/podcast-1.0.dtd}email"
-    ).text = "mattg@gladlabs.io"
+    ).text = site_config.get("owner_email", "")
 
     # itunes:category
     cat = SubElement(
@@ -169,7 +170,7 @@ def _build_rss_xml(episodes: list[dict]) -> str:
 
     # Atom self-link
     atom_link = SubElement(channel, "{http://www.w3.org/2005/Atom}link")
-    atom_link.set("href", f"{SITE_URL}/api/podcast/feed.xml")
+    atom_link.set("href", f"{_site_url()}/api/podcast/feed.xml")
     atom_link.set("rel", "self")
     atom_link.set("type", "application/rss+xml")
 
@@ -177,9 +178,10 @@ def _build_rss_xml(episodes: list[dict]) -> str:
     for ep in episodes:
         item = SubElement(channel, "item")
         SubElement(item, "title").text = ep["title"]
-        SubElement(item, "link").text = f"{SITE_URL}/posts/{ep['slug']}"
+        SubElement(item, "link").text = f"{_site_url()}/posts/{ep['slug']}"
         SubElement(item, "description").text = ep.get("description", "")
-        SubElement(item, "guid").text = f"gladlabs-podcast-{ep['post_id']}"
+        _domain = site_config.get("site_domain", "podcast")
+        SubElement(item, "guid").text = f"{_domain}-podcast-{ep['post_id']}"
 
         pub_date = ep.get("published_at")
         if pub_date:

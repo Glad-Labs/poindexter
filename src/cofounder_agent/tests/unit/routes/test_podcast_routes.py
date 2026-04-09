@@ -83,7 +83,7 @@ class TestBuildRssXml:
         xml = _build_rss_xml([])
         assert '<?xml version="1.0"' in xml
         assert "<channel>" in xml
-        assert "<title>Glad Labs Podcast</title>" in xml
+        assert "<title>Test Podcast</title>" in xml
         assert "<item>" not in xml
 
     def test_single_episode(self):
@@ -99,7 +99,7 @@ class TestBuildRssXml:
         xml = _build_rss_xml(episodes)
         assert "<item>" in xml
         assert "<title>Test Episode</title>" in xml
-        assert "gladlabs-podcast-123" in xml
+        assert "test-site.example.com-podcast-123" in xml
         assert "audio/mpeg" in xml
         assert "5000000" in xml
 

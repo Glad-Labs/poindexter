@@ -239,21 +239,17 @@ class TestTriggerNextjsRevalidation:
         # Confirm paths in the posted body
         assert "/" in (posted_json.get("paths", []) if isinstance(posted_json, dict) else [])
 
-    def test_uses_env_var_for_nextjs_url(self):
-        """NEXT_PUBLIC_PUBLIC_SITE_URL env var changes the target URL when site_config has no URL."""
+    def test_uses_site_config_for_nextjs_url(self):
+        """site_config URL overrides the default localhost URL."""
         mock_client = _make_mock_httpx_client(status_code=200)
-        # site_config returns secret but no URL, so env var is used for URL
         mock_cfg = MagicMock()
         mock_cfg.get = lambda key, default=None: {
             "revalidate_secret": "test-secret",
+            "public_site_url": "http://my-site.example.com",
         }.get(key, default)
         with patch("services.site_config.site_config", mock_cfg), \
              patch("routes.revalidate_routes.httpx.AsyncClient", return_value=mock_client):
-            with patch.dict(
-                os.environ,
-                {"NEXT_PUBLIC_PUBLIC_SITE_URL": "http://my-site.example.com"},
-            ):
-                result = self._run(trigger_nextjs_revalidation(["/blog"]))
+            result = self._run(trigger_nextjs_revalidation(["/blog"]))
         assert result is True
         # Confirm the call URL contains the custom host
         post_args = mock_client.post.call_args

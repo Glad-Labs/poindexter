@@ -73,7 +73,8 @@ class AIContentGenerator:
             logger.debug("Ollama already checked previously: %s", self.ollama_available)
             return
 
-        ollama_url = os.getenv("OLLAMA_BASE_URL", os.getenv("OLLAMA_HOST", "http://host.docker.internal:11434"))
+        from services.site_config import site_config as _sc
+        ollama_url = _sc.get("ollama_base_url") or _sc.get("ollama_host", "http://host.docker.internal:11434")
         logger.info("Checking if Ollama server is running at %s...", ollama_url)
         try:
             async with httpx.AsyncClient(timeout=5) as client:
@@ -581,7 +582,8 @@ class AIContentGenerator:
             return None
 
         logger.info("[ATTEMPT 1/3] Trying Ollama (Local, GPU-accelerated)...")
-        ollama_endpoint = os.getenv("OLLAMA_BASE_URL", os.getenv("OLLAMA_HOST", "http://host.docker.internal:11434"))
+        from services.site_config import site_config as _sc
+        ollama_endpoint = _sc.get("ollama_base_url") or _sc.get("ollama_host", "http://host.docker.internal:11434")
         logger.info("   ├─ Endpoint: %s", ollama_endpoint)
         logger.info("   └─ Status: Connecting...\n")
         try:

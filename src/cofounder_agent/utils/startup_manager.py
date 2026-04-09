@@ -399,7 +399,8 @@ class StartupManager:
         import os
 
         # Skip warmup unless explicitly enabled (lazy loading is the default)
-        if os.getenv("ENABLE_SDXL_WARMUP", "").lower() not in ("true", "1", "yes"):
+        from services.site_config import site_config
+        if site_config.get("enable_sdxl_warmup", "").lower() not in ("true", "1", "yes"):
             logger.info(
                 "  SDXL warmup: Skipped (lazy loading on first request). Set ENABLE_SDXL_WARMUP=true to pre-load."
             )

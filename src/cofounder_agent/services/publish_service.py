@@ -19,6 +19,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 from services.logger_config import get_logger
+from services.site_config import site_config
 from utils.text_utils import extract_title_from_content
 
 logger = get_logger(__name__)
@@ -541,7 +542,7 @@ async def publish_post_from_task(
     # ---------------------------------------------------------------
     # 11. Ping search engines (fire-and-forget)
     # ---------------------------------------------------------------
-    site_url = "https://www.gladlabs.io"
+    site_url = site_config.require("site_url")
     published_url_full = f"{site_url}/posts/{slug}"
     asyncio.ensure_future(_ping_search_engines(site_url, published_url_full))
 

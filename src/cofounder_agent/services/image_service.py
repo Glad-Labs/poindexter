@@ -137,8 +137,9 @@ IMAGE_MODEL_REGISTRY: Dict[ImageModel, ImageModelConfig] = {
 
 
 def get_default_image_model() -> ImageModel:
-    """Get the default image model from env var or fallback."""
-    model_name = os.getenv("IMAGE_MODEL", "sdxl_lightning")
+    """Get the default image model from config or fallback."""
+    from services.site_config import site_config
+    model_name = site_config.get("image_model", "sdxl_lightning")
     try:
         return ImageModel(model_name)
     except ValueError:
@@ -217,7 +218,7 @@ class ImageService:
     def __init__(self):
         """Initialize image service"""
         from services.site_config import site_config
-        self.pexels_api_key = site_config.get("pexels_api_key") or os.getenv("PEXELS_API_KEY")
+        self.pexels_api_key = site_config.get("pexels_api_key")
         self._pexels_key_checked_db = bool(self.pexels_api_key)
 
         if not self.pexels_api_key:
@@ -496,7 +497,7 @@ class ImageService:
         # Refresh from site_config in case it loaded after __init__
         if not self.pexels_api_key:
             from services.site_config import site_config
-            self.pexels_api_key = site_config.get("pexels_api_key") or os.getenv("PEXELS_API_KEY", "")
+            self.pexels_api_key = site_config.get("pexels_api_key", "")
             if self.pexels_api_key:
                 self.pexels_available = True
                 self.pexels_headers = {"Authorization": self.pexels_api_key}
@@ -776,7 +777,8 @@ class ImageService:
             True if successful, False otherwise
         """
         # Strategy 1: Try host SDXL server (runs on GPU outside Docker)
-        sdxl_server_url = os.getenv("SDXL_SERVER_URL", "http://host.docker.internal:9836")
+        from services.site_config import site_config as _sc
+        sdxl_server_url = _sc.get("sdxl_server_url", "http://host.docker.internal:9836")
         try:
             import httpx
             async with httpx.AsyncClient(timeout=120) as client:

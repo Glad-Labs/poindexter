@@ -89,7 +89,7 @@ def _build_html(title: str, excerpt: str, slug: str, first_name: Optional[str] =
 
   <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 32px 0;">
   <p style="font-size: 12px; color: #999;">
-    You're receiving this because you subscribed to Glad Labs updates.<br>
+    You're receiving this because you subscribed to {site_config.get("site_name", "our")} updates.<br>
     <a href="{unsubscribe_url}" style="color: #999;">Unsubscribe</a>
   </p>
 </body>

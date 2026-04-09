@@ -26,6 +26,7 @@ import os
 from typing import Optional
 
 from fastapi import FastAPI
+from services.site_config import site_config
 
 try:
     import sentry_sdk
@@ -88,11 +89,11 @@ class SentryIntegration:
             logger.debug("Sentry already initialized")
             return cls._sentry_enabled
 
-        # Get configuration from environment
-        sentry_dsn = os.getenv("SENTRY_DSN", "").strip()
-        sentry_enabled = os.getenv("SENTRY_ENABLED", "true").lower() in ("true", "1", "yes")
+        # Get configuration from site_config (falls back to env vars)
+        sentry_dsn = site_config.get("sentry_dsn", "").strip()
+        sentry_enabled = site_config.get("sentry_enabled", "true").lower() in ("true", "1", "yes")
         environment = os.getenv("ENVIRONMENT", "development")
-        release = os.getenv("APP_VERSION", "3.0.1")
+        release = site_config.get("app_version", "3.0.1")
 
         # Skip initialization if DSN not configured or explicitly disabled
         if not sentry_dsn:

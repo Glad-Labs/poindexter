@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from services.logger_config import get_logger
+from services.site_config import site_config
 
 logger = get_logger(__name__)
 
@@ -41,13 +42,13 @@ class WorkerService:
                 "python": platform.python_version(),
             }
             # Check for Ollama
-            ollama_url = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+            ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
             caps["ollama_url"] = ollama_url
             # Check for SDXL
-            caps["sdxl"] = bool(os.getenv("SDXL_API_URL"))
+            caps["sdxl"] = bool(site_config.get("sdxl_api_url"))
             # GPU info (basic — enhance later with nvidia-smi)
-            caps["gpu"] = os.getenv("GPU_NAME", "unknown")
-            caps["vram_gb"] = int(os.getenv("GPU_VRAM_GB", "0"))
+            caps["gpu"] = site_config.get("gpu_name", "unknown")
+            caps["vram_gb"] = int(site_config.get("gpu_vram_gb", "0"))
             self._capabilities = caps
         return self._capabilities
 

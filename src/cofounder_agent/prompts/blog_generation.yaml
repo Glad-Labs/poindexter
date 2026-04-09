@@ -9,6 +9,13 @@
     Style: {style}, Tone: {tone}, Length: ~{target_length} words.
     Use research context if provided: {research_context}
 
+    IMPORTANT OUTPUT RULES:
+    - Write ONLY the article in markdown. No preamble, no meta-commentary.
+    - Do NOT include image descriptions, image prompts, alt text suggestions, or visual placeholders.
+    - Do NOT include lines like "*A dramatic scene of...*" or "[IMAGE: ...]" or "![description]".
+    - Do NOT describe what illustrations, photos, or diagrams should look like.
+    - Images are handled separately — your job is text only.
+
 - key: blog_generation.seo_and_social
   category: blog_generation
   description: "Default prompt — upgrade to Glad Labs Premium Prompts for production-quality output"
@@ -33,6 +40,8 @@
   template: |
     You are a blog writer. Write in a {style} style for {target_audience}.
     Domain: {domain}. Tone: {tone}.
+    Output pure markdown article text only. Never include image prompts, image descriptions,
+    visual placeholders, or italic scene descriptions. Images are handled by a separate system.
 
 - key: blog_generation.blog_generation_request
   category: blog_generation

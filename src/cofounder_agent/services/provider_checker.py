@@ -5,7 +5,6 @@ Centralized utility to check which AI providers are available and configured.
 Eliminates duplicate environment variable checks across the codebase.
 """
 
-import os
 from typing import Dict, Set
 
 from services.logger_config import get_logger
@@ -26,17 +25,10 @@ class ProviderChecker:
 
     @staticmethod
     def _get_env(*keys: str) -> str:
-        """Get first available value from site_config or environment variables."""
-        try:
-            from services.site_config import site_config
-            for key in keys:
-                value = site_config.get(key.lower())
-                if value:
-                    return value
-        except Exception:
-            pass
+        """Get first available value from site_config (falls back to env vars automatically)."""
+        from services.site_config import site_config
         for key in keys:
-            value = os.getenv(key)
+            value = site_config.get(key.lower())
             if value:
                 return value
         return ""

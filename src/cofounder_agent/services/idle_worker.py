@@ -652,7 +652,7 @@ class IdleWorker:
                     prompt = f"photorealistic scene related to {post['title'][:50]}, cinematic lighting, 4k, detailed, no people, no text"
                     try:
                         import httpx
-                        _ollama = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+                        _ollama = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
                         async with httpx.AsyncClient(timeout=30) as _c:
                             _r = await _c.post(f"{_ollama}/api/generate", json={
                                 "model": "llama3:latest",
@@ -1419,7 +1419,7 @@ class IdleWorker:
             if not rows:
                 return {"checked": 0, "note": "no posts published in last 24h"}
 
-            site_url = site_config.get("site_url", "https://www.gladlabs.io")
+            site_url = site_config.require("site_url")
             verified = 0
             failures = []
 

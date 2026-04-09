@@ -23,8 +23,6 @@ logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/video", tags=["video"])
 
-SITE_URL = "https://www.gladlabs.io"
-
 from services.site_config import site_config
 
 _R2_FALLBACK = "https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev"
@@ -54,8 +52,9 @@ async def video_feed():
             }
 
     if not episodes_on_disk:
+        _vname = site_config.get("video_feed_name", "Video")
         return Response(
-            content='<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0"><channel><title>Glad Labs Video</title></channel></rss>',
+            content=f'<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0"><channel><title>{_vname}</title></channel></rss>',
             media_type="application/rss+xml; charset=utf-8",
         )
 
@@ -84,16 +83,18 @@ async def video_feed():
     rss.set("version", "2.0")
     rss.set("xmlns:atom", "http://www.w3.org/2005/Atom")
     channel = SubElement(rss, "channel")
-    SubElement(channel, "title").text = "Glad Labs Video"
-    SubElement(channel, "link").text = SITE_URL
+    _sname = site_config.get("site_name", "Site")
+    SubElement(channel, "title").text = site_config.get("video_feed_name", "Video")
+    SubElement(channel, "link").text = site_config.require("site_url")
     SubElement(channel, "description").text = (
-        "AI development video essays from Glad Labs. "
+        f"Video essays from {_sname}. "
         "Narrated slideshows covering technology, infrastructure, and AI."
     )
     SubElement(channel, "language").text = "en-us"
 
     atom_link = SubElement(channel, "{http://www.w3.org/2005/Atom}link")
-    atom_link.set("href", f"{SITE_URL}/api/video/feed.xml")
+    _su = site_config.require("site_url")
+    atom_link.set("href", f"{_su}/api/video/feed.xml")
     atom_link.set("rel", "self")
     atom_link.set("type", "application/rss+xml")
 
@@ -105,9 +106,10 @@ async def video_feed():
 
         item = SubElement(channel, "item")
         SubElement(item, "title").text = post.get("title", "Untitled")
-        SubElement(item, "link").text = f"{SITE_URL}/posts/{post.get('slug', pid)}"
+        SubElement(item, "link").text = f"{_su}/posts/{post.get('slug', pid)}"
         SubElement(item, "description").text = post.get("excerpt", "")
-        SubElement(item, "guid").text = f"gladlabs-video-{pid}"
+        _domain = site_config.get("site_domain", "video")
+        SubElement(item, "guid").text = f"{_domain}-video-{pid}"
 
         pub_date = post.get("published_at")
         if pub_date:

@@ -149,9 +149,9 @@ class ModelRouter:
         if use_ollama is None:
             try:
                 from services.site_config import site_config
-                use_ollama = site_config.get("use_ollama", os.getenv("USE_OLLAMA", "false")).lower() == "true"
+                use_ollama = site_config.get("use_ollama", "false").lower() == "true"
             except Exception:
-                use_ollama = os.getenv("USE_OLLAMA", "false").lower() == "true"
+                use_ollama = False
 
         self.use_ollama = use_ollama
 
@@ -170,9 +170,9 @@ class ModelRouter:
         # For persistent tracking, use cost_aggregation_service.get_budget_status().
         try:
             from services.site_config import site_config
-            self._monthly_spend_limit = float(site_config.get("monthly_spend_limit") or os.getenv("MONTHLY_SPEND_LIMIT", "100.0"))
+            self._monthly_spend_limit = float(site_config.get("monthly_spend_limit", "100.0"))
         except Exception:
-            self._monthly_spend_limit = float(os.getenv("MONTHLY_SPEND_LIMIT", "100.0"))
+            self._monthly_spend_limit = 100.0
         self._session_cloud_spend = 0.0
         self._budget_exceeded_logged = False
 

@@ -593,7 +593,7 @@ async def go_live(
         try:
             from services.task_executor import _notify_openclaw
             from services.site_config import site_config as _sc
-            _site_url = _sc.get("site_url", "https://www.gladlabs.io")
+            _site_url = _sc.require("site_url")
             await _notify_openclaw(
                 f"🚀 Published: \"{row['title']}\"\n{_site_url}/posts/{row['slug']}",
                 critical=True,
@@ -754,7 +754,8 @@ async def generate_task_image(
             try:
                 import aiohttp
 
-                pexels_key = os.getenv("PEXELS_API_KEY")
+                from services.site_config import site_config as _sc
+                pexels_key = _sc.get("pexels_api_key")
                 if not pexels_key:
                     raise HTTPException(status_code=400, detail="Pexels API key not configured")
 

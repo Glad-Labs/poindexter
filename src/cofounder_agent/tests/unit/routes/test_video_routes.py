@@ -118,7 +118,7 @@ class TestVideoFeed:
             assert resp.status_code == 200
             assert "application/rss+xml" in resp.headers["content-type"]
             assert "<item>" not in resp.text
-            assert "Glad Labs Video" in resp.text
+            assert "Test Video" in resp.text
 
     @patch("utils.route_utils.get_services")
     def test_feed_with_episodes(self, mock_gs, tmp_path):

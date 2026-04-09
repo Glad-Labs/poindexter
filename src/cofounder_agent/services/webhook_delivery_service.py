@@ -7,12 +7,12 @@ or retried up to 3 times.
 """
 
 import asyncio
-import os
 from datetime import datetime, timezone
 
 import httpx
 
 from services.logger_config import get_logger
+from services.site_config import site_config
 
 logger = get_logger(__name__)
 
@@ -23,8 +23,8 @@ POLL_INTERVAL = 5  # seconds
 class WebhookDeliveryService:
     def __init__(self, pool):
         self.pool = pool
-        self.webhook_url = os.getenv("OPENCLAW_WEBHOOK_URL", "")
-        self.webhook_token = os.getenv("OPENCLAW_WEBHOOK_TOKEN", "")
+        self.webhook_url = site_config.get("openclaw_webhook_url", "")
+        self.webhook_token = site_config.get("openclaw_webhook_token", "")
         self._running = False
         self._client = None
 

@@ -19,7 +19,6 @@ Usage:
 """
 
 import functools
-import os
 import time
 from typing import Any, Callable, Optional
 
@@ -28,12 +27,9 @@ from services.logger_config import get_logger
 logger = get_logger(__name__)
 
 def _cfg(key: str, default: str) -> str:
-    """Read from site_config with env var fallback."""
-    try:
-        from services.site_config import site_config
-        return site_config.get(key) or os.getenv(key.upper(), default)
-    except Exception:
-        return os.getenv(key.upper(), default)
+    """Read from site_config (falls back to env vars automatically)."""
+    from services.site_config import site_config
+    return site_config.get(key, default)
 
 SLOW_QUERY_THRESHOLD_MS = int(_cfg("slow_query_threshold_ms", "100"))
 LOG_ALL_QUERIES = _cfg("log_all_queries", "false").lower() == "true"

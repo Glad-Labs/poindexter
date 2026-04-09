@@ -4,7 +4,7 @@ Content Validator — programmatic quality gate for AI-generated content.
 Runs hard rules against generated content BEFORE it can be published.
 No LLM judgment — deterministic pattern matching that catches:
 - Fabricated people, quotes, and statistics
-- False claims about Glad Labs
+- False claims about the company
 - Unverifiable citations
 - Impossible timeframes and metrics
 
@@ -192,10 +192,10 @@ def validate_content(title: str, content: str, topic: str = "") -> ValidationRes
         "Potentially fabricated statistic: '{matched}'"
     ))
 
-    # 3. Check for impossible Glad Labs claims
+    # 3. Check for impossible company claims
     issues.extend(_check_patterns(
         full_text, GLAD_LABS_IMPOSSIBLE, "critical", "glad_labs_claim",
-        "Impossible claim about Glad Labs: '{matched}'"
+        f"Impossible claim about {_COMPANY_NAME}: " + "'{matched}'"
     ))
 
     # 4. Check for fabricated quotes
@@ -234,7 +234,7 @@ def validate_content(title: str, content: str, topic: str = "") -> ValidationRes
         if re.search(rf"\b{word}\s+years?\b", title, re.IGNORECASE) and num > 1:
             issues.append(ValidationIssue(
                 severity="critical", category="glad_labs_claim",
-                description=f"Title claims {word} years — Glad Labs is {GLAD_LABS_FACTS['age_months']} months old",
+                description=f"Title claims {word} years — {_COMPANY_NAME} is {GLAD_LABS_FACTS['age_months']} months old",
                 matched_text=title,
             ))
     if re.search(r"\d+\s*years?", title, re.IGNORECASE):
@@ -244,7 +244,7 @@ def validate_content(title: str, content: str, topic: str = "") -> ValidationRes
             issues.append(ValidationIssue(
                 severity="critical",
                 category="glad_labs_claim",
-                description=f"Title claims {years} years — Glad Labs is {GLAD_LABS_FACTS['age_months']} months old",
+                description=f"Title claims {years} years — {_COMPANY_NAME} is {GLAD_LABS_FACTS['age_months']} months old",
                 matched_text=title,
             ))
 

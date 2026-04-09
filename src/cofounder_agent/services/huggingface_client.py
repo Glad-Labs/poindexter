@@ -6,7 +6,6 @@ Supports open-source models for blog post generation
 """
 
 import asyncio
-import os
 from typing import AsyncGenerator, List, Optional
 
 import aiohttp
@@ -49,11 +48,8 @@ class HuggingFaceClient:
         Args:
             api_token: HuggingFace API token (optional, for higher rate limits)
         """
-        try:
-            from services.site_config import site_config
-            self.api_token = api_token or site_config.get("huggingface_api_token") or os.getenv("HUGGINGFACE_API_TOKEN")
-        except Exception:
-            self.api_token = api_token or os.getenv("HUGGINGFACE_API_TOKEN")
+        from services.site_config import site_config
+        self.api_token = api_token or site_config.get("huggingface_api_token", "")
         self.base_url = "https://api-inference.huggingface.co/models"
         self.session: Optional[aiohttp.ClientSession] = None
 

@@ -124,7 +124,7 @@
       "mediaMaxMb": 50
     },
     "telegram": {
-      "enabled": true,
+      "enabled": false,
       "dmPolicy": "pairing",
       "botToken": "${TELEGRAM_BOT_TOKEN}",
       "groupPolicy": "allowlist",

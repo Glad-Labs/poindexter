@@ -111,8 +111,9 @@ class DatabaseService:
                 "dev",
                 "local",
             )
-            min_size = int(os.getenv("DATABASE_POOL_MIN_SIZE", "5" if is_dev else "20"))
-            max_size = int(os.getenv("DATABASE_POOL_MAX_SIZE", "20" if is_dev else "50"))
+            from services.site_config import site_config
+            min_size = int(site_config.get("database_pool_min_size", "5" if is_dev else "20"))
+            max_size = int(site_config.get("database_pool_max_size", "20" if is_dev else "50"))
 
             self.pool = await asyncpg.create_pool(
                 self.database_url,
@@ -127,8 +128,8 @@ class DatabaseService:
 
             # Create local pool if LOCAL_DATABASE_URL is configured, otherwise reuse primary
             if self.local_database_url:
-                local_min = int(os.getenv("LOCAL_DATABASE_POOL_MIN_SIZE", "3" if is_dev else "5"))
-                local_max = int(os.getenv("LOCAL_DATABASE_POOL_MAX_SIZE", "10" if is_dev else "20"))
+                local_min = int(site_config.get("local_database_pool_min_size", "3" if is_dev else "5"))
+                local_max = int(site_config.get("local_database_pool_max_size", "10" if is_dev else "20"))
                 self.local_pool = await asyncpg.create_pool(
                     self.local_database_url,
                     min_size=local_min,

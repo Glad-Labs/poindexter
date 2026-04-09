@@ -51,9 +51,8 @@ async def trigger_nextjs_revalidation(paths: Optional[list] = None) -> bool:
     nextjs_url = (
         site_config.get("public_site_url")
         or site_config.get("site_url")
-        or os.getenv("NEXT_PUBLIC_PUBLIC_SITE_URL")
-        or os.getenv("SITE_URL")
-        or os.getenv("NEXT_PUBLIC_API_BASE_URL", "http://localhost:3000")
+        or site_config.get("next_public_public_site_url")
+        or site_config.get("next_public_api_base_url", "http://localhost:3000")
     )
     if nextjs_url.endswith("/api"):
         nextjs_url = nextjs_url[:-4]
@@ -76,7 +75,7 @@ async def trigger_nextjs_revalidation(paths: Optional[list] = None) -> bool:
         logger.warning("Failed to fetch revalidate_secret from DB: %s", e)
 
     if not revalidate_secret:
-        revalidate_secret = site_config.get("revalidate_secret") or os.getenv("REVALIDATE_SECRET", "")
+        revalidate_secret = site_config.get("revalidate_secret", "")
     environment = os.getenv("ENVIRONMENT", "development").lower()
 
     if not revalidate_secret:

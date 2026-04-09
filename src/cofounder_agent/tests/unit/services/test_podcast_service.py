@@ -91,13 +91,13 @@ class TestBuildScript:
 
     def test_includes_intro(self):
         script = _build_script("My Title", "Some content")
-        assert "Welcome to the Glad Labs podcast" in script
+        assert "Welcome to" in script
         assert "My Title" in script
 
     def test_includes_outro(self):
         script = _build_script("Title", "Content")
         assert "Thanks for listening" in script
-        assert "gladlabs dot io" in script
+        assert "See you next time" in script
 
     def test_strips_markdown_from_content(self):
         script = _build_script("Title", "# Heading\n**bold** text")

@@ -19,6 +19,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from config import get_config
 from services.logger_config import get_logger
+from services.site_config import site_config
 
 logger = get_logger(__name__)
 
@@ -164,9 +165,9 @@ class MiddlewareConfig:
         """
         # Get allowed origins from environment, with safe defaults
         # Includes ports 3000, 3001, 3002, 3003, 3004 for development (in case of port conflicts)
-        allowed_origins = os.getenv(
-            "ALLOWED_ORIGINS",
-            "http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3004,http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:3002,http://127.0.0.1:3003,http://127.0.0.1:3004",  # Development defaults
+        allowed_origins = site_config.get(
+            "allowed_origins",
+            "http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3004,http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:3002,http://127.0.0.1:3003,http://127.0.0.1:3004",
         ).split(",")
 
         # Strip whitespace and trailing slashes from origins

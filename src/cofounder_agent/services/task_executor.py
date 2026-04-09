@@ -365,7 +365,7 @@ class TaskExecutor:
             if topic and not TopicDiscovery._is_brand_relevant(topic):
                 logger.info("[TASK_SINGLE] Rejecting off-brand topic: %s", topic[:60])
                 await self.database_service.update_task(
-                    task_id=task_id, updates={"status": "rejected", "result": '{"reason": "Off-topic: not relevant to Glad Labs brand"}'}
+                    task_id=task_id, updates={"status": "rejected", "result": '{"reason": "Off-topic: not relevant to brand"}'}
                 )
                 return
 

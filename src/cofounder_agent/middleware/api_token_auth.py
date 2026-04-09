@@ -14,13 +14,14 @@ from typing import Optional
 
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from services.site_config import site_config
 
 logger = logging.getLogger(__name__)
 
 security = HTTPBearer(auto_error=False)
 
 # Startup safety check: refuse dev-token bypass in production
-_dev_mode = os.getenv("DEVELOPMENT_MODE", "").lower() == "true"
+_dev_mode = site_config.get("development_mode", "").lower() == "true"
 _environment = os.getenv("ENVIRONMENT", "").lower()
 _dev_token_blocked = False
 
@@ -42,8 +43,8 @@ async def verify_api_token(
     Returns:
         The verified token string.
     """
-    api_token = os.getenv("API_TOKEN", "")
-    dev_mode = os.getenv("DEVELOPMENT_MODE", "").lower() == "true"
+    api_token = site_config.get("api_token", "")
+    dev_mode = site_config.get("development_mode", "").lower() == "true"
 
     if not credentials:
         raise HTTPException(status_code=401, detail="Missing authorization header")
@@ -76,7 +77,7 @@ async def verify_api_token(
 
 # Fixed operator identity for solo-operator mode.
 # In a single-operator system, all authenticated requests come from the owner.
-OPERATOR_ID = os.getenv("OPERATOR_ID", "operator")
+OPERATOR_ID = site_config.get("operator_id", "operator")
 
 
 def get_operator_identity() -> dict:
@@ -98,8 +99,8 @@ async def verify_api_token_optional(
     Used for public endpoints that optionally accept auth (e.g. list_posts
     shows drafts only when authenticated).
     """
-    api_token = os.getenv("API_TOKEN", "")
-    dev_mode = os.getenv("DEVELOPMENT_MODE", "").lower() == "true"
+    api_token = site_config.get("api_token", "")
+    dev_mode = site_config.get("development_mode", "").lower() == "true"
 
     if not credentials:
         return None

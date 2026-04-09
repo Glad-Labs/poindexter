@@ -430,10 +430,12 @@ class TestScrubFabricatedLinks:
         result = _scrub_fabricated_links(content)
         assert "arxiv.org" in result
 
-    def test_keeps_gladlabs_links(self):
+    def test_keeps_own_domain_links(self):
         from services.content_router_service import _scrub_fabricated_links
-        content = "Read [our post](https://www.gladlabs.io/posts/ai-trends) about this."
-        assert "gladlabs.io" in _scrub_fabricated_links(content)
+        from services.site_config import site_config
+        domain = site_config.get("site_domain", "test-site.example.com")
+        content = f"Read [our post](https://www.{domain}/posts/ai-trends) about this."
+        assert domain in _scrub_fabricated_links(content)
 
     def test_empty_content_returns_empty(self):
         from services.content_router_service import _scrub_fabricated_links

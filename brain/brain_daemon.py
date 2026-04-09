@@ -70,7 +70,7 @@ IS_DOCKER = bool(os.getenv("IN_DOCKER"))
 
 # Service URLs — loaded from DB at startup, these are just initial defaults
 # Updated by _load_config_from_db() before the first monitoring cycle
-_SITE_URL = "https://www.gladlabs.io"
+_SITE_URL = os.getenv("SITE_URL", "https://www.gladlabs.io")
 _API_BASE_URL = "http://localhost:8002"
 
 SERVICES = {

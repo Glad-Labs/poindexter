@@ -5,9 +5,9 @@ Converts blog post content into MP3 podcast episodes using Microsoft Edge TTS
 (edge-tts). Fully local, free, no API keys required.
 
 Each episode includes:
-- Intro: "Welcome to the Glad Labs podcast. Today's episode: {title}"
+- Intro: "Welcome to the {podcast_name} podcast. Today's episode: {title}"
 - Body: The blog post content (markdown stripped to plain text)
-- Outro: "Thanks for listening. Visit gladlabs.io for more."
+- Outro: "Thanks for listening. Visit {site_domain} for more."
 
 Audio files are saved to ~/.gladlabs/podcast/ and served via the FastAPI
 podcast routes. A valid podcast RSS feed is generated for Apple Podcasts /
@@ -311,16 +311,16 @@ async def _build_script_with_llm(title: str, content: str) -> str:
     """
     import httpx
 
-    ollama_url = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+    ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
     try:
         # Use the podcast-specific model, fall back to writer model, then default
         model = (
             site_config.get("podcast_script_model")
             or site_config.get("pipeline_writer_model", "").replace("ollama/", "")
-            or os.getenv("DEFAULT_OLLAMA_MODEL", "gemma3:27b")
+            or site_config.get("default_ollama_model", "gemma3:27b")
         )
     except Exception:
-        model = os.getenv("DEFAULT_OLLAMA_MODEL", "gemma3:27b")
+        model = site_config.get("default_ollama_model", "gemma3:27b")
     if model == "auto" or not model:
         model = "gemma3:27b"
 
@@ -381,10 +381,12 @@ PODCAST SCRIPT:"""
     script_body = _normalize_for_speech(script_body)
     spoken_title = _normalize_for_speech(title)
 
-    intro = f"Welcome to the Glad Labs podcast. Today's episode: {spoken_title}."
+    _pname = site_config.get("podcast_name", "the podcast")
+    _domain_tts = site_config.get("site_domain", "our site").replace(".", " dot ")
+    intro = f"Welcome to {_pname}. Today's episode: {spoken_title}."
     outro = (
-        "Thanks for listening to the Glad Labs podcast. "
-        "Visit gladlabs dot io for more episodes, articles, and insights. "
+        f"Thanks for listening to {_pname}. "
+        f"Visit {_domain_tts} for more episodes, articles, and insights. "
         "See you next time."
     )
     return f"{intro}\n\n{script_body}\n\n{outro}"
@@ -396,10 +398,12 @@ def _build_script_fallback(title: str, content: str) -> str:
     plain_text = _normalize_for_speech(plain_text)
     spoken_title = _normalize_for_speech(title)
 
-    intro = f"Welcome to the Glad Labs podcast. Today's episode: {spoken_title}."
+    _pname = site_config.get("podcast_name", "the podcast")
+    _domain_tts = site_config.get("site_domain", "our site").replace(".", " dot ")
+    intro = f"Welcome to {_pname}. Today's episode: {spoken_title}."
     outro = (
-        "Thanks for listening to the Glad Labs podcast. "
-        "Visit gladlabs dot io for more episodes, articles, and insights. "
+        f"Thanks for listening to {_pname}. "
+        f"Visit {_domain_tts} for more episodes, articles, and insights. "
         "See you next time."
     )
     return f"{intro}\n\n{plain_text}\n\n{outro}"

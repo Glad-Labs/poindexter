@@ -4,32 +4,14 @@ Telegram configuration — single source of truth.
 All services that send Telegram messages import from here rather than
 hardcoding the chat ID or using inconsistent env-var names.
 
-The canonical env var is TELEGRAM_CHAT_ID; OPENCLAW_TELEGRAM_CHAT_ID is
-accepted as an alias for backward compatibility.
+site_config.get() checks the DB first, then falls back to env vars
+automatically -- no need for explicit os.getenv() fallbacks.
 """
 
-import os
+from services.site_config import site_config
 
-# Resolved once at import time — check DB config first, then the preferred
-# env var, then the legacy OpenClaw-prefixed variant, then fall back to default.
-try:
-    from services.site_config import site_config
-    _db_chat_id = site_config.get("telegram_chat_id")
-    _db_bot_token = site_config.get("telegram_bot_token")
-except Exception:
-    _db_chat_id = None
-    _db_bot_token = None
+# Resolved once at import time via site_config (DB -> env var -> default).
+# Legacy OPENCLAW_TELEGRAM_* env vars are handled by site_config aliases.
+TELEGRAM_CHAT_ID: str = site_config.get("telegram_chat_id", "5318613610")
 
-TELEGRAM_CHAT_ID: str = (
-    _db_chat_id
-    or os.getenv("TELEGRAM_CHAT_ID")
-    or os.getenv("OPENCLAW_TELEGRAM_CHAT_ID")
-    or "5318613610"
-)
-
-TELEGRAM_BOT_TOKEN: str = (
-    _db_bot_token
-    or os.getenv("TELEGRAM_BOT_TOKEN")
-    or os.getenv("OPENCLAW_TELEGRAM_BOT_TOKEN")
-    or ""
-)
+TELEGRAM_BOT_TOKEN: str = site_config.get("telegram_bot_token", "")

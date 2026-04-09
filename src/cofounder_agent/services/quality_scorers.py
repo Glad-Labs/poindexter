@@ -112,14 +112,18 @@ def score_accuracy(content: str, context: Dict[str, Any], cfg: dict | None = Non
 
     # External links: only count links to known reputable domains.
     all_links = re.findall(r"https?://([^\s\)\]\"'>]+)", content)
+    from services.site_config import site_config as _sc
+    _domain = _sc.get("site_domain", "")
     reputable_domains = {
         "github.com", "arxiv.org", "docs.python.org", "docs.rs",
         "developer.mozilla.org", "stackoverflow.com", "wikipedia.org",
         "news.ycombinator.com", "devto.dev", "dev.to", "blog.rust-lang.org",
         "go.dev", "kubernetes.io", "docker.com", "vercel.com", "nextjs.org",
         "react.dev", "pytorch.org", "huggingface.co", "openai.com",
-        "gladlabs.io", "www.gladlabs.io",
     }
+    if _domain:
+        reputable_domains.add(_domain)
+        reputable_domains.add(f"www.{_domain}")
     good_links = sum(1 for link in all_links if any(d in link for d in reputable_domains))
     bad_links = len(all_links) - good_links
     score += min(good_links * cfg["accuracy_good_link_bonus"], cfg["accuracy_good_link_max"])

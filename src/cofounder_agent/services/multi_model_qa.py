@@ -129,9 +129,13 @@ class MultiModelQA:
             critic_model = await self.settings.get("pipeline_critic_model")
         qa_cost_log = None
         cross_result = await self._review_with_cloud_model(title, content, topic, model_override=critic_model)
+        critic_skipped = False
         if cross_result:
             cross_review, qa_cost_log = cross_result
             reviews.append(cross_review)
+        else:
+            critic_skipped = True
+            logger.warning("[MULTI_QA] Cross-model review skipped — score will reflect validator only")
 
         # 3. Aggregate scores — weights configurable via app_settings
         validator_weight = 0.4
@@ -152,8 +156,12 @@ class MultiModelQA:
         else:
             final_score = validator_review.score
 
-        # Approve only if ALL reviewers pass and final score >= threshold
+        # If critic was skipped, don't auto-approve — require the validator score
+        # to meet threshold on its own. This prevents silently passing weak content.
         all_passed = all(r.approved for r in reviews)
+        if critic_skipped:
+            # Validator-only: use its raw score, don't pretend cross-model passed
+            final_score = validator_review.score
         approved = all_passed and final_score >= approval_threshold
 
         result = MultiModelResult(
@@ -176,7 +184,15 @@ class MultiModelQA:
         if ollama_result is not None:
             return ollama_result
 
-        logger.info("[MULTI_QA] Ollama unavailable, no cloud fallback — skipping review")
+        # Try a fallback model if the primary returned empty/failed
+        fallback_model = "gemma3:27b"
+        if model_override != fallback_model:
+            logger.info("[MULTI_QA] Primary critic failed, trying fallback model: %s", fallback_model)
+            fallback_result = await self._review_with_ollama(title, content, topic, model_override=fallback_model)
+            if fallback_result is not None:
+                return fallback_result
+
+        logger.info("[MULTI_QA] All QA models unavailable — skipping review")
         return None
 
     async def _review_with_ollama(
@@ -219,7 +235,7 @@ class MultiModelQA:
                 thinking_max = int(await self.settings.get("qa_thinking_model_max_tokens") or thinking_max)
                 standard_max = int(await self.settings.get("qa_standard_max_tokens") or standard_max)
                 temperature = float(await self.settings.get("qa_temperature") or temperature)
-            ollama_model = model_override or default_model
+            ollama_model = (model_override or default_model).removeprefix("ollama/")
             is_thinking_model = any(t in ollama_model.lower() for t in ("qwen3.5", "glm-4.7", "qwen3:30b"))
             max_tok = thinking_max if is_thinking_model else standard_max
             result = await client.generate(

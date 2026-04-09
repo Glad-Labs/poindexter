@@ -20,7 +20,6 @@ Usage from task_executor or any post-publish hook:
 """
 
 from services.logger_config import get_logger
-import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import List, Optional
@@ -41,18 +40,12 @@ SITE_BASE_URL = _sc.get("site_url", "https://localhost:3000")
 # Notification targets (mirrors task_executor._notify_openclaw)
 from services.telegram_config import TELEGRAM_BOT_TOKEN as _TELEGRAM_BOT_TOKEN
 from services.telegram_config import TELEGRAM_CHAT_ID as _TELEGRAM_CHAT_ID
-_OPENCLAW_URL = os.getenv("OPENCLAW_GATEWAY_URL", "http://localhost:18789")
-try:
-    _OPENCLAW_TOKEN = _sc.get("openclaw_hooks_token") or os.getenv("OPENCLAW_HOOKS_TOKEN", "hooks-gladlabs")
-except Exception:
-    _OPENCLAW_TOKEN = os.getenv("OPENCLAW_HOOKS_TOKEN", "hooks-gladlabs")
+_OPENCLAW_URL = _sc.get("openclaw_gateway_url", "http://localhost:18789")
+_OPENCLAW_TOKEN = _sc.get("openclaw_hooks_token", "hooks-gladlabs")
 _DISCORD_OPS_CHANNEL = "1487683559065125055"
 
 # LLM defaults — social copy is a simple task, use the fast 8B model
-try:
-    _SOCIAL_MODEL = _sc.get("social_poster_model") or os.getenv("SOCIAL_POSTER_MODEL", "ollama/llama3:latest")
-except Exception:
-    _SOCIAL_MODEL = os.getenv("SOCIAL_POSTER_MODEL", "ollama/llama3:latest")
+_SOCIAL_MODEL = _sc.get("social_poster_model", "ollama/llama3:latest")
 
 # Platform character limits (with safety margin)
 TWITTER_CHAR_LIMIT = 280

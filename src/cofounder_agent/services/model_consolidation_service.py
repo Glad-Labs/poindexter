@@ -111,8 +111,8 @@ class OllamaAdapter(ProviderAdapter):
     def __init__(self):
         from .ollama_client import OllamaClient
 
-        # OLLAMA_BASE_URL stays as env var — it's infrastructure/networking config
-        self.host = os.getenv("OLLAMA_BASE_URL", os.getenv("OLLAMA_HOST", "http://host.docker.internal:11434"))
+        from services.site_config import site_config
+        self.host = site_config.get("ollama_base_url") or site_config.get("ollama_host", "http://host.docker.internal:11434")
         self.client = OllamaClient(base_url=self.host)
         self.provider_type = ProviderType.OLLAMA
 
@@ -150,9 +150,9 @@ class OllamaAdapter(ProviderAdapter):
         if not model:
             try:
                 from services.site_config import site_config
-                model = site_config.get("default_ollama_model") or "auto"
+                model = site_config.get("default_ollama_model", "auto")
             except Exception:
-                model = os.getenv("DEFAULT_OLLAMA_MODEL", "auto")
+                model = "auto"
         start_time = datetime.now(timezone.utc)
 
         try:
