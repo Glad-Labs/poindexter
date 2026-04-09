@@ -104,7 +104,7 @@ class UnifiedOrchestrator:
         self.failed_requests = 0
 
         logger.info(
-            "🚀 UnifiedOrchestrator initialized with %d agents: %s",
+            "UnifiedOrchestrator initialized with %d agents: %s",
             len(self.agents),
             ", ".join(self.agents.keys()),
         )
@@ -151,23 +151,30 @@ class UnifiedOrchestrator:
 
             if agent_class:
                 logger.debug(
-                    f"Instantiating agent '{agent_name}' from registry with kwargs: {kwargs.keys()}"
+                    "Instantiating agent '%s' from registry with kwargs: %s",
+                    agent_name,
+                    kwargs.keys(),
                 )
                 try:
                     return agent_class(**kwargs)
                 except TypeError as e:
                     # Agent doesn't accept kwargs, try without
                     logger.debug(
-                        f"Agent '{agent_name}' doesn't accept kwargs, instantiating without: {e}"
+                        "Agent '%s' doesn't accept kwargs, instantiating without: %s",
+                        agent_name,
+                        e,
                     )
                     return agent_class()
 
             logger.debug(
-                f"Agent '{agent_name}' not found in registry, falling back to direct import"
+                "Agent '%s' not found in registry, falling back to direct import",
+                agent_name,
             )
         except Exception as e:
             logger.debug(
-                f"Registry lookup failed for '{agent_name}': {e}, falling back to direct import"
+                "Registry lookup failed for '%s': %s, falling back to direct import",
+                agent_name,
+                e,
             )
 
         # Fallback: Direct import based on agent name
@@ -189,7 +196,9 @@ class UnifiedOrchestrator:
                 module = __import__(module_path, fromlist=[class_name])
                 agent_class = getattr(module, class_name)
                 logger.debug(
-                    f"Instantiating agent '{agent_name}' via direct import with kwargs: {kwargs.keys()}"
+                    "Instantiating agent '%s' via direct import with kwargs: %s",
+                    agent_name,
+                    kwargs.keys(),
                 )
 
                 try:
@@ -197,11 +206,12 @@ class UnifiedOrchestrator:
                 except TypeError:
                     # Agent doesn't accept kwargs, try without
                     logger.debug(
-                        f"Agent '{agent_name}' doesn't accept kwargs, instantiating without"
+                        "Agent '%s' doesn't accept kwargs, instantiating without",
+                        agent_name,
                     )
                     return agent_class()
             except (ImportError, AttributeError) as e:
-                logger.error(f"Failed to import agent '{agent_name}': {e}", exc_info=True)
+                logger.error("Failed to import agent '%s': %s", agent_name, e, exc_info=True)
                 raise ValueError(
                     f"Agent '{agent_name}' not found in registry or importable via fallback"
                 ) from e
@@ -1084,7 +1094,7 @@ class UnifiedOrchestrator:
             "next_action": "POST /api/content/tasks/%s/approve with human decision" % task_id,
         }
 
-        logger.info("[%s] ✅ Pipeline complete. Awaiting human approval.", request.request_id)
+        logger.info("[%s] Pipeline complete. Awaiting human approval.", request.request_id)
 
         return ExecutionResult(
             request_id=request.request_id,

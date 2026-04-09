@@ -120,7 +120,7 @@ async def create_task(
                 detail="topic is required and cannot be empty",
             )
 
-        logger.info(f"Creating task: type={task_request.task_type}, topic={task_request.topic}")
+        logger.info("Creating task: type=%s, topic=%s", task_request.task_type, task_request.topic)
 
         # Route based on task_type using registry dict (Open/Closed — add new
         # task types by registering a handler below, not by editing this block).
@@ -137,7 +137,7 @@ async def create_task(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Task creation failed: {e}", exc_info=True)
+        logger.error("Task creation failed: %s", e, exc_info=True)
         raise HTTPException(
             status_code=500,
             detail="Failed to create task",
@@ -157,7 +157,7 @@ async def _handle_blog_post_creation(
 
     # Log model selections (#952) so we can confirm user choices are applied
     if request.models_by_phase:
-        logger.info(f"[create_task] User model selections applied: {request.models_by_phase}")
+        logger.info("[create_task] User model selections applied: %s", request.models_by_phase)
 
     # Merge content_constraints into top-level fields (#1250)
     # content_constraints overrides top-level style/tone/target_length when provided
@@ -177,11 +177,11 @@ async def _handle_blog_post_creation(
             fresh = [t for t in topics if not t.is_duplicate]
             if fresh:
                 resolved_topic = fresh[0].title
-                logger.info(f"[create_task] Resolved 'auto' topic → '{resolved_topic}'")
+                logger.info("[create_task] Resolved 'auto' topic -> '%s'", resolved_topic)
             else:
                 raise ValueError("No fresh topics found — all discovered topics are duplicates of recent content")
         except Exception as e:
-            logger.warning(f"[create_task] Auto-topic resolution failed: {e}")
+            logger.warning("[create_task] Auto-topic resolution failed: %s", e)
             raise HTTPException(status_code=422, detail=f"Could not resolve auto topic: {e}")
 
     task_data = {
@@ -209,7 +209,7 @@ async def _handle_blog_post_creation(
 
     # Store in database as pending — task executor will pick it up
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"Blog task created: {returned_task_id}")
+    logger.info("Blog task created: %s", returned_task_id)
 
     return {
         "id": returned_task_id,
@@ -249,7 +249,7 @@ async def _handle_social_media_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"Social task created: {returned_task_id} platforms={request.platforms}")
+    logger.info("Social task created: %s platforms=%s", returned_task_id, request.platforms)
 
     return {
         "id": returned_task_id,
@@ -284,7 +284,7 @@ async def _handle_email_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"Email task created: {returned_task_id}")
+    logger.info("Email task created: %s", returned_task_id)
 
     return {
         "id": returned_task_id,
@@ -317,7 +317,7 @@ async def _handle_newsletter_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"Newsletter task created: {returned_task_id}")
+    logger.info("Newsletter task created: %s", returned_task_id)
 
     return {
         "id": returned_task_id,
@@ -355,7 +355,7 @@ async def _handle_business_analytics_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"Analytics task created: {returned_task_id} metrics={request.metrics}")
+    logger.info("Analytics task created: %s metrics=%s", returned_task_id, request.metrics)
 
     return {
         "id": returned_task_id,
@@ -391,7 +391,7 @@ async def _handle_data_retrieval_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"Data retrieval task created: {returned_task_id} sources={request.data_sources}")
+    logger.info("Data retrieval task created: %s sources=%s", returned_task_id, request.data_sources)
 
     return {
         "id": returned_task_id,
@@ -424,7 +424,7 @@ async def _handle_market_research_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"Market research task created: {returned_task_id}")
+    logger.info("Market research task created: %s", returned_task_id)
 
     return {
         "id": returned_task_id,
@@ -457,7 +457,7 @@ async def _handle_financial_analysis_creation(
     }
 
     returned_task_id = await db_service.add_task(task_data)
-    logger.info(f"Financial analysis task created: {returned_task_id}")
+    logger.info("Financial analysis task created: %s", returned_task_id)
 
     return {
         "id": returned_task_id,
@@ -550,7 +550,7 @@ async def list_tasks(
             limit=limit,
         )
     except Exception as e:
-        logger.error(f"Failed to list tasks: {str(e)}", exc_info=True)
+        logger.error("Failed to list tasks: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to list tasks") from e
 
 
@@ -583,7 +583,7 @@ async def get_task(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to fetch task {task_id}: {str(e)}", exc_info=True)
+        logger.error("Failed to fetch task %s: %s", task_id, e, exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch task") from e
 
 
@@ -613,7 +613,7 @@ async def delete_task(
             _check_task_ownership(task, token)
 
         # Soft delete: mark task as deleted with timestamp
-        logger.info(f"Deleting task {task_id} (operator)")
+        logger.info("Deleting task %s (operator)", task_id)
 
         # Update task status to 'cancelled' and add deleted_at metadata
         deleted_metadata = {
@@ -626,12 +626,12 @@ async def delete_task(
             task_id, "cancelled", result=json.dumps({"metadata": deleted_metadata})
         )
 
-        logger.info(f"Task {task_id} deleted successfully")
+        logger.info("Task %s deleted successfully", task_id)
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to delete task {task_id}: {str(e)}", exc_info=True)
+        logger.error("Failed to delete task %s: %s", task_id, e, exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to delete task") from e
 
 

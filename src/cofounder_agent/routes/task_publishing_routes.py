@@ -294,10 +294,11 @@ async def approve_task(
         # Update task status and result
         new_status = "approved" if approved else "rejected"
         logger.info(
-            f"{'Approving' if approved else 'Rejecting'} task {task_id} (current status: {current_status})"
+            "%s task %s (current status: %s)",
+            "Approving" if approved else "Rejecting", task_id, current_status,
         )
-        logger.info(f"   Has featured_image_url: {bool(merged_result.get('featured_image_url'))}")
-        logger.info(f"   Has content: {bool(merged_result.get('content'))}")
+        logger.info("   Has featured_image_url: %s", bool(merged_result.get("featured_image_url")))
+        logger.info("   Has content: %s", bool(merged_result.get("content")))
 
         # Convert any Decimal values to float before JSON serialization
         safe_result = convert_decimals({"metadata": approval_metadata, **merged_result})
@@ -307,7 +308,7 @@ async def approve_task(
                 task_id, new_status, result=safe_json_dumps(safe_result)
             )
         except Exception as e:
-            logger.error(f"Failed to update task status to {new_status}: {str(e)}", exc_info=True)
+            logger.error("Failed to update task status to %s: %s", new_status, e, exc_info=True)
             raise HTTPException(status_code=500, detail="Failed to update task status") from e
 
         # Check if staging mode is enabled (create draft + preview instead of publishing)
@@ -322,7 +323,7 @@ async def approve_task(
 
         if approved and auto_publish and staging_mode:
             # STAGING MODE: Create draft post with preview token, generate media, send preview link
-            logger.info(f"[STAGING] Creating draft preview for task {task_id}")
+            logger.info("[STAGING] Creating draft preview for task %s", task_id)
             try:
                 from services.publish_service import publish_post_from_task
                 import secrets as _secrets
@@ -366,11 +367,11 @@ async def approve_task(
                 else:
                     logger.warning("[STAGING] Draft creation failed: %s", pub_result.error)
             except Exception as e:
-                logger.critical(f"[STAGING] Error: {type(e).__name__}: {e}", exc_info=True)
+                logger.critical("[STAGING] Error: %s: %s", type(e).__name__, e, exc_info=True)
 
         elif approved and auto_publish:
             # DIRECT PUBLISH MODE (staging_mode=false)
-            logger.info(f"Auto-publishing approved task {task_id}")
+            logger.info("Auto-publishing approved task %s", task_id)
             try:
                 from services.publish_service import publish_post_from_task
 
@@ -390,8 +391,8 @@ async def approve_task(
                     )
             except Exception as e:
                 logger.critical(
-                    f"Unexpected error during auto-publish: {type(e).__name__}: {str(e)}",
-                    exc_info=True,
+                    "Unexpected error during auto-publish: %s: %s",
+                    type(e).__name__, e, exc_info=True,
                 )
                 # Don't fail approval if auto-publish fails
 
@@ -428,12 +429,12 @@ async def approve_task(
         raise
     except (ValueError, KeyError, TypeError) as e:
         logger.error(
-            f"Data validation error in approve_task: {type(e).__name__}: {str(e)}", exc_info=True
+            "Data validation error in approve_task: %s: %s", type(e).__name__, e, exc_info=True
         )
         raise HTTPException(status_code=400, detail="Invalid task data") from e
     except Exception as e:
         logger.error(
-            f"Failed to approve task {task_id}: {type(e).__name__}: {str(e)}", exc_info=True
+            "Failed to approve task %s: %s: %s", task_id, type(e).__name__, e, exc_info=True
         )
         raise HTTPException(status_code=500, detail="Failed to approve task") from e
 
@@ -493,7 +494,7 @@ async def publish_task(
             )
 
         # Publish via shared service (post creation, ISR, social, sync, embed)
-        logger.info(f"Publishing task {task_id}")
+        logger.info("Publishing task %s", task_id)
         from services.publish_service import publish_post_from_task
 
         pub_result = await publish_post_from_task(
@@ -530,8 +531,8 @@ async def publish_task(
             return UnifiedTaskResponse(**response_data)
         except Exception as resp_err:
             logger.warning(
-                f"[publish_task] Response model conversion failed ({resp_err}); returning minimal response",
-                exc_info=True,
+                "[publish_task] Response model conversion failed (%s); returning minimal response",
+                resp_err, exc_info=True,
             )
             return {  # type: ignore[return-value]
                 "id": task_id,
@@ -546,7 +547,7 @@ async def publish_task(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to publish task {task_id}: {str(e)}", exc_info=True)
+        logger.error("Failed to publish task %s: %s", task_id, e, exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to publish task") from e
 
 
@@ -664,7 +665,7 @@ async def reject_task(
             )
 
         # Update task status to rejected
-        logger.info(f"Rejecting task {task_id} (current status: {current_status})")
+        logger.info("Rejecting task %s (current status: %s)", task_id, current_status)
         reject_metadata = {
             "rejected_at": datetime.now(timezone.utc).isoformat(),
             "rejected_by": "operator",
@@ -684,7 +685,7 @@ async def reject_task(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to reject task {task_id}: {str(e)}", exc_info=True)
+        logger.error("Failed to reject task %s: %s", task_id, e, exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to reject task") from e
 
 
@@ -744,7 +745,7 @@ async def generate_task_image(
 
         # Extract source from request for consistency
         source = request.source
-        logger.info(f"Generating image for task {task_id} using {source}")
+        logger.info("Generating image for task %s using %s", task_id, source)
 
         image_url = None
 
@@ -761,15 +762,14 @@ async def generate_task_image(
                 current_image_url = task.get("featured_image_url")
                 page = max(1, request.page)  # Ensure page is at least 1
 
-                logger.info("🔎 Pexels API request:")
-                logger.info(f"   - Query: '{search_query}'")
-                logger.info(f"   - Page: {page}")
+                logger.info("Pexels API request:")
+                logger.info("   - Query: '%s'", search_query)
+                logger.info("   - Page: %s", page)
                 logger.info("   - Per page: 50")
-                logger.info(
-                    f"   - Current featured image: {current_image_url[:80]}..."
-                    if current_image_url
-                    else "   - No current image"
-                )
+                if current_image_url:
+                    logger.info("   - Current featured image: %s...", current_image_url[:80])
+                else:
+                    logger.info("   - No current image")
 
                 async with aiohttp.ClientSession() as session:
                     async with session.get(
@@ -788,12 +788,12 @@ async def generate_task_image(
                                 import random
 
                                 data = await resp.json()
-                                logger.info(f"✅ Pexels API response: {resp.status} OK")
-                                logger.info(f"   - Response size: {len(str(data))} bytes")
+                                logger.info("Pexels API response: %s OK", resp.status)
+                                logger.info("   - Response size: %s bytes", len(str(data)))
 
                                 if data.get("photos"):
                                     photos_count = len(data.get("photos", []))
-                                    logger.info(f"   - Total photos in response: {photos_count}")
+                                    logger.info("   - Total photos in response: %s", photos_count)
                                     # Filter out the current image URL AND recent images to get variety
                                     # Get list of recently used image URLs from task metadata
                                     recently_used = []
@@ -819,9 +819,9 @@ async def generate_task_image(
                                         excluded_urls.add(current_image_url)
 
                                     logger.debug(
-                                        f"Image filtering: Pexels returned {len(data['photos'])} photos, "
-                                        f"currently using: {current_image_url}, "
-                                        f"excluded: {len(excluded_urls)} URLs"
+                                        "Image filtering: Pexels returned %s photos, "
+                                        "currently using: %s, excluded: %s URLs",
+                                        len(data["photos"]), current_image_url, len(excluded_urls),
                                     )
 
                                     # Filter out any previously used images
@@ -832,13 +832,14 @@ async def generate_task_image(
                                     ]
 
                                     logger.info(
-                                        f"   - After filtering: {len(photos)} available photos"
+                                        "   - After filtering: %s available photos", len(photos)
                                     )
 
                                     # If no new images available (rare), use the original list
                                     if not photos:
                                         logger.warning(
-                                            f"⚠️ No new images after filtering, using all {len(data['photos'])} available"
+                                            "No new images after filtering, using all %s available",
+                                            len(data["photos"]),
                                         )
                                         photos = data["photos"]
 
@@ -847,12 +848,12 @@ async def generate_task_image(
                                         photo = random.choice(photos)
                                         image_url = photo["src"]["large"]
                                         logger.info(
-                                            f"✅ Selected image #{photos.index(photo) + 1}: {image_url}"
+                                            "Selected image #%s: %s", photos.index(photo) + 1, image_url
                                         )
                                         logger.info(
-                                            f"   - Photographer: {photo.get('photographer', 'Unknown')}"
+                                            "   - Photographer: %s", photo.get("photographer", "Unknown")
                                         )
-                                        logger.info(f"   - Source: {photo['src']['original']}")
+                                        logger.info("   - Source: %s", photo["src"]["original"])
 
                                         # Store image URL and metadata in task for persistence
                                         # Track this image URL in recent_image_urls for future filtering
@@ -880,7 +881,7 @@ async def generate_task_image(
                                         )
                             except json.JSONDecodeError as je:
                                 logger.error(
-                                    f"Failed to parse Pexels response JSON: {je}", exc_info=True
+                                    "Failed to parse Pexels response JSON: %s", je, exc_info=True
                                 )
                                 raise ValueError(f"Invalid JSON from Pexels API: {str(je)}") from je
                         elif resp.status == 429:
@@ -890,20 +891,20 @@ async def generate_task_image(
                                 detail="Image service rate limit exceeded. Please try again later.",
                             )
                         else:
-                            logger.warning(f"Pexels API returned {resp.status}")
+                            logger.warning("Pexels API returned %s", resp.status)
                             raise ValueError(f"Pexels API error: HTTP {resp.status}")
 
             except ValueError as ve:
-                logger.error(f"Pexels API error: {ve}", exc_info=True)
+                logger.error("Pexels API error: %s", ve, exc_info=True)
                 raise HTTPException(
                     status_code=500, detail="Error fetching image from Pexels"
                 ) from ve
             except asyncio.TimeoutError as exc:
-                logger.warning(f"Pexels API timeout for query: {search_query}", exc_info=True)
+                logger.warning("Pexels API timeout for query: %s", search_query, exc_info=True)
                 raise HTTPException(status_code=504, detail="Pexels API timeout. Please try again.") from exc
             except Exception as e:
                 logger.error(
-                    f"Unexpected error fetching from Pexels: {type(e).__name__}: {e}", exc_info=True
+                    "Unexpected error fetching from Pexels: %s: %s", type(e).__name__, e, exc_info=True
                 )
                 raise HTTPException(
                     status_code=500, detail="Unexpected error fetching image from Pexels"
@@ -924,7 +925,7 @@ async def generate_task_image(
                     # Extract key concepts from content summary
                     generation_prompt = f"{request.topic}: {request.content_summary[:200]}"
 
-                logger.info(f"🎨 Generating image with SDXL: {generation_prompt}")
+                logger.info("Generating image with SDXL: %s", generation_prompt)
 
                 # Save to user's Downloads folder for preview
                 downloads_path = str(Path.home() / "Downloads" / "glad-labs-generated-images")
@@ -935,7 +936,7 @@ async def generate_task_image(
                 output_file = f"sdxl_{unique_id}.png"
                 output_path = os.path.join(downloads_path, output_file)
 
-                logger.info(f"📁 Generating SDXL image to: {output_path}")
+                logger.info("Generating SDXL image to: %s", output_path)
 
                 # Generate image with SDXL
                 success = await image_service.generate_image(
@@ -948,21 +949,21 @@ async def generate_task_image(
                 )
 
                 if success and os.path.exists(output_path):
-                    logger.info(f"✅ SDXL image generated: {output_path}")
+                    logger.info("SDXL image generated: %s", output_path)
                     image_url = output_path
                     logger.info("   Generated image saved locally for preview")
                 else:
                     raise RuntimeError("SDXL image generation failed or file not created")
 
             except asyncio.TimeoutError as exc:
-                logger.warning(f"SDXL image generation timeout for task {task_id}", exc_info=True)
+                logger.warning("SDXL image generation timeout for task %s", task_id, exc_info=True)
                 raise HTTPException(
                     status_code=408,
                     detail="Image generation timeout. Please try again with 'pexels' source.",
                 ) from exc
             except (OSError, IOError, RuntimeError, ValueError) as e:
                 logger.error(
-                    f"SDXL image generation error - {type(e).__name__}: {e}", exc_info=True
+                    "SDXL image generation error - %s: %s", type(e).__name__, e, exc_info=True
                 )
                 raise HTTPException(
                     status_code=500,
@@ -970,7 +971,7 @@ async def generate_task_image(
                 ) from e
             except Exception as e:
                 logger.critical(
-                    f"Unexpected error in SDXL generation: {type(e).__name__}: {e}", exc_info=True
+                    "Unexpected error in SDXL generation: %s: %s", type(e).__name__, e, exc_info=True
                 )
                 raise HTTPException(
                     status_code=500, detail="Internal server error during image generation"
@@ -1033,5 +1034,5 @@ async def generate_task_image(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to generate image for task {task_id}: {str(e)}", exc_info=True)
+        logger.error("Failed to generate image for task %s: %s", task_id, e, exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to generate image") from e
