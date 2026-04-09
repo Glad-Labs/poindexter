@@ -174,6 +174,33 @@ Output ONLY valid JSON (no markdown, no explanation):
                 img.section_heading[:30], img.source, img.style, img.prompt[:50],
             )
 
+        # Log the decision for future learning
+        try:
+            from services.decision_service import log_decision
+            # Need a pool — get it from site_config or pass it in
+            # For now, log via the decision service if a pool is available
+            import asyncpg
+            _dsn = site_config.get("database_url", "")
+            if not _dsn:
+                import os
+                _dsn = os.getenv("DATABASE_URL", "")
+            if _dsn:
+                _conn = await asyncpg.connect(_dsn)
+                try:
+                    for img in result.images:
+                        await log_decision(
+                            pool=_conn,
+                            decision_type="image_source",
+                            decision_point="image_decision_agent",
+                            context={"topic": topic, "category": category, "section": img.section_heading},
+                            decision={"source": img.source, "style": img.style, "prompt": img.prompt, "reasoning": img.reasoning},
+                            model_used=model,
+                        )
+                finally:
+                    await _conn.close()
+        except Exception as _log_err:
+            logger.debug("[IMAGE_AGENT] Decision logging failed (non-fatal): %s", _log_err)
+
         return result
 
     except json.JSONDecodeError as e:
