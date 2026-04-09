@@ -1736,7 +1736,16 @@ async def process_content_generation_task(
             logger.warning("URL validation failed (non-critical): %s", _url_err)
             result["url_validation"] = {"error": str(_url_err)}
 
-        # Stage 2C: Replace inline image placeholders (non-critical — skip on timeout)
+        # ---------------------------------------------------------------
+        # IMAGE PIPELINE: Plan (Ollama) → Switch GPU → Generate (SDXL/Pexels)
+        #
+        # The Image Decision Agent runs NOW while Ollama is still loaded.
+        # It plans what images to generate and where. Then we switch GPU
+        # to SDXL mode and execute the plan. No race conditions, no timeouts.
+        # ---------------------------------------------------------------
+
+        # Stage 2C (planning): Image Decision Agent analyzes content (uses Ollama)
+        # This MUST run before GPU switches to SDXL mode
         _img_result = await _run_stage_with_timeout(
             _stage_replace_inline_images(
                 database_service, task_id, topic, content_text, image_service, result
@@ -1746,7 +1755,14 @@ async def process_content_generation_task(
         if _img_result is not None:
             content_text = _img_result
 
-        # Stage 3: Source featured image (gate-checked, non-critical — skip on timeout)
+        # Switch GPU: Ollama → SDXL for image generation
+        try:
+            from services.gpu_scheduler import gpu as _gpu_sched
+            await _gpu_sched.prepare_mode("sdxl")
+        except Exception:
+            logger.debug("GPU mode switch to SDXL failed (non-fatal)")
+
+        # Stage 3: Generate featured image (now in SDXL mode)
         if await _is_stage_enabled(_pool, "featured_image"):
             featured_image = await _run_stage_with_timeout(
                 _stage_source_featured_image(
@@ -1757,6 +1773,12 @@ async def process_content_generation_task(
         else:
             featured_image = None
             logger.info("Featured image skipped (disabled in pipeline_stages)")
+
+        # Switch GPU back: SDXL → Ollama for QA review
+        try:
+            await _gpu_sched.prepare_mode("ollama")
+        except Exception:
+            logger.debug("GPU mode switch to Ollama failed (non-fatal)")
 
         # Stage 3.5 + 3.7: Multi-Model QA (gate-checked)
         if not await _is_stage_enabled(_pool, "cross_model_qa"):
