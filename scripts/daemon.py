@@ -399,7 +399,7 @@ def run_opportunistic_task():
                 _api_request(
                     f"{API_URL}/api/tasks",
                     method="POST",
-                    json_data={"topic": "auto", "task_type": "blog_post"},
+                    data={"topic": "auto", "task_type": "blog_post"},
                     timeout=30,
                 )
             except Exception as e:
