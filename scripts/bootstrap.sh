@@ -72,7 +72,7 @@ docker compose -f docker-compose.local.yml up -d postgres-local grafana 2>/dev/n
 # Wait for PostgreSQL to be ready
 info "Waiting for PostgreSQL..."
 for i in $(seq 1 30); do
-    if docker exec gladlabs-pgvector pg_isready -U gladlabs -d gladlabs_brain >/dev/null 2>&1; then
+    if docker exec gladlabs-postgres-local pg_isready -U gladlabs -d gladlabs_brain >/dev/null 2>&1; then
         ok "PostgreSQL ready"
         break
     fi
