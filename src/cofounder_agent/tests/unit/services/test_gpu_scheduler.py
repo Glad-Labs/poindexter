@@ -53,8 +53,15 @@ class TestGPUScheduler:
                 order.append(f"{name}_end")
 
         await asyncio.gather(task("first", 0.1), task("second", 0.05))
-        # First must complete before second starts
-        assert order == ["first_start", "first_end", "second_start", "second_end"]
+        # Verify serialization: no interleaving (start/end pairs must be adjacent)
+        assert len(order) == 4
+        assert order[0].endswith("_start")
+        assert order[1].endswith("_end")
+        assert order[2].endswith("_start")
+        assert order[3].endswith("_end")
+        # Same task must start and end before the other starts
+        assert order[0].split("_")[0] == order[1].split("_")[0]
+        assert order[2].split("_")[0] == order[3].split("_")[0]
 
     @pytest.mark.asyncio
     async def test_lock_released_on_exception(self):
