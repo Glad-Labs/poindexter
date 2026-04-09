@@ -514,10 +514,12 @@ class TopicDiscovery:
         "blog automation", "ai writing", "ai content",
         "podcast", "text-to-speech",
         # Dev tools & infrastructure (supporting)
-        "docker", "kubernetes", "ci/cd", "devops",
+        "docker", "kubernetes", "ci/cd", "devops", "terraform",
         "fastapi", "next.js", "nextjs", "postgresql", "postgres",
+        "redis", "mongodb", "supabase", "cloudflare",
         "grafana", "prometheus", "monitoring",
         "open source", "open-source",
+        "python", "javascript", "typescript", "rust", "golang",
         # Solo founder / indie (target audience)
         "solo founder", "solo developer", "indie hacker",
         "bootstrapped", "one-person", "side project",
