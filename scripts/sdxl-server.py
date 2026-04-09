@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 
 OUTPUT_DIR = Path(os.path.expanduser("~")) / ".gladlabs" / "generated-images"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-DEFAULT_MODEL = "stabilityai/sdxl-turbo"
+DEFAULT_MODEL = os.getenv("SDXL_MODEL", "ByteDance/SDXL-Lightning")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("sdxl-server")
 app = FastAPI(title="SDXL Image Server", version="1.0")
@@ -37,8 +37,8 @@ class GenerateRequest(BaseModel):
     negative_prompt: str = Field(default="text, words, letters, watermark, face, person, hands, blurry, low quality, deformed")
     width: int = Field(default=1024, ge=256, le=2048)
     height: int = Field(default=1024, ge=256, le=2048)
-    steps: int = Field(default=4, ge=1, le=50)
-    guidance_scale: float = Field(default=0.0, ge=0, le=20)
+    steps: int = Field(default=8, ge=1, le=50)
+    guidance_scale: float = Field(default=2.0, ge=0, le=20)
     seed: int = Field(default=-1)
 
 class GenerateResponse(BaseModel):
