@@ -1337,6 +1337,7 @@ async def _stage_generate_media_scripts(
     import httpx
     import os
     import re
+    from services.site_config import site_config
 
     ollama_url = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
     model = os.getenv("DEFAULT_OLLAMA_MODEL", "llama3:latest")
@@ -1369,7 +1370,7 @@ async def _stage_generate_media_scripts(
 
 PART 1 — Write 6-8 numbered lines, each describing a photorealistic image for a video slideshow about this article. Each line is a Stable Diffusion XL prompt. Requirements: cinematic lighting, no people, no text, no faces, no hands, 4K quality. One scene per line.
 
-PART 2 — After a blank line, write "SHORT:" on its own line, then write a 60-second narration (about 150 words) summarizing the article for TikTok/YouTube Shorts. Start with a hook, cover 2-3 key takeaways, end with "Full article at glad labs dot io."
+PART 2 — After a blank line, write "SHORT:" on its own line, then write a 60-second narration (about 150 words) summarizing the article for TikTok/YouTube Shorts. Start with a hook, cover 2-3 key takeaways, end with "Full article at {site_config.get('site_name', 'our site')}."
 
 ARTICLE: {title}
 

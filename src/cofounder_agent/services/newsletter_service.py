@@ -21,9 +21,11 @@ from typing import List, Optional
 
 from services.logger_config import get_logger
 
+from services.site_config import site_config
+
 logger = get_logger(__name__)
 
-SITE_URL = "https://www.gladlabs.io"
+SITE_URL = site_config.get("site_url", "")
 
 
 def _cfg() -> dict:
@@ -33,8 +35,8 @@ def _cfg() -> dict:
     return {
         "enabled": site_config.get_bool("newsletter_enabled", False),
         "provider": site_config.get("newsletter_provider", "resend"),
-        "from_email": site_config.get("newsletter_from_email", "newsletter@gladlabs.io"),
-        "from_name": site_config.get("newsletter_from_name", "Glad Labs"),
+        "from_email": site_config.get("newsletter_from_email", ""),
+        "from_name": site_config.get("newsletter_from_name", ""),
         "resend_api_key": site_config.get("resend_api_key", ""),
         "smtp_host": site_config.get("smtp_host", ""),
         "smtp_port": site_config.get_int("smtp_port", 587),
@@ -68,7 +70,7 @@ def _build_html(title: str, excerpt: str, slug: str, first_name: Optional[str] =
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #1a1a1a;">
   <div style="border-bottom: 2px solid #6366f1; padding-bottom: 16px; margin-bottom: 24px;">
-    <h2 style="margin: 0; color: #6366f1;">Glad Labs</h2>
+    <h2 style="margin: 0; color: #6366f1;">{site_config.get("company_name", "")}</h2>
   </div>
 
   <p>{greeting}</p>

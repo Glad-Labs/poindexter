@@ -10,6 +10,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+# Ensure site_config has test values before importing newsletter_service
+from services.site_config import site_config
+site_config._config["site_url"] = "https://test.example.com"
+site_config._config["company_name"] = "Test Company"
+
 from services.newsletter_service import (
     _build_html,
     _get_active_subscribers,
@@ -27,7 +32,7 @@ class TestBuildHtml:
         html = _build_html("My Post", "An excerpt", "my-post-slug")
         assert "My Post" in html
         assert "my-post-slug" in html
-        assert "gladlabs.io/posts/my-post-slug" in html
+        assert "test.example.com/posts/my-post-slug" in html
 
     def test_includes_first_name_greeting(self):
         html = _build_html("T", "E", "s", first_name="Matt")

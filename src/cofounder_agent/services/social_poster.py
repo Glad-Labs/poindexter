@@ -84,7 +84,7 @@ def _build_twitter_prompt(title: str, slug: str, excerpt: str, keywords: List[st
     post_url = f"{SITE_BASE_URL}/posts/{slug}"
     hashtags = " ".join(f"#{kw.replace(' ', '')}" for kw in keywords[:3])
     return (
-        "You are a social media copywriter for a tech company called Glad Labs.\n"
+        f"You are a social media copywriter for a tech company called {_sc.get('company_name', '')}.\n"
         "Write a single tweet to promote the following blog post.\n\n"
         "Rules:\n"
         f"- The tweet MUST be under {TWITTER_CHAR_LIMIT} characters including the URL and hashtags.\n"
@@ -103,7 +103,7 @@ def _build_linkedin_prompt(title: str, slug: str, excerpt: str, keywords: List[s
     post_url = f"{SITE_BASE_URL}/posts/{slug}"
     hashtags = " ".join(f"#{kw.replace(' ', '')}" for kw in keywords[:3])
     return (
-        "You are a social media copywriter for a tech company called Glad Labs.\n"
+        f"You are a social media copywriter for a tech company called {_sc.get('company_name', '')}.\n"
         "Write a LinkedIn post to promote the following blog article.\n\n"
         "Rules:\n"
         f"- The post MUST be under {LINKEDIN_CHAR_LIMIT} characters including the URL and hashtags.\n"

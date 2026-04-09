@@ -10,6 +10,12 @@ from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 
+from unittest.mock import PropertyMock
+
+# Ensure site_config returns a test URL for SITE_URL
+from services.site_config import site_config
+site_config._config["site_url"] = "https://test.example.com"
+
 from services.devto_service import DevToCrossPostService, SITE_URL
 
 

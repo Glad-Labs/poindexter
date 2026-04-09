@@ -64,8 +64,28 @@ class SiteConfig:
             logger.warning("[SITE_CONFIG] Failed to load from DB: %s — using env fallbacks", e)
             return 0
 
+    def require(self, key: str) -> str:
+        """Get a REQUIRED config value. Raises if not configured.
+
+        Use this for settings that MUST be set for the system to work
+        (site_name, site_url, company_name, API keys). No silent defaults.
+        """
+        if key in self._config:
+            return self._config[key]
+        env_key = key.upper()
+        env_val = os.getenv(env_key)
+        if env_val:
+            return env_val
+        raise RuntimeError(
+            f"Required setting '{key}' is not configured. "
+            f"Set it in app_settings table or as env var {env_key}."
+        )
+
     def get(self, key: str, default: str = "") -> str:
-        """Get a config value. Priority: DB > env var > default."""
+        """Get a config value. Priority: DB > env var > default.
+
+        For optional settings only. Use require() for required settings.
+        """
         # DB value takes priority
         if key in self._config:
             return self._config[key]

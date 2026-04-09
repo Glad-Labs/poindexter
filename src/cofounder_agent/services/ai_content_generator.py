@@ -94,7 +94,7 @@ class AIContentGenerator:
         """Fetch published post titles + slugs so the LLM can include real internal links."""
         try:
             from services.site_config import site_config as _sc
-            site_url = _sc.get("site_url", "https://www.gladlabs.io")
+            site_url = _sc.get("site_url", "")
 
             import asyncpg
             dsn = os.getenv("DATABASE_URL", "")

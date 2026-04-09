@@ -34,7 +34,7 @@ logger = get_logger(__name__)
 from services.site_config import site_config
 
 DEVTO_API_BASE = "https://dev.to/api"
-SITE_URL = site_config.get("site_url", "https://www.gladlabs.io")
+SITE_URL = site_config.get("site_url", "")
 
 
 class DevToCrossPostService:
@@ -179,7 +179,7 @@ class DevToCrossPostService:
                     headers={
                         "api-key": api_key,
                         "Content-Type": "application/json",
-                        "User-Agent": "GladLabs/1.0 (https://gladlabs.io)",
+                        "User-Agent": f"{site_config.get('company_name', 'ContentEngine')}/1.0",
                     },
                     json=payload,
                 )
