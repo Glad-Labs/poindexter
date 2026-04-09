@@ -65,11 +65,11 @@ class CustomWorkflowsService:
         try:
             await self._insert_workflow(workflow)
             logger.info(
-                f"Created custom workflow: {workflow.id} ('{workflow.name}') for user {owner_id}"
+                "Created custom workflow: %s ('%s') for user %s", workflow.id, workflow.name, owner_id
             )
             return workflow
         except Exception as e:
-            logger.error(f"Failed to create workflow: {str(e)}", exc_info=True)
+            logger.error("Failed to create workflow: %s", e, exc_info=True)
             raise
 
     async def get_workflow(self, workflow_id: str, owner_id: str) -> Optional[CustomWorkflow]:
@@ -95,12 +95,12 @@ class CustomWorkflowsService:
             )
             if not row:
                 logger.warning(
-                    f"Workflow {workflow_id} not found or access denied for user {owner_id}"
+                    "Workflow %s not found or access denied for user %s", workflow_id, owner_id
                 )
                 return None
             return self._row_to_workflow(row)
         except Exception as e:
-            logger.error(f"Error retrieving workflow {workflow_id}: {str(e)}", exc_info=True)
+            logger.error("Error retrieving workflow %s: %s", workflow_id, e, exc_info=True)
             raise
 
     async def get_workflow_by_name(self, name: str, owner_id: str) -> Optional[CustomWorkflow]:
@@ -125,11 +125,11 @@ class CustomWorkflowsService:
                 owner_id,
             )
             if not row:
-                logger.warning(f"Workflow '{name}' not found for user {owner_id}")
+                logger.warning("Workflow '%s' not found for user %s", name, owner_id)
                 return None
             return self._row_to_workflow(row)
         except Exception as e:
-            logger.error(f"Error retrieving workflow by name '{name}': {str(e)}", exc_info=True)
+            logger.error("Error retrieving workflow by name '%s': %s", name, e, exc_info=True)
             raise
 
     async def list_workflows(
@@ -185,7 +185,7 @@ class CustomWorkflowsService:
             total_count = rows[0]["total_count"] if rows else 0
             workflows = [self._row_to_workflow(row) for row in rows]
 
-            logger.info(f"Listed {len(workflows)} workflows for user {owner_id}")
+            logger.info("Listed %d workflows for user %s", len(workflows), owner_id)
             return {
                 "workflows": workflows,
                 "total_count": total_count,
@@ -194,7 +194,7 @@ class CustomWorkflowsService:
                 "has_next": (page * page_size) < total_count,
             }
         except Exception as e:
-            logger.error(f"Error listing workflows: {str(e)}", exc_info=True)
+            logger.error("Error listing workflows: %s", e, exc_info=True)
             return {
                 "workflows": [],
                 "total_count": 0,
@@ -242,10 +242,10 @@ class CustomWorkflowsService:
         # Save to database
         try:
             await self._update_workflow_in_db(workflow)
-            logger.info(f"Updated custom workflow: {workflow_id} for user {owner_id}")
+            logger.info("Updated custom workflow: %s for user %s", workflow_id, owner_id)
             return workflow
         except Exception as e:
-            logger.error(f"Failed to update workflow: {str(e)}", exc_info=True)
+            logger.error("Failed to update workflow: %s", e, exc_info=True)
             raise
 
     async def delete_workflow(self, workflow_id: str, owner_id: str) -> bool:
@@ -274,10 +274,10 @@ class CustomWorkflowsService:
             await self.database_service.pool.execute(
                 "DELETE FROM custom_workflows WHERE id = $1", workflow_id
             )
-            logger.info(f"Deleted custom workflow: {workflow_id} for user {owner_id}")
+            logger.info("Deleted custom workflow: %s for user %s", workflow_id, owner_id)
             return True
         except Exception as e:
-            logger.error(f"Failed to delete workflow: {str(e)}", exc_info=True)
+            logger.error("Failed to delete workflow: %s", e, exc_info=True)
             raise
 
     def validate_workflow(self, workflow: CustomWorkflow) -> WorkflowValidationResult:
@@ -326,7 +326,7 @@ class CustomWorkflowsService:
         ]
 
         self._available_phases_cache = available_phases
-        logger.info(f"Loaded {len(available_phases)} available phases")
+        logger.info("Loaded %d available phases", len(available_phases))
         return available_phases
 
     # ========================================================================
@@ -538,13 +538,13 @@ class CustomWorkflowsService:
             )
 
             logger.info(
-                f"Persisted workflow execution: {execution_id} for workflow {workflow_id}, "
-                f"status: {execution_status}, duration: {duration_ms}ms"
+                "Persisted workflow execution: %s for workflow %s, status: %s, duration: %dms",
+                execution_id, workflow_id, execution_status, duration_ms
             )
             return True
 
         except Exception as e:
-            logger.error(f"Failed to persist workflow execution {execution_id}: {e}", exc_info=True)
+            logger.error("Failed to persist workflow execution %s: %s", execution_id, e, exc_info=True)
             return False
 
     async def get_workflow_execution(
@@ -579,7 +579,7 @@ class CustomWorkflowsService:
             return self._row_to_execution(row)
 
         except Exception as e:
-            logger.error(f"Failed to get workflow execution {execution_id}: {e}", exc_info=True)
+            logger.error("Failed to get workflow execution %s: %s", execution_id, e, exc_info=True)
             return None
 
     async def get_workflow_executions(
@@ -641,7 +641,8 @@ class CustomWorkflowsService:
 
         except Exception as e:
             logger.error(
-                f"[get_workflow_executions] Failed to get workflow executions for {workflow_id}: {e}",
+                "[get_workflow_executions] Failed to get workflow executions for %s: %s",
+                workflow_id, e,
                 exc_info=True,
             )
             return {
