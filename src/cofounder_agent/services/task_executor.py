@@ -715,7 +715,7 @@ class TaskExecutor:
                 SELECT task_id, status, topic, task_metadata,
                        COALESCE((task_metadata::jsonb->>'retry_count')::int, 0) as retry_count
                 FROM content_tasks
-                WHERE status IN ('failed', 'rejected')
+                WHERE status = 'failed'
                 AND created_at > NOW() - INTERVAL '24 hours'
                 AND COALESCE((task_metadata::jsonb->>'retry_count')::int, 0) < $1
                 LIMIT 3
