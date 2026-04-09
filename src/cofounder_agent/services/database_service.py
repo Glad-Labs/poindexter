@@ -74,7 +74,7 @@ class DatabaseService:
             database_url_env = os.getenv("DATABASE_URL")
             if not database_url_env:
                 raise ValueError(
-                    "❌ DATABASE_URL environment variable is required. "
+                    "DATABASE_URL environment variable is required. "
                     "PostgreSQL is REQUIRED for all development and production environments. "
                     "Local development must use glad_labs_dev PostgreSQL database."
                 )
@@ -83,10 +83,10 @@ class DatabaseService:
         # Local database URL (optional — falls back to primary pool when unset)
         self.local_database_url = local_database_url or os.getenv("LOCAL_DATABASE_URL") or None
 
-        logger.info(f"DatabaseService initialized with PostgreSQL: {self.database_url[:50]}...")
+        logger.info("DatabaseService initialized with PostgreSQL: %s...", self.database_url[:50])
         if self.local_database_url:
             logger.info(
-                f"DatabaseService local pool configured: {self.local_database_url[:50]}..."
+                "DatabaseService local pool configured: %s...", self.local_database_url[:50]
             )
 
         self.pool = None
@@ -122,7 +122,7 @@ class DatabaseService:
                 command_timeout=30,  # Query execution timeout
             )
             logger.info(
-                f"✅ Database pool initialized (size: {min_size}-{max_size}, query timeout: 30s)"
+                "Database pool initialized (size: %s-%s, query timeout: 30s)", min_size, max_size
             )
 
             # Create local pool if LOCAL_DATABASE_URL is configured, otherwise reuse primary
@@ -137,7 +137,7 @@ class DatabaseService:
                     command_timeout=30,
                 )
                 logger.info(
-                    f"✅ Local database pool initialized (size: {local_min}-{local_max})"
+                    "Local database pool initialized (size: %s-%s)", local_min, local_max
                 )
 
                 # Worker mode: flip pools so .pool = local (internal ops default)
@@ -146,13 +146,13 @@ class DatabaseService:
                 if deployment_mode == "worker":
                     self.cloud_pool = self.pool  # Cloud DB for publishing
                     self.pool = self.local_pool  # Local for everything else
-                    logger.info("🔄 Worker mode: pool=local, cloud_pool=cloud")
+                    logger.info("Worker mode: pool=local, cloud_pool=cloud")
                 else:
                     self.cloud_pool = self.pool  # Coordinator: both point to cloud DB
             else:
                 self.local_pool = self.pool
                 self.cloud_pool = self.pool
-                logger.info("ℹ️  No LOCAL_DATABASE_URL — local_pool = pool (single-pool mode)")
+                logger.info("No LOCAL_DATABASE_URL - local_pool = pool (single-pool mode)")
 
             # Initialize delegate modules routed to appropriate pools
             # Cloud pool: users, content, admin (production DB for public-facing data)
@@ -167,11 +167,11 @@ class DatabaseService:
             self.audit = init_global_audit_logger(self.local_pool)
 
             logger.info(
-                "✅ All database modules initialized "
+                "All database modules initialized "
                 "(users, tasks, content, admin, writing_style, embeddings, audit)"
             )
         except Exception as e:
-            logger.error(f"❌ Failed to initialize database: {e}", exc_info=True)
+            logger.error("Failed to initialize database: %s", e, exc_info=True)
             raise
 
     async def close(self) -> None:
