@@ -238,8 +238,30 @@ def restart_service(name: str):
         logger.error("[BRAIN] Failed to restart %s: %s", name, e, exc_info=True)
 
 
+_last_openclaw_doctor = 0.0  # Track last doctor run to avoid running every cycle
+
+
+def _run_openclaw_doctor():
+    """Run 'openclaw doctor --fix' to heal degraded channels (Telegram 409, WhatsApp disconnect)."""
+    global _last_openclaw_doctor
+    try:
+        kwargs = {"creationflags": 0x08000000} if sys.platform == "win32" else {}
+        result = subprocess.run(
+            ["openclaw", "doctor", "--fix"],
+            capture_output=True, text=True, timeout=30, **kwargs,
+        )
+        _last_openclaw_doctor = time.time()
+        if "error" in result.stdout.lower() or result.returncode != 0:
+            logger.warning("[BRAIN] openclaw doctor reported issues: %s", result.stdout[-200:])
+        else:
+            logger.info("[BRAIN] openclaw doctor --fix ran OK")
+    except Exception as e:
+        logger.warning("[BRAIN] openclaw doctor failed: %s", e)
+
+
 async def monitor_services(pool) -> list:
     """Check all services, log to knowledge graph, alert on failures."""
+    global _last_openclaw_doctor
     issues = []
     for name, config in SERVICES.items():
         if config["type"] == "json_status":
@@ -304,6 +326,11 @@ async def monitor_services(pool) -> list:
                     send_telegram(f"ALERT: {name} is DOWN — {detail}")
         else:
             logger.debug("[BRAIN] Service %s: OK", name)
+
+    # Run openclaw doctor every 15 minutes to heal degraded channels
+    # (Telegram 409 conflicts, WhatsApp disconnects) that appear "up" to HTTP checks
+    if time.time() - _last_openclaw_doctor > 900:
+        _run_openclaw_doctor()
 
     return issues
 
