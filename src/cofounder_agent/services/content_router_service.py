@@ -1851,7 +1851,7 @@ async def process_content_generation_task(
         return result
 
     except Exception as e:
-        logger.error(f"❌ [BG-TASK] Pipeline error for task {task_id[:8]}...: {e}", exc_info=True)
+        logger.error("[BG-TASK] Pipeline error for task %s...: %s", task_id[:8], e, exc_info=True)
         logger.error("[BG-TASK] Detailed traceback:", exc_info=True)
         audit_log_bg("error", "content_router", {
             "error": str(e)[:500], "stages_completed": list(result.get("stages", {}).keys()),
@@ -1862,7 +1862,7 @@ async def process_content_generation_task(
         # so it's available for review/approval workflow
         try:
             logger.debug("[BG-TASK] Attempting to update task status to 'failed'...")
-            logger.debug(f"[BG-TASK] Preserving partial results: {list(result.keys())}")
+            logger.debug("[BG-TASK] Preserving partial results: %s", list(result.keys()))
 
             # Build task_metadata with whatever we successfully generated
             failure_metadata = {
@@ -1893,7 +1893,7 @@ async def process_content_generation_task(
                     "task_metadata": failure_metadata,  # ✅ Preserve all data
                 },
             )
-            logger.debug("[BG-TASK] ✅ Task status updated to 'failed' with preserved data")
+            logger.debug("[BG-TASK] Task status updated to 'failed' with preserved data")
 
             # Emit webhook so OpenClaw is notified of pipeline failure
             try:
@@ -1903,7 +1903,7 @@ async def process_content_generation_task(
             except Exception:
                 logger.warning("[WEBHOOK] Failed to emit task.failed event from pipeline", exc_info=True)
         except Exception as db_error:
-            logger.error(f"❌ [BG-TASK] Failed to update task status: {db_error}", exc_info=True)
+            logger.error("[BG-TASK] Failed to update task status: %s", db_error, exc_info=True)
 
         result["status"] = "failed"
         result["error"] = str(e)
@@ -1954,7 +1954,7 @@ async def _select_category_for_topic(
             )
         return cat_id
     except Exception as e:
-        logger.error(f"Error selecting category: {e}", exc_info=True)
+        logger.error("Error selecting category: %s", e, exc_info=True)
         return None
 
 
@@ -1980,7 +1980,7 @@ async def _get_or_create_default_author(database_service: DatabaseService) -> Op
                 """)
 
             if author_id:
-                logger.info(f"Created default author: Poindexter AI ({author_id})")
+                logger.info("Created default author: Poindexter AI (%s)", author_id)
                 return author_id
 
             # Fallback: return any author
@@ -1988,5 +1988,5 @@ async def _get_or_create_default_author(database_service: DatabaseService) -> Op
             return fallback_id
 
     except Exception as e:
-        logger.error(f"Error getting/creating default author: {e}", exc_info=True)
+        logger.error("Error getting/creating default author: %s", e, exc_info=True)
         return None

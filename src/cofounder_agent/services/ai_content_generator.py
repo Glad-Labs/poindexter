@@ -848,14 +848,14 @@ class AIContentGenerator:
                             return generated_content, metrics["model_used"], metrics
 
                 except asyncio.TimeoutError:
-                    logger.debug(f"HuggingFace model {model_id} timed out")
+                    logger.debug("HuggingFace model %s timed out", model_id)
                     continue
                 except Exception as e:
-                    logger.debug(f"HuggingFace model {model_id} failed: {e}")
+                    logger.debug("HuggingFace model %s failed: %s", model_id, e)
                     continue
 
         except Exception as e:
-            logger.warning(f"HuggingFace generation failed: {e}", exc_info=True)
+            logger.warning("HuggingFace generation failed: %s", e, exc_info=True)
             attempts.append(("HuggingFace", str(e)))
 
         return None
@@ -875,18 +875,19 @@ class AIContentGenerator:
         tags = ctx["tags"]
 
         # If all models fail, use fallback
-        logger.error(f"\n{'='*80}")
-        logger.error("❌ ALL AI MODELS FAILED - Using fallback template")
-        logger.error(f"{'='*80}")
-        logger.error(f"Attempts made: {len(attempts)}")
+        logger.warning(f"\n{'='*80}")
+        logger.warning("[FAIL] ALL AI MODELS FAILED - Using fallback template")
+        logger.warning(f"{'='*80}")
+        logger.warning("Attempts made: %d", len(attempts))
         for provider, error in attempts:
-            logger.error(f"   ✗ {provider}: {error}")
-        logger.error("Provider summary:")
-        logger.error(f"   - Ollama:      {use_ollama} (tried/available)")
-        logger.error(
-            f"   - HuggingFace: {ProviderChecker.is_huggingface_available()} (token available)"
+            logger.warning("   [FAIL] %s: %s", provider, error)
+        logger.warning("Provider summary:")
+        logger.warning("   - Ollama:      %s (tried/available)", use_ollama)
+        logger.warning(
+            "   - HuggingFace: %s (token available)",
+            ProviderChecker.is_huggingface_available(),
         )
-        logger.error(f"{'='*80}\n")
+        logger.warning(f"{'='*80}\n")
 
         # Capture in Sentry as a distinct message so alert rules can target it.
         # Generated content will be a stub template, not AI output (issue #556).
@@ -1058,8 +1059,8 @@ async def test_generation():
     generator = get_content_generator()
 
     logger.info("Testing content generation...")
-    logger.debug(f"Ollama available: {generator.ollama_available}")
-    logger.debug(f"HuggingFace token: {'✓' if generator.hf_token else '✗'}")
+    logger.debug("Ollama available: %s", generator.ollama_available)
+    logger.debug("HuggingFace token: %s", "yes" if generator.hf_token else "no")
 
     logger.info("Generating blog post...")
     content, model, metrics = await generator.generate_blog_post(
@@ -1070,12 +1071,12 @@ async def test_generation():
         tags=["AI", "Marketing", "Technology"],
     )
 
-    logger.info(f"Model used: {model}")
-    logger.info(f"Content length: {len(content)} characters")
-    logger.info(f"Quality score: {metrics['final_quality_score']}/10")
-    logger.info(f"Generation attempts: {metrics['generation_attempts']}")
+    logger.info("Model used: %s", model)
+    logger.info("Content length: %d characters", len(content))
+    logger.info("Quality score: %s/10", metrics["final_quality_score"])
+    logger.info("Generation attempts: %s", metrics["generation_attempts"])
     logger.info(f"Time taken: {metrics['generation_time_seconds']:.2f} seconds")
-    logger.info(f"First 500 characters:\n{content[:500]}...")
+    logger.info("First 500 characters:\n%s...", content[:500])
 
 
 if __name__ == "__main__":
