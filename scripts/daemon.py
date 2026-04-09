@@ -525,6 +525,18 @@ def main():
                 run_db_sync()
             except Exception as e:
                 logger.error("DB sync error: %s", e)
+
+            # Run openclaw doctor to heal degraded channels (Telegram 409, WhatsApp disconnect)
+            # Runs alongside sync (every 15 min) since both are maintenance tasks
+            try:
+                import subprocess as _sp
+                _kwargs = {"creationflags": 0x08000000} if sys.platform == "win32" else {}
+                _result = _sp.run(["openclaw", "doctor", "--fix"], capture_output=True, text=True, timeout=30, **_kwargs)
+                if _result.returncode != 0:
+                    logger.warning("[OPENCLAW] doctor --fix failed: %s", _result.stdout[-200:])
+            except Exception as _e:
+                logger.debug("[OPENCLAW] doctor not available: %s", _e)
+
             last_sync = now
 
         if one_shot:
