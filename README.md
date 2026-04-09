@@ -20,29 +20,49 @@ One engine that runs your entire content operation:
 
 Run it on your machine. Own your data. No cloud lock-in.
 
+## Prerequisites
+
+- **Docker Desktop** — [docker.com](https://docker.com) (required)
+- **Ollama** — [ollama.com](https://ollama.com) (required for local AI inference)
+- **Node.js 22+** — [nodejs.org](https://nodejs.org) (for frontend)
+- **GPU (recommended)** — RTX 3060+ (8GB VRAM min). Works on CPU but slow.
+
 ## Quick Start
 
 ```bash
-# 1. Clone and configure
+# 1. Clone
 git clone https://github.com/Glad-Labs/glad-labs-engine.git
 cd glad-labs-engine
-cp .env.example .env          # Edit with your settings
 
-# 2. Start everything (Postgres, Grafana, Prometheus, API, worker)
-docker compose up -d
+# 2. Bootstrap (creates config, starts DB, pulls models, seeds settings)
+bash scripts/bootstrap.sh
 
-# 3. Install Ollama (if not already)
-# https://ollama.ai — then pull a model:
-ollama pull llama3.3:70b
+# 3. Start the full stack
+docker compose -f docker-compose.local.yml up -d
 
 # 4. Your first post
 curl -X POST http://localhost:8002/api/tasks \
-  -H "Authorization: Bearer YOUR_API_TOKEN" \
+  -H "Authorization: Bearer $(grep API_TOKEN .env.local | cut -d= -f2)" \
   -H "Content-Type: application/json" \
   -d '{"topic": "Why Docker changed everything", "task_type": "blog_post"}'
 ```
 
 The pipeline runs automatically. Check progress at `http://localhost:3000` (Grafana).
+
+### Minimum Models (auto-pulled by bootstrap)
+
+| Model              | Size  | Role                                        |
+| ------------------ | ----- | ------------------------------------------- |
+| `qwen3:8b`         | 5GB   | Fast tasks: SEO, image decisions, summaries |
+| `gemma3:27b`       | 16GB  | QA reviews, fallback critic                 |
+| `nomic-embed-text` | 274MB | Embeddings for semantic search              |
+
+For better writing quality, also pull a larger writer model:
+
+```bash
+ollama pull qwen3:30b      # 18GB — good balance of speed and quality
+ollama pull glm-4.7:9b     # 6GB — lighter alternative
+```
 
 ## Architecture
 
