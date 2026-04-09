@@ -82,7 +82,7 @@ def _load_pipeline():
     from diffusers import StableDiffusionXLPipeline, EulerDiscreteScheduler
     logger.info("Loading %s on %s (%d MB VRAM)", DEFAULT_MODEL,
                 torch.cuda.get_device_name(0),
-                torch.cuda.get_device_properties(0).total_mem // 1024 // 1024)
+                torch.cuda.get_device_properties(0).total_memory // 1024 // 1024)
     pipe = StableDiffusionXLPipeline.from_pretrained(
         DEFAULT_MODEL, torch_dtype=torch.float16, variant="fp16", use_safetensors=True)
     pipe.scheduler = EulerDiscreteScheduler.from_config(pipe.scheduler.config)
@@ -112,7 +112,7 @@ async def health():
     gpu_ok = torch.cuda.is_available()
     return {"status": "ready" if _pipeline else "idle", "model": _model_name,
             "gpu": torch.cuda.get_device_name(0) if gpu_ok else None,
-            "vram_total_mb": torch.cuda.get_device_properties(0).total_mem // 1024 // 1024 if gpu_ok else 0,
+            "vram_total_mb": torch.cuda.get_device_properties(0).total_memory // 1024 // 1024 if gpu_ok else 0,
             "gpu_available": gpu_ok}
 
 @app.post("/generate", response_model=GenerateResponse)
