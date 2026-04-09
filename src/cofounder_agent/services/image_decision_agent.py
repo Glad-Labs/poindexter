@@ -149,11 +149,15 @@ Output ONLY valid JSON (no markdown, no explanation):
 
             # Ollama may need to load the model into VRAM on first call.
             # Retry with backoff on 404 (model not loaded yet).
+            # Use /nothink prefix for qwen3 thinking models to get direct JSON output.
+            is_thinking_model = any(t in model.lower() for t in ("qwen3", "glm-4.7"))
+            actual_prompt = f"/nothink\n{prompt}" if is_thinking_model else prompt
+
             raw = ""
             for _attempt in range(3):
                 resp = await client.post(f"{ollama_url}/api/generate", json={
                     "model": model,
-                    "prompt": prompt,
+                    "prompt": actual_prompt,
                     "stream": False,
                     "options": {"num_predict": 800, "temperature": 0.7},
                 })
@@ -164,7 +168,12 @@ Output ONLY valid JSON (no markdown, no explanation):
                     await asyncio.sleep(wait_s)
                     continue
                 resp.raise_for_status()
-                raw = resp.json().get("response", "").strip()
+                resp_data = resp.json()
+                raw = resp_data.get("response", "").strip()
+                # Thinking models may put content in "thinking" field instead of "response"
+                if not raw and resp_data.get("thinking"):
+                    raw = resp_data["thinking"].strip()
+                    logger.debug("[IMAGE_AGENT] Using thinking field (response was empty)")
                 break
 
         # Parse the JSON response
@@ -174,7 +183,19 @@ Output ONLY valid JSON (no markdown, no explanation):
         raw_clean = re.sub(r'^```(?:json)?\s*', '', raw_clean, flags=re.MULTILINE)
         raw_clean = re.sub(r'```\s*$', '', raw_clean, flags=re.MULTILINE).strip()
 
-        plan_data = json.loads(raw_clean)
+        # Try direct parse first, then search for JSON object in the text
+        try:
+            plan_data = json.loads(raw_clean)
+        except (json.JSONDecodeError, ValueError):
+            # Thinking models may embed JSON within reasoning text — extract it
+            json_match = re.search(r'\{[^{}]*"featured"[^}]*\{.*\}.*\}', raw_clean, re.DOTALL)
+            if not json_match:
+                json_match = re.search(r'\{.*\}', raw_clean, re.DOTALL)
+            if json_match:
+                plan_data = json.loads(json_match.group(0))
+                logger.info("[IMAGE_AGENT] Extracted JSON from reasoning text")
+            else:
+                raise
 
         result = ImagePlanResult(raw_response=raw)
 
