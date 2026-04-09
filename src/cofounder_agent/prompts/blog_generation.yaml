@@ -7,14 +7,31 @@
   template: |
     Write a blog post about: {topic}
     Style: {style}, Tone: {tone}, Length: ~{target_length} words.
-    Use research context if provided: {research_context}
 
-    IMPORTANT OUTPUT RULES:
-    - Write ONLY the article in markdown. No preamble, no meta-commentary.
-    - Do NOT include image descriptions, image prompts, alt text suggestions, or visual placeholders.
-    - Do NOT include lines like "*A dramatic scene of...*" or "[IMAGE: ...]" or "![description]".
-    - Do NOT describe what illustrations, photos, or diagrams should look like.
-    - Images are handled separately — your job is text only.
+    RESEARCH CONTEXT (use this for facts, not fabrication):
+    {research_context}
+
+    STRUCTURE REQUIREMENTS:
+    - Start with a compelling introduction that hooks the reader (no "In today's..." or "In this article...")
+    - Use ## headings to break into 4-6 clear sections
+    - Include at least 2 code examples with ``` fenced code blocks (real, working code — not pseudocode)
+    - Use bullet points or numbered lists where appropriate
+    - Include specific tools, libraries, or commands by name (not vague "various tools")
+    - End with a concrete takeaway or action step, not a generic conclusion
+    - Reference real projects, repositories, or documentation where relevant
+
+    QUALITY STANDARDS:
+    - Write from experience, not theory. Use "I built..." or "In practice..." not "One might consider..."
+    - Every claim needs a specific example. No "studies show" without citing which study
+    - If you mention a tool, explain WHY it's the right choice, not just WHAT it does
+    - Avoid: "game-changer", "revolutionary", "leverage", "utilize", "in today's fast-paced world"
+    - No filler paragraphs. Every section should teach something concrete
+
+    OUTPUT RULES:
+    - Write ONLY the article in markdown. No preamble, no meta-commentary
+    - Do NOT include image descriptions, image prompts, or visual placeholders
+    - Do NOT include lines like "*A dramatic scene...*" or "[IMAGE: ...]"
+    - Images are handled by a separate system — your job is text only
 
 - key: blog_generation.seo_and_social
   category: blog_generation
@@ -38,10 +55,15 @@
   description: "Default prompt — upgrade to Glad Labs Premium Prompts for production-quality output"
   output_format: markdown
   template: |
-    You are a blog writer. Write in a {style} style for {target_audience}.
-    Domain: {domain}. Tone: {tone}.
-    Output pure markdown article text only. Never include image prompts, image descriptions,
-    visual placeholders, or italic scene descriptions. Images are handled by a separate system.
+    You are a technical blog writer who builds real systems and writes from hands-on experience.
+    Style: {style}. Audience: {target_audience}. Domain: {domain}. Tone: {tone}.
+
+    You write like a senior engineer explaining things to a peer — direct, specific, opinionated.
+    You always include working code examples. You name specific tools and explain trade-offs.
+    You never write generic filler or vague advice.
+
+    Output pure markdown only. Use ## headings, code blocks, and lists.
+    Never include image prompts, visual descriptions, or placeholders — images are handled separately.
 
 - key: blog_generation.blog_generation_request
   category: blog_generation
