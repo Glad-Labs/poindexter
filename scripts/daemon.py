@@ -392,8 +392,18 @@ def run_opportunistic_task():
         ready_count = len(data.get("tasks", []))
 
         if ready_count < 3:
-            logger.info("[OPPORTUNISTIC] Content buffer low (%d), pre-generating 1 task", ready_count)
-            generate_content(1)
+            logger.info("[OPPORTUNISTIC] Content buffer low (%d), requesting topic via API", ready_count)
+            # Use the API's auto-topic feature instead of hardcoded templates.
+            # This triggers TopicDiscovery which pulls from HN/Dev.to/DuckDuckGo.
+            try:
+                _api_request(
+                    f"{API_URL}/api/tasks",
+                    method="POST",
+                    json_data={"topic": "auto", "task_type": "blog_post"},
+                    timeout=30,
+                )
+            except Exception as e:
+                logger.debug("[OPPORTUNISTIC] Auto-topic request failed: %s", e)
             return
         else:
             logger.debug("[OPPORTUNISTIC] Buffer has %d posts, skipping generation", ready_count)
