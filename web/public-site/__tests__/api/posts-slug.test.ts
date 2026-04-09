@@ -3,9 +3,8 @@
  *
  * Tests for /api/posts/[slug] route handler
  *
- * Uses jest-environment-node so that the Web Fetch API globals
- * (Request, Response, Headers) are available via Node 18+ built-ins,
- * which NextRequest depends on.
+ * The route now reads from static JSON on R2/CDN (posts/{slug}.json).
+ * Mocks global.fetch so no real HTTP calls are made.
  */
 
 import { NextRequest } from 'next/server';
@@ -47,7 +46,7 @@ describe('GET /api/posts/[slug]', () => {
     expect(body.slug).toBe('my-post');
   });
 
-  it('returns 404 when backend returns 404', async () => {
+  it('returns 404 when static JSON returns non-ok (post not found)', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: false,
       status: 404,
@@ -61,7 +60,7 @@ describe('GET /api/posts/[slug]', () => {
     expect(body.error).toBe('Post not found');
   });
 
-  it('returns 500 when backend returns non-ok, non-404 status', async () => {
+  it('returns 404 when static JSON returns any non-ok status', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: false,
       status: 503,
@@ -70,7 +69,8 @@ describe('GET /api/posts/[slug]', () => {
     const [req, ctx] = makeRequest('my-post');
     const res = await GET(req, ctx);
 
-    expect(res.status).toBe(500);
+    // The route returns 404 for all non-ok responses (no backend distinction)
+    expect(res.status).toBe(404);
   });
 
   it('returns 500 when fetch throws (network error)', async () => {
@@ -86,7 +86,7 @@ describe('GET /api/posts/[slug]', () => {
     expect(body.error).toBe('Failed to fetch post');
   });
 
-  it('URL-encodes the slug before forwarding to backend', async () => {
+  it('URL-encodes the slug before fetching static JSON', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -98,5 +98,19 @@ describe('GET /api/posts/[slug]', () => {
 
     const calledUrl = (global.fetch as jest.Mock).mock.calls[0][0] as string;
     expect(calledUrl).toContain('hello%20world');
+  });
+
+  it('fetches from posts/{slug}.json on R2', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ id: '1', slug: 'my-post', title: 'Test' }),
+    } as Response);
+
+    const [req, ctx] = makeRequest('my-post');
+    await GET(req, ctx);
+
+    const calledUrl = (global.fetch as jest.Mock).mock.calls[0][0] as string;
+    expect(calledUrl).toContain('/posts/my-post.json');
   });
 });

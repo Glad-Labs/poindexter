@@ -1,13 +1,12 @@
 import type { Metadata } from 'next';
 import logger from '@/lib/logger';
-import * as Sentry from '@sentry/nextjs';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { getAllPublishedPosts } from '@/lib/posts';
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  process.env.NEXT_PUBLIC_FASTAPI_URL ||
-  'http://localhost:8000';
+const STATIC_URL =
+  process.env.NEXT_PUBLIC_STATIC_URL ||
+  'https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/static';
 
 interface Post {
   id: string;
@@ -19,6 +18,7 @@ interface Post {
   published_at?: string;
   created_at: string;
   view_count: number;
+  category_id?: string;
 }
 
 interface Category {
@@ -29,54 +29,34 @@ interface Category {
   post_count?: number;
 }
 
-async function getCategory(slug: string): Promise<Category | null> {
+async function getCategories(): Promise<Category[]> {
   try {
-    const response = await fetch(`${API_BASE}/api/categories/${slug}`, {
-      next: { revalidate: 3600 },
+    const response = await fetch(`${STATIC_URL}/categories.json`, {
+      next: { revalidate: 300 },
     });
-
-    if (!response.ok) {
-      return null;
-    }
-
+    if (!response.ok) return [];
     const data = await response.json();
-    return data.data || data;
+    return data.categories || data || [];
   } catch (error) {
-    logger.error(`Error fetching category "${slug}":`, error);
-    Sentry.captureException(error);
-    return null;
-  }
-}
-
-async function getCategoryPosts(categoryId: string): Promise<Post[]> {
-  try {
-    const response = await fetch(
-      `${API_BASE}/api/posts?category_id=${categoryId}&limit=100&status=published`,
-      {
-        next: { revalidate: 3600 },
-      }
-    );
-
-    if (!response.ok) {
-      return [];
-    }
-
-    const data = await response.json();
-    return data.posts || data.items || data.data || [];
-  } catch (error) {
-    logger.error(`Error fetching posts for category "${categoryId}":`, error);
-    Sentry.captureException(error);
+    logger.error('Error fetching categories:', error);
     return [];
   }
 }
 
+async function getCategory(slug: string): Promise<Category | null> {
+  const categories = await getCategories();
+  return categories.find((c) => c.slug === slug) || null;
+}
+
+async function getCategoryPosts(categoryId: string): Promise<Post[]> {
+  const allPosts = await getAllPublishedPosts();
+  return allPosts.filter((p) => p.category_id === categoryId);
+}
+
 export async function generateStaticParams() {
   try {
-    const response = await fetch(`${API_BASE}/api/categories`);
-    if (!response.ok) return [];
-    const data = await response.json();
-    const categories = data.categories || data.data || data || [];
-    return categories.map((cat: { slug: string }) => ({ slug: cat.slug }));
+    const categories = await getCategories();
+    return categories.map((cat) => ({ slug: cat.slug }));
   } catch {
     return [];
   }

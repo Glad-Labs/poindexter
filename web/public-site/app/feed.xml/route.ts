@@ -10,10 +10,9 @@
 import { NextResponse } from 'next/server';
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.gladlabs.io';
-const FASTAPI_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  process.env.NEXT_PUBLIC_FASTAPI_URL ||
-  'http://localhost:8000';
+const STATIC_URL =
+  process.env.NEXT_PUBLIC_STATIC_URL ||
+  'https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/static';
 
 interface Post {
   title: string;
@@ -28,24 +27,15 @@ interface Post {
 
 export async function GET() {
   try {
-    // Fetch published posts from the API
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10_000);
-
-    const response = await fetch(
-      `${FASTAPI_URL}/api/posts?limit=20&published_only=true`,
-      {
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
-        next: { revalidate: 3600 }, // Cache for 1 hour
-      }
-    );
-    clearTimeout(timeoutId);
+    // Fetch published posts from static JSON on R2
+    const response = await fetch(`${STATIC_URL}/posts/index.json`, {
+      next: { revalidate: 300 }, // Revalidate every 5 min
+    });
 
     let posts: Post[] = [];
     if (response.ok) {
       const data = await response.json();
-      posts = data.posts || data.data || [];
+      posts = (data.posts || []).slice(0, 20); // RSS feed: latest 20 posts
     }
 
     const now = new Date().toUTCString();

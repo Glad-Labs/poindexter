@@ -26,7 +26,7 @@ jest.mock('@/lib/logger', () => ({
   default: { error: jest.fn(), warn: jest.fn(), info: jest.fn() },
 }));
 
-// Mock global fetch to avoid real network calls
+// Mock global fetch to return static JSON shape from R2
 const mockPosts = [
   {
     id: '1',
@@ -54,7 +54,12 @@ beforeEach(() => {
   global.fetch = jest.fn(() =>
     Promise.resolve({
       ok: true,
-      json: () => Promise.resolve({ posts: mockPosts, total: 2 }),
+      json: () =>
+        Promise.resolve({
+          posts: mockPosts,
+          total: 2,
+          exported_at: '2026-01-15T00:00:00Z',
+        }),
     })
   );
 });
@@ -120,7 +125,12 @@ describe('Archive Page (/archive/[page])', () => {
     global.fetch = jest.fn(() =>
       Promise.resolve({
         ok: true,
-        json: () => Promise.resolve({ posts: [], total: 0 }),
+        json: () =>
+          Promise.resolve({
+            posts: [],
+            total: 0,
+            exported_at: '2026-01-15T00:00:00Z',
+          }),
       })
     );
     await renderPage();
@@ -134,10 +144,21 @@ describe('Archive Page (/archive/[page])', () => {
   });
 
   test('renders pagination when total exceeds page size', async () => {
+    // 25 posts in index means 3 pages; we return first 10 in the slice
+    const manyPosts = Array.from({ length: 25 }, (_, i) => ({
+      ...mockPosts[0],
+      id: String(i),
+      slug: `post-${i}`,
+    }));
     global.fetch = jest.fn(() =>
       Promise.resolve({
         ok: true,
-        json: () => Promise.resolve({ posts: mockPosts, total: 25 }),
+        json: () =>
+          Promise.resolve({
+            posts: manyPosts,
+            total: 25,
+            exported_at: '2026-01-15T00:00:00Z',
+          }),
       })
     );
     const { container } = await renderPage();

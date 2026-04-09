@@ -21,122 +21,57 @@ interface Tag {
   slug: string;
 }
 
+const STATIC_URL =
+  process.env.NEXT_PUBLIC_STATIC_URL ||
+  'https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/static';
+
 /**
  * Dynamic Sitemap Generation for Next.js 15
  *
- * This generates yourdomain.com/sitemap.xml from Postgres data.
+ * Reads from static JSON on R2/CDN — no API server needed.
  * Automatically indexes all published posts, categories, and tags.
  *
  * Google will crawl this immediately on deployment.
  */
 
-// Import FastAPI client to query published posts
 async function fetchPublishedContent() {
-  // Note: This runs at runtime via ISR, not during the initial Vercel build.
-  // The sitemap is regenerated periodically (Next.js default: every request).
-
-  const FASTAPI_URL =
-    process.env.NEXT_PUBLIC_API_BASE_URL ||
-    process.env.NEXT_PUBLIC_FASTAPI_URL ||
-    'http://localhost:8000';
-
-  // Validate that FASTAPI_URL is a valid absolute URL
-  let isValidUrl = false;
   try {
-    new URL(FASTAPI_URL);
-    isValidUrl = true;
-  } catch {
-    logger.warn(
-      'Invalid NEXT_PUBLIC_FASTAPI_URL during build. Using static fallback.'
-    );
-  }
+    // Fetch posts, categories, and sitemap data in parallel
+    const [postsRes, categoriesRes, sitemapRes] = await Promise.all([
+      fetch(`${STATIC_URL}/posts/index.json`, {
+        next: { revalidate: 300 },
+      }),
+      fetch(`${STATIC_URL}/categories.json`, {
+        next: { revalidate: 300 },
+      }),
+      fetch(`${STATIC_URL}/sitemap.json`, {
+        next: { revalidate: 300 },
+      }),
+    ]);
 
-  // If URL is invalid, return empty results (use static pages only)
-  if (!isValidUrl) {
-    logger.log(
-      'NEXT_PUBLIC_FASTAPI_URL is invalid. Skipping dynamic content fetch.'
-    );
-    return { allPosts: [], allCategories: [], allTags: [] };
-  }
+    const allPosts: Post[] = postsRes.ok
+      ? (await postsRes.json()).posts || []
+      : [];
 
-  // Skip fetching when using the default localhost fallback (no real API configured).
-  // In local dev, the homepage and archive pages fetch from localhost directly,
-  // but the sitemap should only include dynamic content when a real API is available.
-  const isLocalhost =
-    FASTAPI_URL.includes('localhost') || FASTAPI_URL.includes('127.0.0.1');
-  const hasExplicitApiUrl =
-    Boolean(process.env.NEXT_PUBLIC_API_BASE_URL) ||
-    Boolean(process.env.NEXT_PUBLIC_FASTAPI_URL);
-  if (isLocalhost && !hasExplicitApiUrl) {
-    logger.log(
-      'No API URL configured (using localhost fallback). Skipping dynamic sitemap content.'
-    );
-    return { allPosts: [], allCategories: [], allTags: [] };
-  }
+    const allCategories: Category[] = categoriesRes.ok
+      ? (await categoriesRes.json()).categories ||
+        (await categoriesRes.json()) ||
+        []
+      : [];
 
-  const API_BASE = `${FASTAPI_URL}/api`;
-  const FETCH_TIMEOUT = 10_000; // 10s timeout per request — avoid 60s build hangs
-
-  try {
-    // Fetch all published posts with pagination (API max limit is 100)
-    let allPosts: Post[] = [];
-    let skip = 0;
-    const limit = 100;
-    let hasMore = true;
-
-    while (hasMore) {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
-      const postsResponse = await fetch(
-        `${API_BASE}/posts?offset=${skip}&limit=${limit}&published_only=true`,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          signal: controller.signal,
-        }
-      );
-      clearTimeout(timeoutId);
-
-      if (!postsResponse.ok) break;
-
-      const pageJson = await postsResponse.json();
-      const pageData = pageJson.posts || pageJson.data || [];
-      if (pageData.length === 0) {
-        hasMore = false;
-      } else {
-        allPosts = [...allPosts, ...pageData];
-        skip += limit;
-      }
+    // Extract unique tags from sitemap.json tag URLs, or fall back to empty
+    let allTags: Tag[] = [];
+    if (sitemapRes.ok) {
+      const sitemapData = await sitemapRes.json();
+      const urls: { loc: string }[] = sitemapData.urls || sitemapData || [];
+      allTags = urls
+        .filter((u) => u.loc && u.loc.includes('/tag/'))
+        .map((u) => {
+          const slug = u.loc.split('/tag/').pop()?.replace(/\/$/, '') || '';
+          return { slug };
+        })
+        .filter((t) => t.slug);
     }
-
-    // Fetch all categories
-    const catController = new AbortController();
-    const catTimeoutId = setTimeout(() => catController.abort(), FETCH_TIMEOUT);
-    const categoriesResponse = await fetch(`${API_BASE}/categories`, {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      signal: catController.signal,
-    });
-    clearTimeout(catTimeoutId);
-    const catJson = categoriesResponse.ok
-      ? await categoriesResponse.json()
-      : {};
-    const allCategories = catJson.categories || catJson.data || [];
-
-    // Fetch all tags
-    const tagController = new AbortController();
-    const tagTimeoutId = setTimeout(() => tagController.abort(), FETCH_TIMEOUT);
-    const tagsResponse = await fetch(`${API_BASE}/tags`, {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      signal: tagController.signal,
-    });
-    clearTimeout(tagTimeoutId);
-    const tagJson = tagsResponse.ok ? await tagsResponse.json() : {};
-    const allTags = tagJson.tags || tagJson.data || [];
 
     return { allPosts, allCategories, allTags };
   } catch (error) {

@@ -3,7 +3,6 @@ import { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import * as Sentry from '@sentry/nextjs';
 import {
   BlogPostingSchema,
   BreadcrumbSchema,
@@ -18,11 +17,12 @@ import {
   buildSEOTitle,
   generateCanonicalURL,
 } from '../../../lib/seo';
-
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  process.env.NEXT_PUBLIC_FASTAPI_URL ||
-  'http://localhost:8000';
+import {
+  getPostBySlug,
+  getRelatedPosts,
+  getAllPublishedPosts,
+  type Post,
+} from '../../../lib/posts';
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.gladlabs.io';
 
@@ -31,79 +31,23 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.gladlabs.io';
 // work via ISR fallback (dynamicParams defaults to true in Next.js 15).
 export async function generateStaticParams(): Promise<{ slug: string }[]> {
   try {
-    const response = await fetch(
-      `${API_BASE}/api/posts?offset=0&limit=50&published_only=true`,
-      { next: { revalidate: 3600 } }
-    );
-    if (!response.ok) return [];
-    const data = await response.json();
-    const posts = Array.isArray(data?.posts)
-      ? data.posts
-      : Array.isArray(data?.data)
-        ? data.data
-        : [];
+    const posts = await getAllPublishedPosts();
     return posts
-      .filter((p: { slug?: string }) => p.slug)
-      .map((p: { slug: string }) => ({ slug: p.slug }));
-  } catch (error) {
-    Sentry.captureException(error);
+      .slice(0, 50)
+      .filter((p) => p.slug)
+      .map((p) => ({ slug: p.slug }));
+  } catch {
     return [];
   }
-}
-
-interface Post {
-  id: string;
-  title: string;
-  slug: string;
-  content: string;
-  excerpt?: string;
-  featured_image_url?: string;
-  cover_image_url?: string;
-  author_id?: string;
-  category_id?: string;
-  seo_title?: string;
-  seo_description?: string;
-  seo_keywords?: string;
-  published_at?: string;
-  created_at: string;
-  view_count: number;
 }
 
 // Fetch post data.
 // Wrapped with React.cache() so that generateMetadata and PostPage share a
 // single fetch result within the same server-side render request (issue #521).
-// The underlying fetch still uses ISR revalidation (next: { revalidate: 86400 })
-// for cross-request caching at the Next.js layer.
 const getPost = cache(async function getPost(
   slug: string
 ): Promise<Post | null> {
-  try {
-    // Use direct endpoint for single post by slug (much faster than fetching all posts)
-    const response = await fetch(`${API_BASE}/api/posts/${slug}`, {
-      next: { revalidate: 3600 }, // ISR: revalidate every 1 hour (matches homepage) + on-demand revalidation via publish webhook
-    });
-
-    if (!response.ok) {
-      if (response.status === 404) {
-        return null;
-      }
-      // Non-404 API errors reported to Sentry so backend outages are visible
-      Sentry.captureMessage(
-        `Failed to fetch post "${slug}": HTTP ${response.status}`,
-        'error'
-      );
-      return null;
-    }
-
-    const data = await response.json();
-    const post = data.data || data;
-
-    return post || null;
-  } catch (error) {
-    // Network/timeout errors reported to Sentry
-    Sentry.captureException(error, { extra: { slug } });
-    return null;
-  }
+  return getPostBySlug(slug);
 });
 
 // Generate metadata for the post
@@ -181,29 +125,16 @@ export default async function PostPage({
 }) {
   const { slug } = await params;
 
-  // Fetch main post and related posts in parallel to avoid waterfall
-  const [post, relatedPostsRaw] = await Promise.all([
-    getPost(slug),
-    fetch(`${API_BASE}/api/posts?offset=0&limit=4&published_only=true`, {
-      next: { revalidate: 3600 },
-    })
-      .then(async (relRes) => {
-        if (!relRes.ok) return [];
-        const relData = await relRes.json();
-        return relData.posts || relData.data || [];
-      })
-      .catch(() => [] as Post[]),
-  ]);
+  const post = await getPost(slug);
 
   if (!post) {
     notFound();
   }
 
-  const relatedPosts: Post[] = (
-    Array.isArray(relatedPostsRaw) ? relatedPostsRaw : []
-  )
-    .filter((p: Post) => p.slug !== post.slug)
-    .slice(0, 3);
+  // Fetch related posts from the same category
+  const relatedPosts: Post[] = post.category_id
+    ? await getRelatedPosts(post.category_id, post.id, 3)
+    : [];
 
   const imageUrl = post.cover_image_url || post.featured_image_url;
   const publishDate = post.published_at || post.created_at;

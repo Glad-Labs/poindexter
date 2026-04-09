@@ -1,63 +1,15 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import type { Metadata } from 'next';
-import * as Sentry from '@sentry/nextjs';
-import logger from '@/lib/logger';
-
-interface Post {
-  id: string;
-  title: string;
-  slug: string;
-  excerpt?: string;
-  featured_image_url?: string;
-  published_at?: string;
-  created_at: string;
-  view_count: number;
-}
+import { getPosts } from '@/lib/posts';
 
 const POSTS_PER_PAGE = 12;
 
-const FASTAPI_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  process.env.NEXT_PUBLIC_FASTAPI_URL ||
-  'http://localhost:8000';
-
 async function getAllPublishedPosts() {
   try {
-    const url = `${FASTAPI_URL}/api/posts?offset=0&limit=${POSTS_PER_PAGE}&published_only=true`;
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-    const response = await fetch(url, {
-      next: { revalidate: 900 },
-      headers: { 'Content-Type': 'application/json' },
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      Sentry.captureMessage(
-        `Posts listing fetch failed: ${response.status}`,
-        'error'
-      );
-      return { posts: [], total: 0, error: 'api_error' };
-    }
-
-    const data = await response.json();
-    const posts: Post[] =
-      data?.posts ||
-      data?.data ||
-      data?.items ||
-      (Array.isArray(data) ? data : []);
-    const total =
-      data?.total ?? data?.meta?.pagination?.total ?? posts.length ?? 0;
-
-    return { posts, total, error: null };
-  } catch (error) {
-    logger.error('Error fetching posts listing:', error);
-    Sentry.captureException(error);
+    const data = await getPosts(1);
+    return { posts: data.posts, total: data.total, error: null };
+  } catch {
     return { posts: [], total: 0, error: 'network' };
   }
 }

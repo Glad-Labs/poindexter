@@ -1,10 +1,21 @@
 /**
  * Posts API Tests (lib/posts.ts)
  *
- * Tests the FastAPI integration for fetching posts
- * Verifies: API calls, error handling, data transformation
+ * Tests the static JSON integration for fetching posts from R2/CDN.
+ * Verifies: fetch calls, error handling, pagination, data transformation
  */
 import { getPosts, getPostBySlug, getPostsByCategory } from '../lib/posts';
+
+// Mock logger to avoid noise
+jest.mock('./logger', () => ({
+  __esModule: true,
+  default: {
+    error: jest.fn(),
+    warn: jest.fn(),
+    info: jest.fn(),
+    log: jest.fn(),
+  },
+}));
 
 // Mock fetch
 global.fetch = jest.fn();
@@ -36,7 +47,11 @@ describe('Posts API (lib/posts.ts)', () => {
     it('should fetch published posts and return structured response', async () => {
       (fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ posts: [mockPost], total: 1 }),
+        json: async () => ({
+          posts: [mockPost],
+          total: 1,
+          exported_at: '2024-01-15T10:00:00Z',
+        }),
       });
 
       const result = await getPosts();
@@ -45,38 +60,49 @@ describe('Posts API (lib/posts.ts)', () => {
       expect(result.total).toBe(1);
       expect(result.page).toBe(1);
       expect(fetch).toHaveBeenCalledWith(
-        expect.stringContaining('/api/posts'),
+        expect.stringContaining('/posts/index.json'),
         expect.any(Object)
       );
     });
 
     it('should handle pagination with page parameter', async () => {
+      // Create 15 posts so page 2 returns the remainder
+      const manyPosts = Array.from({ length: 15 }, (_, i) => ({
+        ...mockPost,
+        id: `post-${i}`,
+        slug: `test-post-${i}`,
+      }));
+
       (fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ posts: [mockPost], total: 20 }),
+        json: async () => ({
+          posts: manyPosts,
+          total: 15,
+          exported_at: '2024-01-15T10:00:00Z',
+        }),
       });
 
       const result = await getPosts(2);
 
-      expect(fetch).toHaveBeenCalledWith(
-        expect.stringContaining('offset='),
-        expect.any(Object)
-      );
+      // Page 2 with 10 per page should return posts 10-14 (5 posts)
+      expect(result.posts).toHaveLength(5);
       expect(result.page).toBe(2);
     });
 
-    it('should filter by published status', async () => {
+    it('should fetch from static index.json (not API with status param)', async () => {
       (fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ posts: [mockPost], total: 1 }),
+        json: async () => ({
+          posts: [mockPost],
+          total: 1,
+          exported_at: '2024-01-15T10:00:00Z',
+        }),
       });
 
       await getPosts();
 
-      expect(fetch).toHaveBeenCalledWith(
-        expect.stringContaining('status=published'),
-        expect.any(Object)
-      );
+      const calledUrl = (fetch as jest.Mock).mock.calls[0][0] as string;
+      expect(calledUrl).toContain('/posts/index.json');
     });
 
     it('should return empty result on API error', async () => {
@@ -88,7 +114,6 @@ describe('Posts API (lib/posts.ts)', () => {
 
       const result = await getPosts();
 
-      // getPosts catches errors and returns empty result
       expect(result.posts).toEqual([]);
       expect(result.total).toBe(0);
     });
@@ -103,14 +128,24 @@ describe('Posts API (lib/posts.ts)', () => {
     });
 
     it('should calculate totalPages correctly', async () => {
+      const manyPosts = Array.from({ length: 25 }, (_, i) => ({
+        ...mockPost,
+        id: `post-${i}`,
+        slug: `test-post-${i}`,
+      }));
+
       (fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ posts: [mockPost], total: 25 }),
+        json: async () => ({
+          posts: manyPosts,
+          total: 25,
+          exported_at: '2024-01-15T10:00:00Z',
+        }),
       });
 
       const result = await getPosts();
 
-      expect(result.totalPages).toBeGreaterThan(0);
+      expect(result.totalPages).toBe(3); // 25 posts / 10 per page = 3 pages
     });
   });
 
@@ -125,7 +160,7 @@ describe('Posts API (lib/posts.ts)', () => {
 
       expect(result).toBeDefined();
       expect(fetch).toHaveBeenCalledWith(
-        expect.stringContaining('test-post'),
+        expect.stringContaining('/posts/test-post.json'),
         expect.any(Object)
       );
     });
@@ -155,25 +190,37 @@ describe('Posts API (lib/posts.ts)', () => {
   });
 
   describe('getPostsByCategory', () => {
-    it('should fetch posts by category slug', async () => {
+    it('should filter posts by category from index', async () => {
+      const posts = [
+        { ...mockPost, id: 'p1', category_id: 'tech' },
+        { ...mockPost, id: 'p2', category_id: 'health' },
+        { ...mockPost, id: 'p3', category_id: 'tech' },
+      ];
+
       (fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ posts: [mockPost], total: 1 }),
+        json: async () => ({
+          posts,
+          total: 3,
+          exported_at: '2024-01-15T10:00:00Z',
+        }),
       });
 
       const result = await getPostsByCategory('tech');
 
       expect(result).toBeDefined();
-      expect(fetch).toHaveBeenCalledWith(
-        expect.stringContaining('tech'),
-        expect.any(Object)
-      );
+      expect(result.posts).toHaveLength(2);
+      expect(result.total).toBe(2);
     });
 
     it('should return empty result for empty category', async () => {
       (fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ posts: [], total: 0 }),
+        json: async () => ({
+          posts: [mockPost],
+          total: 1,
+          exported_at: '2024-01-15T10:00:00Z',
+        }),
       });
 
       const result = await getPostsByCategory('empty-category');

@@ -1,13 +1,8 @@
 import type { Metadata } from 'next';
 import logger from '@/lib/logger';
-import * as Sentry from '@sentry/nextjs';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  process.env.NEXT_PUBLIC_FASTAPI_URL ||
-  'http://localhost:8000';
+import { getAllPublishedPosts } from '@/lib/posts';
 
 interface Post {
   id: string;
@@ -22,35 +17,40 @@ interface Post {
   tags?: string[];
 }
 
+const STATIC_URL =
+  process.env.NEXT_PUBLIC_STATIC_URL ||
+  'https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/static';
+
 async function getTagPosts(tag: string): Promise<Post[]> {
   try {
-    const response = await fetch(
-      `${API_BASE}/api/posts?tag=${encodeURIComponent(tag)}&limit=100&status=published`,
-      {
-        next: { revalidate: 3600 },
-      }
-    );
-
-    if (!response.ok) {
-      return [];
-    }
-
-    const data = await response.json();
-    return data.posts || data.items || data.data || [];
+    // Fetch the full post index and filter by tag
+    const allPosts = await getAllPublishedPosts();
+    return allPosts.filter(
+      (p) =>
+        Array.isArray((p as Post).tags) &&
+        (p as Post).tags!.some((t) => t.toLowerCase() === tag.toLowerCase())
+    ) as Post[];
   } catch (error) {
     logger.error(`Error fetching posts for tag "${tag}":`, error);
-    Sentry.captureException(error);
     return [];
   }
 }
 
 export async function generateStaticParams() {
   try {
-    const response = await fetch(`${API_BASE}/api/tags`);
+    const response = await fetch(`${STATIC_URL}/sitemap.json`, {
+      next: { revalidate: 300 },
+    });
     if (!response.ok) return [];
     const data = await response.json();
-    const tags = data.tags || data.data || data || [];
-    return tags.map((tag: { slug: string }) => ({ slug: tag.slug }));
+    const urls: { loc: string }[] = data.urls || data || [];
+    return urls
+      .filter((u) => u.loc && u.loc.includes('/tag/'))
+      .map((u) => {
+        const slug = u.loc.split('/tag/').pop()?.replace(/\/$/, '') || '';
+        return { slug };
+      })
+      .filter((t) => t.slug);
   } catch {
     return [];
   }

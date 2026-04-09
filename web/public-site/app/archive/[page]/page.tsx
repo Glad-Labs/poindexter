@@ -1,19 +1,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import type { Metadata } from 'next';
-import * as Sentry from '@sentry/nextjs';
-import logger from '@/lib/logger';
-
-interface Post {
-  id: string;
-  title: string;
-  slug: string;
-  excerpt?: string;
-  featured_image_url?: string;
-  published_at?: string;
-  created_at: string;
-  view_count: number;
-}
+import { getPosts } from '@/lib/posts';
 
 interface ArchivePageProps {
   params: Promise<{
@@ -23,38 +11,11 @@ interface ArchivePageProps {
 
 const POSTS_PER_PAGE = 10;
 
-const FASTAPI_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  process.env.NEXT_PUBLIC_FASTAPI_URL ||
-  'http://localhost:8000';
-
 async function getArchivePosts(page: number) {
   try {
-    const offset = (page - 1) * POSTS_PER_PAGE;
-    const url = `${FASTAPI_URL}/api/posts?offset=${offset}&limit=${POSTS_PER_PAGE}&published_only=true`;
-
-    const response = await fetch(url, {
-      next: { revalidate: 3600 }, // ISR: revalidate every hour
-      headers: { 'Content-Type': 'application/json' },
-    });
-
-    if (!response.ok) {
-      return { posts: [], total: 0 };
-    }
-
-    const data = await response.json();
-    const posts: Post[] =
-      data?.posts ||
-      data?.data ||
-      data?.items ||
-      (Array.isArray(data) ? data : []);
-    const total =
-      data?.total ?? data?.meta?.pagination?.total ?? posts.length ?? 0;
-
-    return { posts, total };
-  } catch (error) {
-    logger.error('Error fetching archive posts:', error);
-    Sentry.captureException(error);
+    const data = await getPosts(page);
+    return { posts: data.posts, total: data.total };
+  } catch {
     return { posts: [], total: 0 };
   }
 }

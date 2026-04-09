@@ -31,77 +31,30 @@ export const metadata = {
   },
 };
 
-// Server-side data fetching with ISR (Incremental Static Regeneration)
-// Returns { posts, error } so the UI can distinguish API failure from empty content (#946)
+// Fetch posts from static JSON on R2/CDN — no API server needed
+const STATIC_URL =
+  process.env.NEXT_PUBLIC_STATIC_URL ||
+  'https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/static';
+
 async function getPosts() {
   try {
-    const FASTAPI_URL =
-      process.env.NEXT_PUBLIC_API_BASE_URL ||
-      process.env.NEXT_PUBLIC_FASTAPI_URL ||
-      'http://localhost:8000';
+    const response = await fetch(`${STATIC_URL}/posts/index.json`, {
+      next: { revalidate: 300 },
+    });
 
-    // Validate URL is absolute
-    if (
-      !FASTAPI_URL.startsWith('http://') &&
-      !FASTAPI_URL.startsWith('https://')
-    ) {
-      // eslint-disable-next-line no-console -- Server-side config validation, no logger available
-      console.warn('Invalid NEXT_PUBLIC_API_BASE_URL, using static fallback');
-      return { posts: [], error: 'invalid_config' };
+    if (!response.ok) {
+      Sentry.captureMessage(
+        `Failed to fetch static posts: ${response.status}`,
+        'error'
+      );
+      return { posts: [], error: 'fetch_error' };
     }
 
-    const url = `${FASTAPI_URL}/api/posts?offset=0&limit=20&published_only=true`;
-
-    // Add timeout support using AbortController
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-
-    try {
-      const response = await fetch(url, {
-        // ISR: Revalidate every 15 minutes (900 seconds)
-        // On-demand revalidation via publish webhook triggers instant updates
-        next: { revalidate: 900 },
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        Sentry.captureMessage(
-          `Failed to fetch posts: ${response.status} ${response.statusText}`,
-          'error'
-        );
-        return { posts: [], error: 'api_error' };
-      }
-
-      const data = await response.json();
-      const posts = Array.isArray(data?.posts)
-        ? data.posts
-        : Array.isArray(data?.data)
-          ? data.data
-          : [];
-
-      return { posts, error: null };
-    } catch (fetchError) {
-      clearTimeout(timeoutId);
-      // Specific handling for timeout vs other errors — both reported to Sentry
-      if (fetchError.name === 'AbortError') {
-        Sentry.captureMessage(
-          `Homepage posts fetch timed out (10s) from ${url}`,
-          'error'
-        );
-        return { posts: [], error: 'timeout' };
-      } else {
-        Sentry.captureException(fetchError, { extra: { url } });
-        return { posts: [], error: 'network' };
-      }
-    }
+    const data = await response.json();
+    return { posts: data.posts || [], error: null };
   } catch (error) {
     Sentry.captureException(error);
-    return { posts: [], error: 'unexpected' };
+    return { posts: [], error: 'network' };
   }
 }
 
@@ -133,226 +86,228 @@ export default async function HomePage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteSchema) }}
       />
 
-    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
-      {/* Animated Background Elements */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-cyan-500/10 rounded-full blur-3xl animate-pulse" />
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl animate-pulse delay-1000" />
-      </div>
-
-      {/* Simplified Hero Section */}
-      <section className="relative pt-20 pb-12 md:pt-32 md:pb-20 px-4 md:px-0">
-        <div className="container mx-auto max-w-5xl text-center">
-          <h1 className="text-4xl md:text-6xl font-bold mb-4 bg-gradient-to-r from-cyan-400 via-blue-400 to-violet-400 bg-clip-text text-transparent">
-            Explore Our Latest Insights
-          </h1>
-          <p className="text-xl text-slate-300 max-w-2xl mx-auto">
-            Deep dives into AI, technology, and digital transformation
-          </p>
+      <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
+        {/* Animated Background Elements */}
+        <div className="fixed inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute -top-40 -right-40 w-80 h-80 bg-cyan-500/10 rounded-full blur-3xl animate-pulse" />
+          <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl animate-pulse delay-1000" />
         </div>
-      </section>
 
-      {/* #946: Distinct states for API outage vs empty content */}
-      {error ? (
-        <section className="py-12 px-4 md:px-0">
-          <div className="container mx-auto max-w-6xl">
-            <div className="h-96 bg-slate-800/50 rounded-xl flex flex-col items-center justify-center border border-amber-500/30">
-              <svg
-                className="w-12 h-12 text-amber-400 mb-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                  d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
-                />
-              </svg>
-              <p className="text-amber-300 font-medium text-lg mb-2">
-                Unable to load articles right now
-              </p>
-              <p className="text-slate-400 text-sm">
-                Our content service is temporarily unavailable. Please try again
-                shortly.
-              </p>
-            </div>
+        {/* Simplified Hero Section */}
+        <section className="relative pt-20 pb-12 md:pt-32 md:pb-20 px-4 md:px-0">
+          <div className="container mx-auto max-w-5xl text-center">
+            <h1 className="text-4xl md:text-6xl font-bold mb-4 bg-gradient-to-r from-cyan-400 via-blue-400 to-violet-400 bg-clip-text text-transparent">
+              Explore Our Latest Insights
+            </h1>
+            <p className="text-xl text-slate-300 max-w-2xl mx-auto">
+              Deep dives into AI, technology, and digital transformation
+            </p>
           </div>
         </section>
-      ) : posts.length === 0 ? (
-        <section className="py-12 px-4 md:px-0">
-          <div className="container mx-auto max-w-6xl">
-            <div className="h-96 bg-slate-800 rounded-xl flex flex-col items-center justify-center border border-slate-700">
-              <p className="text-slate-400 text-lg mb-2">
-                No posts available yet.
-              </p>
-              <p className="text-slate-500 text-sm">
-                New articles are on the way — check back soon!
-              </p>
-            </div>
-          </div>
-        </section>
-      ) : (
-        <section className="py-12 px-4 md:px-0">
-          <div className="container mx-auto max-w-6xl">
-            {/* Main Featured Post Card */}
-            <div className="bg-gradient-to-b from-slate-800/50 to-slate-900/50 rounded-2xl overflow-hidden border border-cyan-500/20 hover:border-cyan-400/40 transition-colors">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 p-8">
-                {/* Featured Image */}
-                <div className="relative aspect-video lg:aspect-auto h-full min-h-96 bg-slate-700 rounded-xl overflow-hidden">
-                  {currentPost?.featured_image_url ? (
-                    <Image
-                      src={currentPost.featured_image_url}
-                      alt={currentPost.title || 'Featured Post'}
-                      fill
-                      sizes="(min-width: 1024px) 50vw, 100vw"
-                      className="object-cover"
-                      priority
-                    />
-                  ) : (
-                    <div className="w-full h-full bg-gradient-to-br from-cyan-500/20 to-violet-500/20 flex items-center justify-center">
-                      <span className="text-slate-400">No image available</span>
-                    </div>
-                  )}
-                </div>
 
-                {/* Post Content */}
-                <div className="flex flex-col justify-between">
-                  {/* Category & Meta */}
-                  <div>
-                    {currentPost?.category && (
-                      <div className="inline-block mb-4">
-                        <span className="px-3 py-1 bg-cyan-500/20 text-cyan-300 rounded-full text-sm font-medium border border-cyan-500/30">
-                          {currentPost.category.name || 'Featured'}
+        {/* #946: Distinct states for API outage vs empty content */}
+        {error ? (
+          <section className="py-12 px-4 md:px-0">
+            <div className="container mx-auto max-w-6xl">
+              <div className="h-96 bg-slate-800/50 rounded-xl flex flex-col items-center justify-center border border-amber-500/30">
+                <svg
+                  className="w-12 h-12 text-amber-400 mb-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={1.5}
+                    d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
+                  />
+                </svg>
+                <p className="text-amber-300 font-medium text-lg mb-2">
+                  Unable to load articles right now
+                </p>
+                <p className="text-slate-400 text-sm">
+                  Our content service is temporarily unavailable. Please try
+                  again shortly.
+                </p>
+              </div>
+            </div>
+          </section>
+        ) : posts.length === 0 ? (
+          <section className="py-12 px-4 md:px-0">
+            <div className="container mx-auto max-w-6xl">
+              <div className="h-96 bg-slate-800 rounded-xl flex flex-col items-center justify-center border border-slate-700">
+                <p className="text-slate-400 text-lg mb-2">
+                  No posts available yet.
+                </p>
+                <p className="text-slate-500 text-sm">
+                  New articles are on the way — check back soon!
+                </p>
+              </div>
+            </div>
+          </section>
+        ) : (
+          <section className="py-12 px-4 md:px-0">
+            <div className="container mx-auto max-w-6xl">
+              {/* Main Featured Post Card */}
+              <div className="bg-gradient-to-b from-slate-800/50 to-slate-900/50 rounded-2xl overflow-hidden border border-cyan-500/20 hover:border-cyan-400/40 transition-colors">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 p-8">
+                  {/* Featured Image */}
+                  <div className="relative aspect-video lg:aspect-auto h-full min-h-96 bg-slate-700 rounded-xl overflow-hidden">
+                    {currentPost?.featured_image_url ? (
+                      <Image
+                        src={currentPost.featured_image_url}
+                        alt={currentPost.title || 'Featured Post'}
+                        fill
+                        sizes="(min-width: 1024px) 50vw, 100vw"
+                        className="object-cover"
+                        priority
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-gradient-to-br from-cyan-500/20 to-violet-500/20 flex items-center justify-center">
+                        <span className="text-slate-400">
+                          No image available
                         </span>
                       </div>
                     )}
-
-                    {/* Title */}
-                    <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4 leading-tight">
-                      {currentPost?.title}
-                    </h2>
-
-                    {/* Excerpt */}
-                    <p className="text-lg text-slate-300 mb-6 leading-relaxed">
-                      {currentPost?.excerpt ||
-                        (currentPost?.content
-                          ? currentPost.content.substring(0, 200) + '...'
-                          : 'Read this insightful article')}
-                    </p>
                   </div>
 
-                  {/* Meta Information & CTA */}
-                  <div className="flex items-center justify-between pt-6 border-t border-slate-700/50">
-                    <div className="text-sm text-slate-400">
-                      {currentPost?.published_at && (
-                        <time dateTime={currentPost.published_at}>
-                          {new Date(
-                            currentPost.published_at
-                          ).toLocaleDateString('en-US', {
-                            year: 'numeric',
-                            month: 'long',
-                            day: 'numeric',
-                          })}
-                        </time>
-                      )}
-                    </div>
-
-                    <Link
-                      href={`/posts/${currentPost?.slug}`}
-                      className="inline-flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-lg font-semibold hover:shadow-lg hover:shadow-cyan-500/50 transition-all"
-                    >
-                      Read Article
-                      <span className="text-xl">→</span>
-                    </Link>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Recent Posts Grid */}
-            {posts.length > 1 && (
-              <div className="mt-12">
-                <h2 className="text-2xl font-bold text-white mb-6">
-                  Recent Posts
-                </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {posts.slice(1, 7).map((post) => (
-                    <Link
-                      key={post.id || post.slug}
-                      href={`/posts/${post.slug}`}
-                      className="group bg-slate-800/50 rounded-lg overflow-hidden border border-slate-700 hover:border-cyan-500/50 transition-all hover:shadow-lg hover:shadow-cyan-500/10"
-                    >
-                      {/* Post Image */}
-                      {post.featured_image_url && (
-                        <div className="relative aspect-video overflow-hidden bg-slate-700">
-                          <Image
-                            src={post.featured_image_url}
-                            alt={post.title}
-                            fill
-                            sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
-                            className="object-cover group-hover:scale-105 transition-transform"
-                          />
+                  {/* Post Content */}
+                  <div className="flex flex-col justify-between">
+                    {/* Category & Meta */}
+                    <div>
+                      {currentPost?.category && (
+                        <div className="inline-block mb-4">
+                          <span className="px-3 py-1 bg-cyan-500/20 text-cyan-300 rounded-full text-sm font-medium border border-cyan-500/30">
+                            {currentPost.category.name || 'Featured'}
+                          </span>
                         </div>
                       )}
 
-                      {/* Post Info */}
-                      <div className="p-6">
-                        <h3 className="text-lg font-semibold text-white mb-2 group-hover:text-cyan-400 transition-colors line-clamp-2">
-                          {post.title}
-                        </h3>
-                        <p className="text-sm text-slate-300 line-clamp-2">
-                          {post.excerpt ||
-                            (post.content
-                              ? post.content.substring(0, 100) + '...'
-                              : '')}
-                        </p>
-                        {post.published_at && (
-                          <time
-                            dateTime={post.published_at}
-                            className="text-xs text-slate-400 mt-3 block"
-                          >
-                            {new Date(post.published_at).toLocaleDateString(
-                              'en-US',
-                              {
-                                year: 'numeric',
-                                month: 'short',
-                                day: 'numeric',
-                              }
-                            )}
+                      {/* Title */}
+                      <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4 leading-tight">
+                        {currentPost?.title}
+                      </h2>
+
+                      {/* Excerpt */}
+                      <p className="text-lg text-slate-300 mb-6 leading-relaxed">
+                        {currentPost?.excerpt ||
+                          (currentPost?.content
+                            ? currentPost.content.substring(0, 200) + '...'
+                            : 'Read this insightful article')}
+                      </p>
+                    </div>
+
+                    {/* Meta Information & CTA */}
+                    <div className="flex items-center justify-between pt-6 border-t border-slate-700/50">
+                      <div className="text-sm text-slate-400">
+                        {currentPost?.published_at && (
+                          <time dateTime={currentPost.published_at}>
+                            {new Date(
+                              currentPost.published_at
+                            ).toLocaleDateString('en-US', {
+                              year: 'numeric',
+                              month: 'long',
+                              day: 'numeric',
+                            })}
                           </time>
                         )}
                       </div>
-                    </Link>
-                  ))}
+
+                      <Link
+                        href={`/posts/${currentPost?.slug}`}
+                        className="inline-flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-lg font-semibold hover:shadow-lg hover:shadow-cyan-500/50 transition-all"
+                      >
+                        Read Article
+                        <span className="text-xl">→</span>
+                      </Link>
+                    </div>
+                  </div>
                 </div>
               </div>
-            )}
+
+              {/* Recent Posts Grid */}
+              {posts.length > 1 && (
+                <div className="mt-12">
+                  <h2 className="text-2xl font-bold text-white mb-6">
+                    Recent Posts
+                  </h2>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {posts.slice(1, 7).map((post) => (
+                      <Link
+                        key={post.id || post.slug}
+                        href={`/posts/${post.slug}`}
+                        className="group bg-slate-800/50 rounded-lg overflow-hidden border border-slate-700 hover:border-cyan-500/50 transition-all hover:shadow-lg hover:shadow-cyan-500/10"
+                      >
+                        {/* Post Image */}
+                        {post.featured_image_url && (
+                          <div className="relative aspect-video overflow-hidden bg-slate-700">
+                            <Image
+                              src={post.featured_image_url}
+                              alt={post.title}
+                              fill
+                              sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
+                              className="object-cover group-hover:scale-105 transition-transform"
+                            />
+                          </div>
+                        )}
+
+                        {/* Post Info */}
+                        <div className="p-6">
+                          <h3 className="text-lg font-semibold text-white mb-2 group-hover:text-cyan-400 transition-colors line-clamp-2">
+                            {post.title}
+                          </h3>
+                          <p className="text-sm text-slate-300 line-clamp-2">
+                            {post.excerpt ||
+                              (post.content
+                                ? post.content.substring(0, 100) + '...'
+                                : '')}
+                          </p>
+                          {post.published_at && (
+                            <time
+                              dateTime={post.published_at}
+                              className="text-xs text-slate-400 mt-3 block"
+                            >
+                              {new Date(post.published_at).toLocaleDateString(
+                                'en-US',
+                                {
+                                  year: 'numeric',
+                                  month: 'short',
+                                  day: 'numeric',
+                                }
+                              )}
+                            </time>
+                          )}
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* Browse All Articles CTA */}
+        <section className="py-16 px-4 md:px-0">
+          <div className="container mx-auto max-w-6xl text-center">
+            <h2 className="text-3xl font-bold text-white mb-4">
+              Browse All Articles
+            </h2>
+            <p className="text-lg text-slate-300 mb-8">
+              Explore our complete collection of insights and analyses
+            </p>
+            <Link
+              href="/archive/1"
+              className="inline-flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-cyan-500 via-blue-500 to-violet-500 text-white rounded-lg font-semibold hover:shadow-lg hover:shadow-cyan-500/50 transition-all text-lg"
+            >
+              View All Articles
+              <span className="text-2xl">→</span>
+            </Link>
           </div>
         </section>
-      )}
-
-      {/* Browse All Articles CTA */}
-      <section className="py-16 px-4 md:px-0">
-        <div className="container mx-auto max-w-6xl text-center">
-          <h2 className="text-3xl font-bold text-white mb-4">
-            Browse All Articles
-          </h2>
-          <p className="text-lg text-slate-300 mb-8">
-            Explore our complete collection of insights and analyses
-          </p>
-          <Link
-            href="/archive/1"
-            className="inline-flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-cyan-500 via-blue-500 to-violet-500 text-white rounded-lg font-semibold hover:shadow-lg hover:shadow-cyan-500/50 transition-all text-lg"
-          >
-            View All Articles
-            <span className="text-2xl">→</span>
-          </Link>
-        </div>
-      </section>
-    </div>
+      </div>
     </>
   );
 }

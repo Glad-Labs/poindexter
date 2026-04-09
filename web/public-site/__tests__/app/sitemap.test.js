@@ -2,7 +2,10 @@
  * Sitemap Generation Tests
  *
  * Tests the Next.js sitemap.ts route handler.
- * Verifies: Static pages, dynamic post/category/tag pages, API error fallback
+ * Verifies: Static pages, dynamic post/category/tag pages, error fallback
+ *
+ * sitemap.ts now reads from static JSON on R2/CDN (posts/index.json,
+ * categories.json, sitemap.json) instead of FastAPI.
  */
 
 // Mock the logger module
@@ -18,23 +21,15 @@ jest.mock('@/lib/logger', () => ({
 // Mock fetch globally
 global.fetch = jest.fn();
 
-// Set API URL to non-localhost so sitemap.ts doesn't skip dynamic content
-process.env.NEXT_PUBLIC_FASTAPI_URL = 'https://api.example.com';
-
 // Reset modules before each test to re-evaluate env-dependent code
 beforeEach(() => {
   jest.resetModules();
   global.fetch.mockReset();
   process.env.NEXT_PUBLIC_SITE_URL = 'https://example.com';
-  // Set BOTH env vars to non-localhost so sitemap.ts fetches dynamic content
-  process.env.NEXT_PUBLIC_API_BASE_URL = 'https://api.example.com';
-  process.env.NEXT_PUBLIC_FASTAPI_URL = 'https://api.example.com';
 });
 
 afterEach(() => {
   delete process.env.NEXT_PUBLIC_SITE_URL;
-  delete process.env.NEXT_PUBLIC_API_BASE_URL;
-  delete process.env.NEXT_PUBLIC_FASTAPI_URL;
 });
 
 async function loadSitemap() {
@@ -42,20 +37,50 @@ async function loadSitemap() {
   return mod.default;
 }
 
+/**
+ * Helper: mock all 3 static JSON fetches (posts/index.json, categories.json, sitemap.json)
+ */
+function mockStaticJsonFetches({
+  posts = [],
+  categories = [],
+  sitemapUrls = [],
+} = {}) {
+  global.fetch.mockImplementation((url) => {
+    if (url.includes('/posts/index.json')) {
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          posts,
+          total: posts.length,
+          exported_at: '2024-01-15T00:00:00Z',
+        }),
+      });
+    }
+    if (url.includes('/categories.json')) {
+      return Promise.resolve({
+        ok: true,
+        json: async () => categories,
+      });
+    }
+    if (url.includes('/sitemap.json')) {
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ urls: sitemapUrls }),
+      });
+    }
+    return Promise.resolve({ ok: false });
+  });
+}
+
 describe('sitemap()', () => {
   it('should always include static and legal pages', async () => {
-    // API returns empty
-    global.fetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ posts: [], categories: [], tags: [] }),
-    });
+    mockStaticJsonFetches();
 
     const sitemap = await loadSitemap();
     const result = await sitemap();
 
     const urls = result.map((entry) => entry.url);
     expect(urls).toContain('https://example.com');
-    expect(urls).toContain('https://example.com/about');
     expect(urls).toContain('https://example.com/about');
     expect(urls).toContain('https://example.com/posts');
     expect(urls).toContain('https://example.com/archive/1');
@@ -65,36 +90,13 @@ describe('sitemap()', () => {
     expect(urls).toContain('https://example.com/legal/data-requests');
   });
 
-  // Skip in CI: sitemap.ts reads NEXT_PUBLIC_FASTAPI_URL at import time,
-  // and jest.resetModules() doesn't reliably re-evaluate env vars in all CI environments.
-  // Covered by: static pages test + error fallback test.
-  it.skip('should include post URLs from API response', async () => {
-    // Ensure env vars are set before dynamic import
-    process.env.NEXT_PUBLIC_FASTAPI_URL = 'https://api.example.com';
-    process.env.NEXT_PUBLIC_API_BASE_URL = 'https://api.example.com';
-
-    global.fetch
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          posts: [
-            { slug: 'first-post', updatedAt: '2024-01-01' },
-            { slug: 'second-post', publishedAt: '2024-02-01' },
-          ],
-        }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ posts: [] }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ categories: [] }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ tags: [] }),
-      });
+  it('should include post URLs from static JSON response', async () => {
+    mockStaticJsonFetches({
+      posts: [
+        { slug: 'first-post', updated_at: '2024-01-01' },
+        { slug: 'second-post', published_at: '2024-02-01' },
+      ],
+    });
 
     const sitemap = await loadSitemap();
     const result = await sitemap();
@@ -104,38 +106,23 @@ describe('sitemap()', () => {
     expect(urls).toContain('https://example.com/posts/second-post');
   });
 
-  it('should return only static pages when API fetch fails', async () => {
+  it('should return only static pages when fetch fails', async () => {
     global.fetch.mockRejectedValue(new Error('Network error'));
 
     const sitemap = await loadSitemap();
     const result = await sitemap();
 
-    // Should have exactly 9 static + legal pages (includes /posts)
+    // Should have exactly 8 static + legal pages
     expect(result.length).toBe(8);
   });
 
   it('should set priority=1 for the homepage', async () => {
-    global.fetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ posts: [], categories: [], tags: [] }),
-    });
+    mockStaticJsonFetches();
 
     const sitemap = await loadSitemap();
     const result = await sitemap();
     const home = result.find((e) => e.url === 'https://example.com');
 
     expect(home.priority).toBe(1);
-  });
-
-  it('should fall back to empty arrays when localhost URL is used', async () => {
-    delete process.env.NEXT_PUBLIC_API_BASE_URL;
-    delete process.env.NEXT_PUBLIC_FASTAPI_URL;
-
-    const sitemap = await loadSitemap();
-    const result = await sitemap();
-
-    // Only static + legal pages (includes /posts) — no API calls made
-    expect(result.length).toBe(8);
-    expect(global.fetch).not.toHaveBeenCalled();
   });
 });
