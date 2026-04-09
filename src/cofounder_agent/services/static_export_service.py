@@ -140,10 +140,30 @@ def _post_summary(post: Dict) -> Dict:
     }
 
 
+def _markdown_to_html(content: str) -> str:
+    """Convert markdown content to HTML for static export."""
+    if not content:
+        return ""
+    stripped = content.strip()
+    # If already HTML, return as-is
+    if stripped.startswith("<") and not stripped.startswith("<!["):
+        return content
+    try:
+        import markdown as md
+        return md.markdown(
+            stripped,
+            extensions=["extra", "codehilite", "sane_lists", "smarty"],
+            output_format="html",
+        )
+    except Exception:
+        logger.warning("[STATIC_EXPORT] markdown conversion failed, returning raw content")
+        return content
+
+
 def _post_full(post: Dict) -> Dict:
-    """Full post dict including content."""
+    """Full post dict including content (converted to HTML)."""
     summary = _post_summary(post)
-    summary["content"] = post.get("content", "")
+    summary["content"] = _markdown_to_html(post.get("content", ""))
     return summary
 
 
@@ -162,7 +182,7 @@ def _build_json_feed(posts: List[Dict], site_url: str, site_title: str) -> Dict:
         if post.get("featured_image_url"):
             item["image"] = post["featured_image_url"]
         if post.get("content"):
-            item["content_html"] = post["content"]
+            item["content_html"] = _markdown_to_html(post["content"])
         items.append(item)
 
     return {
