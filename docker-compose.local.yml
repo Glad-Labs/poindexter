@@ -133,8 +133,8 @@ services:
       WOODPECKER_GITEA: "true"
       WOODPECKER_GITEA_URL: http://gitea:3000
       WOODPECKER_GITEA_SKIP_VERIFY: "true"
-      WOODPECKER_GITEA_CLIENT: "8fd6377e-3f73-4e47-a75c-37a819d9d5d5"
-      WOODPECKER_GITEA_SECRET: "gto_7yrceuebfnzdak7adsmxq4gwccsougpz7t2zyjz4fl7jpgxj5sta"
+      WOODPECKER_GITEA_CLIENT: ${WOODPECKER_GITEA_CLIENT:-change-me}
+      WOODPECKER_GITEA_SECRET: ${WOODPECKER_GITEA_SECRET:-change-me}
       WOODPECKER_SECRET: ${WOODPECKER_SECRET:?Set in .env}
       WOODPECKER_ADMIN: gladlabs
     extra_hosts:
@@ -177,7 +177,7 @@ services:
       # No Telegram tokens — OpenClaw owns Telegram/Discord connections
       API_URL: "http://worker:8002"
       WORKER_API_URL: "http://worker:8002"
-      SITE_URL: "https://www.gladlabs.io"
+      SITE_URL: ${SITE_URL:-https://www.gladlabs.io}
       OLLAMA_URL: "http://host.docker.internal:11434"
       GRAFANA_URL: "http://grafana:3000"
       GRAFANA_PASSWORD: ${GRAFANA_PASSWORD:?GRAFANA_PASSWORD must be set}
@@ -215,12 +215,12 @@ services:
       PEXELS_API_KEY: ${PEXELS_API_KEY:-}
       DEFAULT_OLLAMA_MODEL: ${DEFAULT_OLLAMA_MODEL:-auto}
       # No Telegram tokens — OpenClaw owns Telegram/Discord connections
-      SITE_NAME: "Glad Labs"
-      SITE_DOMAIN: "gladlabs.io"
-      SITE_URL: "https://www.gladlabs.io"
-      API_BASE_URL: "http://localhost:8002"
-      COMPANY_NAME: "Glad Labs"
-      HOST_HOME: "C:/Users/mattm"
+      SITE_NAME: ${SITE_NAME:-Glad Labs}
+      SITE_DOMAIN: ${SITE_DOMAIN:-gladlabs.io}
+      SITE_URL: ${SITE_URL:-https://www.gladlabs.io}
+      API_BASE_URL: ${API_BASE_URL:-http://localhost:8002}
+      COMPANY_NAME: ${COMPANY_NAME:-Glad Labs}
+      HOST_HOME: ${HOST_HOME:-${USERPROFILE:-/root}}
       API_TOKEN: ${API_TOKEN:?API_TOKEN must be set}
     volumes:
       - ${USERPROFILE:-.}/.gladlabs:/root/.gladlabs
@@ -246,7 +246,7 @@ services:
     ports:
       - "5050:80"
     environment:
-      PGADMIN_DEFAULT_EMAIL: mattg@gladlabs.io
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@localhost}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:?PGADMIN_PASSWORD must be set}
       PGADMIN_CONFIG_SERVER_MODE: "False"
       PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
