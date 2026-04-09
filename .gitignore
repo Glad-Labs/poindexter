@@ -119,3 +119,11 @@ infrastructure/headscale/certs/key.pem
 scripts/secrets-to-scrub.txt
 mcp.json
 .env.vercel
+*.html
+
+# Branded frontend (private — not part of the open-source engine)
+web/public-site/
+
+# VPN config (private infrastructure)
+infrastructure/headscale/certs/
+
