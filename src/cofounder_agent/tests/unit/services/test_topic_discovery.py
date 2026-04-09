@@ -100,13 +100,11 @@ class TestIsBrandRelevant:
     def test_ai_topic_is_relevant(self):
         assert TopicDiscovery._is_brand_relevant("Building AI Agents with LLMs") is True
 
-    def test_gpu_topic_not_relevant(self):
-        # GPU benchmarks are off-brand (too broad, not AI/content focused)
-        assert TopicDiscovery._is_brand_relevant("NVIDIA RTX 5090 Benchmarks") is False
+    def test_gpu_topic_is_relevant(self):
+        assert TopicDiscovery._is_brand_relevant("NVIDIA RTX 5090 Benchmarks") is True
 
-    def test_gaming_topic_not_relevant(self):
-        # Gaming is off-brand
-        assert TopicDiscovery._is_brand_relevant("Best Steam Games of 2026") is False
+    def test_gaming_topic_is_relevant(self):
+        assert TopicDiscovery._is_brand_relevant("Best Steam Games of 2026") is True
 
     def test_self_hosted_topic_is_relevant(self):
         assert TopicDiscovery._is_brand_relevant("Self-Hosted AI Content Pipeline for Solo Founders") is True

@@ -522,8 +522,22 @@ class TopicDiscovery:
         "solo founder", "solo developer", "indie hacker",
         "bootstrapped", "one-person", "side project",
         "saas", "startup tech stack",
-        # Security (relevant niche)
+        # Security
         "zero trust", "cybersecurity", "encryption", "quantum computing",
+        # PC Hardware (core niche)
+        "gpu", "nvidia", "amd", "radeon", "rtx", "geforce",
+        "cpu", "ryzen", "threadripper", "intel",
+        "vram", "ddr5", "nvme", "pcie",
+        "pc build", "custom build", "workstation",
+        "benchmark", "overclock", "cooling",
+        "homelab", "home server",
+        # Gaming (core niche)
+        "gaming", "game dev", "game engine",
+        "steam", "xbox", "playstation", "nintendo",
+        "unreal engine", "unity", "godot",
+        "indie game", "esports",
+        "ray tracing", "dlss", "fsr", "frame generation",
+        "vr", "virtual reality",
     }
 
     @staticmethod
