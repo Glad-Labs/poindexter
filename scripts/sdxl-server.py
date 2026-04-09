@@ -29,6 +29,8 @@ logger = logging.getLogger("sdxl-server")
 app = FastAPI(title="SDXL Image Server", version="1.0")
 _pipeline = None
 _model_name = None
+_last_used = 0.0
+IDLE_TIMEOUT = 60  # 1 minute — unload fast so Ollama can use VRAM for next pipeline step
 
 class GenerateRequest(BaseModel):
     prompt: str
@@ -48,10 +50,35 @@ class GenerateResponse(BaseModel):
     generation_time_ms: int
     seed: int
 
-def _load_pipeline():
+def _unload_pipeline():
+    """Free VRAM by unloading the SDXL model."""
     global _pipeline, _model_name
+    if _pipeline is None:
+        return
+    logger.info("Unloading SDXL model to free VRAM (idle timeout)")
+    del _pipeline
+    _pipeline = None
+    _model_name = None
+    torch.cuda.empty_cache()
+    import gc
+    gc.collect()
+    logger.info("VRAM freed: %d MB used", torch.cuda.memory_allocated(0) // 1024 // 1024)
+
+
+def _load_pipeline():
+    global _pipeline, _model_name, _last_used
+    _last_used = time.time()
     if _pipeline is not None:
         return _pipeline
+
+    # Tell Ollama to unload models before we load SDXL
+    try:
+        import httpx
+        httpx.post("http://localhost:11434/api/generate",
+                   json={"model": "", "keep_alive": 0}, timeout=5)
+        logger.info("Asked Ollama to unload models")
+    except Exception:
+        pass
     from diffusers import StableDiffusionXLPipeline, EulerDiscreteScheduler
     logger.info("Loading %s on %s (%d MB VRAM)", DEFAULT_MODEL,
                 torch.cuda.get_device_name(0),
@@ -70,6 +97,16 @@ def _load_pipeline():
     logger.info("SDXL ready")
     return pipe
 
+@app.on_event("startup")
+async def _start_idle_checker():
+    import asyncio
+    async def _check_idle():
+        while True:
+            await asyncio.sleep(60)
+            if _pipeline is not None and (time.time() - _last_used) > IDLE_TIMEOUT:
+                _unload_pipeline()
+    asyncio.create_task(_check_idle())
+
 @app.get("/health")
 async def health():
     gpu_ok = torch.cuda.is_available()
@@ -80,6 +117,8 @@ async def health():
 
 @app.post("/generate", response_model=GenerateResponse)
 async def generate(req: GenerateRequest):
+    global _last_used
+    _last_used = time.time()
     pipe = _load_pipeline()
     seed = req.seed if req.seed >= 0 else int(torch.randint(0, 2**32, (1,)).item())
     generator = torch.Generator(device="cuda").manual_seed(seed)
