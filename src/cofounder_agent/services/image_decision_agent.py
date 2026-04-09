@@ -155,12 +155,21 @@ Output ONLY valid JSON (no markdown, no explanation):
 
             raw = ""
             for _attempt in range(3):
-                resp = await client.post(f"{ollama_url}/api/generate", json={
-                    "model": model,
-                    "prompt": actual_prompt,
-                    "stream": False,
-                    "options": {"num_predict": 800, "temperature": 0.7},
-                })
+                # Use /api/chat for thinking models (better thinking token handling)
+                if is_thinking_model:
+                    resp = await client.post(f"{ollama_url}/api/chat", json={
+                        "model": model,
+                        "messages": [{"role": "user", "content": actual_prompt}],
+                        "stream": False,
+                        "options": {"num_predict": 800, "temperature": 0.7},
+                    })
+                else:
+                    resp = await client.post(f"{ollama_url}/api/generate", json={
+                        "model": model,
+                        "prompt": actual_prompt,
+                        "stream": False,
+                        "options": {"num_predict": 800, "temperature": 0.7},
+                    })
                 if resp.status_code == 404 and _attempt < 2:
                     import asyncio
                     wait_s = 3 * (_attempt + 1)
@@ -169,11 +178,19 @@ Output ONLY valid JSON (no markdown, no explanation):
                     continue
                 resp.raise_for_status()
                 resp_data = resp.json()
-                raw = resp_data.get("response", "").strip()
-                # Thinking models may put content in "thinking" field instead of "response"
-                if not raw and resp_data.get("thinking"):
-                    raw = resp_data["thinking"].strip()
-                    logger.debug("[IMAGE_AGENT] Using thinking field (response was empty)")
+                # /api/chat returns content in message.content; /api/generate in response
+                if is_thinking_model:
+                    msg = resp_data.get("message", {})
+                    raw = msg.get("content", "").strip()
+                    if not raw:
+                        # Thinking models: check thinking field in message
+                        raw = resp_data.get("thinking", "").strip()
+                else:
+                    raw = resp_data.get("response", "").strip()
+                if not raw:
+                    logger.warning("[IMAGE_AGENT] Model returned empty — response=%d chars, thinking=%d chars",
+                                   len(resp_data.get("response", "") or resp_data.get("message", {}).get("content", "")),
+                                   len(resp_data.get("thinking", "")))
                 break
 
         # Parse the JSON response
