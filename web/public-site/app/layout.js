@@ -100,6 +100,19 @@ export default function RootLayout({ children }) {
           See: components/CookieConsentBanner.tsx
         */}
         <CookieConsentBanner />
+        {/* Lemon Squeezy affiliate tracking */}
+        <Script
+          id="lemon-squeezy-affiliate"
+          strategy="lazyOnload"
+          dangerouslySetInnerHTML={{
+            __html:
+              'window.lemonSqueezyAffiliateConfig = { store: "gladlabs" };',
+          }}
+        />
+        <Script
+          src="https://lmsqueezy.com/affiliate.js"
+          strategy="lazyOnload"
+        />
       </body>
     </html>
   );
