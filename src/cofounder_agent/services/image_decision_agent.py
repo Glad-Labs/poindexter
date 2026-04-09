@@ -168,8 +168,10 @@ Output ONLY valid JSON (no markdown, no explanation):
                 break
 
         # Parse the JSON response
+        # Strip thinking tags (qwen3 models wrap output in <think>...</think>)
+        raw_clean = re.sub(r'<think>.*?</think>', '', raw, flags=re.DOTALL).strip()
         # Strip markdown code fences if present
-        raw_clean = re.sub(r'^```(?:json)?\s*', '', raw, flags=re.MULTILINE)
+        raw_clean = re.sub(r'^```(?:json)?\s*', '', raw_clean, flags=re.MULTILINE)
         raw_clean = re.sub(r'```\s*$', '', raw_clean, flags=re.MULTILINE).strip()
 
         plan_data = json.loads(raw_clean)
