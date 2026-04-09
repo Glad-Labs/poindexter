@@ -206,6 +206,39 @@ class GPUScheduler:
         except Exception as e:
             logger.warning("Failed to unload Ollama models: %s", e)
 
+    async def prepare_mode(self, mode: str):
+        """Actively prepare GPU for a specific workload mode.
+
+        Call this BEFORE a pipeline stage that needs a different GPU workload.
+        The pipeline knows what's coming next — no idle timeouts needed.
+
+        Modes:
+            "ollama"  — unload SDXL, Ollama auto-loads on next request
+            "sdxl"    — unload Ollama models, SDXL server loads on next /generate
+            "idle"    — unload everything, free all VRAM
+        """
+        if mode == "sdxl":
+            await self._unload_ollama_models()
+            logger.info("[GPU] Prepared for SDXL — Ollama models unloaded")
+        elif mode == "ollama":
+            await self._unload_sdxl()
+            logger.info("[GPU] Prepared for Ollama — SDXL unloaded")
+        elif mode == "idle":
+            await self._unload_ollama_models()
+            await self._unload_sdxl()
+            logger.info("[GPU] All models unloaded — VRAM freed")
+
+    async def _unload_sdxl(self):
+        """Tell the SDXL server to unload its model and free VRAM immediately."""
+        sdxl_url = os.getenv("SDXL_SERVER_URL", "http://localhost:9836")
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.post(f"{sdxl_url}/unload")
+                if resp.status_code == 200:
+                    logger.info("[GPU] SDXL model unloaded via /unload endpoint")
+        except Exception:
+            pass  # SDXL server not running — nothing to unload
+
     @property
     def is_busy(self) -> bool:
         return self._lock.locked()
