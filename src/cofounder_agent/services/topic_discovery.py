@@ -494,41 +494,36 @@ class TopicDiscovery:
 
         return topics
 
-    # Keywords that indicate a topic is relevant to Glad Labs' niche
+    # Keywords that indicate a topic is relevant to Glad Labs' niche.
+    # KEEP THIS TIGHT — overly broad terms like "software", "code", "data",
+    # "model", "cloud", "server" match nearly everything from HN and produce
+    # off-brand content. Use multi-word phrases when possible.
     _BRAND_KEYWORDS = {
-        # AI / ML
+        # AI / ML (core niche)
         "ai", "artificial intelligence", "llm", "language model", "gpt", "claude",
-        "inference", "machine learning", "deep learning", "neural", "transformer",
+        "local inference", "machine learning", "deep learning", "transformer",
         "ollama", "hugging face", "huggingface", "stable diffusion", "sdxl",
-        "fine-tun", "rag", "embeddings", "vector", "model", "training",
-        "computer vision", "nlp", "generative", "diffusion", "lora",
-        "agent", "autonomous", "copilot", "chatbot", "prompt",
-        # Hardware
-        "gpu", "cuda", "nvidia", "amd", "radeon", "vram", "cpu", "ryzen",
-        "geforce", "rtx", "3d v-cache", "x3d", "threadripper", "epyc",
-        "pcie", "nvme", "ddr5", "ram", "overclock", "benchmark", "cooling",
-        "custom build", "pc build", "workstation", "server", "homelab",
-        "raspberry pi", "arm", "risc-v", "fpga", "asic",
-        # Gaming
-        "gaming", "game", "esports", "steam", "xbox", "playstation", "nintendo",
-        "unreal engine", "unity", "godot", "game dev", "game engine",
-        "fps", "mmo", "rpg", "indie game", "retro", "emulat",
-        "controller", "peripheral", "monitor", "display", "refresh rate",
-        "ray tracing", "dlss", "fsr", "frame generation", "upscaling",
-        "vr", "virtual reality", "ar", "mixed reality",
-        "streaming", "twitch", "obs", "capture card",
-        # Dev / Infra (supporting)
-        "developer", "dev tool", "devops", "cicd", "ci/cd", "pipeline",
-        "automation", "content", "blog", "podcast",
-        "open source", "open-source", "linux", "docker", "kubernetes",
-        "api", "cloud", "edge computing", "serverless", "infrastructure",
-        "coding", "programming", "software", "engineering", "code",
-        "privacy", "security", "cryptography", "encryption", "quantum",
-        "cyber", "vulnerability", "exploit", "ransomware", "zero-day",
-        "self-healing", "monitoring", "grafana",
-        "productivity", "workflow", "database", "postgres", "data",
-        "startup", "indie", "solo founder", "solo developer", "founder", "saas", "business",
-        "local", "self-host", "self host",
+        "fine-tun", "rag", "embeddings", "vector database",
+        "generative ai", "diffusion", "lora",
+        "ai agent", "autonomous agent", "copilot", "chatbot", "prompt engineering",
+        # Self-hosted / local-first (brand identity)
+        "self-host", "self host", "local-first", "homelab", "home server",
+        "own your data", "data sovereignty", "vendor lock-in",
+        # Content automation (what we sell)
+        "content pipeline", "content automation", "headless cms",
+        "blog automation", "ai writing", "ai content",
+        "podcast", "text-to-speech",
+        # Dev tools & infrastructure (supporting)
+        "docker", "kubernetes", "ci/cd", "devops",
+        "fastapi", "next.js", "nextjs", "postgresql", "postgres",
+        "grafana", "prometheus", "monitoring",
+        "open source", "open-source",
+        # Solo founder / indie (target audience)
+        "solo founder", "solo developer", "indie hacker",
+        "bootstrapped", "one-person", "side project",
+        "saas", "startup tech stack",
+        # Security (relevant niche)
+        "zero trust", "cybersecurity", "encryption", "quantum computing",
     }
 
     @staticmethod
