@@ -142,6 +142,11 @@ def auto_publish():
     """
     MIN_PUBLISH_SCORE = _setting("auto_publish_threshold")
 
+    # 0 means auto-publish is disabled — hold everything for manual approval
+    if MIN_PUBLISH_SCORE <= 0:
+        logger.debug("Auto-publish disabled (threshold=0). Skipping publish cycle.")
+        return
+
     published = 0
     rejected = 0
     held = 0  # Tasks held for manual review (below threshold but not rejected)
