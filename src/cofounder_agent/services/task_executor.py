@@ -384,7 +384,7 @@ class TaskExecutor:
                 "[TASK_SINGLE] Executing content router pipeline (timeout: %ss)...",
                 TASK_TIMEOUT_SECONDS,
             )
-            await _notify_openclaw(f"Processing: \"{topic}\"...")
+            # Removed "Processing..." notification — too noisy. Only notify on completion.
             try:
                 from services.content_router_service import process_content_generation_task
 
@@ -493,22 +493,9 @@ class TaskExecutor:
                 except Exception:
                     logger.warning("Auto-publish check failed, task stays in awaiting_approval", exc_info=True)
 
-                # Emit webhook event for OpenClaw notifications
-                try:
-                    if auto_published:
-                        await emit_webhook_event(getattr(self.database_service, "cloud_pool", None) or self.database_service.pool, "task.auto_published", {
-                            "task_id": task_id, "topic": topic, "quality_score": quality_score,
-                        })
-                    else:
-                        await emit_webhook_event(getattr(self.database_service, "cloud_pool", None) or self.database_service.pool, "task.needs_review", {
-                            "task_id": task_id, "topic": topic, "quality_score": quality_score,
-                        })
-                except Exception:
-                    logger.warning("[WEBHOOK] Failed to emit completion event", exc_info=True)
-
-                # Notify via direct Discord webhook + Telegram bot API
-                # NOTE: publish_post_from_task already sends its own notification,
-                # so we only notify here for the non-published (awaiting_approval) path.
+                # Single notification: direct Discord + Telegram with preview link.
+                # No duplicate webhook events — this is the ONLY notification per task.
+                # publish_post_from_task handles its own notification if auto-published.
                 if auto_published:
                     pass  # publish_service.py handles the notification
                 else:
@@ -533,20 +520,12 @@ class TaskExecutor:
                     except Exception:
                         logger.debug("[PREVIEW] Failed to create preview token", exc_info=True)
 
-                    msg = (
-                        f"📝 Awaiting approval: \"{topic}\"\n"
-                        f"Quality score: {quality_score:.0f}/100\n"
-                    )
+                    msg = f"Awaiting approval: \"{topic}\"\n"
+                    msg += f"Score: {quality_score:.0f}/100\n"
                     if preview_url:
                         msg += f"Preview: {preview_url}\n"
-                    msg += (
-                        f"Task ID: {task_id[:8]}\n"
-                        f"Reply: /approve-post {task_id[:8]}"
-                    )
-                    # Only send to Telegram if quality is worth reviewing (>= 50)
-                    # Low-quality tasks still go to Discord for logging
-                    is_worth_reviewing = quality_score >= 50
-                    await _notify_openclaw(msg, critical=is_worth_reviewing)
+                    msg += f"Approve: /approve-post {task_id[:8]}"
+                    await _notify_openclaw(msg, critical=True)
 
                 return
 
