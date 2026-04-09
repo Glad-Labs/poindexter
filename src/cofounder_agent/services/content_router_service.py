@@ -1038,12 +1038,23 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
                             "prompt": sdxl_inline_prompt, "negative_prompt": neg,
                             "steps": 4, "guidance_scale": 1.0,
                         })
-                if _ir.status_code == 200 and _ir.headers.get("content-type", "").startswith("image/"):
-                    output_dir = _os.path.join(_os.path.expanduser("~"), "Downloads", "glad-labs-generated-images")
-                    _os.makedirs(output_dir, exist_ok=True)
-                    with _tf.NamedTemporaryFile(suffix=".png", delete=False, dir=output_dir) as _tmp:
-                        _tmp.write(_ir.content)
-                        tmp_path = _tmp.name
+                if _ir.status_code == 200:
+                    # SDXL server returns JSON with image_path, or raw image bytes
+                    ct = _ir.headers.get("content-type", "")
+                    if ct.startswith("application/json"):
+                        _sdxl_data = _ir.json()
+                        tmp_path = _sdxl_data.get("image_path", "")
+                        if not tmp_path or not _os.path.exists(tmp_path):
+                            raise RuntimeError(f"SDXL returned JSON but image_path missing or invalid: {tmp_path}")
+                        logger.info("  [IMAGE-%s] SDXL generated: %s (%dms)", num, _os.path.basename(tmp_path), _sdxl_data.get("generation_time_ms", 0))
+                    elif ct.startswith("image/"):
+                        output_dir = _os.path.join(_os.path.expanduser("~"), "Downloads", "glad-labs-generated-images")
+                        _os.makedirs(output_dir, exist_ok=True)
+                        with _tf.NamedTemporaryFile(suffix=".png", delete=False, dir=output_dir) as _tmp:
+                            _tmp.write(_ir.content)
+                            tmp_path = _tmp.name
+                    else:
+                        raise RuntimeError(f"SDXL returned unexpected content-type: {ct}")
 
                     # Upload to R2 CDN
                     img_url = tmp_path
