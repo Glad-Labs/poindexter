@@ -115,7 +115,7 @@ async def reject_task(
             },
         )
 
-        logger.info(f"Task {task_id} rejected by {operator['id']}: {request.reason}")
+        logger.info("Task %s rejected by %s: %s", task_id, operator['id'], request.reason)
 
         # Broadcast rejection status to connected WebSocket clients
         try:
@@ -131,7 +131,7 @@ async def reject_task(
                 },
             )
         except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
-            logger.warning(f"Failed to broadcast rejection status: {e}", exc_info=True)
+            logger.warning("Failed to broadcast rejection status: %s", e, exc_info=True)
 
         return {
             "task_id": task_id,
@@ -151,7 +151,7 @@ async def reject_task(
     except AppError:
         raise
     except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
-        logger.error(f"Failed to reject task {task_id}: {e}", exc_info=True)
+        logger.error("Failed to reject task %s: %s", task_id, e, exc_info=True)
         raise HTTPException(
             status_code=500,
             detail="Failed to reject task",
@@ -201,7 +201,7 @@ async def get_pending_approvals(
                 pending_tasks = result.get("tasks", []) if isinstance(result, dict) else []
                 total = result.get("total", 0) if isinstance(result, dict) else 0
         except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
-            logger.error(f"Pending approval query failed: {e}", exc_info=True)
+            logger.error("Pending approval query failed: %s", e, exc_info=True)
             pending_tasks = []
             total = 0
 
@@ -215,7 +215,7 @@ async def get_pending_approvals(
                 if not task.get("task_name") and task.get("title"):
                     task["task_name"] = task["title"]
 
-        logger.info(f"Pending approvals: {total} total, returning {len(pending_tasks)}")
+        logger.info("Pending approvals: %d total, returning %d", total, len(pending_tasks))
 
         return {
             "total": total,
@@ -247,7 +247,7 @@ async def get_pending_approvals(
         }
 
     except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
-        logger.error(f"Failed to fetch pending approvals: {e}", exc_info=True)
+        logger.error("Failed to fetch pending approvals: %s", e, exc_info=True)
         raise HTTPException(
             status_code=500,
             detail="Failed to fetch pending approvals",

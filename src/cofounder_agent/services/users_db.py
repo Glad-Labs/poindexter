@@ -168,7 +168,7 @@ class UsersDatabase(DatabaseServiceMixin):
                 if oauth_row:
                     # OAuth account already linked, get existing user
                     user_id = oauth_row["user_id"]
-                    logger.info("✅ OAuth account found, getting user: %s", user_id)
+                    logger.info("OAuth account found, getting user: %s", user_id)
 
                     user = await conn.fetchrow(
                         "SELECT id, email, username, is_active, created_at, updated_at FROM users WHERE id = $1",
@@ -189,7 +189,7 @@ class UsersDatabase(DatabaseServiceMixin):
                 if existing_user:
                     # Email exists, link OAuth account to existing user
                     user_id = existing_user["id"]
-                    logger.info("✅ Email found, linking OAuth to user: %s", user_id)
+                    logger.info("Email found, linking OAuth to user: %s", user_id)
 
                     # Create OAuth account link; ON CONFLICT guards against concurrent inserts
                     provider_data_json = json.dumps(provider_data)
@@ -213,7 +213,7 @@ class UsersDatabase(DatabaseServiceMixin):
 
                 # Create new user and OAuth account
                 user_id = str(uuid4())
-                logger.info("✅ Creating new user from OAuth: %s", user_id)
+                logger.info("Creating new user from OAuth: %s", user_id)
 
                 # Create user
                 user = await conn.fetchrow(
@@ -265,12 +265,12 @@ class UsersDatabase(DatabaseServiceMixin):
                         winner_row["user_id"],
                     )
                     logger.info(
-                        "✅ Concurrent OAuth create detected — returning winner user: %s",
+                        "Concurrent OAuth create detected -- returning winner user: %s",
                         winner_row["user_id"],
                     )
                     return ModelConverter.to_user_response(winner_user) if winner_user else None
 
-                logger.info("✅ Created new OAuth user: %s", user_id)
+                logger.info("Created new OAuth user: %s", user_id)
                 return ModelConverter.to_user_response(user) if user else None
 
     @log_query_performance(
@@ -325,7 +325,8 @@ class UsersDatabase(DatabaseServiceMixin):
                 return "1" in result or "1" == result
         except Exception as e:
             logger.error(
-                f"[unlink_oauth_account] Error unlinking OAuth account for user_id={user_id}, provider={provider}: {str(e)}",
+                "[unlink_oauth_account] Error unlinking OAuth account for user_id=%s, provider=%s: %s",
+                user_id, provider, e,
                 exc_info=True,
             )
             return False

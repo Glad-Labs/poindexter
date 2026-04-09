@@ -86,7 +86,7 @@ class UsageTracker:
         """Initialize usage tracker"""
         self.active_operations: Dict[str, UsageMetrics] = {}
         self.completed_operations: list[UsageMetrics] = []
-        logger.info("✅ Usage tracker initialized")
+        logger.info("Usage tracker initialized")
 
     def start_operation(
         self,
@@ -124,7 +124,7 @@ class UsageTracker:
         )
 
         self.active_operations[operation_id] = metrics
-        logger.debug(f"Started tracking operation: {operation_id} ({operation_type})")
+        logger.debug("Started tracking operation: %s (%s)", operation_id, operation_type)
 
         return metrics
 
@@ -146,7 +146,7 @@ class UsageTracker:
             True if successful, False if operation not found
         """
         if operation_id not in self.active_operations:
-            logger.warning(f"Operation not found: {operation_id}")
+            logger.warning("Operation not found: %s", operation_id)
             return False
 
         metrics = self.active_operations[operation_id]
@@ -173,7 +173,7 @@ class UsageTracker:
             Completed UsageMetrics or None if not found
         """
         if operation_id not in self.active_operations:
-            logger.warning(f"Operation not found: {operation_id}")
+            logger.warning("Operation not found: %s", operation_id)
             return None
 
         metrics = self.active_operations.pop(operation_id)
@@ -184,9 +184,11 @@ class UsageTracker:
         self.completed_operations.append(metrics)
 
         logger.debug(
-            f"Completed operation: {operation_id} "
-            f"({metrics.duration_ms}ms, {metrics.total_cost_usd:.4f}USD, "
-            f"{metrics.input_tokens + metrics.output_tokens} tokens)"
+            "Completed operation: %s (%dms, %.4fUSD, %d tokens)",
+            operation_id,
+            metrics.duration_ms,
+            metrics.total_cost_usd,
+            metrics.input_tokens + metrics.output_tokens,
         )
 
         return metrics

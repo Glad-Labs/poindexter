@@ -113,7 +113,7 @@ async def subscribe_to_newsletter(
             True,  # Mark as verified immediately on public signup
         )
 
-        logger.info(f"Newsletter subscriber added: {payload.email} (ID: {subscriber_id})")
+        logger.info("Newsletter subscriber added: %s (ID: %s)", payload.email, subscriber_id)
 
         return NewsletterSubscribeResponse(
             success=True,
@@ -122,7 +122,7 @@ async def subscribe_to_newsletter(
         )
 
     except Exception as e:
-        logger.error(f"Newsletter subscription error: {e}", exc_info=True)
+        logger.error("Newsletter subscription error: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to process subscription",
@@ -154,7 +154,7 @@ async def unsubscribe_from_newsletter(
                 "[newsletter_unsubscribe] No active subscription found for email (not revealing to client)"
             )
         else:
-            logger.info(f"[newsletter_unsubscribe] Successfully unsubscribed: {payload.email}")
+            logger.info("[newsletter_unsubscribe] Successfully unsubscribed: %s", payload.email)
 
         # Always return the same response to prevent email enumeration
         return NewsletterSubscribeResponse(
@@ -162,7 +162,7 @@ async def unsubscribe_from_newsletter(
         )
 
     except Exception as e:
-        logger.error(f"Unsubscribe error: {e}", exc_info=True)
+        logger.error("Unsubscribe error: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to process unsubscribe",
@@ -183,7 +183,7 @@ async def get_subscriber_count(
 
         return {"success": True, "subscriber_count": count or 0}
     except Exception as e:
-        logger.error(f"Subscriber count error: {e}", exc_info=True)
+        logger.error("Subscriber count error: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch subscriber count",

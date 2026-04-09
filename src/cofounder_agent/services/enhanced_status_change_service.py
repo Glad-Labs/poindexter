@@ -50,7 +50,7 @@ class EnhancedStatusChangeService:
             task = await self.db_service.get_task(task_id)
             if not task:
                 error = f"Task not found: {task_id}"
-                logger.error(f"❌ {error}")
+                logger.error("%s", error)
                 return False, error, ["task_not_found"]
 
             current_status = task.get("status", "pending")
@@ -65,8 +65,8 @@ class EnhancedStatusChangeService:
 
             if not is_valid:
                 error_msg = f"Invalid status transition: {current_status} → {new_status}"
-                logger.warning(f"❌ {error_msg}")
-                logger.warning(f"   Errors: {errors}")
+                logger.warning("%s", error_msg)
+                logger.warning("   Errors: %s", errors)
                 return False, error_msg, errors
 
             # Prepare history metadata
@@ -87,7 +87,7 @@ class EnhancedStatusChangeService:
             )
 
             if not logged:
-                logger.warning(f"⚠️  Failed to log status change for {task_id}")
+                logger.warning("Failed to log status change for %s", task_id)
 
             # Update task
             update_data = {"status": new_status, "updated_at": datetime.now(timezone.utc)}
@@ -122,12 +122,12 @@ class EnhancedStatusChangeService:
                 return False, error, ["update_failed"]
 
             success_msg = f"Status changed: {current_status} → {new_status}"
-            logger.info(f"✅ {success_msg}")
+            logger.info("%s", success_msg)
             return True, success_msg, []
 
         except Exception as e:
             error = f"Error during status change: {str(e)}"
-            logger.error(f"[_validate_and_change_status] ❌ {error}", exc_info=True)
+            logger.error("[_validate_and_change_status] %s", error, exc_info=True)
             return False, error, ["internal_error"]
 
     async def get_status_audit_trail(self, task_id: str, limit: int = 50) -> Dict[str, Any]:
@@ -147,7 +147,7 @@ class EnhancedStatusChangeService:
             return {"task_id": task_id, "history_count": len(history), "history": history}
         except Exception as e:
             logger.error(
-                f"[_get_status_audit_trail] ❌ Failed to get audit trail: {e}", exc_info=True
+                "[_get_status_audit_trail] Failed to get audit trail: %s", e, exc_info=True
             )
             return {"task_id": task_id, "history_count": 0, "history": [], "error": str(e)}
 
@@ -168,7 +168,7 @@ class EnhancedStatusChangeService:
             return {"task_id": task_id, "failure_count": len(failures), "failures": failures}
         except Exception as e:
             logger.error(
-                f"[_get_validation_failures] ❌ Failed to get validation failures: {e}",
-                exc_info=True,
+                "[_get_validation_failures] Failed to get validation failures: %s",
+                e, exc_info=True,
             )
             return {"task_id": task_id, "failure_count": 0, "failures": [], "error": str(e)}

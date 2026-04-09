@@ -34,7 +34,7 @@ async def _close_database_service(db_service: Any, owns_service: bool) -> None:
         await db_service.close()
     except Exception as close_error:
         logger.warning(
-            f"[_close_database_service] Failed to close database service: {close_error}",
+            "[_close_database_service] Failed to close database service: %s", close_error,
             exc_info=True,
         )
 
@@ -187,7 +187,7 @@ class CreatePostPhase(BasePhase):
             if config.get("category_id"):
                 post_data["category_id"] = config.get("category_id")
 
-            logger.info(f"[CreatePostPhase] Creating post: {seo_title} (slug: {slug})")
+            logger.info("[CreatePostPhase] Creating post: %s (slug: %s)", seo_title, slug)
 
             db_service, owns_service = await _resolve_database_service(config)
             created_post = await db_service.create_post(post_data)
@@ -204,14 +204,14 @@ class CreatePostPhase(BasePhase):
                 "post_data": post_data,
             }
 
-            logger.info(f"[CreatePostPhase] Created post {post_id}")
+            logger.info("[CreatePostPhase] Created post %s", post_id)
 
             return self.result
 
         except Exception as e:
             self.status = "failed"
             self.error = str(e)
-            logger.error(f"[CreatePostPhase] Error: {str(e)}", exc_info=True)
+            logger.error("[CreatePostPhase] Error: %s", str(e), exc_info=True)
             raise
 
         finally:
@@ -295,7 +295,7 @@ class PublishPostPhase(BasePhase):
             published_at = datetime.now(timezone.utc).isoformat()
             public_url = f"{base_url}/posts/{slug}"
 
-            logger.info(f"[PublishPostPhase] Publishing post {post_id}")
+            logger.info("[PublishPostPhase] Publishing post %s", post_id)
 
             db_service, owns_service = await _resolve_database_service(config)
             updated = await db_service.update_post(
@@ -314,14 +314,14 @@ class PublishPostPhase(BasePhase):
                 "public_url": public_url,
             }
 
-            logger.info(f"[PublishPostPhase] Published at {public_url}")
+            logger.info("[PublishPostPhase] Published at %s", public_url)
 
             return self.result
 
         except Exception as e:
             self.status = "failed"
             self.error = str(e)
-            logger.error(f"[PublishPostPhase] Error: {str(e)}", exc_info=True)
+            logger.error("[PublishPostPhase] Error: %s", str(e), exc_info=True)
             raise
 
         finally:

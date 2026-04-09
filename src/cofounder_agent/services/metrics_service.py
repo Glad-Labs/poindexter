@@ -176,7 +176,7 @@ class MetricsService:
                 await self._database_service.log(task_metrics.to_dict())
             return True
         except Exception as e:
-            logger.error(f"[save_metrics] Failed to persist metrics: {e}", exc_info=True)
+            logger.error("[save_metrics] Failed to persist metrics: %s", e, exc_info=True)
             return False
 
     async def get_metrics(self) -> Dict[str, Any]:

@@ -105,7 +105,7 @@ class SentryIntegration:
             return False
 
         if not sentry_enabled:
-            logger.info("ℹ️  Sentry disabled via SENTRY_ENABLED=false")
+            logger.info("Sentry disabled via SENTRY_ENABLED=false")
             cls._initialized = True
             cls._sentry_enabled = False
             return False
@@ -154,9 +154,9 @@ class SentryIntegration:
             sentry_sdk.set_tag("version", release)
 
             logger.info("[OK] Sentry initialized successfully")
-            logger.info(f"   Environment: {environment}")
-            logger.info(f"   Release: {release}")
-            logger.info(f"   Traces Sample Rate: {0.1 if environment == 'production' else 1.0}")
+            logger.info("   Environment: %s", environment)
+            logger.info("   Release: %s", release)
+            logger.info("   Traces Sample Rate: %s", 0.1 if environment == 'production' else 1.0)
             logger.info("   Dashboard: https://sentry.io")
 
             cls._initialized = True
@@ -165,7 +165,7 @@ class SentryIntegration:
 
         except Exception as e:
             logger.error(
-                f"[_initialize] [ERROR] Failed to initialize Sentry: {str(e)}", exc_info=True
+                "[_initialize] [ERROR] Failed to initialize Sentry: %s", e, exc_info=True
             )
             cls._initialized = True
             cls._sentry_enabled = False
@@ -229,7 +229,7 @@ class SentryIntegration:
                 sentry_sdk.capture_exception(error)
         except Exception as e:
             logger.error(
-                f"[_capture_exception] Failed to capture exception in Sentry: {e}", exc_info=True
+                "[_capture_exception] Failed to capture exception in Sentry: %s", e, exc_info=True
             )
 
     @classmethod
@@ -254,7 +254,7 @@ class SentryIntegration:
                 sentry_sdk.capture_message(message, level=level)  # type: ignore[arg-type]
         except Exception as e:
             logger.error(
-                f"[_capture_message] Failed to capture message in Sentry: {e}", exc_info=True
+                "[_capture_message] Failed to capture message in Sentry: %s", e, exc_info=True
             )
 
     @classmethod
@@ -275,7 +275,7 @@ class SentryIntegration:
             sentry_sdk.set_user({"id": user_id, "email": email, "username": username})
         except Exception as e:
             logger.error(
-                f"[_set_user_context] Failed to set user context in Sentry: {e}", exc_info=True
+                "[_set_user_context] Failed to set user context in Sentry: %s", e, exc_info=True
             )
 
     @classmethod
@@ -288,7 +288,7 @@ class SentryIntegration:
             sentry_sdk.set_user(None)
         except Exception as e:
             logger.error(
-                f"[_clear_user_context] Failed to clear user context in Sentry: {e}", exc_info=True
+                "[_clear_user_context] Failed to clear user context in Sentry: %s", e, exc_info=True
             )
 
     @classmethod
@@ -314,7 +314,7 @@ class SentryIntegration:
             )
         except Exception as e:
             logger.error(
-                f"[_add_breadcrumb] Failed to add breadcrumb in Sentry: {e}", exc_info=True
+                "[_add_breadcrumb] Failed to add breadcrumb in Sentry: %s", e, exc_info=True
             )
 
     @classmethod
@@ -337,7 +337,7 @@ class SentryIntegration:
             return sentry_sdk.start_transaction(name=name, op=op, description=description)
         except Exception as e:
             logger.error(
-                f"[_start_transaction] Failed to start Sentry transaction: {e}", exc_info=True
+                "[_start_transaction] Failed to start Sentry transaction: %s", e, exc_info=True
             )
             return None
 

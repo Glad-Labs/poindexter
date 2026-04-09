@@ -146,13 +146,13 @@ async def _generate_social_text(
         if len(text) > char_limit:
             text = text[: char_limit - 3].rsplit(" ", 1)[0] + "..."
             logger.warning(
-                f"[social_poster] {platform} text exceeded {char_limit} chars, truncated"
+                "[social_poster] %s text exceeded %d chars, truncated", platform, char_limit
             )
 
         return text
 
     except Exception as e:
-        logger.error(f"[social_poster] LLM generation failed for {platform}: {e}", exc_info=True)
+        logger.error("[social_poster] LLM generation failed for %s: %s", platform, e, exc_info=True)
         return ""
 
 
@@ -165,7 +165,7 @@ async def _notify(message: str) -> None:
     """Send social post notifications to Telegram and Discord."""
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            logger.info(f"[social_poster] Notifying: {message[:80]}")
+            logger.info("[social_poster] Notifying: %s", message[:80])
             # Telegram — direct bot API
             await client.post(
                 f"https://api.telegram.org/bot{_TELEGRAM_BOT_TOKEN}/sendMessage",
@@ -182,7 +182,7 @@ async def _notify(message: str) -> None:
                 },
             )
     except Exception as e:
-        logger.warning(f"[social_poster] Notification failed: {e}")
+        logger.warning("[social_poster] Notification failed: %s", e)
 
 
 # ---------------------------------------------------------------------------
@@ -221,7 +221,7 @@ async def generate_social_posts(
     )
     if twitter_text:
         posts.append(SocialPost(platform="twitter", text=twitter_text, post_url=post_url))
-        logger.info(f"[social_poster] Twitter post generated ({len(twitter_text)} chars)")
+        logger.info("[social_poster] Twitter post generated (%d chars)", len(twitter_text))
     else:
         logger.error("[social_poster] Twitter post generation failed — empty result")
 
@@ -232,7 +232,7 @@ async def generate_social_posts(
     )
     if linkedin_text:
         posts.append(SocialPost(platform="linkedin", text=linkedin_text, post_url=post_url))
-        logger.info(f"[social_poster] LinkedIn post generated ({len(linkedin_text)} chars)")
+        logger.info("[social_poster] LinkedIn post generated (%d chars)", len(linkedin_text))
     else:
         logger.error("[social_poster] LinkedIn post generation failed — empty result")
 
@@ -261,7 +261,7 @@ async def generate_and_distribute_social_posts(
     Returns:
         List of generated SocialPost objects
     """
-    logger.info(f"[social_poster] Generating social posts for: {title}")
+    logger.info("[social_poster] Generating social posts for: %s", title)
 
     posts = await generate_social_posts(title, slug, excerpt, keywords, ollama)
 
@@ -274,7 +274,7 @@ async def generate_and_distribute_social_posts(
         )
         await _notify(notification)
         logger.info(
-            f"[social_poster] Distributed {post.platform} post to Telegram + Discord"
+            "[social_poster] Distributed %s post to Telegram + Discord", post.platform
         )
 
     if not posts:

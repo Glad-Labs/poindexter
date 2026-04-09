@@ -35,7 +35,7 @@ class WebhookDeliveryService:
             return
         self._running = True
         self._client = httpx.AsyncClient(timeout=10.0)
-        logger.info(f"[WEBHOOK] Delivery service started, polling every {POLL_INTERVAL}s")
+        logger.info("[WEBHOOK] Delivery service started, polling every %ds", POLL_INTERVAL)
         asyncio.create_task(self._delivery_loop())
 
     async def stop(self):
@@ -104,7 +104,7 @@ class WebhookDeliveryService:
                     datetime.now(timezone.utc),
                     event_id,
                 )
-            logger.debug(f"[WEBHOOK] Delivered event {event_id} ({event_type})")
+            logger.debug("[WEBHOOK] Delivered event %s (%s)", event_id, event_type)
 
         except Exception:
             # Increment retry count
@@ -118,7 +118,7 @@ class WebhookDeliveryService:
                     datetime.now(timezone.utc),
                     event_id,
                 )
-            logger.warning(f"[WEBHOOK] Failed to deliver event {event_id}", exc_info=True)
+            logger.warning("[WEBHOOK] Failed to deliver event %s", event_id, exc_info=True)
 
     def _format_message(self, event_type: str, payload: dict) -> str:
         """Format a webhook event into a human-readable message for OpenClaw."""
@@ -156,4 +156,4 @@ async def emit_webhook_event(pool, event_type: str, payload: dict):
                 json.dumps(payload),
             )
     except Exception:
-        logger.warning(f"[WEBHOOK] Failed to emit {event_type} event", exc_info=True)
+        logger.warning("[WEBHOOK] Failed to emit %s event", event_type, exc_info=True)

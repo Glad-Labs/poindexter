@@ -418,18 +418,20 @@ class ModelConsolidationService:
         # Try each provider in order
         last_error = None
         logger.info(
-            f"🔗 Starting provider fallback chain ({len(chain)} providers to try)",
+            "Starting provider fallback chain (%d providers to try)",
+            len(chain),
             chain=[p.value for p in chain],
         )
 
         for provider_type in chain:
             try:
                 # Check availability
-                logger.debug(f"⏳ Checking {provider_type.value} availability...")
+                logger.debug("Checking %s availability...", provider_type.value)
                 is_available = await self._check_provider_availability(provider_type)
                 if not is_available:
                     logger.info(
-                        f"⏭️  {provider_type.value} not available, skipping",
+                        "%s not available, skipping",
+                        provider_type.value,
                         provider=provider_type.value,
                     )
                     continue
@@ -438,13 +440,15 @@ class ModelConsolidationService:
                 adapter = self.adapters.get(provider_type)
                 if not adapter:
                     logger.warning(
-                        f"⚠️  No adapter for {provider_type.value}, skipping",
+                        "No adapter for %s, skipping",
+                        provider_type.value,
                         provider=provider_type.value,
                     )
                     continue
 
                 logger.info(
-                    f"🚀 Attempting generation with {provider_type.value}...",
+                    "Attempting generation with %s...",
+                    provider_type.value,
                     provider=provider_type.value,
                 )
 
@@ -470,7 +474,8 @@ class ModelConsolidationService:
                 self.metrics["by_provider"][provider_type.value]["cost"] += response.cost
 
                 logger.info(
-                    f"✅ {provider_type.value} generation successful",
+                    "%s generation successful",
+                    provider_type.value,
                     provider=provider_type.value,
                     response_time_ms=response.response_time_ms,
                     cost=response.cost,
@@ -481,7 +486,8 @@ class ModelConsolidationService:
             except Exception as e:
                 last_error = e
                 logger.warning(
-                    f"❌ {provider_type.value} generation failed",
+                    "%s generation failed",
+                    provider_type.value,
                     provider=provider_type.value,
                     error=str(e),
                     exc_info=True,
@@ -491,7 +497,7 @@ class ModelConsolidationService:
         # All providers failed
         self.metrics["failed_requests"] += 1
         error_msg = f"All model providers failed. Last error: {str(last_error)}"
-        logger.error("🚨 All providers exhausted", error=error_msg, exc_info=last_error)
+        logger.error("All providers exhausted", error=error_msg, exc_info=last_error)
         raise ServiceError(error_msg)
 
     def get_status(self) -> Dict[str, Any]:

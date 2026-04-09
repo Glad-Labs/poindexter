@@ -57,7 +57,7 @@ class ProgressService:
             message="Initializing generation...",
         )
         self._progress[task_id] = progress
-        logger.info(f"📊 Created progress tracker for {task_id}")
+        logger.info("Created progress tracker for %s", task_id)
         return progress
 
     def get_progress(self, task_id: str) -> Optional[GenerationProgress]:
@@ -157,7 +157,7 @@ class ProgressService:
             try:
                 callback(progress)
             except Exception as e:
-                logger.error(f"[_notify_callbacks] Error in progress callback: {e}", exc_info=True)
+                logger.error("[_notify_callbacks] Error in progress callback: %s", e, exc_info=True)
 
     def cleanup(self, task_id: str) -> None:
         """Clean up progress and callbacks for a task"""

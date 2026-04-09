@@ -77,8 +77,8 @@ class WorkflowExecutor:
         if execution_id is None:
             execution_id = f"exec-{int(time.time() * 1000)}"
 
-        logger.info(f"Starting workflow execution: {execution_id}")
-        logger.info(f"Workflow: {workflow.name} ({len(workflow.phases)} phases)")
+        logger.info("Starting workflow execution: %s", execution_id)
+        logger.info("Workflow: %s (%d phases)", workflow.name, len(workflow.phases))
 
         # Normalize phases to WorkflowPhase objects
         phases = self._normalize_phases(workflow.phases)
@@ -104,7 +104,7 @@ class WorkflowExecutor:
             # Execute phases in order
             for i, phase in enumerate(phases):
                 if phase.skip:
-                    logger.info(f"Skipping phase {i}: {phase.name}")
+                    logger.info("Skipping phase %d: %s", i, phase.name)
                     # Update progress for skipped phase
                     if progress_service:
                         try:
@@ -116,12 +116,12 @@ class WorkflowExecutor:
                             )
                         except Exception as e:
                             logger.error(
-                                f"[_execute_workflow] Failed to update progress for skipped phase: {e}",
-                                exc_info=True,
+                                "[_execute_workflow] Failed to update progress for skipped phase: %s",
+                                e, exc_info=True,
                             )
                     continue
 
-                logger.info(f"Executing phase {i}: {phase.name}")
+                logger.info("Executing phase %d: %s", i, phase.name)
                 start_time = time.time()
 
                 # Update progress: start phase
@@ -134,8 +134,8 @@ class WorkflowExecutor:
                         )
                     except Exception as e:
                         logger.error(
-                            f"[_execute_workflow] Failed to update progress for phase start: {e}",
-                            exc_info=True,
+                            "[_execute_workflow] Failed to update progress for phase start: %s",
+                            e, exc_info=True,
                         )
 
                 # Prepare inputs for this phase
@@ -154,8 +154,8 @@ class WorkflowExecutor:
                     result = await self._execute_phase(phase, phase_inputs, execution_id)
                 except Exception as e:
                     logger.error(
-                        f"[_execute_workflow] Phase {i} ({phase.name}) failed: {str(e)}",
-                        exc_info=True,
+                        "[_execute_workflow] Phase %d (%s) failed: %s",
+                        i, phase.name, e, exc_info=True,
                     )
                     result = PhaseResult(
                         status="failed",
@@ -186,8 +186,8 @@ class WorkflowExecutor:
                             )
                     except Exception as e:
                         logger.error(
-                            f"[_execute_workflow] Failed to update progress for phase completion: {e}",
-                            exc_info=True,
+                            "[_execute_workflow] Failed to update progress for phase completion: %s",
+                            e, exc_info=True,
                         )
 
                 # Store result
@@ -198,19 +198,19 @@ class WorkflowExecutor:
 
                 # Log progress
                 logger.info(
-                    f"Phase {i} ({phase.name}) status: {result.status} "
-                    f"(time: {result.execution_time_ms:.0f}ms)"
+                    "Phase %d (%s) status: %s (time: %.0fms)",
+                    i, phase.name, result.status, result.execution_time_ms,
                 )
 
                 # Stop on failure (for now, can be made configurable)
                 if result.status == "failed":
-                    logger.warning(f"Phase {i} ({phase.name}) failed, halting workflow")
+                    logger.warning("Phase %d (%s) failed, halting workflow", i, phase.name)
                     raise WorkflowExecutionError(
                         f"Phase {phase.name} (index {i}) failed: {result.error}"
                     )
 
         except Exception as e:
-            logger.error(f"[_execute_workflow] Workflow execution failed: {str(e)}", exc_info=True)
+            logger.error("[_execute_workflow] Workflow execution failed: %s", e, exc_info=True)
             # Mark remaining phases as not executed
             for phase in phases[len(phase_results) :]:
                 if phase.name not in phase_results:
@@ -222,7 +222,7 @@ class WorkflowExecutor:
                         tokens_used=None,
                     )
 
-        logger.info(f"Workflow execution complete: {len(phase_results)} phases executed")
+        logger.info("Workflow execution complete: %d phases executed", len(phase_results))
         return phase_results
 
     def _prepare_phase_inputs(
@@ -324,8 +324,8 @@ class WorkflowExecutor:
         try:
             import asyncio
 
-            logger.info(f"Executing {phase.name} with {len(inputs)} inputs")
-            logger.debug(f"Agent type: {phase_def.agent_type}")
+            logger.info("Executing %s with %d inputs", phase.name, len(inputs))
+            logger.debug("Agent type: %s", phase_def.agent_type)
 
             # Get the agent based on agent_type
             agent = self._get_agent(phase_def.agent_type)
@@ -383,7 +383,7 @@ class WorkflowExecutor:
 
         except Exception as e:
             logger.error(
-                f"[_execute_phase] Failed to execute {phase.name}: {str(e)}", exc_info=True
+                "[_execute_phase] Failed to execute %s: %s", phase.name, e, exc_info=True
             )
             return PhaseResult(
                 status="failed",
@@ -430,7 +430,7 @@ class WorkflowExecutor:
             }
 
             if agent_type not in agent_mapping:
-                logger.warning(f"Agent type '{agent_type}' not in mapping")
+                logger.warning("Agent type '%s' not in mapping", agent_type)
                 return None
 
             module_path, factory_func = agent_mapping[agent_type]
@@ -443,7 +443,7 @@ class WorkflowExecutor:
                     WorkflowExecutor._agent_module_cache[module_path] = importlib.import_module(
                         module_path
                     )
-                    logger.debug(f"Imported and cached agent module '{module_path}'")
+                    logger.debug("Imported and cached agent module '%s'", module_path)
 
                 module = WorkflowExecutor._agent_module_cache[module_path]
 
@@ -451,21 +451,21 @@ class WorkflowExecutor:
                 if hasattr(module, factory_func):
                     agent_factory = getattr(module, factory_func)
                     agent = agent_factory()
-                    logger.debug(f"Loaded agent '{agent_type}' from {module_path}")
+                    logger.debug("Loaded agent '%s' from %s", agent_type, module_path)
                     return agent
                 else:
-                    logger.warning(f"Factory function '{factory_func}' not found in {module_path}")
+                    logger.warning("Factory function '%s' not found in %s", factory_func, module_path)
                     return None
 
             except ImportError as e:
                 logger.error(
-                    f"[_get_agent] Failed to import agent module '{module_path}': {e}",
-                    exc_info=True,
+                    "[_get_agent] Failed to import agent module '%s': %s",
+                    module_path, e, exc_info=True,
                 )
                 return None
 
         except Exception as e:
-            logger.error(f"[_get_agent] Error loading agent '{agent_type}': {e}", exc_info=True)
+            logger.error("[_get_agent] Error loading agent '%s': %s", agent_type, e, exc_info=True)
             return None
 
     def _normalize_phases(self, phases: List[Any]) -> List[WorkflowPhase]:

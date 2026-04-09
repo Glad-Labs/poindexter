@@ -283,7 +283,7 @@ class SEOOptimizedContentGenerator:
         """
         start_time = time.time()
 
-        logger.info(f"Starting comprehensive blog post generation for: {topic}")
+        logger.info("Starting comprehensive blog post generation for: %s", topic)
 
         # Stage 1: Generate core content with validation
         logger.info("Stage 1: Generating core content...")
@@ -355,7 +355,7 @@ class SEOOptimizedContentGenerator:
 
         generation_time = time.time() - start_time
 
-        logger.info(f"Blog post generation complete in {generation_time:.1f}s")
+        logger.info("Blog post generation complete in %.1fs", generation_time)
 
         return EnhancedBlogPost(
             title=title,

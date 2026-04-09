@@ -201,9 +201,9 @@ class ModelRouter:
                 )
                 if self._session_cloud_spend > self._monthly_spend_limit:
                     logger.critical(
-                        f"[BUDGET_EXCEEDED] Month-to-date spend "
-                        f"(${self._session_cloud_spend:.2f}) already exceeds limit "
-                        f"(${self._monthly_spend_limit:.2f}) at startup."
+                        "[BUDGET_EXCEEDED] Month-to-date spend ($%.2f) already exceeds limit ($%.2f) at startup.",
+                        self._session_cloud_spend,
+                        self._monthly_spend_limit,
                     )
                     self._budget_exceeded_logged = True
         except Exception:
@@ -219,16 +219,18 @@ class ModelRouter:
         self._provider_consecutive_failures[provider] = count
         if count >= self._FAILURE_ALERT_THRESHOLD:
             logger.critical(
-                f"[llm_provider] Provider {provider!r} has failed {count} consecutive times — "
-                f"possible outage or quota exhaustion"
+                "[llm_provider] Provider %r has failed %d consecutive times -- possible outage or quota exhaustion",
+                provider,
+                count,
             )
 
     def record_provider_success(self, provider: str) -> None:
         """Record a successful LLM call. Resets consecutive failure counter."""
         if self._provider_consecutive_failures.get(provider, 0) > 0:
             logger.info(
-                f"[llm_provider] Provider {provider!r} recovered after "
-                f"{self._provider_consecutive_failures[provider]} consecutive failures"
+                "[llm_provider] Provider %r recovered after %d consecutive failures",
+                provider,
+                self._provider_consecutive_failures[provider],
             )
         self._provider_consecutive_failures[provider] = 0
 
@@ -456,7 +458,7 @@ def get_model_for_phase(
     if model_selections and phase in model_selections:
         selected = model_selections[phase]
         if selected and selected != "auto":
-            logger.info(f"[MODEL_ROUTER] Using selected model for {phase}: {selected}")
+            logger.info("[MODEL_ROUTER] Using selected model for %s: %s", phase, selected)
             return selected
 
     quality = quality_preference or "balanced"
@@ -464,5 +466,5 @@ def get_model_for_phase(
         quality = "balanced"
 
     model = defaults_by_phase[quality].get(phase, "ollama/qwen3:8b")
-    logger.info(f"[MODEL_ROUTER] Using {quality} quality model for {phase}: {model}")
+    logger.info("[MODEL_ROUTER] Using %s quality model for %s: %s", quality, phase, model)
     return model

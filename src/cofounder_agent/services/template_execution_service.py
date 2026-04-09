@@ -180,8 +180,8 @@ class TemplateExecutionService:
         )
 
         logger.info(
-            f"Built workflow from template '{template_name}' "
-            f"with {len(workflow_phases)} phases for owner {owner_id}"
+            "Built workflow from template '%s' with %d phases for owner %s",
+            template_name, len(workflow_phases), owner_id,
         )
 
         return workflow
@@ -247,7 +247,7 @@ class TemplateExecutionService:
             # Initialize progress tracking (Phase 2)
             self._initialize_progress_tracking(execution_id, workflow, template_name)
 
-            logger.info(f"Executing template '{template_name}' with workflow {workflow.id}")
+            logger.info("Executing template '%s' with workflow %s", template_name, workflow.id)
 
             # Persist template workflow to database before execution
             # This ensures the foreign key constraint in workflow_executions is satisfied
@@ -259,18 +259,18 @@ class TemplateExecutionService:
                     )
                     if existing:
                         workflow.id = existing.id
-                        logger.info(f"Using existing template workflow: {workflow.id}")
+                        logger.info("Using existing template workflow: %s", workflow.id)
                     else:
                         # Create new template workflow
                         workflow_save = await self.custom_workflows_service.create_workflow(
                             workflow=workflow, owner_id=owner_id
                         )
                         workflow.id = workflow_save.id
-                        logger.info(f"Persisted template workflow: {workflow.id}")
+                        logger.info("Persisted template workflow: %s", workflow.id)
                 except Exception as e:
                     logger.warning(
-                        f"[_execute_template] Could not persist/retrieve template workflow, "
-                        f"assigning ephemeral ID: {e}",
+                        "[_execute_template] Could not persist/retrieve template workflow, "
+                        "assigning ephemeral ID: %s", e,
                         exc_info=True,
                     )
                     # Assign an ephemeral ID and continue — execution results
@@ -282,7 +282,7 @@ class TemplateExecutionService:
             if task_input and isinstance(task_input, dict):
                 selected_model = task_input.get("model")
                 if selected_model:
-                    logger.info(f"[template_execution] Model selected: {selected_model}")
+                    logger.info("[template_execution] Model selected: %s", selected_model)
 
             # Execute via WorkflowExecutor
             phase_results = await self.workflow_executor.execute_workflow(
@@ -312,17 +312,17 @@ class TemplateExecutionService:
             }
 
             logger.info(
-                f"Template execution completed: {execution_id} "
-                f"(status: {result['status']}, phases: {len(phase_results)})"
+                "Template execution completed: %s (status: %s, phases: %d)",
+                execution_id, result['status'], len(phase_results),
             )
 
             return result
 
         except ValueError as e:
-            logger.error(f"[_execute_template] Template validation error: {str(e)}", exc_info=True)
+            logger.error("[_execute_template] Template validation error: %s", str(e), exc_info=True)
             raise
         except Exception as e:
-            logger.error(f"[_execute_template] Template execution error: {str(e)}", exc_info=True)
+            logger.error("[_execute_template] Template execution error: %s", str(e), exc_info=True)
             raise
 
     def _initialize_progress_tracking(
@@ -363,16 +363,16 @@ class TemplateExecutionService:
                     asyncio.create_task(broadcast_workflow_progress(actual_execution_id, progress))
                 except Exception as e:
                     logger.error(
-                        f"[_broadcast_callback] Could not broadcast progress: {e}", exc_info=True
+                        "[_broadcast_callback] Could not broadcast progress: %s", e, exc_info=True
                     )
 
             progress_service.register_callback(actual_execution_id, broadcast_callback)
 
-            logger.debug(f"Initialized progress tracking for execution {actual_execution_id}")
+            logger.debug("Initialized progress tracking for execution %s", actual_execution_id)
 
         except Exception as e:
             logger.error(
-                f"[_initialize_progress_tracking] Could not initialize progress tracking: {e}",
+                "[_initialize_progress_tracking] Could not initialize progress tracking: %s", e,
                 exc_info=True,
             )
             # Continue execution even if progress tracking fails
@@ -396,7 +396,7 @@ class TemplateExecutionService:
             )
         except Exception as e:
             logger.error(
-                f"[_get_execution_status] Failed to get execution status: {str(e)}", exc_info=True
+                "[_get_execution_status] Failed to get execution status: %s", str(e), exc_info=True
             )
             return None
 
@@ -441,6 +441,6 @@ class TemplateExecutionService:
             }
         except Exception as e:
             logger.error(
-                f"[_get_execution_history] Failed to get execution history: {str(e)}", exc_info=True
+                "[_get_execution_history] Failed to get execution history: %s", str(e), exc_info=True
             )
             return {"executions": [], "total_count": 0}

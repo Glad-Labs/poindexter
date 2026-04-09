@@ -60,7 +60,7 @@ def convert_markdown_to_html(markdown_content: str) -> str:
         )
         return html
     except Exception as e:
-        logger.error(f"Error converting markdown: {e}", exc_info=True)
+        logger.error("Error converting markdown: %s", e, exc_info=True)
         return markdown_content
 
 

@@ -71,7 +71,7 @@ class WorkflowProgressService:
         )
         self._progress[execution_id] = progress
         logger.info(
-            f"📊 Created progress tracker for execution {execution_id} " f"({total_phases} phases)"
+            "Created progress tracker for execution %s (%d phases)", execution_id, total_phases
         )
         return progress
 
@@ -265,7 +265,7 @@ class WorkflowProgressService:
         if execution_id not in self._callbacks:
             self._callbacks[execution_id] = []
         self._callbacks[execution_id].append(callback)
-        logger.debug(f"Registered progress callback for execution {execution_id}")
+        logger.debug("Registered progress callback for execution %s", execution_id)
 
     def unregister_callback(
         self,
@@ -276,10 +276,10 @@ class WorkflowProgressService:
         if execution_id in self._callbacks:
             try:
                 self._callbacks[execution_id].remove(callback)
-                logger.debug(f"Unregistered progress callback for execution {execution_id}")
+                logger.debug("Unregistered progress callback for execution %s", execution_id)
             except ValueError:
                 logger.debug(
-                    f"[unregister_callback] Callback not found for execution {execution_id}, already removed"
+                    "[unregister_callback] Callback not found for execution %s, already removed", execution_id
                 )
 
     def _notify_callbacks(
@@ -294,7 +294,8 @@ class WorkflowProgressService:
                     callback(progress)
                 except Exception as e:
                     logger.error(
-                        f"[_notify_callbacks] Error in progress callback for execution_id={execution_id}: {e}",
+                        "[_notify_callbacks] Error in progress callback for execution_id=%s: %s",
+                        execution_id, e,
                         exc_info=True,
                     )
 
@@ -304,7 +305,7 @@ class WorkflowProgressService:
             del self._progress[execution_id]
         if execution_id in self._callbacks:
             del self._callbacks[execution_id]
-        logger.debug(f"Cleaned up progress tracking for execution {execution_id}")
+        logger.debug("Cleaned up progress tracking for execution %s", execution_id)
 
 
 # Global singleton instance

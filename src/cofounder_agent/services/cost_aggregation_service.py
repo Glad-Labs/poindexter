@@ -116,7 +116,7 @@ class CostAggregationService:
                     "last_updated": datetime.now(timezone.utc).isoformat(),
                 }
         except Exception as e:
-            logger.error(f"[_get_summary] Error getting cost summary: {e}", exc_info=True)
+            logger.error("[_get_summary] Error getting cost summary: %s", e, exc_info=True)
             return self._get_empty_summary()
 
     async def get_breakdown_by_phase(
@@ -196,7 +196,7 @@ class CostAggregationService:
                 }
         except Exception as e:
             logger.error(
-                f"[_get_breakdown_by_phase] Error getting cost breakdown by phase: {e}",
+                "[_get_breakdown_by_phase] Error getting cost breakdown by phase: %s", e,
                 exc_info=True,
             )
             return self._get_empty_breakdown_by_phase(period)
@@ -275,7 +275,7 @@ class CostAggregationService:
                 }
         except Exception as e:
             logger.error(
-                f"[_get_breakdown_by_model] Error getting cost breakdown by model: {e}",
+                "[_get_breakdown_by_model] Error getting cost breakdown by model: %s", e,
                 exc_info=True,
             )
             return self._get_empty_breakdown_by_model(period)
@@ -366,7 +366,7 @@ class CostAggregationService:
                     "last_updated": datetime.now(timezone.utc).isoformat(),
                 }
         except Exception as e:
-            logger.error(f"[_get_history] Error getting cost history: {e}", exc_info=True)
+            logger.error("[_get_history] Error getting cost history: %s", e, exc_info=True)
             return self._get_empty_history(period)
 
     async def get_budget_status(
@@ -492,7 +492,7 @@ class CostAggregationService:
                 "last_updated": datetime.now(timezone.utc).isoformat(),
             }
         except Exception as e:
-            logger.error(f"[_get_budget_status] Error getting budget status: {e}", exc_info=True)
+            logger.error("[_get_budget_status] Error getting budget status: %s", e, exc_info=True)
             return self._get_empty_budget_status(monthly_budget)
 
     async def recalculate_all(self) -> Dict[str, Any]:

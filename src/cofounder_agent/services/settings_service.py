@@ -94,7 +94,7 @@ class SettingsService:
 
         # Invalidate cache so next read picks up the change
         self._last_refresh = 0
-        logger.info(f"[SETTINGS] Updated key={key!r}")
+        logger.info("[SETTINGS] Updated key=%r", key)
 
     async def delete(self, key: str):
         """Delete a setting."""
@@ -103,7 +103,7 @@ class SettingsService:
                 "DELETE FROM app_settings WHERE key = $1", key
             )
         self._last_refresh = 0
-        logger.info(f"[SETTINGS] Deleted key={key!r} ({result})")
+        logger.info("[SETTINGS] Deleted key=%r (%s)", key, result)
 
     async def get_all(self, include_secrets: bool = False) -> list[dict]:
         """Get all settings. Masks secret values unless *include_secrets*."""
@@ -147,7 +147,7 @@ class SettingsService:
                 for row in rows
             }
             self._last_refresh = time.monotonic()
-            logger.debug(f"[SETTINGS] Cache refreshed — {len(self._cache)} keys loaded")
+            logger.debug("[SETTINGS] Cache refreshed -- %d keys loaded", len(self._cache))
         except Exception:
             logger.error("[SETTINGS] Failed to refresh cache from DB", exc_info=True)
 

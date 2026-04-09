@@ -65,7 +65,7 @@ class WritingStyleIntegrationService:
 
             if not sample_data:
                 logger.warning(
-                    f"No writing sample found for style_id={writing_style_id}, user_id={user_id}"
+                    "No writing sample found for style_id=%s, user_id=%s", writing_style_id, user_id
                 )
                 return None
 
@@ -75,16 +75,17 @@ class WritingStyleIntegrationService:
                 analysis = self._analyze_sample(sample_text)
                 sample_data["analysis"] = analysis
                 logger.info(
-                    f"✅ Sample analysis: tone={analysis.get('detected_tone')}, "
-                    f"style={analysis.get('detected_style')}, "
-                    f"avg_sentence_len={analysis.get('avg_sentence_length')}"
+                    "Sample analysis: tone=%s, style=%s, avg_sentence_len=%s",
+                    analysis.get('detected_tone'),
+                    analysis.get('detected_style'),
+                    analysis.get('avg_sentence_length'),
                 )
 
             return sample_data
 
         except Exception as e:
             logger.error(
-                f"[_get_sample_for_content_generation] Error getting sample for content generation: {e}",
+                "[_get_sample_for_content_generation] Error getting sample for content generation: %s", e,
                 exc_info=True,
             )
             return None
@@ -269,12 +270,12 @@ class WritingStyleIntegrationService:
                 if analysis_guidance:
                     enhanced_prompt += f"\n\n## Style Analysis Results\n{analysis_guidance}"
 
-            logger.info("✅ Creative agent prompt enhanced with writing sample guidance")
+            logger.info("Creative agent prompt enhanced with writing sample guidance")
             return enhanced_prompt
 
         except Exception as e:
             logger.error(
-                f"[_generate_creative_agent_prompt_injection] Error generating creative agent prompt injection: {e}",
+                "[_generate_creative_agent_prompt_injection] Error generating creative agent prompt injection: %s", e,
                 exc_info=True,
             )
             return base_prompt
@@ -353,7 +354,7 @@ class WritingStyleIntegrationService:
             return results
 
         except Exception as e:
-            logger.error(f"[_verify_style_match] Error verifying style match: {e}", exc_info=True)
+            logger.error("[_verify_style_match] Error verifying style match: %s", e, exc_info=True)
             return {"matched": False, "reason": f"Verification error: {str(e)}"}
 
     @staticmethod

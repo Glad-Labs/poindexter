@@ -68,13 +68,13 @@ class WorkerService:
                 f"Worker {self.worker_id}",
                 json.dumps(self.capabilities),
             )
-        logger.info(f"[WORKER] Registered as {self.worker_id}")
+        logger.info("[WORKER] Registered as %s", self.worker_id)
 
     async def start_heartbeat(self):
         """Start the heartbeat loop."""
         self._running = True
         asyncio.create_task(self._heartbeat_loop())
-        logger.info(f"[WORKER] Heartbeat started (every {HEARTBEAT_INTERVAL}s)")
+        logger.info("[WORKER] Heartbeat started (every %ds)", HEARTBEAT_INTERVAL)
 
     async def stop(self):
         """Mark worker as offline."""
@@ -89,7 +89,7 @@ class WorkerService:
                     """,
                     self.worker_id,
                 )
-            logger.info(f"[WORKER] Marked offline: {self.worker_id}")
+            logger.info("[WORKER] Marked offline: %s", self.worker_id)
         except Exception:
             logger.debug("[WORKER] Failed to mark offline", exc_info=True)
 

@@ -159,9 +159,9 @@ class PhaseRegistry:
     def register_phase(self, phase_def: PhaseDefinition) -> None:
         """Register a new phase definition"""
         if phase_def.name in self._phases:
-            logger.warning(f"Phase '{phase_def.name}' already registered, overwriting")
+            logger.warning("Phase '%s' already registered, overwriting", phase_def.name)
         self._phases[phase_def.name] = phase_def
-        logger.info(f"Registered phase: {phase_def.name}")
+        logger.info("Registered phase: %s", phase_def.name)
 
     def get_phase(self, name: str) -> Optional[PhaseDefinition]:
         """Get a phase definition by name"""
@@ -184,7 +184,7 @@ class PhaseRegistry:
         self._register_content_creation_phases()
         self._register_quality_phases()
         self._register_media_and_publishing_phases()
-        logger.info(f"Initialized PhaseRegistry with {len(self._phases)} built-in phases")
+        logger.info("Initialized PhaseRegistry with %d built-in phases", len(self._phases))
 
     def _register_content_creation_phases(self) -> None:
         """Register research and draft phases"""
@@ -523,7 +523,7 @@ class PhaseRegistry:
         """Register blog post workflow phases"""
         self._register_blog_content_phases()
         self._register_blog_media_and_publishing_phases()
-        logger.info(f"Registered {4} blog phases - Total phases: {len(self._phases)}")
+        logger.info("Registered %d blog phases - Total phases: %d", 4, len(self._phases))
 
     def _register_blog_content_phases(self) -> None:
         """Register blog content generation and quality evaluation phases"""

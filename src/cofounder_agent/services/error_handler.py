@@ -292,7 +292,7 @@ def handle_error(
 
     # Log the error if requested
     if log_exception:
-        logger.error(f"Unhandled exception: {error}", exc_info=True)
+        logger.error("Unhandled exception: %s", error, exc_info=True)
 
     # Convert to ServiceError — do not expose raw exception message in HTTP response
     details = context or {}

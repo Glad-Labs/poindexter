@@ -310,6 +310,6 @@ class WorkflowValidator:
                         )
                     )
                 else:
-                    logger.warning(f"Could not normalize phase: {phase}")
+                    logger.warning("Could not normalize phase: %s", phase)
 
         return normalized

@@ -63,9 +63,9 @@ class ProviderChecker:
             key = cls._get_env("HUGGINGFACE_API_TOKEN")
             cls._cache["huggingface"] = bool(key)
             if cls._cache["huggingface"]:
-                logger.debug("✅ HuggingFace provider available")
+                logger.debug("HuggingFace provider available")
             else:
-                logger.debug("❌ HuggingFace provider not configured")
+                logger.debug("HuggingFace provider not configured")
         return cls._cache["huggingface"]
 
     @classmethod

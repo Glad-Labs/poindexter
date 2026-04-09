@@ -52,7 +52,7 @@ async def get_budget_status(
 
         return result
     except Exception as e:
-        logger.error(f"Error getting budget status: {e}", exc_info=True)
+        logger.error("Error getting budget status: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="An internal error occurred") from e
 
 
@@ -103,7 +103,7 @@ async def get_operational_metrics(
                     task_counts = {}
         except Exception as db_err:
             logger.warning(
-                f"[operational_metrics] DB task count unavailable: {db_err}", exc_info=True
+                "[operational_metrics] DB task count unavailable: %s", db_err, exc_info=True
             )
 
         pending = task_counts.get("pending", 0)
@@ -122,7 +122,7 @@ async def get_operational_metrics(
             if container and hasattr(container, "task_executor") and container.task_executor:
                 executor_stats = container.task_executor.get_stats()
         except Exception as ex_err:
-            logger.debug(f"[operational_metrics] Executor stats unavailable: {ex_err}")
+            logger.debug("[operational_metrics] Executor stats unavailable: %s", ex_err)
 
         # --- WebSocket connections ---
         ws_total = 0
@@ -131,7 +131,7 @@ async def get_operational_metrics(
 
             ws_total = sum(len(conns) for conns in websocket_manager.active_connections.values())
         except Exception as ws_err:
-            logger.debug(f"[operational_metrics] WebSocket count unavailable: {ws_err}")
+            logger.debug("[operational_metrics] WebSocket count unavailable: %s", ws_err)
 
         metrics: Dict[str, Any] = {
             "timestamp": now.isoformat(),
@@ -156,21 +156,25 @@ async def get_operational_metrics(
         queue_depth = pending + in_progress
         if queue_depth > 50:
             logger.warning(
-                f"[operational_metrics] queue_depth={queue_depth} "
-                f"pending={pending} in_progress={in_progress} "
-                f"errors={executor_stats.get('error_count', 0)} "
-                f"ws_connections={ws_total}",
+                "[operational_metrics] queue_depth=%d pending=%d in_progress=%d errors=%d ws_connections=%d",
+                queue_depth,
+                pending,
+                in_progress,
+                executor_stats.get('error_count', 0),
+                ws_total,
             )
         else:
             logger.info(
-                f"[operational_metrics] queue_depth={queue_depth} "
-                f"pending={pending} in_progress={in_progress} "
-                f"errors={executor_stats.get('error_count', 0)} "
-                f"ws_connections={ws_total}",
+                "[operational_metrics] queue_depth=%d pending=%d in_progress=%d errors=%d ws_connections=%d",
+                queue_depth,
+                pending,
+                in_progress,
+                executor_stats.get('error_count', 0),
+                ws_total,
             )
 
         return metrics
 
     except Exception as e:
-        logger.error(f"[get_operational_metrics] Error: {e}", exc_info=True)
+        logger.error("[get_operational_metrics] Error: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve operational metrics") from e

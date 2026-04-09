@@ -81,8 +81,8 @@ class PhaseMapper:
             if source_key:
                 mapping[target_key] = source_key
                 logger.debug(
-                    f"Auto-mapped {target_phase_name}.{target_key} "
-                    f"<- {source_phase_name}.{source_key}"
+                    "Auto-mapped %s.%s <- %s.%s",
+                    target_phase_name, target_key, source_phase_name, source_key,
                 )
 
         return mapping
@@ -101,7 +101,7 @@ class PhaseMapper:
 
         # Strategy 1: Exact key match
         if target_key in source_outputs:
-            logger.debug(f"Found exact key match: {target_key}")
+            logger.debug("Found exact key match: %s", target_key)
             return target_key
 
         # Strategy 2: Semantic similarity matching
@@ -110,8 +110,8 @@ class PhaseMapper:
         if candidates:
             best_match = candidates[0]  # Highest similarity score
             logger.debug(
-                f"Found semantic match: {target_key} -> {best_match[0]} "
-                f"(similarity: {best_match[1]:.2f})"
+                "Found semantic match: %s -> %s (similarity: %.2f)",
+                target_key, best_match[0], best_match[1],
             )
             return best_match[0]
 
@@ -226,5 +226,5 @@ def build_full_phase_pipeline(
 
         full_mapping[target_phase_name] = phase_mapping
 
-    logger.info(f"Built phase pipeline mapping for {len(phase_names)} phases")
+    logger.info("Built phase pipeline mapping for %d phases", len(phase_names))
     return full_mapping

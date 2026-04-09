@@ -94,7 +94,7 @@ class GenerateContentPhase(BasePhase):
             tone = config.get("tone", "professional")
             target_length = config.get("target_length", 1500)
 
-            logger.info(f"[GenerateContentPhase] Generating {style} {tone} content on '{topic}'")
+            logger.info("[GenerateContentPhase] Generating %s %s content on '%s'", style, tone, topic)
 
             # Use existing content generation logic
             content_generator = get_content_generator()
@@ -116,8 +116,8 @@ class GenerateContentPhase(BasePhase):
             }
 
             logger.info(
-                f"[GenerateContentPhase] Generated {len(content_text)} characters "
-                f"using {model_used}"
+                "[GenerateContentPhase] Generated %d characters using %s",
+                len(content_text), model_used,
             )
 
             return self.result
@@ -125,7 +125,7 @@ class GenerateContentPhase(BasePhase):
         except Exception as e:
             self.status = "failed"
             self.error = str(e)
-            logger.error(f"[GenerateContentPhase] Error: {str(e)}", exc_info=True)
+            logger.error("[GenerateContentPhase] Error: %s", e, exc_info=True)
             raise
 
 
@@ -219,7 +219,7 @@ class QualityEvaluationPhase(BasePhase):
             topic = inputs.get("topic")
             tags = inputs.get("tags", [topic])
 
-            logger.info(f"[QualityEvaluationPhase] Evaluating content ({len(content or '')} chars)")
+            logger.info("[QualityEvaluationPhase] Evaluating content (%d chars)", len(content or ""))
 
             # Use existing quality service
             quality_service = get_quality_service()
@@ -243,8 +243,8 @@ class QualityEvaluationPhase(BasePhase):
             }
 
             logger.info(
-                f"[QualityEvaluationPhase] Score: {quality_result['overall_score']:.1f} "
-                f"(threshold: {threshold}, passing: {passing})"
+                "[QualityEvaluationPhase] Score: %.1f (threshold: %s, passing: %s)",
+                quality_result["overall_score"], threshold, passing,
             )
 
             return self.result
@@ -252,7 +252,7 @@ class QualityEvaluationPhase(BasePhase):
         except Exception as e:
             self.status = "failed"
             self.error = str(e)
-            logger.error(f"[QualityEvaluationPhase] Error: {str(e)}", exc_info=True)
+            logger.error("[QualityEvaluationPhase] Error: %s", e, exc_info=True)
             raise
 
 
@@ -336,7 +336,7 @@ class SearchImagePhase(BasePhase):
             topic = inputs.get("topic")
             tags = inputs.get("tags", [topic])
 
-            logger.info(f"[SearchImagePhase] Searching images for '{topic}'")
+            logger.info("[SearchImagePhase] Searching images for '%s'", topic)
 
             # Use existing image service
             image_service = get_image_service()
@@ -349,14 +349,14 @@ class SearchImagePhase(BasePhase):
                 "source": "Pexels" if featured_image else None,
             }
 
-            logger.info(f"[SearchImagePhase] Found image: {self.result['image_url'] is not None}")
+            logger.info("[SearchImagePhase] Found image: %s", self.result["image_url"] is not None)
 
             return self.result
 
         except Exception as e:
             self.status = "failed"
             self.error = str(e)
-            logger.warning(f"[SearchImagePhase] Error (non-fatal): {str(e)}", exc_info=True)
+            logger.warning("[SearchImagePhase] Error (non-fatal): %s", e, exc_info=True)
             # Image search failures are typically non-terminal, return null
             self.result = {
                 "image_url": None,
@@ -434,7 +434,7 @@ class GenerateSEOPhase(BasePhase):
             content = inputs.get("content")
             topic = inputs.get("topic")
 
-            logger.info(f"[GenerateSEOPhase] Generating SEO metadata for '{topic}'")
+            logger.info("[GenerateSEOPhase] Generating SEO metadata for '%s'", topic)
 
             # Use existing SEO generator
             seo_generator = get_seo_content_generator()
@@ -450,9 +450,8 @@ class GenerateSEOPhase(BasePhase):
             }
 
             logger.info(
-                f"[GenerateSEOPhase] Generated SEO assets "
-                f"(title: {len(self.result['seo_title'])} chars, "
-                f"keywords: {len(self.result['seo_keywords'])})"
+                "[GenerateSEOPhase] Generated SEO assets (title: %d chars, keywords: %d)",
+                len(self.result["seo_title"]), len(self.result["seo_keywords"]),
             )
 
             return self.result
@@ -460,7 +459,7 @@ class GenerateSEOPhase(BasePhase):
         except Exception as e:
             self.status = "failed"
             self.error = str(e)
-            logger.error(f"[GenerateSEOPhase] Error: {str(e)}", exc_info=True)
+            logger.error("[GenerateSEOPhase] Error: %s", e, exc_info=True)
             raise
 
 
@@ -583,18 +582,18 @@ class CaptureTrainingDataPhase(BasePhase):
             if database_service is not None:
                 await database_service.create_orchestrator_training_data(payload)
                 logger.info(
-                    f"[CaptureTrainingDataPhase] Stored to DB "
-                    f"(topic: {topic}, score: {overall_score}, id: {execution_id})"
+                    "[CaptureTrainingDataPhase] Stored to DB (topic: %s, score: %s, id: %s)",
+                    topic, overall_score, execution_id,
                 )
                 self.status = "completed"
                 self.result = {"stored": True}
             else:
                 # No database_service injected — log the payload so it's not silently lost
                 logger.info(
-                    f"[CaptureTrainingDataPhase] No database_service in config — "
-                    f"logging payload only (topic: {topic}, score: {overall_score})"
+                    "[CaptureTrainingDataPhase] No database_service in config -- logging payload only (topic: %s, score: %s)",
+                    topic, overall_score,
                 )
-                logger.debug(f"[CaptureTrainingDataPhase] Payload: {payload}")
+                logger.debug("[CaptureTrainingDataPhase] Payload: %s", payload)
                 self.status = "completed"
                 self.result = {"stored": False, "reason": "no_database_service"}
 
@@ -603,7 +602,7 @@ class CaptureTrainingDataPhase(BasePhase):
         except Exception as e:
             self.status = "failed"
             self.error = str(e)
-            logger.error(f"[CaptureTrainingDataPhase] Error: {str(e)}", exc_info=True)
+            logger.error("[CaptureTrainingDataPhase] Error: %s", e, exc_info=True)
             # Non-terminal failure — content generation pipeline continues
             self.result = {"stored": False, "reason": "error"}
             return self.result

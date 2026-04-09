@@ -188,7 +188,7 @@ async def update_task_status_enterprise(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error updating task status for {task_id}: {str(e)}", exc_info=True)
+        logger.error("Error updating task status for %s: %s", task_id, str(e), exc_info=True)
         raise HTTPException(
             status_code=500,
             detail="Failed to update task status",
@@ -278,7 +278,7 @@ async def update_task_status_validated(
         }
 
     except Exception as e:
-        logger.error(f"Error in enhanced status update for {task_id}: {str(e)}", exc_info=True)
+        logger.error("Error in enhanced status update for %s: %s", task_id, str(e), exc_info=True)
         raise HTTPException(
             status_code=500,
             detail="Failed to update task status",
@@ -367,7 +367,7 @@ async def get_task_status_info(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error fetching status info for {task_id}: {str(e)}", exc_info=True)
+        logger.error("Error fetching status info for %s: %s", task_id, str(e), exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch status info") from e
 
 
@@ -443,7 +443,7 @@ async def get_task_status_history(
         }
 
     except Exception as e:
-        logger.error(f"Error fetching status history for {task_id}: {str(e)}", exc_info=True)
+        logger.error("Error fetching status history for %s: %s", task_id, str(e), exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch status history") from e
 
 
@@ -510,12 +510,12 @@ async def get_task_validation_failures(
         failures = await status_service.get_validation_failures(task_id, limit=limit)
 
         if not failures.get("failures"):
-            logger.info(f"ℹ️  No validation failures found for task {task_id}")
+            logger.info("No validation failures found for task %s", task_id)
 
         return failures
 
     except Exception as e:
-        logger.error(f"Error fetching validation failures for {task_id}: {str(e)}", exc_info=True)
+        logger.error("Error fetching validation failures for %s: %s", task_id, str(e), exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch validation failures") from e
 
 
@@ -666,5 +666,5 @@ async def update_task_content(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to update task content: {e}", exc_info=True)
+        logger.error("Failed to update task content: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to update task content") from e

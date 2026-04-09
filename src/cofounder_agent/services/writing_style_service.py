@@ -48,7 +48,7 @@ class WritingStyleService:
 
         except Exception as e:
             logger.error(
-                f"[_get_active_style_prompt] Error retrieving active writing style: {e}",
+                "[_get_active_style_prompt] Error retrieving active writing style: %s", e,
                 exc_info=True,
             )
             return ""
@@ -86,7 +86,7 @@ class WritingStyleService:
 
         except Exception as e:
             logger.error(
-                f"[_get_style_prompt_for_generation] Error preparing writing sample for generation: {e}",
+                "[_get_style_prompt_for_generation] Error preparing writing sample for generation: %s", e,
                 exc_info=True,
             )
             return None
@@ -109,7 +109,7 @@ class WritingStyleService:
             sample = await self.db.writing_style.get_writing_sample(writing_style_id)
 
             if not sample:
-                logger.warning(f"Writing sample not found: {writing_style_id}")
+                logger.warning("Writing sample not found: %s", writing_style_id)
                 return None
 
             return {
@@ -123,7 +123,8 @@ class WritingStyleService:
 
         except Exception as e:
             logger.error(
-                f"[_get_style_prompt_for_specific_sample] Error retrieving specific writing sample {writing_style_id}: {e}",
+                "[_get_style_prompt_for_specific_sample] Error retrieving specific writing sample %s: %s",
+                writing_style_id, e,
                 exc_info=True,
             )
             return None

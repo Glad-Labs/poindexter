@@ -96,7 +96,7 @@ class UnifiedQualityService:
         self.failing_count = 0
         self.average_score = 0.0
 
-        logger.info("✅ UnifiedQualityService initialized")
+        logger.info("UnifiedQualityService initialized")
 
     @staticmethod
     def _qa_cfg() -> dict:
@@ -125,7 +125,7 @@ class UnifiedQualityService:
         Returns:
             QualityAssessment with scores and feedback
         """
-        logger.info(f"Evaluating content ({method.value}): {len(content)} chars")
+        logger.info("Evaluating content (%s): %d chars", method.value, len(content))
 
         context = context or {}
 
@@ -157,14 +157,14 @@ class UnifiedQualityService:
                 await self._store_evaluation(assessment, context)
 
             logger.info(
-                f"✅ Evaluation complete: {assessment.overall_score:.0f}/100 "
-                f"({'PASS' if assessment.passing else 'FAIL'})"
+                "Evaluation complete: %.0f/100 (%s)",
+                assessment.overall_score, "PASS" if assessment.passing else "FAIL",
             )
 
             return assessment
 
         except Exception as e:
-            logger.error(f"[_evaluate] ❌ Evaluation failed: {e}", exc_info=True)
+            logger.error("[_evaluate] Evaluation failed: %s", e, exc_info=True)
             # Return minimal assessment on error
             return QualityAssessment(
                 dimensions=QualityDimensions(
@@ -376,11 +376,11 @@ class UnifiedQualityService:
 
         except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
             logger.warning(
-                f"LLM evaluation parsing failed ({e}), falling back to pattern-based", exc_info=True
+                "LLM evaluation parsing failed (%s), falling back to pattern-based", e, exc_info=True
             )
             return await self._evaluate_pattern_based(content, context)
         except Exception as e:
-            logger.error(f"[_evaluate_llm_based] LLM call failed: {e}", exc_info=True)
+            logger.error("[_evaluate_llm_based] LLM call failed: %s", e, exc_info=True)
             return await self._evaluate_pattern_based(content, context)
 
     async def _evaluate_hybrid(self, content: str, context: Dict[str, Any]) -> QualityAssessment:
@@ -817,7 +817,7 @@ class UnifiedQualityService:
                 assessment.passing,
             )
         except Exception as e:
-            logger.error(f"[_store_evaluation] Failed to store evaluation: {e}", exc_info=True)
+            logger.error("[_store_evaluation] Failed to store evaluation: %s", e, exc_info=True)
 
     # ========================================================================
     # STATISTICS & REPORTING

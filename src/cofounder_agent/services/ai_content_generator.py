@@ -309,9 +309,9 @@ class AIContentGenerator:
 
         Returns a context dict containing all shared state needed by provider methods.
         """
-        logger.info(f"\n{'='*80}")
+        logger.info("\n%s", "=" * 80)
         logger.info("BLOG GENERATION STARTED")
-        logger.info(f"{'='*80}")
+        logger.info("%s", "=" * 80)
         logger.info("Topic: %s", topic)
         logger.info("Style: %s | Tone: %s", style, tone)
         logger.info("Target length: %d words | Tags: %s", target_length, tags)
@@ -322,7 +322,7 @@ class AIContentGenerator:
             "HuggingFace token: %s",
             "yes" if ProviderChecker.is_huggingface_available() else "no",
         )
-        logger.info(f"{'='*80}\n")
+        logger.info("%s\n", "=" * 80)
 
         # Provider priority: Ollama → HuggingFace → template
         effective_provider = preferred_provider
@@ -390,9 +390,9 @@ class AIContentGenerator:
         start_time = time.time()
 
         # Log provider decision tree
-        logger.info(f"\n{'='*80}")
+        logger.info("\n%s", "=" * 80)
         logger.info("PROVIDER DECISION TREE:")
-        logger.info(f"{'='*80}")
+        logger.info("%s", "=" * 80)
         logger.info("   User selection: provider=%s, model=%s", preferred_provider, preferred_model)
         logger.info("   Effective provider: %s", effective_provider)
         logger.info("")
@@ -406,7 +406,7 @@ class AIContentGenerator:
             "token set" if ProviderChecker.is_huggingface_available() else "no token",
         )
         logger.info("   └─ Fallback:           Available (generic template)")
-        logger.info(f"{'='*80}\n")
+        logger.info("%s\n", "=" * 80)
 
         return {
             "effective_provider": effective_provider,
@@ -532,7 +532,8 @@ class AIContentGenerator:
 
             refined_word_count = len(refined_content.split())
             logger.info(
-                f"      Refined Quality: {refined_validation.quality_score:.1f}/{self.quality_threshold} | Words: {refined_word_count} | Issues: {len(refined_validation.issues)}"
+                "      Refined Quality: %.1f/%s | Words: %d | Issues: %d",
+                refined_validation.quality_score, self.quality_threshold, refined_word_count, len(refined_validation.issues),
             )
 
             if refined_validation.is_valid:
@@ -541,14 +542,14 @@ class AIContentGenerator:
                 metrics["models_used_by_phase"]["draft"] = metrics["model_used"]  # Track phase
                 metrics["final_quality_score"] = refined_validation.quality_score
                 metrics["generation_time_seconds"] = time.time() - start_time
-                logger.info(f"\n{'='*80}")
+                logger.info("\n%s", "=" * 80)
                 logger.info("[OK] GENERATION COMPLETE (with refinement)")
                 logger.info("   Model: %s", metrics["model_used"])
                 logger.info(
-                    f"   Quality: {refined_validation.quality_score:.1f}/{self.quality_threshold}"
+                    "   Quality: %.1f/%s", refined_validation.quality_score, self.quality_threshold
                 )
-                logger.info(f"   Time: {metrics['generation_time_seconds']:.1f}s")
-                logger.info(f"{'='*80}\n")
+                logger.info("   Time: %.1fs", metrics["generation_time_seconds"])
+                logger.info("%s\n", "=" * 80)
                 return refined_content, metrics["model_used"], metrics
 
         # Return None but signal the refined content via a special key
@@ -642,7 +643,8 @@ class AIContentGenerator:
                     logger.warning("   Could not discover fallback models: %s", e)
 
                 logger.info(
-                    f"   ├─ Will try {len(model_list)} model(s): {[m.split(':')[0] for m in model_list[:5]]}"
+                    "   ├─ Will try %d model(s): %s",
+                    len(model_list), [m.split(":")[0] for m in model_list[:5]],
                 )
             for model_idx, model_name in enumerate(model_list, 1):
                 try:
@@ -689,7 +691,8 @@ class AIContentGenerator:
 
                         word_count = len(generated_content.split())
                         logger.info(
-                            f"      Quality Score: {validation.quality_score:.1f}/{self.quality_threshold} | Words: {word_count} | Issues: {len(validation.issues)}"
+                            "      Quality Score: %.1f/%s | Words: %d | Issues: %d",
+                            validation.quality_score, self.quality_threshold, word_count, len(validation.issues),
                         )
 
                         if validation.issues:
@@ -716,14 +719,14 @@ class AIContentGenerator:
                                 "cost_usd": round(electricity_cost, 6), "phase": "content_generation",
                                 "duration_seconds": round(duration_s, 2),
                             }
-                            logger.info(f"\n{'='*80}")
+                            logger.info("\n%s", "=" * 80)
                             logger.info("[OK] GENERATION COMPLETE")
                             logger.info("   Model: %s", metrics["model_used"])
                             logger.info(
-                                f"   Quality: {validation.quality_score:.1f}/{self.quality_threshold}"
+                                "   Quality: %.1f/%s", validation.quality_score, self.quality_threshold
                             )
-                            logger.info(f"   Time: {metrics['generation_time_seconds']:.1f}s")
-                            logger.info(f"{'='*80}\n")
+                            logger.info("   Time: %.1fs", metrics["generation_time_seconds"])
+                            logger.info("%s\n", "=" * 80)
                             return generated_content, metrics["model_used"], metrics
 
                         # If content fails QA but we have refinement attempts left, try to improve
@@ -748,14 +751,14 @@ class AIContentGenerator:
                             ]  # Track phase
                             metrics["final_quality_score"] = validation.quality_score
                             metrics["generation_time_seconds"] = time.time() - start_time
-                            logger.info(f"\n{'='*80}")
+                            logger.info("\n%s", "=" * 80)
                             logger.warning("GENERATION COMPLETE (below quality threshold)")
                             logger.info("   Model: %s", metrics["model_used"])
                             logger.info(
-                                f"   Quality: {validation.quality_score:.1f}/{self.quality_threshold}"
+                                "   Quality: %.1f/%s", validation.quality_score, self.quality_threshold
                             )
-                            logger.info(f"   Time: {metrics['generation_time_seconds']:.1f}s")
-                            logger.info(f"{'='*80}\n")
+                            logger.info("   Time: %.1fs", metrics["generation_time_seconds"])
+                            logger.info("%s\n", "=" * 80)
                             return generated_content, metrics["model_used"], metrics
                     else:
                         logger.warning("      [FAIL] Generated content too short or empty")
@@ -875,9 +878,9 @@ class AIContentGenerator:
         tags = ctx["tags"]
 
         # If all models fail, use fallback
-        logger.warning(f"\n{'='*80}")
+        logger.warning("\n%s", "=" * 80)
         logger.warning("[FAIL] ALL AI MODELS FAILED - Using fallback template")
-        logger.warning(f"{'='*80}")
+        logger.warning("%s", "=" * 80)
         logger.warning("Attempts made: %d", len(attempts))
         for provider, error in attempts:
             logger.warning("   [FAIL] %s: %s", provider, error)
@@ -887,7 +890,7 @@ class AIContentGenerator:
             "   - HuggingFace: %s (token available)",
             ProviderChecker.is_huggingface_available(),
         )
-        logger.warning(f"{'='*80}\n")
+        logger.warning("%s\n", "=" * 80)
 
         # Capture in Sentry as a distinct message so alert rules can target it.
         # Generated content will be a stub template, not AI output (issue #556).
@@ -1075,7 +1078,7 @@ async def test_generation():
     logger.info("Content length: %d characters", len(content))
     logger.info("Quality score: %s/10", metrics["final_quality_score"])
     logger.info("Generation attempts: %s", metrics["generation_attempts"])
-    logger.info(f"Time taken: {metrics['generation_time_seconds']:.2f} seconds")
+    logger.info("Time taken: %.2f seconds", metrics["generation_time_seconds"])
     logger.info("First 500 characters:\n%s...", content[:500])
 
 

@@ -104,7 +104,7 @@ class UnifiedPromptManager:
         """Load all prompts from YAML files in the prompts/ directory."""
         prompts_dir = Path(__file__).resolve().parent.parent / "prompts"
         if not prompts_dir.is_dir():
-            logger.warning(f"Prompts directory not found: {prompts_dir}")
+            logger.warning("Prompts directory not found: %s", prompts_dir)
             return
 
         for yaml_path in sorted(prompts_dir.glob("*.yaml")):
@@ -112,7 +112,7 @@ class UnifiedPromptManager:
                 with open(yaml_path, "r", encoding="utf-8") as f:
                     entries: List[Dict[str, Any]] = yaml.safe_load(f) or []
             except Exception:
-                logger.error(f"Failed to load prompt file: {yaml_path}", exc_info=True)
+                logger.error("Failed to load prompt file: %s", yaml_path, exc_info=True)
                 continue
 
             for entry in entries:
@@ -163,7 +163,7 @@ class UnifiedPromptManager:
             example_output=example_output,
             notes=notes,
         )
-        logger.debug(f"Registered prompt: {key} ({category.value})")
+        logger.debug("Registered prompt: %s (%s)", key, category.value)
 
     async def load_from_db(self, pool) -> int:
         """Load prompt overrides from the prompt_templates database table.
@@ -181,10 +181,10 @@ class UnifiedPromptManager:
             )
             for row in rows:
                 self._db_overrides[row["key"]] = row["template"]
-            logger.info(f"Loaded {len(rows)} prompt templates from database")
+            logger.info("Loaded %d prompt templates from database", len(rows))
             return len(rows)
         except Exception as e:
-            logger.warning(f"Could not load prompts from DB (using YAML fallback): {e}")
+            logger.warning("Could not load prompts from DB (using YAML fallback): %s", e)
             return 0
 
     def get_prompt(self, key: str, **kwargs) -> str:
