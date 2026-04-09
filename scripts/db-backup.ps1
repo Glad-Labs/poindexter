@@ -35,7 +35,7 @@ $ErrorActionPreference = "Stop"
 # --- Configuration ---
 $DB_HOST = if ($env:DB_HOST) { $env:DB_HOST } else { "hopper.proxy.rlwy.net" }
 $DB_PORT = if ($env:DB_PORT) { $env:DB_PORT } else { "32382" }
-$DB_NAME = if ($env:DB_NAME) { $env:DB_NAME } else { "railway" }
+$DB_NAME = if ($env:DB_NAME) { $env:DB_NAME } else { "gladlabs_brain" }
 $DB_USER = if ($env:DB_USER) { $env:DB_USER } else { "postgres" }
 $DB_PASS = $env:DB_PASS
 

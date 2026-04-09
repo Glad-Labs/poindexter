@@ -125,10 +125,6 @@ EXTERNAL_SERVICES = {
         "url": "https://www.vercel-status.com/api/v2/status.json",
         "type": "statuspage",
     },
-    "railway": {
-        "url": "https://railway.instatus.com/summary.json",
-        "type": "instatus",  # Instatus format
-    },
     # grafana_cloud removed — using local Grafana now (localhost:3000)
     # anthropic removed — no longer used in pipeline (session 55)
 }

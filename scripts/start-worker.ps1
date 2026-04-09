@@ -51,7 +51,7 @@ if (Test-Path $OpenClawEnv) {
 
 # Get production DATABASE_URL from Railway (public proxy, not internal)
 Write-Host "Fetching production DATABASE_URL from Railway..." -ForegroundColor Cyan
-$railwayOutput = & railway variables --service Postgres --json 2>&1
+# Railway removed: $railwayOutput = & railway variables --service Postgres --json 2>&1
 try {
     $railwayJson = $railwayOutput | ConvertFrom-Json
     $publicUrl = $railwayJson.DATABASE_PUBLIC_URL

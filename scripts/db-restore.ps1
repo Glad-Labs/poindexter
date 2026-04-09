@@ -52,7 +52,7 @@ param(
 
     [string]$TargetHost = "hopper.proxy.rlwy.net",
     [string]$TargetPort = "32382",
-    [string]$TargetDB = "railway",
+    [string]$TargetDB = "gladlabs_brain",
     [string]$TargetUser = "postgres",
     [string]$TargetPassword = $env:DB_PASS,
 

@@ -48,7 +48,7 @@ Authorization: Bearer <API_TOKEN>
 ### If secrets are exposed:
 
 1. Immediately rotate the compromised credential at the provider
-2. Update on Railway: `railway variables -s cofounder --set "KEY=new_value"`
+2. Update in app_settings table or via API
 3. Verify with: `curl -H "Authorization: Bearer NEW_TOKEN" https://your-url/api/health`
 
 ## Security Architecture
