@@ -18,8 +18,7 @@ from .webhook_delivery_service import emit_webhook_event
 import os as _os
 import httpx as _httpx
 
-from services.telegram_config import TELEGRAM_BOT_TOKEN as _TELEGRAM_BOT_TOKEN  # noqa: E402
-from services.telegram_config import TELEGRAM_CHAT_ID as _TELEGRAM_CHAT_ID  # noqa: E402
+# Telegram notifications now routed through OpenClaw gateway (no direct bot token needed)
 
 
 async def _notify_discord(message: str) -> None:
@@ -43,24 +42,33 @@ async def _notify_discord(message: str) -> None:
         _logger.warning("[NOTIFY:discord] Failed: %s", e)
 
 
-async def _notify_telegram(message: str) -> None:
-    """Send critical notification to Telegram (approval requests, failures)."""
-    _logger = get_logger(__name__)
-    try:
-        async with _httpx.AsyncClient(timeout=10) as client:
-            _logger.info("[NOTIFY:telegram] %s", message[:80])
-            await client.post(
-                f"https://api.telegram.org/bot{_TELEGRAM_BOT_TOKEN}/sendMessage",
-                json={"chat_id": _TELEGRAM_CHAT_ID, "text": message},
-            )
-    except Exception as e:
-        _logger.warning("[NOTIFY:telegram] Failed: %s", e)
-
-
 async def _notify_openclaw(message: str, critical: bool = False) -> None:
-    """Send pipeline notification. Critical → Telegram + Discord. Normal → Discord only."""
+    """Send pipeline notification via OpenClaw gateway (routes to Telegram + Discord).
+
+    No direct bot tokens needed — OpenClaw owns all messaging channels.
+    Falls back to Discord webhook if OpenClaw is unavailable.
+    """
+    _logger = get_logger(__name__)
+
+    # Try OpenClaw gateway first (routes to both Telegram + Discord)
     if critical:
-        await _notify_telegram(message)
+        try:
+            from services.site_config import site_config
+            openclaw_url = site_config.get("openclaw_gateway_url", "http://localhost:18789")
+            openclaw_token = site_config.get("openclaw_webhook_token", "hooks-gladlabs")
+            async with _httpx.AsyncClient(timeout=10) as client:
+                resp = await client.post(
+                    f"{openclaw_url}/api/hooks/pipeline",
+                    json={"text": message, "critical": True},
+                    headers={"Authorization": f"Bearer {openclaw_token}"},
+                )
+                if resp.status_code < 300:
+                    _logger.info("[NOTIFY:openclaw] %s", message[:80])
+                    return
+        except Exception as e:
+            _logger.debug("[NOTIFY:openclaw] Gateway unavailable, falling back to Discord: %s", e)
+
+    # Fallback: Discord webhook (always works, no bot token needed)
     await _notify_discord(message)
 
 # Import WebSocket progress emission (re-exported so tests can patch at this module)
