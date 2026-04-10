@@ -632,3 +632,264 @@ class TestGetStatusHistory:
         db = _make_db(pool)
         result = await db.get_status_history("t-1")
         assert result == []
+
+
+# ---------------------------------------------------------------------------
+# get_tasks_by_ids — bulk fetch
+# ---------------------------------------------------------------------------
+
+
+class TestGetTasksByIds:
+    @pytest.mark.asyncio
+    async def test_empty_list_returns_empty_dict(self):
+        db = _make_db()
+        result = await db.get_tasks_by_ids([])
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_returns_dict_keyed_by_task_id(self):
+        rows = [
+            _make_row(task_id="t-1", topic="A", content="aa"),
+            _make_row(task_id="t-2", topic="B", content="bb"),
+        ]
+        pool = _make_pool(fetch_result=rows)
+        db = _make_db(pool)
+
+        with patch(_CONVERTER) as mc:
+            mc.to_task_response.side_effect = lambda r: r
+            mc.to_dict.side_effect = lambda r: {"task_id": r["task_id"], "topic": r["topic"]}
+            result = await db.get_tasks_by_ids(["t-1", "t-2"])
+        assert set(result.keys()) == {"t-1", "t-2"}
+
+    @pytest.mark.asyncio
+    async def test_db_error_returns_empty_dict(self):
+        pool = _make_pool(fetch_side_effect=RuntimeError("query failed"))
+        db = _make_db(pool)
+        result = await db.get_tasks_by_ids(["t-1"])
+        assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# sweep_stale_tasks
+# ---------------------------------------------------------------------------
+
+
+class TestSweepStaleTasks:
+    @pytest.mark.asyncio
+    async def test_no_stale_returns_zero_counts(self):
+        # Build a pool whose connection supports transaction context manager
+        conn = MagicMock()
+        conn.fetch = AsyncMock(return_value=[])
+        conn.execute = AsyncMock()
+
+        @asynccontextmanager
+        async def _txn():
+            yield None
+        conn.transaction = _txn
+
+        pool = MagicMock()
+
+        @asynccontextmanager
+        async def _acquire():
+            yield conn
+        pool.acquire = _acquire
+
+        db = TasksDatabase(pool=pool)
+        result = await db.sweep_stale_tasks(stale_threshold_minutes=60)
+        assert result == {"reset": 0, "failed": 0}
+
+    @pytest.mark.asyncio
+    async def test_resets_under_max_retries(self):
+        # Two stale tasks: one with retry_count=0 (reset), one with retry_count=3 (fail)
+        stale_rows = [
+            {"task_id": "t-1", "task_metadata": json.dumps({"retry_count": 0})},
+            {"task_id": "t-2", "task_metadata": json.dumps({"retry_count": 3})},
+        ]
+        conn = MagicMock()
+        conn.fetch = AsyncMock(return_value=stale_rows)
+        conn.execute = AsyncMock()
+
+        @asynccontextmanager
+        async def _txn():
+            yield None
+        conn.transaction = _txn
+
+        pool = MagicMock()
+
+        @asynccontextmanager
+        async def _acquire():
+            yield conn
+        pool.acquire = _acquire
+
+        db = TasksDatabase(pool=pool)
+        result = await db.sweep_stale_tasks(stale_threshold_minutes=60, max_retries=3)
+        assert result == {"reset": 1, "failed": 1}
+        # Two execute calls: one reset, one fail
+        assert conn.execute.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_db_error_returns_zero_counts(self):
+        pool = MagicMock()
+        pool.acquire = MagicMock(side_effect=RuntimeError("conn lost"))
+        db = TasksDatabase(pool=pool)
+        result = await db.sweep_stale_tasks(stale_threshold_minutes=60)
+        assert result == {"reset": 0, "failed": 0}
+
+    @pytest.mark.asyncio
+    async def test_handles_empty_metadata(self):
+        # Task with NULL/empty metadata - retry_count defaults to 0
+        stale_rows = [
+            {"task_id": "t-1", "task_metadata": None},
+            {"task_id": "t-2", "task_metadata": ""},
+        ]
+        conn = MagicMock()
+        conn.fetch = AsyncMock(return_value=stale_rows)
+        conn.execute = AsyncMock()
+
+        @asynccontextmanager
+        async def _txn():
+            yield None
+        conn.transaction = _txn
+
+        pool = MagicMock()
+
+        @asynccontextmanager
+        async def _acquire():
+            yield conn
+        pool.acquire = _acquire
+
+        db = TasksDatabase(pool=pool)
+        result = await db.sweep_stale_tasks()
+        # Both should be reset (retry_count defaults to 0)
+        assert result == {"reset": 2, "failed": 0}
+
+
+# ---------------------------------------------------------------------------
+# bulk_update_task_statuses
+# ---------------------------------------------------------------------------
+
+
+class TestBulkUpdateTaskStatuses:
+    @pytest.mark.asyncio
+    async def test_empty_list_returns_empty_dicts(self):
+        db = _make_db()
+        result = await db.bulk_update_task_statuses([], "completed")
+        assert result == {"updated_ids": [], "missing_ids": []}
+
+    @pytest.mark.asyncio
+    async def test_partitions_existing_and_missing(self):
+        # First fetch (existence check) returns one of two
+        existing_rows = [{"task_id": "t-1"}]
+        # Second fetch (UPDATE RETURNING) returns the same one
+        update_rows = [{"task_id": "t-1"}]
+
+        conn = MagicMock()
+        conn.fetch = AsyncMock(side_effect=[existing_rows, update_rows])
+
+        @asynccontextmanager
+        async def _txn():
+            yield None
+        conn.transaction = _txn
+
+        pool = MagicMock()
+
+        @asynccontextmanager
+        async def _acquire():
+            yield conn
+        pool.acquire = _acquire
+
+        db = TasksDatabase(pool=pool)
+        result = await db.bulk_update_task_statuses(["t-1", "t-2"], "completed")
+        assert result["updated_ids"] == ["t-1"]
+        assert result["missing_ids"] == ["t-2"]
+
+    @pytest.mark.asyncio
+    async def test_all_missing_no_update_call(self):
+        # Existence check returns nothing
+        conn = MagicMock()
+        conn.fetch = AsyncMock(return_value=[])
+
+        @asynccontextmanager
+        async def _txn():
+            yield None
+        conn.transaction = _txn
+
+        pool = MagicMock()
+
+        @asynccontextmanager
+        async def _acquire():
+            yield conn
+        pool.acquire = _acquire
+
+        db = TasksDatabase(pool=pool)
+        result = await db.bulk_update_task_statuses(["t-1", "t-2"], "failed")
+        assert result["updated_ids"] == []
+        assert set(result["missing_ids"]) == {"t-1", "t-2"}
+        # Only the existence check was called, not the UPDATE
+        assert conn.fetch.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_db_exception_raises(self):
+        pool = MagicMock()
+        pool.acquire = MagicMock(side_effect=RuntimeError("conn lost"))
+        db = TasksDatabase(pool=pool)
+        with pytest.raises(RuntimeError):
+            await db.bulk_update_task_statuses(["t-1"], "completed")
+
+
+# ---------------------------------------------------------------------------
+# claim_next_task
+# ---------------------------------------------------------------------------
+
+
+class TestClaimNextTask:
+    @pytest.mark.asyncio
+    async def test_claims_pending_task(self):
+        row_data = {"task_id": "t-1", "topic": "test", "status": "in_progress"}
+        # asyncpg Record dict-like behavior
+        pool = _make_pool(fetchrow_result=row_data)
+        db = _make_db(pool)
+        result = await db.claim_next_task("worker-1")
+        assert result == row_data
+
+    @pytest.mark.asyncio
+    async def test_no_pending_returns_none(self):
+        pool = _make_pool(fetchrow_result=None)
+        db = _make_db(pool)
+        result = await db.claim_next_task("worker-1")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_with_categories_filter(self):
+        row_data = {"task_id": "t-1", "task_category": "blog_post"}
+        pool = _make_pool(fetchrow_result=row_data)
+        db = _make_db(pool)
+        result = await db.claim_next_task("worker-1", task_categories=["blog_post", "podcast"])
+        assert result == row_data
+
+    @pytest.mark.asyncio
+    async def test_db_error_returns_none(self):
+        pool = _make_pool(fetchrow_side_effect=RuntimeError("conn lost"))
+        db = _make_db(pool)
+        result = await db.claim_next_task("worker-1")
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# release_task
+# ---------------------------------------------------------------------------
+
+
+class TestReleaseTask:
+    @pytest.mark.asyncio
+    async def test_release_with_no_error_marks_pending(self):
+        pool = _make_pool()
+        db = _make_db(pool)
+        # Should not raise
+        await db.release_task("t-1", "worker-1")
+
+    @pytest.mark.asyncio
+    async def test_release_with_error_marks_failed(self):
+        pool = _make_pool()
+        db = _make_db(pool)
+        await db.release_task("t-1", "worker-1", error_message="oops")
