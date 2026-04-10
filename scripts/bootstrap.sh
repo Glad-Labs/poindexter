@@ -53,11 +53,20 @@ if [ ! -f .env.local ]; then
     if [ -f .env.example ]; then
         cp .env.example .env.local
 
-        # Auto-generate required secrets
-        _api_token=$(openssl rand -base64 32 2>/dev/null || python3 -c "import secrets; print(secrets.token_urlsafe(32))" 2>/dev/null || echo "change-me-$(date +%s)")
-        _grafana_pw=$(openssl rand -base64 16 2>/dev/null || python3 -c "import secrets; print(secrets.token_urlsafe(16))" 2>/dev/null || echo "grafana-$(date +%s)")
-        _pg_pw=$(openssl rand -base64 16 2>/dev/null || python3 -c "import secrets; print(secrets.token_urlsafe(16))" 2>/dev/null || echo "postgres-$(date +%s)")
-        _pgadmin_pw=$(openssl rand -base64 16 2>/dev/null || python3 -c "import secrets; print(secrets.token_urlsafe(16))" 2>/dev/null || echo "pgadmin-$(date +%s)")
+        # Auto-generate required secrets. Hard-fail if neither openssl nor
+        # python3 is available — a deterministic fallback would silently
+        # produce predictable secrets and we'd rather the customer install
+        # an entropy source than ship with broken auth.
+        _gen_secret() {
+            openssl rand -base64 "$1" 2>/dev/null || \
+                python3 -c "import secrets; print(secrets.token_urlsafe($1))" 2>/dev/null || \
+                fail "Cannot generate secrets: install openssl or python3 with the secrets module"
+        }
+        _api_token=$(_gen_secret 32)
+        _grafana_pw=$(_gen_secret 16)
+        _pg_pw=$(_gen_secret 16)
+        _pgadmin_pw=$(_gen_secret 16)
+        _woodpecker_secret=$(_gen_secret 24)
 
         # Write generated secrets into .env.local
         {
@@ -67,6 +76,7 @@ if [ ! -f .env.local ]; then
             echo "GRAFANA_PASSWORD=${_grafana_pw}"
             echo "LOCAL_POSTGRES_PASSWORD=${_pg_pw}"
             echo "PGADMIN_PASSWORD=${_pgadmin_pw}"
+            echo "WOODPECKER_SECRET=${_woodpecker_secret}"
         } >> .env.local
 
         ok ".env.local created with auto-generated secrets"
@@ -181,9 +191,11 @@ INSERT INTO app_settings (key, value, category, description, is_secret) VALUES
 ('qa_validator_weight', '0.4', 'quality', 'Weight for programmatic validator', false),
 ('qa_critic_weight', '0.6', 'quality', 'Weight for LLM critic', false),
 
--- Model selections
-('pipeline_writer_model', 'ollama/qwen3.5:35b', 'models', 'Content generation model', false),
-('pipeline_critic_model', 'glm-4.7-5090:latest', 'models', 'QA/review model', false),
+-- Model selections — defaults match what Ollama models are auto-pulled
+-- below. Override these in app_settings (or via the API) once you've
+-- pulled a larger writer/critic model. See README for upgrade options.
+('pipeline_writer_model', 'ollama/qwen3:8b', 'models', 'Content generation model', false),
+('pipeline_critic_model', 'ollama/gemma3:27b', 'models', 'QA/review model', false),
 ('pipeline_seo_model', 'ollama/qwen3:8b', 'models', 'SEO metadata model', false),
 ('pipeline_social_model', 'ollama/qwen3:8b', 'models', 'Social post generation model', false),
 ('pipeline_fallback_model', 'ollama/gemma3:27b', 'models', 'Fallback when primary unavailable', false),
@@ -264,15 +276,16 @@ echo -e "${GREEN}  Setup complete!${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 echo "Next steps:"
-echo "  1. Edit .env.local with your API keys and database URL"
-echo "  2. Start the backend:"
-echo "     cd src/cofounder_agent && poetry run uvicorn main:app --port 8000"
-echo "  3. Start the frontend:"
-echo "     cd web/public-site && npm run dev"
-echo "  4. View Grafana dashboards:"
-echo "     http://localhost:3000 (admin / poindexter)"
-echo "  5. Create your first post:"
-echo "     curl -X POST http://localhost:8000/api/tasks -H 'Content-Type: application/json' \\"
+echo "  1. Bring up the full stack:"
+echo "     docker compose -f docker-compose.local.yml up -d"
+echo "  2. Wait for the worker to be healthy (about 30-60s):"
+echo "     docker compose -f docker-compose.local.yml ps worker"
+echo "  3. View Grafana dashboards at http://localhost:3000"
+echo "     login: admin / \$(grep ^GRAFANA_PASSWORD .env.local | cut -d= -f2)"
+echo "  4. Create your first post:"
+echo "     curl -X POST http://localhost:8002/api/tasks \\"
+echo "       -H \"Authorization: Bearer \$(grep ^API_TOKEN .env.local | cut -d= -f2)\" \\"
+echo "       -H 'Content-Type: application/json' \\"
 echo "       -d '{\"topic\": \"Your first AI-generated post\", \"category\": \"technology\"}'"
 echo ""
 echo "All settings are configurable in the database (app_settings table)."

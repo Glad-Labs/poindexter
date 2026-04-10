@@ -29,6 +29,8 @@ Run it on your machine. Own your data. No cloud lock-in.
 
 ## Quick Start
 
+> **Windows users:** run these commands from Git Bash or WSL. The bootstrap script needs `bash` (not native cmd or PowerShell).
+
 ```bash
 # 1. Clone
 git clone https://github.com/Glad-Labs/poindexter.git
@@ -42,9 +44,9 @@ docker compose -f docker-compose.local.yml up -d
 
 # 4. Your first post
 curl -X POST http://localhost:8002/api/tasks \
-  -H "Authorization: Bearer $(grep API_TOKEN .env.local | cut -d= -f2)" \
+  -H "Authorization: Bearer $(grep ^API_TOKEN .env.local | cut -d= -f2)" \
   -H "Content-Type: application/json" \
-  -d '{"topic": "Why Docker changed everything", "task_type": "blog_post"}'
+  -d '{"topic": "Why Docker changed everything", "category": "technology"}'
 ```
 
 The pipeline runs automatically. Check progress at `http://localhost:3000` (Grafana).
