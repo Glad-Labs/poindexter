@@ -60,6 +60,72 @@ class MultiModelResult:
         return "\n".join(lines)
 
 
+TOPIC_DELIVERY_PROMPT = """You are a strict editor checking whether an article
+delivers on its topic. A reader clicking this article expects what the topic
+promises. Did the writer deliver?
+
+REQUESTED TOPIC: {topic}
+
+ARTICLE OPENING (first ~1000 words):
+{opening}
+
+Check these specific failure modes:
+
+  1. Numeric promises. If the topic says "10 X" or "11 Y" or "5 Z", does the
+     body actually list that many? Partial lists (two items then a pivot to
+     generalities) FAIL.
+  2. Named entities. If the topic names a specific product, person, or
+     technology ("Llama 4", "Claude", "indie hackers making $1M+"), does the
+     body actually discuss that specific thing? An article titled "Llama 4"
+     that only discusses Llama 3.1 FAILS.
+  3. Format promise. If the topic implies a guide, tutorial, list, or review,
+     does the body deliver that format? A "guide" that's actually an opinion
+     piece FAILS.
+  4. Angle/thesis. Is the article's thesis actually about the topic, or did
+     the writer pivot to a tangential point they preferred?
+
+Respond with ONLY valid JSON:
+{{"delivers": true/false, "score": NUMBER 0-100, "reason": "1-2 sentences naming the specific gap if any"}}
+
+Scoring guidance: delivers=true and score 85-100 if the body is a faithful
+execution of the topic. delivers=false and score 0-40 if the body is a
+bait-and-switch or numeric underdelivery or misnamed version. delivers=true
+and score 60-80 if the body is mostly on-topic but weaker than the topic
+implies.
+"""
+
+
+CONSISTENCY_PROMPT = """You are a strict editor checking an article for
+internal contradictions. Readers lose trust when section 1 says X and
+section 3 says not-X, even if both are defensible on their own.
+
+ARTICLE (full text):
+{content}
+
+Read the entire article and look for:
+
+  1. Recommendation contradictions. Does one section recommend tool/approach
+     A and another section recommend incompatible tool/approach B without
+     acknowledging the switch? ("Don't use React" followed by "use Next.js"
+     is a contradiction; Next.js is React.)
+  2. Factual contradictions. Does one section state a number, version, or
+     claim that another section directly contradicts?
+  3. Principle contradictions. Does the article lay out a principle in one
+     section ("never build custom auth") and then show code that violates it
+     in another section?
+  4. Code vs prose contradictions. Does the prose claim the code does X when
+     the code actually does Y? (e.g. "the code validates the referrer" when
+     the code just inserts without validating.)
+
+Respond with ONLY valid JSON:
+{{"consistent": true/false, "score": NUMBER 0-100, "contradictions": ["list","of","specific","pairs"]}}
+
+Scoring guidance: consistent=true and score 85-100 if no contradictions.
+consistent=false and score 0-50 if one or more contradictions found.
+Be specific in the contradictions list — name the sections and the conflict.
+"""
+
+
 QA_PROMPT = """Review this blog post for publication readiness. Be critical but fair.
 
 TODAY'S DATE: {current_date}
@@ -198,18 +264,40 @@ class MultiModelQA:
             critic_skipped = True
             logger.warning("[MULTI_QA] Cross-model review skipped — score will reflect validator only")
 
+        # 2b. Topic-delivery gate — catches bait-and-switch titles where the
+        # body doesn't deliver what the topic promised. Binary gate: if the
+        # body fails to deliver, approved=False regardless of other scores.
+        topic_review = await self._check_topic_delivery(topic, content)
+        if topic_review is not None:
+            reviews.append(topic_review)
+
+        # 2c. Internal-consistency gate — catches cross-section contradictions
+        # where one section recommends something another section forbids. Also
+        # a binary gate.
+        consistency_review = await self._check_internal_consistency(content)
+        if consistency_review is not None:
+            reviews.append(consistency_review)
+
         # 3. Aggregate scores — weights configurable via app_settings
         validator_weight = 0.4
         critic_weight = 0.6
+        gate_weight = 0.3  # topic-delivery + internal-consistency gates
         approval_threshold = 70
         if self.settings:
             validator_weight = float(await self.settings.get("qa_validator_weight") or 0.4)
             critic_weight = float(await self.settings.get("qa_critic_weight") or 0.6)
+            gate_weight = float(await self.settings.get("qa_gate_weight") or 0.3)
             approval_threshold = float(await self.settings.get("qa_final_score_threshold") or 70)
 
         scored_reviews = [r for r in reviews if r.score > 0]
         if scored_reviews:
-            weights = {"programmatic": validator_weight, "anthropic": critic_weight, "google": critic_weight, "ollama": critic_weight}
+            weights = {
+                "programmatic": validator_weight,
+                "anthropic": critic_weight,
+                "google": critic_weight,
+                "ollama": critic_weight,
+                "consistency_gate": gate_weight,
+            }
             total_weight = sum(weights.get(r.provider, 0.5) for r in scored_reviews)
             final_score = sum(
                 r.score * weights.get(r.provider, 0.5) for r in scored_reviews
@@ -390,5 +478,135 @@ class MultiModelQA:
         except Exception as e:
             logger.warning("[MULTI_QA] Ollama review failed (non-critical): %s", e)
             return None
+
+    async def _run_gate_prompt(
+        self,
+        prompt: str,
+        reviewer_name: str,
+        pass_key: str,
+    ) -> Optional[ReviewerResult]:
+        """Shared plumbing for the topic-delivery and consistency gates.
+
+        Runs a JSON-returning Ollama prompt, parses the result, and turns it
+        into a ReviewerResult with provider='consistency_gate'. Returns None
+        if Ollama is unreachable or returns unparseable output — in that
+        case the gate is silently skipped and does not block approval.
+        """
+        import json
+        import re
+
+        try:
+            from services.ollama_client import OllamaClient
+
+            client = OllamaClient()
+            if self.settings:
+                rate = await self.settings.get("electricity_rate_kwh")
+                if rate:
+                    client.configure_electricity(electricity_rate_kwh=float(rate))
+            if not await client.check_health():
+                logger.debug("[MULTI_QA] Ollama not available, skipping %s", reviewer_name)
+                await client.close()
+                return None
+
+            default_model = "gemma3:27b"
+            temperature = 0.2
+            if self.settings:
+                default_model = (
+                    await self.settings.get("pipeline_critic_model") or default_model
+                )
+                temperature = float(
+                    await self.settings.get("qa_temperature") or temperature
+                )
+            ollama_model = default_model.removeprefix("ollama/")
+
+            result = await client.generate(
+                prompt=prompt,
+                model=ollama_model,
+                temperature=temperature,
+                max_tokens=600,
+            )
+            await client.close()
+
+            text = result.get("text", "")
+            if not text:
+                return None
+
+            json_text = text
+            if "```" in text:
+                m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+                if m:
+                    json_text = m.group(1)
+
+            try:
+                data = json.loads(json_text)
+            except json.JSONDecodeError:
+                m = re.search(r"\{[^{}]*\}", text, re.DOTALL)
+                if not m:
+                    logger.warning(
+                        "[MULTI_QA] %s returned unparseable JSON: %s",
+                        reviewer_name, text[:200],
+                    )
+                    return None
+                try:
+                    data = json.loads(m.group(0))
+                except json.JSONDecodeError:
+                    return None
+
+            passed = bool(data.get(pass_key, False))
+            score = float(data.get("score", 0))
+            if reviewer_name == "topic_delivery":
+                feedback = str(data.get("reason", ""))[:300]
+            else:  # internal_consistency
+                contradictions = data.get("contradictions") or []
+                if isinstance(contradictions, list) and contradictions:
+                    feedback = "Contradictions: " + "; ".join(
+                        str(c)[:80] for c in contradictions[:3]
+                    )
+                else:
+                    feedback = str(data.get("reason", "No contradictions found"))[:300]
+
+            return ReviewerResult(
+                reviewer=reviewer_name,
+                approved=passed,
+                score=score,
+                feedback=feedback or ("passed" if passed else "failed"),
+                provider="consistency_gate",
+            )
+        except Exception as e:
+            logger.warning("[MULTI_QA] %s gate failed (non-critical): %s", reviewer_name, e)
+            return None
+
+    async def _check_topic_delivery(
+        self, topic: str, content: str
+    ) -> Optional[ReviewerResult]:
+        """Gate: does the content deliver what the topic promised?
+
+        Catches bait-and-switch titles (e.g. "11 indie hackers" with no
+        hackers named in the body). Returns None if Ollama is unavailable.
+        """
+        if not topic or not topic.strip():
+            return None
+        # ~1000 words of opening is enough to see the thesis and main points
+        opening = content[:6000]
+        prompt = TOPIC_DELIVERY_PROMPT.format(topic=topic.strip(), opening=opening)
+        return await self._run_gate_prompt(
+            prompt, reviewer_name="topic_delivery", pass_key="delivers"
+        )
+
+    async def _check_internal_consistency(
+        self, content: str
+    ) -> Optional[ReviewerResult]:
+        """Gate: does the article contradict itself across sections?
+
+        Catches cases where section 1 says "no React" and section 3 says
+        "use Next.js" without acknowledging the switch. Returns None if
+        Ollama is unavailable.
+        """
+        if not content or not content.strip():
+            return None
+        prompt = CONSISTENCY_PROMPT.format(content=content[:10000])
+        return await self._run_gate_prompt(
+            prompt, reviewer_name="internal_consistency", pass_key="consistent"
+        )
 
     # _review_with_gemini removed — Ollama-only policy
