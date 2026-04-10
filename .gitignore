@@ -131,3 +131,17 @@ infrastructure/headscale/certs/
 # Premium Grafana dashboards (kept locally for Matt's Grafana, never committed)
 infrastructure/grafana/dashboards/cost-analytics.json
 infrastructure/grafana/dashboards/infrastructure-data.json
+
+# Matt-specific operator scripts (scheduled tasks, watchdogs) — kept locally only
+scripts/run-hidden.vbs
+scripts/start-claude-code.ps1
+scripts/claude-code-watchdog.ps1
+scripts/openclaw-watchdog.ps1
+scripts/auto-embed.py
+scripts/db-backup.ps1
+scripts/db-restore.ps1
+scripts/update-checker.py
+scripts/install-watchdogs.ps1
+scripts/reinstall-watchdogs.ps1
+scripts/register-auto-embed-task.bat
+scripts/register-content-qa-task.bat
