@@ -716,8 +716,14 @@ class TaskExecutor:
         if not self.database_service or not self.database_service.pool:
             return
         try:
-            # Find failed/rejected tasks with retry_count < max_retries
-            # Only retry tasks from the last 24 hours to avoid re-processing ancient failures
+            # Find failed tasks (execution failures) with retry_count < max_retries.
+            # IMPORTANT: skip tasks that were explicitly rejected by a human via
+            # /reject — rejections are a final signal, not a retry opportunity.
+            # approval_status='rejected' means human hit the button; leave it alone.
+            # Also skip tasks where allow_revisions was set to false in metadata
+            # as a belt-and-suspenders check.
+            # Only retry tasks from the last 24 hours to avoid re-processing
+            # ancient failures.
             max_retries = int(await self._get_setting("max_task_retries", str(MAX_TASK_RETRIES)))
             rows = await self.database_service.pool.fetch("""
                 SELECT task_id, status, topic, task_metadata,
@@ -726,6 +732,8 @@ class TaskExecutor:
                 WHERE status = 'failed'
                 AND created_at > NOW() - INTERVAL '24 hours'
                 AND COALESCE((task_metadata::jsonb->>'retry_count')::int, 0) < $1
+                AND COALESCE(approval_status, 'pending') != 'rejected'
+                AND COALESCE((metadata::jsonb->>'allow_revisions')::text, 'true') != 'false'
                 LIMIT 3
             """, max_retries)
 
