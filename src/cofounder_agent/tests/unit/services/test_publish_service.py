@@ -631,6 +631,9 @@ class TestScheduledPublishApplied:
     @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
     @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
     async def test_scheduled_time_set_on_post_data(self, mock_ping, mock_hooks):
+        # honor_pacing=True opts into the scheduling path. The default
+        # changed to False in commit 3f60ec4c because human approval is
+        # the gate — callers that want pacing must opt in explicitly.
         future_time = datetime.now(timezone.utc) + timedelta(hours=10)
         db = _make_db()
         task = _make_task()
@@ -643,7 +646,8 @@ class TestScheduledPublishApplied:
             _LazyImportContext(),
         ):
             result = await publish_post_from_task(
-                db_service=db, task=task, task_id="tid-sched", queue_social=False,
+                db_service=db, task=task, task_id="tid-sched",
+                queue_social=False, honor_pacing=True,
             )
 
         assert result.success is True
@@ -665,7 +669,8 @@ class TestScheduledPublishApplied:
             _LazyImportContext(),
         ):
             await publish_post_from_task(
-                db_service=db, task=task, task_id="tid-nosched", queue_social=False,
+                db_service=db, task=task, task_id="tid-nosched",
+                queue_social=False, honor_pacing=True,
             )
 
         post_data = db.create_post.call_args[0][0]

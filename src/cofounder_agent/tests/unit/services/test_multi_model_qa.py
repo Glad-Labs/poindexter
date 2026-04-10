@@ -83,9 +83,23 @@ def _mock_ollama_client_down():
 
 @pytest.fixture
 def qa():
-    """MultiModelQA with no pool and mocked model router."""
+    """MultiModelQA with no pool and mocked model router.
+
+    The topic_delivery and internal_consistency gates introduced in
+    commit cfe767b6 are stubbed out on the instance level so the existing
+    validator + main-critic tests only assert on those two reviewers.
+    Dedicated gate tests live in the gates section below.
+    """
+    async def _skip_gate(*_args, **_kwargs):
+        return None
+
     with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
-        return MultiModelQA(pool=None, settings_service=None)
+        instance = MultiModelQA(pool=None, settings_service=None)
+    # Stub the new gates so existing tests that don't care about them
+    # see the pre-gate reviewer count (validator + main critic = 2).
+    instance._check_topic_delivery = _skip_gate  # type: ignore[method-assign]
+    instance._check_internal_consistency = _skip_gate  # type: ignore[method-assign]
+    return instance
 
 
 # ---------------------------------------------------------------------------
