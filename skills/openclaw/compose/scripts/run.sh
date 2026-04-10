@@ -2,7 +2,7 @@
 # Process Composer skill — plan, approve, execute business processes
 
 FASTAPI_URL="${FASTAPI_URL:-http://localhost:8002}"
-GLADLABS_KEY="${GLADLABS_KEY}"
+POINDEXTER_KEY="${POINDEXTER_KEY:-${GLADLABS_KEY}}"
 ACTION="$1"
 INTENT="$2"
 
@@ -14,7 +14,7 @@ case "$ACTION" in
     fi
     PAYLOAD=$(python -c "import json,sys; print(json.dumps({'intent': sys.argv[1]}))" "$INTENT")
     RESPONSE=$(curl -s -X POST "${FASTAPI_URL}/api/compose/plan" \
-      -H "Authorization: Bearer ${GLADLABS_KEY}" \
+      -H "Authorization: Bearer ${POINDEXTER_KEY}" \
       -H "Content-Type: application/json" \
       -d "$PAYLOAD")
     echo "$RESPONSE" | python -m json.tool 2>/dev/null || echo "$RESPONSE"
@@ -27,7 +27,7 @@ case "$ACTION" in
     fi
     PAYLOAD=$(python -c "import json,sys; print(json.dumps({'intent': sys.argv[1]}))" "$INTENT")
     RESPONSE=$(curl -s -X POST "${FASTAPI_URL}/api/compose/execute" \
-      -H "Authorization: Bearer ${GLADLABS_KEY}" \
+      -H "Authorization: Bearer ${POINDEXTER_KEY}" \
       -H "Content-Type: application/json" \
       -d "$PAYLOAD")
     echo "$RESPONSE" | python -m json.tool 2>/dev/null || echo "$RESPONSE"
@@ -40,7 +40,7 @@ case "$ACTION" in
       exit 1
     fi
     RESPONSE=$(curl -s -X POST "${FASTAPI_URL}/api/compose/approve/${PLAN_ID}" \
-      -H "Authorization: Bearer ${GLADLABS_KEY}" \
+      -H "Authorization: Bearer ${POINDEXTER_KEY}" \
       -H "Content-Type: application/json" \
       -d '{"approve": true}')
     echo "$RESPONSE" | python -m json.tool 2>/dev/null || echo "$RESPONSE"
@@ -55,7 +55,7 @@ case "$ACTION" in
     fi
     PAYLOAD=$(python -c "import json,sys; print(json.dumps({'approve': False, 'reason': sys.argv[1] if len(sys.argv) > 1 else ''}))" "$REASON")
     RESPONSE=$(curl -s -X POST "${FASTAPI_URL}/api/compose/approve/${PLAN_ID}" \
-      -H "Authorization: Bearer ${GLADLABS_KEY}" \
+      -H "Authorization: Bearer ${POINDEXTER_KEY}" \
       -H "Content-Type: application/json" \
       -d "$PAYLOAD")
     echo "$RESPONSE" | python -m json.tool 2>/dev/null || echo "$RESPONSE"
@@ -63,7 +63,7 @@ case "$ACTION" in
 
   steps)
     RESPONSE=$(curl -s "${FASTAPI_URL}/api/compose/steps" \
-      -H "Authorization: Bearer ${GLADLABS_KEY}")
+      -H "Authorization: Bearer ${POINDEXTER_KEY}")
     echo "$RESPONSE" | python -m json.tool 2>/dev/null || echo "$RESPONSE"
     ;;
 

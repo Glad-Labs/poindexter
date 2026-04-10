@@ -2,10 +2,10 @@
 # scripts/run.sh — Fetch completed tasks and display quality scores
 
 FASTAPI_URL="${FASTAPI_URL:-http://localhost:8002}"
-GLADLABS_KEY="${GLADLABS_KEY}"
+POINDEXTER_KEY="${POINDEXTER_KEY:-${GLADLABS_KEY}}"
 
-if [ -z "$GLADLABS_KEY" ]; then
-  echo "Error: GLADLABS_KEY not configured"
+if [ -z "$POINDEXTER_KEY" ]; then
+  echo "Error: POINDEXTER_KEY not configured (set POINDEXTER_KEY in your env)"
   exit 1
 fi
 
@@ -14,7 +14,7 @@ LIMIT="${1:-10}"
 echo "Fetching quality report (last $LIMIT completed tasks)..."
 
 RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "${FASTAPI_URL}/api/tasks?status=completed&limit=${LIMIT}" \
-  -H "Authorization: Bearer ${GLADLABS_KEY}" \
+  -H "Authorization: Bearer ${POINDEXTER_KEY}" \
   -H "Content-Type: application/json")
 
 HTTP_CODE=$(echo "$RESPONSE" | tail -1)

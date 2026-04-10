@@ -1,6 +1,6 @@
-# Glad Labs Engine
+# Poindexter
 
-**Your PC is a content factory.** An open-source AI content pipeline that researches, writes, reviews, and publishes — autonomously.
+**Your PC is a content factory.** Poindexter is an open-source AI content pipeline that researches, writes, reviews, and publishes — autonomously. Built by [Glad Labs LLC](https://www.gladlabs.io).
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-4%2C007_passing-brightgreen)]()
@@ -31,8 +31,8 @@ Run it on your machine. Own your data. No cloud lock-in.
 
 ```bash
 # 1. Clone
-git clone https://github.com/Glad-Labs/glad-labs-engine.git
-cd glad-labs-engine
+git clone https://github.com/Glad-Labs/poindexter.git
+cd poindexter
 
 # 2. Bootstrap (creates config, starts DB, pulls models, seeds settings)
 bash scripts/bootstrap.sh

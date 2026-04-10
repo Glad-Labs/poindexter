@@ -654,7 +654,7 @@ async def publish_post_from_task(
             await upload_podcast_episode(pid)
             await upload_video_episode(pid)
             # Upload short video if it exists
-            short_path = Path(os.path.expanduser("~")) / ".gladlabs" / "video" / f"{pid}-short.mp4"
+            short_path = Path(os.path.expanduser("~")) / ".poindexter" / "video" / f"{pid}-short.mp4"
             if short_path.exists():
                 await upload_to_r2(str(short_path), f"video/{pid}-short.mp4", "video/mp4")
             # Regenerate public podcast RSS feed on R2

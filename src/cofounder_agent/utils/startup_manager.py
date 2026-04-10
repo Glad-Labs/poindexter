@@ -1,7 +1,7 @@
 """
 Startup Manager - Orchestrates application initialization and shutdown
 
-Handles all startup and shutdown operations for the Glad Labs AI Co-Founder:
+Handles all startup and shutdown operations for Poindexter (the AI cofounder pipeline):
 - Database initialization (PostgreSQL + asyncpg)
 - Cache setup (Redis)
 - Model consolidation service
@@ -72,7 +72,7 @@ class StartupManager:
         }
         """
         try:
-            logger.info("🚀 Starting Glad Labs AI Co-Founder application...")
+            logger.info("🚀 Starting Poindexter application...")
             logger.info(f"  Environment: {os.getenv('ENVIRONMENT', 'production')}")
 
             # Step 0: Validate secrets before any heavy initialization
@@ -486,7 +486,7 @@ class StartupManager:
     async def shutdown(self) -> None:
         """Gracefully shutdown all services"""
         try:
-            logger.info("[STOP] Shutting down Glad Labs AI Co-Founder application...")
+            logger.info("[STOP] Shutting down Poindexter application...")
 
             # Stop background task executor
             try:

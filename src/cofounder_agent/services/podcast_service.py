@@ -9,7 +9,7 @@ Each episode includes:
 - Body: The blog post content (markdown stripped to plain text)
 - Outro: "Thanks for listening. Visit {site_domain} for more."
 
-Audio files are saved to ~/.gladlabs/podcast/ and served via the FastAPI
+Audio files are saved to ~/.poindexter/podcast/ and served via the FastAPI
 podcast routes. A valid podcast RSS feed is generated for Apple Podcasts /
 Spotify distribution.
 
@@ -22,7 +22,7 @@ Usage:
         title="Why Local LLMs Beat Cloud APIs",
         content="# Why Local LLMs...\\n\\nMarkdown body here...",
     )
-    # result = {"file_path": "~/.gladlabs/podcast/abc123.mp3", "duration_seconds": 312}
+    # result = {"file_path": "~/.poindexter/podcast/abc123.mp3", "duration_seconds": 312}
 """
 
 import os
@@ -40,7 +40,7 @@ logger = get_logger(__name__)
 # Configuration
 # ---------------------------------------------------------------------------
 
-PODCAST_DIR = Path(os.path.expanduser("~")) / ".gladlabs" / "podcast"
+PODCAST_DIR = Path(os.path.expanduser("~")) / ".poindexter" / "podcast"
 
 # Default voice from DB config, with voice pool for rotation
 VOICE_PRIMARY = site_config.get("tts_voice", "en-US-AvaMultilingualNeural")

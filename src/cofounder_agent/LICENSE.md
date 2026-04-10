@@ -1,8 +1,8 @@
 # GNU AFFERO GENERAL PUBLIC LICENSE v3.0
 
-**Glad Labs AI Co-Founder System**
+**Poindexter — AI Content Pipeline (built by Glad Labs LLC)**
 
-Copyright (C) 2025 Matthew M. Gladding (Glad Labs, LLC)
+Copyright (C) 2025-2026 Matthew M. Gladding (Glad Labs, LLC)
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as published
@@ -35,7 +35,7 @@ Key points of the AGPL 3.0:
 
 ## Commercial & Proprietary Use
 
-**The Glad Labs platform is licensed under the GNU AGPL 3.0.** This means it is free to use for any project that also complies with the AGPL 3.0.
+**Poindexter is licensed under the GNU AGPL 3.0.** This means it is free to use for any project that also complies with the AGPL 3.0.
 
 ### Commercial License
 

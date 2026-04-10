@@ -1,8 +1,8 @@
 {
-  "name": "glad-labs-cofounder-agent",
+  "name": "poindexter-cofounder-agent",
   "version": "0.1.0",
   "private": true,
-  "description": "AI Co-Founder System - FastAPI backend with autonomous agents, multi-provider LLM routing, and comprehensive error handling (Phase 1C complete).",
+  "description": "Poindexter cofounder agent — FastAPI backend with autonomous agents, multi-provider LLM routing, and comprehensive error handling. Built by Glad Labs LLC.",
   "license": "AGPL-3.0-or-later",
   "author": "Matthew M. Gladding (Glad Labs, LLC)",
   "scripts": {

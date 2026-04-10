@@ -1,7 +1,7 @@
 """
-Glad Labs AI Agent - Poindexter
-FastAPI application serving as the central orchestrator for the Glad Labs ecosystem
-Implements PostgreSQL database with REST API command queue integration
+Poindexter — AI content pipeline (built by Glad Labs LLC).
+FastAPI application serving as the central orchestrator for the Poindexter pipeline.
+Implements PostgreSQL database with REST API command queue integration.
 """
 
 import asyncio
@@ -608,18 +608,18 @@ async def prometheus_metrics():
     try:
         from services.gpu_scheduler import gpu
         s = gpu.status
-        lines.append("# HELP gladlabs_gpu_gaming_detected Whether gaming/external GPU workload is detected (1=yes)")
-        lines.append("# TYPE gladlabs_gpu_gaming_detected gauge")
-        lines.append(f'gladlabs_gpu_gaming_detected {1 if s["gaming_detected"] else 0}')
-        lines.append("# HELP gladlabs_gpu_gaming_paused_seconds Current gaming pause duration in seconds")
-        lines.append("# TYPE gladlabs_gpu_gaming_paused_seconds gauge")
-        lines.append(f'gladlabs_gpu_gaming_paused_seconds {s["gaming_paused_s"]}')
-        lines.append("# HELP gladlabs_gpu_gaming_paused_total_seconds Total time paused for gaming since worker start")
-        lines.append("# TYPE gladlabs_gpu_gaming_paused_total_seconds counter")
-        lines.append(f'gladlabs_gpu_gaming_paused_total_seconds {s["total_gaming_paused_s"]}')
-        lines.append("# HELP gladlabs_gpu_busy Whether the GPU lock is held by the pipeline")
-        lines.append("# TYPE gladlabs_gpu_busy gauge")
-        lines.append(f'gladlabs_gpu_busy {1 if s["busy"] else 0}')
+        lines.append("# HELP poindexter_gpu_gaming_detected Whether gaming/external GPU workload is detected (1=yes)")
+        lines.append("# TYPE poindexter_gpu_gaming_detected gauge")
+        lines.append(f'poindexter_gpu_gaming_detected {1 if s["gaming_detected"] else 0}')
+        lines.append("# HELP poindexter_gpu_gaming_paused_seconds Current gaming pause duration in seconds")
+        lines.append("# TYPE poindexter_gpu_gaming_paused_seconds gauge")
+        lines.append(f'poindexter_gpu_gaming_paused_seconds {s["gaming_paused_s"]}')
+        lines.append("# HELP poindexter_gpu_gaming_paused_total_seconds Total time paused for gaming since worker start")
+        lines.append("# TYPE poindexter_gpu_gaming_paused_total_seconds counter")
+        lines.append(f'poindexter_gpu_gaming_paused_total_seconds {s["total_gaming_paused_s"]}')
+        lines.append("# HELP poindexter_gpu_busy Whether the GPU lock is held by the pipeline")
+        lines.append("# TYPE poindexter_gpu_busy gauge")
+        lines.append(f'poindexter_gpu_busy {1 if s["busy"] else 0}')
     except Exception:
         pass
 
@@ -628,25 +628,25 @@ async def prometheus_metrics():
         database_service = getattr(app.state, "database", None)
         if database_service and getattr(database_service, "pool", None):
             pool = database_service.pool
-            lines.append("# HELP gladlabs_db_pool_size Current number of connections in pool")
-            lines.append("# TYPE gladlabs_db_pool_size gauge")
-            lines.append(f'gladlabs_db_pool_size{{pool="cloud"}} {pool.get_size()}')
-            lines.append("# HELP gladlabs_db_pool_idle Number of idle connections in pool")
-            lines.append("# TYPE gladlabs_db_pool_idle gauge")
-            lines.append(f'gladlabs_db_pool_idle{{pool="cloud"}} {pool.get_idle_size()}')
-            lines.append("# HELP gladlabs_db_pool_min_size Minimum pool size setting")
-            lines.append("# TYPE gladlabs_db_pool_min_size gauge")
-            lines.append(f'gladlabs_db_pool_min_size{{pool="cloud"}} {pool.get_min_size()}')
-            lines.append("# HELP gladlabs_db_pool_max_size Maximum pool size setting")
-            lines.append("# TYPE gladlabs_db_pool_max_size gauge")
-            lines.append(f'gladlabs_db_pool_max_size{{pool="cloud"}} {pool.get_max_size()}')
+            lines.append("# HELP poindexter_db_pool_size Current number of connections in pool")
+            lines.append("# TYPE poindexter_db_pool_size gauge")
+            lines.append(f'poindexter_db_pool_size{{pool="cloud"}} {pool.get_size()}')
+            lines.append("# HELP poindexter_db_pool_idle Number of idle connections in pool")
+            lines.append("# TYPE poindexter_db_pool_idle gauge")
+            lines.append(f'poindexter_db_pool_idle{{pool="cloud"}} {pool.get_idle_size()}')
+            lines.append("# HELP poindexter_db_pool_min_size Minimum pool size setting")
+            lines.append("# TYPE poindexter_db_pool_min_size gauge")
+            lines.append(f'poindexter_db_pool_min_size{{pool="cloud"}} {pool.get_min_size()}')
+            lines.append("# HELP poindexter_db_pool_max_size Maximum pool size setting")
+            lines.append("# TYPE poindexter_db_pool_max_size gauge")
+            lines.append(f'poindexter_db_pool_max_size{{pool="cloud"}} {pool.get_max_size()}')
             # Local pool (if separate)
             local_pool = getattr(database_service, "local_pool", None)
             if local_pool and local_pool is not pool:
-                lines.append(f'gladlabs_db_pool_size{{pool="local"}} {local_pool.get_size()}')
-                lines.append(f'gladlabs_db_pool_idle{{pool="local"}} {local_pool.get_idle_size()}')
-                lines.append(f'gladlabs_db_pool_min_size{{pool="local"}} {local_pool.get_min_size()}')
-                lines.append(f'gladlabs_db_pool_max_size{{pool="local"}} {local_pool.get_max_size()}')
+                lines.append(f'poindexter_db_pool_size{{pool="local"}} {local_pool.get_size()}')
+                lines.append(f'poindexter_db_pool_idle{{pool="local"}} {local_pool.get_idle_size()}')
+                lines.append(f'poindexter_db_pool_min_size{{pool="local"}} {local_pool.get_min_size()}')
+                lines.append(f'poindexter_db_pool_max_size{{pool="local"}} {local_pool.get_max_size()}')
     except Exception:
         pass
 
@@ -655,15 +655,15 @@ async def prometheus_metrics():
         database_service = getattr(app.state, "database", None)
         if database_service:
             task_counts = await database_service.tasks.get_task_counts()
-            lines.append("# HELP gladlabs_tasks_pending Number of pending content tasks")
-            lines.append("# TYPE gladlabs_tasks_pending gauge")
-            lines.append(f"gladlabs_tasks_pending {getattr(task_counts, 'pending', 0)}")
-            lines.append("# HELP gladlabs_tasks_in_progress Number of in-progress content tasks")
-            lines.append("# TYPE gladlabs_tasks_in_progress gauge")
-            lines.append(f"gladlabs_tasks_in_progress {getattr(task_counts, 'in_progress', 0)}")
-            lines.append("# HELP gladlabs_tasks_awaiting_approval Number of tasks awaiting approval")
-            lines.append("# TYPE gladlabs_tasks_awaiting_approval gauge")
-            lines.append(f"gladlabs_tasks_awaiting_approval {getattr(task_counts, 'awaiting_approval', 0)}")
+            lines.append("# HELP poindexter_tasks_pending Number of pending content tasks")
+            lines.append("# TYPE poindexter_tasks_pending gauge")
+            lines.append(f"poindexter_tasks_pending {getattr(task_counts, 'pending', 0)}")
+            lines.append("# HELP poindexter_tasks_in_progress Number of in-progress content tasks")
+            lines.append("# TYPE poindexter_tasks_in_progress gauge")
+            lines.append(f"poindexter_tasks_in_progress {getattr(task_counts, 'in_progress', 0)}")
+            lines.append("# HELP poindexter_tasks_awaiting_approval Number of tasks awaiting approval")
+            lines.append("# TYPE poindexter_tasks_awaiting_approval gauge")
+            lines.append(f"poindexter_tasks_awaiting_approval {getattr(task_counts, 'awaiting_approval', 0)}")
     except Exception:
         pass
 

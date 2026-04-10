@@ -2,7 +2,7 @@
 Sentry Error Tracking Integration Service
 
 Provides enterprise-grade error tracking, performance monitoring, and issue management
-for the Glad Labs AI Co-Founder system.
+for Poindexter (the AI cofounder pipeline).
 
 Features:
 - Automatic exception capturing and reporting

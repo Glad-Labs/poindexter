@@ -110,7 +110,7 @@ class TestGenerateVideoForPost:
         with patch("services.video_service.VIDEO_DIR", video_dir), \
              patch("services.video_service._generate_images_for_video", new_callable=AsyncMock) as mock_gen, \
              patch("services.video_service.httpx.AsyncClient", return_value=mock_client):
-            mock_gen.return_value = ["/root/.gladlabs/video/frames/frame_00.png"]
+            mock_gen.return_value = ["/root/.poindexter/video/frames/frame_00.png"]
             result = await generate_video_for_post(
                 post_id="post123",
                 title="Test",
@@ -187,8 +187,8 @@ class TestGenerateVideoForPost:
              patch("services.video_service._generate_images_for_video", new_callable=AsyncMock) as mock_gen, \
              patch("services.video_service.httpx.AsyncClient", return_value=mock_client):
             mock_gen.return_value = [
-                "/root/.gladlabs/video/frames/frame_00.png",
-                "/root/.gladlabs/video/frames/frame_01.png",
+                "/root/.poindexter/video/frames/frame_00.png",
+                "/root/.poindexter/video/frames/frame_01.png",
             ]
             result = await generate_video_for_post(
                 post_id="post123",
@@ -225,7 +225,7 @@ class TestGenerateVideoForPost:
         with patch("services.video_service.VIDEO_DIR", video_dir), \
              patch("services.video_service._generate_images_for_video", new_callable=AsyncMock) as mock_gen, \
              patch("services.video_service.httpx.AsyncClient", return_value=mock_client):
-            mock_gen.return_value = ["/root/.gladlabs/video/frames/frame_00.png"]
+            mock_gen.return_value = ["/root/.poindexter/video/frames/frame_00.png"]
             result = await generate_video_for_post(
                 post_id="post123",
                 title="Test",
@@ -251,7 +251,7 @@ class TestGenerateVideoForPost:
         with patch("services.video_service.VIDEO_DIR", video_dir), \
              patch("services.video_service._generate_images_for_video", new_callable=AsyncMock) as mock_gen, \
              patch("services.video_service.httpx.AsyncClient", return_value=mock_client):
-            mock_gen.return_value = ["/root/.gladlabs/video/frames/frame_00.png"]
+            mock_gen.return_value = ["/root/.poindexter/video/frames/frame_00.png"]
             result = await generate_video_for_post(
                 post_id="post123",
                 title="Test",
@@ -315,22 +315,22 @@ class TestGenerateVideoForPost:
              patch.dict(os.environ, {"HOST_HOME": "/host/home"}), \
              patch("services.video_service.os.path.exists", return_value=True):
             mock_gen.return_value = [
-                "/root/.gladlabs/video/frames/frame_00.png",
-                "/root/.gladlabs/video/frames/frame_01.png",
+                "/root/.poindexter/video/frames/frame_00.png",
+                "/root/.poindexter/video/frames/frame_01.png",
             ]
             await generate_video_for_post(
                 post_id="post123",
                 title="Test",
-                podcast_path="/root/.gladlabs/podcast/post123.mp3",
+                podcast_path="/root/.poindexter/podcast/post123.mp3",
             )
 
         # Inspect the JSON payload sent to the video server
         call_kwargs = mock_client.post.call_args
         payload = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
-        assert payload["audio_path"] == "/host/home/.gladlabs/podcast/post123.mp3"
+        assert payload["audio_path"] == "/host/home/.poindexter/podcast/post123.mp3"
         assert payload["image_paths"] == [
-            "/host/home/.gladlabs/video/frames/frame_00.png",
-            "/host/home/.gladlabs/video/frames/frame_01.png",
+            "/host/home/.poindexter/video/frames/frame_00.png",
+            "/host/home/.poindexter/video/frames/frame_01.png",
         ]
 
 
@@ -593,19 +593,19 @@ class TestToHostPath:
              patch("services.video_service.httpx.AsyncClient", return_value=mock_client), \
              patch.dict(os.environ, env, clear=True), \
              patch("services.video_service.os.path.exists", return_value=True):
-            mock_gen.return_value = ["/root/.gladlabs/video/frames/f.png"]
+            mock_gen.return_value = ["/root/.poindexter/video/frames/f.png"]
             await generate_video_for_post(
                 post_id="p1",
                 title="T",
-                podcast_path="/root/.gladlabs/podcast/p1.mp3",
+                podcast_path="/root/.poindexter/podcast/p1.mp3",
             )
 
         payload = mock_client.post.call_args.kwargs.get("json") or mock_client.post.call_args[1]["json"]
-        assert payload["audio_path"] == "C:/Users/mattm/.gladlabs/podcast/p1.mp3"
+        assert payload["audio_path"] == "C:/Users/mattm/.poindexter/podcast/p1.mp3"
 
     @pytest.mark.asyncio
     async def test_non_gladlabs_paths_unchanged(self, tmp_path):
-        """Paths that don't contain /root/.gladlabs remain unchanged."""
+        """Paths that don't contain /root/.poindexter remain unchanged."""
         video_dir = tmp_path / "video"
         video_dir.mkdir()
         podcast = tmp_path / "podcast.mp3"
@@ -629,7 +629,7 @@ class TestToHostPath:
              patch("services.video_service._generate_images_for_video", new_callable=AsyncMock) as mock_gen, \
              patch("services.video_service.httpx.AsyncClient", return_value=mock_client), \
              patch("services.video_service.os.path.exists", return_value=True):
-            # Image path that does NOT contain /root/.gladlabs
+            # Image path that does NOT contain /root/.poindexter
             mock_gen.return_value = ["/tmp/some/other/frame.png"]
             await generate_video_for_post(
                 post_id="p2",
@@ -638,7 +638,7 @@ class TestToHostPath:
             )
 
         payload = mock_client.post.call_args.kwargs.get("json") or mock_client.post.call_args[1]["json"]
-        # Paths without /root/.gladlabs should pass through unmodified
+        # Paths without /root/.poindexter should pass through unmodified
         assert payload["image_paths"] == ["/tmp/some/other/frame.png"]
         assert payload["audio_path"] == "/tmp/other/podcast.mp3"
 
@@ -1069,7 +1069,7 @@ class TestGenerateShortVideoForPost:
              patch("services.video_service.httpx.AsyncClient", return_value=mock_client):
             mock_summary.return_value = str(audio_path)
             mock_extract.return_value = []
-            mock_gen.return_value = ["/root/.gladlabs/video/frames/frame_00.png"]
+            mock_gen.return_value = ["/root/.poindexter/video/frames/frame_00.png"]
             result = await generate_short_video_for_post(
                 post_id="p1", title="T", content="body",
             )
@@ -1108,7 +1108,7 @@ class TestGenerateShortVideoForPost:
              patch("services.video_service.httpx.AsyncClient", return_value=mock_client):
             mock_summary.return_value = str(audio_path)
             mock_extract.return_value = []
-            mock_gen.return_value = ["/root/.gladlabs/video/frames/frame_00.png"]
+            mock_gen.return_value = ["/root/.poindexter/video/frames/frame_00.png"]
             result = await generate_short_video_for_post(
                 post_id="p1", title="T", content="body",
             )
@@ -1145,7 +1145,7 @@ class TestGenerateShortVideoForPost:
              patch("services.video_service.httpx.AsyncClient", return_value=mock_client):
             mock_summary.return_value = str(audio_path)
             mock_extract.return_value = []
-            mock_scenes.return_value = ["/root/.gladlabs/video/frames/scene_00.png"]
+            mock_scenes.return_value = ["/root/.poindexter/video/frames/scene_00.png"]
             mock_gen.return_value = []
             await generate_short_video_for_post(
                 post_id="p1", title="T", content="body",
@@ -1192,7 +1192,7 @@ class TestGenerateShortVideoForPost:
              patch.dict("sys.modules", {"services.podcast_service": fake_podcast_module}):
             mock_summary.return_value = None  # short summary fails
             mock_extract.return_value = []
-            mock_gen.return_value = ["/root/.gladlabs/video/frames/frame_00.png"]
+            mock_gen.return_value = ["/root/.poindexter/video/frames/frame_00.png"]
             result = await generate_short_video_for_post(
                 post_id="p1", title="T", content="body",
             )
