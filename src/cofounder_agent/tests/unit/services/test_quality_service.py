@@ -418,3 +418,306 @@ class TestQualityDimensionsAverage:
         avg = dims.average()
         # Average is > 50, so no cap should apply from accuracy
         assert avg > 50.0
+
+
+# ---------------------------------------------------------------------------
+# evaluate() — public API orchestration
+# ---------------------------------------------------------------------------
+
+
+from unittest.mock import AsyncMock, MagicMock
+
+from services.quality_service import (
+    EvaluationMethod,
+    QualityAssessment,
+    get_content_quality_service,
+    get_quality_service,
+)
+
+
+class TestEvaluatePublicAPI:
+    @pytest.mark.asyncio
+    async def test_pattern_based_returns_assessment(self, svc):
+        content = (
+            "Building software well takes practice. The best engineers learn from "
+            "every mistake and refactor relentlessly. According to research [1], "
+            "developers who write tests have fewer bugs in production. See more at "
+            "https://example.com/testing for the full study. Testing matters."
+        )
+        result = await svc.evaluate(content, context={"topic": "testing"}, store_result=False)
+        assert isinstance(result, QualityAssessment)
+        assert result.evaluation_method == EvaluationMethod.PATTERN_BASED
+        assert 0 <= result.overall_score <= 100
+        assert result.word_count is not None and result.word_count > 10
+        assert result.content_length == len(content)
+
+    @pytest.mark.asyncio
+    async def test_llm_based_with_no_client_falls_back_to_pattern(self, svc):
+        """LLM_BASED method without llm_client should fall back to pattern-based."""
+        result = await svc.evaluate(
+            "Some plain content for testing.",
+            method=EvaluationMethod.LLM_BASED,
+            store_result=False,
+        )
+        # The fallback path returns an assessment marked as PATTERN_BASED
+        assert result.evaluation_method == EvaluationMethod.PATTERN_BASED
+
+    @pytest.mark.asyncio
+    async def test_evaluate_updates_statistics(self, svc):
+        before = svc.get_statistics()
+        assert before["total_evaluations"] == 0
+        await svc.evaluate("First content sample.", store_result=False)
+        await svc.evaluate("Second content sample.", store_result=False)
+        after = svc.get_statistics()
+        assert after["total_evaluations"] == 2
+        assert after["passing_count"] + after["failing_count"] == 2
+
+    @pytest.mark.asyncio
+    async def test_evaluate_running_average(self, svc):
+        await svc.evaluate("Sample one.", store_result=False)
+        await svc.evaluate("Sample two.", store_result=False)
+        stats = svc.get_statistics()
+        assert stats["average_score"] >= 0
+        assert stats["average_score"] <= 100
+
+    @pytest.mark.asyncio
+    async def test_default_method_is_pattern_based(self, svc):
+        result = await svc.evaluate("Default eval method test.", store_result=False)
+        assert result.evaluation_method == EvaluationMethod.PATTERN_BASED
+
+    @pytest.mark.asyncio
+    async def test_unknown_method_falls_back_to_pattern(self, svc):
+        # Pass a non-enum value to hit the else branch in evaluate()
+        class _Fake:
+            value = "fake"
+        result = await svc.evaluate("test", method=_Fake(), store_result=False)
+        assert result.evaluation_method == EvaluationMethod.PATTERN_BASED
+
+
+class TestEvaluateLLMPath:
+    @pytest.mark.asyncio
+    async def test_llm_returns_valid_json(self):
+        llm = AsyncMock()
+        llm.generate_text = AsyncMock(return_value=(
+            '{"clarity": 8, "accuracy": 9, "completeness": 7, "relevance": 8, '
+            '"seo_quality": 7, "readability": 8, "engagement": 9, '
+            '"feedback": "Good post overall.", "suggestions": ["add more examples"]}'
+        ))
+        svc = UnifiedQualityService(llm_client=llm)
+        result = await svc.evaluate(
+            "Test content.",
+            context={"topic": "x"},
+            method=EvaluationMethod.LLM_BASED,
+            store_result=False,
+        )
+        assert result.evaluation_method == EvaluationMethod.LLM_BASED
+        assert result.feedback == "Good post overall."
+        assert result.dimensions.clarity == 80  # 8 * 10
+        assert result.dimensions.accuracy == 90
+
+    @pytest.mark.asyncio
+    async def test_llm_returns_clamped_scores(self):
+        """Out-of-range scores should be clamped to 0-10 then scaled to 0-100."""
+        llm = AsyncMock()
+        llm.generate_text = AsyncMock(return_value=(
+            '{"clarity": 15, "accuracy": -3, "completeness": 7, "relevance": 7, '
+            '"seo_quality": 7, "readability": 7, "engagement": 7}'
+        ))
+        svc = UnifiedQualityService(llm_client=llm)
+        result = await svc.evaluate(
+            "x",
+            method=EvaluationMethod.LLM_BASED,
+            store_result=False,
+        )
+        # 15 clamped to 10 -> 100
+        assert result.dimensions.clarity == 100
+        # -3 clamped to 0 -> 0
+        assert result.dimensions.accuracy == 0
+
+    @pytest.mark.asyncio
+    async def test_llm_invalid_score_uses_neutral_fallback(self):
+        llm = AsyncMock()
+        llm.generate_text = AsyncMock(return_value=(
+            '{"clarity": "not a number", "accuracy": 8, "completeness": 7, '
+            '"relevance": 7, "seo_quality": 7, "readability": 7, "engagement": 7}'
+        ))
+        svc = UnifiedQualityService(llm_client=llm)
+        result = await svc.evaluate(
+            "x",
+            method=EvaluationMethod.LLM_BASED,
+            store_result=False,
+        )
+        # Non-numeric -> 50.0 neutral fallback
+        assert result.dimensions.clarity == 50
+
+    @pytest.mark.asyncio
+    async def test_llm_no_json_falls_back_to_pattern(self):
+        llm = AsyncMock()
+        llm.generate_text = AsyncMock(return_value="just some text without any JSON")
+        svc = UnifiedQualityService(llm_client=llm)
+        result = await svc.evaluate(
+            "Plain content.",
+            method=EvaluationMethod.LLM_BASED,
+            store_result=False,
+        )
+        # Fell back to pattern-based
+        assert result.evaluation_method == EvaluationMethod.PATTERN_BASED
+
+    @pytest.mark.asyncio
+    async def test_llm_call_raises_falls_back_to_pattern(self):
+        llm = AsyncMock()
+        llm.generate_text = AsyncMock(side_effect=RuntimeError("ollama unreachable"))
+        svc = UnifiedQualityService(llm_client=llm)
+        result = await svc.evaluate(
+            "Plain content.",
+            method=EvaluationMethod.LLM_BASED,
+            store_result=False,
+        )
+        assert result.evaluation_method == EvaluationMethod.PATTERN_BASED
+
+
+class TestEvaluateHybridPath:
+    @pytest.mark.asyncio
+    async def test_hybrid_with_no_llm_returns_pattern_based(self, svc):
+        result = await svc.evaluate(
+            "Hybrid test content.",
+            method=EvaluationMethod.HYBRID,
+            store_result=False,
+        )
+        # No LLM client → pattern-based assessment is returned directly
+        assert result.evaluation_method == EvaluationMethod.PATTERN_BASED
+
+    @pytest.mark.asyncio
+    async def test_hybrid_averages_pattern_and_llm(self):
+        llm = AsyncMock()
+        llm.generate_text = AsyncMock(return_value=(
+            '{"clarity": 10, "accuracy": 10, "completeness": 10, "relevance": 10, '
+            '"seo_quality": 10, "readability": 10, "engagement": 10}'
+        ))
+        svc = UnifiedQualityService(llm_client=llm)
+        result = await svc.evaluate(
+            "Hybrid combined evaluation content for testing.",
+            method=EvaluationMethod.HYBRID,
+            store_result=False,
+        )
+        assert result.evaluation_method == EvaluationMethod.HYBRID
+        # LLM gave perfect 100s; combined should be > pattern alone but <= 100
+        assert result.overall_score <= 100
+
+    @pytest.mark.asyncio
+    async def test_hybrid_with_llm_fallback_returns_pattern(self):
+        """If LLM fails inside hybrid, the pattern-based result is returned (not HYBRID)."""
+        llm = AsyncMock()
+        llm.generate_text = AsyncMock(side_effect=Exception("oops"))
+        svc = UnifiedQualityService(llm_client=llm)
+        result = await svc.evaluate(
+            "x",
+            method=EvaluationMethod.HYBRID,
+            store_result=False,
+        )
+        assert result.evaluation_method == EvaluationMethod.PATTERN_BASED
+
+
+class TestEvaluateErrorPath:
+    @pytest.mark.asyncio
+    async def test_internal_exception_returns_minimal_assessment(self, svc, monkeypatch):
+        """If pattern eval raises, evaluate() returns a 5.0 minimal assessment."""
+        async def boom(*args, **kwargs):
+            raise RuntimeError("scoring exploded")
+
+        monkeypatch.setattr(svc, "_evaluate_pattern_based", boom)
+
+        result = await svc.evaluate("x", store_result=False)
+        assert result.overall_score == 5.0
+        assert result.passing is False
+        assert "Evaluation error" in result.feedback
+        assert result.evaluated_by == "UnifiedQualityService-Error"
+
+
+class TestStoreEvaluation:
+    @pytest.mark.asyncio
+    async def test_no_database_service_skips_persistence(self):
+        svc = UnifiedQualityService(database_service=None)
+        await svc.evaluate("x", store_result=True)  # should not raise
+
+    @pytest.mark.asyncio
+    async def test_no_task_id_in_context_skips_persistence(self):
+        db = AsyncMock()
+        db.create_quality_evaluation = AsyncMock()
+        svc = UnifiedQualityService(database_service=db)
+        await svc.evaluate("x", context={}, store_result=True)
+        db.create_quality_evaluation.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_with_task_id_persists(self):
+        db = AsyncMock()
+        db.create_quality_evaluation = AsyncMock()
+        svc = UnifiedQualityService(database_service=db)
+        await svc.evaluate(
+            "Sample content for persistence test.",
+            context={"task_id": "task-uuid-123", "topic": "x"},
+            store_result=True,
+        )
+        db.create_quality_evaluation.assert_awaited_once()
+        args, _ = db.create_quality_evaluation.call_args
+        payload = args[0]
+        assert payload["task_id"] == "task-uuid-123"
+        assert payload["content_id"] == "task-uuid-123"
+        assert "criteria" in payload
+        assert "overall_score" in payload
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_content_id(self):
+        db = AsyncMock()
+        db.create_quality_evaluation = AsyncMock()
+        svc = UnifiedQualityService(database_service=db)
+        await svc.evaluate(
+            "x",
+            context={"content_id": "content-456"},
+            store_result=True,
+        )
+        db.create_quality_evaluation.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_db_failure_does_not_propagate(self):
+        db = AsyncMock()
+        db.create_quality_evaluation = AsyncMock(side_effect=RuntimeError("db down"))
+        svc = UnifiedQualityService(database_service=db)
+        # Should swallow the exception, not raise
+        result = await svc.evaluate(
+            "x",
+            context={"task_id": "t1"},
+            store_result=True,
+        )
+        assert isinstance(result, QualityAssessment)
+
+
+class TestStatistics:
+    def test_initial_statistics(self, svc):
+        stats = svc.get_statistics()
+        assert stats["total_evaluations"] == 0
+        assert stats["passing_count"] == 0
+        assert stats["failing_count"] == 0
+        assert stats["pass_rate"] == 0
+        assert stats["average_score"] == 0.0
+
+    def test_pass_rate_with_no_evaluations(self, svc):
+        # Division-by-zero protection
+        assert svc.get_statistics()["pass_rate"] == 0
+
+
+class TestFactoryFunctions:
+    def test_get_quality_service_returns_instance(self):
+        svc = get_quality_service()
+        assert isinstance(svc, UnifiedQualityService)
+
+    def test_get_content_quality_service_alias(self):
+        svc = get_content_quality_service()
+        assert isinstance(svc, UnifiedQualityService)
+
+    def test_factory_passes_dependencies(self):
+        db = MagicMock()
+        llm = MagicMock()
+        svc = get_quality_service(database_service=db, llm_client=llm)
+        assert svc.database_service is db
+        assert svc.llm_client is llm
