@@ -712,27 +712,40 @@ class TaskExecutor:
         await self._auto_retry_failed_tasks()
 
     async def _auto_retry_failed_tasks(self) -> None:
-        """Retry recent failed/rejected tasks with adjusted parameters (different model, shorter length)."""
+        """Retry recent failed tasks with adjusted parameters.
+
+        Three cases of "failed-ish" state, handled distinctly:
+
+        1. Execution failure (pipeline crash, timeout, etc.)
+           status = 'failed', approval_status = 'pending' (no human touched it)
+           metadata has no allow_revisions key. → RETRY.
+
+        2. Human rejected with allow_revisions=true ("not this one, try again")
+           status = 'failed_revisions_requested'
+           approval_status = 'rejected', metadata.allow_revisions = true. → RETRY.
+
+        3. Human rejected with allow_revisions=false ("archive it, permanent")
+           status = 'failed'
+           approval_status = 'rejected', metadata.allow_revisions = false. → SKIP.
+
+        The single source of truth for "should this retry" is
+        metadata.allow_revisions — explicit false means no, anything else
+        (true or absent) means yes. Both 'failed' and
+        'failed_revisions_requested' statuses are eligible; approval_status
+        is NOT checked because case 2 has approval_status='rejected' but
+        should still retry.
+        """
         if not self.database_service or not self.database_service.pool:
             return
         try:
-            # Find failed tasks (execution failures) with retry_count < max_retries.
-            # IMPORTANT: skip tasks that were explicitly rejected by a human via
-            # /reject — rejections are a final signal, not a retry opportunity.
-            # approval_status='rejected' means human hit the button; leave it alone.
-            # Also skip tasks where allow_revisions was set to false in metadata
-            # as a belt-and-suspenders check.
-            # Only retry tasks from the last 24 hours to avoid re-processing
-            # ancient failures.
             max_retries = int(await self._get_setting("max_task_retries", str(MAX_TASK_RETRIES)))
             rows = await self.database_service.pool.fetch("""
                 SELECT task_id, status, topic, task_metadata,
                        COALESCE((task_metadata::jsonb->>'retry_count')::int, 0) as retry_count
                 FROM content_tasks
-                WHERE status = 'failed'
+                WHERE status IN ('failed', 'failed_revisions_requested')
                 AND created_at > NOW() - INTERVAL '24 hours'
                 AND COALESCE((task_metadata::jsonb->>'retry_count')::int, 0) < $1
-                AND COALESCE(approval_status, 'pending') != 'rejected'
                 AND COALESCE((metadata::jsonb->>'allow_revisions')::text, 'true') != 'false'
                 LIMIT 3
             """, max_retries)
@@ -763,8 +776,13 @@ class TaskExecutor:
                 meta["last_retry_at"] = datetime.now(timezone.utc).isoformat()
                 meta["retry_adjustments"] = adjustments
 
+                # Clear approval_status too — case 2 (human rejected with
+                # allow_revisions=true) has approval_status='rejected' from the
+                # first pass, but on retry we want the new generation to be
+                # judged fresh, not inherit a stale rejection flag.
                 await self.database_service.update_task(task_id, {
                     "status": "pending",
+                    "approval_status": "pending",
                     "error_message": None,
                     "task_metadata": meta,
                 })
