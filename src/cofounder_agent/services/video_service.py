@@ -108,14 +108,18 @@ async def _generate_images_for_video(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info("[VIDEO] Generating %d SDXL images from %d prompts", len(prompts), len(prompts))
-    async with httpx.AsyncClient(timeout=120) as client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=5.0)) as client:
         for i, prompt in enumerate(prompts):
             try:
                 logger.info("[VIDEO] SDXL frame %d: %s", i + 1, prompt[:80])
-                resp = await client.post(f"{SDXL_SERVER_URL}/generate", json={
-                    "prompt": prompt, "negative_prompt": neg,
-                    "steps": 4, "guidance_scale": 1.0,
-                })
+                resp = await client.post(
+                    f"{SDXL_SERVER_URL}/generate",
+                    json={
+                        "prompt": prompt, "negative_prompt": neg,
+                        "steps": 4, "guidance_scale": 1.0,
+                    },
+                    timeout=60,
+                )
                 if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image/"):
                     img_path = str(output_dir / f"frame_{i:02d}.png")
                     with open(img_path, "wb") as f:
@@ -187,14 +191,18 @@ async def _generate_images_from_scenes(scenes: list[str]) -> list[str]:
     image_paths = []
 
     logger.info("[VIDEO] Generating %d SDXL images from pre-generated scenes", len(scenes))
-    async with httpx.AsyncClient(timeout=120) as client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=5.0)) as client:
         for i, prompt in enumerate(scenes):
             try:
                 logger.info("[VIDEO] SDXL frame %d: %s", i + 1, prompt[:80])
-                resp = await client.post(f"{SDXL_SERVER_URL}/generate", json={
-                    "prompt": prompt, "negative_prompt": neg,
-                    "steps": 4, "guidance_scale": 1.0,
-                })
+                resp = await client.post(
+                    f"{SDXL_SERVER_URL}/generate",
+                    json={
+                        "prompt": prompt, "negative_prompt": neg,
+                        "steps": 4, "guidance_scale": 1.0,
+                    },
+                    timeout=60,
+                )
                 if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image/"):
                     img_path = str(output_dir / f"frame_{i:02d}.png")
                     with open(img_path, "wb") as f:

@@ -128,8 +128,8 @@ class GPUScheduler:
     async def _get_gpu_utilization(self) -> Optional[float]:
         """Query nvidia-smi exporter for current GPU utilization %."""
         try:
-            async with httpx.AsyncClient(timeout=5) as client:
-                resp = await client.get(NVIDIA_EXPORTER_URL)
+            async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=2.0)) as client:
+                resp = await client.get(NVIDIA_EXPORTER_URL, timeout=5)
                 if resp.status_code != 200:
                     return None
                 for line in resp.text.splitlines():
@@ -194,8 +194,8 @@ class GPUScheduler:
     async def _unload_ollama_models(self):
         """Unload all Ollama models to free VRAM for SDXL."""
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(f"{OLLAMA_BASE_URL}/api/ps")
+            async with httpx.AsyncClient(timeout=httpx.Timeout(15.0, connect=3.0)) as client:
+                resp = await client.get(f"{OLLAMA_BASE_URL}/api/ps", timeout=10)
                 if resp.status_code != 200:
                     return
                 data = resp.json()
@@ -236,8 +236,8 @@ class GPUScheduler:
         """Tell the SDXL server to unload its model and free VRAM immediately."""
         sdxl_url = _sc_get("sdxl_server_url", "http://localhost:9836")
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.post(f"{sdxl_url}/unload")
+            async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=3.0)) as client:
+                resp = await client.post(f"{sdxl_url}/unload", timeout=10)
                 if resp.status_code == 200:
                     logger.info("[GPU] SDXL model unloaded via /unload endpoint")
         except Exception:
