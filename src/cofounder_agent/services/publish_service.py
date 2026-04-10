@@ -144,6 +144,11 @@ def _parse_json_field(value, field_name: str = "field", task_id: str = "") -> di
 async def _calculate_scheduled_publish_time(db_service) -> Optional[datetime]:
     """Determine when a post should be published to avoid batch-publishing.
 
+    Reserved for a future scheduling/release-time-optimization feature. Callers
+    can opt in by passing honor_pacing=True to publish_post_from_task; today
+    the default is False (immediate publish) because human approval is the
+    gate — pacing the output of a human reviewer is redundant.
+
     Checks how many posts were already published today and what the latest
     publish time is.  If the daily cap is reached, the post is scheduled for
     the next available day.  Within a day, posts are spaced by at least
@@ -268,6 +273,7 @@ async def publish_post_from_task(
     trigger_revalidation: bool = True,
     queue_social: bool = True,
     draft_mode: bool = False,
+    honor_pacing: bool = False,
     background_tasks=None,
 ) -> PublishResult:
     """Create a published post from a completed content task.
@@ -369,7 +375,12 @@ async def publish_post_from_task(
     # ---------------------------------------------------------------
     # 4b. Determine scheduled publish time (content spacing)
     # ---------------------------------------------------------------
-    scheduled_at = await _calculate_scheduled_publish_time(db_service)
+    # Pacing is reserved for a future scheduling feature. When honor_pacing
+    # is False (default), the post publishes immediately because the human
+    # reviewer is already the gate and pacing their output is redundant.
+    scheduled_at = (
+        await _calculate_scheduled_publish_time(db_service) if honor_pacing else None
+    )
     if scheduled_at:
         logger.info(
             "[publish_service] Post scheduled for %s (not immediate)",

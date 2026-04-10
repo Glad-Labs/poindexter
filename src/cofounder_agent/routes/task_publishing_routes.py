@@ -311,67 +311,14 @@ async def approve_task(
             logger.error("Failed to update task status to %s: %s", new_status, e, exc_info=True)
             raise HTTPException(status_code=500, detail="Failed to update task status") from e
 
-        # Check if staging mode is enabled (create draft + preview instead of publishing)
-        staging_mode = False
-        try:
-            _staging = await db_service.pool.fetchval(
-                "SELECT value FROM app_settings WHERE key = 'staging_mode'",
-            )
-            staging_mode = str(_staging).lower() in ("true", "1", "yes") if _staging else False
-        except Exception:
-            pass
+        # NOTE: staging_mode is still present in app_settings but no longer
+        # gates publish — approval now goes live immediately. The setting is
+        # reserved for a future scheduling / release-time-optimization feature
+        # that will honor pacing and scheduled slots instead of the previous
+        # "create a draft and wait for a second publish step" semantics.
 
-        if approved and auto_publish and staging_mode:
-            # STAGING MODE: Create draft post with preview token, generate media, send preview link
-            logger.info("[STAGING] Creating draft preview for task %s", task_id)
-            try:
-                from services.publish_service import publish_post_from_task
-                import secrets as _secrets
-
-                preview_token = _secrets.token_hex(16)  # 32-char hex token
-
-                pub_result = await publish_post_from_task(
-                    db_service, task, task_id,
-                    publisher="operator",
-                    trigger_revalidation=False,  # Don't revalidate — it's a draft
-                    queue_social=False,  # Don't post to social yet
-                    draft_mode=True,  # New param: create as draft instead of published
-                )
-                if pub_result.success:
-                    # Set preview token on the draft post
-                    pool = getattr(db_service, "cloud_pool", None) or db_service.pool
-                    await pool.execute(
-                        "UPDATE posts SET preview_token = $1, status = 'draft' WHERE id = $2",
-                        preview_token, pub_result.post_id,
-                    )
-                    merged_result["post_id"] = pub_result.post_id
-                    merged_result["post_slug"] = pub_result.post_slug
-                    merged_result["preview_token"] = preview_token
-
-                    # Send preview link (Tailscale-accessible HTML preview)
-                    from services.site_config import site_config as _prev_sc
-                    _preview_base = _prev_sc.get("preview_base_url", "http://100.81.93.12:8002")
-                    preview_url = f"{_preview_base}/preview/{preview_token}"
-                    try:
-                        from services.task_executor import _notify_openclaw
-                        topic_name = task.get("topic", task.get("title", "Untitled"))
-                        await _notify_openclaw(
-                            f"📋 Draft ready for review: \"{topic_name}\"\n"
-                            f"Preview: {preview_url}\n"
-                            f"Task: {task_id}\n"
-                            f"Approve to publish: reply 'publish {task_id[:8]}'",
-                            critical=True,
-                        )
-                    except Exception:
-                        logger.debug("[STAGING] Notification failed", exc_info=True)
-                else:
-                    logger.warning("[STAGING] Draft creation failed: %s", pub_result.error)
-            except Exception as e:
-                logger.critical("[STAGING] Error: %s: %s", type(e).__name__, e, exc_info=True)
-
-        elif approved and auto_publish:
-            # DIRECT PUBLISH MODE (staging_mode=false)
-            logger.info("Auto-publishing approved task %s", task_id)
+        if approved and auto_publish:
+            logger.info("Publishing approved task %s (approve → go-live)", task_id)
             try:
                 from services.publish_service import publish_post_from_task
 
@@ -380,6 +327,8 @@ async def approve_task(
                     publisher="operator",
                     trigger_revalidation=True,
                     queue_social=True,
+                    draft_mode=False,
+                    honor_pacing=False,
                 )
                 if pub_result.success:
                     merged_result["post_id"] = pub_result.post_id
@@ -387,14 +336,15 @@ async def approve_task(
                     merged_result["published_url"] = pub_result.published_url
                 else:
                     logger.warning(
-                        "[approve_task] Auto-publish failed: %s", pub_result.error
+                        "[approve_task] Publish failed: %s", pub_result.error
                     )
             except Exception as e:
                 logger.critical(
-                    "Unexpected error during auto-publish: %s: %s",
+                    "Unexpected error during publish: %s: %s",
                     type(e).__name__, e, exc_info=True,
                 )
-                # Don't fail approval if auto-publish fails
+                # Don't fail approval if publish fails — the task is still
+                # marked approved and a human can retry publish via /publish.
 
         # Fetch updated task
         updated_task = await db_service.get_task(task_id)
@@ -579,14 +529,23 @@ async def go_live(
         datetime.now(timezone.utc), post_id,
     )
 
-    # Trigger revalidation
+    # Trigger ISR revalidation on the public site so Vercel busts its cache
+    # for the post page, the home page, the archive, and the /posts index.
     try:
-        from routes.revalidate_routes import revalidate_path
-        await revalidate_path(f"/posts/{row['slug']}")
-        await revalidate_path("/")
-        await revalidate_path("/archive/1")
+        from routes.revalidate_routes import trigger_nextjs_revalidation
+        reval_ok = await trigger_nextjs_revalidation([
+            f"/posts/{row['slug']}",
+            "/",
+            "/archive",
+            "/archive/1",
+            "/posts",
+        ])
+        if reval_ok:
+            logger.info("[GO-LIVE] ISR revalidation triggered for %s", row["slug"])
+        else:
+            logger.warning("[GO-LIVE] ISR revalidation returned failure for %s", row["slug"])
     except Exception:
-        logger.debug("[GO-LIVE] Revalidation failed (non-fatal)", exc_info=True)
+        logger.warning("[GO-LIVE] Revalidation call raised (non-fatal)", exc_info=True)
 
     # Queue social/podcast/video (they check for existing files)
     if _should_run_post_publish_hooks():
