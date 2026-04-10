@@ -125,3 +125,332 @@ class TestGPUSchedulerSingleton:
     def test_singleton_exists(self):
         from services.gpu_scheduler import gpu
         assert isinstance(gpu, GPUScheduler)
+
+
+# ===========================================================================
+# _get_gpu_utilization
+# ===========================================================================
+
+
+class TestGetGpuUtilization:
+    """Coverage for the nvidia-smi exporter parsing."""
+
+    @pytest.mark.asyncio
+    async def test_parses_utilization_from_prometheus_output(self):
+        """The function looks for a 'nvidia_gpu_utilization_percent{...}' line."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+
+        prometheus_text = (
+            "# HELP nvidia_gpu_utilization_percent GPU utilization\n"
+            "# TYPE nvidia_gpu_utilization_percent gauge\n"
+            "nvidia_gpu_utilization_percent{gpu=\"0\"} 75.0\n"
+            "nvidia_other_metric{x=\"y\"} 100\n"
+        )
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.text = prometheus_text
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(return_value=mock_resp)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result = await scheduler._get_gpu_utilization()
+        assert result == 75.0
+
+    @pytest.mark.asyncio
+    async def test_non_200_returns_none(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        mock_resp = MagicMock()
+        mock_resp.status_code = 503
+        mock_resp.text = ""
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(return_value=mock_resp)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result = await scheduler._get_gpu_utilization()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_network_error_returns_none(self):
+        from unittest.mock import AsyncMock, patch
+        from services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(side_effect=RuntimeError("connection refused"))
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result = await scheduler._get_gpu_utilization()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_no_matching_line_returns_none(self):
+        """If the metric isn't in the response, returns None."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.text = "some_other_metric{} 50\nyet_another{} 100\n"
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(return_value=mock_resp)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result = await scheduler._get_gpu_utilization()
+        assert result is None
+
+
+# ===========================================================================
+# _wait_for_gaming_clear
+# ===========================================================================
+
+
+class TestWaitForGamingClear:
+    @pytest.mark.asyncio
+    async def test_idle_gpu_proceeds_immediately(self):
+        from unittest.mock import AsyncMock, patch
+        from services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        scheduler._get_gpu_utilization = AsyncMock(return_value=10.0)  # below threshold
+
+        with patch("services.site_config.site_config") as mock_sc:
+            mock_sc.get_int.side_effect = lambda k, d: d  # use defaults
+            await scheduler._wait_for_gaming_clear()
+        # Did not enter gaming-detected state
+        assert scheduler._gaming_detected is False
+        # Only one utilization check happened
+        scheduler._get_gpu_utilization.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_none_utilization_proceeds(self):
+        from unittest.mock import AsyncMock, patch
+        from services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        scheduler._get_gpu_utilization = AsyncMock(return_value=None)
+
+        with patch("services.site_config.site_config") as mock_sc:
+            mock_sc.get_int.side_effect = lambda k, d: d
+            await scheduler._wait_for_gaming_clear()
+        # No exception, no gaming flag set
+        assert scheduler._gaming_detected is False
+
+    @pytest.mark.asyncio
+    async def test_brief_spike_proceeds(self):
+        """First check is high, second is low — was just a spike, proceed."""
+        from unittest.mock import AsyncMock, patch
+        from services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        # First check: 90% (high), second check: 5% (idle)
+        scheduler._get_gpu_utilization = AsyncMock(side_effect=[90.0, 5.0])
+
+        with patch("services.site_config.site_config") as mock_sc, \
+             patch("asyncio.sleep", new=AsyncMock()):
+            mock_sc.get_int.side_effect = lambda k, d: d
+            await scheduler._wait_for_gaming_clear()
+        # Was just a spike — gaming not flagged
+        assert scheduler._gaming_detected is False
+
+    @pytest.mark.asyncio
+    async def test_idle_after_previous_gaming_clears_flag(self):
+        """If gaming was previously detected and GPU is now idle, the flag clears."""
+        from unittest.mock import AsyncMock, patch
+        from services.gpu_scheduler import GPUScheduler
+        import time
+
+        scheduler = GPUScheduler()
+        scheduler._gaming_detected = True
+        scheduler._gaming_paused_since = time.monotonic() - 60.0
+        scheduler._get_gpu_utilization = AsyncMock(return_value=5.0)
+
+        with patch("services.site_config.site_config") as mock_sc:
+            mock_sc.get_int.side_effect = lambda k, d: d
+            await scheduler._wait_for_gaming_clear()
+
+        assert scheduler._gaming_detected is False
+        # Pause duration was added to total
+        assert scheduler._total_gaming_paused_s >= 60.0
+
+
+# ===========================================================================
+# prepare_mode
+# ===========================================================================
+
+
+class TestPrepareMode:
+    @pytest.mark.asyncio
+    async def test_sdxl_mode_unloads_ollama(self):
+        from unittest.mock import AsyncMock
+        from services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        scheduler._unload_ollama_models = AsyncMock()
+        scheduler._unload_sdxl = AsyncMock()
+
+        await scheduler.prepare_mode("sdxl")
+        scheduler._unload_ollama_models.assert_awaited_once()
+        scheduler._unload_sdxl.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_ollama_mode_unloads_sdxl(self):
+        from unittest.mock import AsyncMock
+        from services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        scheduler._unload_ollama_models = AsyncMock()
+        scheduler._unload_sdxl = AsyncMock()
+
+        await scheduler.prepare_mode("ollama")
+        scheduler._unload_sdxl.assert_awaited_once()
+        scheduler._unload_ollama_models.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_idle_mode_unloads_both(self):
+        from unittest.mock import AsyncMock
+        from services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        scheduler._unload_ollama_models = AsyncMock()
+        scheduler._unload_sdxl = AsyncMock()
+
+        await scheduler.prepare_mode("idle")
+        scheduler._unload_ollama_models.assert_awaited_once()
+        scheduler._unload_sdxl.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_unknown_mode_no_op(self):
+        from unittest.mock import AsyncMock
+        from services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        scheduler._unload_ollama_models = AsyncMock()
+        scheduler._unload_sdxl = AsyncMock()
+
+        await scheduler.prepare_mode("unknown")
+        scheduler._unload_ollama_models.assert_not_awaited()
+        scheduler._unload_sdxl.assert_not_awaited()
+
+
+# ===========================================================================
+# _unload_sdxl
+# ===========================================================================
+
+
+class TestUnloadSdxl:
+    @pytest.mark.asyncio
+    async def test_post_to_unload_endpoint(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=mock_resp)
+
+        with patch("httpx.AsyncClient", return_value=mock_client), \
+             patch("services.gpu_scheduler._sc_get", return_value="http://localhost:9836"):
+            await scheduler._unload_sdxl()
+
+        mock_client.post.assert_awaited_once()
+        url = mock_client.post.await_args.args[0]
+        assert "/unload" in url
+
+    @pytest.mark.asyncio
+    async def test_server_unavailable_silently_passes(self):
+        from unittest.mock import AsyncMock, patch
+        from services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(side_effect=RuntimeError("connection refused"))
+
+        with patch("httpx.AsyncClient", return_value=mock_client), \
+             patch("services.gpu_scheduler._sc_get", return_value="http://localhost:9836"):
+            # Should not raise
+            await scheduler._unload_sdxl()
+
+
+# ===========================================================================
+# Properties and config helpers
+# ===========================================================================
+
+
+class TestPropertiesAndConfig:
+    def test_is_busy_property(self):
+        from services.gpu_scheduler import GPUScheduler
+        scheduler = GPUScheduler()
+        assert scheduler.is_busy is False
+
+    def test_is_gaming_property(self):
+        from services.gpu_scheduler import GPUScheduler
+        scheduler = GPUScheduler()
+        assert scheduler.is_gaming is False
+        scheduler._gaming_detected = True
+        assert scheduler.is_gaming is True
+
+    def test_status_includes_config(self):
+        from unittest.mock import patch
+        from services.gpu_scheduler import GPUScheduler
+        scheduler = GPUScheduler()
+        with patch("services.site_config.site_config") as mock_sc:
+            mock_sc.get_int.side_effect = lambda k, d: d
+            status = scheduler.status
+        assert "config" in status
+        assert "threshold_percent" in status["config"]
+        assert "check_interval_s" in status["config"]
+        assert status["busy"] is False
+        assert status["gaming_detected"] is False
+
+    def test_cfg_int_defaults_when_site_config_missing(self):
+        from unittest.mock import patch
+        from services.gpu_scheduler import _cfg_int
+
+        with patch.dict("sys.modules", {"services.site_config": None}):
+            result = _cfg_int("any_key", 42)
+        # Falls back to default since import fails
+        assert result == 42
+
+    def test_cfg_float_defaults_when_site_config_missing(self):
+        from unittest.mock import patch
+        from services.gpu_scheduler import _cfg_float
+
+        with patch.dict("sys.modules", {"services.site_config": None}):
+            result = _cfg_float("any_key", 3.14)
+        assert result == 3.14
+
+    def test_cfg_int_uses_site_config_when_available(self):
+        from unittest.mock import patch, MagicMock
+        from services.gpu_scheduler import _cfg_int
+
+        fake_sc_module = MagicMock()
+        fake_sc_module.site_config = MagicMock()
+        fake_sc_module.site_config.get_int = MagicMock(return_value=99)
+
+        with patch.dict("sys.modules", {"services.site_config": fake_sc_module}):
+            result = _cfg_int("threshold", 30)
+        assert result == 99
