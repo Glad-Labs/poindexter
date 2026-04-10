@@ -27,10 +27,15 @@ import pytest
 from services.content_router_service import (
     ContentTaskStore,
     _check_title_originality,
+    _get_or_create_default_author,
     _is_stage_enabled,
+    _load_stage_timeouts,
     _normalize_text,
     _parse_model_preferences,
     _run_stage_with_timeout,
+    _scrub_fabricated_links,
+    _select_category_for_topic,
+    _stage_verify_task,
     get_content_task_store,
 )
 
@@ -708,3 +713,242 @@ class TestCheckTitleOriginality:
                 )
 
         assert result["is_original"] is True
+
+
+# ---------------------------------------------------------------------------
+# _scrub_fabricated_links — additional edge cases (existing class above
+# already covers the basic cases)
+# ---------------------------------------------------------------------------
+
+
+class TestScrubFabricatedLinksEdgeCases:
+    def test_subdomain_of_trusted_domain_kept(self):
+        content = "[Wiki article](https://en.wikipedia.org/wiki/Python)"
+        result = _scrub_fabricated_links(content)
+        assert "wikipedia.org" in result
+
+    def test_link_inside_markdown_parens_not_double_processed(self):
+        """Bare URL regex uses negative lookbehind to skip URLs inside markdown ()."""
+        content = "[label](https://github.com/example/repo)"
+        result = _scrub_fabricated_links(content)
+        # The full markdown link should pass through unchanged
+        assert result == content
+
+    def test_internal_post_link_with_no_slug_cache_kept(self):
+        """Without a populated slug cache, internal /posts/ links pass through."""
+        from services.site_config import site_config
+        domain = site_config.get("site_domain", "")
+        if not domain:
+            return  # skip if no domain configured
+        content = f"[older post](https://{domain}/posts/some-old-post)"
+        result = _scrub_fabricated_links(content)
+        assert "/posts/some-old-post" in result
+
+
+# ---------------------------------------------------------------------------
+# _load_stage_timeouts
+# ---------------------------------------------------------------------------
+
+
+class TestLoadStageTimeouts:
+    def test_returns_dict_of_int_timeouts(self):
+        with patch("services.site_config.site_config") as mock_sc:
+            mock_sc.get.return_value = None  # no overrides
+            result = _load_stage_timeouts()
+        assert isinstance(result, dict)
+        # Should contain at least the well-known stage names
+        assert "verify_task" in result
+        assert "generate_content" in result
+        assert "quality_evaluation" in result
+        for value in result.values():
+            assert isinstance(value, int)
+
+    def test_app_settings_override_applied(self):
+        with patch("services.site_config.site_config") as mock_sc:
+            mock_sc.get.side_effect = lambda k, d=None: "999" if k == "stage_timeout_draft" else None
+            result = _load_stage_timeouts()
+        assert result["generate_content"] == 999
+
+    def test_invalid_override_value_silently_ignored(self):
+        with patch("services.site_config.site_config") as mock_sc:
+            mock_sc.get.side_effect = lambda k, d=None: "not-a-number" if k == "stage_timeout_qa" else None
+            result = _load_stage_timeouts()
+        # quality_evaluation falls back to its default
+        assert isinstance(result["quality_evaluation"], int)
+
+
+# ---------------------------------------------------------------------------
+# _stage_verify_task
+# ---------------------------------------------------------------------------
+
+
+class TestStageVerifyTask:
+    @pytest.mark.asyncio
+    async def test_existing_task_marks_stage_complete(self):
+        db = AsyncMock()
+        db.get_task = AsyncMock(return_value={"id": "t1", "topic": "x"})
+        result = {"stages": {}}
+        await _stage_verify_task(db, "t1", result)
+        assert result["content_task_id"] == "t1"
+        assert result["stages"]["1_content_task_created"] is True
+
+    @pytest.mark.asyncio
+    async def test_missing_task_marks_stage_failed(self):
+        db = AsyncMock()
+        db.get_task = AsyncMock(return_value=None)
+        result = {"stages": {}}
+        await _stage_verify_task(db, "missing-task", result)
+        assert result["stages"]["1_content_task_created"] is False
+
+    @pytest.mark.asyncio
+    async def test_db_exception_marks_stage_failed(self):
+        db = AsyncMock()
+        db.get_task = AsyncMock(side_effect=RuntimeError("db down"))
+        result = {"stages": {}}
+        await _stage_verify_task(db, "t1", result)
+        assert result["stages"]["1_content_task_created"] is False
+
+
+# ---------------------------------------------------------------------------
+# _select_category_for_topic
+# ---------------------------------------------------------------------------
+
+
+class TestSelectCategoryForTopic:
+    @pytest.mark.asyncio
+    async def test_uses_requested_category_when_valid(self):
+        db = MagicMock()
+        conn = AsyncMock()
+        conn.fetchval = AsyncMock(return_value="cat-uuid-business")
+        cm = AsyncMock()
+        cm.__aenter__ = AsyncMock(return_value=conn)
+        cm.__aexit__ = AsyncMock(return_value=False)
+        db.pool = MagicMock()
+        db.pool.acquire = MagicMock(return_value=cm)
+
+        result = await _select_category_for_topic("Some Topic", db, requested_category="business")
+        assert result == "cat-uuid-business"
+
+    @pytest.mark.asyncio
+    async def test_keyword_match_picks_security_category(self):
+        db = MagicMock()
+        conn = AsyncMock()
+        # First call (requested) returns None; second (matched) returns id
+        conn.fetchval = AsyncMock(return_value="cat-security-uuid")
+        cm = AsyncMock()
+        cm.__aenter__ = AsyncMock(return_value=conn)
+        cm.__aexit__ = AsyncMock(return_value=False)
+        db.pool = MagicMock()
+        db.pool.acquire = MagicMock(return_value=cm)
+
+        result = await _select_category_for_topic("Zero Trust Auth and OWASP for Devs", db)
+        assert result == "cat-security-uuid"
+        # Last fetchval call queried for the matched category slug
+        last_call = conn.fetchval.await_args
+        assert last_call.args[1] == "security"
+
+    @pytest.mark.asyncio
+    async def test_no_match_defaults_to_technology(self):
+        db = MagicMock()
+        conn = AsyncMock()
+        conn.fetchval = AsyncMock(return_value="cat-tech-uuid")
+        cm = AsyncMock()
+        cm.__aenter__ = AsyncMock(return_value=conn)
+        cm.__aexit__ = AsyncMock(return_value=False)
+        db.pool = MagicMock()
+        db.pool.acquire = MagicMock(return_value=cm)
+
+        result = await _select_category_for_topic("Random Unrelated Topic", db)
+        assert result == "cat-tech-uuid"
+        last_call = conn.fetchval.await_args
+        assert last_call.args[1] == "technology"
+
+    @pytest.mark.asyncio
+    async def test_db_error_returns_none(self):
+        db = MagicMock()
+        db.pool = MagicMock()
+        db.pool.acquire = MagicMock(side_effect=RuntimeError("conn lost"))
+        result = await _select_category_for_topic("AI Software Engineering", db)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_invalid_requested_category_falls_through_to_keyword(self):
+        db = MagicMock()
+        conn = AsyncMock()
+        # Sequence: requested lookup returns None, matched lookup returns id
+        conn.fetchval = AsyncMock(side_effect=[None, "cat-eng-uuid"])
+        cm = AsyncMock()
+        cm.__aenter__ = AsyncMock(return_value=conn)
+        cm.__aexit__ = AsyncMock(return_value=False)
+        db.pool = MagicMock()
+        db.pool.acquire = MagicMock(return_value=cm)
+
+        result = await _select_category_for_topic(
+            "monorepo migration architecture",
+            db,
+            requested_category="nonexistent-slug",
+        )
+        # Falls back to keyword match — engineering wins
+        assert result == "cat-eng-uuid"
+
+
+# ---------------------------------------------------------------------------
+# _get_or_create_default_author
+# ---------------------------------------------------------------------------
+
+
+class TestGetOrCreateDefaultAuthor:
+    @pytest.mark.asyncio
+    async def test_returns_existing_author_id(self):
+        db = MagicMock()
+        conn = AsyncMock()
+        conn.fetchval = AsyncMock(return_value="existing-author-uuid")
+        cm = AsyncMock()
+        cm.__aenter__ = AsyncMock(return_value=conn)
+        cm.__aexit__ = AsyncMock(return_value=False)
+        db.pool = MagicMock()
+        db.pool.acquire = MagicMock(return_value=cm)
+
+        result = await _get_or_create_default_author(db)
+        assert result == "existing-author-uuid"
+        # Only one fetchval call (the SELECT)
+        assert conn.fetchval.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_creates_when_missing(self):
+        db = MagicMock()
+        conn = AsyncMock()
+        # First call (SELECT) returns None, second call (INSERT RETURNING) returns id
+        conn.fetchval = AsyncMock(side_effect=[None, "newly-created-uuid"])
+        cm = AsyncMock()
+        cm.__aenter__ = AsyncMock(return_value=conn)
+        cm.__aexit__ = AsyncMock(return_value=False)
+        db.pool = MagicMock()
+        db.pool.acquire = MagicMock(return_value=cm)
+
+        result = await _get_or_create_default_author(db)
+        assert result == "newly-created-uuid"
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_any_author_when_insert_returns_none(self):
+        """ON CONFLICT DO NOTHING returns NULL when row exists; falls back to SELECT LIMIT 1."""
+        db = MagicMock()
+        conn = AsyncMock()
+        # SELECT poindexter -> None, INSERT -> None (race), SELECT LIMIT 1 -> fallback id
+        conn.fetchval = AsyncMock(side_effect=[None, None, "any-author-uuid"])
+        cm = AsyncMock()
+        cm.__aenter__ = AsyncMock(return_value=conn)
+        cm.__aexit__ = AsyncMock(return_value=False)
+        db.pool = MagicMock()
+        db.pool.acquire = MagicMock(return_value=cm)
+
+        result = await _get_or_create_default_author(db)
+        assert result == "any-author-uuid"
+
+    @pytest.mark.asyncio
+    async def test_db_exception_returns_none(self):
+        db = MagicMock()
+        db.pool = MagicMock()
+        db.pool.acquire = MagicMock(side_effect=RuntimeError("conn lost"))
+        result = await _get_or_create_default_author(db)
+        assert result is None
