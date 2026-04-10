@@ -83,7 +83,18 @@ class WebResearcher:
                 return results
 
             loop = asyncio.get_event_loop()
-            raw = await loop.run_in_executor(None, _search)
+            # Hard cap: DDG sometimes hangs or rate-limits silently.
+            # asyncio.wait_for guarantees the pipeline won't stall on search.
+            try:
+                raw = await asyncio.wait_for(
+                    loop.run_in_executor(None, _search), timeout=20
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "[RESEARCH] DuckDuckGo search timed out after 20s for: %s",
+                    query[:50],
+                )
+                return []
 
             return [
                 {
@@ -105,10 +116,17 @@ class WebResearcher:
             return ""
 
         try:
-            async with httpx.AsyncClient(timeout=FETCH_TIMEOUT, follow_redirects=True) as client:
-                resp = await client.get(url, headers={
-                    "User-Agent": "Mozilla/5.0 (compatible; ContentResearcher/1.0)",
-                })
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(FETCH_TIMEOUT, connect=3.0),
+                follow_redirects=True,
+            ) as client:
+                resp = await client.get(
+                    url,
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (compatible; ContentResearcher/1.0)",
+                    },
+                    timeout=FETCH_TIMEOUT,
+                )
                 if resp.status_code != 200:
                     return ""
 

@@ -84,12 +84,17 @@ async def _ping_search_engines(site_url: str, post_url: str) -> None:
     """Notify search engines about new content via IndexNow and Google ping."""
     import httpx
 
-    async with httpx.AsyncClient(timeout=10) as client:
+    # Tight caps on external SEO pings — they're fire-and-forget, we don't
+    # want them to delay anything else if the target is slow.
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(10.0, connect=3.0)
+    ) as client:
         # IndexNow (Bing, Yandex, Naver, Seznam)
         try:
             await client.get(
                 "https://api.indexnow.org/indexnow",
                 params={"url": post_url, "key": "gladlabs"},
+                timeout=10,
             )
             logger.info("[SEO] IndexNow ping sent for %s", post_url)
         except Exception as e:
@@ -100,6 +105,7 @@ async def _ping_search_engines(site_url: str, post_url: str) -> None:
             await client.get(
                 "https://www.google.com/ping",
                 params={"sitemap": f"{site_url}/sitemap.xml"},
+                timeout=10,
             )
             logger.info("[SEO] Google sitemap ping sent")
         except Exception as e:

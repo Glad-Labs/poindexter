@@ -125,8 +125,12 @@ class OllamaAdapter(ProviderAdapter):
                     f"{self.host}/api/tags", timeout=3.0
                 )
             except Exception:
-                # Shared client may be closed — create a fresh one
-                async with httpx.AsyncClient() as client:
+                # Shared client may be closed — create a fresh one.
+                # Explicit client-level timeout so a hung connect can't block
+                # health checks even if the per-call timeout is missed.
+                async with httpx.AsyncClient(
+                    timeout=httpx.Timeout(3.0, connect=2.0)
+                ) as client:
                     response = await client.get(
                         f"{self.host}/api/tags", timeout=3.0
                     )
