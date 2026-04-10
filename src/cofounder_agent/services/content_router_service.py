@@ -732,6 +732,11 @@ async def _stage_generate_content(
     except Exception as e:
         logger.warning("RAG context skipped (non-fatal): %s", e)
 
+    # Capture the research corpus on the result so the multi-model QA stage
+    # (Stage 3.5) can ground its fact-checking against the same sources the
+    # writer consulted. Without this the critic relies on stale training data.
+    result["research_context"] = research_context
+
     from services.gpu_scheduler import gpu
     async with gpu.lock("ollama", model=preferred_model):
         content_text, model_used, metrics = await content_generator.generate_blog_post(
@@ -1625,12 +1630,18 @@ async def _stage_finalize_task(
     content_text = _normalize_text(content_text)
 
     # 🔑 CRITICAL: Store featured_image_url and all other metadata so approval endpoint can find it
+    # quality_score: prefer the multi-model QA score (already promoted into
+    # result["quality_score"] when QA ran). Fall back to the early pattern eval
+    # only when QA is disabled or timed out.
+    final_quality_score = int(round(float(
+        result.get("quality_score") or quality_result.overall_score
+    )))
     await database_service.update_task(
         task_id=task_id,
         updates={
             "status": "awaiting_approval",
             "approval_status": "pending",
-            "quality_score": int(quality_result.overall_score),
+            "quality_score": final_quality_score,
             "featured_image_url": result.get("featured_image_url"),
             "seo_title": seo_title,
             "seo_description": seo_description,
@@ -1657,7 +1668,9 @@ async def _stage_finalize_task(
                 "category": result.get("category") or category,
                 "target_audience": target_audience or "General",
                 "post_id": result.get("post_id"),
-                "quality_score": quality_result.overall_score,
+                "quality_score": final_quality_score,
+                "quality_score_early_eval": quality_result.overall_score,
+                "qa_final_score": result.get("qa_final_score"),
                 "content_length": len(content_text),
                 "word_count": len(content_text.split()),
                 # Media scripts from Stage 4B
@@ -1850,6 +1863,7 @@ async def process_content_generation_task(
                     title=_normalize_text(result.get("seo_title", topic)),
                     content=_normalize_text(content_text),
                     topic=topic,
+                    research_sources=result.get("research_context"),
                 ),
                 "cross_model_qa", task_id,
             )
@@ -1860,6 +1874,15 @@ async def process_content_generation_task(
                                          "feedback": "QA stage timed out — skipped", "provider": "none"}]
             else:
                 result["qa_final_score"] = _qa_result.final_score
+                # Promote the multi-model QA score to the canonical quality_score that
+                # downstream gates (task_executor auto-curation, finalize_task DB write)
+                # read. The early pattern-based eval is too pessimistic on its own — it
+                # was rejecting posts the LLM critics scored 90+. Take the max so we
+                # never go backwards.
+                result["quality_score"] = max(
+                    float(result.get("quality_score", 0) or 0),
+                    float(_qa_result.final_score),
+                )
                 result["qa_reviews"] = [
                     {"reviewer": r.reviewer, "score": r.score, "approved": r.approved,
                      "feedback": r.feedback, "provider": r.provider}

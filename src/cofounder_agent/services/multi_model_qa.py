@@ -21,6 +21,7 @@ Usage:
 
 from services.logger_config import get_logger
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from services.content_validator import validate_content, ValidationResult
@@ -61,10 +62,12 @@ class MultiModelResult:
 
 QA_PROMPT = """Review this blog post for publication readiness. Be critical but fair.
 
+TODAY'S DATE: {current_date}
+
 TITLE: {title}
 TOPIC: {topic}
 
----CONTENT---
+{sources_block}---CONTENT---
 {content}
 ---END---
 
@@ -73,6 +76,44 @@ Evaluate:
 2. Is the writing clear, engaging, and well-structured?
 3. Are there any hallucinated people, statistics, or quotes?
 4. Would this be valuable to the target audience (developers and founders)?
+
+IMPORTANT — handling claims about products or events you do not recognize:
+Your training data has a cutoff. The article may discuss hardware, software,
+or events that were released or happened after your cutoff but before today's
+date above. If you encounter a specific product, version, framework, or event
+you do not recognize:
+
+  - Do NOT automatically reject it as fabricated just because you lack knowledge.
+    "I have not heard of this" is not the same as "this does not exist."
+  - Do NOT automatically accept it either. Unknown-to-you is not a free pass.
+  - Distinguish suspicious from merely unknown. Reject when claims are internally
+    contradictory, suspiciously specific (fake-looking statistics, invented quotes
+    attributed to real people, made-up studies with impossible citations),
+    or physically/logically impossible. Flag as "uncertain — cannot verify"
+    when the claim is plausible given the date but outside your knowledge,
+    and lower the score modestly for unverifiable specifics rather than rejecting.
+  - Always reject fabricated people, fake statistics, and invented quotes,
+    regardless of date.
+
+HOW TO USE THE SOURCES SECTION (if present above):
+The SOURCES block contains the research corpus the writer consulted while
+drafting this post — real links, pulled excerpts, and internal reference
+material. Treat it as the authoritative ground truth for this specific
+article. When you encounter a factual claim in the content:
+
+  - If the claim appears in or is supported by the SOURCES, it is grounded.
+    Accept it even if it falls outside your training knowledge.
+  - If the claim does NOT appear in the SOURCES and is also outside your
+    knowledge, flag it as "unverified — not backed by provided research"
+    and lower the score modestly. Do not reject outright unless the claim
+    is implausible.
+  - If the claim contradicts the SOURCES, that is a hard rejection.
+  - A claim that is well-established common knowledge (e.g., "HTTP uses
+    status codes", "Postgres supports JSONB") does not need to appear in
+    the SOURCES to be accepted.
+
+If the SOURCES block is absent, fall back to your training knowledge with
+the cutoff caveats above.
 
 Respond with ONLY valid JSON:
 {{"approved": true/false, "quality_score": NUMBER 0-100, "feedback": "2-3 sentences"}}
@@ -93,9 +134,25 @@ class MultiModelQA:
         self.settings = settings_service
         self.router = get_model_router()
 
-    async def review(self, title: str, content: str, topic: str = "") -> MultiModelResult:
+    async def review(
+        self,
+        title: str,
+        content: str,
+        topic: str = "",
+        research_sources: Optional[str] = None,
+    ) -> MultiModelResult:
         """
         Run content through multiple reviewers and aggregate results.
+
+        Args:
+            title: Post title
+            content: Post body
+            topic: Original topic (used for context)
+            research_sources: Optional research corpus the writer consulted.
+                When provided, the critic grounds factual claims against this
+                corpus instead of relying solely on its own (possibly stale)
+                training data. Pass the same research_context string produced
+                by ResearchService.build_context() during generation.
 
         Returns MultiModelResult with approval decision and individual reviews.
         """
@@ -128,7 +185,11 @@ class MultiModelQA:
         if self.settings:
             critic_model = await self.settings.get("pipeline_critic_model")
         qa_cost_log = None
-        cross_result = await self._review_with_cloud_model(title, content, topic, model_override=critic_model)
+        cross_result = await self._review_with_cloud_model(
+            title, content, topic,
+            model_override=critic_model,
+            research_sources=research_sources,
+        )
         critic_skipped = False
         if cross_result:
             cross_review, qa_cost_log = cross_result
@@ -176,11 +237,18 @@ class MultiModelQA:
         return result
 
     async def _review_with_cloud_model(
-        self, title: str, content: str, topic: str, model_override: Optional[str] = None,
+        self,
+        title: str,
+        content: str,
+        topic: str,
+        model_override: Optional[str] = None,
+        research_sources: Optional[str] = None,
     ):
         """Review content using local Ollama. Paid cloud APIs removed (Ollama-only policy)."""
         # Try Ollama (free, local)
-        ollama_result = await self._review_with_ollama(title, content, topic, model_override)
+        ollama_result = await self._review_with_ollama(
+            title, content, topic, model_override, research_sources=research_sources,
+        )
         if ollama_result is not None:
             return ollama_result
 
@@ -188,7 +256,11 @@ class MultiModelQA:
         fallback_model = "gemma3:27b"
         if model_override != fallback_model:
             logger.info("[MULTI_QA] Primary critic failed, trying fallback model: %s", fallback_model)
-            fallback_result = await self._review_with_ollama(title, content, topic, model_override=fallback_model)
+            fallback_result = await self._review_with_ollama(
+                title, content, topic,
+                model_override=fallback_model,
+                research_sources=research_sources,
+            )
             if fallback_result is not None:
                 return fallback_result
 
@@ -196,7 +268,12 @@ class MultiModelQA:
         return None
 
     async def _review_with_ollama(
-        self, title: str, content: str, topic: str, model_override: Optional[str] = None,
+        self,
+        title: str,
+        content: str,
+        topic: str,
+        model_override: Optional[str] = None,
+        research_sources: Optional[str] = None,
     ) -> Optional[ReviewerResult]:
         """Review content using local Ollama (zero cost).
 
@@ -219,10 +296,24 @@ class MultiModelQA:
                 await client.close()
                 return None
 
+            # Build the sources block if the caller passed a research corpus.
+            # Cap it at 4000 chars so it doesn't dwarf the content in the prompt.
+            sources_block = ""
+            if research_sources:
+                trimmed = research_sources.strip()
+                if len(trimmed) > 4000:
+                    trimmed = trimmed[:4000] + "\n\n[...truncated for prompt length...]"
+                sources_block = (
+                    f"---SOURCES (research corpus the writer consulted)---\n"
+                    f"{trimmed}\n"
+                    f"---END SOURCES---\n\n"
+                )
             prompt = QA_PROMPT.format(
                 title=title,
                 topic=topic or title,
                 content=content[:8000],
+                current_date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+                sources_block=sources_block,
             )
 
             # Model and token limits configurable via app_settings

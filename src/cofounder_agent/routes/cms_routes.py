@@ -393,7 +393,7 @@ article pre{{background:#1e293b;padding:16px;border-radius:8px;overflow-x:auto;b
 article blockquote{{border-left:3px solid #22d3ee55;background:#1e293b44;padding:8px 16px;margin:16px 0;border-radius:0 8px 8px 0}}
 article ul,article ol{{padding-left:24px}}
 article li{{margin:4px 0}}
-article img{{max-width:100%;border-radius:8px;margin:12px 0}}
+article img{{max-width:100%;height:auto;aspect-ratio:auto;border-radius:8px;margin:12px 0}}
 .approve{{margin:24px 0;padding:16px;background:#1e293b;border-radius:12px;text-align:center}}
 .approve a{{display:inline-block;padding:12px 32px;background:#22c55e;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;font-size:16px}}
 </style></head><body>
