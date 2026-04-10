@@ -18,7 +18,7 @@
       "title": "Views",
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "gridPos": {
         "h": 3,
@@ -52,7 +52,7 @@
         {
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "format": "table",
           "rawQuery": true,
@@ -67,7 +67,7 @@
       "title": "With Views",
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "gridPos": {
         "h": 3,
@@ -101,7 +101,7 @@
         {
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "format": "table",
           "rawQuery": true,
@@ -116,7 +116,7 @@
       "title": "Subscribers",
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "gridPos": {
         "h": 3,
@@ -150,7 +150,7 @@
         {
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "format": "table",
           "rawQuery": true,
@@ -165,7 +165,7 @@
       "title": "Affiliates",
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "gridPos": {
         "h": 3,
@@ -199,7 +199,7 @@
         {
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "format": "table",
           "rawQuery": true,
@@ -214,7 +214,7 @@
       "title": "Top Posts",
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "gridPos": {
         "h": 8,
@@ -239,7 +239,7 @@
         {
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "format": "table",
           "rawQuery": true,
@@ -254,7 +254,7 @@
       "title": "Categories",
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "gridPos": {
         "h": 8,
@@ -279,7 +279,7 @@
         {
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "format": "table",
           "rawQuery": true,
@@ -294,7 +294,7 @@
       "title": "Raw Views",
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "gridPos": {
         "h": 8,
@@ -319,7 +319,7 @@
         {
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "format": "table",
           "rawQuery": true,

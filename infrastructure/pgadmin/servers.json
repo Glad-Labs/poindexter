@@ -9,17 +9,6 @@
       "Username": "gladlabs",
       "SSLMode": "prefer",
       "PassFile": "/tmp/pgpass"
-    },
-    "2": {
-      "Name": "Railway (Production)",
-      "Group": "Glad Labs",
-      "Host": "hopper.proxy.rlwy.net",
-      "Port": 32382,
-      "MaintenanceDB": "railway",
-      "Username": "postgres",
-      "SSLMode": "prefer",
-      "PassFile": "/tmp/pgpass",
-      "_note": "Password loaded from pgpass file (not committed to git)"
     }
   }
 }
