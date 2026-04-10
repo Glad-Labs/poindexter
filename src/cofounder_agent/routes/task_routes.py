@@ -93,6 +93,61 @@ router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
 
 @router.post(
+    "/discover-topics",
+    response_model=Dict[str, Any],
+    summary="Trigger topic discovery on demand and optionally queue the results",
+    status_code=200,
+)
+@limiter.limit("10/minute")
+async def discover_topics(
+    request: Request,
+    max_topics: int = Query(5, ge=1, le=20),
+    queue: bool = Query(True, description="Queue fresh topics as content tasks"),
+    token: str = Depends(verify_api_token),
+    db_service: DatabaseService = Depends(get_database_dependency),
+):
+    """Run TopicDiscovery on demand instead of waiting for the 8-hour idle cycle.
+
+    Returns the list of discovered topics with a duplicate flag for each.
+    When `queue=true` (default), fresh topics are immediately inserted as
+    pending content_tasks so the executor picks them up on its next poll.
+    """
+    try:
+        from services.topic_discovery import TopicDiscovery
+
+        pool = db_service.pool
+        if not pool:
+            raise HTTPException(status_code=503, detail="Database pool unavailable")
+        discovery = TopicDiscovery(pool)
+        topics = await discovery.discover(max_topics=max_topics)
+        fresh = [t for t in topics if not getattr(t, "is_duplicate", False)]
+
+        queued_count = 0
+        if queue and fresh:
+            queued_count = await discovery.queue_topics(fresh)
+
+        return {
+            "discovered": len(topics),
+            "fresh": len(fresh),
+            "queued": queued_count,
+            "topics": [
+                {
+                    "title": t.title,
+                    "source": getattr(t, "source", None),
+                    "score": getattr(t, "score", None),
+                    "is_duplicate": getattr(t, "is_duplicate", False),
+                }
+                for t in topics
+            ],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Topic discovery failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Topic discovery failed: {e}") from e
+
+
+@router.post(
     "",
     response_model=Dict[str, Any],
     summary="Create task - unified endpoint for all task types",
