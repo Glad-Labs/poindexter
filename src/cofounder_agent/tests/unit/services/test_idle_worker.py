@@ -529,3 +529,359 @@ class TestIdleWorkerInit:
         assert worker.pool is pool
         assert worker._last_run == {}
         assert worker._schedules_loaded is False
+
+
+# ===========================================================================
+# _audit_published_quality
+# ===========================================================================
+
+
+class TestAuditPublishedQuality:
+    @pytest.mark.asyncio
+    async def test_no_posts_returns_audited_zero(self):
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=[])
+        worker = IdleWorker(pool)
+        result = await worker._audit_published_quality()
+        assert result["audited"] == 0
+
+    @pytest.mark.asyncio
+    async def test_short_post_creates_issue(self):
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=[
+            {
+                "id": "p1", "title": "Short post",
+                "slug": "short-post",
+                "content_preview": "## Heading\nOnly a few words.",
+            }
+        ])
+        worker = IdleWorker(pool)
+        worker._create_gitea_issue = AsyncMock(return_value=True)
+
+        result = await worker._audit_published_quality()
+        assert result["audited"] == 1
+        # The issue creation was called because word count is well under 500
+        worker._create_gitea_issue.assert_awaited_once()
+        assert any("only" in i and "words" in i for i in result["issues"])
+
+    @pytest.mark.asyncio
+    async def test_post_without_headings_creates_issue(self):
+        pool = AsyncMock()
+        # Pad to 600 words so word count check passes
+        long_text = "word " * 600
+        pool.fetch = AsyncMock(return_value=[
+            {
+                "id": "p2", "title": "No headings",
+                "slug": "no-headings",
+                "content_preview": long_text,
+            }
+        ])
+        worker = IdleWorker(pool)
+        worker._create_gitea_issue = AsyncMock(return_value=True)
+
+        result = await worker._audit_published_quality()
+        assert any("no headings" in i for i in result["issues"])
+
+    @pytest.mark.asyncio
+    async def test_good_post_no_issues(self):
+        long_with_heading = "## Section\n\n" + ("word " * 600)
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=[
+            {"id": "p3", "title": "Good post", "slug": "good", "content_preview": long_with_heading}
+        ])
+        worker = IdleWorker(pool)
+        worker._create_gitea_issue = AsyncMock()
+
+        result = await worker._audit_published_quality()
+        assert result["audited"] == 1
+        assert result["issues"] == []
+        worker._create_gitea_issue.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_db_exception_returns_error(self):
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(side_effect=RuntimeError("db down"))
+        worker = IdleWorker(pool)
+        result = await worker._audit_published_quality()
+        assert "error" in result
+
+
+# ===========================================================================
+# _check_published_links
+# ===========================================================================
+
+
+class TestCheckPublishedLinks:
+    @pytest.mark.asyncio
+    async def test_no_external_urls_no_issues(self):
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=[
+            {"id": "p1", "title": "Plain", "content": "No links here."},
+        ])
+        worker = IdleWorker(pool)
+        worker._create_gitea_issue = AsyncMock()
+
+        result = await worker._check_published_links()
+        assert result["checked"] == 0
+        assert result["broken"] == 0
+        worker._create_gitea_issue.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_internal_links_skipped(self):
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=[
+            {"id": "p1", "title": "Internal", "content": "See https://gladlabs.io/posts/x"},
+        ])
+        worker = IdleWorker(pool)
+        worker._create_gitea_issue = AsyncMock()
+
+        with patch("services.idle_worker.site_config") as mock_sc:
+            mock_sc.get.return_value = "gladlabs.io"
+            result = await worker._check_published_links()
+        # Internal URL was skipped, nothing was checked
+        assert result["checked"] == 0
+
+    @pytest.mark.asyncio
+    async def test_broken_link_creates_issue(self):
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=[
+            {"id": "p1", "title": "Has bad link",
+             "content": "Read more at https://example.com/dead"},
+        ])
+        worker = IdleWorker(pool)
+        worker._create_gitea_issue = AsyncMock(return_value=True)
+
+        bad_resp = MagicMock()
+        bad_resp.status_code = 404
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.head = AsyncMock(return_value=bad_resp)
+
+        with patch("services.idle_worker.site_config") as mock_sc, \
+             patch("httpx.AsyncClient", return_value=mock_client):
+            mock_sc.get.return_value = "gladlabs.io"
+            result = await worker._check_published_links()
+
+        assert result["broken"] == 1
+        worker._create_gitea_issue.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_unreachable_link_marked_broken(self):
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=[
+            {"id": "p1", "title": "Bad", "content": "Visit https://example.com/x"},
+        ])
+        worker = IdleWorker(pool)
+        worker._create_gitea_issue = AsyncMock()
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.head = AsyncMock(side_effect=RuntimeError("connection failed"))
+
+        with patch("services.idle_worker.site_config") as mock_sc, \
+             patch("httpx.AsyncClient", return_value=mock_client):
+            mock_sc.get.return_value = "gladlabs.io"
+            result = await worker._check_published_links()
+
+        assert result["broken"] == 1
+        # Status was 'unreachable' for the broken url
+        assert any(d["status"] == "unreachable" for d in result["details"])
+
+    @pytest.mark.asyncio
+    async def test_good_link_no_issue(self):
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=[
+            {"id": "p1", "title": "Good", "content": "Read https://example.com/page"},
+        ])
+        worker = IdleWorker(pool)
+        worker._create_gitea_issue = AsyncMock()
+
+        good_resp = MagicMock()
+        good_resp.status_code = 200
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.head = AsyncMock(return_value=good_resp)
+
+        with patch("services.idle_worker.site_config") as mock_sc, \
+             patch("httpx.AsyncClient", return_value=mock_client):
+            mock_sc.get.return_value = "gladlabs.io"
+            result = await worker._check_published_links()
+
+        assert result["checked"] == 1
+        assert result["broken"] == 0
+        worker._create_gitea_issue.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_db_exception_returns_error(self):
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(side_effect=RuntimeError("db down"))
+        worker = IdleWorker(pool)
+        result = await worker._check_published_links()
+        assert "error" in result
+
+
+# ===========================================================================
+# _refresh_stale_embeddings
+# ===========================================================================
+
+
+class TestRefreshStaleEmbeddings:
+    @pytest.mark.asyncio
+    async def test_no_local_db_url_returns_note(self):
+        worker = IdleWorker(AsyncMock())
+        with patch("services.idle_worker.site_config") as mock_sc:
+            mock_sc.get.return_value = None
+            # The function does its own import-from inside, so need to ensure
+            # site_config.get returns None
+            result = await worker._refresh_stale_embeddings()
+        assert "note" in result
+
+    @pytest.mark.asyncio
+    async def test_with_local_db_url_returns_deferred(self):
+        worker = IdleWorker(AsyncMock())
+        # Patch the source module — function does a local import
+        with patch("services.site_config.site_config") as mock_sc:
+            mock_sc.get.return_value = "postgresql://local"
+            result = await worker._refresh_stale_embeddings()
+        assert "note" in result
+        assert "deferred" in result["note"]
+
+
+# ===========================================================================
+# _discover_and_queue_topics
+# ===========================================================================
+
+
+class TestDiscoverAndQueueTopics:
+    @pytest.mark.asyncio
+    async def test_no_topics_found(self):
+        worker = IdleWorker(AsyncMock())
+        fake_discovery = MagicMock()
+        fake_discovery.discover = AsyncMock(return_value=[])
+        fake_discovery.queue_topics = AsyncMock()
+
+        with patch("services.topic_discovery.TopicDiscovery", return_value=fake_discovery):
+            result = await worker._discover_and_queue_topics()
+
+        assert result["discovered"] == 0
+        assert result["queued"] == 0
+        fake_discovery.queue_topics.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_topics_discovered_and_queued(self):
+        worker = IdleWorker(AsyncMock())
+        fake_topic = MagicMock()
+        fake_topic.title = "Some Trending Topic in AI"
+
+        fake_discovery = MagicMock()
+        fake_discovery.discover = AsyncMock(return_value=[fake_topic, fake_topic])
+        fake_discovery.queue_topics = AsyncMock(return_value=2)
+
+        with patch("services.topic_discovery.TopicDiscovery", return_value=fake_discovery):
+            result = await worker._discover_and_queue_topics()
+
+        assert result["discovered"] == 2
+        assert result["queued"] == 2
+        assert len(result["topics"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_discovery_exception_returns_error(self):
+        worker = IdleWorker(AsyncMock())
+        fake_discovery = MagicMock()
+        fake_discovery.discover = AsyncMock(side_effect=RuntimeError("hn down"))
+
+        with patch("services.topic_discovery.TopicDiscovery", return_value=fake_discovery):
+            result = await worker._discover_and_queue_topics()
+        assert "error" in result
+
+
+# ===========================================================================
+# _sync_shared_context + _auto_embed_posts (subprocess wrappers)
+# ===========================================================================
+
+
+class TestSubprocessWrappers:
+    @pytest.mark.asyncio
+    async def test_sync_shared_context_success(self):
+        worker = IdleWorker(AsyncMock())
+
+        fake_proc = MagicMock()
+        fake_proc.returncode = 0
+        fake_proc.communicate = AsyncMock(return_value=(b"sync ok", b""))
+
+        with patch("services.idle_worker.site_config") as mock_sc, \
+             patch("asyncio.create_subprocess_exec", AsyncMock(return_value=fake_proc)):
+            mock_sc.get.return_value = "/app"
+            result = await worker._sync_shared_context()
+
+        assert result["ok"] is True
+        assert "sync ok" in result["output"]
+
+    @pytest.mark.asyncio
+    async def test_sync_shared_context_subprocess_failure(self):
+        worker = IdleWorker(AsyncMock())
+
+        fake_proc = MagicMock()
+        fake_proc.returncode = 1
+        fake_proc.communicate = AsyncMock(return_value=(b"oops", b""))
+
+        with patch("services.idle_worker.site_config") as mock_sc, \
+             patch("asyncio.create_subprocess_exec", AsyncMock(return_value=fake_proc)):
+            mock_sc.get.return_value = "/app"
+            result = await worker._sync_shared_context()
+
+        assert result["ok"] is False
+
+    @pytest.mark.asyncio
+    async def test_sync_shared_context_exception(self):
+        worker = IdleWorker(AsyncMock())
+        with patch("services.idle_worker.site_config") as mock_sc, \
+             patch("asyncio.create_subprocess_exec", AsyncMock(side_effect=FileNotFoundError("python"))):
+            mock_sc.get.return_value = "/app"
+            result = await worker._sync_shared_context()
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_auto_embed_posts_success(self):
+        worker = IdleWorker(AsyncMock())
+
+        fake_proc = MagicMock()
+        fake_proc.returncode = 0
+        fake_proc.communicate = AsyncMock(return_value=(b"embedded 5 posts", b""))
+
+        with patch("services.idle_worker.site_config") as mock_sc, \
+             patch("asyncio.create_subprocess_exec", AsyncMock(return_value=fake_proc)):
+            mock_sc.get.return_value = "/app"
+            result = await worker._auto_embed_posts()
+
+        assert result["ok"] is True
+
+    @pytest.mark.asyncio
+    async def test_auto_embed_posts_exception(self):
+        worker = IdleWorker(AsyncMock())
+        with patch("services.idle_worker.site_config") as mock_sc, \
+             patch("asyncio.create_subprocess_exec", AsyncMock(side_effect=RuntimeError("boom"))):
+            mock_sc.get.return_value = "/app"
+            result = await worker._auto_embed_posts()
+        assert "error" in result
+
+
+# ===========================================================================
+# _sync_page_views
+# ===========================================================================
+
+
+class TestSyncPageViews:
+    @pytest.mark.asyncio
+    async def test_no_database_url_returns_note(self, monkeypatch):
+        pool = AsyncMock()
+        worker = IdleWorker(pool)
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        result = await worker._sync_page_views()
+        assert "note" in result
+        assert "no DATABASE_URL" in result["note"]
