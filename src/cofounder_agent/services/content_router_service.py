@@ -988,7 +988,9 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
     for num, desc in image_placeholders:
         search_query = desc.strip() if desc else topic
         alt_text = desc.strip() if desc else f"{topic} illustration"
-        alt_text = alt_text.replace("[", "").replace("]", "").replace("\n", " ")[:120]
+        alt_text = alt_text.replace("[", "").replace("]", "").replace("\n", " ")[:150]
+        # Clean common LLM artifacts from alt text
+        alt_text = _re.sub(r'^(?:IMAGE|FIGURE|Image|Figure)\s*[-:]\s*', '', alt_text).strip()
         image_replaced = False
 
         # Strategy 1: SDXL generation (unique, on-topic images)
@@ -1082,7 +1084,11 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
 
                     if img_url not in used_image_ids:
                         used_image_ids.add(img_url)
-                        markdown_img = f"\n\n![{alt_text}]({img_url})\n\n"
+                        # Use HTML img tag for SEO attributes (width, height, loading)
+                        markdown_img = (
+                            f'\n\n<img src="{img_url}" alt="{alt_text}" '
+                            f'width="1024" height="1024" loading="lazy" />\n\n'
+                        )
                         content_text = _re.sub(
                             rf"\[IMAGE-{num}[^\]]*\]", markdown_img, content_text, count=1
                         )
@@ -1106,7 +1112,9 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
                     used_image_ids.add(img.url)
                     photographer = getattr(img, "photographer", "Pexels")
                     markdown_img = (
-                        f"\n\n![{alt_text}]({img.url})\n*Photo by {photographer} on Pexels*\n\n"
+                        f'\n\n<img src="{img.url}" alt="{alt_text}" '
+                        f'width="650" height="433" loading="lazy" />\n'
+                        f'<figcaption>Photo by {photographer} on Pexels</figcaption>\n\n'
                     )
                     content_text = _re.sub(
                         rf"\[IMAGE-{num}[^\]]*\]", markdown_img, content_text, count=1
@@ -1307,6 +1315,9 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
                     source="sdxl_cloudinary" if "cloudinary" in image_url else "sdxl_local",
                 )
                 result["featured_image_url"] = image_url
+                result["featured_image_alt"] = f"{topic} — AI generated illustration"[:200]
+                result["featured_image_width"] = 1024
+                result["featured_image_height"] = 1024
                 result["featured_image_photographer"] = "AI Generated (SDXL)"
                 result["featured_image_source"] = featured_image.source
                 result["stages"]["3_featured_image_found"] = True
@@ -1324,6 +1335,9 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
         )
         if featured_image:
             result["featured_image_url"] = featured_image.url
+            result["featured_image_alt"] = f"{topic} — Photo by {featured_image.photographer} on Pexels"[:200]
+            result["featured_image_width"] = getattr(featured_image, "width", 650)
+            result["featured_image_height"] = getattr(featured_image, "height", 433)
             result["featured_image_photographer"] = featured_image.photographer
             result["featured_image_source"] = featured_image.source
             result["stages"]["3_featured_image_found"] = True
@@ -1628,6 +1642,9 @@ async def _stage_finalize_task(
             # 🖼️ Store featured_image_url in task_metadata for later retrieval by approval endpoint
             "task_metadata": {
                 "featured_image_url": result.get("featured_image_url"),
+                "featured_image_alt": result.get("featured_image_alt", ""),
+                "featured_image_width": result.get("featured_image_width"),
+                "featured_image_height": result.get("featured_image_height"),
                 "featured_image_photographer": result.get("featured_image_photographer"),
                 "featured_image_source": result.get("featured_image_source"),
                 "content": content_text,
@@ -1965,6 +1982,9 @@ async def process_content_generation_task(
             failure_metadata = {
                 "content": result.get("content"),
                 "featured_image_url": result.get("featured_image_url"),
+                "featured_image_alt": result.get("featured_image_alt"),
+                "featured_image_width": result.get("featured_image_width"),
+                "featured_image_height": result.get("featured_image_height"),
                 "featured_image_photographer": result.get("featured_image_photographer"),
                 "featured_image_source": result.get("featured_image_source"),
                 "seo_title": result.get("seo_title"),
