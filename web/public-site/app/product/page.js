@@ -70,7 +70,7 @@ const PIPELINE_STEPS = [
     step: '05',
     title: 'Publish',
     description:
-      'Posts that pass quality gates auto-publish with SEO metadata, featured images, podcast episodes, and social posts. Static JSON pushed to any CDN.',
+      'Posts that pass quality gates publish with SEO metadata, AI-generated featured images, and podcast episodes. Static JSON pushed to any CDN.',
     icon: '/',
   },
 ];
@@ -117,7 +117,7 @@ const FEATURES = [
 const STATS = [
   { value: '$30', label: '/mo operating cost' },
   { value: '4,000+', label: 'tests passing' },
-  { value: '37+', label: 'posts published' },
+  { value: '25+', label: 'posts published' },
   { value: '0', label: 'cloud vendor lock-in' },
 ];
 

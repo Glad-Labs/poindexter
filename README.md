@@ -15,7 +15,7 @@ One engine that runs your entire content operation:
 4. **Reviews** every draft with multi-model QA scoring on 7 quality dimensions
 5. **Validates** against hallucinations — catches fake people, stats, quotes, and impossible claims
 6. **Publishes** to any frontend via static JSON export (push-only headless CMS)
-7. **Generates** podcast episodes, social posts, and video from each article
+7. **Generates** podcast episodes and AI images from each article
 8. **Monitors** itself with 7 Grafana dashboards, auto-heals via brain daemon
 
 Run it on your machine. Own your data. No cloud lock-in.
