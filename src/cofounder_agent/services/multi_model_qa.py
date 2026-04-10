@@ -367,19 +367,29 @@ class MultiModelQA:
 
         Uses gemma3:27b by default — strong at structured JSON output.
         """
+        import asyncio
         import json
         import re
 
         try:
             from services.ollama_client import OllamaClient
 
-            client = OllamaClient()
+            # Explicit 90s timeout on the main critic — thinking models (glm-4.7,
+            # qwen3:30b) can legitimately take ~60s for a 1500-token review, so
+            # 90s gives headroom without risking a multi-minute hang.
+            client = OllamaClient(timeout=90)
             # Configure electricity rate from app_settings if available
             if self.settings:
                 rate = await self.settings.get("electricity_rate_kwh")
                 if rate:
                     client.configure_electricity(electricity_rate_kwh=float(rate))
-            if not await client.check_health():
+            try:
+                healthy = await asyncio.wait_for(client.check_health(), timeout=5)
+            except asyncio.TimeoutError:
+                logger.warning("[MULTI_QA] Ollama check_health timed out after 5s")
+                await client.close()
+                return None
+            if not healthy:
                 logger.debug("[MULTI_QA] Ollama not available, skipping local review")
                 await client.close()
                 return None
@@ -417,12 +427,23 @@ class MultiModelQA:
             ollama_model = (model_override or default_model).removeprefix("ollama/")
             is_thinking_model = any(t in ollama_model.lower() for t in ("qwen3.5", "glm-4.7", "qwen3:30b"))
             max_tok = thinking_max if is_thinking_model else standard_max
-            result = await client.generate(
-                prompt=prompt,
-                model=ollama_model,
-                temperature=temperature,
-                max_tokens=max_tok,
-            )
+            try:
+                result = await asyncio.wait_for(
+                    client.generate(
+                        prompt=prompt,
+                        model=ollama_model,
+                        temperature=temperature,
+                        max_tokens=max_tok,
+                    ),
+                    timeout=90,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "[MULTI_QA] Main critic %s timed out after 90s — skipping",
+                    ollama_model,
+                )
+                await client.close()
+                return None
             await client.close()
 
             text = result.get("text", "")
@@ -492,18 +513,29 @@ class MultiModelQA:
         if Ollama is unreachable or returns unparseable output — in that
         case the gate is silently skipped and does not block approval.
         """
+        import asyncio
         import json
         import re
 
         try:
             from services.ollama_client import OllamaClient
 
-            client = OllamaClient()
+            # 60s per gate — gates use shorter prompts (max_tokens=600) and
+            # should respond well under that even on the thinking critic.
+            client = OllamaClient(timeout=60)
             if self.settings:
                 rate = await self.settings.get("electricity_rate_kwh")
                 if rate:
                     client.configure_electricity(electricity_rate_kwh=float(rate))
-            if not await client.check_health():
+            try:
+                healthy = await asyncio.wait_for(client.check_health(), timeout=5)
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "[MULTI_QA] %s: Ollama health check timed out after 5s", reviewer_name
+                )
+                await client.close()
+                return None
+            if not healthy:
                 logger.debug("[MULTI_QA] Ollama not available, skipping %s", reviewer_name)
                 await client.close()
                 return None
@@ -519,12 +551,22 @@ class MultiModelQA:
                 )
             ollama_model = default_model.removeprefix("ollama/")
 
-            result = await client.generate(
-                prompt=prompt,
-                model=ollama_model,
-                temperature=temperature,
-                max_tokens=600,
-            )
+            try:
+                result = await asyncio.wait_for(
+                    client.generate(
+                        prompt=prompt,
+                        model=ollama_model,
+                        temperature=temperature,
+                        max_tokens=600,
+                    ),
+                    timeout=60,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "[MULTI_QA] %s timed out after 60s — gate skipped", reviewer_name
+                )
+                await client.close()
+                return None
             await client.close()
 
             text = result.get("text", "")
