@@ -1040,11 +1040,15 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
                 # Generate the image with GPU lock
                 neg = "text, words, letters, watermark, face, person, hands, blurry, low quality, distorted, ugly, deformed"
                 async with _gpu.lock("sdxl", model="sdxl_lightning"):
-                    async with _hx2.AsyncClient(timeout=120) as _c3:
-                        _ir = await _c3.post(f"{sdxl_url}/generate", json={
-                            "prompt": sdxl_inline_prompt, "negative_prompt": neg,
-                            "steps": 8, "guidance_scale": 2.0,
-                        })
+                    async with _hx2.AsyncClient(timeout=_hx2.Timeout(60.0, connect=5.0)) as _c3:
+                        _ir = await _c3.post(
+                            f"{sdxl_url}/generate",
+                            json={
+                                "prompt": sdxl_inline_prompt, "negative_prompt": neg,
+                                "steps": 8, "guidance_scale": 2.0,
+                            },
+                            timeout=60,
+                        )
                 if _ir.status_code == 200:
                     # SDXL server returns JSON with image_path, or raw image bytes
                     ct = _ir.headers.get("content-type", "")
@@ -1258,11 +1262,17 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
             output_path = None
             async with gpu.lock("sdxl", model="sdxl_lightning"):
                 import httpx as _feat_hx
-                async with _feat_hx.AsyncClient(timeout=120) as _feat_client:
-                    _feat_resp = await _feat_client.post(f"{_feat_sdxl_url}/generate", json={
-                        "prompt": sdxl_prompt, "negative_prompt": negative,
-                        "steps": 8, "guidance_scale": 2.0,
-                    })
+                # 60s cap per SDXL request — Lightning generates in ~2s,
+                # leave headroom for cold load (~10s) and upload.
+                async with _feat_hx.AsyncClient(timeout=_feat_hx.Timeout(60.0, connect=5.0)) as _feat_client:
+                    _feat_resp = await _feat_client.post(
+                        f"{_feat_sdxl_url}/generate",
+                        json={
+                            "prompt": sdxl_prompt, "negative_prompt": negative,
+                            "steps": 8, "guidance_scale": 2.0,
+                        },
+                        timeout=60,
+                    )
 
             if _feat_resp.status_code == 200:
                 ct = _feat_resp.headers.get("content-type", "")

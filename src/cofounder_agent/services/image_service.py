@@ -781,13 +781,19 @@ class ImageService:
         sdxl_server_url = _sc.get("sdxl_server_url", "http://host.docker.internal:9836")
         try:
             import httpx
-            async with httpx.AsyncClient(timeout=120) as client:
-                resp = await client.post(f"{sdxl_server_url}/generate", json={
-                    "prompt": prompt,
-                    "negative_prompt": negative_prompt or "",
-                    "steps": num_inference_steps or 4,
-                    "guidance_scale": guidance_scale or 1.0,
-                })
+            # 60s per-call cap — Lightning generates in ~1-2s, cold-load
+            # takes ~10s, allow headroom for network latency and retries.
+            async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=5.0)) as client:
+                resp = await client.post(
+                    f"{sdxl_server_url}/generate",
+                    json={
+                        "prompt": prompt,
+                        "negative_prompt": negative_prompt or "",
+                        "steps": num_inference_steps or 4,
+                        "guidance_scale": guidance_scale or 1.0,
+                    },
+                    timeout=60,
+                )
                 if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image/"):
                     with open(output_path, "wb") as f:
                         f.write(resp.content)
