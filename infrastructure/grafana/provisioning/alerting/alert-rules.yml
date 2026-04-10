@@ -176,7 +176,7 @@ groups:
           team: glad-labs
         annotations:
           summary: "Brain database exceeds 1 GB"
-          description: "gladlabs_brain database size is {{ $values.B.Value }} GB. Consider archiving old data or increasing storage allocation."
+          description: "poindexter_brain database size is {{ $values.B.Value }} GB. Consider archiving old data or increasing storage allocation."
         data:
           - refId: A
             datasourceUid: local-brain-db
@@ -184,7 +184,7 @@ groups:
               from: 600
               to: 0
             model:
-              rawSql: "SELECT pg_database_size('gladlabs_brain') / (1024*1024*1024.0) as size_gb"
+              rawSql: "SELECT pg_database_size('poindexter_brain') / (1024*1024*1024.0) as size_gb"
               format: table
               editorMode: code
           - refId: B

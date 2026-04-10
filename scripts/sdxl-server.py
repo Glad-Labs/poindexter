@@ -2,7 +2,7 @@
 SDXL Image Generation Server — DB-driven, graceful-degradation HTTP service.
 
 Single host process, single GPU, multiple Docker callers reach it via
-host.docker.internal:9836. The choice of model lives in gladlabs_brain
+host.docker.internal:9836. The choice of model lives in poindexter_brain
 (app_settings.image_generation_model) so it can be changed in one place
 without touching env vars or restarting code.
 
@@ -37,12 +37,15 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-OUTPUT_DIR = Path(os.path.expanduser("~")) / ".gladlabs" / "generated-images"
+OUTPUT_DIR = Path(os.path.expanduser("~")) / ".poindexter" / "generated-images"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 HOST_DB_URL = os.getenv(
-    "GLADLABS_BRAIN_URL",
-    "postgresql://gladlabs:gladlabs-brain-local@localhost:5433/gladlabs_brain",
+    "POINDEXTER_BRAIN_URL",
+    os.getenv(
+        "GLADLABS_BRAIN_URL",
+        "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain",
+    ),
 )
 MODEL_SETTING_KEY = "image_generation_model"
 

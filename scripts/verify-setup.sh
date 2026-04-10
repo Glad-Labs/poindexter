@@ -81,9 +81,9 @@ echo ""
 info "2. PostgreSQL"
 # ============================================================
 
-PG_USER="${LOCAL_POSTGRES_USER:-gladlabs}"
-PG_PASS="${LOCAL_POSTGRES_PASSWORD:-gladlabs-brain-local}"
-PG_DB="${LOCAL_POSTGRES_DB:-gladlabs_brain}"
+PG_USER="${LOCAL_POSTGRES_USER:-poindexter}"
+PG_PASS="${LOCAL_POSTGRES_PASSWORD:-poindexter-brain-local}"
+PG_DB="${LOCAL_POSTGRES_DB:-poindexter_brain}"
 PG_HOST="localhost"
 PG_PORT="5433"
 

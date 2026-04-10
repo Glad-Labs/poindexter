@@ -32,8 +32,11 @@ import boto3
 import httpx
 
 DB_URL = os.getenv(
-    "GLADLABS_BRAIN_URL",
-    "postgresql://gladlabs:gladlabs-brain-local@localhost:5433/gladlabs_brain",
+    "POINDEXTER_BRAIN_URL",
+    os.getenv(
+        "GLADLABS_BRAIN_URL",
+        "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain",
+    ),
 )
 SDXL_URL = "http://localhost:9836"
 OLLAMA_URL = "http://localhost:11434"

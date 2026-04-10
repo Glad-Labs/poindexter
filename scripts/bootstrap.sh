@@ -97,7 +97,7 @@ docker compose -f docker-compose.local.yml up -d postgres-local grafana 2>/dev/n
 # Wait for PostgreSQL to be ready
 info "Waiting for PostgreSQL..."
 for i in $(seq 1 30); do
-    if docker exec gladlabs-postgres-local pg_isready -U gladlabs -d gladlabs_brain >/dev/null 2>&1; then
+    if docker exec gladlabs-postgres-local pg_isready -U "${LOCAL_POSTGRES_USER:-poindexter}" -d "${LOCAL_POSTGRES_DB:-poindexter_brain}" >/dev/null 2>&1; then
         ok "PostgreSQL ready"
         break
     fi
@@ -155,7 +155,7 @@ cd ../..
 info "Seeding default app_settings..."
 
 # These are the configurable knobs — change them in the DB, not in code
-PGPASSWORD=gladlabs-brain-local psql -h localhost -p 5433 -U gladlabs -d gladlabs_brain -c "
+PGPASSWORD="${LOCAL_POSTGRES_PASSWORD:-poindexter-brain-local}" psql -h localhost -p 5433 -U "${LOCAL_POSTGRES_USER:-poindexter}" -d "${LOCAL_POSTGRES_DB:-poindexter_brain}" -c "
 CREATE TABLE IF NOT EXISTS app_settings (
     id SERIAL PRIMARY KEY,
     key VARCHAR(255) UNIQUE NOT NULL,
@@ -270,7 +270,7 @@ echo "     cd src/cofounder_agent && poetry run uvicorn main:app --port 8000"
 echo "  3. Start the frontend:"
 echo "     cd web/public-site && npm run dev"
 echo "  4. View Grafana dashboards:"
-echo "     http://localhost:3000 (admin / gladlabs)"
+echo "     http://localhost:3000 (admin / poindexter)"
 echo "  5. Create your first post:"
 echo "     curl -X POST http://localhost:8000/api/tasks -H 'Content-Type: application/json' \\"
 echo "       -d '{\"topic\": \"Your first AI-generated post\", \"category\": \"technology\"}'"

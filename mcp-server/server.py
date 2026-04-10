@@ -37,7 +37,7 @@ API_URL = os.getenv("POINDEXTER_API_URL") or os.getenv("GLADLABS_API_URL", "http
 API_TOKEN = os.getenv("POINDEXTER_API_TOKEN") or os.getenv("GLADLABS_API_TOKEN", "dev-token")
 LOCAL_DB_DSN = os.getenv(
     "LOCAL_DATABASE_URL",
-    "postgresql://gladlabs:gladlabs-brain-local@localhost:5433/gladlabs_brain",
+    "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain",
 )
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")

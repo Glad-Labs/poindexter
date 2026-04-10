@@ -55,7 +55,7 @@ logger = logging.getLogger("brain")
 # Railway is only used for HTTP health checks, never for DB writes.
 LOCAL_BRAIN_DB = os.getenv(
     "DATABASE_URL",
-    "postgresql://gladlabs:gladlabs-brain-local@localhost:5433/gladlabs_brain",
+    "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain",
 )
 
 # Telegram for alerts (direct bot API, no OpenClaw dependency)

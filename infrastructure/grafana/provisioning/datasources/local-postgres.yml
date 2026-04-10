@@ -6,13 +6,13 @@ datasources:
     type: grafana-postgresql-datasource
     access: proxy
     url: postgres-local:5432
-    database: gladlabs_brain
-    user: gladlabs
+    database: poindexter_brain
+    user: poindexter
     secureJsonData:
       password: $__env{LOCAL_POSTGRES_PASSWORD}
     jsonData:
       sslmode: disable
       postgresVersion: 1600
-      defaultDatabase: gladlabs_brain
+      defaultDatabase: poindexter_brain
     isDefault: true
     editable: true

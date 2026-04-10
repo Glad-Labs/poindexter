@@ -34,14 +34,14 @@ services:
     ports:
       - "5433:5432"
     environment:
-      POSTGRES_DB: ${LOCAL_POSTGRES_DB:-gladlabs_brain}
-      POSTGRES_USER: ${LOCAL_POSTGRES_USER:-gladlabs}
+      POSTGRES_DB: ${LOCAL_POSTGRES_DB:-poindexter_brain}
+      POSTGRES_USER: ${LOCAL_POSTGRES_USER:-poindexter}
       POSTGRES_PASSWORD: ${LOCAL_POSTGRES_PASSWORD:?LOCAL_POSTGRES_PASSWORD must be set}
     volumes:
       - postgres-local-data:/var/lib/postgresql/data
       - ./infrastructure/local-db/init.sql:/docker-entrypoint-initdb.d/01-init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U gladlabs"]
+      test: ["CMD-SHELL", "pg_isready -U ${LOCAL_POSTGRES_USER:-poindexter}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -104,8 +104,8 @@ services:
       USER_GID: 1000
       GITEA__database__DB_TYPE: postgres
       GITEA__database__HOST: postgres-local:5432
-      GITEA__database__NAME: gladlabs_brain
-      GITEA__database__USER: gladlabs
+      GITEA__database__NAME: ${LOCAL_POSTGRES_DB:-poindexter_brain}
+      GITEA__database__USER: ${LOCAL_POSTGRES_USER:-poindexter}
       GITEA__database__PASSWD: ${LOCAL_POSTGRES_PASSWORD:?LOCAL_POSTGRES_PASSWORD must be set}
       GITEA__server__ROOT_URL: http://localhost:3001
       GITEA__server__SSH_DOMAIN: localhost
@@ -172,7 +172,7 @@ services:
     restart: unless-stopped
     environment:
       # Primary DB is local Postgres.
-      DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-gladlabs}:${LOCAL_POSTGRES_PASSWORD:?LOCAL_POSTGRES_PASSWORD must be set}@postgres-local:5432/${LOCAL_POSTGRES_DB:-gladlabs_brain}"
+      DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?LOCAL_POSTGRES_PASSWORD must be set}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
       # CLOUD_DATABASE_URL removed — Railway eliminated. All data on local Postgres + R2.
       # No Telegram tokens — OpenClaw owns Telegram/Discord connections
       API_URL: "http://worker:8002"
@@ -209,7 +209,7 @@ services:
       PORT: "8002"
       # Secrets loaded from DB (app_settings) at startup — no env vars needed
       # Primary DB is local Postgres.
-      DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-gladlabs}:${LOCAL_POSTGRES_PASSWORD:?LOCAL_POSTGRES_PASSWORD must be set}@postgres-local:5432/${LOCAL_POSTGRES_DB:-gladlabs_brain}"
+      DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?LOCAL_POSTGRES_PASSWORD must be set}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
       # CLOUD_DATABASE_URL removed — Railway eliminated. All data on local Postgres + R2.
       OLLAMA_BASE_URL: "http://host.docker.internal:11434"
       PEXELS_API_KEY: ${PEXELS_API_KEY:-}

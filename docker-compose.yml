@@ -31,13 +31,13 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-gladlabs}
-      POSTGRES_USER: ${POSTGRES_USER:-gladlabs}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gladlabs-dev}
+      POSTGRES_DB: ${POSTGRES_DB:-poindexter}
+      POSTGRES_USER: ${POSTGRES_USER:-poindexter}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-poindexter-dev}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gladlabs}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-poindexter}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -55,14 +55,14 @@ services:
     ports:
       - "5433:5432"
     environment:
-      POSTGRES_DB: ${LOCAL_POSTGRES_DB:-gladlabs_brain}
-      POSTGRES_USER: ${LOCAL_POSTGRES_USER:-gladlabs}
-      POSTGRES_PASSWORD: ${LOCAL_POSTGRES_PASSWORD:-gladlabs-brain-local}
+      POSTGRES_DB: ${LOCAL_POSTGRES_DB:-poindexter_brain}
+      POSTGRES_USER: ${LOCAL_POSTGRES_USER:-poindexter}
+      POSTGRES_PASSWORD: ${LOCAL_POSTGRES_PASSWORD:-poindexter-brain-local}
     volumes:
       - postgres-local-data:/var/lib/postgresql/data
       - ./infrastructure/local-db/init.sql:/docker-entrypoint-initdb.d/01-init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${LOCAL_POSTGRES_USER:-gladlabs}"]
+      test: ["CMD-SHELL", "pg_isready -U ${LOCAL_POSTGRES_USER:-poindexter}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -100,7 +100,7 @@ services:
       - "8000:8000"
     environment:
       # Database (uses the postgres service above)
-      DATABASE_URL: postgresql://${POSTGRES_USER:-gladlabs}:${POSTGRES_PASSWORD:-gladlabs-dev}@postgres:5432/${POSTGRES_DB:-gladlabs}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-poindexter}:${POSTGRES_PASSWORD:-poindexter-dev}@postgres:5432/${POSTGRES_DB:-poindexter}
 
       # Auth
       API_TOKEN: ${API_TOKEN:?Set API_TOKEN in .env}

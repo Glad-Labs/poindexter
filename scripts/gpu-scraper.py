@@ -20,10 +20,10 @@ import asyncpg
 import httpx
 
 EXPORTER_URL = "http://localhost:9835/metrics"
-LOCAL_DB = "postgresql://gladlabs:gladlabs-brain-local@localhost:5433/gladlabs_brain"
+LOCAL_DB = "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain"
 INTERVAL = 60  # seconds
 
-LOG_DIR = Path.home() / ".gladlabs"
+LOG_DIR = Path.home() / ".poindexter"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(

@@ -2,11 +2,11 @@
   "Servers": {
     "1": {
       "Name": "Local (Brain DB)",
-      "Group": "Glad Labs",
+      "Group": "Poindexter",
       "Host": "postgres-local",
       "Port": 5432,
-      "MaintenanceDB": "gladlabs_brain",
-      "Username": "gladlabs",
+      "MaintenanceDB": "poindexter_brain",
+      "Username": "poindexter",
       "SSLMode": "prefer",
       "PassFile": "/tmp/pgpass"
     }
