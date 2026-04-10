@@ -557,3 +557,241 @@ class TestContentValidationResultExpanded:
         )
         assert len(result.issues) == 2
         assert result.feedback == "Needs work"
+
+
+# ---------------------------------------------------------------------------
+# _populate_internal_links_cache
+# ---------------------------------------------------------------------------
+
+
+class TestPopulateInternalLinksCache:
+    @pytest.mark.asyncio
+    async def test_no_database_url_returns_empty(self, monkeypatch):
+        gen = _make_generator()
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        await gen._populate_internal_links_cache()
+        assert gen._internal_links_cache == []
+
+    @pytest.mark.asyncio
+    async def test_db_exception_falls_back_to_empty(self, monkeypatch):
+        gen = _make_generator()
+        monkeypatch.setenv("DATABASE_URL", "postgresql://fake")
+
+        # Make asyncpg.connect raise — exception is caught
+        fake_asyncpg = MagicMock()
+        fake_asyncpg.connect = AsyncMock(side_effect=RuntimeError("conn refused"))
+        with patch.dict("sys.modules", {"asyncpg": fake_asyncpg}):
+            await gen._populate_internal_links_cache()
+        # Note: when the except block runs, it sets cache to []
+        assert gen._internal_links_cache == []
+
+
+# ---------------------------------------------------------------------------
+# _handle_all_providers_failed
+# ---------------------------------------------------------------------------
+
+
+class TestHandleAllProvidersFailed:
+    def test_returns_fallback_tuple(self):
+        gen = _make_generator()
+        ctx = {
+            "metrics": {
+                "model_used": None,
+                "models_used_by_phase": {},
+                "final_quality_score": 0.0,
+                "generation_time_seconds": 0,
+            },
+            "attempts": [
+                ("ollama", "connection refused"),
+                ("huggingface", "no token"),
+            ],
+            "start_time": 0.0,
+            "use_ollama": False,
+            "topic": "FastAPI",
+            "style": "technical",
+            "tone": "professional",
+            "tags": ["python", "fastapi"],
+        }
+        content, model_used, metrics = gen._handle_all_providers_failed(ctx)
+
+        assert isinstance(content, str)
+        assert "FastAPI" in content
+        assert "Fallback" in model_used
+        assert metrics["model_used"] == model_used
+        assert metrics["models_used_by_phase"]["draft"] == model_used
+        assert metrics["final_quality_score"] == 0.0
+        assert metrics["generation_time_seconds"] >= 0
+
+    def test_no_attempts_handled(self):
+        gen = _make_generator()
+        ctx = {
+            "metrics": {
+                "model_used": None,
+                "models_used_by_phase": {},
+                "final_quality_score": 0.0,
+                "generation_time_seconds": 0,
+            },
+            "attempts": [],
+            "start_time": 0.0,
+            "use_ollama": False,
+            "topic": "Topic",
+            "style": "narrative",
+            "tone": "casual",
+            "tags": [],
+        }
+        content, model_used, metrics = gen._handle_all_providers_failed(ctx)
+        assert "Topic" in content
+        assert "Fallback" in model_used
+
+
+# ---------------------------------------------------------------------------
+# generate_blog_post — top-level orchestration
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateBlogPost:
+    @pytest.mark.asyncio
+    async def test_returns_ollama_result_when_ollama_succeeds(self):
+        gen = _make_generator()
+
+        # Mock the helpers to return a known shape
+        gen._populate_internal_links_cache = AsyncMock()
+        gen._prepare_generation_context = AsyncMock(return_value={"some": "ctx"})
+        gen._try_ollama = AsyncMock(return_value=(
+            "ollama generated content",
+            "llama3",
+            {"model_used": "llama3", "final_quality_score": 8.5},
+        ))
+        gen._try_huggingface = AsyncMock()
+        gen._handle_all_providers_failed = MagicMock()
+
+        content, model, metrics = await gen.generate_blog_post(
+            topic="x", style="technical", tone="professional",
+            target_length=1000, tags=["python"],
+        )
+
+        assert content == "ollama generated content"
+        assert model == "llama3"
+        assert metrics["final_quality_score"] == 8.5
+        gen._try_ollama.assert_awaited_once()
+        gen._try_huggingface.assert_not_awaited()
+        gen._handle_all_providers_failed.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_falls_through_to_huggingface_when_ollama_fails(self):
+        gen = _make_generator()
+        gen._populate_internal_links_cache = AsyncMock()
+        gen._prepare_generation_context = AsyncMock(return_value={"some": "ctx"})
+        gen._try_ollama = AsyncMock(return_value=None)
+        gen._try_huggingface = AsyncMock(return_value=(
+            "hf generated content", "hf-model", {"final_quality_score": 7.0},
+        ))
+        gen._handle_all_providers_failed = MagicMock()
+
+        content, model, _ = await gen.generate_blog_post(
+            topic="x", style="technical", tone="professional",
+            target_length=1000, tags=[],
+        )
+        assert content == "hf generated content"
+        assert model == "hf-model"
+        gen._try_ollama.assert_awaited_once()
+        gen._try_huggingface.assert_awaited_once()
+        gen._handle_all_providers_failed.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_falls_through_to_fallback_when_all_fail(self):
+        gen = _make_generator()
+        gen._populate_internal_links_cache = AsyncMock()
+        gen._prepare_generation_context = AsyncMock(return_value={"some": "ctx"})
+        gen._try_ollama = AsyncMock(return_value=None)
+        gen._try_huggingface = AsyncMock(return_value=None)
+        gen._handle_all_providers_failed = MagicMock(return_value=(
+            "fallback content", "Fallback (no AI)", {"final_quality_score": 0.0},
+        ))
+
+        content, model, metrics = await gen.generate_blog_post(
+            topic="x", style="technical", tone="professional",
+            target_length=1000, tags=[],
+        )
+        assert content == "fallback content"
+        assert "Fallback" in model
+        assert metrics["final_quality_score"] == 0.0
+        gen._handle_all_providers_failed.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _load_generation_prompts
+# ---------------------------------------------------------------------------
+
+
+class TestLoadGenerationPrompts:
+    def test_calls_prompt_manager_for_system_and_generation(self):
+        gen = _make_generator()
+
+        fake_pm = MagicMock()
+        fake_pm.get_prompt = MagicMock(side_effect=[
+            "system prompt body",
+            "generation prompt body",
+            "refinement prompt body",
+        ])
+
+        with patch("services.ai_content_generator.get_prompt_manager", return_value=fake_pm):
+            system, generation, refine_fn = gen._load_generation_prompts(
+                topic="FastAPI",
+                style="technical",
+                tone="professional",
+                target_length=1000,
+                tags=["python", "api"],
+            )
+
+        assert system == "system prompt body"
+        assert generation == "generation prompt body"
+        assert callable(refine_fn)
+        # First two calls — system and generation
+        assert fake_pm.get_prompt.call_count >= 2
+
+    def test_refinement_callable_calls_pm_when_invoked(self):
+        gen = _make_generator()
+        fake_pm = MagicMock()
+        fake_pm.get_prompt = MagicMock(side_effect=[
+            "sys",
+            "gen",
+            "refined output",
+        ])
+
+        with patch("services.ai_content_generator.get_prompt_manager", return_value=fake_pm):
+            _, _, refine_fn = gen._load_generation_prompts(
+                topic="x", style="technical", tone="professional",
+                target_length=500, tags=[],
+            )
+            result = refine_fn("feedback text", ["issue 1"], "draft content")
+
+        assert result == "refined output"
+        assert fake_pm.get_prompt.call_count == 3
+
+    def test_prompt_manager_failure_raises(self):
+        gen = _make_generator()
+
+        with patch("services.ai_content_generator.get_prompt_manager",
+                   side_effect=RuntimeError("pm broken")):
+            with pytest.raises(RuntimeError, match="pm broken"):
+                gen._load_generation_prompts(
+                    topic="x", style="technical", tone="professional",
+                    target_length=500, tags=[],
+                )
+
+    def test_uses_internal_links_cache_when_present(self):
+        gen = _make_generator()
+        gen._internal_links_cache = ["- \"Existing Post\" -> https://x/posts/existing"]
+
+        fake_pm = MagicMock()
+        fake_pm.get_prompt = MagicMock(side_effect=["sys", "gen"])
+
+        with patch("services.ai_content_generator.get_prompt_manager", return_value=fake_pm):
+            gen._load_generation_prompts(
+                topic="x", style="technical", tone="professional",
+                target_length=500, tags=[],
+            )
+        # The generation prompt call should have received the joined links string
+        gen_call = fake_pm.get_prompt.call_args_list[1]
+        assert "Existing Post" in gen_call.kwargs["internal_link_titles"]
