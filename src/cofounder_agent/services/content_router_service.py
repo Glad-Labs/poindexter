@@ -1237,20 +1237,40 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
                 except Exception as prompt_err:
                     logger.warning("[IMAGE] LLM prompt generation failed, using fallback: %s", prompt_err)
                     sdxl_prompt = f"{_chosen_style}, {_style_tags}, no text, no faces"
-            output_dir = os.path.join(os.path.expanduser("~"), "Downloads", "glad-labs-generated-images")
-            os.makedirs(output_dir, exist_ok=True)
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=False, dir=output_dir) as tmp:
-                output_path = tmp.name
+            # Use external SDXL server (same as inline images) instead of internal diffusers
+            from services.site_config import site_config as _feat_sc
+            _feat_sdxl_url = _feat_sc.get("sdxl_server_url", "http://host.docker.internal:9836")
 
             from services.gpu_scheduler import gpu
+            output_path = None
             async with gpu.lock("sdxl", model="sdxl_lightning"):
-                success = await image_service.generate_image(
-                    prompt=sdxl_prompt,
-                    output_path=output_path,
-                    negative_prompt=negative,
-                    high_quality=True,
-                )
-            if success and os.path.exists(output_path):
+                import httpx as _feat_hx
+                async with _feat_hx.AsyncClient(timeout=120) as _feat_client:
+                    _feat_resp = await _feat_client.post(f"{_feat_sdxl_url}/generate", json={
+                        "prompt": sdxl_prompt, "negative_prompt": negative,
+                        "steps": 8, "guidance_scale": 2.0,
+                    })
+
+            if _feat_resp.status_code == 200:
+                ct = _feat_resp.headers.get("content-type", "")
+                if ct.startswith("application/json"):
+                    _feat_data = _feat_resp.json()
+                    output_path = _feat_data.get("image_path", "")
+                    # Translate host path to container path
+                    _feat_host_home = _feat_sc.get("host_home", "")
+                    if _feat_host_home and output_path.startswith(_feat_host_home):
+                        output_path = output_path.replace(_feat_host_home, os.path.expanduser("~"), 1)
+                    output_path = output_path.replace("\\", "/")
+                    logger.info("[IMAGE] Featured SDXL generated: %s (%dms)",
+                                os.path.basename(output_path), _feat_data.get("generation_time_ms", 0))
+                elif ct.startswith("image/"):
+                    output_dir = os.path.join(os.path.expanduser("~"), "Downloads", "glad-labs-generated-images")
+                    os.makedirs(output_dir, exist_ok=True)
+                    with tempfile.NamedTemporaryFile(suffix=".png", delete=False, dir=output_dir) as tmp:
+                        tmp.write(_feat_resp.content)
+                        output_path = tmp.name
+
+            if output_path and os.path.exists(output_path):
                 # Upload to R2 CDN (replaced Cloudinary — zero egress fees)
                 image_url = output_path  # Fallback to local path
                 try:
