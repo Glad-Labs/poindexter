@@ -49,7 +49,7 @@
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -98,7 +98,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "rawSql": "SELECT pg_database_size(current_database()) as db_size_bytes",
           "format": "table",
@@ -118,7 +118,7 @@
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -167,7 +167,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "rawSql": "SELECT COUNT(*) as active_connections FROM pg_stat_activity WHERE datname = current_database()",
           "format": "table",
@@ -187,7 +187,7 @@
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -272,7 +272,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "rawSql": "SELECT COALESCE(state, 'unknown') as state, COUNT(*) as count FROM pg_stat_activity WHERE datname = current_database() GROUP BY state",
           "format": "table",
@@ -292,7 +292,7 @@
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -342,7 +342,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "rawSql": "SELECT COALESCE(MAX(EXTRACT(EPOCH FROM (NOW() - backend_start))), 0) as max_conn_age_seconds FROM pg_stat_activity WHERE datname = current_database()",
           "format": "table",
@@ -377,7 +377,7 @@
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -435,7 +435,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "rawSql": "SELECT schemaname, relname as table_name, n_live_tup as estimated_rows, n_dead_tup as dead_rows, last_vacuum, last_autovacuum, last_analyze FROM pg_stat_user_tables ORDER BY n_live_tup DESC",
           "format": "table",
@@ -455,7 +455,7 @@
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -497,7 +497,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "rawSql": "SELECT relname as table_name, pg_total_relation_size(quote_ident(relname)) as total_size_bytes FROM pg_stat_user_tables ORDER BY total_size_bytes DESC",
           "format": "table",
@@ -517,7 +517,7 @@
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -591,7 +591,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "rawSql": "SELECT relname as table_name, idx_scan as index_scans, seq_scan as sequential_scans, (idx_scan + seq_scan) as total_scans, CASE WHEN (idx_scan + seq_scan) > 0 THEN ROUND(idx_scan * 100.0 / (idx_scan + seq_scan), 1) ELSE 0 END as idx_scan_pct FROM pg_stat_user_tables WHERE (idx_scan + seq_scan) > 0 ORDER BY total_scans DESC",
           "format": "table",
@@ -611,7 +611,7 @@
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -689,7 +689,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "rawSql": "SELECT pid, usename, state, EXTRACT(EPOCH FROM (NOW() - query_start)) as duration_seconds, LEFT(query, 200) as query FROM pg_stat_activity WHERE datname = current_database() AND state != 'idle' AND pid != pg_backend_pid() ORDER BY query_start ASC",
           "format": "table",
@@ -709,7 +709,7 @@
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -759,7 +759,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "rawSql": "SELECT ROUND(100.0 * SUM(blks_hit) / NULLIF(SUM(blks_hit) + SUM(blks_read), 0), 2) as cache_hit_ratio FROM pg_stat_database WHERE datname = current_database()",
           "format": "table",
@@ -779,7 +779,7 @@
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -838,7 +838,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "rawSql": "SELECT xact_commit as committed, xact_rollback as rolled_back FROM pg_stat_database WHERE datname = current_database()",
           "format": "table",
@@ -858,7 +858,7 @@
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "railway-prod-db"
+        "uid": "local-brain-db"
       },
       "fieldConfig": {
         "defaults": {
@@ -921,7 +921,7 @@
           "refId": "A",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "railway-prod-db"
+            "uid": "local-brain-db"
           },
           "rawSql": "SELECT relname as table_name, n_dead_tup as dead_tuples FROM pg_stat_user_tables WHERE n_dead_tup > 0 ORDER BY n_dead_tup DESC",
           "format": "table",
