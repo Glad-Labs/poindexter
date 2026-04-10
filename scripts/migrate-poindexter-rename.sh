@@ -51,10 +51,11 @@ info "  database:  $OLD_DB → $NEW_DB"
 info "  user:      $OLD_USER → $NEW_USER"
 echo
 
-# 1. Stop everything that talks to the database
+# 1. Stop everything that talks to the database. Service names must match
+# docker-compose.local.yml — woodpecker is named woodpecker-server there.
 info "Stopping containers that hold open connections..."
 docker compose -f docker-compose.local.yml stop \
-  worker brain-daemon grafana pgadmin gitea woodpecker woodpecker-agent 2>/dev/null || true
+  worker brain-daemon grafana pgadmin gitea woodpecker-server woodpecker-agent
 ok "Dependent containers stopped"
 
 # 2. Bring postgres-local up
@@ -76,18 +77,30 @@ else
 fi
 
 if [ "$ALREADY_MIGRATED" = "false" ]; then
-    info "Renaming database and role over psql (connecting via 'postgres' maintenance DB)..."
+    info "Renaming database (over psql, connecting via 'postgres' maintenance DB)..."
     # Connect to the 'postgres' maintenance DB so we don't hold a connection to
     # the database we're about to rename.
     docker exec "$CONTAINER" psql -U "$OLD_USER" -d postgres -v ON_ERROR_STOP=1 -c \
         "ALTER DATABASE \"$OLD_DB\" RENAME TO \"$NEW_DB\";"
     ok "Database renamed: $OLD_DB → $NEW_DB"
 
+    # Postgres won't let a session user rename itself ("session user cannot be
+    # renamed"). Workaround: create a temporary superuser, log in as it, run
+    # the rename, then drop the temp role.
+    info "Renaming role (via temporary superuser since postgres rejects session-user self-rename)..."
+    TMP_ROLE="poindexter_migrate_tmp_$$"
+    TMP_PASS="rename-$(date +%s)"
     docker exec "$CONTAINER" psql -U "$OLD_USER" -d postgres -v ON_ERROR_STOP=1 -c \
+        "CREATE USER \"$TMP_ROLE\" WITH SUPERUSER PASSWORD '$TMP_PASS';"
+    docker exec -e PGPASSWORD="$TMP_PASS" "$CONTAINER" psql -U "$TMP_ROLE" -d postgres -v ON_ERROR_STOP=1 -c \
         "ALTER USER \"$OLD_USER\" RENAME TO \"$NEW_USER\";"
+    docker exec -e PGPASSWORD=ignored "$CONTAINER" psql -U "$NEW_USER" -d postgres -v ON_ERROR_STOP=1 -c \
+        "DROP USER \"$TMP_ROLE\";" 2>/dev/null || \
+    docker exec "$CONTAINER" psql -U "$NEW_USER" -d postgres -v ON_ERROR_STOP=1 -c \
+        "DROP USER \"$TMP_ROLE\";" || true
     ok "Role renamed: $OLD_USER → $NEW_USER"
 
-    # Sanity check
+    # Sanity check — the renamed role keeps its original password
     if docker exec "$CONTAINER" pg_isready -U "$NEW_USER" -d "$NEW_DB" >/dev/null 2>&1; then
         ok "Verified: postgres reachable as $NEW_USER/$NEW_DB"
     else
