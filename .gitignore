@@ -127,3 +127,12 @@ web/public-site/
 # VPN config (private infrastructure)
 infrastructure/headscale/certs/
 
+
+# Premium Grafana dashboards (kept locally for Matt's Grafana, never committed)
+infrastructure/grafana/dashboards/audit-log.json
+infrastructure/grafana/dashboards/gpu-metrics.json
+infrastructure/grafana/dashboards/llm-analytics.json
+infrastructure/grafana/dashboards/page-views.json
+infrastructure/grafana/dashboards/phone-command-center.json
+infrastructure/grafana/dashboards/system-health.json
+infrastructure/grafana/dashboards/system-settings.json
