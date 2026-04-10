@@ -94,6 +94,22 @@ BRAND_CONTRADICTION_PATTERNS = [
     r"(?:bill|invoice|cost)\s+from\s+(?:OpenAI|Anthropic|Google\s+Cloud)",
 ]
 
+# Fabricated personal experience patterns — AI pretending to be a person
+FABRICATED_EXPERIENCE_PATTERNS = [
+    # "I was on a call with...", "I sat down with a client..."
+    r"\bI\s+(?:was|sat|had|got)\s+(?:on\s+a\s+call|in\s+a\s+meeting|talking|chatting)\s+with\s+(?:a\s+)?(?:startup|client|founder|engineer|developer|CTO|CEO|team)",
+    # "at my company", "at my current company", "at our company"
+    r"\b(?:at|for)\s+(?:my|our)\s+(?:current\s+)?(?:company|startup|org|organization|employer|firm|agency)",
+    # "a client of mine", "one of my clients", "a founder I know"
+    r"\b(?:a\s+(?:client|customer|founder|friend|colleague)\s+(?:of\s+mine|I\s+(?:know|work|met)))",
+    # "last week I...", "last month we...", "recently I..."
+    r"\b(?:last\s+(?:week|month|year|quarter)|recently|the\s+other\s+day)\s+(?:I|we)\s+(?:was|were|had|got|built|deployed|switched|migrated)",
+    # Fabricated dollar amounts in anecdotes: "$1,200/month", "saved us $X"
+    r"\b(?:cost(?:ing)?|saved?|spent|paying|bill(?:ed)?)\s+(?:us\s+)?\$[\d,]+(?:/(?:month|year|mo|yr))?",
+    # "he said", "she told me" — fabricated dialogue
+    r'["\u201c][^"\u201d]{10,150}["\u201d]\s*(?:he|she|they)\s+(?:said|told|explained|replied|asked)',
+]
+
 # Leaked image generation prompts — italic descriptions after images
 LEAKED_IMAGE_PROMPT_PATTERNS = [
     r"(?:^|\n)\s*:\s*\*[A-Z][^*]{30,}\*",  # `: *A split-screen comparison...*`
@@ -202,6 +218,12 @@ def validate_content(title: str, content: str, topic: str = "") -> ValidationRes
     issues.extend(_check_patterns(
         full_text, FAKE_QUOTE_PATTERNS, "critical", "fake_quote",
         "Fabricated quote detected: '{matched}'"
+    ))
+
+    # 4b. Check for fabricated personal experiences (AI pretending to be human)
+    issues.extend(_check_patterns(
+        full_text, FABRICATED_EXPERIENCE_PATTERNS, "warning", "fabricated_experience",
+        "Fabricated personal experience: '{matched}'"
     ))
 
     # 5. Check for hallucinated internal links
