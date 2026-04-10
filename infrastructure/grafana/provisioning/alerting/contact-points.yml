@@ -9,7 +9,7 @@ contactPoints:
       - uid: gladlabs-telegram
         type: telegram
         settings:
-          bottoken: "${TELEGRAM_BOT_TOKEN}"
-          chatid: "${TELEGRAM_CHAT_ID}"
+          bottoken: $__env{TELEGRAM_BOT_TOKEN}
+          chatid: "5318613610"
           parse_mode: HTML
           disable_notifications: false
