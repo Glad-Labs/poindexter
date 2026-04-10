@@ -353,7 +353,7 @@ export default async function PostPage({
                        prose-blockquote:border-l-4 prose-blockquote:border-cyan-400 prose-blockquote:pl-4 prose-blockquote:text-slate-400 prose-blockquote:not-italic
                        prose-ul:text-slate-300 prose-ol:text-slate-300
                        prose-li:text-slate-300 prose-li:marker:text-cyan-400
-                       prose-img:rounded-lg prose-img:my-6
+                       prose-img:rounded-lg prose-img:my-6 prose-img:h-auto prose-img:aspect-auto prose-img:w-full
                        prose-hr:border-slate-700"
             >
               <div
