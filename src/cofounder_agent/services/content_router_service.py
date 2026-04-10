@@ -1976,8 +1976,12 @@ async def process_content_generation_task(
         )
 
         audit_log_bg("pipeline_complete", "content_router", {
-            "quality_score": quality_result.overall_score,
+            # quality_score is the promoted score that downstream gates read
+            # (matches content_tasks.quality_score). early_eval_score is kept
+            # alongside for diagnostic visibility.
+            "quality_score": result.get("quality_score", quality_result.overall_score),
             "qa_final_score": result.get("qa_final_score"),
+            "early_eval_score": quality_result.overall_score,
             "status": result["status"],
         }, task_id=task_id)
 

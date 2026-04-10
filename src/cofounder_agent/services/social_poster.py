@@ -157,12 +157,15 @@ async def _generate_social_text(
 async def _notify(message: str) -> None:
     """Send social post notifications to Telegram and Discord."""
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(10.0, connect=3.0)
+        ) as client:
             logger.info("[social_poster] Notifying: %s", message[:80])
             # Telegram — direct bot API
             await client.post(
                 f"https://api.telegram.org/bot{_TELEGRAM_BOT_TOKEN}/sendMessage",
                 json={"chat_id": _TELEGRAM_CHAT_ID, "text": message},
+                timeout=10,
             )
             # Discord — via OpenClaw hooks
             await client.post(
@@ -173,6 +176,7 @@ async def _notify(message: str) -> None:
                     "channel": "discord",
                     "target": _DISCORD_OPS_CHANNEL,
                 },
+                timeout=10,
             )
     except Exception as e:
         logger.warning("[social_poster] Notification failed: %s", e)

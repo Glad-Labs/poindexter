@@ -34,7 +34,11 @@ class WebhookDeliveryService:
             logger.info("[WEBHOOK] No OPENCLAW_WEBHOOK_URL configured, webhook delivery disabled")
             return
         self._running = True
-        self._client = httpx.AsyncClient(timeout=10.0)
+        # Explicit connect sub-cap so a stuck DNS or SYN can't stall the
+        # delivery loop beyond its own retry budget.
+        self._client = httpx.AsyncClient(
+            timeout=httpx.Timeout(10.0, connect=3.0)
+        )
         logger.info("[WEBHOOK] Delivery service started, polling every %ds", POLL_INTERVAL)
         asyncio.create_task(self._delivery_loop())
 
@@ -94,6 +98,7 @@ class WebhookDeliveryService:
                 f"{self.webhook_url}/hooks/agent",
                 json={"message": message, "sessionKey": "hook:pipeline"},
                 headers=headers,
+                timeout=10,
             )
             response.raise_for_status()
 

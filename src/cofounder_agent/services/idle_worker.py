@@ -347,7 +347,10 @@ class IdleWorker:
             import re
             broken = []
             checked = 0
-            async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(10.0, connect=3.0),
+                follow_redirects=True,
+            ) as client:
                 for row in rows:
                     urls = re.findall(r'https?://[^\s\)"<>]+', row["content"] or "")
                     site_domain = site_config.get("site_domain", "localhost")
@@ -355,7 +358,7 @@ class IdleWorker:
                         if site_domain in url:
                             continue  # Skip internal
                         try:
-                            resp = await client.head(url)
+                            resp = await client.head(url, timeout=8)
                             checked += 1
                             if resp.status_code >= 400:
                                 broken.append({"post": row["title"][:40], "url": url, "status": resp.status_code})
@@ -912,7 +915,10 @@ class IdleWorker:
             broken_total = 0
             posts_fixed = 0
 
-            async with httpx.AsyncClient(timeout=8, follow_redirects=True) as client:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(8.0, connect=3.0),
+                follow_redirects=True,
+            ) as client:
                 for row in rows:
                     md_urls = re.findall(r"\]\((https?://[^\s\)]+)\)", row["content"] or "")
                     html_urls = re.findall(r'href="(https?://[^"]+)"', row["content"] or "")
@@ -921,7 +927,11 @@ class IdleWorker:
                     broken = set()
                     for url in list(urls)[:10]:
                         try:
-                            resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
+                            resp = await client.get(
+                                url,
+                                headers={"User-Agent": "Mozilla/5.0"},
+                                timeout=8,
+                            )
                             if resp.status_code == 404:
                                 broken.add(url)
                         except Exception:
@@ -1292,8 +1302,10 @@ class IdleWorker:
                 "&length=1"
             )
 
-            async with httpx.AsyncClient(timeout=15) as client:
-                resp = await client.get(eia_url)
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(15.0, connect=5.0)
+            ) as client:
+                resp = await client.get(eia_url, timeout=15)
                 resp.raise_for_status()
                 data = resp.json()
 
@@ -1423,11 +1435,14 @@ class IdleWorker:
             verified = 0
             failures = []
 
-            async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(10.0, connect=3.0),
+                follow_redirects=True,
+            ) as client:
                 for row in rows:
                     url = f"{site_url}/posts/{row['slug']}"
                     try:
-                        resp = await client.get(url)
+                        resp = await client.get(url, timeout=10)
                         if resp.status_code == 200:
                             verified += 1
                         else:

@@ -353,7 +353,12 @@ ARTICLE CONTENT:
 PODCAST SCRIPT:"""
 
     try:
-        async with httpx.AsyncClient(timeout=300.0) as client:
+        # Podcast script generation is a long-form Ollama call (up to 8k
+        # tokens). 180s is generous for local qwen3:30b/glm-4.7 on a 5090
+        # while keeping the pipeline from ever stalling on a stuck model.
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(180.0, connect=5.0)
+        ) as client:
             resp = await client.post(
                 f"{ollama_url}/api/generate",
                 json={
@@ -362,6 +367,7 @@ PODCAST SCRIPT:"""
                     "stream": False,
                     "options": {"num_predict": 8192, "temperature": 0.4, "num_ctx": 16384},
                 },
+                timeout=180,
             )
             resp.raise_for_status()
             data = resp.json()
