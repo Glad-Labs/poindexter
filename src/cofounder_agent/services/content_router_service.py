@@ -666,6 +666,229 @@ async def _build_rag_context(
         return None
 
 
+# ============================================================================
+# WRITER SELF-REVIEW PASS
+# ============================================================================
+
+_SELF_REVIEW_DETECT_PROMPT = """You are a strict editor reviewing your own
+draft article for internal consistency. Read every section of the article
+below. Your ONLY job is to find cross-section contradictions.
+
+A contradiction is any of these:
+
+  1. Recommendation conflict. Section X recommends tool/approach A and
+     Section Y recommends tool/approach B without acknowledging the
+     switch, where A and B are incompatible. (e.g. "Don't use React" in
+     one section and "Use Next.js" in another — Next.js is React.)
+  2. Principle violation in code. The prose states a principle ("never
+     build custom auth") and then a code example in a different section
+     violates that principle.
+  3. Claim vs code mismatch. The prose says the code does X ("validates
+     the input") when the code actually does Y (no validation shown).
+  4. Numeric or factual conflict. Two sections state different numbers
+     or facts about the same thing.
+
+TITLE: {title}
+TOPIC: {topic}
+
+ARTICLE:
+{content}
+
+Respond with ONLY valid JSON:
+{{"contradictions_found": NUMBER, "contradictions": ["specific pair 1", "specific pair 2"]}}
+
+If none found, return {{"contradictions_found": 0, "contradictions": []}}.
+Be specific — name the sections and the conflict. Do NOT invent nitpicks
+or stylistic concerns. Only flag genuine logical contradictions."""
+
+
+_SELF_REVIEW_REVISE_PROMPT = """You are revising your own draft to fix
+specific contradictions that an editor identified. Do NOT rewrite the
+entire article. Do NOT add new sections. Only fix the specific conflicts
+listed below, making the minimum changes needed to resolve each one.
+
+Keep the same structure, same headings, same code examples where they
+aren't contradicted, same length (within 10%).
+
+TITLE: {title}
+
+CONTRADICTIONS TO FIX:
+{contradictions}
+
+ORIGINAL DRAFT:
+{content}
+
+Return ONLY the revised article text. Do not include meta-commentary,
+notes about what you changed, or markdown code fences around the output."""
+
+
+async def _self_review_and_revise(
+    content_text: str, title: str, topic: str
+) -> tuple:
+    """Writer self-review pass: detect and fix cross-section contradictions.
+
+    Returns (possibly_revised_content, meta) where meta is a dict with:
+        contradictions_found: int — how many the detector flagged
+        revised: bool — whether the draft was actually changed
+        skipped: bool — whether the pass was skipped (Ollama down, etc.)
+        reason: str — explanation if skipped
+    """
+    import asyncio
+    import json
+    import re
+
+    meta = {
+        "contradictions_found": 0,
+        "revised": False,
+        "skipped": False,
+        "reason": None,
+    }
+    if not content_text or len(content_text) < 200:
+        meta["skipped"] = True
+        meta["reason"] = "content too short for meaningful review"
+        return content_text, meta
+
+    try:
+        from services.ollama_client import OllamaClient
+        from services.site_config import site_config as _sc
+
+        # Use gemma3:27b for the reviewer by default — smaller than the
+        # writer, different strengths, less likely to rubber-stamp its own
+        # style preferences. Configurable via app_settings.
+        review_model = _sc.get("writer_self_review_model") or "gemma3:27b"
+        review_model = review_model.removeprefix("ollama/")
+
+        # 90s cap — review prompt is full article content.
+        client = OllamaClient(timeout=90)
+        try:
+            healthy = await asyncio.wait_for(client.check_health(), timeout=5)
+        except asyncio.TimeoutError:
+            healthy = False
+        if not healthy:
+            await client.close()
+            meta["skipped"] = True
+            meta["reason"] = "ollama unavailable for self-review"
+            return content_text, meta
+
+        detect_prompt = _SELF_REVIEW_DETECT_PROMPT.format(
+            title=title,
+            topic=topic or title,
+            content=content_text[:10000],
+        )
+        try:
+            detect_result = await asyncio.wait_for(
+                client.generate(
+                    prompt=detect_prompt,
+                    model=review_model,
+                    temperature=0.2,
+                    max_tokens=800,
+                ),
+                timeout=90,
+            )
+        except asyncio.TimeoutError:
+            await client.close()
+            meta["skipped"] = True
+            meta["reason"] = "self-review detect phase timed out"
+            return content_text, meta
+
+        detect_text = detect_result.get("text", "").strip()
+        if not detect_text:
+            await client.close()
+            meta["skipped"] = True
+            meta["reason"] = "detect phase returned empty response"
+            return content_text, meta
+
+        # Parse the JSON block out of the detect response
+        json_text = detect_text
+        if "```" in detect_text:
+            m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", detect_text, re.DOTALL)
+            if m:
+                json_text = m.group(1)
+        try:
+            detect_data = json.loads(json_text)
+        except json.JSONDecodeError:
+            m = re.search(r"\{.*\}", detect_text, re.DOTALL)
+            if m:
+                try:
+                    detect_data = json.loads(m.group(0))
+                except json.JSONDecodeError:
+                    await client.close()
+                    meta["skipped"] = True
+                    meta["reason"] = "detect phase returned unparseable JSON"
+                    return content_text, meta
+            else:
+                await client.close()
+                meta["skipped"] = True
+                meta["reason"] = "detect phase returned no JSON"
+                return content_text, meta
+
+        contradictions = detect_data.get("contradictions") or []
+        count = int(detect_data.get("contradictions_found", len(contradictions)))
+        meta["contradictions_found"] = count
+
+        if count == 0 or not contradictions:
+            await client.close()
+            return content_text, meta  # passes, no revision needed
+
+        # Revise phase: ask the writer to fix the specific contradictions.
+        contradictions_list = "\n".join(
+            f"- {str(c)[:300]}" for c in contradictions[:10]
+        )
+        revise_prompt = _SELF_REVIEW_REVISE_PROMPT.format(
+            title=title,
+            contradictions=contradictions_list,
+            content=content_text[:10000],
+        )
+        # Reuse the same model for revision to keep voice consistent.
+        try:
+            revise_result = await asyncio.wait_for(
+                client.generate(
+                    prompt=revise_prompt,
+                    model=review_model,
+                    temperature=0.3,
+                    max_tokens=4096,
+                ),
+                timeout=180,
+            )
+        except asyncio.TimeoutError:
+            await client.close()
+            meta["skipped"] = True
+            meta["reason"] = "self-review revise phase timed out"
+            return content_text, meta
+
+        revised_text = revise_result.get("text", "").strip()
+        await client.close()
+
+        # Guardrails on the revision:
+        # 1. Must not be empty
+        # 2. Must be within 50% length of the original (neither dropped
+        #    critical content nor doubled it with new sections)
+        # 3. Must not be shorter than 60% of the original (writer dropped
+        #    whole sections instead of fixing them)
+        if not revised_text or len(revised_text) < 200:
+            meta["skipped"] = True
+            meta["reason"] = "revise phase returned empty or too-short content"
+            return content_text, meta
+        ratio = len(revised_text) / max(len(content_text), 1)
+        if ratio < 0.6 or ratio > 1.5:
+            logger.warning(
+                "[SELF_REVIEW] Revision size out of bounds (ratio=%.2f), keeping original",
+                ratio,
+            )
+            meta["skipped"] = True
+            meta["reason"] = f"revision length ratio {ratio:.2f} outside [0.6, 1.5]"
+            return content_text, meta
+
+        meta["revised"] = True
+        return revised_text, meta
+
+    except Exception as e:
+        logger.warning("[SELF_REVIEW] Pass failed (non-fatal): %s", e)
+        meta["skipped"] = True
+        meta["reason"] = f"exception: {type(e).__name__}"
+        return content_text, meta
+
+
 async def _stage_generate_content(
     database_service, task_id, topic, style, tone, target_length, tags, models_by_phase, result
 ):
@@ -836,6 +1059,50 @@ async def _stage_generate_content(
     content_text = _re_img.sub(r'\[FIGURE:\s*[^\]]+\]', '', content_text)
     # Clean up any double blank lines left behind
     content_text = _re_img.sub(r'\n{3,}', '\n\n', content_text)
+
+    # Stage 2A: Writer self-review pass (catches internal contradictions
+    # before the QA stage rejects them). When enabled, runs a dedicated
+    # Ollama pass asking a reviewer model to find cross-section claim
+    # conflicts, then has the writer revise the draft with the specific
+    # corrections. Catches the qwen3:30b contradiction tendency at source
+    # rather than rejecting at QA and regenerating the whole topic.
+    try:
+        from services.site_config import site_config as _sr_sc
+        _self_review_enabled = str(
+            _sr_sc.get("enable_writer_self_review", "true")
+        ).lower() in ("true", "1", "yes")
+    except Exception:
+        _self_review_enabled = True
+    if _self_review_enabled:
+        try:
+            revised, sr_meta = await _self_review_and_revise(
+                content_text, title, topic,
+            )
+            if sr_meta.get("revised"):
+                logger.info(
+                    "[SELF_REVIEW] Writer revised draft — %d contradictions fixed",
+                    sr_meta.get("contradictions_found", 0),
+                )
+                content_text = revised
+            else:
+                logger.info(
+                    "[SELF_REVIEW] Draft passed self-review (%d chars)",
+                    len(content_text),
+                )
+            audit_log_bg(
+                "writer_self_review", "content_router",
+                {
+                    "contradictions_found": sr_meta.get("contradictions_found", 0),
+                    "revised": sr_meta.get("revised", False),
+                    "skipped": sr_meta.get("skipped", False),
+                    "reason": sr_meta.get("reason"),
+                },
+                task_id=task_id,
+            )
+        except Exception as _sr_err:
+            logger.warning(
+                "[SELF_REVIEW] Self-review pass failed (non-fatal): %s", _sr_err,
+            )
 
     # Update content_task with generated content, title, and model tracking
     await database_service.update_task(
