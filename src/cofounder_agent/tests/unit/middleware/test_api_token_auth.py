@@ -63,8 +63,18 @@ class TestVerifyApiToken:
         assert "API_TOKEN not configured" in exc_info.value.detail
 
     @pytest.mark.asyncio
-    @patch.dict("os.environ", {"DEVELOPMENT_MODE": "true"})
-    async def test_dev_mode_accepts_dev_token(self):
+    @patch("middleware.api_token_auth._dev_token_blocked", False)
+    @patch("middleware.api_token_auth.site_config")
+    async def test_dev_mode_accepts_dev_token(self, mock_site_config):
+        # middleware._dev_token_blocked is evaluated at MODULE IMPORT time
+        # based on ENVIRONMENT + DEVELOPMENT_MODE. Patching os.environ in
+        # the test doesn't retroactively reset it. Patch the module-level
+        # flag directly so this test exercises the dev-mode path even
+        # when the worker imported the module with ENVIRONMENT=production.
+        mock_site_config.get.side_effect = lambda k, default="": {
+            "development_mode": "true",
+            "api_token": "",
+        }.get(k, default)
         cred = _make_credentials("dev-token")
         result = await verify_api_token(credentials=cred)
         assert result == "dev-token"
@@ -116,8 +126,15 @@ class TestVerifyApiTokenOptional:
         assert result is None
 
     @pytest.mark.asyncio
-    @patch.dict("os.environ", {"DEVELOPMENT_MODE": "true"})
-    async def test_dev_mode_accepts_dev_token(self):
+    @patch("middleware.api_token_auth._dev_token_blocked", False)
+    @patch("middleware.api_token_auth.site_config")
+    async def test_dev_mode_accepts_dev_token(self, mock_site_config):
+        # Same patching rationale as the non-optional variant above —
+        # _dev_token_blocked is set at module import time.
+        mock_site_config.get.side_effect = lambda k, default="": {
+            "development_mode": "true",
+            "api_token": "",
+        }.get(k, default)
         cred = _make_credentials("dev-token")
         result = await verify_api_token_optional(credentials=cred)
         assert result == "dev-token"
