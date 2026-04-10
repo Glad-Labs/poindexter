@@ -736,3 +736,244 @@ class TestImportPipelineClass:
 
         mock_import.assert_called_once_with("diffusers")
         assert result == "fake_class"
+
+
+# ---------------------------------------------------------------------------
+# generate_image — main public method
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateImage:
+    """Coverage for the 3-strategy generate_image method."""
+
+    @pytest.mark.asyncio
+    async def test_host_sdxl_server_happy_path(self, tmp_path):
+        """Strategy 1: host SDXL server returns image bytes -> file written + True."""
+        svc = ImageService()
+
+        png_bytes = b"\x89PNG fake image data"
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.headers = {"content-type": "image/png", "X-Elapsed-Seconds": "1.5"}
+        mock_resp.content = png_bytes
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=mock_resp)
+
+        output_path = str(tmp_path / "out.png")
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result = await svc.generate_image(
+                prompt="cat in space",
+                output_path=output_path,
+                negative_prompt="ugly",
+            )
+
+        assert result is True
+        from pathlib import Path as _P
+        assert _P(output_path).exists()
+        assert _P(output_path).read_bytes() == png_bytes
+
+    @pytest.mark.asyncio
+    async def test_host_sdxl_non_200_falls_through_to_local(self, tmp_path):
+        """If host SDXL returns 500 and local diffusers unavailable -> False."""
+        svc = ImageService()
+        svc.sdxl_available = False  # local diffusers not available
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 500
+        mock_resp.headers = {"content-type": "text/plain"}
+        mock_resp.text = "internal error"
+        mock_resp.content = b""
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=mock_resp)
+
+        with patch("httpx.AsyncClient", return_value=mock_client), \
+             patch.object(svc, "_initialize_model"):
+            svc.sdxl_initialized = True  # skip the lazy init
+            result = await svc.generate_image(
+                prompt="x",
+                output_path=str(tmp_path / "x.png"),
+            )
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_host_sdxl_exception_falls_through_to_local(self, tmp_path):
+        """Connection error on host SDXL + diffusers unavailable -> False."""
+        svc = ImageService()
+        svc.sdxl_available = False
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(side_effect=RuntimeError("connection refused"))
+
+        with patch("httpx.AsyncClient", return_value=mock_client), \
+             patch.object(svc, "_initialize_model"):
+            svc.sdxl_initialized = True
+            result = await svc.generate_image(
+                prompt="x", output_path=str(tmp_path / "x.png"),
+            )
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_host_sdxl_wrong_content_type_falls_through(self, tmp_path):
+        """200 with text/html content-type is treated as failure."""
+        svc = ImageService()
+        svc.sdxl_available = False
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.headers = {"content-type": "text/html"}
+        mock_resp.text = "<html>error</html>"
+        mock_resp.content = b""
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=mock_resp)
+
+        with patch("httpx.AsyncClient", return_value=mock_client), \
+             patch.object(svc, "_initialize_model"):
+            svc.sdxl_initialized = True
+            result = await svc.generate_image(
+                prompt="x", output_path=str(tmp_path / "x.png"),
+            )
+
+        assert result is False
+
+
+# ---------------------------------------------------------------------------
+# _ensure_pexels_key — DB-first key loading
+# ---------------------------------------------------------------------------
+
+
+class TestEnsurePexelsKey:
+    @pytest.mark.asyncio
+    async def test_already_has_key_noop(self):
+        svc = ImageService()
+        svc.pexels_api_key = "existing-key"
+        svc._pexels_key_checked_db = True  # already checked
+
+        # Should not import asyncpg or touch site_config
+        with patch("services.image_service.os.getenv") as mock_env:
+            await svc._ensure_pexels_key()
+        # If it short-circuited, getenv was never called
+        mock_env.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_loads_from_site_config_when_missing(self):
+        svc = ImageService()
+        svc.pexels_api_key = ""
+
+        fake_sc = MagicMock()
+        fake_sc.get.return_value = "from-site-config"
+
+        with patch.dict("sys.modules", {"services.site_config": MagicMock(site_config=fake_sc)}):
+            await svc._ensure_pexels_key()
+
+        assert svc.pexels_api_key == "from-site-config"
+        assert svc.pexels_available is True
+        assert svc.pexels_headers == {"Authorization": "from-site-config"}
+
+    @pytest.mark.asyncio
+    async def test_no_db_url_logs_warning(self, monkeypatch):
+        svc = ImageService()
+        svc.pexels_api_key = ""
+
+        # site_config returns empty
+        fake_sc = MagicMock()
+        fake_sc.get.return_value = ""
+
+        # No DATABASE_URL or LOCAL_DATABASE_URL
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        monkeypatch.delenv("LOCAL_DATABASE_URL", raising=False)
+
+        with patch.dict("sys.modules", {"services.site_config": MagicMock(site_config=fake_sc)}):
+            await svc._ensure_pexels_key()
+
+        # No key loaded — graceful fallback, no exception
+        assert svc.pexels_api_key == ""
+        assert svc._pexels_key_checked_db is True
+
+    @pytest.mark.asyncio
+    async def test_db_exception_logged_not_raised(self, monkeypatch):
+        svc = ImageService()
+        svc.pexels_api_key = ""
+
+        fake_sc = MagicMock()
+        fake_sc.get.return_value = ""
+
+        monkeypatch.setenv("LOCAL_DATABASE_URL", "postgresql://fake")
+
+        fake_asyncpg = MagicMock()
+        fake_asyncpg.connect = AsyncMock(side_effect=RuntimeError("conn refused"))
+
+        with patch.dict("sys.modules", {
+            "services.site_config": MagicMock(site_config=fake_sc),
+            "asyncpg": fake_asyncpg,
+        }):
+            await svc._ensure_pexels_key()  # should not raise
+
+        assert svc.pexels_api_key == ""
+
+
+# ---------------------------------------------------------------------------
+# get_active_model + list_available_models + optimize_image_for_web
+# ---------------------------------------------------------------------------
+
+
+class TestModelIntrospection:
+    def test_get_active_model_none_at_startup(self):
+        svc = ImageService()
+        # Fresh instance — nothing loaded
+        assert svc.get_active_model() is None
+
+    def test_get_active_model_returns_loaded(self):
+        svc = ImageService()
+        svc._active_model = ImageModel.SDXL_LIGHTNING
+        assert svc.get_active_model() == ImageModel.SDXL_LIGHTNING
+
+    def test_list_available_models_returns_dict_with_all_three(self):
+        models = ImageService.list_available_models()
+        assert isinstance(models, dict)
+        # All three from the registry
+        for m in IMAGE_MODEL_REGISTRY:
+            assert m.value in models
+
+    def test_list_available_models_entries_have_metadata(self):
+        models = ImageService.list_available_models()
+        for value, meta in models.items():
+            assert "display_name" in meta
+            assert "default_steps" in meta
+            assert "vram_gb" in meta
+            assert "notes" in meta
+
+
+class TestOptimizeImageForWeb:
+    @pytest.mark.asyncio
+    async def test_returns_placeholder_dict(self):
+        svc = ImageService()
+        result = await svc.optimize_image_for_web("https://cdn.example.com/img.png")
+        assert result is not None
+        assert result["url"] == "https://cdn.example.com/img.png"
+        assert result["optimized"] is False
+        assert "not yet implemented" in result["note"].lower()
+
+    @pytest.mark.asyncio
+    async def test_accepts_size_overrides(self):
+        svc = ImageService()
+        # Just verify it doesn't raise with width/height overrides
+        result = await svc.optimize_image_for_web(
+            "https://cdn.example.com/x.png",
+            max_width=2000,
+            max_height=1000,
+        )
+        assert result is not None
