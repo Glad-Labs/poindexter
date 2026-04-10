@@ -388,3 +388,226 @@ class TestCategorySearches:
             assert len(queries) > 0, f"Category {cat} has no queries"
             for q in queries:
                 assert isinstance(q, str) and len(q) > 5
+
+
+# ===========================================================================
+# _is_news_or_junk
+# ===========================================================================
+
+
+class TestIsNewsOrJunk:
+    def test_too_short_title_rejected(self):
+        assert TopicDiscovery._is_news_or_junk("Short title") is True
+        assert TopicDiscovery._is_news_or_junk("AI Tools") is True
+
+    def test_long_title_not_rejected_for_length(self):
+        assert TopicDiscovery._is_news_or_junk(
+            "Building Production-Ready Microservices with Go"
+        ) is False
+
+    def test_lawsuit_pattern_rejected(self):
+        # Real pattern from _NEWS_PATTERNS — "lawsuit" matches
+        assert TopicDiscovery._is_news_or_junk(
+            "Tech Giant Faces Major Lawsuit Over Privacy"
+        ) is True
+
+    def test_personal_anecdote_pattern_rejected(self):
+        # "my experience" is in the news/junk pattern list
+        assert TopicDiscovery._is_news_or_junk(
+            "My experience building a startup from scratch"
+        ) is True
+
+    def test_merch_pattern_rejected(self):
+        assert TopicDiscovery._is_news_or_junk(
+            "Limited Edition Tech Merch and Sticker Pack"
+        ) is True
+
+
+# ===========================================================================
+# _search_by_category
+# ===========================================================================
+
+
+class TestSearchByCategory:
+    @pytest.mark.asyncio
+    async def test_returns_topics_from_research_results(self):
+        d = TopicDiscovery(AsyncMock())
+
+        fake_researcher = MagicMock()
+        fake_researcher.search_simple = AsyncMock(return_value=[
+            {"title": "Building Production Ready FastAPI Microservices", "url": "https://x.com/1"},
+            {"title": "Modern Python Development Best Practices Guide", "url": "https://x.com/2"},
+        ])
+
+        with patch("services.web_research.WebResearcher", return_value=fake_researcher):
+            result = await d._search_by_category(categories=["technology"])
+
+        assert len(result) >= 1
+        assert all(t.source == "ddg_search" for t in result)
+        assert all(t.category == "technology" for t in result)
+
+    @pytest.mark.asyncio
+    async def test_empty_results_returns_empty_list(self):
+        d = TopicDiscovery(AsyncMock())
+
+        fake_researcher = MagicMock()
+        fake_researcher.search_simple = AsyncMock(return_value=[])
+
+        with patch("services.web_research.WebResearcher", return_value=fake_researcher):
+            result = await d._search_by_category(categories=["technology"])
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_unknown_category_skipped(self):
+        d = TopicDiscovery(AsyncMock())
+
+        fake_researcher = MagicMock()
+        fake_researcher.search_simple = AsyncMock(return_value=[])
+
+        with patch("services.web_research.WebResearcher", return_value=fake_researcher):
+            # Category not in CATEGORY_SEARCHES — no queries to issue
+            result = await d._search_by_category(categories=["fake-category"])
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_research_exception_returns_empty(self):
+        d = TopicDiscovery(AsyncMock())
+
+        fake_researcher = MagicMock()
+        fake_researcher.search_simple = AsyncMock(side_effect=RuntimeError("ddg down"))
+
+        with patch("services.web_research.WebResearcher", return_value=fake_researcher):
+            result = await d._search_by_category(categories=["technology"])
+
+        # Exception swallowed; returns whatever was collected before the failure
+        assert isinstance(result, list)
+
+    @pytest.mark.asyncio
+    async def test_filters_titles_that_rewrite_to_empty(self):
+        """Titles rejected by _rewrite_as_blog_topic (e.g. Show HN) should not appear."""
+        d = TopicDiscovery(AsyncMock())
+
+        fake_researcher = MagicMock()
+        fake_researcher.search_simple = AsyncMock(return_value=[
+            {"title": "Show HN: My side project", "url": "https://x.com/1"},  # filtered
+            {"title": "Production-Grade Kubernetes Patterns for Multi-Tenant Apps", "url": "https://x.com/2"},
+        ])
+
+        with patch("services.web_research.WebResearcher", return_value=fake_researcher):
+            result = await d._search_by_category(categories=["technology"])
+
+        # Show HN is filtered, only the real topic comes through
+        titles = [t.title for t in result]
+        assert not any("Show HN" in t for t in titles)
+
+
+# ===========================================================================
+# discover() — top-level orchestrator
+# ===========================================================================
+
+
+class TestDiscover:
+    @pytest.mark.asyncio
+    async def test_combines_sources_and_returns_top_n(self):
+        pool = _make_pool()
+        d = TopicDiscovery(pool)
+
+        # Stub all the source methods
+        d._discover_from_knowledge = AsyncMock(return_value=[
+            DiscoveredTopic(title="AI Coding Assistants for Solo Developers",
+                           category="technology", source="brain", source_url="",
+                           relevance_score=5.0),
+        ])
+        d._scrape_hackernews = AsyncMock(return_value=[
+            DiscoveredTopic(title="Building Local LLM Inference Servers with Ollama",
+                           category="technology", source="hn", source_url="",
+                           relevance_score=4.0),
+        ])
+        d._scrape_devto = AsyncMock(return_value=[])
+        d._search_by_category = AsyncMock(return_value=[])
+
+        result = await d.discover(max_topics=5)
+        # Both topics should pass _is_brand_relevant (they mention AI/LLM/Ollama)
+        assert len(result) == 2
+        # Higher relevance score wins the sort
+        assert result[0].relevance_score >= result[1].relevance_score
+
+    @pytest.mark.asyncio
+    async def test_filters_brand_irrelevant(self):
+        pool = _make_pool()
+        d = TopicDiscovery(pool)
+
+        d._discover_from_knowledge = AsyncMock(return_value=[
+            DiscoveredTopic(title="Best Recipes for Dinner Tonight",
+                           category="technology", source="brain", source_url=""),
+            DiscoveredTopic(title="Self-Hosted AI Pipelines for Solo Founders",
+                           category="technology", source="brain", source_url=""),
+        ])
+        d._scrape_hackernews = AsyncMock(return_value=[])
+        d._scrape_devto = AsyncMock(return_value=[])
+        d._search_by_category = AsyncMock(return_value=[])
+
+        result = await d.discover(max_topics=5)
+        assert len(result) == 1
+        assert "Self-Hosted AI" in result[0].title
+
+    @pytest.mark.asyncio
+    async def test_source_exception_does_not_crash(self):
+        pool = _make_pool()
+        d = TopicDiscovery(pool)
+
+        d._discover_from_knowledge = AsyncMock(return_value=[])
+        d._scrape_hackernews = AsyncMock(side_effect=RuntimeError("hn down"))
+        d._scrape_devto = AsyncMock(return_value=[
+            DiscoveredTopic(title="GPU Local Inference Best Practices",
+                           category="technology", source="devto", source_url=""),
+        ])
+        d._search_by_category = AsyncMock(return_value=[])
+
+        # Should not raise — failed source is logged and skipped
+        result = await d.discover(max_topics=5)
+        assert isinstance(result, list)
+
+    @pytest.mark.asyncio
+    async def test_max_topics_cap(self):
+        pool = _make_pool()
+        d = TopicDiscovery(pool)
+
+        # Generate 10 brand-relevant topics
+        many = [
+            DiscoveredTopic(title=f"AI Self-Hosted Topic {i} About LLMs",
+                           category="technology", source="brain", source_url="",
+                           relevance_score=float(i))
+            for i in range(10)
+        ]
+        d._discover_from_knowledge = AsyncMock(return_value=many)
+        d._scrape_hackernews = AsyncMock(return_value=[])
+        d._scrape_devto = AsyncMock(return_value=[])
+        d._search_by_category = AsyncMock(return_value=[])
+
+        result = await d.discover(max_topics=3)
+        assert len(result) == 3
+        # Top 3 by relevance score
+        scores = [t.relevance_score for t in result]
+        assert scores == sorted(scores, reverse=True)
+
+    @pytest.mark.asyncio
+    async def test_category_filter_applied(self):
+        pool = _make_pool()
+        d = TopicDiscovery(pool)
+
+        d._discover_from_knowledge = AsyncMock(return_value=[
+            DiscoveredTopic(title="AI Self-Hosted Pipeline for Solo Devs",
+                           category="technology", source="brain", source_url=""),
+            DiscoveredTopic(title="Self-Hosted GPU Inference Hardware Setup",
+                           category="hardware", source="brain", source_url=""),
+        ])
+        d._scrape_hackernews = AsyncMock(return_value=[])
+        d._scrape_devto = AsyncMock(return_value=[])
+        d._search_by_category = AsyncMock(return_value=[])
+
+        result = await d.discover(max_topics=5, categories=["hardware"])
+        assert len(result) == 1
+        assert result[0].category == "hardware"
