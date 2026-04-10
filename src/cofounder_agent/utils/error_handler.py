@@ -17,17 +17,13 @@ Import guide:
     - Services (same package): from .error_handler import DatabaseError
 """
 
-import logging
+import logging  # still needed for Logger type references elsewhere in this module
 from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
 
-# NOTE: This module is imported early in the chain (via services/__init__.py →
-# content_router_service → image_service → here). Using get_logger() here would
-# create a circular import through services/__init__.py. stdlib logger is used
-# intentionally for this base-layer utility.
 logger = get_logger(__name__)
 
 

@@ -25,8 +25,12 @@ Cost: $0/month for all options (local GPU or CPU fallback)
 
 import asyncio
 import importlib
-import logging
 from services.logger_config import get_logger
+
+# Module-level logger (unified across the codebase). Used once at import
+# time below for the diffusers-missing warning — the rest of the file
+# uses `logger` from get_logger().
+_import_logger = get_logger(__name__)
 import os
 import time
 from dataclasses import dataclass
@@ -56,7 +60,7 @@ try:
     DIFFUSERS_AVAILABLE = True
 except (ImportError, RuntimeError) as e:
     StableDiffusionXLPipeline = None
-    logging.warning("Diffusers library not available: %s", e)
+    _import_logger.warning("Diffusers library not available: %s", e)
 
 # Optional optimization packages
 try:

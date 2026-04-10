@@ -8,15 +8,15 @@ API_TOKEN environment variable.
 OpenClaw skills and Grafana alerts use this token.
 """
 
-import logging
 import os
 from typing import Optional
 
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from services.logger_config import get_logger
 from services.site_config import site_config
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 security = HTTPBearer(auto_error=False)
 
