@@ -340,8 +340,16 @@ class MultiModelQA:
         if ollama_result is not None:
             return ollama_result
 
-        # Try a fallback model if the primary returned empty/failed
+        # Try a fallback model if the primary returned empty/failed.
+        # DB-configured via qa_fallback_critic_model.
         fallback_model = "gemma3:27b"
+        if self.settings:
+            try:
+                _fb = await self.settings.get("qa_fallback_critic_model")
+                if _fb:
+                    fallback_model = _fb.removeprefix("ollama/")
+            except Exception:
+                pass
         if model_override != fallback_model:
             logger.info("[MULTI_QA] Primary critic failed, trying fallback model: %s", fallback_model)
             fallback_result = await self._review_with_ollama(
@@ -540,11 +548,16 @@ class MultiModelQA:
                 await client.close()
                 return None
 
+            # DB-configured: qa_fallback_critic_model (used as the primary
+            # model for gates since they should be fast/cheap). Falls back
+            # to pipeline_critic_model then gemma3:27b.
             default_model = "gemma3:27b"
             temperature = 0.2
             if self.settings:
                 default_model = (
-                    await self.settings.get("pipeline_critic_model") or default_model
+                    await self.settings.get("qa_fallback_critic_model")
+                    or await self.settings.get("pipeline_critic_model")
+                    or default_model
                 )
                 temperature = float(
                     await self.settings.get("qa_temperature") or temperature

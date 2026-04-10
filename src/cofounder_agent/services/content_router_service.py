@@ -1275,7 +1275,8 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
             from services.site_config import site_config as _sc2
             sdxl_url = _sc2.get("sdxl_server_url", "http://host.docker.internal:9836")
             ollama_url = _sc2.get("ollama_base_url", "http://host.docker.internal:11434")
-            _model = "llama3:latest"  # Fast model for prompt generation
+            # DB-configured: inline_image_prompt_model
+            _model = _sc2.get("inline_image_prompt_model", "llama3:latest")
 
             # Generate SDXL prompt via Ollama with GPU lock
             import random as _inline_rnd
@@ -1510,11 +1511,17 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
                         "Think editorial magazine art — mood, atmosphere, imagination. "
                         "1-2 sentences only. Output ONLY the prompt, nothing else."
                     )
-                    async with _hx.AsyncClient(timeout=30) as _c:
-                        _r = await _c.post(f"{_ollama_url}/api/generate", json={
-                            "model": "llama3:latest", "prompt": _img_prompt, "stream": False,
-                            "options": {"num_predict": 150, "temperature": 0.7, "num_ctx": 4096},
-                        })
+                    from services.site_config import site_config as _feat_prompt_sc
+                    _prompt_model = _feat_prompt_sc.get("inline_image_prompt_model", "llama3:latest")
+                    async with _hx.AsyncClient(timeout=_hx.Timeout(30.0, connect=3.0)) as _c:
+                        _r = await _c.post(
+                            f"{_ollama_url}/api/generate",
+                            json={
+                                "model": _prompt_model, "prompt": _img_prompt, "stream": False,
+                                "options": {"num_predict": 150, "temperature": 0.7, "num_ctx": 4096},
+                            },
+                            timeout=30,
+                        )
                         _r.raise_for_status()
                         sdxl_prompt = _r.json().get("response", "").strip().strip('"')
                     logger.info("[IMAGE] Style: %s | SDXL prompt: %s", _chosen_style, sdxl_prompt[:80])
@@ -1710,7 +1717,12 @@ async def _stage_generate_media_scripts(
     from services.site_config import site_config
 
     ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
-    model = site_config.get("default_ollama_model", "llama3:latest")
+    # DB-configured: video_scene_model (falls back to default_ollama_model, then llama3:latest)
+    model = (
+        site_config.get("video_scene_model")
+        or site_config.get("default_ollama_model")
+        or "llama3:latest"
+    )
     if model == "auto":
         model = "llama3:latest"
 
