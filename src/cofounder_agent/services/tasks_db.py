@@ -338,23 +338,39 @@ class TasksDatabase(DatabaseServiceMixin):
         """
         Get a task from content_tasks by ID.
 
-        Supports both:
-        - UUID task IDs (stored in task_id column)
-        - Numeric IDs (stored in id column, legacy format)
+        Supports:
+        - Full UUID task IDs (exact match on task_id column)
+        - Numeric IDs (exact match on id column, legacy format)
+        - UUID prefix (8+ chars) — convenience for CLI/MCP tools that show short IDs
 
         Args:
-            task_id: Task ID (UUID or numeric)
+            task_id: Task ID (full UUID, numeric, or 8+ char UUID prefix)
 
         Returns:
             Task dict or None if not found
         """
-        # Search by task_id OR id — the UI sends whichever field it rendered from.
         try:
             async with self.pool.acquire() as conn:
+                # First: exact match on task_id or numeric id
                 row = await conn.fetchrow(
                     "SELECT * FROM content_tasks WHERE task_id = $1 OR id::text = $1 LIMIT 1",
                     str(task_id),
                 )
+                # Fallback: UUID prefix match (8+ chars, looks like a UUID prefix)
+                if not row and len(task_id) >= 8 and "-" not in task_id[8:]:
+                    row = await conn.fetchrow(
+                        "SELECT * FROM content_tasks WHERE task_id LIKE $1 LIMIT 2",
+                        f"{task_id}%",
+                    )
+                    # Reject ambiguous prefix matches
+                    if row:
+                        check = await conn.fetch(
+                            "SELECT 1 FROM content_tasks WHERE task_id LIKE $1 LIMIT 2",
+                            f"{task_id}%",
+                        )
+                        if len(check) > 1:
+                            logger.warning("Ambiguous task_id prefix '%s' matches multiple tasks", task_id)
+                            return None
                 if row:
                     task_response = ModelConverter.to_task_response(row)
                     return ModelConverter.to_dict(task_response)
