@@ -1749,7 +1749,9 @@ ARTICLE: {title}
 SCENES:"""
 
         async with gpu.lock("ollama", model=model):
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(120.0, connect=5.0)
+            ) as client:
                 resp = await client.post(
                     f"{ollama_url}/api/generate",
                     json={
@@ -1758,6 +1760,7 @@ SCENES:"""
                         "stream": False,
                         "options": {"num_predict": 2048, "temperature": 0.7},
                     },
+                    timeout=120,
                 )
                 resp.raise_for_status()
                 scene_output = resp.json().get("response", "").strip()

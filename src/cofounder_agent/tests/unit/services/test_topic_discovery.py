@@ -286,7 +286,7 @@ class TestScrapeHackerNews:
 
         with patch("services.topic_discovery.httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
-            mock_client.get = AsyncMock(side_effect=lambda url: _mock_response(url))
+            mock_client.get = AsyncMock(side_effect=lambda url, **_: _mock_response(url))
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client

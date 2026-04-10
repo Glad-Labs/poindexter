@@ -77,8 +77,10 @@ class AIContentGenerator:
         ollama_url = _sc.get("ollama_base_url") or _sc.get("ollama_host", "http://host.docker.internal:11434")
         logger.info("Checking if Ollama server is running at %s...", ollama_url)
         try:
-            async with httpx.AsyncClient(timeout=5) as client:
-                response = await client.get(f"{ollama_url}/api/tags")
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(5.0, connect=2.0)
+            ) as client:
+                response = await client.get(f"{ollama_url}/api/tags", timeout=5)
                 self.ollama_available = response.status_code == 200
 
             if self.ollama_available:

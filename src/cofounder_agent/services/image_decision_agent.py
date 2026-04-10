@@ -122,7 +122,9 @@ Output ONLY valid JSON (no markdown, no explanation):
 }}"""
 
     try:
-        async with httpx.AsyncClient(timeout=90) as client:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(90.0, connect=5.0)
+        ) as client:
             # Verify Ollama is reachable AND the model exists
             try:
                 health = await client.get(f"{ollama_url}/api/tags", timeout=5)

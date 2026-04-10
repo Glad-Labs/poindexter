@@ -314,16 +314,24 @@ class TopicDiscovery:
         """Scrape top stories from Hacker News API (free, no auth)."""
         topics = []
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(10.0, connect=3.0)
+            ) as client:
                 # Get top story IDs
-                resp = await client.get("https://hacker-news.firebaseio.com/v0/topstories.json")
+                resp = await client.get(
+                    "https://hacker-news.firebaseio.com/v0/topstories.json",
+                    timeout=10,
+                )
                 story_ids = resp.json()[:20]  # Top 20
 
                 # Fetch story details (concurrent, limited)
                 sem = asyncio.Semaphore(5)
                 async def fetch_story(sid):
                     async with sem:
-                        r = await client.get(f"https://hacker-news.firebaseio.com/v0/item/{sid}.json")
+                        r = await client.get(
+                            f"https://hacker-news.firebaseio.com/v0/item/{sid}.json",
+                            timeout=10,
+                        )
                         return r.json()
 
                 stories = await asyncio.gather(*[fetch_story(sid) for sid in story_ids], return_exceptions=True)
@@ -361,8 +369,13 @@ class TopicDiscovery:
         """Scrape trending articles from Dev.to API (free, no auth)."""
         topics = []
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get("https://dev.to/api/articles?per_page=15&top=7")
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(10.0, connect=3.0)
+            ) as client:
+                resp = await client.get(
+                    "https://dev.to/api/articles?per_page=15&top=7",
+                    timeout=10,
+                )
                 articles = resp.json()
 
                 for article in articles:
