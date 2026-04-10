@@ -21,9 +21,17 @@ echo "Syncing to GitHub (excluding private files)..."
 TEMP_BRANCH="github-sync-temp-$$"
 git checkout -b "$TEMP_BRANCH" 2>/dev/null
 
-# Remove private files from this temporary branch (not from disk)
+# Remove private/premium files from this temporary branch (not from disk)
 git rm -r --cached --quiet web/public-site/ 2>/dev/null || true
 git rm -r --cached --quiet infrastructure/headscale/certs/ 2>/dev/null || true
+git rm -r --cached --quiet docs/ 2>/dev/null || true
+git rm -r --cached --quiet .shared-context/ 2>/dev/null || true
+git rm -r --cached --quiet marketing/ 2>/dev/null || true
+git rm -r --cached --quiet src/cofounder_agent/writing_samples/ 2>/dev/null || true
+git rm --cached --quiet .github/COMMIT_MESSAGE_*.txt 2>/dev/null || true
+git rm --cached --quiet .github/create-tech-debt-issues.sh 2>/dev/null || true
+git rm --cached --quiet .github/tech-debt-issues.json 2>/dev/null || true
+git rm -r --cached --quiet .github/workflows-disabled/ 2>/dev/null || true
 
 # Commit the removal (temporary — never pushed to Gitea)
 git commit -m "sync: exclude private files for public repo" --allow-empty 2>/dev/null
