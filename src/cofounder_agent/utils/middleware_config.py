@@ -10,8 +10,6 @@ Configures:
 All middleware can be optionally enabled/disabled and configured via environment variables.
 """
 
-import os
-
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse

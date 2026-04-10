@@ -8,7 +8,6 @@ Endpoints:
     POST /api/video/generate/{post_id}   — Manually trigger video generation
 """
 
-import os
 from datetime import datetime, timezone
 from xml.etree.ElementTree import Element, SubElement, tostring
 

@@ -293,12 +293,12 @@ class StartupManager:
                 f"  [DEBUG] TaskExecutor.database_service: {self.task_executor.database_service}"
             )
             logger.debug(
-                f"  [DEBUG] TaskExecutor.orchestrator (initial): None (will be injected later)"
+                "  [DEBUG] TaskExecutor.orchestrator (initial): None (will be injected later)"
             )
 
             logger.info("   Background task executor initialized (not started yet)")
             logger.info(
-                f"     ⏸️  Will be fully configured and started after UnifiedOrchestrator is injected in main.py"
+                "     ⏸️  Will be fully configured and started after UnifiedOrchestrator is injected in main.py"
             )
         except Exception as e:
             error_msg = f"Task executor initialization failed: {str(e)}"
@@ -313,7 +313,7 @@ class StartupManager:
                 logger.info("  🔍 Verifying database connection...")
                 health = await self.database_service.health_check()
                 if health.get("status") == "healthy":
-                    logger.info(f"   Database health check passed")
+                    logger.info("   Database health check passed")
                 else:
                     logger.warning(f"   Database health check returned: {health}")
             except Exception as e:
@@ -513,18 +513,8 @@ class StartupManager:
 
             # Close HuggingFace client session (prevents connection leak)
             try:
-                from services.model_consolidation_service import (  # noqa: F401, E402
-                    ModelConsolidationService,
-                )
-
-                # Close any HuggingFace adapter clients that may be cached
                 logger.info("  Closing HuggingFace client sessions...")
-                # The model consolidation service may have cached adapters
-                # We'll clean up any aiohttp sessions they created
-
-                # Get all tasks and look for lingering aiohttp sessions
                 try:
-                    # Import at function level to avoid import errors if module not loaded
                     from services.huggingface_client import _session_cleanup
 
                     await _session_cleanup()

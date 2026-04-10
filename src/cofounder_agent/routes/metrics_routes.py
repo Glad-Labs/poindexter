@@ -5,7 +5,7 @@ Provides endpoints for budget tracking and operational metrics.
 All endpoints require JWT authentication.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request

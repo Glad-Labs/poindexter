@@ -47,8 +47,7 @@ class ConnectionPoolHealth:
             start_time = asyncio.get_running_loop().time()
             async with asyncio.timeout(5):  # 5-second timeout for health check
                 async with self.pool.acquire() as conn:
-                    # Simple query to verify connection works
-                    result = await conn.fetchval("SELECT 1")
+                    await conn.fetchval("SELECT 1")
 
             check_duration = asyncio.get_running_loop().time() - start_time
 

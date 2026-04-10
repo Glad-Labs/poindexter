@@ -558,7 +558,7 @@ async def go_live(
                 critical=True,
             )
         except Exception:
-            pass
+            logger.warning("[GO-LIVE] Openclaw notification failed (non-fatal)", exc_info=True)
 
     logger.info("[GO-LIVE] Post %s promoted to published: %s", post_id, row["slug"])
     return {

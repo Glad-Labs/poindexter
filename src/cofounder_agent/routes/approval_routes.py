@@ -180,11 +180,7 @@ async def get_pending_approvals(
 ):
     """Get all tasks awaiting human approval, with pagination and optional task_type filter."""
     try:
-        operator = get_operator_identity()
-
-        # Fetch pending tasks from database with pagination
-        # Use get_tasks_paginated which handles status filtering and pagination
-        user_id = operator["id"]
+        get_operator_identity()  # Verify operator identity is resolvable
 
         try:
             result = await db_service.get_tasks_paginated(

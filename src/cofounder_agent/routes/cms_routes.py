@@ -330,7 +330,6 @@ async def preview_post_html(preview_token: str):
     has_video = post.get("has_video", False)
     podcast_url = post.get("podcast_url", "")
     video_url = post.get("video_url", "")
-    task_id = post.get("task_id", post.get("id", ""))
 
     # Build podcast/video players
     media_html = ""
@@ -645,9 +644,8 @@ async def update_post(
         elif filtered.get("status") == "published" and "published_at" not in filtered:
             filtered["published_at"] = datetime.now(timezone.utc)
 
-        # Build parameterized SET clause using ParameterizedQueryBuilder
-        # to validate column identifiers and prevent SQL injection
-        from utils.sql_safety import ParameterizedQueryBuilder, SQLIdentifierValidator, SQLOperator
+        # Validate column identifiers to prevent SQL injection
+        from utils.sql_safety import SQLIdentifierValidator
 
         set_parts = []
         params = []
@@ -845,7 +843,7 @@ async def track_page_view(request: Request) -> JSONResponse:
                     slug,
                 )
     except Exception:
-        pass  # Never fail on tracking — non-critical
+        logger.warning("[TRACK_VIEW] Page view tracking failed (non-fatal)", exc_info=True)
 
     return JSONResponse(status_code=204, content=None)
 
