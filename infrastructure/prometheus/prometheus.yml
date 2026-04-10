@@ -6,7 +6,7 @@ scrape_configs:
     static_configs:
       - targets: ["host.docker.internal:9835"]
 
-  - job_name: gladlabs-worker
+  - job_name: poindexter-worker
     metrics_path: /api/prometheus
     static_configs:
       - targets: ["worker:8002"]

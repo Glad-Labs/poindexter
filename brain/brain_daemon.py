@@ -107,11 +107,11 @@ if not IS_RAILWAY:
     # In Docker, other containers are on the Docker network; host services use host.docker.internal
     _local_host = "host.docker.internal" if IS_DOCKER else "localhost"
     # Worker is a sibling container in Docker — use its container name
-    _worker_host = "gladlabs-worker" if IS_DOCKER else "localhost"
+    _worker_host = "poindexter-worker" if IS_DOCKER else "localhost"
     SERVICES.update({
         "worker": {"url": f"http://{_worker_host}:8002/api/health", "type": "json_status", "critical": False},
         "openclaw": {"url": f"http://{_local_host}:18789/status", "type": "http", "critical": False},
-        "nvidia_exporter": {"url": "http://gladlabs-prometheus:9090/-/healthy" if IS_DOCKER else f"http://{_local_host}:9835/metrics", "type": "http", "critical": False},
+        "nvidia_exporter": {"url": "http://poindexter-prometheus:9090/-/healthy" if IS_DOCKER else f"http://{_local_host}:9835/metrics", "type": "http", "critical": False},
         "windows_exporter": {"url": f"http://{_local_host}:9182/metrics", "type": "http", "critical": False},
     })
 

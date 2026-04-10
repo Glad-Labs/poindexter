@@ -36,6 +36,9 @@ ok()   { echo -e "${GREEN}[OK]${NC} $1"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 fail() { echo -e "${RED}[FAIL]${NC} $1"; exit 1; }
 
+# Default to the legacy container name (gladlabs-postgres-local) since this
+# migration script runs BEFORE the container has been renamed by Stage 2b.
+# Override via POSTGRES_CONTAINER env var if your container has a different name.
 CONTAINER="${POSTGRES_CONTAINER:-gladlabs-postgres-local}"
 OLD_DB="${OLD_DB:-gladlabs_brain}"
 NEW_DB="${NEW_DB:-poindexter_brain}"
@@ -117,5 +120,5 @@ echo "  3. Bring the full stack back up:"
 echo "       docker compose -f docker-compose.local.yml up -d"
 echo
 echo "  4. Tail the worker logs and confirm it connected:"
-echo "       docker logs -f gladlabs-worker"
+echo "       docker logs -f poindexter-worker"
 echo

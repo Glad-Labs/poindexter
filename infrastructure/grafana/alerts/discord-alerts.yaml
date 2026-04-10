@@ -24,7 +24,7 @@ alerts:
       severity: warning
       team: glad-labs
     query:
-      datasource_uid: gladlabs-postgres
+      datasource_uid: poindexter-postgres
       rawSql: >
         SELECT SUM(cost_usd) as spend
         FROM cost_logs
@@ -48,7 +48,7 @@ alerts:
       severity: critical
       team: glad-labs
     query:
-      datasource_uid: gladlabs-postgres
+      datasource_uid: poindexter-postgres
       rawSql: >
         SELECT
           ROUND(
@@ -77,7 +77,7 @@ alerts:
       severity: warning
       team: glad-labs
     query:
-      datasource_uid: gladlabs-postgres
+      datasource_uid: poindexter-postgres
       rawSql: >
         SELECT COUNT(*) as stuck_count
         FROM content_tasks
@@ -102,7 +102,7 @@ alerts:
       severity: warning
       team: glad-labs
     query:
-      datasource_uid: gladlabs-postgres
+      datasource_uid: poindexter-postgres
       rawSql: >
         SELECT
           ROUND(

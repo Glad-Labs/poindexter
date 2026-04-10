@@ -15,7 +15,7 @@ Connect Grafana Cloud to Railway PostgreSQL for production monitoring.
 
    | Field            | Value                             |
    | ---------------- | --------------------------------- |
-   | **Name**         | `gladlabs-postgres`               |
+   | **Name**         | `poindexter-postgres`             |
    | **Host**         | `<railway-host>:<port>`           |
    | **Database**     | `railway` (or your DB name)       |
    | **User**         | `postgres`                        |
@@ -23,7 +23,7 @@ Connect Grafana Cloud to Railway PostgreSQL for production monitoring.
    | **TLS/SSL Mode** | `require`                         |
    | **Version**      | 15.x (match your Railway version) |
 
-4. Set the data source UID to `gladlabs-postgres` (used by all dashboards).
+4. Set the data source UID to `poindexter-postgres` (used by all dashboards).
    - After creating the source, go to **Settings** and update the UID field, or
      note the auto-generated UID and update the dashboard JSON files.
 5. Click **Save & Test** to verify the connection.
@@ -47,7 +47,7 @@ Three dashboards are provided in `dashboards/`:
 1. Go to **Dashboards > New > Import**
 2. Click **Upload dashboard JSON file**
 3. Select the JSON file from `dashboards/`
-4. Set the data source to `gladlabs-postgres` if prompted
+4. Set the data source to `poindexter-postgres` if prompted
 5. Click **Import**
 
 Repeat for each dashboard file.
@@ -98,6 +98,6 @@ postgresql://postgres:PASSWORD@HOST:PORT/railway
 
 ## Datasource UID
 
-All dashboard JSON files reference the datasource UID `gladlabs-postgres`.
+All dashboard JSON files reference the datasource UID `poindexter-postgres`.
 If your data source gets a different UID, update the `"uid"` field in each
 dashboard JSON file, or rename the data source UID in Grafana to match.

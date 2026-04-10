@@ -48,8 +48,10 @@ echo ""
 info "1. Docker Containers"
 # ============================================================
 
-REQUIRED_CONTAINERS="gladlabs-postgres-local gladlabs-worker gladlabs-brain-daemon gladlabs-grafana gladlabs-prometheus"
-OPTIONAL_CONTAINERS="gladlabs-woodpecker gladlabs-woodpecker-agent gladlabs-gitea gladlabs-headscale gladlabs-pgadmin"
+REQUIRED_CONTAINERS="poindexter-postgres-local poindexter-worker poindexter-brain-daemon poindexter-grafana poindexter-prometheus"
+# Optional containers — pgadmin renames to poindexter-*; gitea/woodpecker/headscale
+# stay with the legacy gladlabs-* prefix because they're internal-only.
+OPTIONAL_CONTAINERS="gladlabs-woodpecker gladlabs-woodpecker-agent gladlabs-gitea gladlabs-headscale poindexter-pgadmin"
 
 for c in $REQUIRED_CONTAINERS; do
     running=$(docker inspect --format='{{.State.Status}}' "$c" 2>/dev/null || echo "not found")

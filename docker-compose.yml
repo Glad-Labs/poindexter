@@ -26,7 +26,7 @@ services:
   # ===========================================
   postgres:
     image: postgres:16-alpine
-    container_name: gladlabs-postgres
+    container_name: poindexter-postgres
     restart: unless-stopped
     ports:
       - "5432:5432"
@@ -50,7 +50,7 @@ services:
   # Also serves local Grafana dashboards via Tailscale.
   postgres-local:
     image: pgvector/pgvector:pg16
-    container_name: gladlabs-postgres-local
+    container_name: poindexter-postgres-local
     restart: unless-stopped
     ports:
       - "5433:5432"
@@ -72,7 +72,7 @@ services:
   # ===========================================
   grafana:
     image: grafana/grafana-oss:latest
-    container_name: gladlabs-grafana
+    container_name: poindexter-grafana
     restart: unless-stopped
     ports:
       - "3000:3000"
@@ -94,7 +94,7 @@ services:
     build:
       context: ./src/cofounder_agent
       dockerfile: Dockerfile
-    container_name: gladlabs-cofounder
+    container_name: poindexter-cofounder
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -161,6 +161,9 @@ services:
   #     cofounder:
   #       condition: service_healthy
 
+# Volumes deliberately keep the gladlabs-* prefix to avoid data loss when
+# upgrading. Renaming a docker volume creates a fresh empty one and orphans
+# the existing data. See docker-compose.local.yml for the same note.
 volumes:
   postgres-data:
     name: gladlabs-postgres-data
