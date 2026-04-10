@@ -309,3 +309,145 @@ class TestMultiModelResult:
     def test_rejected_summary(self):
         result = MultiModelResult(approved=False, final_score=45.0, reviews=[])
         assert "REJECTED" in result.summary
+
+
+# ---------------------------------------------------------------------------
+# New QA gates: topic_delivery + internal_consistency (issue #178 partial)
+# ---------------------------------------------------------------------------
+
+
+def _mock_gate_client(json_payload: dict):
+    """Return a mock OllamaClient that returns a canned JSON response.
+
+    Used for the gate tests — the gates expect a JSON object with
+    gate-specific keys (delivers/consistent, score, reason/contradictions).
+    """
+    import json
+    client = AsyncMock()
+    client.check_health = AsyncMock(return_value=True)
+    client.generate = AsyncMock(return_value={
+        "text": json.dumps(json_payload),
+        "tokens": 40,
+        "prompt_tokens": 600,
+    })
+    client.close = AsyncMock()
+    return client
+
+
+@pytest.fixture
+def raw_qa():
+    """MultiModelQA WITHOUT the gate stubs — exercises the real gate methods."""
+    with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
+        return MultiModelQA(pool=None, settings_service=None)
+
+
+class TestTopicDeliveryGate:
+    async def test_delivers_passes(self, raw_qa):
+        """When the body delivers the topic, gate returns approved with high score."""
+        payload = {
+            "delivers": True,
+            "score": 90,
+            "reason": "The body faithfully covers the requested topic.",
+        }
+        with patch("services.ollama_client.OllamaClient", return_value=_mock_gate_client(payload)):
+            review = await raw_qa._check_topic_delivery(GOOD_TOPIC, GOOD_CONTENT)
+        assert review is not None
+        assert review.reviewer == "topic_delivery"
+        assert review.provider == "consistency_gate"
+        assert review.approved is True
+        assert review.score == 90
+
+    async def test_bait_and_switch_fails(self, raw_qa):
+        """Bait-and-switch topic returns approved=False with low score."""
+        payload = {
+            "delivers": False,
+            "score": 40,
+            "reason": "Title promises 11 indie hackers; body names 2 in passing.",
+        }
+        with patch("services.ollama_client.OllamaClient", return_value=_mock_gate_client(payload)):
+            review = await raw_qa._check_topic_delivery("11 solo indie hackers", "Body is an abstract systems essay.")
+        assert review is not None
+        assert review.approved is False
+        assert review.score == 40
+        assert "11 indie hackers" in review.feedback or "names 2" in review.feedback
+
+    async def test_empty_topic_skipped(self, raw_qa):
+        """Empty topic returns None — nothing to check."""
+        review = await raw_qa._check_topic_delivery("", GOOD_CONTENT)
+        assert review is None
+
+    async def test_ollama_unhealthy_skipped(self, raw_qa):
+        """When Ollama health check fails, gate returns None (skipped)."""
+        client = AsyncMock()
+        client.check_health = AsyncMock(return_value=False)
+        client.close = AsyncMock()
+        with patch("services.ollama_client.OllamaClient", return_value=client):
+            review = await raw_qa._check_topic_delivery(GOOD_TOPIC, GOOD_CONTENT)
+        assert review is None
+
+    async def test_malformed_json_skipped(self, raw_qa):
+        """Unparseable Ollama response returns None."""
+        client = AsyncMock()
+        client.check_health = AsyncMock(return_value=True)
+        client.generate = AsyncMock(return_value={"text": "not json at all", "tokens": 5})
+        client.close = AsyncMock()
+        with patch("services.ollama_client.OllamaClient", return_value=client):
+            review = await raw_qa._check_topic_delivery(GOOD_TOPIC, GOOD_CONTENT)
+        assert review is None
+
+
+class TestInternalConsistencyGate:
+    async def test_consistent_passes(self, raw_qa):
+        """No contradictions found returns approved with high score."""
+        payload = {
+            "consistent": True,
+            "score": 92,
+            "contradictions": [],
+        }
+        with patch("services.ollama_client.OllamaClient", return_value=_mock_gate_client(payload)):
+            review = await raw_qa._check_internal_consistency(GOOD_CONTENT)
+        assert review is not None
+        assert review.reviewer == "internal_consistency"
+        assert review.provider == "consistency_gate"
+        assert review.approved is True
+        assert review.score == 92
+
+    async def test_contradiction_fails(self, raw_qa):
+        """Contradiction pair in the list returns approved=False with contradictions in feedback."""
+        payload = {
+            "consistent": False,
+            "score": 45,
+            "contradictions": [
+                "Section 1 says 'no React'; Section 3 recommends Next.js",
+                "Section 2 shows custom auth code; Section 4 says 'never build custom auth'",
+            ],
+        }
+        with patch("services.ollama_client.OllamaClient", return_value=_mock_gate_client(payload)):
+            review = await raw_qa._check_internal_consistency(GOOD_CONTENT)
+        assert review is not None
+        assert review.approved is False
+        assert review.score == 45
+        assert "Contradictions" in review.feedback
+
+    async def test_empty_content_skipped(self, raw_qa):
+        """Empty content returns None — nothing to check."""
+        review = await raw_qa._check_internal_consistency("")
+        assert review is None
+
+    async def test_ollama_unhealthy_skipped(self, raw_qa):
+        """Ollama health check failure returns None."""
+        client = AsyncMock()
+        client.check_health = AsyncMock(return_value=False)
+        client.close = AsyncMock()
+        with patch("services.ollama_client.OllamaClient", return_value=client):
+            review = await raw_qa._check_internal_consistency(GOOD_CONTENT)
+        assert review is None
+
+    async def test_exception_returns_none(self, raw_qa):
+        """An exception anywhere in the gate is caught and returns None."""
+        client = AsyncMock()
+        client.check_health = AsyncMock(side_effect=Exception("connection refused"))
+        client.close = AsyncMock()
+        with patch("services.ollama_client.OllamaClient", return_value=client):
+            review = await raw_qa._check_internal_consistency(GOOD_CONTENT)
+        assert review is None
