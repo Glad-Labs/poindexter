@@ -1,8 +1,8 @@
 {
-  "name": "glad-labs-monorepo",
+  "name": "poindexter-monorepo",
   "version": "0.9.0",
   "private": true,
-  "description": "Complete AI orchestration system with intelligent business management and autonomous agents. Phase 3A: Task retry and status visibility complete. Phase 1C: Error handling standardization complete.",
+  "description": "Poindexter — AI content pipeline with autonomous agents. Built by Glad Labs LLC.",
   "license": "AGPL-3.0-or-later",
   "author": "Matthew M. Gladding (Glad Labs, LLC)",
   "workspaces": [

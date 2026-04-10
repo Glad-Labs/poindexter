@@ -11,7 +11,7 @@ Usage:
         post_id="abc123",
         title="Why Local LLMs Beat Cloud APIs",
         image_urls=["https://cdn.example.com/img1.png", ...],
-        podcast_path="/root/.gladlabs/podcast/abc123.mp3",
+        podcast_path="/root/.poindexter/podcast/abc123.mp3",
     )
 """
 
@@ -28,7 +28,7 @@ from services.site_config import site_config
 
 logger = get_logger(__name__)
 
-VIDEO_DIR = Path(os.path.expanduser("~")) / ".gladlabs" / "video"
+VIDEO_DIR = Path(os.path.expanduser("~")) / ".poindexter" / "video"
 VIDEO_SERVER_URL = site_config.get("video_server_url", "http://host.docker.internal:9837")
 SDXL_SERVER_URL = site_config.get("sdxl_server_url", "http://host.docker.internal:9836")
 
@@ -291,10 +291,10 @@ async def generate_video_for_post(
         return VideoResult(success=False, error="No images could be generated")
 
     # Convert container paths to host paths for the video server
-    # Container mount: /root/.gladlabs → C:/Users/mattm/.gladlabs (bind mount)
+    # Container mount: /root/.poindexter → C:/Users/mattm/.poindexter (bind mount)
     host_home = site_config.get("host_home", "C:/Users/mattm")
     def _to_host_path(container_path: str) -> str:
-        return container_path.replace("/root/.gladlabs", f"{host_home}/.gladlabs")
+        return container_path.replace("/root/.poindexter", f"{host_home}/.poindexter")
 
     host_image_paths = [_to_host_path(p) for p in image_paths]
     host_audio_path = _to_host_path(podcast_path)
@@ -477,7 +477,7 @@ async def generate_short_video_for_post(
 
     host_home = site_config.get("host_home", "C:/Users/mattm")
     def _to_host_path(container_path: str) -> str:
-        return container_path.replace("/root/.gladlabs", f"{host_home}/.gladlabs")
+        return container_path.replace("/root/.poindexter", f"{host_home}/.poindexter")
 
     host_image_paths = [_to_host_path(p) for p in image_paths]
     host_audio_path = _to_host_path(short_audio)

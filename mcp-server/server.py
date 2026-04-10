@@ -1,7 +1,7 @@
 """
-Glad Labs MCP Server — exposes all system capabilities as MCP tools.
+Poindexter MCP Server — exposes all system capabilities as MCP tools.
 
-Connects Claude desktop app directly to the Glad Labs platform:
+Built by Glad Labs LLC. Connects Claude desktop app directly to the Poindexter platform:
 - Content pipeline (create, approve, publish, list tasks)
 - Site monitoring (health checks, post counts)
 - Cost management (budget status)
@@ -29,10 +29,12 @@ import httpx
 from mcp.server.fastmcp import FastMCP
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("gladlabs-mcp")
+logger = logging.getLogger("poindexter-mcp")
 
-API_URL = os.getenv("GLADLABS_API_URL", "http://localhost:8002")
-API_TOKEN = os.getenv("GLADLABS_API_TOKEN", "dev-token")
+# Customer-facing env var names — POINDEXTER_*. Old GLADLABS_* names still
+# accepted as fallback for users upgrading from the pre-rebrand release.
+API_URL = os.getenv("POINDEXTER_API_URL") or os.getenv("GLADLABS_API_URL", "http://localhost:8002")
+API_TOKEN = os.getenv("POINDEXTER_API_TOKEN") or os.getenv("GLADLABS_API_TOKEN", "dev-token")
 LOCAL_DB_DSN = os.getenv(
     "LOCAL_DATABASE_URL",
     "postgresql://gladlabs:gladlabs-brain-local@localhost:5433/gladlabs_brain",
@@ -75,9 +77,10 @@ async def _embed_text(text: str) -> list[float]:
     return embeddings[0]
 
 
-mcp = FastMCP("Glad Labs", instructions="""
-Glad Labs MCP server — your direct interface to the AI content pipeline.
-Use these tools to manage content, monitor the system, and control operations.
+mcp = FastMCP("Poindexter", instructions="""
+Poindexter MCP server — your direct interface to the AI content pipeline.
+Built by Glad Labs LLC. Use these tools to manage content, monitor the
+system, and control operations.
 
 SEMANTIC MEMORY: Use search_memory to recall prior decisions, context, and knowledge.
 Search before asking the user — the answer may already be in memory.
@@ -85,7 +88,7 @@ Search before asking the user — the answer may already be in memory.
 
 
 def _api(method: str, path: str, data: dict | None = None) -> dict:
-    """Call the Glad Labs API."""
+    """Call the Poindexter API."""
     url = f"{API_URL}{path}"
     headers = {"Authorization": f"Bearer {API_TOKEN}", "Content-Type": "application/json"}
     body = json.dumps(data).encode() if data else None
@@ -190,7 +193,7 @@ async def get_post_count() -> str:
 
 @mcp.tool()
 def check_health() -> str:
-    """Check the health of all Glad Labs systems (site, API, worker, OpenClaw)."""
+    """Check the health of all Poindexter systems (site, API, worker, OpenClaw)."""
     checks = []
 
     # Site

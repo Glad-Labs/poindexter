@@ -2,10 +2,10 @@
 # scripts/run.sh — Bulk create content tasks
 
 FASTAPI_URL="${FASTAPI_URL:-http://localhost:8002}"
-GLADLABS_KEY="${GLADLABS_KEY}"
+POINDEXTER_KEY="${POINDEXTER_KEY:-${GLADLABS_KEY}}"
 
-if [ -z "$GLADLABS_KEY" ]; then
-  echo "Error: GLADLABS_KEY not configured"
+if [ -z "$POINDEXTER_KEY" ]; then
+  echo "Error: POINDEXTER_KEY not configured (set POINDEXTER_KEY in your env)"
   exit 1
 fi
 
@@ -39,7 +39,7 @@ TASK_COUNT=$(python -c "import json,sys; print(len(json.loads(sys.argv[1])))" "$
 echo "Creating $TASK_COUNT tasks..."
 
 RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${FASTAPI_URL}/api/tasks/bulk/create" \
-  -H "Authorization: Bearer ${GLADLABS_KEY}" \
+  -H "Authorization: Bearer ${POINDEXTER_KEY}" \
   -H "Content-Type: application/json" \
   -d "$PAYLOAD")
 

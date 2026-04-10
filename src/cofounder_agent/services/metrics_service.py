@@ -1,5 +1,5 @@
 """
-Metrics Service for Glad Labs AI Co-Founder
+Metrics Service for Poindexter (the AI cofounder pipeline).
 
 This module provides centralized metrics collection and reporting.
 """

@@ -1,5 +1,5 @@
 """
-Configuration Management for Glad Labs AI Co-Founder
+Configuration Management for Poindexter (the AI cofounder pipeline).
 
 This module provides centralized configuration loading and access for the entire application.
 """

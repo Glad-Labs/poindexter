@@ -1,5 +1,5 @@
 """
-SQLAdmin — Lightweight admin panel for Glad Labs.
+SQLAdmin — Lightweight admin panel for Poindexter.
 
 Provides a web UI at /admin for browsing and managing:
 - Content tasks (pipeline queue)

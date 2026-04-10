@@ -1,8 +1,9 @@
-"""AI Memory & Knowledge Management System for Glad Labs Co-Founder
+"""AI Memory & Knowledge Management System for Poindexter
 
 This module provides persistent memory, knowledge base management, and learning
-capabilities for the AI co-founder system. It enables the AI to remember conversations,
-learn from interactions, build domain expertise, and maintain context across sessions.
+capabilities for the Poindexter cofounder agent. It enables the AI to remember
+conversations, learn from interactions, build domain expertise, and maintain
+context across sessions.
 
 Uses PostgreSQL for persistent storage (no SQLite).
 """

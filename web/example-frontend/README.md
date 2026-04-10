@@ -1,6 +1,6 @@
 # Example Frontend
 
-A minimal single-page blog that reads from the Glad Labs Engine static JSON export.
+A minimal single-page blog that reads from the Poindexter static JSON export.
 
 **Zero dependencies. Zero build step. Just HTML + JavaScript.**
 

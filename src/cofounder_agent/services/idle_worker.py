@@ -1539,12 +1539,12 @@ class IdleWorker:
             return {"error": str(e)}
 
     async def _backup_database(self) -> dict:
-        """Export key tables as JSON to ~/.gladlabs/backups/ (no pg_dump needed)."""
+        """Export key tables as JSON to ~/.poindexter/backups/ (no pg_dump needed)."""
         import json
         import os
         from datetime import datetime, timezone
 
-        backup_dir = os.path.join(os.path.expanduser("~"), ".gladlabs", "backups")
+        backup_dir = os.path.join(os.path.expanduser("~"), ".poindexter", "backups")
         os.makedirs(backup_dir, exist_ok=True)
 
         tables = [

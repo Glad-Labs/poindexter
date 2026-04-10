@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "glad-labs"
+name = "poindexter"
 version = "0.1.0"
-description = "Production-ready AI orchestration system with autonomous agents, multi-provider LLM routing, and full-stack web applications"
+description = "Poindexter — production-ready AI content pipeline with autonomous agents, multi-provider LLM routing, and full-stack web applications. Built by Glad Labs LLC."
 authors = ["Matthew M. Gladding <mattg@gladlabs.io>"]
 readme = "README.md"
 packages = []
@@ -44,9 +44,9 @@ requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [project]
-name = "glad-labs"
+name = "poindexter"
 version = "0.1.0"
-description = "Python agents for Glad Labs"
+description = "Poindexter — Python agents and content pipeline. Built by Glad Labs LLC."
 authors = [
   { name="Matthew M. Gladding", email="mattg@gladlabs.io" },
 ]

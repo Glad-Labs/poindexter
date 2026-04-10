@@ -110,7 +110,7 @@ async def upload_podcast_episode(post_id: str) -> Optional[str]:
         cdn_ver = site_config.get("podcast_cdn_version", "v2")
     except Exception:
         cdn_ver = "v2"
-    podcast_dir = Path(os.path.expanduser("~")) / ".gladlabs" / "podcast"
+    podcast_dir = Path(os.path.expanduser("~")) / ".poindexter" / "podcast"
     mp3_path = podcast_dir / f"{post_id}.mp3"
     if mp3_path.exists():
         return await upload_to_r2(str(mp3_path), f"podcast/{cdn_ver}/{post_id}.mp3")
@@ -119,7 +119,7 @@ async def upload_podcast_episode(post_id: str) -> Optional[str]:
 
 async def upload_video_episode(post_id: str) -> Optional[str]:
     """Upload a video episode MP4 to R2. Returns public URL or None."""
-    video_dir = Path(os.path.expanduser("~")) / ".gladlabs" / "video"
+    video_dir = Path(os.path.expanduser("~")) / ".poindexter" / "video"
     mp4_path = video_dir / f"{post_id}.mp4"
     if mp4_path.exists():
         return await upload_to_r2(str(mp4_path), f"video/{post_id}.mp4")

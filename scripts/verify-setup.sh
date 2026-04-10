@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Verify Setup — validates that the Glad Labs Engine is properly configured.
+# Verify Setup — validates that Poindexter is properly configured.
 #
 # Usage:
 #   bash scripts/verify-setup.sh
@@ -41,7 +41,7 @@ fi
 
 # ============================================================
 echo ""
-info "=== Glad Labs Engine — Setup Verification ==="
+info "=== Poindexter — Setup Verification ==="
 echo ""
 
 # ============================================================

@@ -357,7 +357,7 @@ async def probe_scheduled_tasks(_pool) -> dict:
     if IS_RAILWAY or platform.system() != "Windows":
         return {"ok": True, "detail": "skipped (not Windows)"}
     try:
-        # Query Glad Labs scheduled tasks via schtasks
+        # Query Poindexter scheduled tasks via schtasks
         result = subprocess.run(
             ["schtasks", "/query", "/fo", "CSV", "/v"],
             capture_output=True, text=True, timeout=15,
@@ -372,10 +372,11 @@ async def probe_scheduled_tasks(_pool) -> dict:
         failed_tasks = []
         for row in reader:
             task_name = row.get("TaskName", "")
-            # Only check Glad Labs tasks (in root or GladLabs folder)
+            # Only check Poindexter tasks (matches existing GladLabs/Poindexter folders)
             if not any(kw in task_name.lower() for kw in [
                 "openclaw", "worker", "brain", "publisher", "nvidia",
-                "power", "content", "update", "claude", "gladlabs", "glad"
+                "power", "content", "update", "claude",
+                "poindexter", "gladlabs", "glad",
             ]):
                 continue
             last_result = row.get("Last Result", "0")

@@ -1,11 +1,11 @@
-# Contributing to Glad Labs Engine
+# Contributing to Poindexter
 
-Thanks for your interest in contributing. Here's how to get involved.
+Thanks for your interest in contributing. Poindexter is built by Glad Labs LLC and welcomes outside contributions.
 
 ## Getting Started
 
 1. Fork the repository
-2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/glad-labs-engine.git`
+2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/poindexter.git`
 3. Copy `.env.example` to `.env` and configure
 4. Start services: `docker compose up -d`
 5. Run tests: `cd src/cofounder_agent && python -m pytest tests/unit/ -q`
