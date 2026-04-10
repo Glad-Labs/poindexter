@@ -41,8 +41,9 @@ SITE_BASE_URL = _sc.get("site_url", "https://localhost:3000")
 from services.telegram_config import TELEGRAM_BOT_TOKEN as _TELEGRAM_BOT_TOKEN
 from services.telegram_config import TELEGRAM_CHAT_ID as _TELEGRAM_CHAT_ID
 _OPENCLAW_URL = _sc.get("openclaw_gateway_url", "http://localhost:18789")
-_OPENCLAW_TOKEN = _sc.get("openclaw_hooks_token", "hooks-gladlabs")
-_DISCORD_OPS_CHANNEL = "1487683559065125055"
+# Same key as task_executor._notify_openclaw uses; unifying here.
+_OPENCLAW_TOKEN = _sc.get("openclaw_webhook_token", "hooks-gladlabs")
+_DISCORD_OPS_CHANNEL = _sc.require("discord_ops_channel_id")
 
 # LLM defaults — social copy is a simple task, use the fast 8B model
 _SOCIAL_MODEL = _sc.get("social_poster_model", "ollama/llama3:latest")

@@ -618,7 +618,9 @@ async def publish_post_from_task(
             async def _gen_short(pid, ptitle, pcontent, scenes, short_script):
                 """Wait for podcast, then generate short video."""
                 import asyncio as _aio
-                await _aio.sleep(180)  # Wait for podcast to finish first
+                from services.site_config import site_config as _scfg
+                _delay = int(_scfg.get("short_video_post_publish_delay_seconds", "180"))
+                await _aio.sleep(_delay)
                 try:
                     result = await generate_short_video_for_post(
                         pid, ptitle, pcontent,
@@ -644,9 +646,11 @@ async def publish_post_from_task(
             import asyncio as _aio
             from services.r2_upload_service import upload_podcast_episode, upload_video_episode
             from services.r2_upload_service import upload_to_r2
+            from services.site_config import site_config as _scfg
             from pathlib import Path
             # Give podcast/video/short generation time to complete
-            await _aio.sleep(240)
+            _delay = int(_scfg.get("media_r2_upload_delay_seconds", "240"))
+            await _aio.sleep(_delay)
             await upload_podcast_episode(pid)
             await upload_video_episode(pid)
             # Upload short video if it exists
@@ -656,15 +660,17 @@ async def publish_post_from_task(
             # Regenerate public podcast RSS feed on R2
             try:
                 import httpx as _hx
-                async with _hx.AsyncClient() as _client:
-                    _feed = await _client.get("http://localhost:8002/api/podcast/feed.xml")
+                from services.site_config import site_config as _scfg
+                _api_base = _scfg.get("internal_api_base_url", "http://localhost:8002")
+                async with _hx.AsyncClient(timeout=_hx.Timeout(30.0, connect=5.0)) as _client:
+                    _feed = await _client.get(f"{_api_base}/api/podcast/feed.xml", timeout=30)
                     _feed_path = "/tmp/podcast-feed.xml"
                     with open(_feed_path, "w") as _f:
                         _f.write(_feed.text)
                     await upload_to_r2(_feed_path, "podcast/feed.xml", "application/rss+xml")
                     logger.info("[R2] Podcast RSS feed regenerated on CDN")
             except Exception as _e:
-                logger.debug("[R2] Feed regen failed (non-fatal): %s", _e)
+                logger.warning("[R2] Feed regen failed (non-fatal): %s", _e)
 
         asyncio.ensure_future(_upload_media_to_r2(post_id))
 
