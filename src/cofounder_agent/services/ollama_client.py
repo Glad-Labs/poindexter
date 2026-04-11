@@ -184,12 +184,18 @@ class OllamaClient:
     # ========================================================================
 
     async def check_health(self) -> bool:
-        """Check if Ollama server is running."""
+        """Check if Ollama server is running.
+
+        Returns False on any failure. Callers handle False by falling back
+        to other providers (HF, cloud), so an unreachable Ollama is a normal
+        state — not an error. Logs at DEBUG instead of ERROR to avoid
+        spamming production logs when Ollama is intentionally off.
+        """
         try:
             response = await self.client.get(f"{self.base_url}/api/tags", timeout=5.0)
             return response.status_code == 200
         except Exception as e:
-            logger.error("[check_health] Ollama health check failed: %s", e, exc_info=True)
+            logger.debug("[check_health] Ollama unreachable at %s: %s", self.base_url, e)
             return False
 
     async def list_models(self) -> list[dict[str, Any]]:
