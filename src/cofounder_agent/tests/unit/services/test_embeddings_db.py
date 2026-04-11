@@ -192,3 +192,188 @@ class TestNeedsReembedding:
         _, conn = mock_pool
         conn.fetchrow.side_effect = RuntimeError("db error")
         assert await db.needs_reembedding("post", "p1", "hash") is True
+
+
+class TestStoreEmbeddingFormatting:
+    @pytest.mark.asyncio
+    async def test_vector_string_format(self, db, mock_pool):
+        """Embedding list should be serialized as `[v1,v2,v3]` for pgvector."""
+        _, conn = mock_pool
+        conn.fetchrow.return_value = {"id": "e1"}
+        await db.store_embedding("post", "p1", "h", [0.1, 0.2, 0.3])
+        args = conn.fetchrow.call_args[0]
+        # vector_str is the 4th positional value ($4)
+        assert args[4] == "[0.1,0.2,0.3]"
+
+    @pytest.mark.asyncio
+    async def test_default_embedding_model(self, db, mock_pool):
+        _, conn = mock_pool
+        conn.fetchrow.return_value = {"id": "e1"}
+        await db.store_embedding("post", "p1", "h", [0.1])
+        args = conn.fetchrow.call_args[0]
+        assert args[5] == "nomic-embed-text"
+
+    @pytest.mark.asyncio
+    async def test_metadata_json_serialization(self, db, mock_pool):
+        _, conn = mock_pool
+        conn.fetchrow.return_value = {"id": "e1"}
+        meta = {"title": "test", "tags": ["a", "b"]}
+        await db.store_embedding("post", "p1", "h", [0.1], metadata=meta)
+        args = conn.fetchrow.call_args[0]
+        # metadata_json is the 6th positional value ($6)
+        decoded = json.loads(args[6])
+        assert decoded == meta
+
+    @pytest.mark.asyncio
+    async def test_none_metadata_passed_as_null(self, db, mock_pool):
+        _, conn = mock_pool
+        conn.fetchrow.return_value = {"id": "e1"}
+        await db.store_embedding("post", "p1", "h", [0.1])
+        args = conn.fetchrow.call_args[0]
+        assert args[6] is None
+
+    @pytest.mark.asyncio
+    async def test_empty_embedding_serializes_to_brackets(self, db, mock_pool):
+        _, conn = mock_pool
+        conn.fetchrow.return_value = {"id": "e1"}
+        await db.store_embedding("post", "p1", "h", [])
+        args = conn.fetchrow.call_args[0]
+        assert args[4] == "[]"
+
+    @pytest.mark.asyncio
+    async def test_timestamps_are_utc_now(self, db, mock_pool):
+        from datetime import datetime, timezone
+        _, conn = mock_pool
+        conn.fetchrow.return_value = {"id": "e1"}
+        before = datetime.now(timezone.utc)
+        await db.store_embedding("post", "p1", "h", [0.1])
+        after = datetime.now(timezone.utc)
+
+        args = conn.fetchrow.call_args[0]
+        # created_at = $7, updated_at = $8
+        created_at, updated_at = args[7], args[8]
+        assert before <= created_at <= after
+        assert created_at == updated_at  # both set to `now` in store_embedding
+
+
+class TestSearchSimilarParameters:
+    @pytest.mark.asyncio
+    async def test_min_similarity_passed_in_query(self, db, mock_pool):
+        _, conn = mock_pool
+        conn.fetch.return_value = []
+        await db.search_similar([0.1, 0.2], min_similarity=0.75)
+        args = conn.fetch.call_args[0]
+        # No source_type → vector at $1, min_similarity at $2, limit at $3
+        assert args[2] == 0.75
+
+    @pytest.mark.asyncio
+    async def test_limit_passed_in_query_no_filter(self, db, mock_pool):
+        _, conn = mock_pool
+        conn.fetch.return_value = []
+        await db.search_similar([0.1], limit=25)
+        args = conn.fetch.call_args[0]
+        assert args[3] == 25
+
+    @pytest.mark.asyncio
+    async def test_limit_passed_in_query_with_filter(self, db, mock_pool):
+        _, conn = mock_pool
+        conn.fetch.return_value = []
+        await db.search_similar([0.1], source_type="post", limit=15)
+        args = conn.fetch.call_args[0]
+        # vector $1, source $2, min_sim $3, limit $4
+        assert args[4] == 15
+
+    @pytest.mark.asyncio
+    async def test_default_limit_is_10(self, db, mock_pool):
+        _, conn = mock_pool
+        conn.fetch.return_value = []
+        await db.search_similar([0.1])
+        args = conn.fetch.call_args[0]
+        assert args[3] == 10
+
+    @pytest.mark.asyncio
+    async def test_default_min_similarity_is_zero(self, db, mock_pool):
+        _, conn = mock_pool
+        conn.fetch.return_value = []
+        await db.search_similar([0.1])
+        args = conn.fetch.call_args[0]
+        assert args[2] == 0.0
+
+    @pytest.mark.asyncio
+    async def test_query_uses_cosine_distance_operator(self, db, mock_pool):
+        _, conn = mock_pool
+        conn.fetch.return_value = []
+        await db.search_similar([0.1])
+        query = conn.fetch.call_args[0][0]
+        assert "<=>" in query  # pgvector cosine distance operator
+        assert "1 - (embedding <=> $1::vector)" in query
+
+    @pytest.mark.asyncio
+    async def test_results_ordered_by_distance(self, db, mock_pool):
+        _, conn = mock_pool
+        conn.fetch.return_value = []
+        await db.search_similar([0.1])
+        query = conn.fetch.call_args[0][0]
+        assert "ORDER BY embedding <=> $1::vector" in query
+
+
+class TestDeleteEmbeddingsSqlShape:
+    @pytest.mark.asyncio
+    async def test_delete_by_id_uses_two_param_query(self, db, mock_pool):
+        _, conn = mock_pool
+        conn.execute.return_value = "DELETE 1"
+        await db.delete_embeddings("post", "p1")
+        args = conn.execute.call_args[0]
+        assert "source_table = $1 AND source_id = $2" in args[0]
+        assert args[1] == "post"
+        assert args[2] == "p1"
+
+    @pytest.mark.asyncio
+    async def test_delete_all_by_type_one_param(self, db, mock_pool):
+        _, conn = mock_pool
+        conn.execute.return_value = "DELETE 5"
+        await db.delete_embeddings("post")
+        args = conn.execute.call_args[0]
+        assert "source_table = $1" in args[0]
+        assert "source_id" not in args[0]
+        assert args[1] == "post"
+        assert len(args) == 2  # SQL + 1 param
+
+    @pytest.mark.asyncio
+    async def test_zero_deletions_returns_zero(self, db, mock_pool):
+        _, conn = mock_pool
+        conn.execute.return_value = "DELETE 0"
+        result = await db.delete_embeddings("post", "missing")
+        assert result == 0
+
+
+class TestNeedsReembeddingParameters:
+    @pytest.mark.asyncio
+    async def test_passes_source_type_and_id_to_query(self, db, mock_pool):
+        _, conn = mock_pool
+        conn.fetchrow.return_value = None
+        await db.needs_reembedding("brain_knowledge", "kn-1", "newhash")
+        args = conn.fetchrow.call_args[0]
+        assert args[1] == "brain_knowledge"
+        assert args[2] == "kn-1"
+
+    @pytest.mark.asyncio
+    async def test_query_only_selects_content_hash(self, db, mock_pool):
+        _, conn = mock_pool
+        conn.fetchrow.return_value = None
+        await db.needs_reembedding("post", "p1", "h")
+        query = conn.fetchrow.call_args[0][0]
+        assert "SELECT content_hash" in query
+
+
+class TestStoreEmbeddingDimensionsLogged:
+    @pytest.mark.asyncio
+    async def test_returns_string_id_even_if_uuid_object(self, db, mock_pool):
+        """If the DB returns a UUID object, it should be coerced to string."""
+        from uuid import UUID
+        _, conn = mock_pool
+        uid = UUID("12345678-1234-5678-1234-567812345678")
+        conn.fetchrow.return_value = {"id": uid}
+        result = await db.store_embedding("post", "p1", "h", [0.1])
+        assert isinstance(result, str)
+        assert result == str(uid)
