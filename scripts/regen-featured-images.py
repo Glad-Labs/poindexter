@@ -213,7 +213,7 @@ async def main():
         aws_secret_access_key=settings["cloudflare_r2_secret_key"],
         region_name="auto",
     )
-    bucket = settings.get("cloudflare_r2_bucket", "gladlabs-media")
+    bucket = settings.get("cloudflare_r2_bucket", "poindexter-media")
     negative = settings.get("image_negative_prompt", "")
 
     success = 0

@@ -23,9 +23,9 @@ logger = logging.getLogger("brain.probes")
 API_URL = os.getenv("API_URL", "http://localhost:8002")
 LOCAL_OLLAMA = os.getenv("OLLAMA_URL", "http://localhost:11434")
 GITEA_URL = os.getenv("GITEA_URL", "http://localhost:3001")
-GITEA_USER = os.getenv("GITEA_USER", "gladlabs")
+GITEA_USER = os.getenv("GITEA_USER", "poindexter")
 GITEA_PASS = os.getenv("GITEA_PASS", "")
-GITEA_REPO = os.getenv("GITEA_REPO", "gladlabs/glad-labs-codebase")
+GITEA_REPO = os.getenv("GITEA_REPO", "poindexter/poindexter")
 
 # Track which probe issues we've already created (avoid duplicates)
 _created_issues: set = set()
@@ -298,7 +298,7 @@ async def probe_grafana_datasources(_pool) -> dict:
         return {"ok": True, "detail": "skipped on Railway (Grafana is local)"}
     grafana_url = os.getenv("GRAFANA_URL", "http://localhost:3000")
     grafana_user = os.getenv("GRAFANA_USER", "admin")
-    grafana_pass = os.getenv("GRAFANA_PASSWORD", "gladlabs")
+    grafana_pass = os.getenv("GRAFANA_PASSWORD", "admin")
 
     try:
         import base64
@@ -338,7 +338,7 @@ async def probe_grafana_datasources(_pool) -> dict:
 async def probe_public_site(_pool) -> dict:
     """Probe: Check the public site returns content (not just 200)."""
     try:
-        site_url = os.getenv("SITE_URL", "https://www.gladlabs.io")
+        site_url = os.getenv("SITE_URL", "http://localhost:3000")
         ok, data = _http_json(f"{site_url}/api/posts?limit=1", timeout=10)
         if not ok:
             return {"ok": False, "detail": f"API unreachable: {data.get('error', 'unknown')}"}

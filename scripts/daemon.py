@@ -43,7 +43,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "cofound
 # which reconfigures the root logger. We must let that run BEFORE setting up our own handler.
 from services.content_validator import validate_content  # noqa: E402
 
-LOG_FILE = os.path.join(os.path.expanduser("~"), ".gladlabs", "daemon.log")
+LOG_FILE = os.path.join(os.path.expanduser("~"), ".poindexter", "daemon.log")
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 
 # Set up the "daemon" logger with its own file handler that won't be blown away

@@ -171,14 +171,14 @@ def reject_post(task_id: str, reason: str = "Rejected by reviewer") -> str:
 
 @mcp.tool()
 def publish_post(task_id: str) -> str:
-    """Publish an approved content task to gladlabs.io."""
+    """Publish an approved content task to the configured site."""
     result = _api("POST", f"/api/tasks/{task_id}/publish")
     return f"Status: {result.get('status', result.get('error', '?'))}"
 
 
 @mcp.tool()
 async def get_post_count() -> str:
-    """Get the total number of published posts on gladlabs.io."""
+    """Get the total number of published posts on the configured site."""
     try:
         pool = await _get_pool()
         count = await pool.fetchval("SELECT COUNT(*) FROM posts WHERE status = 'published'")
@@ -196,9 +196,10 @@ def check_health() -> str:
     """Check the health of all Poindexter systems (site, API, worker, OpenClaw)."""
     checks = []
 
-    # Site
+    # Site (configurable via SITE_URL; defaults to local Next.js dev server)
+    site_url = os.getenv("SITE_URL", "http://localhost:3000")
     try:
-        req = urllib.request.Request("https://gladlabs.io")
+        req = urllib.request.Request(site_url)
         resp = urllib.request.urlopen(req, timeout=10)
         checks.append(f"Site: {resp.status} OK")
     except Exception as e:
