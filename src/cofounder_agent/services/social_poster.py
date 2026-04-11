@@ -43,7 +43,16 @@ from services.telegram_config import TELEGRAM_CHAT_ID as _TELEGRAM_CHAT_ID
 _OPENCLAW_URL = _sc.get("openclaw_gateway_url", "http://localhost:18789")
 # Same key as task_executor._notify_openclaw uses; unifying here.
 _OPENCLAW_TOKEN = _sc.get("openclaw_webhook_token", "hooks-gladlabs")
-_DISCORD_OPS_CHANNEL = _sc.require("discord_ops_channel_id")
+
+
+def _get_discord_ops_channel() -> str:
+    """Lazy-load the discord channel ID at first call (not at import time).
+
+    The require() call needs site_config to be loaded, which doesn't happen
+    until the worker boots and connects to the DB. Calling it at module
+    import time breaks pytest collection in any environment without a DB.
+    """
+    return _sc.require("discord_ops_channel_id")
 
 # LLM defaults — social copy is a simple task, use the fast 8B model
 _SOCIAL_MODEL = _sc.get("social_poster_model", "ollama/llama3:latest")
@@ -175,7 +184,7 @@ async def _notify(message: str) -> None:
                 json={
                     "message": f"Post this to the #ops channel in Discord: {message}",
                     "channel": "discord",
-                    "target": _DISCORD_OPS_CHANNEL,
+                    "target": _get_discord_ops_channel(),
                 },
                 timeout=10,
             )
