@@ -306,3 +306,145 @@ class TestAdminDelegation:
         result = await svc.get_financial_summary(days=7)
         mocks["admin"].get_financial_summary.assert_awaited_once_with(7)
         assert result["total_cost"] == 5.25
+
+
+# ===========================================================================
+# Dual-pool initialization (worker mode pool flip)
+# ===========================================================================
+
+
+class TestDualPoolInitialize:
+    @pytest.mark.asyncio
+    async def test_local_database_url_creates_separate_pool(self, monkeypatch):
+        """When LOCAL_DATABASE_URL is set, a second pool is created."""
+        from services.database_service import DatabaseService
+
+        monkeypatch.setenv("DEPLOYMENT_MODE", "coordinator")
+        svc = DatabaseService(
+            database_url="postgresql://cloud",
+            local_database_url="postgresql://local",
+        )
+
+        cloud_pool = AsyncMock(name="cloud_pool")
+        local_pool = AsyncMock(name="local_pool")
+        # asyncpg.create_pool is called twice (cloud first, then local)
+        create_pool = AsyncMock(side_effect=[cloud_pool, local_pool])
+
+        with patch("asyncpg.create_pool", create_pool), \
+             patch("services.database_service.UsersDatabase"), \
+             patch("services.database_service.TasksDatabase"), \
+             patch("services.database_service.ContentDatabase"), \
+             patch("services.database_service.AdminDatabase"), \
+             patch("services.database_service.WritingStyleDatabase"), \
+             patch("services.database_service.EmbeddingsDatabase"), \
+             patch("services.database_service.init_global_audit_logger"):
+            await svc.initialize()
+
+        assert create_pool.await_count == 2
+        # In coordinator mode, both pool and cloud_pool point at the cloud DB
+        # and local_pool is the separate local DB
+        assert svc.cloud_pool is cloud_pool
+        assert svc.pool is cloud_pool
+        assert svc.local_pool is local_pool
+
+    @pytest.mark.asyncio
+    async def test_worker_mode_flips_pools(self, monkeypatch):
+        """In worker mode, .pool becomes the local pool and .cloud_pool stays cloud."""
+        from services.database_service import DatabaseService
+
+        monkeypatch.setenv("DEPLOYMENT_MODE", "worker")
+        svc = DatabaseService(
+            database_url="postgresql://cloud",
+            local_database_url="postgresql://local",
+        )
+
+        cloud_pool = AsyncMock(name="cloud_pool")
+        local_pool = AsyncMock(name="local_pool")
+        create_pool = AsyncMock(side_effect=[cloud_pool, local_pool])
+
+        with patch("asyncpg.create_pool", create_pool), \
+             patch("services.database_service.UsersDatabase"), \
+             patch("services.database_service.TasksDatabase") as MockTasks, \
+             patch("services.database_service.ContentDatabase") as MockContent, \
+             patch("services.database_service.AdminDatabase"), \
+             patch("services.database_service.WritingStyleDatabase"), \
+             patch("services.database_service.EmbeddingsDatabase"), \
+             patch("services.database_service.init_global_audit_logger"):
+            await svc.initialize()
+
+        # In worker mode the assignment is flipped
+        assert svc.pool is local_pool
+        assert svc.cloud_pool is cloud_pool
+        # Tasks is routed to LOCAL pool (which is now self.pool)
+        MockTasks.assert_called_once_with(local_pool)
+        # Content is routed to CLOUD pool
+        MockContent.assert_called_once_with(cloud_pool)
+
+    @pytest.mark.asyncio
+    async def test_no_local_url_single_pool_mode(self, monkeypatch):
+        """Without LOCAL_DATABASE_URL, all three pool fields point at the same pool."""
+        from services.database_service import DatabaseService
+
+        monkeypatch.delenv("LOCAL_DATABASE_URL", raising=False)
+        monkeypatch.setenv("DEPLOYMENT_MODE", "coordinator")
+        svc = DatabaseService(database_url="postgresql://cloud")
+
+        only_pool = AsyncMock(name="only_pool")
+        create_pool = AsyncMock(return_value=only_pool)
+
+        with patch("asyncpg.create_pool", create_pool), \
+             patch("services.database_service.UsersDatabase"), \
+             patch("services.database_service.TasksDatabase"), \
+             patch("services.database_service.ContentDatabase"), \
+             patch("services.database_service.AdminDatabase"), \
+             patch("services.database_service.WritingStyleDatabase"), \
+             patch("services.database_service.EmbeddingsDatabase"), \
+             patch("services.database_service.init_global_audit_logger"):
+            await svc.initialize()
+
+        # Only one create_pool call
+        assert create_pool.await_count == 1
+        # All three pool fields are the same instance
+        assert svc.pool is only_pool
+        assert svc.local_pool is only_pool
+        assert svc.cloud_pool is only_pool
+
+    @pytest.mark.asyncio
+    async def test_initialize_failure_propagates(self):
+        from services.database_service import DatabaseService
+
+        svc = DatabaseService(database_url="postgresql://bad")
+
+        with patch("asyncpg.create_pool", new=AsyncMock(side_effect=ConnectionError("refused"))):
+            with pytest.raises(ConnectionError):
+                await svc.initialize()
+
+
+class TestCloseDualPool:
+    @pytest.mark.asyncio
+    async def test_close_closes_both_pools_when_separate(self):
+        from services.database_service import DatabaseService
+
+        svc = DatabaseService(database_url="x")
+        cloud_pool = AsyncMock(name="cloud")
+        local_pool = AsyncMock(name="local")
+        svc.pool = cloud_pool
+        svc.local_pool = local_pool
+
+        await svc.close()
+        cloud_pool.close.assert_awaited_once()
+        local_pool.close.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_close_does_not_double_close_shared_pool(self):
+        """When local_pool is the same instance as pool, close it only once."""
+        from services.database_service import DatabaseService
+
+        svc = DatabaseService(database_url="x")
+        shared = AsyncMock(name="shared")
+        svc.pool = shared
+        svc.local_pool = shared
+
+        await svc.close()
+        # Should be called exactly once, not twice
+        shared.close.assert_awaited_once()
