@@ -650,17 +650,33 @@ class ImageService:
         # "DuckDB vs Postgres for analytics" into "data analytics
         # dashboard" so Pexels returns relevant stock photos instead of
         # matching on "duck" the animal.
+        #
+        # The semantic preprocessing is SKIPPED for short/fragmented
+        # strings because the inline-image pipeline calls
+        # search_featured_image() with alt-text snippets like
+        # "A close-up image of a" which aren't real topics. Running the
+        # LLM on those just burns 2s of inference per inline image
+        # (3-4 per post) for no semantic benefit. Heuristic: only
+        # preprocess if the string is long enough to be a real topic.
         search_queries: list[str] = []
-        semantic_query = await self._llm_semantic_pexels_query(topic)
-        if semantic_query:
-            search_queries.append(semantic_query)
-            logger.info(
-                "[FEATURED] Using semantic Pexels query: '%s' (from topic '%s')",
-                semantic_query, topic[:60],
-            )
+        _topic_words = len((topic or "").split())
+        _looks_like_real_topic = (
+            topic
+            and len(topic) >= 25
+            and _topic_words >= 4
+            and not topic.lower().startswith(("a ", "an ", "the "))
+        )
+        if _looks_like_real_topic:
+            semantic_query = await self._llm_semantic_pexels_query(topic)
+            if semantic_query:
+                search_queries.append(semantic_query)
+                logger.info(
+                    "[FEATURED] Using semantic Pexels query: '%s' (from topic '%s')",
+                    semantic_query, topic[:60],
+                )
         # Always include the raw topic as a fallback — if the semantic
-        # query returns zero results, the raw topic might still hit
-        # something.
+        # query returns zero results (or was skipped for fragmented
+        # alt-text), the raw topic might still hit something.
         search_queries.append(topic)
 
         # Add concept-based fallbacks (no people)

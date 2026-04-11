@@ -365,9 +365,25 @@ class TaskExecutor:
             # Pre-generation brand relevance check — reject off-topic before wasting GPU
             from services.topic_discovery import TopicDiscovery
             if topic and not TopicDiscovery._is_brand_relevant(topic):
+                _reason = (
+                    f"Off-brand: topic '{topic[:80]}' did not match any keyword in "
+                    f"TopicDiscovery._BRAND_KEYWORDS. Add the relevant niche keyword "
+                    f"to the whitelist (topic_discovery.py) or to the 'brand_keywords' "
+                    f"app_settings key if this topic should have passed."
+                )
                 logger.info("[TASK_SINGLE] Rejecting off-brand topic: %s", topic[:60])
+                # Populate BOTH error_message and result.reason so the
+                # approval UI, MCP list_tasks, and any downstream log
+                # scraper sees WHY the task was rejected — previously
+                # only result.reason was set and error_message was
+                # empty, which looked like a silent cancel.
                 await self.database_service.update_task(
-                    task_id=task_id, updates={"status": "rejected", "result": '{"reason": "Off-topic: not relevant to brand"}'}
+                    task_id=task_id,
+                    updates={
+                        "status": "rejected",
+                        "error_message": _reason,
+                        "result": '{"reason": "Off-topic: not relevant to brand"}',
+                    },
                 )
                 return
 
