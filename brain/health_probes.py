@@ -230,7 +230,7 @@ async def probe_affiliate_linker(pool) -> dict:
     """Probe: Check affiliate_links table has active links."""
     try:
         row = await pool.fetchrow(
-            "SELECT COUNT(*) as c FROM affiliate_links WHERE is_active = true"
+            "SELECT COUNT(*) as c FROM affiliate_links WHERE active = true"
         )
         count = row["c"] if row else 0
         return {

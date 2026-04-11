@@ -227,11 +227,20 @@ def restart_service(name: str):
 
 
 _last_openclaw_doctor = 0.0  # Track last doctor run to avoid running every cycle
+_openclaw_cli_missing = False  # Latch once we know the CLI isn't installed
 
 
 def _run_openclaw_doctor():
-    """Run 'openclaw doctor --fix' to heal degraded channels (Telegram 409, WhatsApp disconnect)."""
-    global _last_openclaw_doctor
+    """Run 'openclaw doctor --fix' to heal degraded channels (Telegram 409, WhatsApp disconnect).
+
+    The daemon may run in a container where the openclaw CLI isn't installed
+    (it's a host-side tool). If we've already discovered the CLI is missing
+    on this process, skip silently instead of retrying and logging every
+    cycle.
+    """
+    global _last_openclaw_doctor, _openclaw_cli_missing
+    if _openclaw_cli_missing:
+        return
     try:
         kwargs = {"creationflags": 0x08000000} if sys.platform == "win32" else {}
         result = subprocess.run(
@@ -243,6 +252,10 @@ def _run_openclaw_doctor():
             logger.warning("[BRAIN] openclaw doctor reported issues: %s", result.stdout[-200:])
         else:
             logger.info("[BRAIN] openclaw doctor --fix ran OK")
+    except FileNotFoundError:
+        # CLI isn't installed here — log once, then quiet down.
+        _openclaw_cli_missing = True
+        logger.info("[BRAIN] openclaw CLI not on PATH — skipping periodic doctor runs")
     except Exception as e:
         logger.warning("[BRAIN] openclaw doctor failed: %s", e)
 
