@@ -168,11 +168,14 @@ class TestValidationResult:
         assert result.critical_count >= 1
 
     def test_warning_count_property(self):
-        result = validate_content(
-            "Clean",
-            "Studies show a 50% reduction in costs when migrating to the cloud.",
-            "topic",
+        # Use a late_acronym_expansion example since fabrication
+        # categories were promoted to critical on 2026-04-11.
+        content = (
+            "We rely on AWS for hosting. AWS provides everything. "
+            "AWS makes deployment easy. AWS (Amazon Web Services) keeps "
+            "adding services."
         )
+        result = validate_content("Clean", content, "topic")
         assert result.warning_count >= 1
 
     def test_score_penalty_critical_is_10(self):
@@ -182,9 +185,12 @@ class TestValidationResult:
 
     def test_score_penalty_warning_is_3(self):
         """A single warning issue contributes 3 to score_penalty."""
-        result = validate_content(
-            "Clean", "Studies show a 50% increase in performance.", "topic"
+        content = (
+            "We rely on AWS for hosting. AWS provides everything. "
+            "AWS makes deployment easy. AWS (Amazon Web Services) keeps "
+            "adding services."
         )
+        result = validate_content("Clean", content, "topic")
         if result.warning_count > 0 and result.critical_count == 0:
             # Penalty should be a multiple of 3
             assert result.score_penalty % 3 == 0
@@ -211,11 +217,15 @@ class TestHallucinatedLinks:
         result = validate_content("Title", content, "tech")
         assert any(i.category == "hallucinated_link" for i in result.issues)
 
-    def test_hallucinated_link_is_warning_not_critical(self):
+    def test_hallucinated_link_is_critical(self):
+        # Promoted to critical on 2026-04-11 per Matt's "a fabrication
+        # is a fail" direction — a link that looks valid but leads
+        # nowhere is functionally a lie to the reader.
         content = "Read our guide on optimization techniques."
         result = validate_content("Title", content, "tech")
         link_issues = [i for i in result.issues if i.category == "hallucinated_link"]
-        assert all(i.severity == "warning" for i in link_issues)
+        assert link_issues, "expected a hallucinated_link issue"
+        assert all(i.severity == "critical" for i in link_issues)
 
 
 # ---------------------------------------------------------------------------

@@ -203,10 +203,15 @@ def validate_content(title: str, content: str, topic: str = "") -> ValidationRes
         "Fabricated person detected: '{matched}'"
     ))
 
-    # 2. Check for fabricated statistics
+    # 2. Check for fabricated statistics.
+    # Matt 2026-04-11: "A fabrication is a fail, I can't be lying to the
+    # audience. That kills brand credibility." Every fabrication
+    # category is CRITICAL now — any match blocks approval. There is no
+    # "probably fake" middle ground when the consequence is publishing
+    # a lie under your byline.
     issues.extend(_check_patterns(
-        full_text, FAKE_STAT_PATTERNS, "warning", "fake_stat",
-        "Potentially fabricated statistic: '{matched}'"
+        full_text, FAKE_STAT_PATTERNS, "critical", "fake_stat",
+        "Fabricated statistic: '{matched}'"
     ))
 
     # 3. Check for impossible company claims
@@ -221,16 +226,20 @@ def validate_content(title: str, content: str, topic: str = "") -> ValidationRes
         "Fabricated quote detected: '{matched}'"
     ))
 
-    # 4b. Check for fabricated personal experiences (AI pretending to be human)
+    # 4b. Check for fabricated personal experiences (AI pretending to be
+    # human). Promoted to critical — a fake anecdote is the same class
+    # of lie as a fake stat.
     issues.extend(_check_patterns(
-        full_text, FABRICATED_EXPERIENCE_PATTERNS, "warning", "fabricated_experience",
+        full_text, FABRICATED_EXPERIENCE_PATTERNS, "critical", "fabricated_experience",
         "Fabricated personal experience: '{matched}'"
     ))
 
-    # 5. Check for hallucinated internal links
+    # 5. Check for hallucinated internal links. Promoted to critical —
+    # a link that looks valid but leads nowhere is functionally a lie
+    # to the reader.
     issues.extend(_check_patterns(
-        full_text, HALLUCINATED_LINK_PATTERNS, "warning", "hallucinated_link",
-        "Possible hallucinated internal link: '{matched}'"
+        full_text, HALLUCINATED_LINK_PATTERNS, "critical", "hallucinated_link",
+        "Hallucinated internal link: '{matched}'"
     ))
 
     # 6. Check for brand contradictions (promoting paid cloud APIs)
