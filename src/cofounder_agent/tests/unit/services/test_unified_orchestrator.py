@@ -1047,3 +1047,501 @@ class TestHandleContentCreation:
         # must reuse self.database_service (injected at startup) rather than opening
         # a new connection pool on every content generation request.
         MockDatabaseService.assert_not_called()
+
+
+# ===========================================================================
+# _get_model_for_phase
+# ===========================================================================
+
+
+class TestGetModelForPhase:
+    def test_returns_user_selection_when_specific(self):
+        orch = _make_orchestrator()
+        result = orch._get_model_for_phase(
+            phase="draft",
+            model_selections={"draft": "gpt-4o", "research": "claude-opus"},
+            quality_preference="balanced",
+        )
+        assert result == "gpt-4o"
+
+    def test_returns_none_when_phase_set_to_auto(self):
+        orch = _make_orchestrator()
+        result = orch._get_model_for_phase(
+            phase="draft",
+            model_selections={"draft": "auto"},
+            quality_preference="balanced",
+        )
+        assert result is None
+
+    def test_returns_none_when_phase_not_in_selections(self):
+        orch = _make_orchestrator()
+        result = orch._get_model_for_phase(
+            phase="qa",
+            model_selections={"draft": "gpt-4o"},
+            quality_preference="quality",
+        )
+        assert result is None
+
+    def test_returns_none_when_selections_empty(self):
+        orch = _make_orchestrator()
+        result = orch._get_model_for_phase(
+            phase="draft",
+            model_selections={},
+            quality_preference="fast",
+        )
+        assert result is None
+
+    def test_returns_none_when_phase_value_is_empty_string(self):
+        orch = _make_orchestrator()
+        result = orch._get_model_for_phase(
+            phase="draft",
+            model_selections={"draft": ""},
+            quality_preference="balanced",
+        )
+        assert result is None
+
+
+# ===========================================================================
+# _parse_request — keyword-based routing
+# ===========================================================================
+
+
+class TestParseRequest:
+    @pytest.mark.asyncio
+    async def test_create_content_routes_to_content_creation(self):
+        orch = _make_orchestrator()
+        req = await orch._parse_request("create content about Python", "req-1")
+        assert req.request_type == RequestType.CONTENT_CREATION
+        assert req.extracted_intent == "content_creation"
+
+    @pytest.mark.asyncio
+    async def test_blog_post_routes_to_content_creation(self):
+        orch = _make_orchestrator()
+        req = await orch._parse_request("blog post about FastAPI", "req-2")
+        assert req.request_type == RequestType.CONTENT_CREATION
+
+    @pytest.mark.asyncio
+    async def test_research_routes_to_subtask(self):
+        orch = _make_orchestrator()
+        req = await orch._parse_request("research about distributed systems", "req-3")
+        assert req.request_type == RequestType.CONTENT_SUBTASK
+        assert req.parameters["subtask_type"] == "research"
+
+    @pytest.mark.asyncio
+    async def test_creative_routes_to_subtask(self):
+        orch = _make_orchestrator()
+        req = await orch._parse_request("draft a paragraph about AI", "req-4")
+        assert req.request_type == RequestType.CONTENT_SUBTASK
+        assert req.parameters["subtask_type"] == "creative"
+
+    @pytest.mark.asyncio
+    async def test_financial_routes_to_financial_analysis(self):
+        orch = _make_orchestrator()
+        req = await orch._parse_request("show me the budget for this month", "req-5")
+        assert req.request_type == RequestType.FINANCIAL_ANALYSIS
+
+    @pytest.mark.asyncio
+    async def test_compliance_routes_to_compliance_check(self):
+        orch = _make_orchestrator()
+        req = await orch._parse_request("run compliance audit", "req-6")
+        assert req.request_type == RequestType.COMPLIANCE_CHECK
+
+    @pytest.mark.asyncio
+    async def test_create_task_routes_to_task_management(self):
+        orch = _make_orchestrator()
+        req = await orch._parse_request("create task to fix the bug", "req-7")
+        assert req.request_type == RequestType.TASK_MANAGEMENT
+        assert "task_description" in req.parameters
+
+    @pytest.mark.asyncio
+    async def test_what_routes_to_information_retrieval(self):
+        orch = _make_orchestrator()
+        req = await orch._parse_request("what is the current pipeline status", "req-8")
+        assert req.request_type == RequestType.INFORMATION_RETRIEVAL
+        assert "query" in req.parameters
+
+    @pytest.mark.asyncio
+    async def test_should_routes_to_decision_support(self):
+        orch = _make_orchestrator()
+        # Avoid the word "draft" — it matches the earlier creative-subtask elif branch
+        req = await orch._parse_request("should we publish this post now", "req-9")
+        assert req.request_type == RequestType.DECISION_SUPPORT
+
+    @pytest.mark.asyncio
+    async def test_help_routes_to_system_operation(self):
+        orch = _make_orchestrator()
+        req = await orch._parse_request("help me understand commands", "req-10")
+        assert req.request_type == RequestType.SYSTEM_OPERATION
+
+    @pytest.mark.asyncio
+    async def test_intervention_routes_to_intervention(self):
+        orch = _make_orchestrator()
+        req = await orch._parse_request("stop the pipeline immediately", "req-11")
+        assert req.request_type == RequestType.INTERVENTION
+
+    @pytest.mark.asyncio
+    async def test_unknown_input_defaults_to_content_creation(self):
+        orch = _make_orchestrator()
+        req = await orch._parse_request("xyz unknown random gibberish", "req-12")
+        assert req.request_type == RequestType.CONTENT_CREATION
+        assert req.extracted_intent == "content_creation_default"
+
+    @pytest.mark.asyncio
+    async def test_context_passed_through(self):
+        orch = _make_orchestrator()
+        ctx = {"user": "test", "session": "abc"}
+        req = await orch._parse_request("write about ai", "req-13", context=ctx)
+        assert req.context == ctx
+
+    @pytest.mark.asyncio
+    async def test_no_context_yields_empty_dict(self):
+        orch = _make_orchestrator()
+        req = await orch._parse_request("write about ai", "req-14")
+        assert req.context == {}
+
+
+# ===========================================================================
+# Subtask handlers (the simple delegating ones)
+# ===========================================================================
+
+
+class TestHandleContentSubtask:
+    @pytest.mark.asyncio
+    async def test_returns_completed_with_subtask_type(self):
+        orch = _make_orchestrator()
+        request = Request(
+            request_id="r1",
+            original_text="research distributed systems",
+            request_type=RequestType.CONTENT_SUBTASK,
+            extracted_intent="research",
+            parameters={"subtask_type": "research", "topic": "distributed systems"},
+        )
+        result = await orch._handle_content_subtask(request)
+        assert result.status == ExecutionStatus.COMPLETED
+        assert "research" in result.output
+        assert "distributed systems" in result.output
+
+    @pytest.mark.asyncio
+    async def test_defaults_subtask_type_to_research(self):
+        orch = _make_orchestrator()
+        request = Request(
+            request_id="r2", original_text="x",
+            request_type=RequestType.CONTENT_SUBTASK,
+            extracted_intent="x", parameters={},
+        )
+        result = await orch._handle_content_subtask(request)
+        assert result.status == ExecutionStatus.COMPLETED
+
+
+class TestHandleFinancialAnalysis:
+    @pytest.mark.asyncio
+    async def test_no_agent_returns_failed(self):
+        orch = _make_orchestrator()
+        orch.agents = {}
+        request = Request(
+            request_id="r1", original_text="check budget",
+            request_type=RequestType.FINANCIAL_ANALYSIS,
+            extracted_intent="financial_analysis", parameters={},
+        )
+        result = await orch._handle_financial_analysis(request)
+        assert result.status == ExecutionStatus.FAILED
+        assert "not available" in result.output
+
+    @pytest.mark.asyncio
+    async def test_agent_async_analyze_returns_completed(self):
+        orch = _make_orchestrator()
+        fake_agent = MagicMock()
+        fake_agent.analyze = AsyncMock(return_value={"spend_usd": 12.50})
+        orch.agents = {"financial_agent": fake_agent}
+        request = Request(
+            request_id="r2", original_text="x",
+            request_type=RequestType.FINANCIAL_ANALYSIS,
+            extracted_intent="financial_analysis", parameters={},
+        )
+        result = await orch._handle_financial_analysis(request)
+        assert result.status == ExecutionStatus.COMPLETED
+        assert result.output == {"spend_usd": 12.50}
+
+    @pytest.mark.asyncio
+    async def test_agent_exception_returns_failed(self):
+        orch = _make_orchestrator()
+        fake_agent = MagicMock()
+        fake_agent.analyze = AsyncMock(side_effect=RuntimeError("provider down"))
+        orch.agents = {"financial_agent": fake_agent}
+        request = Request(
+            request_id="r3", original_text="x",
+            request_type=RequestType.FINANCIAL_ANALYSIS,
+            extracted_intent="financial_analysis", parameters={},
+        )
+        result = await orch._handle_financial_analysis(request)
+        assert result.status == ExecutionStatus.FAILED
+        assert "provider down" in result.feedback
+
+
+class TestHandleComplianceCheck:
+    @pytest.mark.asyncio
+    async def test_no_agent_returns_failed(self):
+        orch = _make_orchestrator()
+        orch.agents = {}
+        request = Request(
+            request_id="r1", original_text="audit",
+            request_type=RequestType.COMPLIANCE_CHECK,
+            extracted_intent="compliance_check", parameters={},
+        )
+        result = await orch._handle_compliance_check(request)
+        assert result.status == ExecutionStatus.FAILED
+
+    @pytest.mark.asyncio
+    async def test_agent_audit_returns_completed(self):
+        orch = _make_orchestrator()
+        fake_agent = MagicMock()
+        fake_agent.audit = AsyncMock(return_value={"violations": 0})
+        orch.agents = {"compliance_agent": fake_agent}
+        request = Request(
+            request_id="r2", original_text="x",
+            request_type=RequestType.COMPLIANCE_CHECK,
+            extracted_intent="compliance_check", parameters={},
+        )
+        result = await orch._handle_compliance_check(request)
+        assert result.status == ExecutionStatus.COMPLETED
+        assert result.output == {"violations": 0}
+
+    @pytest.mark.asyncio
+    async def test_agent_exception_returns_failed(self):
+        orch = _make_orchestrator()
+        fake_agent = MagicMock()
+        fake_agent.audit = AsyncMock(side_effect=ValueError("scan error"))
+        orch.agents = {"compliance_agent": fake_agent}
+        request = Request(
+            request_id="r3", original_text="x",
+            request_type=RequestType.COMPLIANCE_CHECK,
+            extracted_intent="compliance_check", parameters={},
+        )
+        result = await orch._handle_compliance_check(request)
+        assert result.status == ExecutionStatus.FAILED
+
+
+class TestSimpleHandlers:
+    @pytest.mark.asyncio
+    async def test_task_management(self):
+        orch = _make_orchestrator()
+        request = Request(
+            request_id="r1", original_text="create task",
+            request_type=RequestType.TASK_MANAGEMENT,
+            extracted_intent="create_task", parameters={"task_description": "fix bug"},
+        )
+        result = await orch._handle_task_management(request)
+        assert result.status == ExecutionStatus.COMPLETED
+        assert result.task_id  # uuid generated
+
+    @pytest.mark.asyncio
+    async def test_information_retrieval(self):
+        orch = _make_orchestrator()
+        request = Request(
+            request_id="r1", original_text="what is the latest post",
+            request_type=RequestType.INFORMATION_RETRIEVAL,
+            extracted_intent="retrieve_info",
+            parameters={"query": "what is the latest post"},
+        )
+        result = await orch._handle_information_retrieval(request)
+        assert result.status == ExecutionStatus.COMPLETED
+        assert "latest post" in result.output
+
+    @pytest.mark.asyncio
+    async def test_decision_support(self):
+        orch = _make_orchestrator()
+        request = Request(
+            request_id="r1", original_text="should we publish",
+            request_type=RequestType.DECISION_SUPPORT,
+            extracted_intent="decision_support",
+            parameters={"decision_question": "should we publish"},
+        )
+        result = await orch._handle_decision_support(request)
+        assert result.status == ExecutionStatus.COMPLETED
+        assert "should we publish" in result.output
+
+    @pytest.mark.asyncio
+    async def test_system_operation(self):
+        orch = _make_orchestrator()
+        request = Request(
+            request_id="r1", original_text="status",
+            request_type=RequestType.SYSTEM_OPERATION,
+            extracted_intent="system_info", parameters={},
+        )
+        result = await orch._handle_system_operation(request)
+        assert result.status == ExecutionStatus.COMPLETED
+        # Output is the system info dict
+        assert isinstance(result.output, dict)
+        assert "status" in result.output
+
+    @pytest.mark.asyncio
+    async def test_intervention_returns_cancelled(self):
+        orch = _make_orchestrator()
+        request = Request(
+            request_id="r1", original_text="stop",
+            request_type=RequestType.INTERVENTION,
+            extracted_intent="intervention", parameters={},
+        )
+        result = await orch._handle_intervention(request)
+        # Intervention is a special status — not COMPLETED or FAILED
+        assert result.status == ExecutionStatus.CANCELLED
+        assert result.output == {"intervention": "acknowledged"}
+
+    @pytest.mark.asyncio
+    async def test_unknown_falls_through_to_content_creation(self):
+        """Unknown request type re-routes to _handle_content_creation."""
+        orch = _make_orchestrator()
+        # Stub out _handle_content_creation so we can verify it's called
+        orch._handle_content_creation = AsyncMock(return_value=_make_result())
+        request = Request(
+            request_id="r1", original_text="ambiguous",
+            request_type=RequestType.CONTENT_CREATION,  # any type
+            extracted_intent="unknown", parameters={},
+        )
+        result = await orch._handle_unknown(request)
+        orch._handle_content_creation.assert_awaited_once_with(request)
+        assert result.status == ExecutionStatus.COMPLETED
+
+
+# ===========================================================================
+# process_request — top-level entry point
+# ===========================================================================
+
+
+class TestProcessRequest:
+    @pytest.mark.asyncio
+    async def test_routes_content_creation_request(self):
+        orch = _make_orchestrator()
+        orch._parse_request = AsyncMock(return_value=Request(
+            request_id="r1", original_text="write a post",
+            request_type=RequestType.CONTENT_CREATION,
+            extracted_intent="content_creation", parameters={},
+        ))
+        orch._handle_content_creation = AsyncMock(return_value=_make_result())
+
+        result = await orch.process_request("write a post")
+        orch._handle_content_creation.assert_awaited_once()
+        assert result["status"] == "completed"
+        assert orch.successful_requests == 1
+        assert orch.failed_requests == 0
+
+    @pytest.mark.asyncio
+    async def test_routes_financial_request(self):
+        orch = _make_orchestrator()
+        orch._parse_request = AsyncMock(return_value=Request(
+            request_id="r1", original_text="x",
+            request_type=RequestType.FINANCIAL_ANALYSIS,
+            extracted_intent="financial_analysis", parameters={},
+        ))
+        orch._handle_financial_analysis = AsyncMock(return_value=_make_result(
+            request_type=RequestType.FINANCIAL_ANALYSIS,
+        ))
+        orch._handle_content_creation = AsyncMock()
+
+        await orch.process_request("budget")
+        orch._handle_financial_analysis.assert_awaited_once()
+        orch._handle_content_creation.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_routes_compliance_request(self):
+        orch = _make_orchestrator()
+        orch._parse_request = AsyncMock(return_value=Request(
+            request_id="r1", original_text="x",
+            request_type=RequestType.COMPLIANCE_CHECK,
+            extracted_intent="compliance_check", parameters={},
+        ))
+        orch._handle_compliance_check = AsyncMock(return_value=_make_result(
+            request_type=RequestType.COMPLIANCE_CHECK,
+        ))
+
+        await orch.process_request("audit")
+        orch._handle_compliance_check.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_routes_intervention_request(self):
+        orch = _make_orchestrator()
+        orch._parse_request = AsyncMock(return_value=Request(
+            request_id="r1", original_text="stop",
+            request_type=RequestType.INTERVENTION,
+            extracted_intent="intervention", parameters={},
+        ))
+        orch._handle_intervention = AsyncMock(return_value=_make_result(
+            request_type=RequestType.INTERVENTION,
+            status=ExecutionStatus.CANCELLED,
+        ))
+
+        result = await orch.process_request("stop the pipeline")
+        orch._handle_intervention.assert_awaited_once()
+        assert result["status"] == "cancelled"
+
+    @pytest.mark.asyncio
+    async def test_exception_in_handler_returns_error_dict(self):
+        orch = _make_orchestrator()
+        orch._parse_request = AsyncMock(return_value=Request(
+            request_id="r1", original_text="x",
+            request_type=RequestType.CONTENT_CREATION,
+            extracted_intent="content_creation", parameters={},
+        ))
+        orch._handle_content_creation = AsyncMock(side_effect=RuntimeError("downstream broke"))
+
+        result = await orch.process_request("write a post")
+        assert result["status"] == "error"
+        assert "downstream broke" in result["error"]
+        assert orch.failed_requests == 1
+        assert orch.successful_requests == 0
+
+    @pytest.mark.asyncio
+    async def test_exception_in_parse_returns_error_dict(self):
+        orch = _make_orchestrator()
+        orch._parse_request = AsyncMock(side_effect=ValueError("bad input"))
+
+        result = await orch.process_request("x")
+        assert result["status"] == "error"
+        assert orch.failed_requests == 1
+
+    @pytest.mark.asyncio
+    async def test_total_requests_incremented_on_each_call(self):
+        orch = _make_orchestrator()
+        orch._parse_request = AsyncMock(return_value=Request(
+            request_id="r1", original_text="x",
+            request_type=RequestType.CONTENT_CREATION,
+            extracted_intent="content_creation", parameters={},
+        ))
+        orch._handle_content_creation = AsyncMock(return_value=_make_result())
+
+        await orch.process_request("a")
+        await orch.process_request("b")
+        await orch.process_request("c")
+        assert orch.total_requests == 3
+        assert orch.successful_requests == 3
+
+    @pytest.mark.asyncio
+    async def test_duration_ms_set_on_result(self):
+        orch = _make_orchestrator()
+        orch._parse_request = AsyncMock(return_value=Request(
+            request_id="r1", original_text="x",
+            request_type=RequestType.CONTENT_CREATION,
+            extracted_intent="content_creation", parameters={},
+        ))
+        result_obj = _make_result(duration_ms=0)
+        orch._handle_content_creation = AsyncMock(return_value=result_obj)
+
+        result = await orch.process_request("x")
+        # Duration was set by process_request before serialization
+        assert result["duration_ms"] >= 0
+
+    @pytest.mark.asyncio
+    async def test_legacy_dict_response_returned_directly(self):
+        """If a handler returns a plain dict (not ExecutionResult), it's returned as-is."""
+        orch = _make_orchestrator()
+        orch._parse_request = AsyncMock(return_value=Request(
+            request_id="r1", original_text="x",
+            request_type=RequestType.CONTENT_CREATION,
+            extracted_intent="content_creation", parameters={},
+        ))
+        legacy_dict = {"custom": "shape", "status": "ok"}
+        orch._handle_content_creation = AsyncMock(return_value=legacy_dict)
+
+        result = await orch.process_request("x")
+        assert result == legacy_dict
+        assert orch.successful_requests == 1
