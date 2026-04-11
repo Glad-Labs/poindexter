@@ -1,5 +1,6 @@
 """Idle Worker — background maintenance tasks that run when the pipeline has no active content generation."""
 
+import json
 import time
 
 from services.logger_config import get_logger
@@ -289,14 +290,15 @@ class IdleWorker:
     async def _audit_published_quality(self) -> dict:
         """Re-score a batch of published posts to catch quality drift."""
         try:
-            # Get posts that haven't been audited recently
+            # posts.id is UUID, audit_log.task_id is VARCHAR — cast on comparison.
             rows = await self.pool.fetch("""
                 SELECT p.id, p.title, p.slug, LEFT(p.content, 3000) as content_preview
                 FROM posts p
                 WHERE p.status = 'published'
-                AND p.id NOT IN (
+                AND p.id::text NOT IN (
                     SELECT DISTINCT task_id FROM audit_log
                     WHERE event_type = 'idle_quality_audit'
+                    AND task_id IS NOT NULL
                     AND timestamp > NOW() - INTERVAL '7 days'
                 )
                 ORDER BY p.published_at ASC
@@ -309,7 +311,6 @@ class IdleWorker:
             issues = []
             for row in rows:
                 content = row["content_preview"] or ""
-                # Quick checks: word count, heading presence, link count
                 word_count = len(content.split())
                 has_headings = "##" in content or "<h2" in content
                 if word_count < 500:
@@ -317,7 +318,20 @@ class IdleWorker:
                 if not has_headings:
                     issues.append(f"{row['title'][:40]}: no headings found")
 
-            # Create Gitea issues for problems found
+                # Record the audit so this post is skipped on the next cycle.
+                try:
+                    await self.pool.execute(
+                        "INSERT INTO audit_log (event_type, source, task_id, details, severity) "
+                        "VALUES ($1, $2, $3, $4::jsonb, $5)",
+                        "idle_quality_audit",
+                        "idle_worker",
+                        str(row["id"]),
+                        json.dumps({"title": row["title"], "word_count": word_count}),
+                        "info",
+                    )
+                except Exception as _e:
+                    logger.debug("[IDLE] audit_log insert failed: %s", _e)
+
             if issues:
                 body = "## Quality Audit Findings\n\n" + "\n".join(f"- {i}" for i in issues)
                 await self._create_gitea_issue(
