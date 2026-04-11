@@ -366,3 +366,281 @@ class TestGlobalSingleton:
             a = get_model_consolidation_service()
             b = get_model_consolidation_service()
         assert a is b
+
+
+# ===========================================================================
+# OllamaAdapter
+# ===========================================================================
+
+
+class TestOllamaAdapterIsAvailable:
+    @pytest.mark.asyncio
+    async def test_returns_true_on_200(self):
+        from services.model_consolidation_service import OllamaAdapter, ProviderType
+
+        with patch("services.model_consolidation_service.OllamaClient") if False else patch.object(
+            OllamaAdapter, "__init__", lambda self: None
+        ):
+            adapter = OllamaAdapter()
+            adapter.host = "http://localhost:11434"
+            adapter.provider_type = ProviderType.OLLAMA
+            adapter.client = MagicMock()
+            mock_resp = MagicMock(status_code=200)
+            adapter.client.client = MagicMock()
+            adapter.client.client.get = AsyncMock(return_value=mock_resp)
+            assert await adapter.is_available() is True
+
+    @pytest.mark.asyncio
+    async def test_returns_false_on_non_200(self):
+        from services.model_consolidation_service import OllamaAdapter, ProviderType
+
+        with patch.object(OllamaAdapter, "__init__", lambda self: None):
+            adapter = OllamaAdapter()
+            adapter.host = "http://localhost:11434"
+            adapter.provider_type = ProviderType.OLLAMA
+            adapter.client = MagicMock()
+            mock_resp = MagicMock(status_code=503)
+            adapter.client.client = MagicMock()
+            adapter.client.client.get = AsyncMock(return_value=mock_resp)
+            assert await adapter.is_available() is False
+
+    @pytest.mark.asyncio
+    async def test_returns_false_on_connection_error(self):
+        from services.model_consolidation_service import OllamaAdapter, ProviderType
+
+        with patch.object(OllamaAdapter, "__init__", lambda self: None):
+            adapter = OllamaAdapter()
+            adapter.host = "http://localhost:11434"
+            adapter.provider_type = ProviderType.OLLAMA
+            adapter.client = MagicMock()
+            adapter.client.client = MagicMock()
+            adapter.client.client.get = AsyncMock(side_effect=ConnectionError("refused"))
+
+            # Patch the fallback fresh-client httpx path too
+            mock_fallback = AsyncMock()
+            mock_fallback.__aenter__ = AsyncMock(return_value=mock_fallback)
+            mock_fallback.__aexit__ = AsyncMock(return_value=False)
+            mock_fallback.get = AsyncMock(side_effect=ConnectionError("refused"))
+
+            with patch("services.model_consolidation_service.httpx.AsyncClient", return_value=mock_fallback):
+                assert await adapter.is_available() is False
+
+
+class TestOllamaAdapterGenerate:
+    @pytest.mark.asyncio
+    async def test_returns_model_response_on_success(self):
+        from services.model_consolidation_service import OllamaAdapter, ProviderType, ModelResponse
+
+        with patch.object(OllamaAdapter, "__init__", lambda self: None):
+            adapter = OllamaAdapter()
+            adapter.provider_type = ProviderType.OLLAMA
+            adapter.client = MagicMock()
+            adapter.client.generate = AsyncMock(return_value={
+                "response": "Hello world from Ollama",
+                "prompt_eval_count": 5,
+                "eval_count": 10,
+            })
+
+            # Pass model explicitly so the function doesn't fall through to
+            # site_config — that's covered separately in the next test
+            result = await adapter.generate("Test prompt", model="qwen3:8b")
+
+            assert isinstance(result, ModelResponse)
+            assert result.text == "Hello world from Ollama"
+            assert result.tokens_used == 15  # prompt_eval_count + eval_count
+            assert result.cost == 0.0
+            assert result.provider == ProviderType.OLLAMA
+
+    @pytest.mark.asyncio
+    async def test_uses_default_model_when_not_specified(self):
+        from services.model_consolidation_service import OllamaAdapter, ProviderType
+
+        with patch.object(OllamaAdapter, "__init__", lambda self: None):
+            adapter = OllamaAdapter()
+            adapter.provider_type = ProviderType.OLLAMA
+            adapter.client = MagicMock()
+            adapter.client.generate = AsyncMock(return_value={"response": "ok"})
+
+            with patch("services.site_config.site_config") as mock_sc:
+                mock_sc.get.return_value = "default-model"
+                await adapter.generate("Test prompt")
+
+            # The model arg passed to client.generate should be the default
+            call_kwargs = adapter.client.generate.await_args.kwargs
+            assert call_kwargs["model"] == "default-model"
+
+    @pytest.mark.asyncio
+    async def test_exception_propagates(self):
+        from services.model_consolidation_service import OllamaAdapter, ProviderType
+
+        with patch.object(OllamaAdapter, "__init__", lambda self: None):
+            adapter = OllamaAdapter()
+            adapter.provider_type = ProviderType.OLLAMA
+            adapter.client = MagicMock()
+            adapter.client.generate = AsyncMock(side_effect=RuntimeError("ollama down"))
+
+            with pytest.raises(RuntimeError, match="ollama down"):
+                await adapter.generate("Test prompt", model="qwen3:8b")
+
+
+class TestOllamaAdapterListModels:
+    @pytest.mark.asyncio
+    async def test_returns_live_model_names(self):
+        from services.model_consolidation_service import OllamaAdapter, ProviderType
+
+        with patch.object(OllamaAdapter, "__init__", lambda self: None):
+            adapter = OllamaAdapter()
+            adapter.host = "http://localhost:11434"
+            adapter.provider_type = ProviderType.OLLAMA
+            adapter.client = MagicMock()
+            adapter.client.list_models = AsyncMock(return_value=[
+                {"name": "qwen3:8b"},
+                {"name": "gemma3:27b"},
+            ])
+
+            result = await adapter.list_models()
+            assert result == ["qwen3:8b", "gemma3:27b"]
+
+    @pytest.mark.asyncio
+    async def test_returns_fallback_when_client_fails(self):
+        from services.model_consolidation_service import OllamaAdapter, ProviderType
+
+        with patch.object(OllamaAdapter, "__init__", lambda self: None):
+            adapter = OllamaAdapter()
+            adapter.host = "http://localhost:11434"
+            adapter.provider_type = ProviderType.OLLAMA
+            adapter.client = MagicMock()
+            adapter.client.list_models = AsyncMock(side_effect=RuntimeError("conn error"))
+
+            result = await adapter.list_models()
+            # Falls back to known-installed list
+            assert isinstance(result, list)
+            assert "qwen3:8b" in result or "gemma3:27b" in result
+
+    @pytest.mark.asyncio
+    async def test_empty_live_list_uses_fallback(self):
+        from services.model_consolidation_service import OllamaAdapter, ProviderType
+
+        with patch.object(OllamaAdapter, "__init__", lambda self: None):
+            adapter = OllamaAdapter()
+            adapter.host = "http://localhost:11434"
+            adapter.provider_type = ProviderType.OLLAMA
+            adapter.client = MagicMock()
+            adapter.client.list_models = AsyncMock(return_value=[])
+
+            result = await adapter.list_models()
+            assert len(result) > 0  # falls back to known list
+
+
+# ===========================================================================
+# HuggingFaceAdapter
+# ===========================================================================
+
+
+class TestHuggingFaceAdapter:
+    @pytest.mark.asyncio
+    async def test_is_available_delegates_to_provider_checker(self):
+        from services.model_consolidation_service import HuggingFaceAdapter, ProviderType
+
+        with patch.object(HuggingFaceAdapter, "__init__", lambda self: None):
+            adapter = HuggingFaceAdapter()
+            adapter.provider_type = ProviderType.HUGGINGFACE
+
+            with patch("services.model_consolidation_service.ProviderChecker") as mock_pc:
+                mock_pc.is_huggingface_available.return_value = True
+                assert await adapter.is_available() is True
+
+                mock_pc.is_huggingface_available.return_value = False
+                assert await adapter.is_available() is False
+
+    def test_list_models_returns_known_list(self):
+        from services.model_consolidation_service import HuggingFaceAdapter, ProviderType
+
+        with patch.object(HuggingFaceAdapter, "__init__", lambda self: None):
+            adapter = HuggingFaceAdapter()
+            adapter.provider_type = ProviderType.HUGGINGFACE
+
+            models = adapter.list_models()
+            assert isinstance(models, list)
+            assert "mistralai/Mistral-7B-Instruct-v0.1" in models
+            assert len(models) >= 3
+
+    @pytest.mark.asyncio
+    async def test_generate_returns_model_response(self):
+        from services.model_consolidation_service import HuggingFaceAdapter, ProviderType, ModelResponse
+
+        with patch.object(HuggingFaceAdapter, "__init__", lambda self: None):
+            adapter = HuggingFaceAdapter()
+            adapter.provider_type = ProviderType.HUGGINGFACE
+            adapter.api_token = ""  # no token = free tier path
+            adapter.client = MagicMock()
+            adapter.client.generate = AsyncMock(return_value="Generated text from HF")
+
+            result = await adapter.generate("Test prompt", model="some-model")
+            assert isinstance(result, ModelResponse)
+            assert result.text == "Generated text from HF"
+            assert result.provider == ProviderType.HUGGINGFACE
+            assert result.cost == 0.0  # free tier (no token)
+
+    @pytest.mark.asyncio
+    async def test_generate_with_token_uses_paid_cost(self):
+        """If api_token is set, the response cost reflects the minimal paid rate."""
+        from services.model_consolidation_service import HuggingFaceAdapter, ProviderType
+
+        with patch.object(HuggingFaceAdapter, "__init__", lambda self: None):
+            adapter = HuggingFaceAdapter()
+            adapter.provider_type = ProviderType.HUGGINGFACE
+            adapter.api_token = "hf_real_token_value"
+            adapter.client = MagicMock()
+            adapter.client.generate = AsyncMock(return_value="paid response")
+
+            result = await adapter.generate("Test prompt", model="some-model")
+            assert result.cost == 0.0001
+
+    @pytest.mark.asyncio
+    async def test_generate_uses_default_model(self):
+        from services.model_consolidation_service import HuggingFaceAdapter, ProviderType
+
+        with patch.object(HuggingFaceAdapter, "__init__", lambda self: None):
+            adapter = HuggingFaceAdapter()
+            adapter.provider_type = ProviderType.HUGGINGFACE
+            adapter.api_token = ""
+            adapter.client = MagicMock()
+            adapter.client.generate = AsyncMock(return_value="ok")
+
+            await adapter.generate("Test prompt")
+            call_kwargs = adapter.client.generate.await_args.kwargs
+            assert call_kwargs["model"] == "mistralai/Mistral-7B-Instruct-v0.1"
+
+    @pytest.mark.asyncio
+    async def test_generate_exception_propagates(self):
+        from services.model_consolidation_service import HuggingFaceAdapter, ProviderType
+
+        with patch.object(HuggingFaceAdapter, "__init__", lambda self: None):
+            adapter = HuggingFaceAdapter()
+            adapter.provider_type = ProviderType.HUGGINGFACE
+            adapter.api_token = ""
+            adapter.client = MagicMock()
+            adapter.client.generate = AsyncMock(side_effect=RuntimeError("hf api error"))
+
+            with pytest.raises(RuntimeError, match="hf api error"):
+                await adapter.generate("Test prompt")
+
+
+# ===========================================================================
+# ProviderType enum
+# ===========================================================================
+
+
+class TestProviderType:
+    def test_ollama_value(self):
+        from services.model_consolidation_service import ProviderType
+        assert ProviderType.OLLAMA.value == "ollama"
+
+    def test_huggingface_value(self):
+        from services.model_consolidation_service import ProviderType
+        assert ProviderType.HUGGINGFACE.value == "huggingface"
+
+    def test_construct_from_value(self):
+        from services.model_consolidation_service import ProviderType
+        assert ProviderType("ollama") == ProviderType.OLLAMA

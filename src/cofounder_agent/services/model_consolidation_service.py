@@ -215,8 +215,8 @@ class HuggingFaceAdapter(ProviderAdapter):
     def __init__(self):
         from .huggingface_client import HuggingFaceClient
 
-        api_token = ProviderChecker.get_huggingface_api_key()
-        self.client = HuggingFaceClient(api_token=api_token)
+        self.api_token = ProviderChecker.get_huggingface_api_key()
+        self.client = HuggingFaceClient(api_token=self.api_token)
         self.provider_type = ProviderType.HUGGINGFACE
 
     async def is_available(self) -> bool:
@@ -260,7 +260,7 @@ class HuggingFaceAdapter(ProviderAdapter):
                 provider=self.provider_type,
                 model=model,
                 tokens_used=tokens_used,
-                cost=0.0 if not api_token else 0.0001,  # Free tier or minimal cost
+                cost=0.0 if not self.api_token else 0.0001,  # Free tier or minimal cost
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
