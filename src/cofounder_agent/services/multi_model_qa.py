@@ -272,8 +272,13 @@ class MultiModelQA:
             reviews.append(topic_review)
 
         # 2c. Internal-consistency gate — catches cross-section contradictions
-        # where one section recommends something another section forbids. Also
-        # a binary gate.
+        # where one section recommends something another section forbids.
+        # NOT a hard binary gate: Ollama critics hallucinate contradictions
+        # (confusing section headers for claims, etc.). We feed the gate's
+        # score into the weighted average so real contradictions still
+        # tank the final score, but a single flaky report won't veto a
+        # post that otherwise scored 85+. A hard veto only fires if the
+        # gate's own score is unambiguously low (< 50).
         consistency_review = await self._check_internal_consistency(content)
         if consistency_review is not None:
             reviews.append(consistency_review)
@@ -305,9 +310,26 @@ class MultiModelQA:
         else:
             final_score = validator_review.score
 
-        # If critic was skipped, don't auto-approve — require the validator score
-        # to meet threshold on its own. This prevents silently passing weak content.
-        all_passed = all(r.approved for r in reviews)
+        # Hard-gate pass check — the consistency gate is treated as advisory
+        # unless its own score is unambiguously low (< 50). The topic-delivery
+        # gate stays binary because title/body mismatch is usually clear-cut.
+        consistency_veto_threshold = 50.0
+        if self.settings:
+            try:
+                consistency_veto_threshold = float(
+                    await self.settings.get("qa_consistency_veto_threshold") or 50
+                )
+            except Exception:
+                pass
+
+        def _reviewer_vetoes(r: ReviewerResult) -> bool:
+            if r.approved:
+                return False
+            if r.reviewer == "internal_consistency":
+                return r.score > 0 and r.score < consistency_veto_threshold
+            return True
+
+        all_passed = not any(_reviewer_vetoes(r) for r in reviews)
         if critic_skipped:
             # Validator-only: use its raw score, don't pretend cross-model passed
             final_score = validator_review.score

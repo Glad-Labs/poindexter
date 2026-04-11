@@ -452,6 +452,59 @@ class TestInternalConsistencyGate:
         assert review is None
 
 
+class TestConsistencyGateVetoPolicy:
+    """The consistency gate is advisory — it only vetoes when its own score
+    is unambiguously low (< qa_consistency_veto_threshold, default 50).
+    Prevents flaky contradiction reports from rejecting otherwise strong
+    posts (fixes the 81% same-day rejection rate from 2026-04-10)."""
+
+    async def test_moderate_inconsistency_does_not_veto(self, qa):
+        """A consistency gate with approved=False but score 60 should NOT
+        reject an article that otherwise scores high."""
+        from services.multi_model_qa import ReviewerResult
+
+        async def _consistency_moderate(_content):
+            return ReviewerResult(
+                reviewer="internal_consistency",
+                approved=False,
+                score=60.0,
+                feedback="Contradictions: might be something",
+                provider="consistency_gate",
+            )
+
+        qa._check_internal_consistency = _consistency_moderate  # type: ignore[method-assign]
+
+        with patch("services.multi_model_qa.validate_content", return_value=_passing_validation()):
+            with patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client(approved=True, score=90.0)):
+                result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
+
+        # Final score is still well above threshold and gate didn't hard-veto
+        assert result.final_score >= 70
+        assert result.approved is True
+
+    async def test_unambiguous_inconsistency_still_vetoes(self, qa):
+        """A consistency gate with a clearly low score (< 50) should still
+        veto — real contradictions should manifest in the gate's own score."""
+        from services.multi_model_qa import ReviewerResult
+
+        async def _consistency_low(_content):
+            return ReviewerResult(
+                reviewer="internal_consistency",
+                approved=False,
+                score=20.0,
+                feedback="Contradictions: Section 1 says X, Section 3 says not-X",
+                provider="consistency_gate",
+            )
+
+        qa._check_internal_consistency = _consistency_low  # type: ignore[method-assign]
+
+        with patch("services.multi_model_qa.validate_content", return_value=_passing_validation()):
+            with patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client(approved=True, score=90.0)):
+                result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
+
+        assert result.approved is False
+
+
 # ---------------------------------------------------------------------------
 # Settings-driven weight and threshold overrides
 # ---------------------------------------------------------------------------
