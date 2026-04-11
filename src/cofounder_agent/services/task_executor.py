@@ -387,8 +387,16 @@ class TaskExecutor:
                 )
                 return
 
-            # Set per-task timeout (15 minutes max for content generation)
-            TASK_TIMEOUT_SECONDS = 900  # 15 minutes
+            # Set per-task timeout. Default 15 min; configurable via
+            # app_settings key 'task_timeout_seconds' so operators can
+            # bump it when running a bigger (slower) writer model like
+            # qwen2.5:72b or llama3.3:70b without a redeploy.
+            TASK_TIMEOUT_SECONDS = 900  # 15 minutes default
+            try:
+                _tts = await self._get_setting("task_timeout_seconds", "900")
+                TASK_TIMEOUT_SECONDS = int(_tts)
+            except Exception:
+                pass
 
             # 1. Update task status to 'in_progress'
             logger.info("[TASK_SINGLE] Marking task as in_progress...")
