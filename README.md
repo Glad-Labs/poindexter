@@ -3,7 +3,7 @@
 **Your PC is a content factory.** Poindexter is an open-source AI content pipeline that researches, writes, reviews, and publishes — autonomously. Built by [Glad Labs LLC](https://www.gladlabs.io).
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-4%2C007_passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-4%2C252_passing-brightgreen)]()
 
 ## What It Does
 
