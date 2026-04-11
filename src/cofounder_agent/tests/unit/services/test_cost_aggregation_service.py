@@ -453,3 +453,222 @@ class TestEmptyHelpers:
         assert d["monthly_budget"] == 200.0
         assert d["amount_spent"] == 0.0
         assert d["status"] == "healthy"
+
+
+# ---------------------------------------------------------------------------
+# get_history — trend calculation edge cases
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestGetHistoryTrends:
+    @pytest.mark.asyncio
+    async def test_month_period_retrieves_30_days(self):
+        """period='month' should query with 30-day window."""
+        conn = _make_conn(fetch_rows=[])
+        db = _make_db(conn)
+        svc = _make_service(db)
+
+        await svc.get_history(period="month")
+
+        # fetch was called with a start_date ~30 days ago
+        args = conn.fetch.await_args.args
+        assert len(args) == 2  # SQL + start_date
+        from datetime import datetime, timezone, timedelta
+        now = datetime.now(timezone.utc)
+        start_date = args[1]
+        delta_days = (now - start_date).days
+        assert 29 <= delta_days <= 31
+
+    @pytest.mark.asyncio
+    async def test_week_period_retrieves_7_days(self):
+        conn = _make_conn(fetch_rows=[])
+        db = _make_db(conn)
+        svc = _make_service(db)
+
+        await svc.get_history(period="week")
+
+        args = conn.fetch.await_args.args
+        from datetime import datetime, timezone
+        start_date = args[1]
+        delta_days = (datetime.now(timezone.utc) - start_date).days
+        assert 6 <= delta_days <= 8
+
+    @pytest.mark.asyncio
+    async def test_trend_up_when_second_half_higher(self):
+        """If second-half average > 110% of first-half, trend is 'up'."""
+        rows = [
+            {"date": "2026-04-01", "total_cost": 1.0, "task_count": 10},
+            {"date": "2026-04-02", "total_cost": 1.0, "task_count": 10},
+            {"date": "2026-04-03", "total_cost": 1.0, "task_count": 10},
+            {"date": "2026-04-04", "total_cost": 5.0, "task_count": 10},
+            {"date": "2026-04-05", "total_cost": 5.0, "task_count": 10},
+            {"date": "2026-04-06", "total_cost": 5.0, "task_count": 10},
+        ]
+        conn = _make_conn(fetch_rows=rows)
+        db = _make_db(conn)
+        svc = _make_service(db)
+
+        result = await svc.get_history(period="week")
+        assert result["trend"] == "up"
+
+    @pytest.mark.asyncio
+    async def test_trend_down_when_second_half_lower(self):
+        rows = [
+            {"date": "2026-04-01", "total_cost": 5.0, "task_count": 10},
+            {"date": "2026-04-02", "total_cost": 5.0, "task_count": 10},
+            {"date": "2026-04-03", "total_cost": 5.0, "task_count": 10},
+            {"date": "2026-04-04", "total_cost": 1.0, "task_count": 10},
+            {"date": "2026-04-05", "total_cost": 1.0, "task_count": 10},
+            {"date": "2026-04-06", "total_cost": 1.0, "task_count": 10},
+        ]
+        conn = _make_conn(fetch_rows=rows)
+        db = _make_db(conn)
+        svc = _make_service(db)
+
+        result = await svc.get_history(period="week")
+        assert result["trend"] == "down"
+
+    @pytest.mark.asyncio
+    async def test_trend_stable_when_similar(self):
+        rows = [
+            {"date": "2026-04-01", "total_cost": 2.0, "task_count": 10},
+            {"date": "2026-04-02", "total_cost": 2.0, "task_count": 10},
+            {"date": "2026-04-03", "total_cost": 2.0, "task_count": 10},
+            {"date": "2026-04-04", "total_cost": 2.0, "task_count": 10},
+        ]
+        conn = _make_conn(fetch_rows=rows)
+        db = _make_db(conn)
+        svc = _make_service(db)
+
+        result = await svc.get_history(period="week")
+        assert result["trend"] == "stable"
+
+    @pytest.mark.asyncio
+    async def test_single_day_is_stable(self):
+        """With only one data point, trend defaults to stable."""
+        rows = [
+            {"date": "2026-04-01", "total_cost": 5.0, "task_count": 10},
+        ]
+        conn = _make_conn(fetch_rows=rows)
+        db = _make_db(conn)
+        svc = _make_service(db)
+
+        result = await svc.get_history(period="week")
+        assert result["trend"] == "stable"
+
+    @pytest.mark.asyncio
+    async def test_zero_tasks_avg_cost_is_zero(self):
+        """A day with 0 tasks should report avg_cost=0, not divide by zero."""
+        rows = [
+            {"date": "2026-04-01", "total_cost": 0.0, "task_count": 0},
+        ]
+        conn = _make_conn(fetch_rows=rows)
+        db = _make_db(conn)
+        svc = _make_service(db)
+
+        result = await svc.get_history(period="week")
+        assert result["daily_data"][0]["avg_cost"] == 0
+
+    @pytest.mark.asyncio
+    async def test_weekly_average_scaled_by_period(self):
+        """weekly_average should be total_cost / weeks."""
+        rows = [
+            {"date": f"2026-04-{i:02d}", "total_cost": 7.0, "task_count": 1}
+            for i in range(1, 8)
+        ]
+        conn = _make_conn(fetch_rows=rows)
+        db = _make_db(conn)
+        svc = _make_service(db)
+
+        result = await svc.get_history(period="week")
+        # 7 days * 7.0 = 49 total, / 1 week = 49
+        assert result["weekly_average"] == 49.0
+
+
+# ---------------------------------------------------------------------------
+# get_budget_status — alert thresholds + projection alert
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestGetBudgetStatusProjection:
+    @pytest.mark.asyncio
+    async def test_projection_over_110_percent_adds_alert(self):
+        """If projected cost > 110% of budget, a projection alert is added."""
+        from unittest.mock import patch
+        conn = MagicMock()
+        # amount_spent is high enough that daily_burn_rate * 30 > monthly_budget * 1.1
+        conn.fetchval = AsyncMock(return_value=50.0)
+        db = _make_db(conn)
+        svc = _make_service(db)
+
+        # Freeze "now" so days_elapsed is deterministic. With a high burn rate
+        # projected_final_cost can reliably exceed 110% of the budget.
+        with patch("services.cost_aggregation_service.datetime") as mock_dt:
+            from datetime import datetime, timezone, timedelta
+            fixed_now = datetime(2026, 4, 5, 12, 0, 0, tzinfo=timezone.utc)
+            mock_dt.now = MagicMock(return_value=fixed_now)
+            # Pass-through for other datetime usage (timedelta constructor etc.)
+            mock_dt.side_effect = lambda *a, **k: datetime(*a, **k)
+            # Make timezone accessible
+            mock_dt.timezone = timezone
+            result = await svc.get_budget_status(monthly_budget=100.0)
+
+        # 50 spent over ~5 days = $10/day * 30 days = $300 projected > $110
+        # Should include a projection alert
+        projection_alerts = [
+            a for a in result["alerts"]
+            if "projected" in a.get("message", "").lower()
+        ]
+        assert len(projection_alerts) >= 1
+
+    @pytest.mark.asyncio
+    async def test_projection_below_110_no_alert(self):
+        """Normal burn rate = no projection alert."""
+        conn = MagicMock()
+        conn.fetchval = AsyncMock(return_value=10.0)
+        db = _make_db(conn)
+        svc = _make_service(db)
+
+        result = await svc.get_budget_status(monthly_budget=200.0)
+
+        projection_alerts = [
+            a for a in result["alerts"]
+            if "projected" in a.get("message", "").lower()
+        ]
+        assert len(projection_alerts) == 0
+
+    @pytest.mark.asyncio
+    async def test_zero_budget_safe_percent_used(self):
+        """monthly_budget=0 should not divide by zero."""
+        conn = MagicMock()
+        conn.fetchval = AsyncMock(return_value=5.0)
+        db = _make_db(conn)
+        svc = _make_service(db)
+
+        result = await svc.get_budget_status(monthly_budget=0.0)
+        assert result["percent_used"] == 0  # safe fallback
+
+
+# ---------------------------------------------------------------------------
+# recalculate_all
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestRecalculateAllDelegation:
+    @pytest.mark.asyncio
+    async def test_delegates_to_get_summary(self):
+        svc = _make_service()
+        called = {}
+
+        async def _fake_summary(user_id=None):
+            called["yes"] = True
+            return {"total_spent": 42.0}
+
+        svc.get_summary = _fake_summary  # type: ignore[method-assign]
+
+        result = await svc.recalculate_all()
+        assert called.get("yes") is True
+        assert result["total_spent"] == 42.0
