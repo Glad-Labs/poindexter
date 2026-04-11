@@ -157,12 +157,32 @@ curl -X PUT http://localhost:8002/api/settings/auto_publish_threshold \
   -d '{"value": "80"}'
 ```
 
+## Documentation
+
+Full technical documentation lives under [`docs/`](docs/README.md).
+Start with the [architecture overview](docs/ARCHITECTURE.md), then
+dive into specific areas:
+
+- **[Architecture overview](docs/ARCHITECTURE.md)** — how the whole system fits together
+- **[Multi-agent pipeline](docs/architecture/multi-agent-pipeline.md)** — the content pipeline + cross-model QA
+- **[Database schema](docs/architecture/database-schema.md)** — every table + migration system
+- **[API reference](docs/api/README.md)** — REST endpoints exposed by the worker
+- **[Local development setup](docs/operations/local-development-setup.md)** — end-to-end setup walkthrough
+- **[Environment variables](docs/operations/environment-variables.md)** — bootstrap-layer config
+- **[Troubleshooting](docs/operations/troubleshooting.md)** — production issues we've hit
+- **[Feature status](docs/feature-status.md)** — honest inventory of what works
+
+The docs are written for operators and contributors who want to
+master the system. They take hours to read end-to-end. If you want
+a guided shortcut, the paid Quick Start Guide (below) skips the
+reading.
+
 ## Premium Add-Ons
 
 The engine is free and open-source. For production-quality output:
 
-- **Quick Start Guide ($29)** — Setup to first post in 30 minutes
-- **Premium Prompts ($9/mo)** — Production-grade prompt templates, updated monthly
+- **Quick Start Guide ($29)** — curated 30-minute setup path with Matt's exact tuning + seed data + one-shot install script
+- **Premium Subscription ($9/mo)** — monthly prompt improvements + long-form _AI Content Pipeline_ book + Discord access
 
 Available at [gladlabs.io](https://www.gladlabs.io)
 
