@@ -346,3 +346,231 @@ class TestGetExecutionHistory:
 
         assert result["executions"] == []
         assert result.get("total_count") == 0
+
+    @pytest.mark.asyncio
+    async def test_pagination_params_forwarded(self):
+        cws = _mock_cws()
+        cws.get_all_executions = AsyncMock(return_value=[])
+        svc = _service(cws)
+
+        await svc.get_execution_history(owner_id="o", limit=25, offset=50)
+
+        cws.get_all_executions.assert_awaited_once_with(
+            owner_id="o", limit=25, offset=50
+        )
+
+
+# ---------------------------------------------------------------------------
+# Template config metadata
+# ---------------------------------------------------------------------------
+
+
+class TestTemplateMetadata:
+    def test_blog_post_word_count_target(self):
+        defs = TemplateExecutionService.get_template_definitions()
+        assert defs["blog_post"]["metadata"]["word_count_target"] == 1500
+
+    def test_social_media_does_not_require_approval(self):
+        defs = TemplateExecutionService.get_template_definitions()
+        assert defs["social_media"]["metadata"]["requires_approval"] is False
+
+    def test_market_analysis_quality_threshold(self):
+        defs = TemplateExecutionService.get_template_definitions()
+        assert defs["market_analysis"]["metadata"]["quality_threshold"] == 0.85
+
+    def test_each_template_has_estimated_duration(self):
+        defs = TemplateExecutionService.get_template_definitions()
+        for name, config in defs.items():
+            assert "estimated_duration_seconds" in config
+            assert isinstance(config["estimated_duration_seconds"], int)
+            assert config["estimated_duration_seconds"] > 0
+
+    def test_each_template_has_description(self):
+        defs = TemplateExecutionService.get_template_definitions()
+        for config in defs.values():
+            assert "description" in config
+            assert len(config["description"]) > 0
+
+    def test_each_template_has_metadata_dict(self):
+        defs = TemplateExecutionService.get_template_definitions()
+        for config in defs.values():
+            assert "metadata" in config
+            assert isinstance(config["metadata"], dict)
+
+
+# ---------------------------------------------------------------------------
+# execute_template — additional branches
+# ---------------------------------------------------------------------------
+
+
+class TestExecuteTemplateBranches:
+    @pytest.mark.asyncio
+    async def test_failed_phases_status_failed(self):
+        """If any phase has status != completed, overall status is failed."""
+        completed_phase = MagicMock(status="completed", output={}, error=None)
+        failed_phase = MagicMock(status="failed", output=None, error="boom")
+        wfe = _mock_wfe()
+        wfe.execute_workflow = AsyncMock(return_value={
+            "draft": completed_phase,
+            "assess": failed_phase,
+        })
+        svc = _service(wfe=wfe)
+
+        with patch.object(svc, "_initialize_progress_tracking"):
+            result = await svc.execute_template("blog_post", {}, owner_id="o")
+
+        assert result["status"] == "failed"
+        assert result["phases"]["draft"]["success"] is True
+        assert result["phases"]["assess"]["success"] is False
+        assert result["phases"]["assess"]["error"] == "boom"
+
+    @pytest.mark.asyncio
+    async def test_explicit_execution_id_used(self):
+        wfe = _mock_wfe()
+        wfe.execute_workflow = AsyncMock(return_value={})
+        svc = _service(wfe=wfe)
+
+        with patch.object(svc, "_initialize_progress_tracking"):
+            result = await svc.execute_template(
+                "blog_post", {}, owner_id="o", execution_id="my-exec-123"
+            )
+
+        assert result["execution_id"] == "my-exec-123"
+        # Verify executor received the execution_id
+        kwargs = wfe.execute_workflow.await_args.kwargs
+        assert kwargs["execution_id"] == "my-exec-123"
+
+    @pytest.mark.asyncio
+    async def test_create_new_workflow_when_not_found(self):
+        cws = _mock_cws()
+        cws.get_workflow_by_name = AsyncMock(return_value=None)
+        created = MagicMock(id="wf-fresh")
+        cws.create_workflow = AsyncMock(return_value=created)
+        wfe = _mock_wfe()
+        svc = _service(cws=cws, wfe=wfe)
+
+        with patch.object(svc, "_initialize_progress_tracking"):
+            await svc.execute_template("blog_post", {}, owner_id="o")
+
+        cws.create_workflow.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_persistence_failure_assigns_ephemeral_id(self):
+        """If both get_by_name and create_workflow fail, an ephemeral UUID is assigned."""
+        cws = _mock_cws()
+        cws.get_workflow_by_name = AsyncMock(side_effect=RuntimeError("DB down"))
+        wfe = _mock_wfe()
+        svc = _service(cws=cws, wfe=wfe)
+
+        with patch.object(svc, "_initialize_progress_tracking"):
+            result = await svc.execute_template("blog_post", {}, owner_id="o")
+
+        # Execution still completes — workflow_id is the ephemeral UUID
+        assert result["workflow_id"]
+        assert len(result["workflow_id"]) >= 30  # UUID is 36 chars
+
+    @pytest.mark.asyncio
+    async def test_workflow_id_passed_to_executor(self):
+        cws = _mock_cws()
+        cws.get_workflow_by_name = AsyncMock(return_value=MagicMock(id="wf-existing"))
+        wfe = _mock_wfe()
+        svc = _service(cws=cws, wfe=wfe)
+
+        with patch.object(svc, "_initialize_progress_tracking"):
+            await svc.execute_template("blog_post", {}, owner_id="o")
+
+        kwargs = wfe.execute_workflow.await_args.kwargs
+        assert kwargs["workflow"].id == "wf-existing"
+
+    @pytest.mark.asyncio
+    async def test_initial_inputs_passed_to_executor(self):
+        wfe = _mock_wfe()
+        svc = _service(wfe=wfe)
+        task_input = {"topic": "AI", "tags": ["ml"], "model": "balanced"}
+
+        with patch.object(svc, "_initialize_progress_tracking"):
+            await svc.execute_template("blog_post", task_input, owner_id="o")
+
+        kwargs = wfe.execute_workflow.await_args.kwargs
+        assert kwargs["initial_inputs"] == task_input
+
+    @pytest.mark.asyncio
+    async def test_skip_phases_propagates_to_workflow(self):
+        wfe = _mock_wfe()
+        svc = _service(wfe=wfe)
+
+        with patch.object(svc, "_initialize_progress_tracking"):
+            await svc.execute_template(
+                "blog_post", {}, owner_id="o", skip_phases=["image", "publish"]
+            )
+
+        kwargs = wfe.execute_workflow.await_args.kwargs
+        phase_names = [p.name for p in kwargs["workflow"].phases]
+        assert "image" not in phase_names
+        assert "publish" not in phase_names
+
+
+# ---------------------------------------------------------------------------
+# build_workflow_from_template — additional branches
+# ---------------------------------------------------------------------------
+
+
+class TestBuildWorkflowFromTemplateBranches:
+    def test_no_skip_phases_uses_all(self):
+        svc = _service()
+        workflow = svc.build_workflow_from_template("blog_post", owner_id="o", skip_phases=None)
+        assert len(workflow.phases) == 6
+
+    def test_empty_skip_phases_uses_all(self):
+        svc = _service()
+        workflow = svc.build_workflow_from_template("blog_post", owner_id="o", skip_phases=[])
+        assert len(workflow.phases) == 6
+
+    def test_skip_all_phases_raises_validation(self):
+        """Skipping every phase yields an empty list, which CustomWorkflow rejects."""
+        from pydantic import ValidationError
+        svc = _service()
+        with pytest.raises(ValidationError, match="at least one phase"):
+            svc.build_workflow_from_template(
+                "blog_post",
+                owner_id="o",
+                skip_phases=["research", "draft", "assess", "refine", "image", "publish"],
+            )
+
+    def test_phases_have_empty_user_inputs(self):
+        svc = _service()
+        workflow = svc.build_workflow_from_template("blog_post", owner_id="o")
+        for phase in workflow.phases:
+            assert phase.user_inputs == {}
+            assert phase.input_mapping == {}
+
+    def test_workflow_is_not_marked_as_template(self):
+        svc = _service()
+        workflow = svc.build_workflow_from_template("blog_post", owner_id="o")
+        assert workflow.is_template is False
+
+    def test_workflow_description_from_template(self):
+        svc = _service()
+        workflow = svc.build_workflow_from_template("market_analysis", owner_id="o")
+        assert "Market analysis" in workflow.description or "market" in workflow.description.lower()
+
+
+# ---------------------------------------------------------------------------
+# __init__ branches
+# ---------------------------------------------------------------------------
+
+
+class TestInit:
+    def test_default_executor_used_when_none(self):
+        cws = _mock_cws()
+        with patch("services.workflow_executor.WorkflowExecutor") as MockExecutor:
+            MockExecutor.return_value = MagicMock()
+            svc = TemplateExecutionService(custom_workflows_service=cws, workflow_executor=None)
+        assert svc.workflow_executor is not None
+
+    def test_custom_workflows_service_stored(self):
+        cws = _mock_cws()
+        wfe = _mock_wfe()
+        svc = TemplateExecutionService(custom_workflows_service=cws, workflow_executor=wfe)
+        assert svc.custom_workflows_service is cws
+        assert svc.workflow_executor is wfe
