@@ -132,6 +132,9 @@ async def _generate_social_text(
     ollama: OllamaClient | None = None,
 ) -> str:
     """Call the local Ollama LLM and return the generated text, trimmed to limit."""
+    # Track whether we own the client — only close clients we created here
+    # so we don't shut down a pool the caller is still using.
+    owns_client = ollama is None
     client = ollama or OllamaClient()
     model = _SOCIAL_MODEL.removeprefix("ollama/")  # OllamaClient expects bare model name
 
@@ -160,6 +163,12 @@ async def _generate_social_text(
     except Exception as e:
         logger.error("[social_poster] LLM generation failed for %s: %s", platform, e, exc_info=True)
         return ""
+    finally:
+        if owns_client:
+            try:
+                await client.close()
+            except Exception:
+                pass
 
 
 # ---------------------------------------------------------------------------

@@ -589,6 +589,7 @@ class AIContentGenerator:
         ollama_endpoint = _sc.get("ollama_base_url") or _sc.get("ollama_host", "http://host.docker.internal:11434")
         logger.info("   ├─ Endpoint: %s", ollama_endpoint)
         logger.info("   └─ Status: Connecting...\n")
+        ollama = None
         try:
             from .ollama_client import OllamaClient
 
@@ -787,6 +788,15 @@ class AIContentGenerator:
             logger.warning("Ollama generation failed: %s", e, exc_info=True)
             if not attempts:  # Only append if attempts list is still empty
                 attempts.append(("Ollama", str(e)[:150]))
+        finally:
+            # Close the httpx connection pool held by OllamaClient. Without
+            # this, every content-generation attempt leaked an AsyncClient
+            # (the client was only closed inside the success-return path).
+            if ollama is not None:
+                try:
+                    await ollama.close()
+                except Exception:
+                    pass
 
         return None
 
