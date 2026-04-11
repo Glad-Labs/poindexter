@@ -2155,8 +2155,18 @@ async def process_content_generation_task(
             result["qa_final_score"] = quality_result.overall_score
             result["qa_reviews"] = []
         else:
+            from services.container import get_service
             from services.multi_model_qa import MultiModelQA
-            _qa = MultiModelQA(pool=database_service.pool)
+            # Pass the DB-backed settings service so qa_validator_weight,
+            # qa_critic_weight, qa_gate_weight, qa_final_score_threshold,
+            # and qa_consistency_veto_threshold are actually read from
+            # app_settings. Without it, MultiModelQA silently uses its
+            # hardcoded defaults and the DB-as-config story is broken.
+            _settings_service = get_service("settings")
+            _qa = MultiModelQA(
+                pool=database_service.pool,
+                settings_service=_settings_service,
+            )
             _qa_result = await _run_stage_with_timeout(
                 _qa.review(
                     title=_normalize_text(result.get("seo_title", topic)),
