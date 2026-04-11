@@ -893,3 +893,469 @@ class TestReleaseTask:
         pool = _make_pool()
         db = _make_db(pool)
         await db.release_task("t-1", "worker-1", error_message="oops")
+
+
+# ---------------------------------------------------------------------------
+# bulk_add_tasks
+# ---------------------------------------------------------------------------
+
+
+def _make_bulk_pool():
+    """Pool that supports both conn.executemany and a transaction context manager."""
+    conn = MagicMock()
+    conn.executemany = AsyncMock()
+
+    @asynccontextmanager
+    async def _tx():
+        yield
+
+    conn.transaction = MagicMock(return_value=_tx())
+    pool = MagicMock()
+
+    @asynccontextmanager
+    async def _acquire():
+        yield conn
+
+    pool.acquire = _acquire
+    return pool, conn
+
+
+@pytest.mark.unit
+class TestBulkAddTasks:
+    @pytest.mark.asyncio
+    async def test_empty_list_returns_empty(self):
+        pool = _make_pool()
+        db = _make_db(pool)
+        result = await db.bulk_add_tasks([])
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_returns_list_of_task_ids(self):
+        pool, conn = _make_bulk_pool()
+        db = _make_db(pool)
+
+        tasks = [
+            {"topic": "AI", "task_name": "post-1", "status": "pending"},
+            {"topic": "Docker", "task_name": "post-2", "status": "pending"},
+            {"topic": "Kubernetes", "task_name": "post-3", "status": "pending"},
+        ]
+        result = await db.bulk_add_tasks(tasks)
+
+        assert len(result) == 3
+        assert all(isinstance(tid, str) for tid in result)
+        conn.executemany.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_uses_provided_task_id_when_present(self):
+        pool, conn = _make_bulk_pool()
+        db = _make_db(pool)
+
+        tasks = [
+            {"id": "explicit-id-1", "topic": "AI"},
+            {"task_id": "explicit-id-2", "topic": "Docker"},
+        ]
+        result = await db.bulk_add_tasks(tasks)
+
+        assert result == ["explicit-id-1", "explicit-id-2"]
+
+    @pytest.mark.asyncio
+    async def test_uuid_object_coerced_to_string(self):
+        from uuid import UUID
+        pool, conn = _make_bulk_pool()
+        db = _make_db(pool)
+
+        uid = UUID("12345678-1234-5678-1234-567812345678")
+        tasks = [{"id": uid, "topic": "AI"}]
+        result = await db.bulk_add_tasks(tasks)
+
+        assert isinstance(result[0], str)
+        assert result[0] == str(uid)
+
+    @pytest.mark.asyncio
+    async def test_task_name_merged_into_metadata(self):
+        pool, conn = _make_bulk_pool()
+        db = _make_db(pool)
+
+        captured = {}
+
+        async def _capture_executemany(sql, rows):
+            captured["rows"] = rows
+
+        conn.executemany = AsyncMock(side_effect=_capture_executemany)
+
+        await db.bulk_add_tasks([{
+            "topic": "AI",
+            "task_name": "My Post",
+            "task_metadata": {},
+        }])
+
+        # task_metadata is the 20th positional value ($20)
+        row = captured["rows"][0]
+        metadata_json = row[19]
+        metadata = json.loads(metadata_json)
+        assert metadata.get("task_name") == "My Post"
+
+    @pytest.mark.asyncio
+    async def test_default_fields_when_unspecified(self):
+        pool, conn = _make_bulk_pool()
+        db = _make_db(pool)
+
+        captured = {}
+
+        async def _capture(sql, rows):
+            captured["rows"] = rows
+
+        conn.executemany = AsyncMock(side_effect=_capture)
+
+        await db.bulk_add_tasks([{"topic": "AI"}])
+
+        row = captured["rows"][0]
+        # task_type is index 2, defaults to "blog_post"
+        assert row[2] == "blog_post"
+        # status is index 4, defaults to "pending"
+        assert row[4] == "pending"
+        # style is index 7, defaults to "technical"
+        assert row[7] == "technical"
+        # tone is index 8, defaults to "professional"
+        assert row[8] == "professional"
+        # target_length is index 9, defaults to 1500
+        assert row[9] == 1500
+
+    @pytest.mark.asyncio
+    async def test_db_exception_raised(self):
+        pool, conn = _make_bulk_pool()
+        conn.executemany = AsyncMock(side_effect=RuntimeError("unique violation"))
+        db = _make_db(pool)
+
+        with pytest.raises(RuntimeError, match="unique violation"):
+            await db.bulk_add_tasks([{"topic": "x"}])
+
+
+# ---------------------------------------------------------------------------
+# get_kpi_aggregates
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestGetKpiAggregates:
+    @pytest.mark.asyncio
+    async def test_empty_result_returns_zero_total(self):
+        pool = _make_pool(fetch_result=[])
+        db = _make_db(pool)
+
+        result = await db.get_kpi_aggregates()
+
+        assert result["rows"] == []
+        assert result["total_tasks"] == 0
+
+    @pytest.mark.asyncio
+    async def test_sums_counts_across_rows(self):
+        rows = [
+            {"status": "completed", "model_used": "qwen", "task_type": "blog",
+             "day": "2026-04-01", "count": 10, "total_cost": 0.50,
+             "avg_duration_s": 45.0, "completed_count": 10},
+            {"status": "failed", "model_used": "qwen", "task_type": "blog",
+             "day": "2026-04-01", "count": 2, "total_cost": 0.10,
+             "avg_duration_s": 20.0, "completed_count": 0},
+            {"status": "completed", "model_used": "qwen", "task_type": "blog",
+             "day": "2026-04-02", "count": 15, "total_cost": 0.75,
+             "avg_duration_s": 50.0, "completed_count": 15},
+        ]
+        pool = _make_pool(fetch_result=rows)
+        db = _make_db(pool)
+
+        result = await db.get_kpi_aggregates()
+
+        assert result["total_tasks"] == 27  # 10 + 2 + 15
+        assert len(result["rows"]) == 3
+
+    @pytest.mark.asyncio
+    async def test_custom_date_range(self):
+        """When start_date is provided, it's passed as $2 to the query."""
+        captured = {}
+
+        async def _capture_fetch(sql, *params):
+            captured["sql"] = sql
+            captured["params"] = params
+            return []
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.fetch = AsyncMock(side_effect=_capture_fetch)
+        db = _make_db(pool)
+
+        start = datetime(2026, 4, 1)
+        end = datetime(2026, 4, 10)
+        await db.get_kpi_aggregates(start_date=start, end_date=end)
+
+        assert captured["params"][0] == end
+        assert captured["params"][1] == start
+        assert "created_at >= $2" in captured["sql"]
+
+    @pytest.mark.asyncio
+    async def test_no_start_date_omits_date_filter(self):
+        captured = {}
+
+        async def _capture_fetch(sql, *params):
+            captured["sql"] = sql
+            captured["params"] = params
+            return []
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.fetch = AsyncMock(side_effect=_capture_fetch)
+        db = _make_db(pool)
+
+        await db.get_kpi_aggregates()
+
+        # Only end_date passed; no $2 date filter
+        assert len(captured["params"]) == 1
+        assert "created_at >= $2" not in captured["sql"]
+
+    @pytest.mark.asyncio
+    async def test_db_error_returns_empty(self):
+        pool = _make_pool(fetch_side_effect=RuntimeError("DB down"))
+        db = _make_db(pool)
+
+        result = await db.get_kpi_aggregates()
+
+        assert result == {"rows": [], "total_tasks": 0}
+
+    @pytest.mark.asyncio
+    async def test_query_uses_filter_completed_count(self):
+        """The SQL uses a FILTER clause to count only completed tasks."""
+        captured = {}
+
+        async def _capture_fetch(sql, *params):
+            captured["sql"] = sql
+            return []
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.fetch = AsyncMock(side_effect=_capture_fetch)
+        db = _make_db(pool)
+
+        await db.get_kpi_aggregates()
+
+        assert "FILTER (WHERE status = 'completed')" in captured["sql"]
+        assert "completed_count" in captured["sql"]
+
+
+# ---------------------------------------------------------------------------
+# log_status_change
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestLogStatusChange:
+    @pytest.mark.asyncio
+    async def test_success_returns_true(self):
+        pool = _make_pool(execute_result="INSERT 0 1")
+        db = _make_db(pool)
+
+        result = await db.log_status_change(
+            task_id="t-1",
+            old_status="pending",
+            new_status="running",
+        )
+
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_params_captured_correctly(self):
+        captured = {}
+
+        async def _capture_execute(sql, *params):
+            captured["sql"] = sql
+            captured["params"] = params
+            return "INSERT 0 1"
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.execute = AsyncMock(side_effect=_capture_execute)
+        db = _make_db(pool)
+
+        await db.log_status_change(
+            task_id="t-1",
+            old_status="running",
+            new_status="failed",
+            reason="timeout after 5 minutes",
+            metadata={"attempt": 3, "worker": "worker-1"},
+        )
+
+        assert "INSERT INTO task_status_history" in captured["sql"]
+        assert captured["params"][0] == "t-1"
+        assert captured["params"][1] == "running"
+        assert captured["params"][2] == "failed"
+        assert captured["params"][3] == "timeout after 5 minutes"
+        # metadata is JSON-serialized
+        meta = json.loads(captured["params"][4])
+        assert meta == {"attempt": 3, "worker": "worker-1"}
+
+    @pytest.mark.asyncio
+    async def test_none_reason_passed_as_empty_string(self):
+        captured = {}
+
+        async def _capture(sql, *params):
+            captured["params"] = params
+            return "INSERT 0 1"
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.execute = AsyncMock(side_effect=_capture)
+        db = _make_db(pool)
+
+        await db.log_status_change("t-1", "old", "new")
+
+        assert captured["params"][3] == ""
+
+    @pytest.mark.asyncio
+    async def test_none_metadata_becomes_empty_dict_json(self):
+        captured = {}
+
+        async def _capture(sql, *params):
+            captured["params"] = params
+            return "INSERT 0 1"
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.execute = AsyncMock(side_effect=_capture)
+        db = _make_db(pool)
+
+        await db.log_status_change("t-1", "old", "new")
+
+        metadata_str = captured["params"][4]
+        assert json.loads(metadata_str) == {}
+
+    @pytest.mark.asyncio
+    async def test_db_error_returns_false(self):
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.execute = AsyncMock(side_effect=RuntimeError("constraint violated"))
+        db = _make_db(pool)
+
+        result = await db.log_status_change("t-1", "old", "new")
+
+        assert result is False
+
+
+# ---------------------------------------------------------------------------
+# get_validation_failures
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestGetValidationFailures:
+    @pytest.mark.asyncio
+    async def test_returns_failures_with_errors_from_metadata(self):
+        now = datetime.now()
+        rows = [
+            {
+                "id": 1,
+                "task_id": "t-1",
+                "old_status": "running",
+                "new_status": "validation_failed",
+                "reason": "content too short",
+                "metadata": json.dumps({
+                    "validation_errors": ["word_count: 50", "missing_headings"],
+                    "context": {"word_count": 50},
+                }),
+                "created_at": now,
+            },
+        ]
+        pool = _make_pool(fetch_result=rows)
+        db = _make_db(pool)
+
+        result = await db.get_validation_failures("t-1")
+
+        assert len(result) == 1
+        failure = result[0]
+        assert failure["id"] == 1
+        assert failure["reason"] == "content too short"
+        assert failure["errors"] == ["word_count: 50", "missing_headings"]
+        assert failure["context"] == {"word_count": 50}
+        assert failure["timestamp"] == now.isoformat()
+
+    @pytest.mark.asyncio
+    async def test_empty_metadata_returns_empty_errors(self):
+        now = datetime.now()
+        rows = [
+            {
+                "id": 1, "task_id": "t-1", "old_status": "running",
+                "new_status": "validation_error", "reason": "generic",
+                "metadata": None, "created_at": now,
+            },
+        ]
+        pool = _make_pool(fetch_result=rows)
+        db = _make_db(pool)
+
+        result = await db.get_validation_failures("t-1")
+
+        assert len(result) == 1
+        assert result[0]["errors"] == []
+        assert result[0]["context"] == {}
+
+    @pytest.mark.asyncio
+    async def test_no_failures_returns_empty_list(self):
+        pool = _make_pool(fetch_result=[])
+        db = _make_db(pool)
+
+        result = await db.get_validation_failures("t-1")
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_db_error_returns_empty_list(self):
+        pool = _make_pool(fetch_side_effect=RuntimeError("table missing"))
+        db = _make_db(pool)
+
+        result = await db.get_validation_failures("t-1")
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_legacy_timestamp_column_fallback(self):
+        """When the modern created_at column query fails, retry with legacy 'timestamp' column."""
+        now = datetime.now()
+        modern_result = [
+            {
+                "id": 1, "task_id": "t-1", "old_status": "running",
+                "new_status": "validation_failed", "reason": "ok",
+                "metadata": None, "created_at": now,
+            },
+        ]
+        call_count = [0]
+
+        async def _fetch_with_fallback(sql, *params):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                # First call (modern SQL) fails
+                raise RuntimeError("column created_at does not exist")
+            # Second call (legacy SQL) succeeds
+            return modern_result
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.fetch = AsyncMock(side_effect=_fetch_with_fallback)
+        db = _make_db(pool)
+
+        result = await db.get_validation_failures("t-1")
+
+        assert len(result) == 1
+        assert call_count[0] == 2  # Fallback SQL was attempted
+
+    @pytest.mark.asyncio
+    async def test_limit_passed_to_query(self):
+        captured = {}
+
+        async def _capture(sql, *params):
+            captured["params"] = params
+            return []
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.fetch = AsyncMock(side_effect=_capture)
+        db = _make_db(pool)
+
+        await db.get_validation_failures("t-1", limit=25)
+
+        assert captured["params"][0] == "t-1"
+        assert captured["params"][1] == 25
