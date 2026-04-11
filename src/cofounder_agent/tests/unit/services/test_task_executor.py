@@ -751,3 +751,202 @@ class TestTaskMetricsWiring:
         assert "quality_validation" in breakdown
         # Total duration must be non-negative
         assert m.get_total_duration_ms() >= 0
+
+
+# ===========================================================================
+# _get_setting and _get_model_selections — small DB helpers
+# ===========================================================================
+
+
+class TestGetSetting:
+    @pytest.mark.asyncio
+    async def test_returns_default_when_no_database_service(self):
+        from services.task_executor import TaskExecutor
+        executor = TaskExecutor(database_service=None)
+        result = await executor._get_setting("any_key", "default_val")
+        assert result == "default_val"
+
+    @pytest.mark.asyncio
+    async def test_returns_default_when_pool_is_none(self):
+        from services.task_executor import TaskExecutor
+        db = MagicMock()
+        db.pool = None
+        executor = TaskExecutor(database_service=db)
+        result = await executor._get_setting("any_key", "default_val")
+        assert result == "default_val"
+
+    @pytest.mark.asyncio
+    async def test_returns_db_value_when_present(self):
+        from services.task_executor import TaskExecutor
+        db = MagicMock()
+        db.pool = MagicMock()
+        db.pool.fetchrow = AsyncMock(return_value={"value": "from_db"})
+        executor = TaskExecutor(database_service=db)
+        result = await executor._get_setting("key", "default")
+        assert result == "from_db"
+
+    @pytest.mark.asyncio
+    async def test_returns_default_when_row_missing(self):
+        from services.task_executor import TaskExecutor
+        db = MagicMock()
+        db.pool = MagicMock()
+        db.pool.fetchrow = AsyncMock(return_value=None)
+        executor = TaskExecutor(database_service=db)
+        result = await executor._get_setting("key", "default")
+        assert result == "default"
+
+    @pytest.mark.asyncio
+    async def test_returns_default_on_db_exception(self):
+        from services.task_executor import TaskExecutor
+        db = MagicMock()
+        db.pool = MagicMock()
+        db.pool.fetchrow = AsyncMock(side_effect=RuntimeError("conn lost"))
+        executor = TaskExecutor(database_service=db)
+        result = await executor._get_setting("key", "default")
+        assert result == "default"
+
+
+class TestGetModelSelections:
+    @pytest.mark.asyncio
+    async def test_returns_empty_when_no_database_service(self):
+        from services.task_executor import TaskExecutor
+        executor = TaskExecutor(database_service=None)
+        result = await executor._get_model_selections("task-1")
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_returns_dict_when_already_a_dict(self):
+        from services.task_executor import TaskExecutor
+        db = MagicMock()
+        db.pool = MagicMock()
+        db.pool.fetchrow = AsyncMock(return_value={
+            "model_selections": {"draft": "qwen3:8b", "qa": "gemma3:27b"}
+        })
+        executor = TaskExecutor(database_service=db)
+        result = await executor._get_model_selections("task-1")
+        assert result == {"draft": "qwen3:8b", "qa": "gemma3:27b"}
+
+    @pytest.mark.asyncio
+    async def test_parses_json_string(self):
+        from services.task_executor import TaskExecutor
+        db = MagicMock()
+        db.pool = MagicMock()
+        db.pool.fetchrow = AsyncMock(return_value={
+            "model_selections": '{"draft": "qwen3:8b"}'
+        })
+        executor = TaskExecutor(database_service=db)
+        result = await executor._get_model_selections("task-1")
+        assert result == {"draft": "qwen3:8b"}
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_when_row_missing(self):
+        from services.task_executor import TaskExecutor
+        db = MagicMock()
+        db.pool = MagicMock()
+        db.pool.fetchrow = AsyncMock(return_value=None)
+        executor = TaskExecutor(database_service=db)
+        result = await executor._get_model_selections("task-1")
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_on_db_exception(self):
+        from services.task_executor import TaskExecutor
+        db = MagicMock()
+        db.pool = MagicMock()
+        db.pool.fetchrow = AsyncMock(side_effect=RuntimeError("conn lost"))
+        executor = TaskExecutor(database_service=db)
+        result = await executor._get_model_selections("task-1")
+        assert result == {}
+
+
+# ===========================================================================
+# _get_auto_publish_threshold
+# ===========================================================================
+
+
+class TestGetAutoPublishThreshold:
+    @pytest.mark.asyncio
+    async def test_returns_value_from_setting(self):
+        from services.task_executor import TaskExecutor
+        executor = TaskExecutor(database_service=None)
+        executor._get_setting = AsyncMock(return_value="85.5")
+        result = await executor._get_auto_publish_threshold()
+        assert result == 85.5
+
+    @pytest.mark.asyncio
+    async def test_returns_zero_when_setting_empty(self):
+        from services.task_executor import TaskExecutor
+        executor = TaskExecutor(database_service=None)
+        executor._get_setting = AsyncMock(return_value="")
+        result = await executor._get_auto_publish_threshold()
+        assert result == 0.0
+
+    @pytest.mark.asyncio
+    async def test_returns_zero_on_invalid_value(self):
+        from services.task_executor import TaskExecutor
+        executor = TaskExecutor(database_service=None)
+        executor._get_setting = AsyncMock(return_value="not-a-number")
+        result = await executor._get_auto_publish_threshold()
+        assert result == 0.0
+
+
+# ===========================================================================
+# _auto_publish_task — daily limit guard
+# ===========================================================================
+
+
+class TestAutoPublishTaskGuards:
+    @pytest.mark.asyncio
+    async def test_returns_early_when_daily_limit_reached(self):
+        from services.task_executor import TaskExecutor
+        db = MagicMock()
+        db.pool = MagicMock()
+        db.cloud_pool = MagicMock()
+        # Daily limit is 1, today's count is 1 → at limit
+        db.cloud_pool.fetchval = AsyncMock(return_value=1)
+        db.get_task = AsyncMock()
+        db.update_task_status = AsyncMock()
+
+        executor = TaskExecutor(database_service=db)
+        executor._get_setting = AsyncMock(return_value="1")
+
+        await executor._auto_publish_task("task-1", 90.0)
+
+        # Daily limit hit early — no task fetch, no status change
+        db.get_task.assert_not_awaited()
+        db.update_task_status.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_returns_early_when_task_not_found(self):
+        from services.task_executor import TaskExecutor
+        db = MagicMock()
+        db.pool = MagicMock()
+        db.cloud_pool = MagicMock()
+        db.cloud_pool.fetchval = AsyncMock(return_value=0)  # under limit
+        db.get_task = AsyncMock(return_value=None)
+        db.update_task_status = AsyncMock()
+
+        executor = TaskExecutor(database_service=db)
+        executor._get_setting = AsyncMock(return_value="5")
+
+        await executor._auto_publish_task("missing-task", 90.0)
+        db.update_task_status.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_returns_early_when_no_featured_image(self):
+        from services.task_executor import TaskExecutor
+        db = MagicMock()
+        db.pool = MagicMock()
+        db.cloud_pool = MagicMock()
+        db.cloud_pool.fetchval = AsyncMock(return_value=0)
+        db.get_task = AsyncMock(return_value={
+            "task_id": "t1",
+            "featured_image_url": None,  # missing
+        })
+        db.update_task_status = AsyncMock()
+
+        executor = TaskExecutor(database_service=db)
+        executor._get_setting = AsyncMock(return_value="5")
+
+        await executor._auto_publish_task("t1", 90.0)
+        db.update_task_status.assert_not_awaited()
