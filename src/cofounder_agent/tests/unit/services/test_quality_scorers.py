@@ -632,6 +632,28 @@ class TestScoreSeoDetailed:
         result_without = score_seo(content, {}, cfg=_CFG)
         assert result_with == result_without
 
+    def test_keywords_present_boosts_score(self):
+        """Primary keyword in content should earn a +1.5 bonus over a run
+        with no keywords context at all."""
+        content = "Docker containers are fantastic for reproducible deploys."
+        with_kw = score_seo(content, {"keywords": ["Docker"]}, cfg=_CFG)
+        without_kw = score_seo(content, {}, cfg=_CFG)
+        assert with_kw > without_kw
+
+    def test_keywords_missing_penalizes_score(self):
+        """Keywords declared in context but absent from content should drop
+        the score by 1.0 — previously the pipeline computed this check and
+        threw the result away."""
+        content = "Containers are fantastic for reproducible deploys."
+        with_missing = score_seo(content, {"keywords": ["Docker"]}, cfg=_CFG)
+        without_kw = score_seo(content, {}, cfg=_CFG)
+        assert with_missing < without_kw
+
+    def test_keyword_penalty_floors_at_zero(self):
+        """Score is clamped >= 0 even when penalties stack."""
+        result = score_seo("", {"keywords": ["Docker"]}, cfg=_CFG)
+        assert result >= 0.0
+
 
 # ---------------------------------------------------------------------------
 # score_readability — Flesch tier branches

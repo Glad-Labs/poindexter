@@ -201,8 +201,9 @@ class ResearchService:
             if not topic_words:
                 return []
 
-            # Use the first few significant words for search
-            search_term = " & ".join(topic_words[:3])
+            # Use the first few significant words for search (ILIKE against
+            # each word — an earlier version built a tsquery string here,
+            # which this query never used).
             rows = await self.pool.fetch("""
                 SELECT title, slug FROM posts
                 WHERE status = 'published'
