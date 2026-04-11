@@ -302,3 +302,263 @@ class TestSQLOperator:
 
     def test_is_null_value(self):
         assert SQLOperator.IS_NULL == "IS NULL"
+
+    def test_all_operators_present(self):
+        expected = {
+            "=", "!=", "<", "<=", ">", ">=",
+            "IN", "NOT IN", "LIKE", "ILIKE",
+            "BETWEEN", "IS NULL", "IS NOT NULL",
+        }
+        actual = {op.value for op in SQLOperator}
+        assert expected == actual
+
+    def test_ne_lt_gt(self):
+        assert SQLOperator.NE == "!="
+        assert SQLOperator.LT == "<"
+        assert SQLOperator.LE == "<="
+        assert SQLOperator.GT == ">"
+        assert SQLOperator.GE == ">="
+
+    def test_not_in_value(self):
+        assert SQLOperator.NOT_IN == "NOT IN"
+
+    def test_like_and_between(self):
+        assert SQLOperator.LIKE == "LIKE"
+        assert SQLOperator.BETWEEN == "BETWEEN"
+
+    def test_is_not_null_value(self):
+        assert SQLOperator.IS_NOT_NULL == "IS NOT NULL"
+
+
+# ---------------------------------------------------------------------------
+# add_param + counter
+# ---------------------------------------------------------------------------
+
+
+class TestAddParam:
+    def test_first_param_is_dollar_one(self):
+        builder = ParameterizedQueryBuilder()
+        ph = builder.add_param("value")
+        assert ph == "$1"
+        assert builder.params == ["value"]
+
+    def test_sequential_placeholders(self):
+        builder = ParameterizedQueryBuilder()
+        builder.add_param("a")
+        builder.add_param("b")
+        ph = builder.add_param("c")
+        assert ph == "$3"
+        assert builder.params == ["a", "b", "c"]
+
+    def test_param_counter_persists(self):
+        builder = ParameterizedQueryBuilder()
+        for i in range(5):
+            builder.add_param(i)
+        assert builder.param_counter == 5
+        assert len(builder.params) == 5
+
+    def test_can_store_complex_types(self):
+        builder = ParameterizedQueryBuilder()
+        builder.add_param([1, 2, 3])
+        builder.add_param({"key": "value"})
+        builder.add_param(None)
+        assert builder.params == [[1, 2, 3], {"key": "value"}, None]
+
+
+# ---------------------------------------------------------------------------
+# SQLIdentifierValidator — additional edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestSQLIdentifierValidatorEdgeCases:
+    def test_underscore_only_is_valid(self):
+        assert SQLIdentifierValidator.validate("_") is True
+
+    def test_underscore_prefix_is_valid(self):
+        assert SQLIdentifierValidator.validate("_private_col") is True
+
+    def test_long_identifier_is_valid(self):
+        long_name = "a" * 100
+        assert SQLIdentifierValidator.validate(long_name) is True
+
+    def test_uppercase_is_valid(self):
+        assert SQLIdentifierValidator.validate("UserId") is True
+
+    def test_mixed_case_is_valid(self):
+        assert SQLIdentifierValidator.validate("camelCase_snake") is True
+
+    def test_quoted_identifier_invalid(self):
+        assert SQLIdentifierValidator.validate('"users"') is False
+
+    def test_backtick_invalid(self):
+        assert SQLIdentifierValidator.validate("`users`") is False
+
+    def test_safe_identifier_default_context(self):
+        # Default context arg is "identifier"
+        result = SQLIdentifierValidator.safe_identifier("valid_name")
+        assert result == "valid_name"
+
+    def test_safe_identifier_error_includes_context(self):
+        with pytest.raises(ValueError, match="custom_context"):
+            SQLIdentifierValidator.safe_identifier("bad-name", "custom_context")
+
+
+# ---------------------------------------------------------------------------
+# SELECT — additional combinations
+# ---------------------------------------------------------------------------
+
+
+class TestSelectAdvanced:
+    def test_select_with_all_clauses(self):
+        builder = ParameterizedQueryBuilder()
+        sql, params = builder.select(
+            ["id", "name"],
+            "users",
+            where_clauses=[("status", SQLOperator.EQ, "active")],
+            order_by=[("created_at", "DESC")],
+            limit=20,
+            offset=40,
+        )
+        assert "SELECT id, name FROM users" in sql
+        assert "WHERE status = $1" in sql
+        assert "ORDER BY created_at DESC" in sql
+        assert "LIMIT $2" in sql
+        assert "OFFSET $3" in sql
+        assert params == ["active", 20, 40]
+
+    def test_select_lowercase_order_direction_normalized(self):
+        builder = ParameterizedQueryBuilder()
+        sql, _ = builder.select(["id"], "tasks", order_by=[("created_at", "asc")])
+        assert "ASC" in sql
+
+    def test_select_column_with_uppercase_AS(self):
+        # " AS " should also be detected as expression (it lowercases for matching)
+        builder = ParameterizedQueryBuilder()
+        sql, _ = builder.select(["id AS user_id"], "users")
+        assert "id AS user_id" in sql
+
+    def test_select_multiple_order_by(self):
+        builder = ParameterizedQueryBuilder()
+        sql, _ = builder.select(
+            ["id"],
+            "tasks",
+            order_by=[("priority", "DESC"), ("created_at", "ASC")],
+        )
+        assert "priority DESC" in sql
+        assert "created_at ASC" in sql
+
+    def test_select_offset_without_limit(self):
+        builder = ParameterizedQueryBuilder()
+        sql, params = builder.select(["id"], "tasks", offset=100)
+        assert "OFFSET $1" in sql
+        assert params == [100]
+        assert "LIMIT" not in sql
+
+    def test_select_order_by_invalid_column_raises(self):
+        builder = ParameterizedQueryBuilder()
+        with pytest.raises(ValueError):
+            builder.select(["id"], "tasks", order_by=[("bad col", "ASC")])
+
+
+# ---------------------------------------------------------------------------
+# INSERT — additional cases
+# ---------------------------------------------------------------------------
+
+
+class TestInsertAdvanced:
+    def test_insert_without_returning(self):
+        builder = ParameterizedQueryBuilder()
+        sql, _ = builder.insert("users", {"name": "Alice"})
+        assert "RETURNING" not in sql
+
+    def test_insert_preserves_column_order(self):
+        builder = ParameterizedQueryBuilder()
+        sql, params = builder.insert("users", {"name": "Alice", "email": "a@b.com", "age": 30})
+        # Python dict preserves insertion order in 3.7+
+        assert "(name, email, age)" in sql
+        assert params == ["Alice", "a@b.com", 30]
+
+    def test_insert_returning_invalid_column_raises(self):
+        builder = ParameterizedQueryBuilder()
+        with pytest.raises(ValueError):
+            builder.insert("users", {"name": "x"}, return_columns=["bad-col"])
+
+    def test_insert_with_none_value(self):
+        builder = ParameterizedQueryBuilder()
+        sql, params = builder.insert("users", {"name": "Alice", "deleted_at": None})
+        assert None in params
+
+
+# ---------------------------------------------------------------------------
+# UPDATE — additional cases
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateAdvanced:
+    def test_update_invalid_set_column_raises(self):
+        builder = ParameterizedQueryBuilder()
+        with pytest.raises(ValueError):
+            builder.update(
+                "users",
+                {"bad col": "val"},
+                where_clauses=[("id", SQLOperator.EQ, 1)],
+            )
+
+    def test_update_invalid_where_column_raises(self):
+        builder = ParameterizedQueryBuilder()
+        with pytest.raises(ValueError):
+            builder.update(
+                "users",
+                {"name": "Bob"},
+                where_clauses=[("bad col", SQLOperator.EQ, 1)],
+            )
+
+    def test_update_returning_invalid_column_raises(self):
+        builder = ParameterizedQueryBuilder()
+        with pytest.raises(ValueError):
+            builder.update(
+                "users",
+                {"name": "x"},
+                where_clauses=[("id", SQLOperator.EQ, 1)],
+                return_columns=["bad-col"],
+            )
+
+    def test_update_param_order(self):
+        builder = ParameterizedQueryBuilder()
+        sql, params = builder.update(
+            "users",
+            {"status": "inactive"},
+            where_clauses=[("id", SQLOperator.EQ, 42)],
+        )
+        # SET params come before WHERE params
+        assert params == ["inactive", 42]
+        assert "status = $1" in sql
+        assert "id = $2" in sql
+
+
+# ---------------------------------------------------------------------------
+# DELETE — additional cases
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteAdvanced:
+    def test_delete_invalid_where_column_raises(self):
+        builder = ParameterizedQueryBuilder()
+        with pytest.raises(ValueError):
+            builder.delete("users", [("bad col", SQLOperator.EQ, 1)])
+
+    def test_delete_param_order(self):
+        builder = ParameterizedQueryBuilder()
+        sql, params = builder.delete(
+            "tokens",
+            [("user_id", SQLOperator.EQ, "u1"), ("expired", SQLOperator.EQ, True)],
+        )
+        assert params == ["u1", True]
+
+    def test_delete_uses_and_between_clauses(self):
+        builder = ParameterizedQueryBuilder()
+        sql, _ = builder.delete(
+            "logs",
+            [("level", SQLOperator.EQ, "DEBUG"), ("agent", SQLOperator.EQ, "test")],
+        )
+        assert " AND " in sql
