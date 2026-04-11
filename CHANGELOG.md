@@ -31,8 +31,8 @@
 
 ### Known issues
 
-- 7 remaining structural issues in `bootstrap.sh` from the dogfood install pass are tracked in issue #185 (silent failure cleanup, version checks, schema drift, theater steps). Need a full bootstrap rewrite to address properly.
-- `tests/unit/services/test_web_research.py` is `--ignored` in CI per issue #184 — investigation pending.
+- `bootstrap.sh` still has structural rough edges from the dogfood install pass (silent failure cleanup, version checks, schema drift, theater steps). Likely needs a full rewrite to fix properly.
+- `tests/unit/services/test_web_research.py` is `--ignored` in CI pending investigation.
 
 ---
 

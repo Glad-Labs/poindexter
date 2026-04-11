@@ -4,15 +4,16 @@ Poindexter is built and maintained by [Glad Labs LLC](https://www.gladlabs.io). 
 
 ## Where to ask
 
-| Type of question                                                             | Best channel                                                                                                                                                                            |
-| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Bug reports**                                                              | [Open a GitHub issue](https://github.com/Glad-Labs/poindexter/issues) with the bug template. Include logs, your `docker compose ps` output, and the steps to reproduce.                 |
-| **Feature requests**                                                         | GitHub issues with the "enhancement" label. Discussion happens in the issue thread.                                                                                                     |
-| **"How do I configure X"**                                                   | Check the README first, then `app_settings` in your local DB (`SELECT * FROM app_settings WHERE category = 'whatever'`). If still stuck, open a GitHub issue with the "question" label. |
-| **Security vulnerabilities**                                                 | **Do not open a public issue.** Email **security@gladlabs.io** with subject `[SECURITY] Vulnerability Report`. See [SECURITY.md](SECURITY.md).                                          |
-| **Code of conduct concerns**                                                 | Email **conduct@gladlabs.io**.                                                                                                                                                          |
-| **Commercial licensing** (you need a non-AGPL license for closed-source use) | Email **sales@gladlabs.io**.                                                                                                                                                            |
-| **Paid support, custom development, prompts pack**                           | Email **sales@gladlabs.io** or visit [gladlabs.io](https://www.gladlabs.io).                                                                                                            |
+| Type of question                                                             | Best channel                                                                                                                                                                                                              |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Bug reports**                                                              | [Open a GitHub issue](https://github.com/Glad-Labs/poindexter/issues) with the bug template. Include logs, your `docker compose ps` output, and the steps to reproduce.                                                   |
+| **Feature requests**                                                         | GitHub issues with the "enhancement" label. Discussion happens in the issue thread.                                                                                                                                       |
+| **"How do I configure X"**                                                   | Check the README first, then `app_settings` in your local DB (`SELECT * FROM app_settings WHERE category = 'whatever'`). If still stuck, open a GitHub issue with the "question" label or ask in the Discord (see below). |
+| **Real-time chat / community**                                               | Glad Labs Discord — informal Q&A, build-along chat, dogfooding feedback. Currently invite-only while the community is small; email **sales@gladlabs.io** for an invite if you're a customer or contributor.               |
+| **Security vulnerabilities**                                                 | **Do not open a public issue.** Email **security@gladlabs.io** with subject `[SECURITY] Vulnerability Report`. See [SECURITY.md](SECURITY.md).                                                                            |
+| **Code of conduct concerns**                                                 | Email **conduct@gladlabs.io**.                                                                                                                                                                                            |
+| **Commercial licensing** (you need a non-AGPL license for closed-source use) | Email **sales@gladlabs.io**.                                                                                                                                                                                              |
+| **Paid support, custom development, prompts pack**                           | Email **sales@gladlabs.io** or visit [gladlabs.io](https://www.gladlabs.io).                                                                                                                                              |
 
 ## What's free vs paid
 
@@ -51,7 +52,7 @@ To set expectations honestly:
 - **No multi-tenant deployment recipe.** Poindexter is designed for one operator on one machine. If you want to run it as a service for multiple customers, that's a different architecture and we don't ship it.
 - **No Windows-native support outside Git Bash / WSL.** The bootstrap script needs `bash`. Native cmd and PowerShell are not supported install paths.
 - **No backwards compatibility guarantee on AGPL releases pre-1.0.** Database schema and config keys may change between releases. Read the CHANGELOG before upgrading.
-- **No active community Discord or forum yet.** GitHub issues are the only public channel right now.
+- **No public community forum yet.** The Discord is invite-only — GitHub issues remain the canonical public channel.
 
 ## Helping yourself
 
