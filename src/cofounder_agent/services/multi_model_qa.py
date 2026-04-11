@@ -279,9 +279,21 @@ class MultiModelQA:
         # tank the final score, but a single flaky report won't veto a
         # post that otherwise scored 85+. A hard veto only fires if the
         # gate's own score is unambiguously low (< 50).
+        # When the consistency gate fires, the content_router_service
+        # rewrite loop intercepts and retries the draft with targeted
+        # fixes before finalizing the reject/approve decision.
         consistency_review = await self._check_internal_consistency(content)
         if consistency_review is not None:
             reviews.append(consistency_review)
+
+        # 2d. Image relevance gate — checks whether inline images
+        # actually match the content they're next to. Catches the
+        # "a close-up image of a busy server room" stock-photo-for-a-
+        # FastAPI-post pattern Matt flagged on 2026-04-11. Behind a
+        # flag because it requires a vision-capable Ollama model.
+        image_review = await self._check_image_relevance(title, topic, content)
+        if image_review is not None:
+            reviews.append(image_review)
 
         # 3. Aggregate scores — weights configurable via app_settings
         validator_weight = 0.4
@@ -302,6 +314,7 @@ class MultiModelQA:
                 "google": critic_weight,
                 "ollama": critic_weight,
                 "consistency_gate": gate_weight,
+                "vision_gate": gate_weight,
             }
             total_weight = sum(weights.get(r.provider, 0.5) for r in scored_reviews)
             final_score = sum(
@@ -684,6 +697,211 @@ class MultiModelQA:
         prompt = CONSISTENCY_PROMPT.format(content=content[:10000])
         return await self._run_gate_prompt(
             prompt, reviewer_name="internal_consistency", pass_key="consistent"
+        )
+
+    async def _check_image_relevance(
+        self, title: str, topic: str, content: str
+    ) -> ReviewerResult | None:
+        """Gate: do the inline images actually match what the article is about?
+
+        Extracts up to N inline image URLs from the content, downloads them,
+        and asks a vision-capable Ollama model (qwen3-vl:30b by default)
+        whether each image is relevant to the content and topic. Returns
+        None when disabled (default), when no images are present, or when
+        the vision model is unavailable.
+
+        Settings:
+            qa_vision_check_enabled    — default "false" (opt-in; vision
+                                         inference is ~10s per image)
+            qa_vision_model            — default "qwen3-vl:30b"
+            qa_vision_max_images       — default 3
+            qa_vision_pass_threshold   — default 60 (min per-image score
+                                         the gate considers "relevant")
+        """
+        import asyncio
+        import base64
+        import json
+        import re
+
+        # Feature flag
+        enabled = False
+        model = "qwen3-vl:30b"
+        max_images = 3
+        pass_threshold = 60
+        if self.settings:
+            try:
+                enabled = str(
+                    await self.settings.get("qa_vision_check_enabled") or "false"
+                ).lower() == "true"
+                model = (
+                    await self.settings.get("qa_vision_model") or "qwen3-vl:30b"
+                )
+                model = model.removeprefix("ollama/")
+                max_images = int(
+                    await self.settings.get("qa_vision_max_images") or 3
+                )
+                pass_threshold = int(
+                    await self.settings.get("qa_vision_pass_threshold") or 60
+                )
+            except Exception:
+                pass
+
+        if not enabled:
+            return None
+        if not content or not content.strip():
+            return None
+
+        # Find inline markdown / HTML images. Cap at max_images so a
+        # 10-image article doesn't blow up inference budget.
+        md_urls = re.findall(r'!\[[^\]]*\]\((https?://[^)\s]+)\)', content)
+        html_urls = re.findall(r'<img[^>]+src=[\'"](https?://[^\'"]+)[\'"]', content)
+        urls: list[str] = []
+        for u in md_urls + html_urls:
+            if u not in urls:
+                urls.append(u)
+            if len(urls) >= max_images:
+                break
+        if not urls:
+            return None
+
+        try:
+            import httpx
+        except Exception:
+            return None
+
+        # Download each image and base64-encode it for the Ollama chat API.
+        encoded_images: list[tuple[str, str]] = []
+        try:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(15.0, connect=5.0)
+            ) as client:
+                for url in urls:
+                    try:
+                        resp = await client.get(url)
+                        if resp.status_code != 200:
+                            continue
+                        img_bytes = resp.content
+                        if not img_bytes or len(img_bytes) > 8 * 1024 * 1024:
+                            continue  # skip empty or oversized (>8MB)
+                        encoded_images.append(
+                            (url, base64.b64encode(img_bytes).decode("ascii"))
+                        )
+                    except Exception as e:
+                        logger.debug(
+                            "[VISION_QA] image download failed for %s: %s",
+                            url[:60], e,
+                        )
+        except Exception as e:
+            logger.debug("[VISION_QA] httpx client error: %s", e)
+            return None
+
+        if not encoded_images:
+            return None
+
+        # Build a context snippet from the content (first ~1500 chars + title).
+        content_snippet = content[:1500]
+        prompt = (
+            "You are reviewing images attached to a blog post for relevance.\n\n"
+            f"TITLE: {title}\n"
+            f"TOPIC: {topic}\n\n"
+            f"ARTICLE SNIPPET:\n{content_snippet}\n\n"
+            "For EACH image attached, rate 0-100 how well the image represents "
+            "the article's subject and would help a reader understand the content. "
+            "A generic stock photo with no connection to the topic scores below 50. "
+            "An image that directly illustrates a concept from the article scores 80+.\n\n"
+            "Respond with ONLY valid JSON:\n"
+            '{"scores": [int,...], "reasons": ["short reason per image", ...], "overall": int}'
+        )
+
+        # Ollama /api/chat with images — single message, images array.
+        try:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(120.0, connect=5.0)
+            ) as client:
+                payload = {
+                    "model": model,
+                    "stream": False,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": prompt,
+                            "images": [b64 for _u, b64 in encoded_images],
+                        }
+                    ],
+                    "options": {"temperature": 0.2, "num_predict": 400},
+                }
+                resp = await asyncio.wait_for(
+                    client.post(
+                        "http://host.docker.internal:11434/api/chat",
+                        json=payload,
+                    ),
+                    timeout=150,
+                )
+                if resp.status_code != 200:
+                    logger.warning(
+                        "[VISION_QA] ollama returned HTTP %d: %s",
+                        resp.status_code, resp.text[:200],
+                    )
+                    return None
+                data = resp.json()
+                text = data.get("message", {}).get("content", "")
+        except Exception as e:
+            logger.warning("[VISION_QA] ollama call failed (non-critical): %s", e)
+            return None
+
+        if not text:
+            return None
+
+        # Parse JSON response
+        json_text = text
+        if "```" in text:
+            m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+            if m:
+                json_text = m.group(1)
+        try:
+            parsed = json.loads(json_text)
+        except json.JSONDecodeError:
+            m = re.search(r"\{[^{}]*\"scores\".*?\}", text, re.DOTALL)
+            if not m:
+                logger.warning("[VISION_QA] unparseable response: %s", text[:200])
+                return None
+            try:
+                parsed = json.loads(m.group(0))
+            except json.JSONDecodeError:
+                return None
+
+        scores_list = parsed.get("scores") or []
+        reasons_list = parsed.get("reasons") or []
+        overall = parsed.get("overall")
+        if not isinstance(scores_list, list) or not scores_list:
+            return None
+        try:
+            score_values = [float(s) for s in scores_list if isinstance(s, (int, float))]
+        except Exception:
+            return None
+        if not score_values:
+            return None
+        avg_score = sum(score_values) / len(score_values)
+        if overall is None or not isinstance(overall, (int, float)):
+            overall = avg_score
+
+        # Build feedback with per-image detail (urls get truncated)
+        parts: list[str] = []
+        for i, (url, _b64) in enumerate(encoded_images):
+            s = scores_list[i] if i < len(scores_list) else "?"
+            r = reasons_list[i] if i < len(reasons_list) else ""
+            parts.append(f"[{s}] {url[-40:]}: {str(r)[:80]}")
+        feedback = f"Vision QA avg={avg_score:.0f}, overall={overall}. " + "; ".join(parts[:3])
+
+        # Approval: the average per-image score must clear the threshold.
+        passed = avg_score >= pass_threshold
+
+        return ReviewerResult(
+            reviewer="image_relevance",
+            approved=passed,
+            score=float(overall),
+            feedback=feedback[:500],
+            provider="vision_gate",
         )
 
     # _review_with_gemini removed — Ollama-only policy
