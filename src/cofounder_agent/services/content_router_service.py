@@ -2222,21 +2222,32 @@ async def process_content_generation_task(
             except Exception:
                 pass
 
-            def _aggregate_issues_to_fix(qa_result) -> str:
+            def _aggregate_issues_to_fix(qa_result) -> tuple[str, bool]:
                 """Collect every flagged issue into a structured list the
                 writer can act on in a single rewrite pass.
 
                 Pulls from:
-                  - ValidationResult (programmatic validator)
+                  - ValidationResult critical issues only (warnings are
+                    noted but don't force a rewrite when overall QA
+                    passed — they're advisory)
                   - Each ReviewerResult in qa_result.reviews where the
-                    reviewer reported non-approval OR a sub-threshold score
+                    reviewer reported non-approval
 
-                Returns a multi-line string with [severity] tags so the
-                writer prompt can prioritize.
+                Returns (issues_text, has_blocking_issue). The second
+                element is True when at least one issue actually blocks
+                approval — a rewrite should fire only when True. This
+                prevents the loop from burning LLM cycles on approved
+                posts that have a harmless validator warning like a
+                potentially-fabricated stat.
                 """
                 lines: list[str] = []
-                # Programmatic validator — every ValidationIssue comes through
-                # with a severity (critical/warning) AND a description. Priority.
+                has_blocking = False
+                # Programmatic validator — ship CRITICAL issues into the
+                # rewrite list and flag them as blocking. Warnings are
+                # advisory: we include them so the writer fixes them
+                # opportunistically when a rewrite is happening for
+                # another reason, but a warning alone won't trigger
+                # a rewrite.
                 try:
                     _vr = qa_result.validation
                     if _vr is not None and _vr.issues:
@@ -2244,24 +2255,23 @@ async def process_content_generation_task(
                             lines.append(
                                 f"[{_issue.severity}] {_issue.category}: {_issue.description}"
                             )
+                            if _issue.severity == "critical":
+                                has_blocking = True
                 except Exception:
                     pass
-                # Reviewers — include any that didn't approve. For the
-                # consistency gate specifically, also include moderate-
-                # confidence reports because the gate's soft-veto might
-                # let those through but the issue is still real.
+                # Reviewers — a reviewer that didn't approve is a
+                # blocking issue. A reviewer that approved with a
+                # borderline score (< 75) is advisory.
                 for _r in qa_result.reviews:
                     if _r.reviewer == "programmatic_validator":
                         continue  # already surfaced via validation above
-                    if _r.approved:
-                        # Skip approved reviewers unless the score is
-                        # borderline (< 75). Borderline is often the
-                        # model saying "fine but could be better."
-                        if _r.score >= 75:
-                            continue
+                    if _r.approved and _r.score >= 75:
+                        continue
                     severity = "critical" if not _r.approved else "warning"
                     lines.append(f"[{severity}] {_r.reviewer}: {_r.feedback}")
-                return "\n".join(lines[:30])  # cap so the prompt stays bounded
+                    if not _r.approved:
+                        has_blocking = True
+                return "\n".join(lines[:30]), has_blocking
 
             _qa_result = None
             _rewrite_attempts = 0
@@ -2278,10 +2288,13 @@ async def process_content_generation_task(
                 if _qa_result is None:
                     break
 
-                _issues_to_fix = _aggregate_issues_to_fix(_qa_result)
+                _issues_to_fix, _has_blocking_issue = _aggregate_issues_to_fix(_qa_result)
 
-                # Clean pass — approved AND no aggregated issues. Done.
-                if _qa_result.approved and not _issues_to_fix:
+                # Clean pass — approved AND no blocking issue. Warnings
+                # alone on an approved post don't trigger the rewrite
+                # loop; they'd burn a full generation cycle to fix
+                # something that isn't actually blocking publish.
+                if _qa_result.approved and not _has_blocking_issue:
                     break
 
                 # Topic-delivery failure means the content is about the

@@ -98,9 +98,19 @@ class OllamaClient:
     Model profiles are discovered dynamically from the Ollama server.
     """
 
-    def __init__(self, base_url: str | None = None, model: str | None = None, timeout: int = 120):
+    def __init__(self, base_url: str | None = None, model: str | None = None, timeout: int | None = None):
         self.base_url = (base_url or DEFAULT_BASE_URL).rstrip("/")
         self.model = model or DEFAULT_MODEL
+        # Default timeout is high (600s) because a 70B+ writer model can
+        # easily take 3-10 minutes to generate a long blog post on a
+        # single GPU. The old default of 120s silently dropped big-model
+        # calls to httpx.ReadTimeout and the ai_content_generator
+        # fallback chain would switch to a smaller model — users thought
+        # they were writing with qwen2.5:72b but were actually on
+        # gemma3:27b the whole time. Callers can still override for
+        # short-timeout use cases (health checks, quick list calls).
+        if timeout is None:
+            timeout = int(_sc_get("ollama_client_timeout_seconds", "600") or 600)
         self.timeout = timeout
         self.client = httpx.AsyncClient(timeout=timeout)
         self._model_cache: dict[str, dict[str, Any]] = {}
