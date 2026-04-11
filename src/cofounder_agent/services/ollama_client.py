@@ -337,8 +337,14 @@ class OllamaClient:
             result = response.json()
 
             # Extract text from chat response format
-            msg = result.get("message", {})
-            text = msg.get("content", "")
+            msg = result.get("message") or {}
+            # Ollama occasionally returns "content": null (not missing)
+            # on thinking-model empty-response failures. The .get default
+            # only triggers when the key is absent, so we coalesce None
+            # to "" here so every downstream caller can assume text is a
+            # plain string and not have to defensively (result.get("text")
+            # or "").
+            text = msg.get("content") or ""
 
             duration_s = result.get("total_duration", 0) / 1e9
             electricity_cost = calculate_electricity_cost(
