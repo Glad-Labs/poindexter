@@ -450,3 +450,326 @@ class TestInternalConsistencyGate:
         with patch("services.ollama_client.OllamaClient", return_value=client):
             review = await raw_qa._check_internal_consistency(GOOD_CONTENT)
         assert review is None
+
+
+# ---------------------------------------------------------------------------
+# Settings-driven weight and threshold overrides
+# ---------------------------------------------------------------------------
+
+
+def _settings_service(**overrides):
+    """Return a mock settings service whose .get() returns overrides."""
+    svc = MagicMock()
+
+    async def _get(key):
+        return overrides.get(key)
+
+    svc.get = AsyncMock(side_effect=_get)
+    return svc
+
+
+class TestSettingsOverrides:
+    async def test_custom_validator_weight_from_settings(self):
+        settings = _settings_service(
+            qa_validator_weight=0.5,
+            qa_critic_weight=0.5,
+            qa_gate_weight=0.0,
+            qa_final_score_threshold=70,
+        )
+        with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
+            qa = MultiModelQA(pool=None, settings_service=settings)
+
+        # Stub gates so they don't actually call Ollama
+        async def _skip_gate(*args, **kwargs):
+            return None
+        qa._check_topic_delivery = _skip_gate
+        qa._check_internal_consistency = _skip_gate
+
+        with patch("services.multi_model_qa.validate_content", return_value=_passing_validation()), \
+             patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client(score=80.0)):
+            result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
+
+        # With 50/50 weights, final_score should be between validator (100) and critic (80)
+        assert 80 <= result.final_score <= 100
+
+    async def test_high_threshold_rejects_decent_content(self):
+        """If the configured threshold is 95, a 80-score critic gets rejected."""
+        settings = _settings_service(
+            qa_validator_weight=0.4,
+            qa_critic_weight=0.6,
+            qa_gate_weight=0.3,
+            qa_final_score_threshold=95,
+        )
+        with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
+            qa = MultiModelQA(pool=None, settings_service=settings)
+
+        async def _skip_gate(*args, **kwargs):
+            return None
+        qa._check_topic_delivery = _skip_gate
+        qa._check_internal_consistency = _skip_gate
+
+        with patch("services.multi_model_qa.validate_content", return_value=_passing_validation()), \
+             patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client(score=75.0)):
+            result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
+
+        # Weighted final score is somewhere around (100*0.4 + 75*0.6)/1.0 = 85
+        # 85 < 95 threshold → rejected
+        assert result.approved is False
+
+    async def test_low_threshold_approves_weak_content(self):
+        settings = _settings_service(
+            qa_validator_weight=0.4,
+            qa_critic_weight=0.6,
+            qa_gate_weight=0.3,
+            qa_final_score_threshold=50,  # very lenient
+        )
+        with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
+            qa = MultiModelQA(pool=None, settings_service=settings)
+
+        async def _skip_gate(*args, **kwargs):
+            return None
+        qa._check_topic_delivery = _skip_gate
+        qa._check_internal_consistency = _skip_gate
+
+        with patch("services.multi_model_qa.validate_content", return_value=_passing_validation()), \
+             patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client(approved=True, score=60.0)):
+            result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
+
+        assert result.approved is True
+
+    async def test_custom_critic_model_passed_through(self):
+        """settings.get('pipeline_critic_model') is passed as model_override."""
+        settings = _settings_service(pipeline_critic_model="ollama/qwen3:30b")
+
+        with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
+            qa = MultiModelQA(pool=None, settings_service=settings)
+
+        async def _skip_gate(*args, **kwargs):
+            return None
+        qa._check_topic_delivery = _skip_gate
+        qa._check_internal_consistency = _skip_gate
+
+        captured = {}
+
+        async def _capture_review(title, content, topic, model_override=None, research_sources=None):
+            captured["model_override"] = model_override
+            return None  # Skip critic path
+
+        qa._review_with_cloud_model = _capture_review
+
+        with patch("services.multi_model_qa.validate_content", return_value=_passing_validation()):
+            await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
+
+        assert captured["model_override"] == "ollama/qwen3:30b"
+
+
+# ---------------------------------------------------------------------------
+# research_sources threading
+# ---------------------------------------------------------------------------
+
+
+class TestResearchSourcesThreading:
+    async def test_research_sources_passed_to_cloud_review(self, qa):
+        """When review() is called with research_sources, it flows to _review_with_cloud_model."""
+        captured = {}
+
+        async def _capture(title, content, topic, model_override=None, research_sources=None):
+            captured["research_sources"] = research_sources
+            return None  # Skip the critic
+
+        qa._review_with_cloud_model = _capture
+
+        with patch("services.multi_model_qa.validate_content", return_value=_passing_validation()):
+            await qa.review(
+                GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC,
+                research_sources="Source 1: github.com/example\nSource 2: arxiv.org/abs/1234",
+            )
+
+        assert "github.com" in captured["research_sources"]
+        assert "arxiv.org" in captured["research_sources"]
+
+    async def test_none_research_sources_by_default(self, qa):
+        captured = {}
+
+        async def _capture(title, content, topic, model_override=None, research_sources=None):
+            captured["research_sources"] = research_sources
+            return None
+
+        qa._review_with_cloud_model = _capture
+
+        with patch("services.multi_model_qa.validate_content", return_value=_passing_validation()):
+            await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
+
+        assert captured["research_sources"] is None
+
+
+# ---------------------------------------------------------------------------
+# Critic-skipped path: final score falls back to validator only
+# ---------------------------------------------------------------------------
+
+
+class TestCriticSkippedFinalScore:
+    async def test_critic_skipped_uses_validator_score_only(self, qa):
+        """When cross-model review returns None, final_score = validator.score (not weighted)."""
+
+        async def _no_cloud(*args, **kwargs):
+            return None  # Critic skipped
+
+        qa._review_with_cloud_model = _no_cloud
+
+        validator_passing_high = ValidationResult(
+            passed=True, issues=[], score_penalty=0,
+        )
+
+        with patch("services.multi_model_qa.validate_content", return_value=validator_passing_high):
+            result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
+
+        # Validator score is 100 - 0 = 100
+        assert result.final_score == 100.0
+
+    async def test_critic_skipped_with_penalized_validator(self, qa):
+        """When critic is skipped, validator penalty applies to final score directly."""
+        async def _no_cloud(*args, **kwargs):
+            return None
+
+        qa._review_with_cloud_model = _no_cloud
+
+        validator_with_warnings = ValidationResult(
+            passed=True,  # still passes (no critical)
+            issues=[
+                ValidationIssue(
+                    severity="warning",
+                    category="fake_stat",
+                    description="Possible fabricated stat",
+                    matched_text="50% improvement",
+                )
+            ],
+            score_penalty=15,
+        )
+
+        with patch("services.multi_model_qa.validate_content", return_value=validator_with_warnings):
+            result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
+
+        assert result.final_score == 85.0  # 100 - 15
+        # Still approved since 85 >= 70 default threshold
+        assert result.approved is True
+
+    async def test_critic_skipped_below_threshold_rejected(self, qa):
+        """Heavy validator penalty below 70 rejects even when no critical issues."""
+        async def _no_cloud(*args, **kwargs):
+            return None
+
+        qa._review_with_cloud_model = _no_cloud
+
+        heavy_penalty = ValidationResult(
+            passed=True,  # warnings only
+            issues=[
+                ValidationIssue(
+                    severity="warning", category="brand_contradiction",
+                    description="OpenAI API reference", matched_text="OpenAI API",
+                )
+            ],
+            score_penalty=40,  # 100 - 40 = 60, below 70 threshold
+        )
+
+        with patch("services.multi_model_qa.validate_content", return_value=heavy_penalty):
+            result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
+
+        assert result.final_score == 60.0
+        assert result.approved is False
+
+
+# ---------------------------------------------------------------------------
+# _run_gate_prompt — additional branches via the _check_topic_delivery proxy
+# ---------------------------------------------------------------------------
+
+
+class TestGatePromptBranches:
+    async def test_json_in_code_fence_extracted(self, raw_qa):
+        """Gates should extract JSON from markdown code fences."""
+        import json
+        fenced = "```json\n" + json.dumps({
+            "delivers": True,
+            "score": 85,
+            "reason": "Good coverage",
+        }) + "\n```"
+
+        client = AsyncMock()
+        client.check_health = AsyncMock(return_value=True)
+        client.generate = AsyncMock(return_value={"text": fenced, "tokens": 40})
+        client.close = AsyncMock()
+
+        with patch("services.ollama_client.OllamaClient", return_value=client):
+            review = await raw_qa._check_topic_delivery(GOOD_TOPIC, GOOD_CONTENT)
+
+        assert review is not None
+        assert review.score == 85
+        assert review.approved is True
+
+    async def test_json_embedded_in_prose_extracted(self, raw_qa):
+        """Gates should fall back to regex-extracting a JSON object from prose."""
+        mixed = 'The editor says: {"delivers": false, "score": 30, "reason": "Off-topic"} — that is all.'
+
+        client = AsyncMock()
+        client.check_health = AsyncMock(return_value=True)
+        client.generate = AsyncMock(return_value={"text": mixed, "tokens": 40})
+        client.close = AsyncMock()
+
+        with patch("services.ollama_client.OllamaClient", return_value=client):
+            review = await raw_qa._check_topic_delivery(GOOD_TOPIC, GOOD_CONTENT)
+
+        assert review is not None
+        assert review.approved is False
+        assert review.score == 30
+
+    async def test_empty_generate_response_returns_none(self, raw_qa):
+        client = AsyncMock()
+        client.check_health = AsyncMock(return_value=True)
+        client.generate = AsyncMock(return_value={"text": "", "tokens": 0})
+        client.close = AsyncMock()
+
+        with patch("services.ollama_client.OllamaClient", return_value=client):
+            review = await raw_qa._check_topic_delivery(GOOD_TOPIC, GOOD_CONTENT)
+
+        assert review is None
+
+    async def test_generate_timeout_returns_none(self, raw_qa):
+        """asyncio.TimeoutError during generate returns None (gate skipped)."""
+        import asyncio
+        client = AsyncMock()
+        client.check_health = AsyncMock(return_value=True)
+        client.generate = AsyncMock(side_effect=asyncio.TimeoutError())
+        client.close = AsyncMock()
+
+        with patch("services.ollama_client.OllamaClient", return_value=client):
+            review = await raw_qa._check_topic_delivery(GOOD_TOPIC, GOOD_CONTENT)
+
+        assert review is None
+
+    async def test_consistency_gate_list_of_contradictions_joined(self, raw_qa):
+        """Contradictions list is joined with semicolons in the feedback."""
+        payload = {
+            "consistent": False,
+            "score": 30,
+            "contradictions": [
+                "First contradiction",
+                "Second contradiction",
+                "Third contradiction",
+            ],
+        }
+
+        client = AsyncMock()
+        client.check_health = AsyncMock(return_value=True)
+        client.generate = AsyncMock(return_value={
+            "text": __import__("json").dumps(payload),
+            "tokens": 40,
+        })
+        client.close = AsyncMock()
+
+        with patch("services.ollama_client.OllamaClient", return_value=client):
+            review = await raw_qa._check_internal_consistency(GOOD_CONTENT)
+
+        assert review is not None
+        assert "First contradiction" in review.feedback
+        assert "Second contradiction" in review.feedback
+        assert ";" in review.feedback
