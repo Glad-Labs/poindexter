@@ -376,3 +376,191 @@ class TestListEpisodes:
             episodes = svc.list_episodes()
             assert len(episodes) == 1
             assert episodes[0]["post_id"] == "real"
+
+
+# ===========================================================================
+# _normalize_for_speech (DB-driven TTS replacements)
+# ===========================================================================
+
+
+class TestNormalizeForSpeech:
+    def test_smart_quotes_converted_to_straight(self):
+        from services.podcast_service import _normalize_for_speech
+        result = _normalize_for_speech("\u201cHello\u201d and \u2018world\u2019")
+        assert "\u201c" not in result
+        assert "\u201d" not in result
+        assert "\u2018" not in result
+        assert "\u2019" not in result
+
+    def test_ellipsis_converted(self):
+        from services.podcast_service import _normalize_for_speech
+        result = _normalize_for_speech("wait\u2026 for it")
+        assert "\u2026" not in result
+        assert "..." in result
+
+    def test_double_spaces_collapsed(self):
+        from services.podcast_service import _normalize_for_speech
+        result = _normalize_for_speech("hello  world   foo")
+        assert "  " not in result
+
+    def test_double_commas_collapsed(self):
+        from services.podcast_service import _normalize_for_speech
+        result = _normalize_for_speech("hello, , world")
+        assert ", ," not in result
+
+    def test_db_pronunciation_override_applied(self):
+        from services.podcast_service import _normalize_for_speech
+        with patch("services.podcast_service.site_config") as mock_sc:
+            mock_sc.get.side_effect = lambda k, d="": {
+                "tts_pronunciations": '{"GitHub": "git hub"}',
+                "tts_acronym_replacements": "",
+            }.get(k, d)
+            result = _normalize_for_speech("Visit GitHub today")
+        assert "git hub" in result.lower() or "git hub" in result
+
+    def test_invalid_db_pronunciations_falls_back_to_defaults(self):
+        from services.podcast_service import _normalize_for_speech
+        with patch("services.podcast_service.site_config") as mock_sc:
+            mock_sc.get.side_effect = lambda k, d="": {
+                "tts_pronunciations": "not valid json {",
+                "tts_acronym_replacements": "",
+            }.get(k, d)
+            # Should not raise — falls back to defaults
+            result = _normalize_for_speech("Some text")
+            assert isinstance(result, str)
+
+    def test_acronym_regex_applied(self):
+        from services.podcast_service import _normalize_for_speech
+        with patch("services.podcast_service.site_config") as mock_sc:
+            mock_sc.get.side_effect = lambda k, d="": {
+                "tts_pronunciations": "",
+                "tts_acronym_replacements": '{"NASA": "nassa"}',
+            }.get(k, d)
+            result = _normalize_for_speech("Working with NASA")
+        assert "nassa" in result.lower()
+
+
+class TestGetTtsReplacements:
+    def test_returns_default_list_when_no_db_config(self):
+        from services.podcast_service import _get_tts_replacements
+        with patch("services.podcast_service.site_config") as mock_sc:
+            mock_sc.get.return_value = ""
+            result = _get_tts_replacements()
+        assert isinstance(result, list)
+        assert len(result) > 0
+        # Each entry is a tuple
+        for item in result[:3]:
+            assert len(item) == 2
+
+    def test_db_overrides_merge_with_defaults(self):
+        from services.podcast_service import _get_tts_replacements
+        with patch("services.podcast_service.site_config") as mock_sc:
+            mock_sc.get.return_value = '{"customword": "kustom werd"}'
+            result = _get_tts_replacements()
+        # The custom DB key should be in the merged list
+        as_dict = dict(result)
+        assert as_dict.get("customword") == "kustom werd"
+
+    def test_invalid_json_falls_back_to_defaults(self):
+        from services.podcast_service import _get_tts_replacements
+        with patch("services.podcast_service.site_config") as mock_sc:
+            mock_sc.get.return_value = "not json"
+            result = _get_tts_replacements()
+        # Should still return a non-empty list (the defaults)
+        assert isinstance(result, list)
+        assert len(result) > 0
+
+
+class TestGetAcronymRegex:
+    def test_returns_default_list_when_no_db_config(self):
+        from services.podcast_service import _get_acronym_regex
+        with patch("services.podcast_service.site_config") as mock_sc:
+            mock_sc.get.return_value = ""
+            result = _get_acronym_regex()
+        assert isinstance(result, list)
+        assert len(result) > 0
+        # Each entry is (compiled_pattern, replacement_string)
+        for pattern, replacement in result[:3]:
+            assert hasattr(pattern, "sub")  # compiled regex
+            assert isinstance(replacement, str)
+
+    def test_db_acronyms_compiled_to_regex(self):
+        from services.podcast_service import _get_acronym_regex
+        with patch("services.podcast_service.site_config") as mock_sc:
+            mock_sc.get.return_value = '{"AWS": "ay double-yoo ess"}'
+            result = _get_acronym_regex()
+        # Should find at least one entry whose substitution is the AWS one
+        replacements = [r for _, r in result]
+        assert "ay double-yoo ess" in replacements
+
+    def test_invalid_json_falls_back_to_defaults(self):
+        from services.podcast_service import _get_acronym_regex
+        with patch("services.podcast_service.site_config") as mock_sc:
+            mock_sc.get.return_value = "not json"
+            result = _get_acronym_regex()
+        # Returns the default list (not crash, not empty)
+        assert isinstance(result, list)
+        assert len(result) > 0
+
+
+# ===========================================================================
+# generate_podcast_episode (fire-and-forget wrapper)
+# ===========================================================================
+
+
+class TestGeneratePodcastEpisodeWrapper:
+    @pytest.mark.asyncio
+    async def test_calls_service_generate_episode(self):
+        from services.podcast_service import generate_podcast_episode
+
+        with patch("services.podcast_service.PodcastService") as MockSvc:
+            mock_instance = MagicMock()
+            mock_result = MagicMock(success=True)
+            mock_instance.generate_episode = AsyncMock(return_value=mock_result)
+            MockSvc.return_value = mock_instance
+
+            await generate_podcast_episode("post-1", "Title", "Content body")
+
+            mock_instance.generate_episode.assert_awaited_once()
+            args = mock_instance.generate_episode.await_args
+            assert args.args[0] == "post-1"
+            assert args.args[1] == "Title"
+
+    @pytest.mark.asyncio
+    async def test_logs_failure_without_raising(self):
+        from services.podcast_service import generate_podcast_episode
+
+        with patch("services.podcast_service.PodcastService") as MockSvc:
+            mock_instance = MagicMock()
+            mock_result = MagicMock(success=False, error="TTS down")
+            mock_instance.generate_episode = AsyncMock(return_value=mock_result)
+            MockSvc.return_value = mock_instance
+
+            # Should not raise even though success is False
+            await generate_podcast_episode("post-1", "Title", "Content")
+
+    @pytest.mark.asyncio
+    async def test_swallows_unexpected_exception(self):
+        from services.podcast_service import generate_podcast_episode
+
+        with patch("services.podcast_service.PodcastService") as MockSvc:
+            mock_instance = MagicMock()
+            mock_instance.generate_episode = AsyncMock(side_effect=RuntimeError("boom"))
+            MockSvc.return_value = mock_instance
+
+            # Fire-and-forget — must not propagate
+            await generate_podcast_episode("post-1", "Title", "Content")
+
+    @pytest.mark.asyncio
+    async def test_pre_generated_script_passed_through(self):
+        from services.podcast_service import generate_podcast_episode
+
+        with patch("services.podcast_service.PodcastService") as MockSvc:
+            mock_instance = MagicMock()
+            mock_instance.generate_episode = AsyncMock(return_value=MagicMock(success=True))
+            MockSvc.return_value = mock_instance
+
+            await generate_podcast_episode("post-1", "T", "C", pre_generated_script="my custom script")
+
+            kwargs = mock_instance.generate_episode.await_args.kwargs
+            assert kwargs.get("pre_generated_script") == "my custom script"
