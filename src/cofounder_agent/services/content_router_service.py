@@ -2299,18 +2299,28 @@ async def process_content_generation_task(
                 if not _issues_to_fix:
                     break  # Nothing specific to rewrite against
 
+                _issue_count_current = _issues_to_fix.count("\n") + 1
                 logger.warning(
                     "[QA_REWRITE] Task %s: %d issues flagged, attempting aggregate rewrite (%d/%d)",
                     task_id[:8],
-                    _issues_to_fix.count("\n") + 1,
+                    _issue_count_current,
                     _rewrite_attempts + 1,
                     _max_rewrites,
                 )
-                audit_log_bg("qa_rewrite_triggered", "content_router", {
-                    "attempt": _rewrite_attempts + 1,
-                    "issue_count": _issues_to_fix.count("\n") + 1,
-                    "issues_sample": _issues_to_fix[:500],
-                }, task_id=task_id, severity="info")
+                audit_log_bg(
+                    "rewrite_decision",
+                    "content_router",
+                    {
+                        "event": "rewrite_started",
+                        "attempt": _rewrite_attempts + 1,
+                        "max_attempts": _max_rewrites,
+                        "issue_count": _issue_count_current,
+                        "issues_sample": _issues_to_fix[:500],
+                        "prior_score": float(_qa_result.final_score),
+                    },
+                    task_id=task_id,
+                    severity="info",
+                )
 
                 try:
                     _revise_prompt = _QA_AGGREGATE_REWRITE_PROMPT.format(
@@ -2399,6 +2409,44 @@ async def process_content_generation_task(
                     for r in _qa_result.reviews
                 ]
                 result["qa_rewrite_attempts"] = _rewrite_attempts
+
+                # Per-reviewer structured audit events. One row per
+                # gate decision, plus one aggregate row for the final
+                # MultiModelResult. This is what every visibility layer
+                # (Grafana panels, Discord ops channel, mobile event
+                # stream) reads from. Keep the fields stable so
+                # downstream consumers don't break on upgrades.
+                for _r in _qa_result.reviews:
+                    audit_log_bg(
+                        "qa_decision",
+                        "multi_model_qa",
+                        {
+                            "reviewer": _r.reviewer,
+                            "provider": _r.provider,
+                            "score": float(_r.score),
+                            "approved": bool(_r.approved),
+                            "feedback": _r.feedback[:500],
+                            "stage": "multi_model_qa",
+                            "rewrite_attempts_so_far": _rewrite_attempts,
+                        },
+                        task_id=task_id,
+                        severity="info" if _r.approved else "warning",
+                    )
+                audit_log_bg(
+                    "qa_aggregate",
+                    "multi_model_qa",
+                    {
+                        "final_score": float(_qa_result.final_score),
+                        "approved": bool(_qa_result.approved),
+                        "reviewer_count": len(_qa_result.reviews),
+                        "failed_reviewers": [
+                            r.reviewer for r in _qa_result.reviews if not r.approved
+                        ],
+                        "rewrite_attempts": _rewrite_attempts,
+                    },
+                    task_id=task_id,
+                    severity="info" if _qa_result.approved else "warning",
+                )
                 # Log QA review cost to database
                 if _qa_result.cost_log and database_service:
                     try:

@@ -59,6 +59,7 @@ _WORKER_ROUTES = [
     ("routes.video_routes", "router", "video_router", "video episodes & generation"),
     ("routes.settings_routes", "router", "settings_router", "settings read/write"),
     ("routes.metrics_routes", "metrics_router", "metrics_router", "metrics & analytics"),
+    ("routes.pipeline_events_routes", "router", "pipeline_events_router", "pipeline events observability (/api/pipeline, /pipeline)"),
 ]
 
 # Backward-compatible alias: defaults to coordinator manifest
