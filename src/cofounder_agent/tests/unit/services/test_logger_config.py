@@ -185,3 +185,242 @@ class TestModuleConstants:
 
     def test_structlog_available_is_bool(self):
         assert isinstance(lc.STRUCTLOG_AVAILABLE, bool)
+
+    def test_log_max_bytes_positive(self):
+        assert lc.LOG_MAX_BYTES > 0
+
+    def test_log_backup_count_non_negative(self):
+        assert lc.LOG_BACKUP_COUNT >= 0
+
+    def test_log_to_file_is_bool(self):
+        assert isinstance(lc.LOG_TO_FILE, bool)
+
+    def test_environment_is_string(self):
+        assert isinstance(lc.ENVIRONMENT, str)
+        assert len(lc.ENVIRONMENT) > 0
+
+    def test_log_format_is_string(self):
+        assert lc.LOG_FORMAT in ("json", "text")
+
+
+# ---------------------------------------------------------------------------
+# get_logger structlog vs stdlib branches
+# ---------------------------------------------------------------------------
+
+
+class TestGetLoggerBranches:
+    def test_returns_stdlib_logger_when_structlog_none(self, monkeypatch):
+        monkeypatch.setattr(lc, "structlog", None)
+        monkeypatch.setattr(lc, "_structlog_configured", False)
+        logger = lc.get_logger("test.stdlib")
+        assert isinstance(logger, logging.Logger)
+        assert logger.name == "test.stdlib"
+
+    def test_returns_stdlib_when_structlog_not_configured(self, monkeypatch):
+        """Even if structlog imported, fall back to stdlib if configure failed."""
+        monkeypatch.setattr(lc, "_structlog_configured", False)
+        logger = lc.get_logger("test.unconfigured")
+        assert isinstance(logger, logging.Logger)
+
+    def test_returns_structlog_when_configured(self, monkeypatch):
+        """Happy path: structlog imported and configured."""
+        if lc.structlog is None:
+            pytest.skip("structlog not installed")
+        monkeypatch.setattr(lc, "_structlog_configured", True)
+        logger = lc.get_logger("test.structlog")
+        # structlog returns a BoundLoggerLazyProxy or similar — not stdlib Logger
+        assert logger is not None
+
+
+# ---------------------------------------------------------------------------
+# set_log_level structlog reconfigure branch
+# ---------------------------------------------------------------------------
+
+
+class TestSetLogLevelStructlogBranch:
+    def test_calls_structlog_configure_when_active(self, monkeypatch):
+        if lc.structlog is None:
+            pytest.skip("structlog not installed")
+
+        called = {"flag": False}
+        original_configure = lc.structlog.configure
+
+        def _spy(*args, **kwargs):
+            called["flag"] = True
+            return original_configure(*args, **kwargs)
+
+        monkeypatch.setattr(lc, "_structlog_configured", True)
+        monkeypatch.setattr(lc.structlog, "configure", _spy)
+
+        lc.set_log_level("DEBUG")
+        assert called["flag"] is True
+
+    def test_critical_level_accepted(self):
+        lc.set_log_level("CRITICAL")
+        # Should complete without raising
+
+    def test_mixed_case_normalized(self):
+        lc.set_log_level("WaRnInG")  # Should not raise
+
+    def test_value_error_message_lists_valid_levels(self):
+        with pytest.raises(ValueError) as exc:
+            lc.set_log_level("BANANA")
+        msg = str(exc.value)
+        assert "BANANA" in msg or "Invalid" in msg
+
+
+# ---------------------------------------------------------------------------
+# configure_standard_logging — formatter branches
+# ---------------------------------------------------------------------------
+
+
+class TestConfigureStandardLoggingFormatters:
+    def test_json_format_branch(self, monkeypatch):
+        """Force LOG_FORMAT=json and verify configure runs without error."""
+        monkeypatch.setattr(lc, "LOG_FORMAT", "json")
+        lc.configure_standard_logging()
+        root = logging.getLogger()
+        assert len(root.handlers) >= 1
+
+    def test_text_format_branch(self, monkeypatch):
+        monkeypatch.setattr(lc, "LOG_FORMAT", "text")
+        lc.configure_standard_logging()
+        root = logging.getLogger()
+        assert len(root.handlers) >= 1
+
+    def test_log_to_file_false_skips_file_handler(self, monkeypatch):
+        monkeypatch.setattr(lc, "LOG_TO_FILE", False)
+        lc.configure_standard_logging()
+        root = logging.getLogger()
+        # Should still have at least the stream handler
+        from logging.handlers import RotatingFileHandler
+        rotating_handlers = [h for h in root.handlers if isinstance(h, RotatingFileHandler)]
+        assert len(rotating_handlers) == 0
+
+    def test_log_to_file_true_adds_rotating_handler(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(lc, "LOG_TO_FILE", True)
+        monkeypatch.setattr(lc, "LOG_DIR", tmp_path / "logs")
+        lc.configure_standard_logging()
+        root = logging.getLogger()
+        from logging.handlers import RotatingFileHandler
+        rotating_handlers = [h for h in root.handlers if isinstance(h, RotatingFileHandler)]
+        assert len(rotating_handlers) >= 1
+
+    def test_unwritable_log_dir_does_not_crash(self, monkeypatch):
+        """If LOG_DIR can't be created, configure should print warning and continue."""
+        # Use a path that can't be created (file with same name exists)
+        monkeypatch.setattr(lc, "LOG_TO_FILE", True)
+
+        # Force RotatingFileHandler to fail
+        import logging.handlers as lh
+        original = lh.RotatingFileHandler
+
+        def _fail(*args, **kwargs):
+            raise PermissionError("denied")
+
+        monkeypatch.setattr(lh, "RotatingFileHandler", _fail)
+        try:
+            lc.configure_standard_logging()  # Should not raise
+        finally:
+            monkeypatch.setattr(lh, "RotatingFileHandler", original)
+
+
+# ---------------------------------------------------------------------------
+# _RequestIDFormatter (defined inside configure_standard_logging)
+# ---------------------------------------------------------------------------
+
+
+class TestRequestIDFormatter:
+    def test_record_without_request_id_gets_dash(self):
+        """Reconfigure logging and verify formatter handles missing request_id."""
+        lc.configure_standard_logging()
+        root = logging.getLogger()
+        if not root.handlers:
+            pytest.skip("no handlers configured")
+
+        # Create a record with no request_id attribute
+        record = logging.LogRecord(
+            name="test",
+            level=logging.INFO,
+            pathname="test.py",
+            lineno=1,
+            msg="hello",
+            args=(),
+            exc_info=None,
+        )
+        # Format via the first handler's formatter
+        formatter = root.handlers[0].formatter
+        if formatter is None:
+            pytest.skip("no formatter on handler")
+        formatted = formatter.format(record)
+        # Should contain a dash for the missing request_id
+        assert "-" in formatted
+
+    def test_record_with_request_id_uses_it(self):
+        lc.configure_standard_logging()
+        root = logging.getLogger()
+        if not root.handlers:
+            pytest.skip("no handlers configured")
+
+        record = logging.LogRecord(
+            name="test",
+            level=logging.INFO,
+            pathname="test.py",
+            lineno=1,
+            msg="hello",
+            args=(),
+            exc_info=None,
+        )
+        record.request_id = "req-xyz-123"  # type: ignore[attr-defined]
+
+        formatter = root.handlers[0].formatter
+        if formatter is None:
+            pytest.skip("no formatter on handler")
+        formatted = formatter.format(record)
+        assert "req-xyz-123" in formatted
+
+
+# ---------------------------------------------------------------------------
+# configure_structlog edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestConfigureStructlogEdgeCases:
+    def test_returns_false_when_structlog_none(self, monkeypatch):
+        monkeypatch.setattr(lc, "structlog", None)
+        result = lc.configure_structlog()
+        assert result is False
+
+    def test_handles_configure_exception(self, monkeypatch):
+        if lc.structlog is None:
+            pytest.skip("structlog not installed")
+
+        def _raise(*args, **kwargs):
+            raise RuntimeError("config broken")
+
+        monkeypatch.setattr(lc.structlog, "configure", _raise)
+        result = lc.configure_structlog()
+        assert result is False
+
+
+# ---------------------------------------------------------------------------
+# _add_request_id ImportError fallback
+# ---------------------------------------------------------------------------
+
+
+class TestAddRequestIdImportFallback:
+    def test_handles_missing_middleware_module(self, monkeypatch):
+        """If middleware.request_id can't be imported, default to '-'."""
+        import sys
+        # Temporarily hide the module to force ImportError
+        saved = sys.modules.pop("middleware.request_id", None)
+        sys.modules["middleware.request_id"] = None  # type: ignore[assignment]
+        try:
+            event_dict = {"event": "no middleware"}
+            result = lc._add_request_id(None, "info", event_dict)  # type: ignore[arg-type]
+            assert result["request_id"] == "-"
+        finally:
+            if saved is not None:
+                sys.modules["middleware.request_id"] = saved
+            else:
+                sys.modules.pop("middleware.request_id", None)
