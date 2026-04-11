@@ -348,3 +348,160 @@ class TestProviderFailureTracking:
         health = router.get_provider_health()
         assert health["ollama"]["consecutive_failures"] == 2
         assert health["huggingface"]["consecutive_failures"] == 1
+
+    def test_record_success_on_clean_provider_no_log(self, router, caplog):
+        """Calling record_success on a provider with 0 failures should not log recovery."""
+        import logging
+        with caplog.at_level(logging.INFO, logger="services.model_router"):
+            router.record_provider_success("ollama")
+        # No "recovered" log should appear
+        assert not any("recovered" in r.message for r in caplog.records)
+
+    def test_record_success_logs_recovery_after_failures(self, router, caplog):
+        import logging
+        router.record_provider_failure("ollama")
+        router.record_provider_failure("ollama")
+        with caplog.at_level(logging.INFO, logger="services.model_router"):
+            router.record_provider_success("ollama")
+        assert any("recovered" in r.message for r in caplog.records)
+
+    def test_failure_count_persists_across_calls(self, router):
+        for _ in range(3):
+            router.record_provider_failure("anthropic")
+        router.record_provider_failure("anthropic")
+        assert router._provider_consecutive_failures["anthropic"] == 4
+
+
+# ---------------------------------------------------------------------------
+# seed_spend_from_db
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestSeedSpendFromDb:
+    @pytest.mark.asyncio
+    async def test_seeds_spend_from_pool(self, router):
+        from unittest.mock import AsyncMock
+
+        pool = AsyncMock()
+        pool.fetchrow = AsyncMock(return_value={"total": 42.50})
+
+        await router.seed_spend_from_db(pool)
+
+        assert router._session_cloud_spend == 42.50
+
+    @pytest.mark.asyncio
+    async def test_zero_spend_when_no_rows(self, router):
+        from unittest.mock import AsyncMock
+
+        pool = AsyncMock()
+        pool.fetchrow = AsyncMock(return_value={"total": 0})
+
+        await router.seed_spend_from_db(pool)
+        assert router._session_cloud_spend == 0.0
+
+    @pytest.mark.asyncio
+    async def test_db_error_keeps_zero_spend(self, router):
+        from unittest.mock import AsyncMock
+
+        pool = AsyncMock()
+        pool.fetchrow = AsyncMock(side_effect=RuntimeError("db down"))
+
+        await router.seed_spend_from_db(pool)
+        # Should not crash, spend remains 0
+        assert router._session_cloud_spend == 0.0
+
+    @pytest.mark.asyncio
+    async def test_spend_over_limit_logs_critical(self, router, caplog):
+        from unittest.mock import AsyncMock
+        import logging
+
+        pool = AsyncMock()
+        pool.fetchrow = AsyncMock(return_value={"total": 99999.0})
+
+        with caplog.at_level(logging.CRITICAL, logger="services.model_router"):
+            await router.seed_spend_from_db(pool)
+
+        assert router._budget_exceeded_logged is True
+        assert any("BUDGET_EXCEEDED" in r.message for r in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_spend_under_limit_does_not_set_exceeded_flag(self, router):
+        from unittest.mock import AsyncMock
+
+        pool = AsyncMock()
+        pool.fetchrow = AsyncMock(return_value={"total": 1.0})
+
+        await router.seed_spend_from_db(pool)
+        assert router._budget_exceeded_logged is False
+
+    @pytest.mark.asyncio
+    async def test_query_filters_to_current_month(self, router):
+        from unittest.mock import AsyncMock
+
+        captured = {}
+
+        async def _capture(sql):
+            captured["sql"] = sql
+            return {"total": 0}
+
+        pool = AsyncMock()
+        pool.fetchrow = AsyncMock(side_effect=_capture)
+        await router.seed_spend_from_db(pool)
+
+        assert "date_trunc('month', NOW())" in captured["sql"]
+        assert "cost_logs" in captured["sql"]
+
+
+# ---------------------------------------------------------------------------
+# __init__ edge cases
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestModelRouterInit:
+    def test_use_ollama_explicit_true(self):
+        r = ModelRouter(use_ollama=True)
+        assert r.use_ollama is True
+
+    def test_use_ollama_explicit_false(self):
+        r = ModelRouter(use_ollama=False)
+        assert r.use_ollama is False
+
+    def test_use_ollama_none_reads_site_config(self):
+        from unittest.mock import patch
+        # site_config returns "true" → use_ollama becomes True
+        with patch("services.site_config.site_config") as mock_cfg:
+            mock_cfg.get.return_value = "true"
+            r = ModelRouter(use_ollama=None)
+            assert r.use_ollama is True
+
+    def test_use_ollama_none_site_config_exception_defaults_false(self):
+        from unittest.mock import patch
+        with patch("services.site_config.site_config") as mock_cfg:
+            mock_cfg.get.side_effect = RuntimeError("config down")
+            r = ModelRouter(use_ollama=None)
+            assert r.use_ollama is False
+
+    def test_default_model_stored(self):
+        r = ModelRouter(default_model="ollama/custom:7b", use_ollama=True)
+        assert r.default_model == "ollama/custom:7b"
+
+    def test_metrics_initialized_to_zero(self):
+        r = ModelRouter(use_ollama=True)
+        assert r.metrics["total_requests"] == 0
+        assert r.metrics["ollama_uses"] == 0
+        assert r.metrics["estimated_cost_actual"] == 0.0
+
+    def test_session_cloud_spend_starts_zero(self):
+        r = ModelRouter(use_ollama=True)
+        assert r._session_cloud_spend == 0.0
+        assert r._budget_exceeded_logged is False
+
+    def test_provider_failures_starts_empty(self):
+        r = ModelRouter(use_ollama=True)
+        assert r._provider_consecutive_failures == {}
+
+    def test_failure_threshold_is_five(self):
+        r = ModelRouter(use_ollama=True)
+        assert r._FAILURE_ALERT_THRESHOLD == 5
