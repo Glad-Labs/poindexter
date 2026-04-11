@@ -13,7 +13,7 @@ import { withSentryConfig } from '@sentry/nextjs';
     if (IS_PROD) {
       throw new Error(
         '\n[next.config] NEXT_PUBLIC_API_BASE_URL is required for production builds.\n' +
-          'Set it in your Vercel/Railway environment config or .env.local.\n'
+          'Set it in your Vercel environment config or .env.local.\n'
       );
     }
     return; // dev: runtime url.js will use localhost fallback

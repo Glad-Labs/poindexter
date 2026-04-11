@@ -16,7 +16,7 @@ Glad Labs is an AI-operated content business — a solo founder using AI to run 
 
 **Architecture inspired by human brain anatomy:**
 
-- **Brainstem** (`brain/`) — standalone daemon on Railway, monitors all services, self-heals
+- **Brainstem** (`brain/`) — standalone daemon (local), monitors all services, self-heals
 - **Cerebrum** (`src/cofounder_agent/`) — FastAPI backend, content pipeline, business logic
 - **Cerebellum** — anticipation engine + QA registry (learned patterns, quality calibration)
 - **Limbic System** — brain_knowledge graph + revenue engine (memory, motivation, rewards)
@@ -30,7 +30,7 @@ Glad Labs is an AI-operated content business — a solo founder using AI to run 
 | ------------- | ----------------------------------------------- |
 | Public site   | https://gladlabs.io (→ www.gladlabs.io)         |
 | Backend API   | http://localhost:8002                           |
-| Brain daemon  | Separate Railway service (brain/)               |
+| Brain daemon  | Local process (brain/)                          |
 | Grafana       | https://gladlabs.grafana.net                    |
 | GitHub        | https://github.com/Glad-Labs/glad-labs-codebase |
 | Project board | https://github.com/orgs/Glad-Labs/projects/2    |
@@ -86,9 +86,9 @@ npm run type:check            # Python mypy
 
 ### Brain Daemon (`brain/`)
 
-**Standalone service on Railway.** Independent of FastAPI — only needs Python + asyncpg.
+**Standalone local process.** Independent of FastAPI — only needs Python + asyncpg.
 
-- Monitors site, API from the cloud (5-minute cycles)
+- Monitors site, API (5-minute cycles)
 - Self-maintains knowledge graph (brain_knowledge table)
 - Processes reasoning queue (brain_queue table)
 - Logs all decisions (brain_decisions table)
@@ -99,7 +99,7 @@ npm run type:check            # Python mypy
 
 **Entry point:** `main.py` — FastAPI app with two deployment modes:
 
-- `DEPLOYMENT_MODE=coordinator` (Railway) — serves API, webhook delivery, scheduled publisher
+- `DEPLOYMENT_MODE=coordinator` — minimal read-only API (intended for future cloud host; currently unused)
 - `DEPLOYMENT_MODE=worker` (local PC) — claims tasks, runs content pipeline via Ollama
 
 **Key services (16 custom-built):**
@@ -158,18 +158,18 @@ Custom MCP server for Claude desktop app. 12 tools: create_post, approve, publis
 
 ### Configuration
 
-**Production env vars (minimal — only 3 on Railway):**
+**Production env vars (minimal — only 3):**
 
-- `DATABASE_URL` — auto from Railway Postgres
-- `PORT` — auto from Railway
+- `DATABASE_URL` — Postgres connection string
+- `PORT` — HTTP port
 - `ENVIRONMENT=production`
 
 **Everything else lives in `app_settings` table (33+ keys).** Manage via API or OpenClaw.
 
 ### Deployment
 
-- `main` branch → Vercel (frontend) + Railway (backend + brain) production auto-deploy
-- `staging` branch → Railway staging auto-deploy (PR required)
+- `main` branch → Vercel (frontend) auto-deploy; backend + brain run locally
+- `staging` branch → Vercel preview deploy (PR required)
 - `dev` branch → working branch, runs tests on push
 - **Workflow:** dev → PR to staging → verify → PR to main → production
 

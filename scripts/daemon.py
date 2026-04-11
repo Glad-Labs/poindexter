@@ -1,10 +1,9 @@
 """
-Glad Labs Daemon — single long-lived process that runs all background tasks.
+Poindexter Daemon — single long-lived process that runs all background tasks.
 
 Replaces separate Windows Scheduled Tasks with one process that handles:
 - Auto-publisher (every 5 minutes)
 - Content generator (every 8 hours)
-- DB sync between local and Railway prod (every 15 minutes)
 
 Run alongside the worker (which handles content generation via Ollama).
 The daemon handles the orchestration tasks that don't need GPU.
@@ -415,49 +414,11 @@ def run_opportunistic_task():
     logger.debug("GPU idle (%d%%) but no opportunistic work available", gpu_util)
 
 
-def run_db_sync():
-    """Bidirectional sync between local DB and Railway prod.
-
-    Push: local published posts → cloud (so Railway serves latest content)
-    Pull: cloud metrics/views/subscribers → local (so Grafana dashboards are current)
-    """
-    import asyncio as _asyncio
-
-    async def _sync():
-        from services.sync_service import SyncService
-        # Load .env so CLOUD_DATABASE_URL is available outside Docker
-        env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
-        if os.path.exists(env_path):
-            with open(env_path, encoding="utf-8", errors="ignore") as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith("#") and "=" in line:
-                        k, v = line.split("=", 1)
-                        os.environ.setdefault(k.strip(), v.strip())
-        async with SyncService() as sync:
-            push = await sync.push_all_posts()
-            pull_metrics = await sync.pull_metrics()
-            pull_views = await sync.pull_page_views()
-            pull_subs = await sync.pull_newsletter_subscribers()
-            return {
-                "push": push,
-                "pull_metrics": pull_metrics,
-                "pull_views": pull_views,
-                "pull_subs": pull_subs,
-            }
-
-    try:
-        result = _asyncio.run(_sync())
-        pushed = result["push"].get("pushed", 0)
-        failed = result["push"].get("failed", 0)
-        views = result["pull_views"].get("inserted", 0)
-        subs = result["pull_subs"].get("inserted", 0)
-        logger.info("DB sync: pushed=%d (fail=%d), pulled views=%d subs=%d",
-                     pushed, failed, views, subs)
-        return result
-    except Exception as e:
-        logger.warning("DB sync error: %s", e)
-        return None
+# NOTE: run_db_sync() previously ran bidirectional sync between local Postgres
+# and a Railway-hosted cloud copy. Railway has been decommissioned — the daemon
+# no longer has a remote target to sync with. The SyncService class is kept in
+# services/ for when a new cloud target is wired up (Neon, Supabase, etc.), but
+# the daemon no longer runs sync on its schedule.
 
 
 def main():
@@ -519,15 +480,9 @@ def main():
                 logger.warning("Opportunistic task error: %s", e)
             last_opportunistic = now
 
-        # Bidirectional DB sync (local ↔ Railway prod)
+        # Periodic maintenance — run openclaw doctor to heal degraded channels
+        # (Telegram 409, WhatsApp disconnect). Cadence reuses the former sync interval.
         if now - last_sync >= _setting("sync_interval"):
-            try:
-                run_db_sync()
-            except Exception as e:
-                logger.error("DB sync error: %s", e)
-
-            # Run openclaw doctor to heal degraded channels (Telegram 409, WhatsApp disconnect)
-            # Runs alongside sync (every 15 min) since both are maintenance tasks
             try:
                 import subprocess as _sp
                 _kwargs = {"creationflags": 0x08000000} if sys.platform == "win32" else {}

@@ -18,7 +18,7 @@ function resolveApiBaseUrl() {
     if (IS_PROD) {
       throw new Error(
         '[Config] NEXT_PUBLIC_API_BASE_URL is required in production. ' +
-          'Set it in your environment or Vercel/Railway config.'
+          'Set it in your environment or Vercel config.'
       );
     }
     return 'http://localhost:8000';

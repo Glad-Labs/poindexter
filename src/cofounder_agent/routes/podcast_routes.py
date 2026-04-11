@@ -79,7 +79,7 @@ async def podcast_feed():
     post_ids = list(episodes_on_disk.keys())
     posts_meta = []
 
-    # Use cloud_pool (Railway) where published posts live
+    # Use cloud_pool (if configured) where published posts live
     pool = getattr(db, "cloud_pool", None) or (db.pool if db else None)
     if pool:
         try:
@@ -280,7 +280,7 @@ async def generate_episode(post_id: str):
     if not pool:
         raise HTTPException(status_code=503, detail="Database not available")
 
-    # Fetch post content from cloud DB (Railway) where published posts live
+    # Fetch post content from cloud DB where published posts live
     try:
         async with pool.acquire() as conn:
             row = await conn.fetchrow(

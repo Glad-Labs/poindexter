@@ -18,9 +18,9 @@ from services.multi_model_qa import MultiModelQA, MultiModelResult, ReviewerResu
 # Fixtures
 # ---------------------------------------------------------------------------
 
-GOOD_TITLE = "How to Deploy FastAPI on Railway"
+GOOD_TITLE = "How to Deploy FastAPI on Fly.io"
 GOOD_CONTENT = (
-    "Railway makes it easy to deploy Python web applications. "
+    "Fly.io makes it easy to deploy Python web applications. "
     "In this guide we walk through the steps to get a FastAPI "
     "project running in production with zero-downtime deploys."
 )

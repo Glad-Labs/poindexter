@@ -1,36 +1,36 @@
 # Grafana Cloud Setup for Glad Labs
 
-Connect Grafana Cloud to Railway PostgreSQL for production monitoring.
+Connect Grafana Cloud to your Poindexter PostgreSQL instance for production monitoring.
 
 ## Prerequisites
 
 - Grafana Cloud account (free tier works): https://grafana.com/products/cloud/
-- Railway PostgreSQL connection string (from Railway dashboard)
+- PostgreSQL connection string for the Poindexter database
 
 ## 1. Add PostgreSQL Data Source
 
 1. In Grafana Cloud, go to **Connections > Data sources > Add data source**
 2. Select **PostgreSQL**
-3. Configure the connection using your Railway credentials:
+3. Configure the connection using your PostgreSQL credentials:
 
-   | Field            | Value                             |
-   | ---------------- | --------------------------------- |
-   | **Name**         | `poindexter-postgres`             |
-   | **Host**         | `<railway-host>:<port>`           |
-   | **Database**     | `railway` (or your DB name)       |
-   | **User**         | `postgres`                        |
-   | **Password**     | Your Railway PostgreSQL password  |
-   | **TLS/SSL Mode** | `require`                         |
-   | **Version**      | 15.x (match your Railway version) |
+   | Field            | Value                            |
+   | ---------------- | -------------------------------- |
+   | **Name**         | `poindexter-postgres`            |
+   | **Host**         | `<host>:<port>`                  |
+   | **Database**     | `poindexter_brain`               |
+   | **User**         | `postgres`                       |
+   | **Password**     | Your PostgreSQL password         |
+   | **TLS/SSL Mode** | `require`                        |
+   | **Version**      | 15.x (match your server version) |
 
 4. Set the data source UID to `poindexter-postgres` (used by all dashboards).
    - After creating the source, go to **Settings** and update the UID field, or
      note the auto-generated UID and update the dashboard JSON files.
 5. Click **Save & Test** to verify the connection.
 
-> **Security note:** Grafana Cloud connects to Railway over the public internet.
-> Ensure your Railway PostgreSQL instance has SSL enabled (it does by default).
-> Consider restricting access via Railway's networking settings if available.
+> **Security note:** Grafana Cloud connects to your database over the public internet.
+> Ensure your PostgreSQL instance has SSL enabled and restrict network access to
+> known IPs where possible.
 
 ## 2. Import Dashboards
 
@@ -78,23 +78,6 @@ definitions -- import them manually in Grafana Cloud:
    - Type: Discord
    - Webhook URL: your Discord channel webhook
 4. Create a **Notification policy** routing alerts to the Discord contact point
-
-## 4. Railway Connection String
-
-Find your Railway PostgreSQL connection string:
-
-1. Open your project in the Railway dashboard
-2. Click the PostgreSQL service
-3. Go to the **Connect** tab
-4. Copy the **Public URL** (format: `postgresql://postgres:PASSWORD@HOST:PORT/railway`)
-
-Parse it into the Grafana fields:
-
-```
-postgresql://postgres:PASSWORD@HOST:PORT/railway
-              ^^^^^^^^ ^^^^^^^^  ^^^^ ^^^^ ^^^^^^^
-              user     password  host port database
-```
 
 ## Datasource UID
 

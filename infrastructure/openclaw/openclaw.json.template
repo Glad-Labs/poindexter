@@ -198,9 +198,6 @@
       "quality-report": { "enabled": true },
       "site-manage": { "enabled": true },
       "model-status": { "enabled": true },
-      "railway-status": { "enabled": true },
-      "railway-deploy": { "enabled": true },
-      "railway-vars": { "enabled": true },
       "vercel-status": { "enabled": true }
     }
   },
