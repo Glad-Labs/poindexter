@@ -224,20 +224,25 @@ def generate_content(count=3):
     """Generate content tasks from topic templates."""
     import random
 
+    # NOTE: Every template must be answerable in THIRD PERSON. First-person
+    # templates ("Why I switched...", "Lessons from running X in production")
+    # push the LLM into fabricating personal experience, which the POV guard
+    # in the prompts and the validator then reject. Keep all formulations as
+    # third-person educational angles.
     TEMPLATES = [
         # Question-driven (curiosity)
         "Why {tech} Is the Secret Weapon for {domain}",
-        "What Happens When You Run {tech} on Your Own Hardware?",
-        "Is {tech} Worth It for Solo Developers in 2026?",
+        "What Happens When You Run {tech} on Your Own Hardware",
+        "Is {tech} Worth It for Solo Developers in 2026",
         "{tech} vs {alt}: The Real Trade-offs Nobody Mentions",
         # How-to / practical
         "How to Set Up {tech} for {domain} in Under an Hour",
         "The {domain} Guide to {tech}: What Actually Works",
-        "{num} Lessons From Running {tech} in Production",
-        "From Zero to {tech}: A Weekend Project That Pays Off",
-        # Opinion / insight
-        "Why I Switched From {alt} to {tech} (And Never Looked Back)",
-        "The Hidden Cost of NOT Using {tech} in Your {domain} Stack",
+        "The {num} {tech} Mistakes That Waste the Most Time",
+        "From Zero to {tech}: A Weekend Project Blueprint",
+        # Opinion / insight (third-person framings)
+        "Why Teams Are Moving From {alt} to {tech}",
+        "The Hidden Cost of NOT Using {tech} in a {domain} Stack",
         "Stop Overthinking {tech} — Here's What Matters",
         "What {domain} Gets Wrong About {tech}",
         # Comparison / decision
