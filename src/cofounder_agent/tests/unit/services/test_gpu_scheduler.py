@@ -3,7 +3,7 @@ Tests for GPU scheduler — async lock serializing Ollama/SDXL access.
 """
 
 import asyncio
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -139,6 +139,7 @@ class TestGetGpuUtilization:
     async def test_parses_utilization_from_prometheus_output(self):
         """The function looks for a 'nvidia_gpu_utilization_percent{...}' line."""
         from unittest.mock import AsyncMock, MagicMock, patch
+
         from services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
@@ -165,6 +166,7 @@ class TestGetGpuUtilization:
     @pytest.mark.asyncio
     async def test_non_200_returns_none(self):
         from unittest.mock import AsyncMock, MagicMock, patch
+
         from services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
@@ -184,6 +186,7 @@ class TestGetGpuUtilization:
     @pytest.mark.asyncio
     async def test_network_error_returns_none(self):
         from unittest.mock import AsyncMock, patch
+
         from services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
@@ -200,6 +203,7 @@ class TestGetGpuUtilization:
     async def test_no_matching_line_returns_none(self):
         """If the metric isn't in the response, returns None."""
         from unittest.mock import AsyncMock, MagicMock, patch
+
         from services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
@@ -226,6 +230,7 @@ class TestWaitForGamingClear:
     @pytest.mark.asyncio
     async def test_idle_gpu_proceeds_immediately(self):
         from unittest.mock import AsyncMock, patch
+
         from services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
@@ -242,6 +247,7 @@ class TestWaitForGamingClear:
     @pytest.mark.asyncio
     async def test_none_utilization_proceeds(self):
         from unittest.mock import AsyncMock, patch
+
         from services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
@@ -257,6 +263,7 @@ class TestWaitForGamingClear:
     async def test_brief_spike_proceeds(self):
         """First check is high, second is low — was just a spike, proceed."""
         from unittest.mock import AsyncMock, patch
+
         from services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
@@ -273,9 +280,10 @@ class TestWaitForGamingClear:
     @pytest.mark.asyncio
     async def test_idle_after_previous_gaming_clears_flag(self):
         """If gaming was previously detected and GPU is now idle, the flag clears."""
-        from unittest.mock import AsyncMock, patch
-        from services.gpu_scheduler import GPUScheduler
         import time
+        from unittest.mock import AsyncMock, patch
+
+        from services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         scheduler._gaming_detected = True
@@ -300,6 +308,7 @@ class TestPrepareMode:
     @pytest.mark.asyncio
     async def test_sdxl_mode_unloads_ollama(self):
         from unittest.mock import AsyncMock
+
         from services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
@@ -313,6 +322,7 @@ class TestPrepareMode:
     @pytest.mark.asyncio
     async def test_ollama_mode_unloads_sdxl(self):
         from unittest.mock import AsyncMock
+
         from services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
@@ -326,6 +336,7 @@ class TestPrepareMode:
     @pytest.mark.asyncio
     async def test_idle_mode_unloads_both(self):
         from unittest.mock import AsyncMock
+
         from services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
@@ -339,6 +350,7 @@ class TestPrepareMode:
     @pytest.mark.asyncio
     async def test_unknown_mode_no_op(self):
         from unittest.mock import AsyncMock
+
         from services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
@@ -359,6 +371,7 @@ class TestUnloadSdxl:
     @pytest.mark.asyncio
     async def test_post_to_unload_endpoint(self):
         from unittest.mock import AsyncMock, MagicMock, patch
+
         from services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
@@ -381,6 +394,7 @@ class TestUnloadSdxl:
     @pytest.mark.asyncio
     async def test_server_unavailable_silently_passes(self):
         from unittest.mock import AsyncMock, patch
+
         from services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
@@ -415,6 +429,7 @@ class TestPropertiesAndConfig:
 
     def test_status_includes_config(self):
         from unittest.mock import patch
+
         from services.gpu_scheduler import GPUScheduler
         scheduler = GPUScheduler()
         with patch("services.site_config.site_config") as mock_sc:
@@ -428,6 +443,7 @@ class TestPropertiesAndConfig:
 
     def test_cfg_int_defaults_when_site_config_missing(self):
         from unittest.mock import patch
+
         from services.gpu_scheduler import _cfg_int
 
         with patch.dict("sys.modules", {"services.site_config": None}):
@@ -437,6 +453,7 @@ class TestPropertiesAndConfig:
 
     def test_cfg_float_defaults_when_site_config_missing(self):
         from unittest.mock import patch
+
         from services.gpu_scheduler import _cfg_float
 
         with patch.dict("sys.modules", {"services.site_config": None}):
@@ -444,7 +461,8 @@ class TestPropertiesAndConfig:
         assert result == 3.14
 
     def test_cfg_int_uses_site_config_when_available(self):
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
+
         from services.gpu_scheduler import _cfg_int
 
         fake_sc_module = MagicMock()

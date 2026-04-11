@@ -68,10 +68,10 @@ class Memory:  # pylint: disable=too-many-instance-attributes
     created_at: datetime
     last_accessed: datetime
     access_count: int = 0
-    tags: Optional[List[str]] = None
-    related_memories: Optional[List[str]] = None
-    metadata: Optional[Dict[str, Any]] = None
-    embedding: Optional[List[float]] = None
+    tags: list[str] | None = None
+    related_memories: list[str] | None = None
+    metadata: dict[str, Any] | None = None
+    embedding: list[float] | None = None
 
 
 @dataclass
@@ -81,11 +81,11 @@ class KnowledgeCluster:  # pylint: disable=too-many-instance-attributes
     id: str
     name: str
     description: str
-    memories: List[str]
+    memories: list[str]
     confidence: float
     last_updated: datetime
     importance_score: float
-    topics: Optional[List[str]] = None
+    topics: list[str] | None = None
 
 
 @dataclass
@@ -97,7 +97,7 @@ class LearningPattern:
     description: str
     frequency: int
     confidence: float
-    examples: List[str]
+    examples: list[str]
     discovered_at: datetime
 
 
@@ -131,14 +131,14 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
         self.embedding_model = None
 
         # Memory caches
-        self.recent_memories: List[Memory] = []
-        self.important_memories: List[Memory] = []
-        self.user_preferences: Dict[str, Any] = {}
-        self.knowledge_clusters: Dict[str, KnowledgeCluster] = {}
+        self.recent_memories: list[Memory] = []
+        self.important_memories: list[Memory] = []
+        self.user_preferences: dict[str, Any] = {}
+        self.knowledge_clusters: dict[str, KnowledgeCluster] = {}
 
         # Learning systems
-        self.learning_patterns: Dict[str, LearningPattern] = {}
-        self.conversation_context: List[Dict[str, Any]] = []
+        self.learning_patterns: dict[str, LearningPattern] = {}
+        self.conversation_context: list[dict[str, Any]] = []
 
         # Configuration
         self.max_recent_memories = 100
@@ -327,8 +327,8 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
         memory_type: MemoryType,
         importance: ImportanceLevel = ImportanceLevel.MEDIUM,
         confidence: float = 1.0,
-        tags: Optional[List[str]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        tags: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """Store a new memory"""
 
@@ -424,10 +424,10 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
     async def recall_memories(  # pylint: disable=too-many-locals
         self,
         query: str,
-        memory_types: Optional[List[MemoryType]] = None,
+        memory_types: list[MemoryType] | None = None,
         limit: int = 10,
         min_relevance: float = 0.5,
-    ) -> List[Memory]:
+    ) -> list[Memory]:
         """Recall memories relevant to a query"""
 
         relevant_memories = []
@@ -519,7 +519,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
         except Exception as e:  # pylint: disable=broad-except
             self.logger.error("Error updating memory access: %s", e, exc_info=True)
 
-    async def _batch_update_memory_access(self, memories: List[Memory]) -> None:
+    async def _batch_update_memory_access(self, memories: list[Memory]) -> None:
         """Batch-update memory access information in PostgreSQL"""
         try:
             async with self.db_pool.acquire() as conn:
@@ -570,14 +570,14 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
             self.logger.error("Error learning user preference: %s", e, exc_info=True)
             raise
 
-    async def get_user_preferences(self, category: Optional[str] = None) -> Dict[str, Any]:
+    async def get_user_preferences(self, category: str | None = None) -> dict[str, Any]:
         """Get user preferences, optionally filtered by category"""
         if category:
             return {k: v for k, v in self.user_preferences.items() if category in k.lower()}
         return self.user_preferences.copy()
 
     async def store_conversation_turn(
-        self, role: str, content: str, context: Optional[Dict[str, Any]] = None
+        self, role: str, content: str, context: dict[str, Any] | None = None
     ):
         """Store a conversation turn with context"""
 
@@ -611,11 +611,11 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
                 metadata={"context": context, "timestamp": conversation_memory["timestamp"]},
             )
 
-    async def get_conversation_context(self, limit: int = 10) -> List[Dict[str, Any]]:
+    async def get_conversation_context(self, limit: int = 10) -> list[dict[str, Any]]:
         """Get recent conversation context"""
         return self.conversation_context[-limit:] if limit else self.conversation_context
 
-    async def identify_learning_patterns(self) -> List[LearningPattern]:
+    async def identify_learning_patterns(self) -> list[LearningPattern]:
         """Identify patterns in user behavior and preferences"""
 
         patterns = []
@@ -665,7 +665,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
 
         return patterns
 
-    def _extract_common_words(self, text: str, min_length: int = 4) -> List[str]:
+    def _extract_common_words(self, text: str, min_length: int = 4) -> list[str]:
         """Extract common meaningful words from text"""
         # Simple word frequency analysis
         words = text.split()
@@ -776,7 +776,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
 
     async def get_contextual_knowledge(
         self, query: str, context_type: str = "general"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get contextual knowledge relevant to current situation"""
 
         # Recall relevant memories
@@ -846,7 +846,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
             self.logger.error("Error forgetting outdated memories: %s", e, exc_info=True)
             raise
 
-    async def get_memory_summary(self) -> Dict[str, Any]:
+    async def get_memory_summary(self) -> dict[str, Any]:
         """Get comprehensive memory system summary from PostgreSQL"""
         try:
             async with self.db_pool.acquire() as conn:

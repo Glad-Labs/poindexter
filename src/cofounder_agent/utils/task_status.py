@@ -34,7 +34,7 @@ class TaskStatus(str, Enum):
 
 
 # Valid status transitions - defines workflow rules
-VALID_TRANSITIONS: Dict[TaskStatus, Set[TaskStatus]] = {
+VALID_TRANSITIONS: dict[TaskStatus, set[TaskStatus]] = {
     TaskStatus.PENDING: {
         TaskStatus.IN_PROGRESS,
         TaskStatus.CANCELLED,
@@ -65,21 +65,21 @@ VALID_TRANSITIONS: Dict[TaskStatus, Set[TaskStatus]] = {
 }
 
 # Terminal states (no further processing without manual intervention)
-TERMINAL_STATUSES: Set[TaskStatus] = {
+TERMINAL_STATUSES: set[TaskStatus] = {
     TaskStatus.PUBLISHED,
     TaskStatus.FAILED,
     TaskStatus.CANCELLED,
 }
 
 # Active processing statuses (task is being worked on)
-ACTIVE_STATUSES: Set[TaskStatus] = {
+ACTIVE_STATUSES: set[TaskStatus] = {
     TaskStatus.PENDING,
     TaskStatus.IN_PROGRESS,
     TaskStatus.ON_HOLD,
 }
 
 # Status descriptions for UI
-STATUS_DESCRIPTIONS: Dict[TaskStatus, str] = {
+STATUS_DESCRIPTIONS: dict[TaskStatus, str] = {
     TaskStatus.PENDING: "Waiting to start processing",
     TaskStatus.IN_PROGRESS: "Currently being processed",
     TaskStatus.AWAITING_APPROVAL: "Waiting for human review and approval",
@@ -92,7 +92,7 @@ STATUS_DESCRIPTIONS: Dict[TaskStatus, str] = {
 }
 
 # Frontend color mapping
-STATUS_COLORS: Dict[TaskStatus, str] = {
+STATUS_COLORS: dict[TaskStatus, str] = {
     TaskStatus.PENDING: "#ffc107",  # Yellow
     TaskStatus.IN_PROGRESS: "#2196f3",  # Blue
     TaskStatus.AWAITING_APPROVAL: "#ff9800",  # Orange
@@ -105,7 +105,7 @@ STATUS_COLORS: Dict[TaskStatus, str] = {
 }
 
 # CSS class names for status badges
-STATUS_CSS_CLASSES: Dict[TaskStatus, str] = {
+STATUS_CSS_CLASSES: dict[TaskStatus, str] = {
     TaskStatus.PENDING: "status-pending",
     TaskStatus.IN_PROGRESS: "status-in-progress",
     TaskStatus.AWAITING_APPROVAL: "status-awaiting-approval",
@@ -118,7 +118,7 @@ STATUS_CSS_CLASSES: Dict[TaskStatus, str] = {
 }
 
 # Status icons for UI
-STATUS_ICONS: Dict[TaskStatus, str] = {
+STATUS_ICONS: dict[TaskStatus, str] = {
     TaskStatus.PENDING: "⧗",  # Hourglass
     TaskStatus.IN_PROGRESS: "⟳",  # Refresh/spinning
     TaskStatus.AWAITING_APPROVAL: "⚠",  # Warning
@@ -149,7 +149,7 @@ def is_valid_transition(
     return target_status in VALID_TRANSITIONS.get(current_status, set())
 
 
-def get_allowed_transitions(status: TaskStatus) -> Set[str]:
+def get_allowed_transitions(status: TaskStatus) -> set[str]:
     """Get list of allowed status transitions for UI dropdown.
 
     Args:
@@ -306,16 +306,16 @@ class StatusTransitionValidator:
 
     def __init__(self):
         """Initialize validator."""
-        self.last_validation_errors: List[str] = []
-        self.transition_history: List[Dict[str, Any]] = []
+        self.last_validation_errors: list[str] = []
+        self.transition_history: list[dict[str, Any]] = []
 
     def validate_transition(
         self,
         current_status: str,
         new_status: str,
-        task_id: Optional[str] = None,
-        additional_context: Optional[Dict[str, Any]] = None,
-    ) -> Tuple[bool, List[str]]:
+        task_id: str | None = None,
+        additional_context: dict[str, Any] | None = None,
+    ) -> tuple[bool, list[str]]:
         """
         Validate a status transition with comprehensive error tracking.
 
@@ -372,8 +372,8 @@ class StatusTransitionValidator:
         return len(errors) == 0, errors
 
     def _validate_context(
-        self, from_status: str, to_status: str, context: Dict[str, Any]
-    ) -> List[str]:
+        self, from_status: str, to_status: str, context: dict[str, Any]
+    ) -> list[str]:
         """
         Validate additional context for specific transitions.
 
@@ -404,11 +404,11 @@ class StatusTransitionValidator:
 
         return errors
 
-    def get_transition_history(self) -> List[Dict[str, Any]]:
+    def get_transition_history(self) -> list[dict[str, Any]]:
         """Get all recorded transition attempts."""
         return self.transition_history
 
-    def get_last_errors(self) -> List[str]:
+    def get_last_errors(self) -> list[str]:
         """Get last validation errors."""
         return self.last_validation_errors
 

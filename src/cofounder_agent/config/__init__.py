@@ -21,10 +21,10 @@ class Config:
 
     # Database configuration
     database_url: str = ""
-    local_database_url: Optional[str] = None
+    local_database_url: str | None = None
 
     # LLM configuration (Ollama-only policy)
-    ollama_base_url: Optional[str] = None
+    ollama_base_url: str | None = None
 
     # Environment settings
     environment: str = "development"
@@ -32,7 +32,7 @@ class Config:
     log_format: str = "json"
 
     # Sentry configuration
-    sentry_dsn: Optional[str] = None
+    sentry_dsn: str | None = None
     sentry_enabled: bool = True
 
     # Telemetry configuration
@@ -118,7 +118,7 @@ def _read_pyproject_version() -> str:
         config_dir = os.path.dirname(os.path.abspath(__file__))
         pyproject_path = os.path.join(config_dir, "..", "pyproject.toml")
         if os.path.exists(pyproject_path):
-            with open(pyproject_path, "r") as f:
+            with open(pyproject_path) as f:
                 for line in f:
                     if line.strip().startswith("version"):
                         # Parse: version = "3.0.55"

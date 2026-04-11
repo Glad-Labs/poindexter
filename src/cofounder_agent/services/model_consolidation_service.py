@@ -20,12 +20,13 @@ Usage:
 
 import asyncio
 import os
-import httpx
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
+
+import httpx
 
 from services.logger_config import get_logger
 
@@ -54,7 +55,7 @@ class ProviderStatus:
     provider: ProviderType
     is_available: bool
     last_checked: datetime
-    last_error: Optional[str] = None
+    last_error: str | None = None
     response_time_ms: float = 0.0
 
     @property
@@ -93,7 +94,7 @@ class ProviderAdapter(ABC):
     async def generate(
         self,
         prompt: str,
-        model: Optional[str] = None,
+        model: str | None = None,
         max_tokens: int = 2000,
         temperature: float = 0.7,
         **kwargs,
@@ -101,7 +102,7 @@ class ProviderAdapter(ABC):
         """Generate text using this provider"""
 
     @abstractmethod
-    def list_models(self) -> List[str]:
+    def list_models(self) -> list[str]:
         """List available models"""
 
 
@@ -109,9 +110,9 @@ class OllamaAdapter(ProviderAdapter):
     """Adapter for Ollama local model provider"""
 
     def __init__(self):
-        from .ollama_client import OllamaClient
-
         from services.site_config import site_config
+
+        from .ollama_client import OllamaClient
         self.host = site_config.get("ollama_base_url") or site_config.get("ollama_host", "http://host.docker.internal:11434")
         self.client = OllamaClient(base_url=self.host)
         self.provider_type = ProviderType.OLLAMA
@@ -145,7 +146,7 @@ class OllamaAdapter(ProviderAdapter):
     async def generate(
         self,
         prompt: str,
-        model: Optional[str] = None,
+        model: str | None = None,
         max_tokens: int = 2000,
         temperature: float = 0.7,
         **kwargs,
@@ -191,7 +192,7 @@ class OllamaAdapter(ProviderAdapter):
             logger.warning("Ollama generation failed", error=str(e), model=model, exc_info=True)
             raise
 
-    async def list_models(self) -> List[str]:
+    async def list_models(self) -> list[str]:
         """List available Ollama models from live instance."""
         try:
             # Delegate to OllamaClient.list_models() which uses the shared
@@ -226,7 +227,7 @@ class HuggingFaceAdapter(ProviderAdapter):
     async def generate(
         self,
         prompt: str,
-        model: Optional[str] = None,
+        model: str | None = None,
         max_tokens: int = 2000,
         temperature: float = 0.7,
         **kwargs,
@@ -269,7 +270,7 @@ class HuggingFaceAdapter(ProviderAdapter):
             )
             raise
 
-    def list_models(self) -> List[str]:
+    def list_models(self) -> list[str]:
         """List available HuggingFace models"""
         return [
             "mistralai/Mistral-7B-Instruct-v0.1",
@@ -304,8 +305,8 @@ class ModelConsolidationService:
 
     def __init__(self):
         """Initialize all model providers"""
-        self.adapters: Dict[ProviderType, ProviderAdapter] = {}
-        self.provider_status: Dict[ProviderType, ProviderStatus] = {}
+        self.adapters: dict[ProviderType, ProviderAdapter] = {}
+        self.provider_status: dict[ProviderType, ProviderStatus] = {}
         self.metrics = {
             "total_requests": 0,
             "successful_requests": 0,
@@ -385,10 +386,10 @@ class ModelConsolidationService:
     async def generate(
         self,
         prompt: str,
-        model: Optional[str] = None,
+        model: str | None = None,
         max_tokens: int = 2000,
         temperature: float = 0.7,
-        preferred_provider: Optional[ProviderType] = None,
+        preferred_provider: ProviderType | None = None,
         **kwargs,
     ) -> ModelResponse:
         """
@@ -504,7 +505,7 @@ class ModelConsolidationService:
         logger.error("All providers exhausted", error=error_msg, exc_info=last_error)
         raise ServiceError(error_msg)
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get status of all providers"""
         return {
             "providers": {
@@ -519,7 +520,7 @@ class ModelConsolidationService:
             "metrics": self.metrics,
         }
 
-    async def list_models(self, provider: Optional[ProviderType] = None) -> Dict[str, List[str]]:
+    async def list_models(self, provider: ProviderType | None = None) -> dict[str, list[str]]:
         """List available models"""
         if provider:
             adapter = self.adapters.get(provider)
@@ -546,7 +547,7 @@ class ModelConsolidationService:
 # GLOBAL SINGLETON
 # ============================================================================
 
-_model_consolidation_service: Optional[ModelConsolidationService] = None
+_model_consolidation_service: ModelConsolidationService | None = None
 
 
 def initialize_model_consolidation_service():

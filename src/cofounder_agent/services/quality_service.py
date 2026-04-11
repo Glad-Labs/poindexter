@@ -44,18 +44,44 @@ from services.quality_models import (  # noqa: F401 — re-exported below
 )
 from services.quality_scorers import (
     check_keywords as _check_keywords_fn,
+)
+from services.quality_scorers import (
     count_syllables as _count_syllables_fn,
+)
+from services.quality_scorers import (
     detect_truncation as _detect_truncation_fn,
+)
+from services.quality_scorers import (
     flesch_kincaid_grade_level as _fk_grade_level_fn,
+)
+from services.quality_scorers import (
     generate_feedback as _generate_feedback_fn,
+)
+from services.quality_scorers import (
     generate_suggestions as _generate_suggestions_fn,
+)
+from services.quality_scorers import (
     qa_cfg as _qa_cfg_fn,
+)
+from services.quality_scorers import (
     score_accuracy as _score_accuracy_fn,
+)
+from services.quality_scorers import (
     score_clarity as _score_clarity_fn,
+)
+from services.quality_scorers import (
     score_completeness as _score_completeness_fn,
+)
+from services.quality_scorers import (
     score_engagement as _score_engagement_fn,
+)
+from services.quality_scorers import (
     score_readability as _score_readability_fn,
+)
+from services.quality_scorers import (
     score_relevance as _score_relevance_fn,
+)
+from services.quality_scorers import (
     score_seo as _score_seo_fn,
 )
 
@@ -109,7 +135,7 @@ class UnifiedQualityService:
     async def evaluate(
         self,
         content: str,
-        context: Optional[Dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
         method: EvaluationMethod = EvaluationMethod.PATTERN_BASED,
         store_result: bool = True,
     ) -> QualityAssessment:
@@ -185,7 +211,7 @@ class UnifiedQualityService:
             )
 
     async def _evaluate_pattern_based(
-        self, content: str, context: Dict[str, Any]
+        self, content: str, context: dict[str, Any]
     ) -> QualityAssessment:
         """
         Fast pattern-based evaluation using heuristics.
@@ -295,7 +321,7 @@ class UnifiedQualityService:
             truncation_detected=truncated,
         )
 
-    async def _evaluate_llm_based(self, content: str, context: Dict[str, Any]) -> QualityAssessment:
+    async def _evaluate_llm_based(self, content: str, context: dict[str, Any]) -> QualityAssessment:
         """
         LLM-based evaluation using language model (issue #189).
 
@@ -383,7 +409,7 @@ class UnifiedQualityService:
             logger.error("[_evaluate_llm_based] LLM call failed: %s", e, exc_info=True)
             return await self._evaluate_pattern_based(content, context)
 
-    async def _evaluate_hybrid(self, content: str, context: Dict[str, Any]) -> QualityAssessment:
+    async def _evaluate_hybrid(self, content: str, context: dict[str, Any]) -> QualityAssessment:
         """
         Hybrid evaluation combining pattern-based and LLM-based.
 
@@ -446,7 +472,7 @@ class UnifiedQualityService:
         """Score clarity. Delegates to quality_scorers."""
         return _score_clarity_fn(content, sentence_count, word_count)
 
-    def _score_accuracy(self, content: str, context: Dict[str, Any]) -> float:
+    def _score_accuracy(self, content: str, context: dict[str, Any]) -> float:
         """Score accuracy. Delegates to quality_scorers."""
         return _score_accuracy_fn(content, context)
 
@@ -455,15 +481,15 @@ class UnifiedQualityService:
         """Detect if content was truncated. Delegates to quality_scorers."""
         return _detect_truncation_fn(content)
 
-    def _score_completeness(self, content: str, context: Dict[str, Any]) -> float:
+    def _score_completeness(self, content: str, context: dict[str, Any]) -> float:
         """Score completeness. Delegates to quality_scorers."""
         return _score_completeness_fn(content, context)
 
-    def _score_relevance(self, content: str, context: Dict[str, Any]) -> float:
+    def _score_relevance(self, content: str, context: dict[str, Any]) -> float:
         """Score relevance. Delegates to quality_scorers."""
         return _score_relevance_fn(content, context)
 
-    def _score_seo(self, content: str, context: Dict[str, Any]) -> float:
+    def _score_seo(self, content: str, context: dict[str, Any]) -> float:
         """Score SEO quality. Delegates to quality_scorers."""
         return _score_seo_fn(content, context)
 
@@ -702,7 +728,7 @@ class UnifiedQualityService:
             ]
             for pat in listicle_patterns:
                 if re.search(pat, title, re.IGNORECASE):
-                    issues.append(f"Generic listicle/guide title pattern")
+                    issues.append("Generic listicle/guide title pattern")
                     penalty -= _t["listicle_penalty"]
                     break
 
@@ -749,7 +775,7 @@ class UnifiedQualityService:
     # UTILITY METHODS
     # ========================================================================
 
-    def _check_keywords(self, content: str, context: Dict[str, Any]) -> bool:
+    def _check_keywords(self, content: str, context: dict[str, Any]) -> bool:
         """Check if keywords are present in content. Delegates to quality_scorers."""
         return _check_keywords_fn(content, context)
 
@@ -757,16 +783,16 @@ class UnifiedQualityService:
         """Estimate syllable count. Delegates to quality_scorers."""
         return _count_syllables_fn(word)
 
-    def _generate_feedback(self, dimensions: QualityDimensions, context: Dict[str, Any]) -> str:
+    def _generate_feedback(self, dimensions: QualityDimensions, context: dict[str, Any]) -> str:
         """Generate human-readable feedback. Delegates to quality_scorers."""
         return _generate_feedback_fn(dimensions, context)
 
-    def _generate_suggestions(self, dimensions: QualityDimensions) -> List[str]:
+    def _generate_suggestions(self, dimensions: QualityDimensions) -> list[str]:
         """Generate improvement suggestions. Delegates to quality_scorers."""
         return _generate_suggestions_fn(dimensions)
 
     async def _store_evaluation(
-        self, assessment: QualityAssessment, context: Dict[str, Any]
+        self, assessment: QualityAssessment, context: dict[str, Any]
     ) -> None:
         """Store evaluation result in database for audit trail and learning loop."""
         try:
@@ -823,7 +849,7 @@ class UnifiedQualityService:
     # STATISTICS & REPORTING
     # ========================================================================
 
-    def get_statistics(self) -> Dict[str, Any]:
+    def get_statistics(self) -> dict[str, Any]:
         """Get evaluation statistics"""
         return {
             "total_evaluations": self.total_evaluations,

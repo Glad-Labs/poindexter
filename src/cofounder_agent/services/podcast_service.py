@@ -431,10 +431,10 @@ class EpisodeResult:
     """Result of generating a podcast episode."""
 
     success: bool
-    file_path: Optional[str] = None
+    file_path: str | None = None
     duration_seconds: int = 0
     file_size_bytes: int = 0
-    error: Optional[str] = None
+    error: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -445,7 +445,7 @@ class EpisodeResult:
 class PodcastService:
     """Generate podcast MP3 episodes from blog post content using Edge TTS."""
 
-    def __init__(self, output_dir: Optional[Path] = None):
+    def __init__(self, output_dir: Path | None = None):
         self.output_dir = output_dir or PODCAST_DIR
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -478,7 +478,7 @@ class PodcastService:
         content: str,
         *,
         force: bool = False,
-        pre_generated_script: Optional[str] = None,
+        pre_generated_script: str | None = None,
     ) -> EpisodeResult:
         """Generate a podcast episode MP3 from blog post content.
 
@@ -600,7 +600,7 @@ async def generate_podcast_episode(
     title: str,
     content: str,
     *,
-    pre_generated_script: Optional[str] = None,
+    pre_generated_script: str | None = None,
 ) -> None:
     """Fire-and-forget podcast generation. Logs errors but never raises."""
     try:

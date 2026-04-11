@@ -13,8 +13,8 @@ from fastapi.responses import JSONResponse
 
 from middleware.api_token_auth import verify_api_token, verify_api_token_optional
 from services.logger_config import get_logger
-from utils.rate_limiter import limiter
 from utils.error_handler import handle_route_error
+from utils.rate_limiter import limiter
 from utils.route_utils import get_database_dependency
 
 logger = get_logger(__name__)
@@ -25,6 +25,7 @@ router = APIRouter(tags=["cms"])
 async def serve_generated_image(filename: str):
     """Serve SDXL-generated images from the local output directory."""
     import os
+
     from fastapi.responses import FileResponse
 
     # Sanitize filename to prevent directory traversal
@@ -145,7 +146,7 @@ async def list_posts(
     skip: int = Query(0, ge=0, le=10000, description="Alias for offset (deprecated — use offset)"),
     limit: int = Query(20, ge=1, le=100),
     published_only: bool = Query(True),
-    token: Optional[str] = Depends(verify_api_token_optional),
+    token: str | None = Depends(verify_api_token_optional),
 ):
     """
     List all blog posts with pagination (ASYNC).
@@ -730,7 +731,7 @@ async def list_categories(
 
 @router.get("/api/categories/{slug}")
 @limiter.limit("60/minute")
-async def get_category_by_slug(request: Request, slug: str) -> Dict[str, Any]:
+async def get_category_by_slug(request: Request, slug: str) -> dict[str, Any]:
     """
     Get a single category by slug (ASYNC).
     Returns: {data: {...}}

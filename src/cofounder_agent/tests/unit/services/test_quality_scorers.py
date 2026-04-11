@@ -5,23 +5,24 @@ Tests all pure scoring functions with edge cases and boundary conditions.
 No DB or LLM calls — all functions are stateless heuristics.
 """
 
-import pytest
 from unittest.mock import patch
 
+import pytest
+
 from services.quality_scorers import (
-    score_clarity,
-    score_accuracy,
-    score_completeness,
-    score_relevance,
-    score_seo,
-    score_readability,
-    score_engagement,
     check_keywords,
     count_syllables,
-    flesch_kincaid_grade_level,
     detect_truncation,
+    flesch_kincaid_grade_level,
     generate_feedback,
     generate_suggestions,
+    score_accuracy,
+    score_clarity,
+    score_completeness,
+    score_engagement,
+    score_readability,
+    score_relevance,
+    score_seo,
 )
 
 # Default config for testing (avoids DB calls)

@@ -33,7 +33,7 @@ class WorkerService:
         self._current_task_id = None
 
     @property
-    def capabilities(self) -> Dict[str, Any]:
+    def capabilities(self) -> dict[str, Any]:
         """Discover local capabilities."""
         if not self._capabilities:
             caps = {
@@ -120,7 +120,7 @@ class WorkerService:
                 logger.debug("[WORKER] Heartbeat failed", exc_info=True)
             await asyncio.sleep(HEARTBEAT_INTERVAL)
 
-    async def _collect_health_metrics(self) -> Dict[str, Any]:
+    async def _collect_health_metrics(self) -> dict[str, Any]:
         """Collect current health metrics."""
         # Basic metrics — enhance with nvidia-smi for GPU util later
         return {
@@ -128,6 +128,6 @@ class WorkerService:
             "current_task": self._current_task_id,
         }
 
-    def set_current_task(self, task_id: Optional[str]):
+    def set_current_task(self, task_id: str | None):
         """Track which task is being processed."""
         self._current_task_id = task_id

@@ -17,7 +17,7 @@ class DatabaseServiceMixin:
     """Shared methods and utilities for database service modules."""
 
     @staticmethod
-    def _convert_row_to_dict(row: Any) -> Dict[str, Any]:
+    def _convert_row_to_dict(row: Any) -> dict[str, Any]:
         """
         Convert asyncpg Record to dict with proper type handling.
 

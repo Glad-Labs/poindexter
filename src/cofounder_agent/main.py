@@ -21,6 +21,7 @@ from config import get_config
 # Load configuration
 config = get_config()
 
+from middleware.api_token_auth import verify_api_token
 from services.container import service_container
 
 # Import services
@@ -28,14 +29,13 @@ from services.logger_config import get_logger
 from services.quality_service import UnifiedQualityService
 from services.sentry_integration import setup_sentry
 from services.telemetry import setup_telemetry
+from utils.connection_health import ConnectionPoolHealth
 
 # Local application imports (must come after path setup)
 from utils.exception_handlers import register_exception_handlers
 from utils.middleware_config import MiddlewareConfig
-from middleware.api_token_auth import verify_api_token
 from utils.route_registration import register_all_routes
 from utils.route_utils import initialize_services
-from utils.connection_health import ConnectionPoolHealth
 from utils.startup_manager import StartupManager
 
 try:
@@ -322,6 +322,7 @@ _deployment_mode = os.getenv("DEPLOYMENT_MODE", "coordinator")
 _is_production = config.environment == "production"
 
 from services.site_config import site_config as _site_cfg
+
 _site_name = _site_cfg.get("site_name", "AI Content Pipeline")
 
 app = FastAPI(
@@ -452,7 +453,7 @@ async def api_health():
             health_data["components"]["database"] = "unavailable"
 
         # Connection pool stats (#140)
-        pool_health: Optional[ConnectionPoolHealth] = getattr(app.state, "pool_health", None)
+        pool_health: ConnectionPoolHealth | None = getattr(app.state, "pool_health", None)
         if database_service and getattr(database_service, "pool", None):
             pool = database_service.pool
             pool_stats = {
@@ -680,7 +681,7 @@ class CommandRequest(BaseModel):
     """
 
     command: str
-    context: Optional[Dict[str, Any]] = None
+    context: dict[str, Any] | None = None
 
     @validator("command")
     def _command_must_not_be_empty(cls, v: str) -> str:  # pylint: disable=no-self-argument
@@ -700,8 +701,8 @@ class CommandResponse(BaseModel):
     """
 
     response: str
-    task_id: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
+    task_id: str | None = None
+    metadata: dict[str, Any] | None = None
 
 
 @app.post("/command", response_model=CommandResponse)

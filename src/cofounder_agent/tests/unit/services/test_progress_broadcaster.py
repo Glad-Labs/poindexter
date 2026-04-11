@@ -10,7 +10,6 @@ import pytest
 
 from services.progress_broadcaster import broadcast_progress, broadcast_workflow_progress
 
-
 # ---------------------------------------------------------------------------
 # broadcast_progress
 # ---------------------------------------------------------------------------

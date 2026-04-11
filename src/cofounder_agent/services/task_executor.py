@@ -2,10 +2,16 @@
 
 import asyncio
 import json
-from services.logger_config import get_logger
+
+# Local OpenClaw notification — worker sends messages through the local gateway
+import os as _os
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
+
+import httpx as _httpx
+
+from services.logger_config import get_logger
 
 # Import AI content generator for fallback
 from .ai_content_generator import AIContentGenerator
@@ -13,10 +19,6 @@ from .error_handler import ServiceError
 from .quality_service import QualityAssessment, UnifiedQualityService
 from .usage_tracker import get_usage_tracker
 from .webhook_delivery_service import emit_webhook_event
-
-# Local OpenClaw notification — worker sends messages through the local gateway
-import os as _os
-import httpx as _httpx
 
 # Telegram notifications now routed through OpenClaw gateway (no direct bot token needed)
 
@@ -106,14 +108,14 @@ class TaskExecutor:
         self.published_count = 0
         self._processor_task = None
         self.usage_tracker = get_usage_tracker()  # Initialize usage tracking
-        self.critique_loop: Optional[Any] = (
+        self.critique_loop: Any | None = (
             None  # Optional critique loop (not wired in current version)
         )
-        self.last_poll_at: Optional[float] = None  # monotonic timestamp of last poll
+        self.last_poll_at: float | None = None  # monotonic timestamp of last poll
         self._poll_cycle: int = 0  # incremented each loop iteration
         # Monotonic timestamp of the last time a task was picked up for processing.
         # Used to detect executor stalls (issue #841).
-        self._last_task_started_at: Optional[float] = None
+        self._last_task_started_at: float | None = None
         # How long (seconds) the queue may have pending tasks without any being
         # picked up before we fire a CRITICAL alert.
         self._IDLE_ALERT_THRESHOLD_S: int = 300  # 5 minutes
@@ -329,7 +331,7 @@ class TaskExecutor:
             self.task_count, self.success_count, self.error_count,
         )
 
-    async def _process_single_task(self, task: Dict[str, Any]):
+    async def _process_single_task(self, task: dict[str, Any]):
         """Process a single task through the pipeline"""
         task_id = task.get("id") or task.get("task_id")
         if not task_id:
@@ -793,12 +795,12 @@ class TaskExecutor:
         except Exception:
             logger.warning("[AUTO_RETRY] Auto-retry sweep failed", exc_info=True)
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get executor statistics"""
-        last_poll_age: Optional[float] = None
+        last_poll_age: float | None = None
         if self.last_poll_at is not None:
             last_poll_age = time.monotonic() - self.last_poll_at
-        last_task_age: Optional[float] = None
+        last_task_age: float | None = None
         if self._last_task_started_at is not None:
             last_task_age = time.monotonic() - self._last_task_started_at
         return {

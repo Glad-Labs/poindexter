@@ -26,7 +26,7 @@ class ContentConstraints:
         "educational"  # Style: technical, narrative, listicle, educational, thought-leadership
     )
     word_count_tolerance: int = 10  # Tolerance percentage (5-20%)
-    per_phase_overrides: Optional[Dict[str, int]] = None  # Override targets for specific phases
+    per_phase_overrides: dict[str, int] | None = None  # Override targets for specific phases
     strict_mode: bool = False  # If True, fail task if constraints violated
 
 
@@ -40,7 +40,7 @@ class ConstraintCompliance:
     word_count_percentage: float  # (actual - target) / target * 100
     writing_style_applied: str
     strict_mode_enforced: bool
-    violation_message: Optional[str] = None
+    violation_message: str | None = None
 
 
 @dataclass
@@ -83,7 +83,7 @@ def validate_constraints(
     content: str,
     constraints: ContentConstraints,
     phase_name: str = "general",
-    word_count_target: Optional[int] = None,
+    word_count_target: int | None = None,
 ) -> ConstraintCompliance:
     """
     Validate that generated content meets the constraints.
@@ -136,7 +136,7 @@ def validate_constraints(
 
 def calculate_phase_targets(
     total_word_count: int, constraints: ContentConstraints, num_phases: int = 5
-) -> Dict[str, int]:
+) -> dict[str, int]:
     """
     Calculate target word counts for each phase in the pipeline.
 
@@ -199,7 +199,7 @@ def _get_default_phase_target(phase: str, total_word_count: int) -> int:
 
 def check_tolerance(
     actual_value: int, target_value: int, tolerance_percent: int
-) -> Tuple[bool, float]:
+) -> tuple[bool, float]:
     """
     Check if actual value is within tolerance of target.
 
@@ -221,7 +221,7 @@ def check_tolerance(
     return is_within, percentage
 
 
-def apply_strict_mode(compliance: ConstraintCompliance) -> Tuple[bool, str]:
+def apply_strict_mode(compliance: ConstraintCompliance) -> tuple[bool, str]:
     """
     Apply strict mode validation.
 
@@ -248,7 +248,7 @@ def apply_strict_mode(compliance: ConstraintCompliance) -> Tuple[bool, str]:
     return True, ""
 
 
-def merge_compliance_reports(reports: List[ConstraintCompliance]) -> ConstraintCompliance:
+def merge_compliance_reports(reports: list[ConstraintCompliance]) -> ConstraintCompliance:
     """
     Merge multiple constraint compliance reports into one summary.
 

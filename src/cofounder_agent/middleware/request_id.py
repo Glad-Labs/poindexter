@@ -42,12 +42,12 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
 # Module-level ContextVar — survives concurrent async tasks within one request
-_request_id_var: ContextVar[Optional[str]] = ContextVar("request_id", default=None)
+_request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
 
 HEADER_NAME = "X-Request-ID"
 
 
-def get_request_id() -> Optional[str]:
+def get_request_id() -> str | None:
     """
     Return the current request ID, or None if called outside a request context.
 

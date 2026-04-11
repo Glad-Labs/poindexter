@@ -11,7 +11,6 @@ from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from middleware.api_token_auth import verify_api_token
-
 from services.cost_aggregation_service import CostAggregationService
 from services.database_service import DatabaseService
 from services.logger_config import get_logger
@@ -29,7 +28,7 @@ async def get_budget_status(
     token: str = Depends(verify_api_token),
     monthly_budget: float = Query(150.0, ge=10, le=10000),
     db_service: DatabaseService = Depends(get_database_dependency),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Get budget status and alerts for Week 2 dashboard
 
@@ -70,7 +69,7 @@ async def get_operational_metrics(
     request: Request,
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Return structured operational gauges for alerting and dashboards.
 
@@ -90,7 +89,7 @@ async def get_operational_metrics(
         uptime = (now - _start_time).total_seconds()
 
         # --- Task queue depth from DB ---
-        task_counts: Dict[str, int] = {}
+        task_counts: dict[str, int] = {}
         try:
             if db_service and db_service.tasks:
                 raw = await db_service.tasks.get_task_counts()
@@ -112,7 +111,7 @@ async def get_operational_metrics(
         completed = task_counts.get("completed", 0)
 
         # --- Task executor in-memory stats ---
-        executor_stats: Dict[str, Any] = {}
+        executor_stats: dict[str, Any] = {}
         try:
             from services.service_container import (
                 get_service_container,  # type: ignore[import-untyped]
@@ -133,7 +132,7 @@ async def get_operational_metrics(
         except Exception as ws_err:
             logger.debug("[operational_metrics] WebSocket count unavailable: %s", ws_err)
 
-        metrics: Dict[str, Any] = {
+        metrics: dict[str, Any] = {
             "timestamp": now.isoformat(),
             "uptime_seconds": round(uptime, 1),
             "task_queue": {

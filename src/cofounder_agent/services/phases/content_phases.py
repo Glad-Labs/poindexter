@@ -73,7 +73,7 @@ class GenerateContentPhase(BasePhase):
             },
         )
 
-    async def execute(self, inputs: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, inputs: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
         """Generate content using AI"""
 
         # Validate inputs
@@ -203,7 +203,7 @@ class QualityEvaluationPhase(BasePhase):
             },
         )
 
-    async def execute(self, inputs: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, inputs: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
         """Evaluate content quality"""
 
         is_valid, error = await self.validate_inputs(inputs)
@@ -311,7 +311,7 @@ class SearchImagePhase(BasePhase):
             },
         )
 
-    async def execute(self, inputs: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, inputs: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
         """Search for featured image"""
 
         if not config.get("enabled", True):
@@ -419,7 +419,7 @@ class GenerateSEOPhase(BasePhase):
             configurable_params={},
         )
 
-    async def execute(self, inputs: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, inputs: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
         """Generate SEO metadata"""
 
         is_valid, error = await self.validate_inputs(inputs)
@@ -527,7 +527,7 @@ class CaptureTrainingDataPhase(BasePhase):
             configurable_params={},
         )
 
-    async def execute(self, inputs: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, inputs: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
         """Capture training data"""
 
         is_valid, error = await self.validate_inputs(inputs)

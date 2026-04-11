@@ -37,11 +37,11 @@ SDXL_SERVER_URL = site_config.get("sdxl_server_url", "http://host.docker.interna
 class VideoResult:
     """Result of generating a video."""
     success: bool
-    file_path: Optional[str] = None
+    file_path: str | None = None
     duration_seconds: int = 0
     file_size_bytes: int = 0
     images_used: int = 0
-    error: Optional[str] = None
+    error: str | None = None
 
 
 async def _generate_images_for_video(
@@ -98,8 +98,8 @@ async def _generate_images_for_video(
         prompts = [
             f"photorealistic {title} concept, cinematic lighting, 4k, detailed",
             f"futuristic technology scene related to {title}, blue lighting, photorealistic",
-            f"modern server infrastructure, glowing connections, cinematic, photorealistic",
-            f"abstract data visualization with flowing light particles, cinematic, 4k",
+            "modern server infrastructure, glowing connections, cinematic, photorealistic",
+            "abstract data visualization with flowing light particles, cinematic, 4k",
         ][:num_images]
 
     # Generate images via SDXL
@@ -222,10 +222,10 @@ async def generate_video_for_post(
     post_id: str,
     title: str,
     content: str = "",
-    podcast_path: Optional[str] = None,
-    image_urls: Optional[list[str]] = None,
+    podcast_path: str | None = None,
+    image_urls: list[str] | None = None,
     force: bool = False,
-    pre_generated_scenes: Optional[list[str]] = None,
+    pre_generated_scenes: list[str] | None = None,
 ) -> VideoResult:
     """Generate a video for a published post.
 
@@ -344,7 +344,7 @@ async def generate_video_for_post(
 
 async def _generate_short_summary_audio(
     post_id: str, title: str, content: str,
-) -> Optional[str]:
+) -> str | None:
     """Generate a 60-second summary TTS audio for the short-form video.
 
     Uses Ollama to write a tight ~150-word hook + key takeaways,
@@ -354,7 +354,7 @@ async def _generate_short_summary_audio(
     model = "llama3:latest"
 
     # Strip markdown for cleaner input
-    from services.podcast_service import _strip_markdown, _normalize_for_speech
+    from services.podcast_service import _normalize_for_speech, _strip_markdown
 
     prompt = f"""Write a 60-second video narration (about 150 words) summarizing this article.
 
@@ -409,9 +409,9 @@ async def generate_short_video_for_post(
     post_id: str,
     title: str,
     content: str = "",
-    podcast_path: Optional[str] = None,
-    pre_generated_scenes: Optional[list[str]] = None,
-    pre_generated_summary: Optional[str] = None,
+    podcast_path: str | None = None,
+    pre_generated_scenes: list[str] | None = None,
+    pre_generated_summary: str | None = None,
     force: bool = False,
 ) -> VideoResult:
     """Generate a vertical short-form video (TikTok/YouTube Shorts).
@@ -437,6 +437,7 @@ async def generate_short_video_for_post(
         # TTS the pre-generated summary directly
         try:
             import edge_tts
+
             from services.podcast_service import _normalize_for_speech
             script = _normalize_for_speech(pre_generated_summary)
             short_audio_path = str(VIDEO_DIR / f"{post_id}-short-audio.mp3")
@@ -525,7 +526,7 @@ async def generate_video_episode(
     title: str,
     content: str,
     *,
-    pre_generated_scenes: Optional[list[str]] = None,
+    pre_generated_scenes: list[str] | None = None,
 ) -> None:
     """Fire-and-forget full-length video generation. Logs errors but never raises."""
     try:

@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from services.topic_discovery import TopicDiscovery, DiscoveredTopic, CATEGORY_SEARCHES
+from services.topic_discovery import CATEGORY_SEARCHES, DiscoveredTopic, TopicDiscovery
 
 
 def _make_pool(published_titles=None, pending_topics=None):

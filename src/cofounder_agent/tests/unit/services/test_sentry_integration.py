@@ -1,6 +1,7 @@
 """Tests for sentry_integration service."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 

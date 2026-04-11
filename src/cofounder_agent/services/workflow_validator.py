@@ -26,14 +26,14 @@ class WorkflowValidator:
     """Validates workflow structure and execution feasibility"""
 
     def __init__(
-        self, registry: Optional[PhaseRegistry] = None, mapper: Optional[PhaseMapper] = None
+        self, registry: PhaseRegistry | None = None, mapper: PhaseMapper | None = None
     ):
         self.registry = registry or PhaseRegistry.get_instance()
         self.mapper = mapper or PhaseMapper(self.registry)
 
     def validate_workflow(
-        self, workflow: CustomWorkflow, initial_inputs: Optional[Dict[str, Any]] = None
-    ) -> Tuple[bool, List[str], List[str]]:
+        self, workflow: CustomWorkflow, initial_inputs: dict[str, Any] | None = None
+    ) -> tuple[bool, list[str], list[str]]:
         """
         Validate a workflow definition.
 
@@ -49,8 +49,8 @@ class WorkflowValidator:
             - errors: Critical issues that prevent execution
             - warnings: Non-critical issues or suggestions
         """
-        errors: List[str] = []
-        warnings: List[str] = []
+        errors: list[str] = []
+        warnings: list[str] = []
 
         if not workflow.phases:
             errors.append("Workflow must have at least one phase")
@@ -92,11 +92,11 @@ class WorkflowValidator:
     # ---------------------------------------------------------------------------
 
     def _validate_phase_registry(
-        self, workflow_phases: List[WorkflowPhase]
-    ) -> Tuple[List[str], List[str]]:
+        self, workflow_phases: list[WorkflowPhase]
+    ) -> tuple[list[str], list[str]]:
         """Check that all phases exist in the registry and flag skipped phases."""
-        errors: List[str] = []
-        warnings: List[str] = []
+        errors: list[str] = []
+        warnings: list[str] = []
         for phase in workflow_phases:
             if not self.registry.phase_exists(phase.name):
                 errors.append(f"Phase '{phase.name}' not found in registry")
@@ -105,10 +105,10 @@ class WorkflowValidator:
         return errors, warnings
 
     def _validate_phase_indices(
-        self, workflow_phases: List[WorkflowPhase]
-    ) -> Tuple[List[str], List[str]]:
+        self, workflow_phases: list[WorkflowPhase]
+    ) -> tuple[list[str], list[str]]:
         """Check that phase indices are sequential starting from zero."""
-        errors: List[str] = []
+        errors: list[str] = []
         indices = sorted([p.index for p in workflow_phases])
         expected = list(range(len(workflow_phases)))
         if indices != expected:
@@ -116,8 +116,8 @@ class WorkflowValidator:
         return errors, []
 
     def _validate_no_duplicate_names(
-        self, workflow_phases: List[WorkflowPhase]
-    ) -> Tuple[List[str], List[str]]:
+        self, workflow_phases: list[WorkflowPhase]
+    ) -> tuple[list[str], list[str]]:
         """Check that no two phases share the same name."""
         phase_names = [p.name for p in workflow_phases]
         if len(set(phase_names)) != len(phase_names):
@@ -126,12 +126,12 @@ class WorkflowValidator:
 
     def _validate_phase_mappings(
         self,
-        workflow_phases: List[WorkflowPhase],
-        initial_inputs: Optional[Dict[str, Any]],
-    ) -> Tuple[List[str], List[str]]:
+        workflow_phases: list[WorkflowPhase],
+        initial_inputs: dict[str, Any] | None,
+    ) -> tuple[list[str], list[str]]:
         """Validate input/output mappings between consecutive phases."""
-        errors: List[str] = []
-        warnings: List[str] = []
+        errors: list[str] = []
+        warnings: list[str] = []
 
         for i, phase in enumerate(workflow_phases):
             phase_def = self.registry.get_phase(phase.name)
@@ -175,11 +175,11 @@ class WorkflowValidator:
         phase_def: Any,
         prev_phase: WorkflowPhase,
         prev_phase_def: Any,
-        initial_inputs: Optional[Dict[str, Any]],
-    ) -> Tuple[List[str], List[str]]:
+        initial_inputs: dict[str, Any] | None,
+    ) -> tuple[list[str], list[str]]:
         """Validate that one phase can receive inputs from the previous phase."""
-        errors: List[str] = []
-        warnings: List[str] = []
+        errors: list[str] = []
+        warnings: list[str] = []
         prefix = f"Phase {phase_index} ({phase.name})"
 
         try:
@@ -229,10 +229,10 @@ class WorkflowValidator:
         return errors, warnings
 
     def _validate_timeout_and_retries(
-        self, workflow_phases: List[WorkflowPhase]
-    ) -> Tuple[List[str], List[str]]:
+        self, workflow_phases: list[WorkflowPhase]
+    ) -> tuple[list[str], list[str]]:
         """Warn on phases with suspiciously short timeouts or high retry counts."""
-        warnings: List[str] = []
+        warnings: list[str] = []
         for phase in workflow_phases:
             phase_def = self.registry.get_phase(phase.name)
             if not phase_def:
@@ -248,8 +248,8 @@ class WorkflowValidator:
         return [], warnings
 
     def validate_for_execution(
-        self, workflow: CustomWorkflow, initial_inputs: Optional[Dict[str, Any]] = None
-    ) -> Tuple[bool, List[str]]:
+        self, workflow: CustomWorkflow, initial_inputs: dict[str, Any] | None = None
+    ) -> tuple[bool, list[str]]:
         """
         Validate that a workflow can be executed with given inputs.
 
@@ -283,7 +283,7 @@ class WorkflowValidator:
 
         return len(errors) == 0, errors
 
-    def _normalize_phases(self, phases: List[Any]) -> List[WorkflowPhase]:
+    def _normalize_phases(self, phases: list[Any]) -> list[WorkflowPhase]:
         """
         Convert phases to WorkflowPhase objects if needed.
         Handles both WorkflowPhase objects and dict representations.

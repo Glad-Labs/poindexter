@@ -429,7 +429,7 @@ class TestOllamaAdapterIsAvailable:
 class TestOllamaAdapterGenerate:
     @pytest.mark.asyncio
     async def test_returns_model_response_on_success(self):
-        from services.model_consolidation_service import OllamaAdapter, ProviderType, ModelResponse
+        from services.model_consolidation_service import ModelResponse, OllamaAdapter, ProviderType
 
         with patch.object(OllamaAdapter, "__init__", lambda self: None):
             adapter = OllamaAdapter()
@@ -567,7 +567,11 @@ class TestHuggingFaceAdapter:
 
     @pytest.mark.asyncio
     async def test_generate_returns_model_response(self):
-        from services.model_consolidation_service import HuggingFaceAdapter, ProviderType, ModelResponse
+        from services.model_consolidation_service import (
+            HuggingFaceAdapter,
+            ModelResponse,
+            ProviderType,
+        )
 
         with patch.object(HuggingFaceAdapter, "__init__", lambda self: None):
             adapter = HuggingFaceAdapter()

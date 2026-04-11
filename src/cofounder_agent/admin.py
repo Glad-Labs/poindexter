@@ -15,7 +15,6 @@ mapped to the existing asyncpg-managed tables.
 
 import os
 
-from services.site_config import site_config
 from sqladmin import Admin, ModelView
 from sqlalchemy import (
     Boolean,
@@ -30,6 +29,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase
 
+from services.site_config import site_config
 
 # ---------------------------------------------------------------------------
 # SQLAlchemy base + engine (read-only reflection of asyncpg-managed tables)

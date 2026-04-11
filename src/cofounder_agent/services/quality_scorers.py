@@ -103,7 +103,7 @@ def score_clarity(content: str, sentence_count: int, word_count: int, cfg: dict 
     return 5.0
 
 
-def score_accuracy(content: str, context: Dict[str, Any], cfg: dict | None = None) -> float:
+def score_accuracy(content: str, context: dict[str, Any], cfg: dict | None = None) -> float:
     """Score accuracy based on citation patterns and factual anchors.
     Thresholds tunable via qa_accuracy_* app_settings keys."""
     cfg = cfg or qa_cfg()
@@ -175,7 +175,7 @@ def score_accuracy(content: str, context: Dict[str, Any], cfg: dict | None = Non
     return min(max(score, 0.0), 10.0)
 
 
-def score_completeness(content: str, context: Dict[str, Any], cfg: dict | None = None) -> float:
+def score_completeness(content: str, context: dict[str, Any], cfg: dict | None = None) -> float:
     """Score completeness based on depth signals beyond raw word count.
     Thresholds tunable via qa_completeness_* app_settings keys."""
     cfg = cfg or qa_cfg()
@@ -219,7 +219,7 @@ def score_completeness(content: str, context: Dict[str, Any], cfg: dict | None =
     return min(score, 10.0)
 
 
-def score_relevance(content: str, context: Dict[str, Any], cfg: dict | None = None) -> float:
+def score_relevance(content: str, context: dict[str, Any], cfg: dict | None = None) -> float:
     """Score relevance using topic-word family matching to resist keyword stuffing.
     Thresholds tunable via qa_relevance_* app_settings keys."""
     cfg = cfg or qa_cfg()
@@ -257,7 +257,7 @@ def score_relevance(content: str, context: Dict[str, Any], cfg: dict | None = No
     return min(base, 10.0)
 
 
-def score_seo(content: str, context: Dict[str, Any], cfg: dict | None = None) -> float:
+def score_seo(content: str, context: dict[str, Any], cfg: dict | None = None) -> float:
     """Score SEO quality. Baseline tunable via qa_seo_baseline."""
     cfg = cfg or qa_cfg()
     score = cfg["seo_baseline"]
@@ -346,7 +346,7 @@ def score_engagement(content: str, cfg: dict | None = None) -> float:
 # Utility functions
 # ---------------------------------------------------------------------------
 
-def check_keywords(content: str, context: Dict[str, Any]) -> bool:
+def check_keywords(content: str, context: dict[str, Any]) -> bool:
     """Check if keywords are present in content."""
     context = context or {}
     keywords = context.get("keywords")
@@ -479,7 +479,7 @@ def detect_truncation(content: str) -> bool:
 # Feedback generation
 # ---------------------------------------------------------------------------
 
-def generate_feedback(dimensions: Any, context: Dict[str, Any]) -> str:
+def generate_feedback(dimensions: Any, context: dict[str, Any]) -> str:
     """Generate human-readable feedback.
 
     ``dimensions`` is expected to have an ``.average()`` method (e.g.
@@ -498,7 +498,7 @@ def generate_feedback(dimensions: Any, context: Dict[str, Any]) -> str:
     return "Poor quality - major revisions required"
 
 
-def generate_suggestions(dimensions: Any) -> List[str]:
+def generate_suggestions(dimensions: Any) -> list[str]:
     """Generate improvement suggestions based on weak dimensions.
 
     ``dimensions`` is expected to have dimension attributes on a 0-100 scale

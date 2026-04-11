@@ -6,14 +6,14 @@ from pydantic import BaseModel, Field
 class ImageDetails(BaseModel):
     """Holds the details for a single image, from generation to final URL."""
 
-    query: Optional[str] = None
+    query: str | None = None
     source: str = "pexels"  # Default to Pexels, can be 'gcs' or 'local'
-    path: Optional[str] = None  # Local path or GCS blob name
-    public_url: Optional[str] = None
-    alt_text: Optional[str] = None
-    caption: Optional[str] = None
-    description: Optional[str] = None
-    strapi_image_id: Optional[int] = None  # To link featured image in Strapi
+    path: str | None = None  # Local path or GCS blob name
+    public_url: str | None = None
+    alt_text: str | None = None
+    caption: str | None = None
+    description: str | None = None
+    strapi_image_id: int | None = None  # To link featured image in Strapi
 
 
 class BlogPost(BaseModel):
@@ -27,50 +27,50 @@ class BlogPost(BaseModel):
     primary_keyword: str
     target_audience: str
     category: str
-    status: Optional[str] = "New"
-    task_id: Optional[str] = None  # Firestore document ID for the task
-    run_id: Optional[str] = None
+    status: str | None = "New"
+    task_id: str | None = None  # Firestore document ID for the task
+    run_id: str | None = None
     refinement_loops: int = 3
-    writing_style: Optional[str] = (
+    writing_style: str | None = (
         None  # Writing style: technical, narrative, listicle, educational, thought-leadership
     )
     # SEO & Metadata
-    title: Optional[str] = None
-    meta_description: Optional[str] = None
-    slug: Optional[str] = None
+    title: str | None = None
+    meta_description: str | None = None
+    slug: str | None = None
     # Content Stages
-    research_data: Optional[Any] = None
-    raw_content: Optional[str] = None
-    body_content_blocks: Optional[List[Dict[str, Any]]] = None
-    qa_feedback: List[str] = []
+    research_data: Any | None = None
+    raw_content: str | None = None
+    body_content_blocks: list[dict[str, Any]] | None = None
+    qa_feedback: list[str] = []
     # Image data
-    images: Optional[List[ImageDetails]] = []
+    images: list[ImageDetails] | None = []
     # Publishing data
-    strapi_id: Optional[int] = None
-    strapi_url: Optional[str] = None
+    strapi_id: int | None = None
+    strapi_url: str | None = None
     # --- Internal State ---
     # Holds a map of {post_title: post_url} for internal linking, excluded from serialization
-    published_posts_map: Dict[str, str] = Field(default_factory=dict, exclude=True)
+    published_posts_map: dict[str, str] = Field(default_factory=dict, exclude=True)
 
     # --- Refinement & State Tracking ---
-    qa_feedback: List[str] = Field(default_factory=list)
+    qa_feedback: list[str] = Field(default_factory=list)
 
     # --- NEW: Quality Score Tracking ---
-    quality_scores: List[float] = Field(
+    quality_scores: list[float] = Field(
         default_factory=list,
         description="Quality scores from each QA evaluation (0-100 scale). "
         "Allows tracking improvement trend across refinement iterations.",
     )
 
     # --- Metadata for Agent Coordination ---
-    metadata: Optional[Dict[str, Any]] = Field(
+    metadata: dict[str, Any] | None = Field(
         default_factory=dict,
         description="Metadata for agent coordination (e.g., writing_sample_guidance)",
     )
 
     # --- Publishing & Finalization ---
-    strapi_post_id: Optional[int] = None
-    rejection_reason: Optional[str] = None  # Reason for failing QA or publishing
+    strapi_post_id: int | None = None
+    rejection_reason: str | None = None  # Reason for failing QA or publishing
 
 
 class StrapiPost(BaseModel):
@@ -81,15 +81,15 @@ class StrapiPost(BaseModel):
 
     Title: str
     Slug: str
-    BodyContent: List[Dict]
+    BodyContent: list[dict]
     PostStatus: str = "Draft"  # Corrected to capitalized "Draft"
-    Keywords: Optional[str] = None
-    MetaDescription: Optional[str] = None
-    FeaturedImage: Optional[int] = None
-    ReadingTime: Optional[int] = None
-    Excerpt: Optional[str] = None
-    author: Optional[int] = None  # Author relationship ID
-    category: Optional[int] = None  # Category relationship ID
-    tags: Optional[List[int]] = None  # Tag relationship IDs
+    Keywords: str | None = None
+    MetaDescription: str | None = None
+    FeaturedImage: int | None = None
+    ReadingTime: int | None = None
+    Excerpt: str | None = None
+    author: int | None = None  # Author relationship ID
+    category: int | None = None  # Category relationship ID
+    tags: list[int] | None = None  # Tag relationship IDs
 
     model_config = {"populate_by_name": True}

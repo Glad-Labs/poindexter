@@ -9,7 +9,7 @@ Uses:
 - TokenManager for OAuth token status checking (optional)
 """
 
-from typing import Callable
+from collections.abc import Callable
 
 from fastapi import Request, status
 from starlette.middleware.base import BaseHTTPMiddleware

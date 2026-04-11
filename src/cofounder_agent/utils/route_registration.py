@@ -67,8 +67,8 @@ _ROUTE_MANIFEST = _COORDINATOR_ROUTES
 def register_all_routes(
     app: FastAPI,
     deployment_mode: str = "coordinator",
-    database_service: Optional[Any] = None,
-) -> Dict[str, bool]:
+    database_service: Any | None = None,
+) -> dict[str, bool]:
     """
     Register route routers with the FastAPI application based on deployment mode.
 
@@ -91,7 +91,7 @@ def register_all_routes(
         len(manifest),
     )
 
-    status: Dict[str, bool] = {}
+    status: dict[str, bool] = {}
 
     # Routes that are intentionally absent (module removed)
     # sample_upload_routes.py removed — functionality moved to writing_style_routes.py

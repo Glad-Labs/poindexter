@@ -20,7 +20,6 @@ import asyncio
 from typing import List, Optional
 
 from services.logger_config import get_logger
-
 from services.site_config import site_config
 
 logger = get_logger(__name__)
@@ -48,7 +47,7 @@ def _cfg() -> dict:
     }
 
 
-async def _get_active_subscribers(pool) -> List[dict]:
+async def _get_active_subscribers(pool) -> list[dict]:
     """Fetch all active, verified subscribers."""
     rows = await pool.fetch(
         "SELECT id, email, first_name FROM newsletter_subscribers "
@@ -58,7 +57,7 @@ async def _get_active_subscribers(pool) -> List[dict]:
     return [dict(r) for r in rows]
 
 
-def _build_html(title: str, excerpt: str, slug: str, first_name: Optional[str] = None) -> str:
+def _build_html(title: str, excerpt: str, slug: str, first_name: str | None = None) -> str:
     """Build a simple, clean newsletter email body."""
     greeting = f"Hi {first_name}," if first_name else "Hi there,"
     post_url = f"{SITE_URL}/posts/{slug}"

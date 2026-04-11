@@ -99,7 +99,7 @@ class _WorkflowResearchAgentAdapter:
         except Exception as e:
             self._init_error = str(e)
 
-    async def run(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    async def run(self, inputs: dict[str, Any]) -> dict[str, Any]:
         topic = inputs.get("topic") or inputs.get("prompt") or "general topic"
         keywords = inputs.get("keywords") or []
         if not isinstance(keywords, list):

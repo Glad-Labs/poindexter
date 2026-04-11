@@ -23,13 +23,14 @@ Version History:
 """
 
 import json
-from services.logger_config import get_logger
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import yaml
+
+from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -64,10 +65,10 @@ class PromptMetadata:
     created_date: str  # ISO format: YYYY-MM-DD
     last_modified: str  # ISO format: YYYY-MM-DD
     deprecated: bool = False
-    replacement_prompt_key: Optional[str] = None
+    replacement_prompt_key: str | None = None
     description: str = ""
     output_format: str = ""  # "json", "text", "markdown", etc.
-    example_output: Optional[str] = None
+    example_output: str | None = None
     notes: str = ""  # A/B test results, performance notes, etc.
 
 
@@ -82,7 +83,7 @@ class UnifiedPromptManager:
     """
 
     # Mapping from YAML category strings to PromptCategory enum values
-    _CATEGORY_MAP: Dict[str, PromptCategory] = {
+    _CATEGORY_MAP: dict[str, PromptCategory] = {
         "blog_generation": PromptCategory.BLOG_GENERATION,
         "content_qa": PromptCategory.CONTENT_QA,
         "seo_metadata": PromptCategory.SEO_METADATA,
@@ -95,9 +96,9 @@ class UnifiedPromptManager:
     }
 
     def __init__(self):
-        self.prompts: Dict[str, Dict[str, Any]] = {}
-        self.metadata: Dict[str, PromptMetadata] = {}
-        self._db_overrides: Dict[str, str] = {}  # DB prompt overrides (loaded async)
+        self.prompts: dict[str, dict[str, Any]] = {}
+        self.metadata: dict[str, PromptMetadata] = {}
+        self._db_overrides: dict[str, str] = {}  # DB prompt overrides (loaded async)
         self._initialize_prompts()
 
     def _initialize_prompts(self):
@@ -109,8 +110,8 @@ class UnifiedPromptManager:
 
         for yaml_path in sorted(prompts_dir.glob("*.yaml")):
             try:
-                with open(yaml_path, "r", encoding="utf-8") as f:
-                    entries: List[Dict[str, Any]] = yaml.safe_load(f) or []
+                with open(yaml_path, encoding="utf-8") as f:
+                    entries: list[dict[str, Any]] = yaml.safe_load(f) or []
             except Exception:
                 logger.error("Failed to load prompt file: %s", yaml_path, exc_info=True)
                 continue
@@ -142,7 +143,7 @@ class UnifiedPromptManager:
         template: str,
         description: str = "",
         output_format: str = "text",
-        example_output: Optional[str] = None,
+        example_output: str | None = None,
         notes: str = "",
         version: PromptVersion = PromptVersion.V1_1,
         created_date: str = "2026-02-07",
@@ -228,7 +229,7 @@ class UnifiedPromptManager:
             raise KeyError(f"Prompt '{key}' not found")
         return self.metadata[key]
 
-    def list_prompts(self, category: Optional[PromptCategory] = None) -> Dict[str, Dict[str, Any]]:
+    def list_prompts(self, category: PromptCategory | None = None) -> dict[str, dict[str, Any]]:
         """List all prompts, optionally filtered by category"""
         result = {}
         for key, metadata in self.metadata.items():
@@ -262,7 +263,7 @@ class UnifiedPromptManager:
 
 
 # Global singleton instance
-_prompt_manager: Optional[UnifiedPromptManager] = None
+_prompt_manager: UnifiedPromptManager | None = None
 
 
 def get_prompt_manager() -> UnifiedPromptManager:

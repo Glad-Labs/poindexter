@@ -95,7 +95,7 @@ class TopicDiscovery:
     def __init__(self, pool):
         self.pool = pool
 
-    async def discover(self, max_topics: int = 10, categories: Optional[List[str]] = None) -> List[DiscoveredTopic]:
+    async def discover(self, max_topics: int = 10, categories: list[str] | None = None) -> list[DiscoveredTopic]:
         """Discover fresh topics from multiple sources.
 
         Brain knowledge is the primary source (works offline).
@@ -103,7 +103,7 @@ class TopicDiscovery:
 
         Returns deduplicated, scored topics ready for queuing.
         """
-        all_topics: List[DiscoveredTopic] = []
+        all_topics: list[DiscoveredTopic] = []
 
         # Primary: generate topics from brain knowledge (always available)
         knowledge_topics = await self._discover_from_knowledge(categories)
@@ -140,7 +140,7 @@ class TopicDiscovery:
         logger.info("[TOPIC_DISCOVERY] Discovered %d topics (%d before dedup)", len(result), len(all_topics))
         return result
 
-    async def queue_topics(self, topics: List[DiscoveredTopic]) -> int:
+    async def queue_topics(self, topics: list[DiscoveredTopic]) -> int:
         """Queue discovered topics as content tasks."""
         import random
         # Vary post lengths: 60% short (800-1200), 30% medium (1500-2000), 10% deep dive (2500-3500)
@@ -192,7 +192,7 @@ class TopicDiscovery:
                 logger.warning("[TOPIC_DISCOVERY] Failed to queue '%s': %s", topic.title[:40], e)
         return queued
 
-    async def _discover_from_knowledge(self, categories: Optional[List[str]] = None) -> List[DiscoveredTopic]:
+    async def _discover_from_knowledge(self, categories: list[str] | None = None) -> list[DiscoveredTopic]:
         """Generate topics from the brain's own knowledge graph and gap analysis.
 
         Works completely offline — no internet required. Combines:
@@ -200,7 +200,7 @@ class TopicDiscovery:
         2. Published post titles (to find category gaps)
         3. topic_gaps analysis from idle_worker
         """
-        topics: List[DiscoveredTopic] = []
+        topics: list[DiscoveredTopic] = []
         if not self.pool:
             return topics
 
@@ -225,7 +225,7 @@ class TopicDiscovery:
             """)
 
             # Build a map of underserved categories
-            underserved: Dict[str, int] = {}
+            underserved: dict[str, int] = {}
             for row in category_counts:
                 cat = row["category"].lower() if row["category"] else "technology"
                 count = row["post_count"]
@@ -310,7 +310,7 @@ class TopicDiscovery:
 
         return topics
 
-    async def _scrape_hackernews(self) -> List[DiscoveredTopic]:
+    async def _scrape_hackernews(self) -> list[DiscoveredTopic]:
         """Scrape top stories from Hacker News API (free, no auth)."""
         topics = []
         try:
@@ -365,7 +365,7 @@ class TopicDiscovery:
             logger.warning("[TOPIC_DISCOVERY] HackerNews scrape failed: %s", e)
         return topics
 
-    async def _scrape_devto(self) -> List[DiscoveredTopic]:
+    async def _scrape_devto(self) -> list[DiscoveredTopic]:
         """Scrape trending articles from Dev.to API (free, no auth)."""
         topics = []
         try:
@@ -403,7 +403,7 @@ class TopicDiscovery:
             logger.warning("[TOPIC_DISCOVERY] Dev.to scrape failed: %s", e)
         return topics
 
-    async def _search_by_category(self, categories: Optional[List[str]] = None) -> List[DiscoveredTopic]:
+    async def _search_by_category(self, categories: list[str] | None = None) -> list[DiscoveredTopic]:
         """Search DuckDuckGo for trending topics per category."""
         topics = []
         target_categories = categories or list(CATEGORY_SEARCHES.keys())
@@ -442,7 +442,7 @@ class TopicDiscovery:
             logger.warning("[TOPIC_DISCOVERY] DuckDuckGo search failed: %s", e)
         return topics
 
-    async def _deduplicate(self, topics: List[DiscoveredTopic]) -> List[DiscoveredTopic]:
+    async def _deduplicate(self, topics: list[DiscoveredTopic]) -> list[DiscoveredTopic]:
         """Mark topics that duplicate existing published posts."""
         if not self.pool:
             return topics

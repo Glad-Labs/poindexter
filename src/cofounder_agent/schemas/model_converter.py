@@ -37,7 +37,7 @@ class ModelConverter:
     """Converts asyncpg Row objects to Pydantic models."""
 
     @staticmethod
-    def _normalize_row_data(row: Any) -> Dict[str, Any]:
+    def _normalize_row_data(row: Any) -> dict[str, Any]:
         """Convert asyncpg Row to dict with proper type handling."""
         if hasattr(row, "keys"):
             data = dict(row)
@@ -319,22 +319,22 @@ class ModelConverter:
         return SettingResponse(**data)
 
     @staticmethod
-    def to_task_counts_response(counts_dict: Dict[str, int]) -> TaskCountsResponse:
+    def to_task_counts_response(counts_dict: dict[str, int]) -> TaskCountsResponse:
         """Convert counts dict to TaskCountsResponse model."""
         return TaskCountsResponse(**counts_dict)
 
     @staticmethod
-    def to_metrics_response(metrics_dict: Dict[str, Any]) -> MetricsResponse:
+    def to_metrics_response(metrics_dict: dict[str, Any]) -> MetricsResponse:
         """Convert metrics dict to MetricsResponse model."""
         return MetricsResponse(**metrics_dict)
 
     @staticmethod
-    def to_financial_summary_response(summary_dict: Dict[str, Any]) -> FinancialSummaryResponse:
+    def to_financial_summary_response(summary_dict: dict[str, Any]) -> FinancialSummaryResponse:
         """Convert summary dict to FinancialSummaryResponse model."""
         return FinancialSummaryResponse(**summary_dict)
 
     @staticmethod
-    def to_list(rows: List[Any], model_class: Type[T]) -> List[T]:
+    def to_list(rows: list[Any], model_class: type[T]) -> list[T]:
         """Convert list of rows to list of models."""
         if not rows:
             return []
@@ -364,7 +364,7 @@ class ModelConverter:
         return [converter(row) for row in rows]
 
     @staticmethod
-    def to_dict(model: Any) -> Dict[str, Any]:
+    def to_dict(model: Any) -> dict[str, Any]:
         """Convert Pydantic model to dict."""
         if hasattr(model, "model_dump"):
             # Pydantic v2
@@ -376,7 +376,7 @@ class ModelConverter:
             return dict(model) if isinstance(model, dict) else {}
 
     @staticmethod
-    def task_response_to_unified(task_response: TaskResponse) -> Dict[str, Any]:
+    def task_response_to_unified(task_response: TaskResponse) -> dict[str, Any]:
         """Convert TaskResponse to UnifiedTaskResponse-compatible dict.
 
         Handles conversion of seo_keywords from JSON string to list.
@@ -438,9 +438,9 @@ class ModelConverter:
 # TYPE ALIASES FOR COMMON PATTERNS
 # ============================================================================
 
-UsersResponseList = List[UserResponse]
-TasksResponseList = List[TaskResponse]
-PostsResponseList = List[PostResponse]
-LogsResponseList = List[LogResponse]
-CostLogsResponseList = List[CostLogResponse]
-SettingsResponseList = List[SettingResponse]
+UsersResponseList = list[UserResponse]
+TasksResponseList = list[TaskResponse]
+PostsResponseList = list[PostResponse]
+LogsResponseList = list[LogResponse]
+CostLogsResponseList = list[CostLogResponse]
+SettingsResponseList = list[SettingResponse]

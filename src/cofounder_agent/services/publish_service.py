@@ -31,12 +31,12 @@ class PublishResult:
     def __init__(
         self,
         success: bool,
-        post_id: Optional[str] = None,
-        post_slug: Optional[str] = None,
-        published_url: Optional[str] = None,
-        post_title: Optional[str] = None,
+        post_id: str | None = None,
+        post_slug: str | None = None,
+        published_url: str | None = None,
+        post_title: str | None = None,
         revalidation_success: bool = False,
-        error: Optional[str] = None,
+        error: str | None = None,
     ):
         self.success = success
         self.post_id = post_id
@@ -46,7 +46,7 @@ class PublishResult:
         self.revalidation_success = revalidation_success
         self.error = error
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "success": self.success,
             "post_id": self.post_id,
@@ -115,8 +115,8 @@ async def _ping_search_engines(site_url: str, post_url: str) -> None:
 async def _embed_published_post(db_service, post_dict: dict) -> None:
     """Embed a newly published post into pgvector (non-blocking)."""
     try:
-        from services.ollama_client import OllamaClient
         from services.embedding_service import EmbeddingService
+        from services.ollama_client import OllamaClient
 
         embeddings_db = getattr(db_service, "embeddings", None)
         if not embeddings_db:
@@ -147,7 +147,7 @@ def _parse_json_field(value, field_name: str = "field", task_id: str = "") -> di
     return value
 
 
-async def _calculate_scheduled_publish_time(db_service) -> Optional[datetime]:
+async def _calculate_scheduled_publish_time(db_service) -> datetime | None:
     """Determine when a post should be published to avoid batch-publishing.
 
     Reserved for a future scheduling/release-time-optimization feature. Callers
@@ -272,7 +272,7 @@ async def _calculate_scheduled_publish_time(db_service) -> Optional[datetime]:
 
 async def publish_post_from_task(
     db_service,
-    task: Dict[str, Any],
+    task: dict[str, Any],
     task_id: str,
     *,
     publisher: str = "operator",
@@ -396,7 +396,7 @@ async def publish_post_from_task(
     # ---------------------------------------------------------------
     # 5. Insert into posts table
     # ---------------------------------------------------------------
-    post_data: Dict[str, Any] = {
+    post_data: dict[str, Any] = {
         "title": post_title,
         "slug": slug,
         "content": post_content,
@@ -618,6 +618,7 @@ async def publish_post_from_task(
             async def _gen_short(pid, ptitle, pcontent, scenes, short_script):
                 """Wait for podcast, then generate short video."""
                 import asyncio as _aio
+
                 from services.site_config import site_config as _scfg
                 _delay = int(_scfg.get("short_video_post_publish_delay_seconds", "180"))
                 await _aio.sleep(_delay)
@@ -644,10 +645,14 @@ async def publish_post_from_task(
         async def _upload_media_to_r2(pid: str) -> None:
             """Wait for media files to appear, then upload to R2."""
             import asyncio as _aio
-            from services.r2_upload_service import upload_podcast_episode, upload_video_episode
-            from services.r2_upload_service import upload_to_r2
-            from services.site_config import site_config as _scfg
             from pathlib import Path
+
+            from services.r2_upload_service import (
+                upload_podcast_episode,
+                upload_to_r2,
+                upload_video_episode,
+            )
+            from services.site_config import site_config as _scfg
             # Give podcast/video/short generation time to complete
             _delay = int(_scfg.get("media_r2_upload_delay_seconds", "240"))
             await _aio.sleep(_delay)
@@ -660,6 +665,7 @@ async def publish_post_from_task(
             # Regenerate public podcast RSS feed on R2
             try:
                 import httpx as _hx
+
                 from services.site_config import site_config as _scfg
                 _api_base = _scfg.get("internal_api_base_url", "http://localhost:8002")
                 async with _hx.AsyncClient(timeout=_hx.Timeout(30.0, connect=5.0)) as _client:

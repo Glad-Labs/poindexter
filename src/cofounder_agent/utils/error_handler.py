@@ -18,11 +18,12 @@ Import guide:
 """
 
 import logging  # still needed for Logger type references elsewhere in this module
-from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
+
+from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -34,8 +35,8 @@ class ErrorResponse:
         self,
         status_code: int,
         detail: str,
-        operation: Optional[str] = None,
-        error_type: Optional[str] = None,
+        operation: str | None = None,
+        error_type: str | None = None,
     ):
         """
         Initialize error response.
@@ -52,7 +53,7 @@ class ErrorResponse:
         self.error_type = error_type or "UnknownError"
         self.timestamp = datetime.now(timezone.utc).isoformat()
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON response."""
         return {
             "error": {
@@ -70,8 +71,8 @@ class ErrorResponse:
 async def handle_route_error(
     error: Exception,
     operation: str,
-    logger_instance: Optional[logging.Logger] = None,
-    default_detail: Optional[str] = None,
+    logger_instance: logging.Logger | None = None,
+    default_detail: str | None = None,
 ) -> HTTPException:
     """
     Unified error handler for API routes.
@@ -156,7 +157,7 @@ async def handle_route_error(
 def handle_service_error(
     error: Exception,
     operation: str,
-    logger_instance: Optional[logging.Logger] = None,
+    logger_instance: logging.Logger | None = None,
     fallback_value: Any = None,
 ) -> Any:
     """
@@ -204,7 +205,7 @@ def create_error_response(
     error: Exception,
     operation: str = "operation",
     status_code: int = 500,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Create a standardized error response dictionary.
 
@@ -240,8 +241,8 @@ def create_error_response(
 def log_and_raise_http_error(
     status_code: int,
     detail: str,
-    operation: Optional[str] = None,
-    logger_instance: Optional[logging.Logger] = None,
+    operation: str | None = None,
+    logger_instance: logging.Logger | None = None,
 ) -> None:
     """
     Log an error and raise HTTPException.
@@ -274,21 +275,21 @@ def log_and_raise_http_error(
 
 
 # Convenience functions for common errors
-def not_found(detail: str = "Resource not found", operation: Optional[str] = None) -> HTTPException:
+def not_found(detail: str = "Resource not found", operation: str | None = None) -> HTTPException:
     """Raise 404 Not Found error."""
     if operation:
         logger.warning(f"[{operation}] Resource not found: {detail}")
     return HTTPException(status_code=404, detail=detail)
 
 
-def bad_request(detail: str = "Invalid request", operation: Optional[str] = None) -> HTTPException:
+def bad_request(detail: str = "Invalid request", operation: str | None = None) -> HTTPException:
     """Raise 400 Bad Request error."""
     if operation:
         logger.warning(f"[{operation}] Bad request: {detail}")
     return HTTPException(status_code=400, detail=detail)
 
 
-def forbidden(detail: str = "Access denied", operation: Optional[str] = None) -> HTTPException:
+def forbidden(detail: str = "Access denied", operation: str | None = None) -> HTTPException:
     """Raise 403 Forbidden error."""
     if operation:
         logger.warning(f"[{operation}] Forbidden: {detail}")
@@ -296,7 +297,7 @@ def forbidden(detail: str = "Access denied", operation: Optional[str] = None) ->
 
 
 def internal_error(
-    detail: str = "Internal server error", operation: Optional[str] = None
+    detail: str = "Internal server error", operation: str | None = None
 ) -> HTTPException:
     """Raise 500 Internal Server Error."""
     if operation:
@@ -305,7 +306,7 @@ def internal_error(
 
 
 def service_unavailable(
-    detail: str = "Service unavailable", operation: Optional[str] = None
+    detail: str = "Service unavailable", operation: str | None = None
 ) -> HTTPException:
     """Raise 503 Service Unavailable error."""
     if operation:

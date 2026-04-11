@@ -50,7 +50,7 @@ class OAuthAccountResponse(BaseModel):
     user_id: str = Field(..., description="Linked user UUID")
     provider: str = Field(..., description="OAuth provider (github, google, etc.)")
     provider_user_id: str = Field(..., description="User ID from OAuth provider")
-    provider_data: Optional[Dict[str, Any]] = Field(
+    provider_data: dict[str, Any] | None = Field(
         default=None, description="Additional data from OAuth provider"
     )
     created_at: datetime = Field(..., description="Account linking timestamp")
@@ -68,71 +68,71 @@ class TaskResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str = Field(..., description="Task UUID")
-    task_id: Optional[str] = Field(None, description="Task UUID (alias for id)")
-    user_id: Optional[str] = Field(None, description="Associated user UUID")
-    title: Optional[str] = Field(None, description="Task title")
-    task_name: Optional[str] = Field(None, description="Task name (alias for title)")
-    description: Optional[str] = Field(None, description="Task description")
-    topic: Optional[str] = Field(None, description="Topic for content generation")
-    request_type: Optional[str] = Field(None, description="Type of request")
-    task_type: Optional[str] = Field(None, description="Type of task (blog_post, etc.)")
-    status: Optional[str] = Field(None, description="Task execution status")
-    category: Optional[str] = Field(None, description="Task category")
-    priority: Optional[int] = Field(default=0, ge=0, le=5, description="Priority level (0-5)")
+    task_id: str | None = Field(None, description="Task UUID (alias for id)")
+    user_id: str | None = Field(None, description="Associated user UUID")
+    title: str | None = Field(None, description="Task title")
+    task_name: str | None = Field(None, description="Task name (alias for title)")
+    description: str | None = Field(None, description="Task description")
+    topic: str | None = Field(None, description="Topic for content generation")
+    request_type: str | None = Field(None, description="Type of request")
+    task_type: str | None = Field(None, description="Type of task (blog_post, etc.)")
+    status: str | None = Field(None, description="Task execution status")
+    category: str | None = Field(None, description="Task category")
+    priority: int | None = Field(default=0, ge=0, le=5, description="Priority level (0-5)")
 
     # Content fields (normalized)
-    style: Optional[str] = Field(None, description="Writing style")
-    tone: Optional[str] = Field(None, description="Writing tone")
-    target_length: Optional[int] = Field(None, description="Target word count")
-    primary_keyword: Optional[str] = Field(None, description="Primary SEO keyword")
-    target_audience: Optional[str] = Field(None, description="Target audience")
-    content: Optional[str] = Field(None, description="Generated content")
-    excerpt: Optional[str] = Field(None, description="Content excerpt")
-    featured_image_url: Optional[str] = Field(None, description="URL for featured image")
-    featured_image_data: Optional[Dict[str, Any]] = Field(
+    style: str | None = Field(None, description="Writing style")
+    tone: str | None = Field(None, description="Writing tone")
+    target_length: int | None = Field(None, description="Target word count")
+    primary_keyword: str | None = Field(None, description="Primary SEO keyword")
+    target_audience: str | None = Field(None, description="Target audience")
+    content: str | None = Field(None, description="Generated content")
+    excerpt: str | None = Field(None, description="Content excerpt")
+    featured_image_url: str | None = Field(None, description="URL for featured image")
+    featured_image_data: dict[str, Any] | None = Field(
         None, description="Metadata for featured image"
     )
-    featured_image_prompt: Optional[str] = Field(
+    featured_image_prompt: str | None = Field(
         None, description="Prompt used for image generation"
     )
 
     # Quality & SEO
-    qa_feedback: Optional[str] = Field(None, description="QA feedback")
-    quality_score: Optional[float] = Field(None, description="Quality score (0-100)")
-    seo_title: Optional[str] = Field(None, description="SEO optimized title")
-    seo_description: Optional[str] = Field(None, description="SEO meta description")
-    seo_keywords: Optional[str] = Field(None, description="SEO keywords")
+    qa_feedback: str | None = Field(None, description="QA feedback")
+    quality_score: float | None = Field(None, description="Quality score (0-100)")
+    seo_title: str | None = Field(None, description="SEO optimized title")
+    seo_description: str | None = Field(None, description="SEO meta description")
+    seo_keywords: str | None = Field(None, description="SEO keywords")
 
     # Progress tracking
-    stage: Optional[str] = Field(None, description="Current execution stage")
-    percentage: Optional[int] = Field(None, description="Completion percentage")
-    message: Optional[str] = Field(None, description="Status message")
+    stage: str | None = Field(None, description="Current execution stage")
+    percentage: int | None = Field(None, description="Completion percentage")
+    message: str | None = Field(None, description="Status message")
 
     # Metadata & System
-    agent_id: Optional[str] = Field(None, description="ID of the agent handling the task")
-    model_used: Optional[str] = Field(None, description="LLM model used")
-    error_message: Optional[str] = Field(None, description="Error message if failed")
-    tags: Optional[List[str]] = Field(default_factory=list, description="Task tags")
+    agent_id: str | None = Field(None, description="ID of the agent handling the task")
+    model_used: str | None = Field(None, description="LLM model used")
+    error_message: str | None = Field(None, description="Error message if failed")
+    tags: list[str] | None = Field(default_factory=list, description="Task tags")
 
-    task_metadata: Optional[Dict[str, Any]] = Field(
+    task_metadata: dict[str, Any] | None = Field(
         default=None, description="Additional task metadata (JSON)"
     )
-    result: Optional[Dict[str, Any]] = Field(
+    result: dict[str, Any] | None = Field(
         default=None, description="Task execution result (JSON)"
     )
-    progress: Optional[Dict[str, Any]] = Field(
+    progress: dict[str, Any] | None = Field(
         default=None, description="Task progress tracking (JSON)"
     )
     created_at: datetime = Field(..., description="Task creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
-    started_at: Optional[datetime] = Field(None, description="Execution start timestamp")
-    completed_at: Optional[datetime] = Field(None, description="Completion timestamp")
-    cost_breakdown: Optional[Dict[str, Any]] = Field(None, description="Task cost breakdown")
+    started_at: datetime | None = Field(None, description="Execution start timestamp")
+    completed_at: datetime | None = Field(None, description="Completion timestamp")
+    cost_breakdown: dict[str, Any] | None = Field(None, description="Task cost breakdown")
 
     # Publishing fields (#954) — extracted from result JSON by ModelConverter
-    post_id: Optional[str] = Field(None, description="Post ID in CMS after publishing")
-    post_slug: Optional[str] = Field(None, description="Post slug for URL generation")
-    published_url: Optional[str] = Field(None, description="Published post URL")
+    post_id: str | None = Field(None, description="Post ID in CMS after publishing")
+    post_slug: str | None = Field(None, description="Post slug for URL generation")
+    published_url: str | None = Field(None, description="Published post URL")
 
 
 class TaskCountsResponse(BaseModel):
@@ -163,20 +163,20 @@ class PostResponse(BaseModel):
     title: str = Field(..., description="Post title")
     slug: str = Field(..., description="URL-friendly slug")
     content: str = Field(..., description="Post content (markdown)")
-    excerpt: Optional[str] = Field(None, description="Post excerpt")
-    featured_image_url: Optional[str] = Field(None, description="Featured image URL")
-    cover_image_url: Optional[str] = Field(None, description="Cover image URL")
-    author_id: Optional[str] = Field(None, description="Author UUID")
-    category_id: Optional[str] = Field(None, description="Category UUID")
-    tag_ids: Optional[List[str]] = Field(default=None, description="List of tag UUIDs")
+    excerpt: str | None = Field(None, description="Post excerpt")
+    featured_image_url: str | None = Field(None, description="Featured image URL")
+    cover_image_url: str | None = Field(None, description="Cover image URL")
+    author_id: str | None = Field(None, description="Author UUID")
+    category_id: str | None = Field(None, description="Category UUID")
+    tag_ids: list[str] | None = Field(default=None, description="List of tag UUIDs")
     status: Literal["draft", "published", "archived"] = Field(
         default="draft", description="Publication status"
     )
-    seo_title: Optional[str] = Field(None, description="SEO title tag")
-    seo_description: Optional[str] = Field(None, description="SEO meta description")
-    seo_keywords: Optional[str] = Field(None, description="Comma-separated SEO keywords")
-    created_by: Optional[str] = Field(None, description="Creator user UUID")
-    updated_by: Optional[str] = Field(None, description="Last editor user UUID")
+    seo_title: str | None = Field(None, description="SEO title tag")
+    seo_description: str | None = Field(None, description="SEO meta description")
+    seo_keywords: str | None = Field(None, description="Comma-separated SEO keywords")
+    created_by: str | None = Field(None, description="Creator user UUID")
+    updated_by: str | None = Field(None, description="Last editor user UUID")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
 
@@ -189,7 +189,7 @@ class CategoryResponse(BaseModel):
     id: str = Field(..., description="Category UUID")
     name: str = Field(..., description="Category name")
     slug: str = Field(..., description="URL-friendly slug")
-    description: Optional[str] = Field(None, description="Category description")
+    description: str | None = Field(None, description="Category description")
 
 
 class TagResponse(BaseModel):
@@ -200,7 +200,7 @@ class TagResponse(BaseModel):
     id: str = Field(..., description="Tag UUID")
     name: str = Field(..., description="Tag name")
     slug: str = Field(..., description="URL-friendly slug")
-    description: Optional[str] = Field(None, description="Tag description")
+    description: str | None = Field(None, description="Tag description")
 
 
 class AuthorResponse(BaseModel):
@@ -230,7 +230,7 @@ class LogResponse(BaseModel):
         ..., description="Log level"
     )
     message: str = Field(..., description="Log message")
-    context: Optional[Dict[str, Any]] = Field(default=None, description="Additional context (JSON)")
+    context: dict[str, Any] | None = Field(default=None, description="Additional context (JSON)")
     created_at: datetime = Field(..., description="Log creation timestamp")
 
 
@@ -260,8 +260,8 @@ class FinancialEntryResponse(BaseModel):
     id: str = Field(..., description="Entry UUID")
     category: str = Field(..., description="Expense category")
     amount: float = Field(..., description="Amount in USD")
-    description: Optional[str] = Field(None, description="Entry description")
-    tags: Optional[List[str]] = Field(default=None, description="Category tags")
+    description: str | None = Field(None, description="Entry description")
+    tags: list[str] | None = Field(default=None, description="Category tags")
     created_at: datetime = Field(..., description="Creation timestamp")
 
 
@@ -272,9 +272,9 @@ class FinancialSummaryResponse(BaseModel):
 
     total_entries: int = Field(default=0, description="Number of entries")
     total_amount: float = Field(default=0.0, description="Total amount in USD")
-    avg_amount: Optional[float] = Field(None, description="Average amount per entry")
-    min_amount: Optional[float] = Field(None, description="Minimum amount")
-    max_amount: Optional[float] = Field(None, description="Maximum amount")
+    avg_amount: float | None = Field(None, description="Average amount per entry")
+    min_amount: float | None = Field(None, description="Minimum amount")
+    max_amount: float | None = Field(None, description="Maximum amount")
 
 
 class CostLogResponse(BaseModel):
@@ -284,7 +284,7 @@ class CostLogResponse(BaseModel):
 
     id: str = Field(..., description="Cost log UUID")
     task_id: str = Field(..., description="Associated task UUID")
-    user_id: Optional[str] = Field(None, description="Associated user UUID")
+    user_id: str | None = Field(None, description="Associated user UUID")
     phase: Literal[
         "research", "outline", "draft", "assess", "refine", "finalize", "content_generation", "qa_review"
     ] = Field(..., description="Execution phase")
@@ -296,10 +296,10 @@ class CostLogResponse(BaseModel):
     output_tokens: int = Field(default=0, ge=0, description="Output token count")
     total_tokens: int = Field(default=0, ge=0, description="Total token count")
     cost_usd: float = Field(default=0.0, ge=0.0, description="Cost in USD")
-    quality_score: Optional[float] = Field(None, ge=0.0, le=5.0, description="Quality rating (0-5)")
-    duration_ms: Optional[int] = Field(None, ge=0, description="Execution time in milliseconds")
+    quality_score: float | None = Field(None, ge=0.0, le=5.0, description="Quality rating (0-5)")
+    duration_ms: int | None = Field(None, ge=0, description="Execution time in milliseconds")
     success: bool = Field(default=True, description="Whether call succeeded")
-    error_message: Optional[str] = Field(None, description="Error details if failed")
+    error_message: str | None = Field(None, description="Error details if failed")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
 
@@ -310,15 +310,15 @@ class TaskCostBreakdownResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     total: float = Field(default=0.0, ge=0.0, description="Total cost in USD")
-    research: Optional[Dict[str, Any]] = Field(
+    research: dict[str, Any] | None = Field(
         None, description="Research phase costs {cost, model, count}"
     )
-    outline: Optional[Dict[str, Any]] = Field(None, description="Outline phase costs")
-    draft: Optional[Dict[str, Any]] = Field(None, description="Draft phase costs")
-    assess: Optional[Dict[str, Any]] = Field(None, description="Assessment phase costs")
-    refine: Optional[Dict[str, Any]] = Field(None, description="Refinement phase costs")
-    finalize: Optional[Dict[str, Any]] = Field(None, description="Finalization phase costs")
-    entries: Optional[List[CostLogResponse]] = Field(None, description="Detailed cost log entries")
+    outline: dict[str, Any] | None = Field(None, description="Outline phase costs")
+    draft: dict[str, Any] | None = Field(None, description="Draft phase costs")
+    assess: dict[str, Any] | None = Field(None, description="Assessment phase costs")
+    refine: dict[str, Any] | None = Field(None, description="Refinement phase costs")
+    finalize: dict[str, Any] | None = Field(None, description="Finalization phase costs")
+    entries: list[CostLogResponse] | None = Field(None, description="Detailed cost log entries")
 
 
 # ============================================================================
@@ -333,7 +333,7 @@ class QualityEvaluationResponse(BaseModel):
 
     id: str = Field(..., description="Evaluation UUID")
     content_id: str = Field(..., description="Evaluated content UUID")
-    task_id: Optional[str] = Field(None, description="Associated task UUID")
+    task_id: str | None = Field(None, description="Associated task UUID")
     overall_score: float = Field(..., ge=0.0, le=100.0, description="Overall quality score (0-100)")
     clarity: float = Field(default=0.0, ge=0.0, le=100.0, description="Clarity score (0-100)")
     accuracy: float = Field(default=0.0, ge=0.0, le=100.0, description="Accuracy score (0-100)")
@@ -349,8 +349,8 @@ class QualityEvaluationResponse(BaseModel):
     )
     engagement: float = Field(default=0.0, ge=0.0, le=100.0, description="Engagement score (0-100)")
     passing: bool = Field(default=False, description="Whether content passed quality threshold")
-    feedback: Optional[str] = Field(None, description="Evaluator feedback")
-    suggestions: Optional[List[str]] = Field(None, description="Improvement suggestions")
+    feedback: str | None = Field(None, description="Evaluator feedback")
+    suggestions: list[str] | None = Field(None, description="Improvement suggestions")
     evaluated_by: str = Field(default="QualityEvaluator", description="Evaluator identifier")
     evaluation_method: str = Field(default="pattern-based", description="Evaluation method used")
     evaluation_timestamp: datetime = Field(..., description="Evaluation timestamp")
@@ -369,7 +369,7 @@ class QualityImprovementLogResponse(BaseModel):
         ..., description="Absolute improvement (improved_score - initial_score)"
     )
     refinement_type: str = Field(default="auto-critique", description="Type of refinement applied")
-    changes_made: Optional[str] = Field(None, description="Description of changes")
+    changes_made: str | None = Field(None, description="Description of changes")
     refinement_timestamp: datetime = Field(..., description="Refinement timestamp")
     passed_after_refinement: bool = Field(
         default=False, description="Whether content passed after refinement"
@@ -392,7 +392,7 @@ class AgentStatusResponse(BaseModel):
         ..., description="Current agent status"
     )
     last_run: datetime = Field(..., description="Last execution timestamp")
-    metadata: Optional[Dict[str, Any]] = Field(
+    metadata: dict[str, Any] | None = Field(
         default=None, description="Agent-specific metadata (JSON)"
     )
     created_at: datetime = Field(..., description="Creation timestamp")
@@ -407,12 +407,12 @@ class OrchestratorTrainingDataResponse(BaseModel):
     id: str = Field(..., description="Training data UUID")
     execution_id: str = Field(..., description="Execution identifier")
     user_request: str = Field(..., description="Original user request")
-    intent: Optional[str] = Field(None, description="Detected intent")
-    business_state: Optional[Dict[str, Any]] = Field(None, description="Business context (JSON)")
-    execution_result: Optional[str] = Field(None, description="Execution outcome")
-    quality_score: Optional[float] = Field(None, ge=0.0, le=10.0, description="Quality score")
+    intent: str | None = Field(None, description="Detected intent")
+    business_state: dict[str, Any] | None = Field(None, description="Business context (JSON)")
+    execution_result: str | None = Field(None, description="Execution outcome")
+    quality_score: float | None = Field(None, ge=0.0, le=10.0, description="Quality score")
     success: bool = Field(default=False, description="Whether execution succeeded")
-    tags: Optional[List[str]] = Field(default=None, description="Classification tags")
+    tags: list[str] | None = Field(default=None, description="Classification tags")
     source_agent: str = Field(default="content_agent", description="Source agent name")
     created_at: datetime = Field(..., description="Creation timestamp")
 
@@ -430,9 +430,9 @@ class SettingResponse(BaseModel):
     id: str = Field(..., description="Setting UUID")
     key: str = Field(..., description="Setting key identifier")
     value: str = Field(..., description="Setting value (JSON-encoded if complex)")
-    category: Optional[str] = Field(None, description="Setting category for grouping")
-    display_name: Optional[str] = Field(None, description="Display name for UI")
-    description: Optional[str] = Field(None, description="Setting description")
+    category: str | None = Field(None, description="Setting category for grouping")
+    display_name: str | None = Field(None, description="Display name for UI")
+    description: str | None = Field(None, description="Setting description")
     is_active: bool = Field(default=True, description="Whether setting is active")
     created_at: datetime = Field(..., description="Creation timestamp")
     modified_at: datetime = Field(..., description="Last modification timestamp")
@@ -451,7 +451,7 @@ class PaginatedResponse(BaseModel, Generic[T]):
     total: int = Field(..., description="Total number of items")
     page: int = Field(..., ge=1, description="Current page number")
     limit: int = Field(..., ge=1, le=100, description="Items per page")
-    items: List[T] = Field(..., description="Response items")
+    items: list[T] = Field(..., description="Response items")
 
 
 # ============================================================================
@@ -467,7 +467,7 @@ class ErrorResponse(BaseModel):
     status: int = Field(..., description="HTTP status code")
     error: str = Field(..., description="Error type")
     message: str = Field(..., description="Error message")
-    details: Optional[Dict[str, Any]] = Field(None, description="Additional error details")
+    details: dict[str, Any] | None = Field(None, description="Additional error details")
     timestamp: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc), description="Error timestamp"
     )

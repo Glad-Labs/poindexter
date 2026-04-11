@@ -8,7 +8,7 @@ and whether execution used the agent pipeline or fallback mechanism.
 
 async def up(pool):
     """Add selected_model and execution_mode columns to workflow_executions table"""
-    
+
     # Add selected_model column to track which LLM was selected
     await pool.execute(
         """
@@ -44,7 +44,7 @@ async def up(pool):
 
 async def down(pool):
     """Rollback: Remove model tracking columns from workflow_executions table"""
-    
+
     # Drop indexes
     await pool.execute(
         """

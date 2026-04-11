@@ -53,7 +53,7 @@ def _to_json(data: Any) -> str:
     return json.dumps(data, default=_json_serial, ensure_ascii=False)
 
 
-async def _upload_json(key: str, data: str, content_type: str = "application/json") -> Optional[str]:
+async def _upload_json(key: str, data: str, content_type: str = "application/json") -> str | None:
     """Upload a JSON string to R2/S3-compatible storage. Returns public URL or None."""
     from services.r2_upload_service import upload_to_r2
 
@@ -72,7 +72,7 @@ async def _upload_json(key: str, data: str, content_type: str = "application/jso
             os.unlink(tmp.name)
 
 
-async def _fetch_published_posts(pool, include_content: bool = False) -> List[Dict]:
+async def _fetch_published_posts(pool, include_content: bool = False) -> list[dict]:
     """Fetch all published posts, newest first."""
     content_col = ", content" if include_content else ""
     async with pool.acquire() as conn:
@@ -89,7 +89,7 @@ async def _fetch_published_posts(pool, include_content: bool = False) -> List[Di
     return [dict(r) for r in rows]
 
 
-async def _fetch_post_by_slug(pool, slug: str) -> Optional[Dict]:
+async def _fetch_post_by_slug(pool, slug: str) -> dict | None:
     """Fetch a single post by slug with full content."""
     async with pool.acquire() as conn:
         row = await conn.fetchrow("""
@@ -103,7 +103,7 @@ async def _fetch_post_by_slug(pool, slug: str) -> Optional[Dict]:
     return dict(row) if row else None
 
 
-async def _fetch_categories(pool) -> List[Dict]:
+async def _fetch_categories(pool) -> list[dict]:
     """Fetch all categories."""
     async with pool.acquire() as conn:
         rows = await conn.fetch(
@@ -112,14 +112,14 @@ async def _fetch_categories(pool) -> List[Dict]:
     return [dict(r) for r in rows]
 
 
-async def _fetch_authors(pool) -> List[Dict]:
+async def _fetch_authors(pool) -> list[dict]:
     """Fetch all authors."""
     async with pool.acquire() as conn:
         rows = await conn.fetch("SELECT * FROM authors ORDER BY name")
     return [dict(r) for r in rows]
 
 
-def _post_summary(post: Dict) -> Dict:
+def _post_summary(post: dict) -> dict:
     """Strip content from a post dict for listing responses."""
     return {
         "id": str(post["id"]),
@@ -160,14 +160,14 @@ def _markdown_to_html(content: str) -> str:
         return content
 
 
-def _post_full(post: Dict) -> Dict:
+def _post_full(post: dict) -> dict:
     """Full post dict including content (converted to HTML)."""
     summary = _post_summary(post)
     summary["content"] = _markdown_to_html(post.get("content", ""))
     return summary
 
 
-def _build_json_feed(posts: List[Dict], site_url: str, site_title: str) -> Dict:
+def _build_json_feed(posts: list[dict], site_url: str, site_title: str) -> dict:
     """Build a JSON Feed 1.1 compliant feed."""
     items = []
     for post in posts[:50]:
@@ -194,7 +194,7 @@ def _build_json_feed(posts: List[Dict], site_url: str, site_title: str) -> Dict:
     }
 
 
-def _build_sitemap(posts: List[Dict], categories: List[Dict], site_url: str) -> Dict:
+def _build_sitemap(posts: list[dict], categories: list[dict], site_url: str) -> dict:
     """Build sitemap data (URLs + last modified dates)."""
     urls = [
         {"url": site_url, "lastmod": datetime.now(timezone.utc).isoformat(), "priority": 1.0},
@@ -278,7 +278,7 @@ async def export_post(pool, slug: str) -> bool:
         return False
 
 
-async def export_full_rebuild(pool) -> Dict[str, Any]:
+async def export_full_rebuild(pool) -> dict[str, Any]:
     """Full rebuild — regenerate ALL static files from scratch."""
     site_url = site_config.get("public_site_url") or site_config.require("site_url")
     site_title = site_config.get("site_title") or site_config.require("site_name")

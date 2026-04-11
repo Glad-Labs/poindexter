@@ -60,12 +60,12 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
     },
 )
 async def list_settings(
-    category: Optional[SettingCategoryEnum] = Query(None, description="Filter by category"),
-    environment: Optional[SettingEnvironmentEnum] = Query(
+    category: SettingCategoryEnum | None = Query(None, description="Filter by category"),
+    environment: SettingEnvironmentEnum | None = Query(
         None, description="Filter by environment"
     ),
-    tags: Optional[str] = Query(None, description="Comma-separated tag filter"),
-    search: Optional[str] = Query(None, description="Search in key and description"),
+    tags: str | None = Query(None, description="Comma-separated tag filter"),
+    search: str | None = Query(None, description="Search in key and description"),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     per_page: int = Query(20, ge=1, le=100, description="Items per page"),
     token: str = Depends(verify_api_token),

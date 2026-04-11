@@ -28,11 +28,11 @@ class WorkflowRequest:
     """
 
     workflow_type: str
-    input_data: Dict[str, Any]
+    input_data: dict[str, Any]
     user_id: str
     source: str = "api"
-    custom_pipeline: Optional[List[str]] = None
-    execution_options: Dict[str, Any] = field(
+    custom_pipeline: list[str] | None = None
+    execution_options: dict[str, Any] = field(
         default_factory=lambda: {
             "timeout": 300,
             "max_retries": 3,
@@ -40,8 +40,8 @@ class WorkflowRequest:
             "skip_on_error": False,
         }
     )
-    workflow_id: Optional[str] = None
-    request_id: Optional[str] = None
+    workflow_id: str | None = None
+    request_id: str | None = None
 
     def __post_init__(self):
         """Validate request on creation."""
@@ -94,16 +94,16 @@ class WorkflowResponse:
     workflow_type: str
     status: str  # COMPLETED, FAILED, PENDING, AWAITING_INPUT
     user_id: str
-    output: Dict[str, Any]
-    task_results: List[Any]
+    output: dict[str, Any]
+    task_results: list[Any]
     start_time: datetime
     end_time: datetime
     duration_seconds: float
     task_count: int
-    errors: List[str] = field(default_factory=list)
-    execution_metadata: Dict[str, Any] = field(default_factory=dict)
+    errors: list[str] = field(default_factory=list)
+    execution_metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert response to dictionary for JSON serialization."""
         return {
             "workflow_id": self.workflow_id,
@@ -154,11 +154,11 @@ class WorkflowCheckpoint:
 
     workflow_id: str
     task_index: int
-    accumulated_data: Dict[str, Any]
-    pending_approval: Dict[str, Any]
-    pending_actions: List[str]
+    accumulated_data: dict[str, Any]
+    pending_approval: dict[str, Any]
+    pending_actions: list[str]
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    expires_at: Optional[datetime] = None
+    expires_at: datetime | None = None
 
     def is_expired(self) -> bool:
         """Check if checkpoint has expired."""
@@ -182,8 +182,8 @@ class WorkflowApprovalRequest:
     workflow_id: str
     action: str  # 'approve' or 'reject'
     user_id: str
-    comment: Optional[str] = None
-    modifications: Optional[Dict[str, Any]] = None
+    comment: str | None = None
+    modifications: dict[str, Any] | None = None
 
     def __post_init__(self):
         """Validate approval request."""

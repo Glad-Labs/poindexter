@@ -13,6 +13,7 @@ from typing import Optional
 
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
 from services.logger_config import get_logger
 from services.site_config import site_config
 
@@ -93,7 +94,7 @@ def get_operator_identity() -> dict:
 
 async def verify_api_token_optional(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-) -> Optional[str]:
+) -> str | None:
     """Like verify_api_token but returns None instead of raising 401.
 
     Used for public endpoints that optionally accept auth (e.g. list_posts

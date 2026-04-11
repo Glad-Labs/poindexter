@@ -14,11 +14,12 @@ Graceful failure: if either DB is unreachable, log and skip.
 """
 
 import os
-from services.logger_config import get_logger
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import asyncpg
+
+from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -46,15 +47,15 @@ class SyncService:
 
     def __init__(
         self,
-        cloud_url: Optional[str] = None,
-        local_url: Optional[str] = None,
+        cloud_url: str | None = None,
+        local_url: str | None = None,
     ):
         import os
 
         self.cloud_url = cloud_url or os.getenv("CLOUD_DATABASE_URL", CLOUD_DATABASE_URL)
         self.local_url = local_url or os.getenv("LOCAL_DATABASE_URL", LOCAL_DATABASE_URL)
-        self._cloud_pool: Optional[asyncpg.Pool] = None
-        self._local_pool: Optional[asyncpg.Pool] = None
+        self._cloud_pool: asyncpg.Pool | None = None
+        self._local_pool: asyncpg.Pool | None = None
 
     # ------------------------------------------------------------------
     # Context manager
@@ -184,7 +185,7 @@ class SyncService:
             logger.error("Failed to push post %s: %s", post_id, exc, exc_info=True)
             return False
 
-    async def push_all_posts(self) -> Dict[str, int]:
+    async def push_all_posts(self) -> dict[str, int]:
         """
         Push all published posts from local DB to cloud DB.
 
@@ -317,7 +318,7 @@ class SyncService:
     # PULL: cloud -> local  (metrics for Grafana)
     # ======================================================================
 
-    async def pull_metrics(self) -> Dict[str, Any]:
+    async def pull_metrics(self) -> dict[str, Any]:
         """
         Pull analytics and subscriber metrics from cloud DB into local DB
         so Grafana dashboards can query them locally.
@@ -331,7 +332,7 @@ class SyncService:
         if not self._require_pools():
             return {"status": "skipped", "reason": "pools not connected"}
 
-        result: Dict[str, Any] = {}
+        result: dict[str, Any] = {}
 
         try:
             result["page_views"] = await self.pull_page_views()
@@ -354,7 +355,7 @@ class SyncService:
         logger.info("Pull metrics complete: %s", result)
         return result
 
-    async def pull_page_views(self) -> Dict[str, Any]:
+    async def pull_page_views(self) -> dict[str, Any]:
         """
         Pull raw page_views rows from cloud DB into local DB.
 
@@ -421,7 +422,7 @@ class SyncService:
             logger.error("Failed to pull page_views: %s", exc, exc_info=True)
             return {"error": str(exc)}
 
-    async def _pull_web_analytics(self) -> Dict[str, Any]:
+    async def _pull_web_analytics(self) -> dict[str, Any]:
         """Pull web_analytics rows from cloud that are newer than local max."""
         async with self._local_pool.acquire() as local:
             row = await local.fetchrow(
@@ -473,7 +474,7 @@ class SyncService:
 
         return {"rows_pulled": len(rows)}
 
-    async def pull_newsletter_subscribers(self) -> Dict[str, Any]:
+    async def pull_newsletter_subscribers(self) -> dict[str, Any]:
         """
         Pull newsletter_subscribers rows from cloud DB into local DB.
 
@@ -574,7 +575,7 @@ class SyncService:
             logger.error("Failed to pull newsletter_subscribers: %s", exc, exc_info=True)
             return {"error": str(exc)}
 
-    async def _pull_newsletter_stats(self) -> Dict[str, Any]:
+    async def _pull_newsletter_stats(self) -> dict[str, Any]:
         """
         Pull aggregate newsletter stats from cloud and store as a
         metrics snapshot in local sync_metrics table for Grafana.
@@ -626,13 +627,13 @@ class SyncService:
     # STATUS
     # ======================================================================
 
-    async def get_status(self) -> Dict[str, Any]:
+    async def get_status(self) -> dict[str, Any]:
         """
         Return a status summary comparing local and cloud data.
 
         Includes row counts, latest timestamps, and connection health.
         """
-        status: Dict[str, Any] = {
+        status: dict[str, Any] = {
             "cloud_connected": self._cloud_pool is not None,
             "local_connected": self._local_pool is not None,
             "checked_at": datetime.now(timezone.utc).isoformat(),

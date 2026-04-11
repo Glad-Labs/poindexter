@@ -9,7 +9,6 @@ from fastapi import HTTPException
 
 from middleware.api_token_auth import verify_api_token, verify_api_token_optional
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

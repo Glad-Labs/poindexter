@@ -36,7 +36,7 @@ class BlogContentGeneratorAgent:
         logger.info("Initializing BlogContentGeneratorAgent")
         self.content_generator = get_content_generator()
 
-    async def run(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    async def run(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """
         Generate blog content from topic and parameters.
 

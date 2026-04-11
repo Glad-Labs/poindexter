@@ -110,7 +110,7 @@ class ParameterizedQueryBuilder:
     """
 
     def __init__(self):
-        self.params: List[Any] = []
+        self.params: list[Any] = []
         self.param_counter = 0
 
     def add_param(self, value: Any) -> str:
@@ -129,13 +129,13 @@ class ParameterizedQueryBuilder:
 
     def select(
         self,
-        columns: List[str],
+        columns: list[str],
         table: str,
-        where_clauses: Optional[List[Tuple[str, SQLOperator, Any]]] = None,
-        order_by: Optional[List[Tuple[str, str]]] = None,  # (column, ASC/DESC)
-        limit: Optional[int] = None,
-        offset: Optional[int] = None,
-    ) -> Tuple[str, List[Any]]:
+        where_clauses: list[tuple[str, SQLOperator, Any]] | None = None,
+        order_by: list[tuple[str, str]] | None = None,  # (column, ASC/DESC)
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> tuple[str, list[Any]]:
         """
         Build SELECT query.
 
@@ -209,9 +209,9 @@ class ParameterizedQueryBuilder:
     def insert(
         self,
         table: str,
-        columns: Dict[str, Any],
-        return_columns: Optional[List[str]] = None,
-    ) -> Tuple[str, List[Any]]:
+        columns: dict[str, Any],
+        return_columns: list[str] | None = None,
+    ) -> tuple[str, list[Any]]:
         """
         Build INSERT query.
 
@@ -246,10 +246,10 @@ class ParameterizedQueryBuilder:
     def update(
         self,
         table: str,
-        updates: Dict[str, Any],
-        where_clauses: List[Tuple[str, SQLOperator, Any]],
-        return_columns: Optional[List[str]] = None,
-    ) -> Tuple[str, List[Any]]:
+        updates: dict[str, Any],
+        where_clauses: list[tuple[str, SQLOperator, Any]],
+        return_columns: list[str] | None = None,
+    ) -> tuple[str, list[Any]]:
         """
         Build UPDATE query.
 
@@ -296,8 +296,8 @@ class ParameterizedQueryBuilder:
     def delete(
         self,
         table: str,
-        where_clauses: List[Tuple[str, SQLOperator, Any]],
-    ) -> Tuple[str, List[Any]]:
+        where_clauses: list[tuple[str, SQLOperator, Any]],
+    ) -> tuple[str, list[Any]]:
         """
         Build DELETE query.
 

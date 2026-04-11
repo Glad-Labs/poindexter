@@ -113,7 +113,7 @@ class TemplateExecutionService:
         return True
 
     @staticmethod
-    def get_template_definitions() -> Dict[str, Dict[str, Any]]:
+    def get_template_definitions() -> dict[str, dict[str, Any]]:
         """
         Get all template definitions.
 
@@ -125,10 +125,10 @@ class TemplateExecutionService:
     def build_workflow_from_template(
         self,
         template_name: str,
-        skip_phases: Optional[List[str]] = None,
-        quality_threshold: Optional[float] = None,
+        skip_phases: list[str] | None = None,
+        quality_threshold: float | None = None,
         owner_id: str = "system",
-        tags: Optional[List[str]] = None,
+        tags: list[str] | None = None,
     ) -> CustomWorkflow:
         """
         Build a CustomWorkflow object from a template definition.
@@ -189,13 +189,13 @@ class TemplateExecutionService:
     async def execute_template(
         self,
         template_name: str,
-        task_input: Dict[str, Any],
-        skip_phases: Optional[List[str]] = None,
-        quality_threshold: Optional[float] = None,
+        task_input: dict[str, Any],
+        skip_phases: list[str] | None = None,
+        quality_threshold: float | None = None,
         owner_id: str = "system",
-        tags: Optional[List[str]] = None,
-        execution_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        tags: list[str] | None = None,
+        execution_id: str | None = None,
+    ) -> dict[str, Any]:
         """
         Execute a workflow template.
 
@@ -327,7 +327,7 @@ class TemplateExecutionService:
 
     def _initialize_progress_tracking(
         self,
-        execution_id: Optional[str],
+        execution_id: str | None,
         workflow: CustomWorkflow,
         template_name: str,
     ) -> None:
@@ -379,7 +379,7 @@ class TemplateExecutionService:
 
     async def get_execution_status(
         self, execution_id: str, owner_id: str
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Get status of a workflow execution.
 
@@ -403,10 +403,10 @@ class TemplateExecutionService:
     async def get_execution_history(
         self,
         owner_id: str,
-        template_name: Optional[str] = None,
+        template_name: str | None = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get execution history for a user, optionally filtered by template.
 

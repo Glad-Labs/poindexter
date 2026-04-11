@@ -42,8 +42,8 @@ class ImagePlan:
 @dataclass
 class ImagePlanResult:
     """Complete image plan for an article."""
-    images: List[ImagePlan] = field(default_factory=list)
-    featured_image: Optional[ImagePlan] = None
+    images: list[ImagePlan] = field(default_factory=list)
+    featured_image: ImagePlan | None = None
     raw_response: str = ""
 
 
@@ -253,10 +253,11 @@ Output ONLY valid JSON (no markdown, no explanation):
 
         # Log the decision for future learning
         try:
-            from services.decision_service import log_decision
             # Need a pool — get it from site_config or pass it in
             # For now, log via the decision service if a pool is available
             import asyncpg
+
+            from services.decision_service import log_decision
             _dsn = site_config.get("database_url", "")
             if not _dsn:
                 import os

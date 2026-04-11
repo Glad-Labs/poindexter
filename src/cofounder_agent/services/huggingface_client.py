@@ -6,7 +6,8 @@ Supports open-source models for blog post generation
 """
 
 import asyncio
-from typing import AsyncGenerator, List, Optional
+from collections.abc import AsyncGenerator
+from typing import List, Optional
 
 import aiohttp
 
@@ -42,7 +43,7 @@ class HuggingFaceClient:
         },
     }
 
-    def __init__(self, api_token: Optional[str] = None):
+    def __init__(self, api_token: str | None = None):
         """Initialize HuggingFace client
 
         Args:
@@ -51,7 +52,7 @@ class HuggingFaceClient:
         from services.site_config import site_config
         self.api_token = api_token or site_config.get("huggingface_api_token", "")
         self.base_url = "https://api-inference.huggingface.co/models"
-        self.session: Optional[aiohttp.ClientSession] = None
+        self.session: aiohttp.ClientSession | None = None
 
         if not self.api_token:
             logger.warning("No HuggingFace API token provided. Using free tier (rate limited).")
@@ -276,7 +277,7 @@ async def test_huggingface():
 
 
 # Module-level cleanup helper for lifespan shutdown
-_active_clients: List[HuggingFaceClient] = []
+_active_clients: list[HuggingFaceClient] = []
 
 
 async def _session_cleanup() -> None:

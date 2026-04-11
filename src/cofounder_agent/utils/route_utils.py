@@ -115,43 +115,43 @@ class ServiceContainer:
         self._additional_services[name] = service
         logger.info(f"Service '{name}' registered with ServiceContainer")
 
-    def get_database(self) -> Optional[Any]:
+    def get_database(self) -> Any | None:
         """Get the database service"""
         return self._database_service
 
-    def get_orchestrator(self) -> Optional[Any]:
+    def get_orchestrator(self) -> Any | None:
         """Get the orchestrator service"""
         return self._orchestrator
 
-    def get_task_executor(self) -> Optional[Any]:
+    def get_task_executor(self) -> Any | None:
         """Get the task executor service"""
         return self._task_executor
 
-    def get_intelligent_orchestrator(self) -> Optional[Any]:
+    def get_intelligent_orchestrator(self) -> Any | None:
         """Get the intelligent orchestrator service"""
         return self._intelligent_orchestrator
 
-    def get_workflow_history(self) -> Optional[Any]:
+    def get_workflow_history(self) -> Any | None:
         """Get the workflow history service"""
         return self._workflow_history
 
-    def get_workflow_engine(self) -> Optional[Any]:
+    def get_workflow_engine(self) -> Any | None:
         """Get the workflow engine service"""
         return self._workflow_engine
 
-    def get_redis_cache(self) -> Optional[Any]:
+    def get_redis_cache(self) -> Any | None:
         """Get the Redis cache service"""
         return self._redis_cache
 
-    def get_custom_workflows_service(self) -> Optional[Any]:
+    def get_custom_workflows_service(self) -> Any | None:
         """Get the custom workflows service"""
         return self._custom_workflows_service
 
-    def get_template_execution_service(self) -> Optional[Any]:
+    def get_template_execution_service(self) -> Any | None:
         """Get the template execution service"""
         return self._template_execution_service
 
-    def get_service(self, name: str) -> Optional[Any]:
+    def get_service(self, name: str) -> Any | None:
         """Get an arbitrary service by name"""
         return self._additional_services.get(name)
 

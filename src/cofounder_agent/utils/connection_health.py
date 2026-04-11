@@ -27,12 +27,12 @@ class ConnectionPoolHealth:
         """
         self.pool = pool
         self.check_interval = check_interval
-        self.last_check_time: Optional[datetime] = None
-        self.last_check_status: Optional[Dict[str, Any]] = None
+        self.last_check_time: datetime | None = None
+        self.last_check_status: dict[str, Any] | None = None
         self.consecutive_failures = 0
         self.max_consecutive_failures = 3
 
-    async def check_pool_health(self) -> Dict[str, Any]:
+    async def check_pool_health(self) -> dict[str, Any]:
         """
         Check the health of the connection pool.
 
@@ -142,7 +142,7 @@ class ConnectionPoolHealth:
                 logger.error(f"Error in health check loop: {e}", exc_info=True)
                 await asyncio.sleep(self.check_interval)
 
-    def get_health_summary(self) -> Dict[str, Any]:
+    def get_health_summary(self) -> dict[str, Any]:
         """Get summary of last health check."""
         if self.last_check_status is None:
             return {"status": "unknown", "message": "No health checks performed yet"}
@@ -202,7 +202,7 @@ class ConnectionPoolHealth:
         return False
 
 
-async def diagnose_connection_issues() -> Dict[str, Any]:
+async def diagnose_connection_issues() -> dict[str, Any]:
     """
     Run diagnostic checks for common connection issues.
 

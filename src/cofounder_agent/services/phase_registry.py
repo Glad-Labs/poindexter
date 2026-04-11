@@ -52,11 +52,11 @@ class InputField:
     label: str
     input_type: InputType = InputType.TEXT
     required: bool = False
-    default_value: Optional[Any] = None
-    description: Optional[str] = None
-    placeholder: Optional[str] = None
-    options: Optional[List[dict]] = None  # For select inputs
-    validation_pattern: Optional[str] = None
+    default_value: Any | None = None
+    description: str | None = None
+    placeholder: str | None = None
+    options: list[dict] | None = None  # For select inputs
+    validation_pattern: str | None = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization"""
@@ -80,8 +80,8 @@ class OutputField:
     key: str
     label: str
     content_type: ContentType = ContentType.TEXT
-    description: Optional[str] = None
-    example: Optional[str] = None
+    description: str | None = None
+    example: str | None = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization"""
@@ -101,14 +101,14 @@ class PhaseDefinition:
     name: str
     agent_type: str
     description: str
-    input_schema: Dict[str, InputField] = field(default_factory=dict)
-    output_schema: Dict[str, OutputField] = field(default_factory=dict)
+    input_schema: dict[str, InputField] = field(default_factory=dict)
+    output_schema: dict[str, OutputField] = field(default_factory=dict)
     required: bool = True
     timeout_seconds: int = 300
     max_retries: int = 3
     skip_on_error: bool = False
-    quality_threshold: Optional[float] = None
-    tags: List[str] = field(default_factory=list)
+    quality_threshold: float | None = None
+    tags: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization"""
@@ -135,7 +135,7 @@ class PhaseRegistry:
     """
 
     _instance: Optional["PhaseRegistry"] = None
-    _phases: Dict[str, PhaseDefinition] = {}
+    _phases: dict[str, PhaseDefinition] = {}
 
     def __new__(cls):
         if cls._instance is None:
@@ -163,15 +163,15 @@ class PhaseRegistry:
         self._phases[phase_def.name] = phase_def
         logger.info("Registered phase: %s", phase_def.name)
 
-    def get_phase(self, name: str) -> Optional[PhaseDefinition]:
+    def get_phase(self, name: str) -> PhaseDefinition | None:
         """Get a phase definition by name"""
         return self._phases.get(name)
 
-    def list_phases(self) -> List[PhaseDefinition]:
+    def list_phases(self) -> list[PhaseDefinition]:
         """List all available phases"""
         return list(self._phases.values())
 
-    def list_phase_names(self) -> List[str]:
+    def list_phase_names(self) -> list[str]:
         """List all available phase names"""
         return list(self._phases.keys())
 

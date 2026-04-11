@@ -44,7 +44,7 @@ class CreativeAgent:
         self,
         post: BlogPost,
         is_refinement: bool = False,
-        word_count_target: Optional[int] = None,
+        word_count_target: int | None = None,
         constraints=None,
     ) -> BlogPost:
         """

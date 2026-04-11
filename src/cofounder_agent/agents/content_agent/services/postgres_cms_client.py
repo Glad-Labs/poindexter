@@ -28,7 +28,7 @@ class PostgresCMSClient:
     - media: Images and media files
     """
 
-    def __init__(self, database_url: Optional[str] = None):
+    def __init__(self, database_url: str | None = None):
         """
         Initialize PostgreSQL CMS client.
 
@@ -36,7 +36,7 @@ class PostgresCMSClient:
             database_url: PostgreSQL connection string. If not provided, uses config.DATABASE_URL
         """
         self.database_url: str = database_url or config.DATABASE_URL or ""
-        self.pool: Optional[asyncpg.Pool] = None
+        self.pool: asyncpg.Pool | None = None
         logger.info(
             f"PostgresCMSClient initialized (Database: {self._mask_url(self.database_url)})"
         )
@@ -241,7 +241,7 @@ class PostgresCMSClient:
         )
         return tag_id
 
-    async def get_post_by_slug(self, slug: str) -> Optional[Dict[str, Any]]:
+    async def get_post_by_slug(self, slug: str) -> dict[str, Any] | None:
         """Retrieve a post by slug"""
         if not self.pool:
             raise RuntimeError("Database pool not initialized")
@@ -281,8 +281,8 @@ class PostgresCMSClient:
             return None
 
     async def upload_image_metadata(
-        self, image_details: ImageDetails, post_id: Optional[str] = None
-    ) -> Optional[str]:
+        self, image_details: ImageDetails, post_id: str | None = None
+    ) -> str | None:
         """
         Store image metadata in PostgreSQL media table.
 

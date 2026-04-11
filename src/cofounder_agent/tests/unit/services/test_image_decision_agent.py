@@ -13,9 +13,9 @@ Covers:
 - plan_images: max_images cap is honored
 """
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import json
 import pytest
 
 from services.image_decision_agent import (
@@ -23,7 +23,6 @@ from services.image_decision_agent import (
     ImagePlanResult,
     plan_images,
 )
-
 
 # ---------------------------------------------------------------------------
 # Dataclasses

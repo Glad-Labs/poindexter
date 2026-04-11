@@ -6,7 +6,7 @@ Provides request size limits, content-type validation, and payload inspection.
 """
 
 import json
-from typing import Callable
+from collections.abc import Callable
 
 from fastapi import HTTPException, Request, status
 from starlette.middleware.base import BaseHTTPMiddleware

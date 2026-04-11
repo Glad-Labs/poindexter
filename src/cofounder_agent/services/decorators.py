@@ -20,7 +20,8 @@ Usage:
 
 import functools
 import time
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any, Optional
 
 from services.logger_config import get_logger
 
@@ -39,7 +40,7 @@ ENABLE_QUERY_MONITORING = _cfg("enable_query_monitoring", "true").lower() == "tr
 def log_query_performance(
     operation: str,
     category: str = "database",
-    slow_threshold_ms: Optional[int] = None,
+    slow_threshold_ms: int | None = None,
 ):
     """
     Decorator to log query performance metrics.

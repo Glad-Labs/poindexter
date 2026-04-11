@@ -558,6 +558,7 @@ class TestSearchEnginePing:
     async def test_ping_failure_does_not_raise(self):
         """Even if httpx calls fail, the function completes silently."""
         import httpx
+
         from services.publish_service import _ping_search_engines
 
         mock_client = AsyncMock()

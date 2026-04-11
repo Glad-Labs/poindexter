@@ -413,8 +413,8 @@ class TestSeedSpendFromDb:
 
     @pytest.mark.asyncio
     async def test_spend_over_limit_logs_critical(self, router, caplog):
-        from unittest.mock import AsyncMock
         import logging
+        from unittest.mock import AsyncMock
 
         pool = AsyncMock()
         pool.fetchrow = AsyncMock(return_value={"total": 99999.0})

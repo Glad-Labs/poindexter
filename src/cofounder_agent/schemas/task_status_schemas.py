@@ -19,20 +19,20 @@ class TaskStatusUpdateRequest(BaseModel):
         min_length=1,
         max_length=50,
     )
-    updated_by: Optional[str] = Field(
+    updated_by: str | None = Field(
         None,
         description="User/system identifier making the change",
     )
-    reason: Optional[str] = Field(
+    reason: str | None = Field(
         None,
         description="Reason for status change (for audit trail)",
         max_length=500,
     )
-    metadata: Optional[Dict[str, Any]] = Field(
+    metadata: dict[str, Any] | None = Field(
         None,
         description="Additional metadata for the status change",
     )
-    result: Optional[str] = Field(
+    result: str | None = Field(
         None,
         description="Result data to store with the status update",
     )
@@ -63,7 +63,7 @@ class TaskStatusUpdateResponse(BaseModel):
     old_status: str
     new_status: str
     timestamp: datetime
-    updated_by: Optional[str] = None
+    updated_by: str | None = None
     message: str = "Status updated successfully"
 
 
@@ -72,12 +72,12 @@ class TaskStatusHistoryEntry(BaseModel):
 
     id: int
     task_id: str
-    old_status: Optional[str] = None
+    old_status: str | None = None
     new_status: str
     changed_at: datetime
-    changed_by: Optional[str] = None
-    reason: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
+    changed_by: str | None = None
+    reason: str | None = None
+    metadata: dict[str, Any] | None = None
 
 
 class TaskStatusInfo(BaseModel):
@@ -86,19 +86,19 @@ class TaskStatusInfo(BaseModel):
     task_id: str
     current_status: str
     status_updated_at: datetime
-    status_updated_by: Optional[str] = None
+    status_updated_by: str | None = None
     created_at: datetime
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
     is_terminal: bool = Field(
         ...,
         description="Whether status is terminal (no further transitions without override)",
     )
-    allowed_transitions: List[str] = Field(
+    allowed_transitions: list[str] = Field(
         ...,
         description="List of valid status values this task can transition to",
     )
-    duration_minutes: Optional[float] = Field(
+    duration_minutes: float | None = Field(
         None,
         description="Minutes elapsed since status change",
     )
@@ -125,7 +125,7 @@ class TaskStatusInfo(BaseModel):
 class TaskStatusFilterRequest(BaseModel):
     """Request model for filtering tasks by status."""
 
-    statuses: List[str] = Field(
+    statuses: list[str] = Field(
         ...,
         description="List of statuses to filter by",
         min_items=1,  # type: ignore[call-overload]
@@ -141,11 +141,11 @@ class TaskStatusFilterRequest(BaseModel):
         description="Offset for pagination",
         ge=0,
     )
-    sort_by: Optional[str] = Field(
+    sort_by: str | None = Field(
         "created_at",
         description="Field to sort by (created_at, updated_at, status_updated_at)",
     )
-    sort_order: Optional[str] = Field(
+    sort_order: str | None = Field(
         "desc",
         description="Sort order (asc or desc)",
     )
@@ -181,13 +181,13 @@ class TaskStatusStatistics(BaseModel):
     """Statistics about task statuses."""
 
     total_tasks: int
-    by_status: Dict[str, int] = Field(
+    by_status: dict[str, int] = Field(
         ...,
         description="Count of tasks by status",
     )
-    average_duration_minutes: Optional[float] = None
-    oldest_task_days: Optional[int] = None
-    recent_changes_count: Optional[int] = Field(
+    average_duration_minutes: float | None = None
+    oldest_task_days: int | None = None
+    recent_changes_count: int | None = Field(
         None,
         description="Number of status changes in last 24 hours",
     )

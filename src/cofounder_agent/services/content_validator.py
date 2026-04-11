@@ -15,10 +15,11 @@ Usage:
         # Reject — content has quality issues
 """
 
-from services.logger_config import get_logger
 import re
 from dataclasses import dataclass, field
 from typing import List
+
+from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -140,7 +141,7 @@ class ValidationIssue:
 class ValidationResult:
     """Result of content validation."""
     passed: bool
-    issues: List[ValidationIssue] = field(default_factory=list)
+    issues: list[ValidationIssue] = field(default_factory=list)
     score_penalty: int = 0
 
     @property
@@ -163,7 +164,7 @@ def _check_patterns(
     severity: str,
     category: str,
     description_template: str,
-) -> List[ValidationIssue]:
+) -> list[ValidationIssue]:
     """Run regex patterns against text and return issues."""
     issues = []
     clean_text = _strip_html(text)
@@ -190,7 +191,7 @@ def validate_content(title: str, content: str, topic: str = "") -> ValidationRes
     Returns ValidationResult with pass/fail and list of issues.
     Content fails if ANY critical issue is found.
     """
-    issues: List[ValidationIssue] = []
+    issues: list[ValidationIssue] = []
     title = title or ""
     content = content or ""
     topic = topic or ""

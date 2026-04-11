@@ -182,7 +182,7 @@ _STOPWORDS: frozenset = frozenset(
 # ---------------------------------------------------------------------------
 
 
-def extract_keywords_from_text(text: str, count: int = 5) -> List[str]:
+def extract_keywords_from_text(text: str, count: int = 5) -> list[str]:
     """
     Extract the most frequent meaningful keywords from *text*.
 
@@ -222,7 +222,7 @@ def extract_keywords_from_text(text: str, count: int = 5) -> List[str]:
     return [w for w, _ in candidates[:count]]
 
 
-def extract_keywords_from_title(title: str, count: int = 7) -> List[str]:
+def extract_keywords_from_title(title: str, count: int = 7) -> list[str]:
     """
     Fallback keyword extraction for when only the post title is available.
 
@@ -247,7 +247,7 @@ def extract_keywords_from_title(title: str, count: int = 7) -> List[str]:
     return keywords[:count] if keywords else [title[:20]]
 
 
-def extract_title_from_content(content: str) -> Tuple[Optional[str], Optional[str]]:
+def extract_title_from_content(content: str) -> tuple[str | None, str | None]:
     """
     Extract a leading Markdown heading from *content* and return it separately.
 

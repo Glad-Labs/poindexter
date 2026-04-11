@@ -11,11 +11,9 @@ Integrates all missing features from the original content agent:
 - Social media optimization (OG tags, Twitter cards)
 """
 
-import re
 import os
+import re
 import time
-
-from .site_config import site_config
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -24,6 +22,7 @@ from services.logger_config import get_logger
 from utils.text_utils import extract_keywords_from_text
 
 from .prompt_manager import get_prompt_manager
+from .site_config import site_config
 
 logger = get_logger(__name__)
 
@@ -35,32 +34,32 @@ class ContentMetadata:
     seo_title: str = ""
     meta_description: str = ""
     slug: str = ""
-    meta_keywords: List[str] = field(default_factory=list)
+    meta_keywords: list[str] = field(default_factory=list)
     reading_time_minutes: int = 0
     word_count: int = 0
 
     # Featured image
     featured_image_prompt: str = ""
-    featured_image_url: Optional[str] = None
+    featured_image_url: str | None = None
     featured_image_alt_text: str = ""
     featured_image_caption: str = ""
 
     # Structured data
-    json_ld_schema: Optional[Dict[str, Any]] = None
+    json_ld_schema: dict[str, Any] | None = None
 
     # Social media
     og_title: str = ""
     og_description: str = ""
-    og_image: Optional[str] = None
+    og_image: str | None = None
     twitter_title: str = ""
     twitter_description: str = ""
 
     # Organization
     category: str = ""
-    tags: List[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
 
     # Internal linking
-    internal_links: List[Dict[str, str]] = field(default_factory=list)
+    internal_links: list[dict[str, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -74,9 +73,9 @@ class EnhancedBlogPost:
     model_used: str
     quality_score: float
     generation_time_seconds: float
-    validation_results: List[Dict[str, Any]] = field(default_factory=list)
+    validation_results: list[dict[str, Any]] = field(default_factory=list)
 
-    def to_strapi_format(self) -> Dict[str, Any]:
+    def to_strapi_format(self) -> dict[str, Any]:
         """Convert to Strapi-compatible format"""
         return {
             "title": self.title,
@@ -108,7 +107,7 @@ class ContentMetadataGenerator:
     def __init__(self, llm_provider_manager=None):
         self.llm = llm_provider_manager
 
-    def generate_seo_assets(self, title: str, content: str, topic: str) -> Dict[str, Any]:
+    def generate_seo_assets(self, title: str, content: str, topic: str) -> dict[str, Any]:
         """
         Generate SEO assets: title, meta description, keywords, slug.
 
@@ -157,7 +156,7 @@ class ContentMetadataGenerator:
             return combined[:152] + "..."
         return combined
 
-    def _extract_keywords(self, content: str, count: int = 5) -> List[str]:
+    def _extract_keywords(self, content: str, count: int = 5) -> list[str]:
         """Extract relevant keywords from content.
 
         Delegates to ``utils.text_utils.extract_keywords_from_text`` which
@@ -180,7 +179,7 @@ class ContentMetadataGenerator:
             content_context=context,
         )
 
-    def generate_json_ld_schema(self, blog_post: Dict[str, Any]) -> Dict[str, Any]:
+    def generate_json_ld_schema(self, blog_post: dict[str, Any]) -> dict[str, Any]:
         """Generate JSON-LD structured data for rich snippets"""
         return {
             "@context": "https://schema.org",
@@ -193,7 +192,7 @@ class ContentMetadataGenerator:
             "image": blog_post.get("featured_image_url"),
         }
 
-    def generate_category_and_tags(self, content: str, topic: str) -> Dict[str, Any]:
+    def generate_category_and_tags(self, content: str, topic: str) -> dict[str, Any]:
         """Suggest appropriate category and tags"""
         # Category inference based on keywords
         categories = {
@@ -226,8 +225,8 @@ class ContentMetadataGenerator:
         return reading_time
 
     def generate_social_metadata(
-        self, title: str, excerpt: str, image_url: Optional[str] = None
-    ) -> Dict[str, str]:
+        self, title: str, excerpt: str, image_url: str | None = None
+    ) -> dict[str, str]:
         """Generate social media metadata (OG, Twitter)"""
         return {
             "og_title": title[:70],  # OG title limit
@@ -243,7 +242,7 @@ class SEOOptimizedContentGenerator:
     """Main service for SEO-optimized content generation with full metadata"""
 
     def __init__(
-        self, ai_content_generator, metadata_generator: Optional[ContentMetadataGenerator] = None
+        self, ai_content_generator, metadata_generator: ContentMetadataGenerator | None = None
     ):
         self.ai_generator = ai_content_generator
         self.metadata_gen = metadata_generator or ContentMetadataGenerator()
@@ -254,7 +253,7 @@ class SEOOptimizedContentGenerator:
         style: str = "technical",
         tone: str = "professional",
         target_length: int = 1500,
-        tags_input: Optional[List[str]] = None,
+        tags_input: list[str] | None = None,
         generate_images: bool = True,
     ) -> EnhancedBlogPost:
         """

@@ -42,7 +42,7 @@ def _parse_seo_keywords(value: str) -> list:
     return [kw.strip() for kw in value.split(",") if kw.strip()]
 
 
-def _normalize_seo_keywords_in_task(task: Dict[str, Any]) -> Dict[str, Any]:
+def _normalize_seo_keywords_in_task(task: dict[str, Any]) -> dict[str, Any]:
     """Normalize seo_keywords from strings to lists at top level, result, and task_metadata."""
     if not isinstance(task, dict):
         return task
@@ -94,7 +94,7 @@ router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
 @router.post(
     "/discover-topics",
-    response_model=Dict[str, Any],
+    response_model=dict[str, Any],
     summary="Trigger topic discovery on demand and optionally queue the results",
     status_code=200,
 )
@@ -149,7 +149,7 @@ async def discover_topics(
 
 @router.post(
     "",
-    response_model=Dict[str, Any],
+    response_model=dict[str, Any],
     summary="Create task - unified endpoint for all task types",
     status_code=201,
 )
@@ -206,7 +206,7 @@ async def create_task(
 
 async def _handle_blog_post_creation(
     request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Handle blog post task creation"""
     task_id = str(uuid_lib.uuid4())
 
@@ -279,7 +279,7 @@ async def _handle_blog_post_creation(
 
 async def _handle_social_media_creation(
     request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Handle social media task creation"""
     task_id = str(uuid_lib.uuid4())
 
@@ -319,7 +319,7 @@ async def _handle_social_media_creation(
 
 async def _handle_email_creation(
     request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Handle email task creation"""
     task_id = str(uuid_lib.uuid4())
 
@@ -353,7 +353,7 @@ async def _handle_email_creation(
 
 async def _handle_newsletter_creation(
     request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Handle newsletter task creation"""
     task_id = str(uuid_lib.uuid4())
 
@@ -386,7 +386,7 @@ async def _handle_newsletter_creation(
 
 async def _handle_business_analytics_creation(
     request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Handle business analytics task creation"""
     task_id = str(uuid_lib.uuid4())
 
@@ -424,7 +424,7 @@ async def _handle_business_analytics_creation(
 
 async def _handle_data_retrieval_creation(
     request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Handle data retrieval task creation"""
     task_id = str(uuid_lib.uuid4())
 
@@ -460,7 +460,7 @@ async def _handle_data_retrieval_creation(
 
 async def _handle_market_research_creation(
     request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Handle market research task creation"""
     task_id = str(uuid_lib.uuid4())
 
@@ -493,7 +493,7 @@ async def _handle_market_research_creation(
 
 async def _handle_financial_analysis_creation(
     request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Handle financial analysis task creation"""
     task_id = str(uuid_lib.uuid4())
 
@@ -549,11 +549,11 @@ _TASK_TYPE_REGISTRY = {
 async def list_tasks(
     offset: int = Query(0, ge=0, description="Pagination offset"),
     limit: int = Query(20, ge=1, le=100, description="Pagination limit (max 100)"),
-    status: Optional[str] = Query(
+    status: str | None = Query(
         None, description="Filter by status (queued, pending, running, completed, failed)"
     ),
-    category: Optional[str] = Query(None, description="Filter by category"),
-    search: Optional[str] = Query(
+    category: str | None = Query(None, description="Filter by category"),
+    search: str | None = Query(
         None,
         max_length=200,
         description="Keyword search across task name, topic, and category (trigram-indexed)",

@@ -7,10 +7,10 @@ from services.logger_config import get_logger
 logger = get_logger(__name__)
 
 
-def load_prompts_from_file(file_path: str) -> Dict[str, str]:
+def load_prompts_from_file(file_path: str) -> dict[str, str]:
     """Loads and returns the prompts from a JSON file."""
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             return json.load(f)
     except FileNotFoundError:
         logger.critical(
@@ -44,7 +44,7 @@ def slugify(text: str) -> str:
     return text
 
 
-def extract_json_from_string(text: str) -> Optional[str]:
+def extract_json_from_string(text: str) -> str | None:
     """
     Finds and extracts the first valid JSON object from a string.
     Handles cases where JSON is embedded in text or markdown code blocks.

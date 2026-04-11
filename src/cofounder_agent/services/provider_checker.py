@@ -21,7 +21,7 @@ class ProviderChecker:
     """
 
     # Cache for provider status (updated on first check)
-    _cache: Dict[str, bool] = {}
+    _cache: dict[str, bool] = {}
 
     @staticmethod
     def _get_env(*keys: str) -> str:
@@ -67,7 +67,7 @@ class ProviderChecker:
         return True
 
     @classmethod
-    def get_available_providers(cls) -> Set[str]:
+    def get_available_providers(cls) -> set[str]:
         """Get set of all available providers. Ollama-only policy."""
         providers = {"ollama"}  # Ollama always available
 

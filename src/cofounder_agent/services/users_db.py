@@ -38,7 +38,7 @@ class UsersDatabase(DatabaseServiceMixin):
         self.pool = pool
 
     @log_query_performance(operation="get_user_by_id", category="user_retrieval")
-    async def get_user_by_id(self, user_id: str) -> Optional[UserResponse]:
+    async def get_user_by_id(self, user_id: str) -> UserResponse | None:
         """
         Get user by ID.
 
@@ -57,7 +57,7 @@ class UsersDatabase(DatabaseServiceMixin):
             return ModelConverter.to_user_response(row) if row else None
 
     @log_query_performance(operation="get_user_by_email", category="user_retrieval")
-    async def get_user_by_email(self, email: str) -> Optional[UserResponse]:
+    async def get_user_by_email(self, email: str) -> UserResponse | None:
         """
         Get user by email address.
 
@@ -76,7 +76,7 @@ class UsersDatabase(DatabaseServiceMixin):
             return ModelConverter.to_user_response(row) if row else None
 
     @log_query_performance(operation="get_user_by_username", category="user_retrieval")
-    async def get_user_by_username(self, username: str) -> Optional[UserResponse]:
+    async def get_user_by_username(self, username: str) -> UserResponse | None:
         """
         Get user by username.
 
@@ -95,7 +95,7 @@ class UsersDatabase(DatabaseServiceMixin):
             return ModelConverter.to_user_response(row) if row else None
 
     @log_query_performance(operation="create_user", category="user_write")
-    async def create_user(self, user_data: Dict[str, Any]) -> UserResponse:
+    async def create_user(self, user_data: dict[str, Any]) -> UserResponse:
         """
         Create new user.
 
@@ -129,8 +129,8 @@ class UsersDatabase(DatabaseServiceMixin):
         self,
         provider: str,
         provider_user_id: str,
-        provider_data: Dict[str, Any],
-    ) -> Optional[UserResponse]:
+        provider_data: dict[str, Any],
+    ) -> UserResponse | None:
         """
         Get existing OAuth user or create new one from provider data.
 
@@ -276,7 +276,7 @@ class UsersDatabase(DatabaseServiceMixin):
     @log_query_performance(
         operation="get_oauth_accounts", category="user_relationships", slow_threshold_ms=50
     )
-    async def get_oauth_accounts(self, user_id: str) -> List[OAuthAccountResponse]:
+    async def get_oauth_accounts(self, user_id: str) -> list[OAuthAccountResponse]:
         """
         Get all OAuth accounts linked to a user.
 

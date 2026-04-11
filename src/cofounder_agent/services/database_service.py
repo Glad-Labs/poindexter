@@ -18,13 +18,13 @@ When LOCAL_DATABASE_URL is not set, self.local_pool = self.pool (backward compat
 All existing methods are delegated to appropriate modules.
 """
 
-from services.logger_config import get_logger
 import os
 from typing import Dict, List, Optional
 
 import asyncpg
 
 from config import get_config
+from services.logger_config import get_logger
 
 from .admin_db import AdminDatabase
 from .audit_log import AuditLogger, init_global_audit_logger
@@ -55,8 +55,8 @@ class DatabaseService:
 
     def __init__(
         self,
-        database_url: Optional[str] = None,
-        local_database_url: Optional[str] = None,
+        database_url: str | None = None,
+        local_database_url: str | None = None,
     ):
         """
         Initialize database service coordinator with asyncpg.
@@ -93,13 +93,13 @@ class DatabaseService:
         self.local_pool = None
 
         # Delegate modules will be initialized after pool is created
-        self.users: Optional[UsersDatabase] = None
-        self.tasks: Optional[TasksDatabase] = None
-        self.content: Optional[ContentDatabase] = None
-        self.admin: Optional[AdminDatabase] = None
-        self.writing_style: Optional[WritingStyleDatabase] = None
-        self.embeddings: Optional[EmbeddingsDatabase] = None
-        self.audit: Optional[AuditLogger] = None
+        self.users: UsersDatabase | None = None
+        self.tasks: TasksDatabase | None = None
+        self.content: ContentDatabase | None = None
+        self.admin: AdminDatabase | None = None
+        self.writing_style: WritingStyleDatabase | None = None
+        self.embeddings: EmbeddingsDatabase | None = None
+        self.audit: AuditLogger | None = None
 
     async def initialize(self) -> None:
         """Initialize connection pool(s) and all delegate modules."""
@@ -191,29 +191,29 @@ class DatabaseService:
     # DatabaseService API. Each method delegates to the appropriate module.
 
     # USER OPERATIONS
-    async def get_user_by_id(self, user_id: str) -> Optional[Dict]:
+    async def get_user_by_id(self, user_id: str) -> dict | None:
         """Delegate to users module."""
         return await self.users.get_user_by_id(user_id)
 
-    async def get_user_by_email(self, email: str) -> Optional[Dict]:
+    async def get_user_by_email(self, email: str) -> dict | None:
         """Delegate to users module."""
         return await self.users.get_user_by_email(email)
 
-    async def get_user_by_username(self, username: str) -> Optional[Dict]:
+    async def get_user_by_username(self, username: str) -> dict | None:
         """Delegate to users module."""
         return await self.users.get_user_by_username(username)
 
-    async def create_user(self, user_data: dict) -> Dict:
+    async def create_user(self, user_data: dict) -> dict:
         """Delegate to users module."""
         return await self.users.create_user(user_data)
 
     async def get_or_create_oauth_user(
         self, provider: str, provider_user_id: str, provider_data: dict
-    ) -> Dict:
+    ) -> dict:
         """Delegate to users module."""
         return await self.users.get_or_create_oauth_user(provider, provider_user_id, provider_data)
 
-    async def get_oauth_accounts(self, user_id: str) -> List[Dict]:
+    async def get_oauth_accounts(self, user_id: str) -> list[dict]:
         """Delegate to users module."""
         return await self.users.get_oauth_accounts(user_id)
 
@@ -222,16 +222,16 @@ class DatabaseService:
         return await self.users.unlink_oauth_account(user_id, provider)
 
     # TASK OPERATIONS
-    async def add_task(self, task_data: dict) -> Dict:
+    async def add_task(self, task_data: dict) -> dict:
         """Delegate to tasks module."""
         return await self.tasks.add_task(task_data)
 
-    async def get_task(self, task_id: str) -> Optional[Dict]:
+    async def get_task(self, task_id: str) -> dict | None:
         """Delegate to tasks module."""
         return await self.tasks.get_task(task_id)
 
     async def update_task_status(
-        self, task_id: str, status: str, result: Optional[str] = None
+        self, task_id: str, status: str, result: str | None = None
     ) -> bool:
         """Delegate to tasks module."""
         return await self.tasks.update_task_status(task_id, status, result)
@@ -252,36 +252,36 @@ class DatabaseService:
         self,
         offset: int = 0,
         limit: int = 20,
-        status: Optional[str] = None,
-        category: Optional[str] = None,
-        search: Optional[str] = None,
-    ) -> Dict:
+        status: str | None = None,
+        category: str | None = None,
+        search: str | None = None,
+    ) -> dict:
         """Delegate to tasks module."""
         return await self.tasks.get_tasks_paginated(offset, limit, status, category, search)
 
-    async def get_task_counts(self) -> Dict:
+    async def get_task_counts(self) -> dict:
         """Delegate to tasks module."""
         return await self.tasks.get_task_counts()
 
-    async def get_pending_tasks(self, limit: int = 10) -> List[Dict]:
+    async def get_pending_tasks(self, limit: int = 10) -> list[dict]:
         """Delegate to tasks module."""
         return await self.tasks.get_pending_tasks(limit)
 
-    async def get_all_tasks(self, limit: int = 100) -> List[Dict]:
+    async def get_all_tasks(self, limit: int = 100) -> list[dict]:
         """Delegate to tasks module."""
         return await self.tasks.get_all_tasks(limit)
 
-    async def get_queued_tasks(self, limit: int = 5) -> List[Dict]:
+    async def get_queued_tasks(self, limit: int = 5) -> list[dict]:
         """Delegate to tasks module."""
         return await self.tasks.get_queued_tasks(limit)
 
     async def get_tasks_by_date_range(
-        self, start_date=None, end_date=None, status: Optional[str] = None, limit: int = 500
-    ) -> List[Dict]:
+        self, start_date=None, end_date=None, status: str | None = None, limit: int = 500
+    ) -> list[dict]:
         """Delegate to tasks module."""
         return await self.tasks.get_tasks_by_date_range(start_date, end_date, status, limit)
 
-    async def get_kpi_aggregates(self, start_date=None, end_date=None) -> Dict:
+    async def get_kpi_aggregates(self, start_date=None, end_date=None) -> dict:
         """Delegate to tasks module — single-query KPI aggregation (issue #696)."""
         return await self.tasks.get_kpi_aggregates(start_date, end_date)
 
@@ -289,24 +289,24 @@ class DatabaseService:
         """Delegate to tasks module."""
         return await self.tasks.delete_task(task_id)
 
-    async def get_drafts(self, limit: int = 20, offset: int = 0) -> List[Dict]:
+    async def get_drafts(self, limit: int = 20, offset: int = 0) -> list[dict]:
         """Delegate to tasks module."""
         return await self.tasks.get_drafts(limit, offset)
 
     async def sweep_stale_tasks(
         self, timeout_minutes: int = 60, max_retries: int = 3
-    ) -> Dict:
+    ) -> dict:
         """Delegate to tasks module — reset stuck in_progress tasks."""
         return await self.tasks.sweep_stale_tasks(
             stale_threshold_minutes=timeout_minutes, max_retries=max_retries
         )
 
     # CONTENT OPERATIONS
-    async def create_post(self, post_data: dict) -> Dict:
+    async def create_post(self, post_data: dict) -> dict:
         """Delegate to content module."""
         return await self.content.create_post(post_data)
 
-    async def get_post_by_slug(self, slug: str) -> Optional[Dict]:
+    async def get_post_by_slug(self, slug: str) -> dict | None:
         """Delegate to content module."""
         return await self.content.get_post_by_slug(slug)
 
@@ -314,82 +314,82 @@ class DatabaseService:
         """Delegate to content module."""
         return await self.content.update_post(post_id, updates)
 
-    async def get_all_categories(self) -> List[Dict]:
+    async def get_all_categories(self) -> list[dict]:
         """Delegate to content module."""
         return await self.content.get_all_categories()
 
-    async def get_all_tags(self) -> List[Dict]:
+    async def get_all_tags(self) -> list[dict]:
         """Delegate to content module."""
         return await self.content.get_all_tags()
 
-    async def get_author_by_name(self, name: str) -> Optional[Dict]:
+    async def get_author_by_name(self, name: str) -> dict | None:
         """Delegate to content module."""
         return await self.content.get_author_by_name(name)
 
-    async def create_quality_evaluation(self, eval_data: dict) -> Dict:
+    async def create_quality_evaluation(self, eval_data: dict) -> dict:
         """Delegate to content module."""
         return await self.content.create_quality_evaluation(eval_data)
 
-    async def create_quality_improvement_log(self, log_data: dict) -> Dict:
+    async def create_quality_improvement_log(self, log_data: dict) -> dict:
         """Delegate to content module."""
         return await self.content.create_quality_improvement_log(log_data)
 
-    async def get_metrics(self) -> Dict:
+    async def get_metrics(self) -> dict:
         """Delegate to content module."""
         return await self.content.get_metrics()
 
-    async def create_orchestrator_training_data(self, train_data: dict) -> Dict:
+    async def create_orchestrator_training_data(self, train_data: dict) -> dict:
         """Delegate to content module."""
         return await self.content.create_orchestrator_training_data(train_data)
 
     # ADMIN OPERATIONS
     async def add_log_entry(
-        self, agent_name: str, level: str, message: str, context: Optional[dict] = None
-    ) -> Dict:
+        self, agent_name: str, level: str, message: str, context: dict | None = None
+    ) -> dict:
         """Delegate to admin module."""
         return await self.admin.add_log_entry(agent_name, level, message, context)
 
     async def get_logs(
-        self, agent_name: Optional[str] = None, level: Optional[str] = None, limit: int = 100
-    ) -> List[Dict]:
+        self, agent_name: str | None = None, level: str | None = None, limit: int = 100
+    ) -> list[dict]:
         """Delegate to admin module."""
         return await self.admin.get_logs(agent_name, level, limit)
 
-    async def add_financial_entry(self, entry_data: dict) -> Dict:
+    async def add_financial_entry(self, entry_data: dict) -> dict:
         """Delegate to admin module."""
         return await self.admin.add_financial_entry(entry_data)
 
-    async def get_financial_summary(self, days: int = 30) -> Dict:
+    async def get_financial_summary(self, days: int = 30) -> dict:
         """Delegate to admin module."""
         return await self.admin.get_financial_summary(days)
 
-    async def log_cost(self, cost_log: dict) -> Dict:
+    async def log_cost(self, cost_log: dict) -> dict:
         """Delegate to admin module."""
         return await self.admin.log_cost(cost_log)
 
-    async def get_task_costs(self, task_id: str) -> Dict:
+    async def get_task_costs(self, task_id: str) -> dict:
         """Delegate to admin module."""
         return await self.admin.get_task_costs(task_id)
 
     async def update_agent_status(
-        self, agent_name: str, status: str, last_run=None, metadata: Optional[dict] = None
+        self, agent_name: str, status: str, last_run=None, metadata: dict | None = None
     ) -> bool:
         """Delegate to admin module."""
         return await self.admin.update_agent_status(agent_name, status, last_run, metadata)
 
-    async def get_agent_status(self, agent_name: str) -> Optional[Dict]:
+    async def get_agent_status(self, agent_name: str) -> dict | None:
         """Delegate to admin module."""
         return await self.admin.get_agent_status(agent_name)
 
-    async def health_check(self, service: str = "cofounder") -> Dict:
+    async def health_check(self, service: str = "cofounder") -> dict:
         """Delegate to admin module."""
         return await self.admin.health_check(service)
 
-    async def get_setting(self, key: str) -> Optional[Dict]:
+    async def get_setting(self, key: str) -> dict | None:
         """Delegate to admin module."""
         return await self.admin.get_setting(key)
 
-    async def get_all_settings(self, category: Optional[str] = None) -> List[Dict]:
+    async def get_all_settings(self, category: str | None = None) -> list[dict]:
         """Delegate to admin module."""
         return await self.admin.get_all_settings(category)
 
@@ -397,10 +397,10 @@ class DatabaseService:
         self,
         key: str,
         value,
-        category: Optional[str] = None,
-        display_name: Optional[str] = None,
-        description: Optional[str] = None,
-    ) -> Dict:
+        category: str | None = None,
+        display_name: str | None = None,
+        description: str | None = None,
+    ) -> dict:
         """Delegate to admin module."""
         return await self.admin.set_setting(key, value, category, display_name, description)
 
@@ -423,7 +423,7 @@ class DatabaseService:
         source_id: str,
         content_hash: str,
         embedding: list,
-        metadata: Optional[Dict] = None,
+        metadata: dict | None = None,
     ) -> str:
         """Delegate to embeddings module."""
         return await self.embeddings.store_embedding(
@@ -434,17 +434,17 @@ class DatabaseService:
         self,
         embedding: list,
         limit: int = 10,
-        source_type: Optional[str] = None,
+        source_type: str | None = None,
         min_similarity: float = 0.0,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """Delegate to embeddings module."""
         return await self.embeddings.search_similar(embedding, limit, source_type, min_similarity)
 
-    async def get_embedding(self, source_type: str, source_id: str) -> Optional[Dict]:
+    async def get_embedding(self, source_type: str, source_id: str) -> dict | None:
         """Delegate to embeddings module."""
         return await self.embeddings.get_embedding(source_type, source_id)
 
-    async def delete_embeddings(self, source_type: str, source_id: Optional[str] = None) -> int:
+    async def delete_embeddings(self, source_type: str, source_id: str | None = None) -> int:
         """Delegate to embeddings module."""
         return await self.embeddings.delete_embeddings(source_type, source_id)
 

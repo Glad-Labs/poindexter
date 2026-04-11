@@ -14,9 +14,10 @@ Handles all startup and shutdown operations for Poindexter (the AI cofounder pip
 - Graceful shutdown
 """
 
-from services.logger_config import get_logger
 import os
 from typing import Any, Dict
+
+from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -61,7 +62,7 @@ class StartupManager:
         else:
             logger.info("[startup] All secrets validated OK")
 
-    async def initialize_all_services(self) -> Dict[str, Any]:
+    async def initialize_all_services(self) -> dict[str, Any]:
         """
         Initialize all services in sequence.
 
@@ -458,7 +459,7 @@ class StartupManager:
                 try:
                     if os.path.exists(output_path):
                         os.remove(output_path)
-                except (OSError, IOError) as e:
+                except OSError as e:
                     logger.debug(f"  [DEBUG] Temp file cleanup failed (non-critical): {str(e)}")
 
         except Exception as e:

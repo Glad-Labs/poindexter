@@ -19,12 +19,12 @@ Usage:
         # Safe to publish
 """
 
-from services.logger_config import get_logger
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from services.content_validator import validate_content, ValidationResult
+from services.content_validator import ValidationResult, validate_content
+from services.logger_config import get_logger
 from services.model_router import get_model_router
 
 logger = get_logger(__name__)
@@ -45,9 +45,9 @@ class MultiModelResult:
     """Aggregated result from all reviewers."""
     approved: bool
     final_score: float
-    reviews: List[ReviewerResult] = field(default_factory=list)
-    validation: Optional[ValidationResult] = None
-    cost_log: Optional[dict] = None
+    reviews: list[ReviewerResult] = field(default_factory=list)
+    validation: ValidationResult | None = None
+    cost_log: dict | None = None
 
     @property
     def summary(self) -> str:
@@ -205,7 +205,7 @@ class MultiModelQA:
         title: str,
         content: str,
         topic: str = "",
-        research_sources: Optional[str] = None,
+        research_sources: str | None = None,
     ) -> MultiModelResult:
         """
         Run content through multiple reviewers and aggregate results.
@@ -222,7 +222,7 @@ class MultiModelQA:
 
         Returns MultiModelResult with approval decision and individual reviews.
         """
-        reviews: List[ReviewerResult] = []
+        reviews: list[ReviewerResult] = []
 
         # 1. Programmatic validation (always runs, fast, deterministic)
         validation = validate_content(title, content, topic)
@@ -329,8 +329,8 @@ class MultiModelQA:
         title: str,
         content: str,
         topic: str,
-        model_override: Optional[str] = None,
-        research_sources: Optional[str] = None,
+        model_override: str | None = None,
+        research_sources: str | None = None,
     ):
         """Review content using local Ollama. Paid cloud APIs removed (Ollama-only policy)."""
         # Try Ollama (free, local)
@@ -368,9 +368,9 @@ class MultiModelQA:
         title: str,
         content: str,
         topic: str,
-        model_override: Optional[str] = None,
-        research_sources: Optional[str] = None,
-    ) -> Optional[ReviewerResult]:
+        model_override: str | None = None,
+        research_sources: str | None = None,
+    ) -> ReviewerResult | None:
         """Review content using local Ollama (zero cost).
 
         Uses gemma3:27b by default — strong at structured JSON output.
@@ -513,7 +513,7 @@ class MultiModelQA:
         prompt: str,
         reviewer_name: str,
         pass_key: str,
-    ) -> Optional[ReviewerResult]:
+    ) -> ReviewerResult | None:
         """Shared plumbing for the topic-delivery and consistency gates.
 
         Runs a JSON-returning Ollama prompt, parses the result, and turns it
@@ -633,7 +633,7 @@ class MultiModelQA:
 
     async def _check_topic_delivery(
         self, topic: str, content: str
-    ) -> Optional[ReviewerResult]:
+    ) -> ReviewerResult | None:
         """Gate: does the content deliver what the topic promised?
 
         Catches bait-and-switch titles (e.g. "11 indie hackers" with no
@@ -650,7 +650,7 @@ class MultiModelQA:
 
     async def _check_internal_consistency(
         self, content: str
-    ) -> Optional[ReviewerResult]:
+    ) -> ReviewerResult | None:
         """Gate: does the article contradict itself across sections?
 
         Catches cases where section 1 says "no React" and section 3 says

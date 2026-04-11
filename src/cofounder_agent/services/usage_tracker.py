@@ -36,7 +36,7 @@ class UsageMetrics:
 
     # Duration tracking
     start_time: float = field(default_factory=time.time)
-    end_time: Optional[float] = None
+    end_time: float | None = None
 
     # Cost tracking
     input_cost_usd: float = 0.0  # Per 1K input tokens
@@ -46,11 +46,11 @@ class UsageMetrics:
     total_cost_usd: float = 0.0
     duration_ms: int = 0
     success: bool = True
-    error: Optional[str] = None
+    error: str | None = None
 
     # Metadata
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def complete(self):
         """Mark operation as complete and calculate metrics"""
@@ -62,7 +62,7 @@ class UsageMetrics:
         output_cost = (self.output_tokens / 1000.0) * self.output_cost_usd
         self.total_cost_usd = input_cost + output_cost
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for storage"""
         return asdict(self)
 
@@ -84,7 +84,7 @@ class UsageTracker:
 
     def __init__(self):
         """Initialize usage tracker"""
-        self.active_operations: Dict[str, UsageMetrics] = {}
+        self.active_operations: dict[str, UsageMetrics] = {}
         self.completed_operations: list[UsageMetrics] = []
         logger.info("Usage tracker initialized")
 
@@ -94,7 +94,7 @@ class UsageTracker:
         operation_type: str,
         model_name: str,
         model_provider: str = "ollama",
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> UsageMetrics:
         """
         Start tracking an operation.
@@ -159,8 +159,8 @@ class UsageTracker:
         self,
         operation_id: str,
         success: bool = True,
-        error: Optional[str] = None,
-    ) -> Optional[UsageMetrics]:
+        error: str | None = None,
+    ) -> UsageMetrics | None:
         """
         Complete an operation and move to history.
 
@@ -193,7 +193,7 @@ class UsageTracker:
 
         return metrics
 
-    def get_operation_metrics(self, operation_id: str) -> Optional[UsageMetrics]:
+    def get_operation_metrics(self, operation_id: str) -> UsageMetrics | None:
         """Get metrics for an operation (active or completed)"""
         if operation_id in self.active_operations:
             return self.active_operations[operation_id]
@@ -206,10 +206,10 @@ class UsageTracker:
 
     def get_summary(
         self,
-        operation_type: Optional[str] = None,
-        model_name: Optional[str] = None,
+        operation_type: str | None = None,
+        model_name: str | None = None,
         limit: int = 100,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get summary statistics.
 
@@ -258,7 +258,7 @@ class UsageTracker:
         }
 
     @staticmethod
-    def _group_by(operations: list[UsageMetrics], key: str) -> Dict[str, Any]:
+    def _group_by(operations: list[UsageMetrics], key: str) -> dict[str, Any]:
         """Group operations by a field"""
         groups = {}
 
@@ -284,7 +284,7 @@ class UsageTracker:
 
 
 # Global tracker instance
-_tracker: Optional[UsageTracker] = None
+_tracker: UsageTracker | None = None
 
 
 def get_usage_tracker() -> UsageTracker:

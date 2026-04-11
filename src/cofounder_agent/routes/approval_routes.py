@@ -29,7 +29,7 @@ router = APIRouter(prefix="/api/tasks", tags=["approval"])
 
 
 async def broadcast_approval_status(
-    task_id: str, status: str, details: Optional[Dict] = None
+    task_id: str, status: str, details: dict | None = None
 ) -> None:
     """No-op stub — websocket routes removed (no connected clients)."""
     pass
@@ -60,7 +60,7 @@ class RejectionRequest(BaseModel):
 @router.post(
     "/{task_id}/reject",
     summary="Reject a task with feedback",
-    response_model=Dict[str, Any],
+    response_model=dict[str, Any],
     status_code=200,
 )
 async def reject_task(
@@ -161,13 +161,13 @@ async def reject_task(
 @router.get(
     "/pending-approval",
     summary="List all tasks awaiting approval",
-    response_model=Dict[str, Any],
+    response_model=dict[str, Any],
     status_code=200,
 )
 async def get_pending_approvals(
     limit: int = Query(20, ge=1, le=100, description="Results per page (1-100)"),
     offset: int = Query(0, ge=0, description="Pagination offset (page * limit)"),
-    task_type: Optional[str] = Query(
+    task_type: str | None = Query(
         None, description="Filter by task type (blog_post, email, etc.)"
     ),
     sort_by: str = Query(

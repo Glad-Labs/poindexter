@@ -177,7 +177,7 @@ class ModelRouter:
         self._budget_exceeded_logged = False
 
         # Runtime provider failure tracking.
-        self._provider_consecutive_failures: Dict[str, int] = {}
+        self._provider_consecutive_failures: dict[str, int] = {}
         self._FAILURE_ALERT_THRESHOLD = 5
 
         logger.info(
@@ -234,7 +234,7 @@ class ModelRouter:
             )
         self._provider_consecutive_failures[provider] = 0
 
-    def get_provider_health(self) -> Dict[str, Any]:
+    def get_provider_health(self) -> dict[str, Any]:
         """Return provider names mapped to their current failure counts."""
         return {
             provider: {"consecutive_failures": count}
@@ -242,8 +242,8 @@ class ModelRouter:
         }
 
     def route_request(
-        self, task_type: str, context: Optional[Dict[str, Any]] = None, estimated_tokens: int = 1000
-    ) -> Tuple[str, float, TaskComplexity]:
+        self, task_type: str, context: dict[str, Any] | None = None, estimated_tokens: int = 1000
+    ) -> tuple[str, float, TaskComplexity]:
         """
         Route request to appropriate Ollama model based on task complexity.
 
@@ -285,7 +285,7 @@ class ModelRouter:
 
         return model, estimated_cost, complexity
 
-    def _assess_complexity(self, task_type: str, context: Dict[str, Any]) -> TaskComplexity:
+    def _assess_complexity(self, task_type: str, context: dict[str, Any]) -> TaskComplexity:
         """Assess task complexity based on type and context."""
         task_lower = task_type.lower()
 
@@ -317,7 +317,7 @@ class ModelRouter:
         """Get cost per 1K tokens for a model."""
         return MODEL_COSTS.get(model, 0.0)
 
-    def get_max_tokens(self, task_type: str, context: Optional[Dict[str, Any]] = None) -> int:
+    def get_max_tokens(self, task_type: str, context: dict[str, Any] | None = None) -> int:
         """Get maximum token limit for a task type."""
         context = context or {}
 
@@ -348,7 +348,7 @@ class ModelRouter:
         )
         return default
 
-    def get_metrics(self) -> Dict[str, Any]:
+    def get_metrics(self) -> dict[str, Any]:
         """Get routing metrics."""
         total = self.metrics["total_requests"]
         return {
@@ -374,7 +374,7 @@ class ModelRouter:
 
     def recommend_model_for_budget(
         self, remaining_budget: float, estimated_tokens: int
-    ) -> Optional[str]:
+    ) -> str | None:
         """Recommend cheapest model that fits within budget."""
         sorted_models = sorted(MODEL_COSTS.items(), key=lambda x: x[1])
 
@@ -398,10 +398,10 @@ class ModelRouter:
 
 
 # Singleton instance
-_model_router: Optional[ModelRouter] = None
+_model_router: ModelRouter | None = None
 
 
-def get_model_router() -> Optional[ModelRouter]:
+def get_model_router() -> ModelRouter | None:
     """Get the global model router instance."""
     return _model_router
 
@@ -415,7 +415,7 @@ def initialize_model_router(default_model: str = "ollama/qwen3:8b") -> ModelRout
 
 
 def get_model_for_phase(
-    phase: str, model_selections: Dict[str, str], quality_preference: str
+    phase: str, model_selections: dict[str, str], quality_preference: str
 ) -> str:
     """
     Get the appropriate Ollama model for a given generation phase.

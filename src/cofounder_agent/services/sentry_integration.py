@@ -21,11 +21,12 @@ For local development, set SENTRY_ENABLED=false to disable reporting.
 """
 
 import logging
-from services.logger_config import get_logger
 import os
 from typing import Optional
 
 from fastapi import FastAPI
+
+from services.logger_config import get_logger
 from services.site_config import site_config
 
 try:
@@ -173,7 +174,7 @@ class SentryIntegration:
             return False
 
     @staticmethod
-    def _before_send(event: dict, hint: dict) -> Optional[dict]:
+    def _before_send(event: dict, hint: dict) -> dict | None:
         """
         Filter events before sending to Sentry.
         Remove sensitive data (passwords, tokens, etc.)
@@ -207,7 +208,7 @@ class SentryIntegration:
 
     @classmethod
     def capture_exception(
-        cls, error: Exception, context: Optional[dict] = None, level: str = "error"
+        cls, error: Exception, context: dict | None = None, level: str = "error"
     ):
         """
         Manually capture an exception with optional context.
@@ -234,7 +235,7 @@ class SentryIntegration:
             )
 
     @classmethod
-    def capture_message(cls, message: str, level: str = "info", context: Optional[dict] = None):
+    def capture_message(cls, message: str, level: str = "info", context: dict | None = None):
         """
         Manually capture a message event.
 
@@ -294,7 +295,7 @@ class SentryIntegration:
 
     @classmethod
     def add_breadcrumb(
-        cls, category: str, message: str, level: str = "info", data: Optional[dict] = None
+        cls, category: str, message: str, level: str = "info", data: dict | None = None
     ):
         """
         Add a breadcrumb for debugging context.

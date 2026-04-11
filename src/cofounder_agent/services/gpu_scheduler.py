@@ -75,15 +75,15 @@ class GPUScheduler:
 
     def __init__(self):
         self._lock = asyncio.Lock()
-        self._current_owner: Optional[str] = None  # "ollama" or "sdxl"
-        self._current_model: Optional[str] = None
+        self._current_owner: str | None = None  # "ollama" or "sdxl"
+        self._current_model: str | None = None
         self._acquired_at: float = 0
         self._gaming_detected: bool = False
         self._gaming_paused_since: float = 0
         self._total_gaming_paused_s: float = 0  # cumulative for metrics
 
     @asynccontextmanager
-    async def lock(self, owner: str, model: Optional[str] = None):
+    async def lock(self, owner: str, model: str | None = None):
         """Acquire exclusive GPU access.
 
         Waits for any gaming/external workload to finish before acquiring.
@@ -125,7 +125,7 @@ class GPUScheduler:
             self._current_model = None
             self._lock.release()
 
-    async def _get_gpu_utilization(self) -> Optional[float]:
+    async def _get_gpu_utilization(self) -> float | None:
         """Query nvidia-smi exporter for current GPU utilization %."""
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=2.0)) as client:

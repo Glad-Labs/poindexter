@@ -22,10 +22,10 @@ from pydantic import BaseModel, Field
 class ProgressInfo(BaseModel):
     """Real-time progress information for tasks in progress"""
 
-    stage: Optional[str] = Field(None, description="Current pipeline stage")
-    percentage: Optional[int] = Field(None, ge=0, le=100, description="Progress percentage 0-100")
-    message: Optional[str] = Field(None, description="Status message")
-    node: Optional[str] = Field(None, description="LangGraph node name (alias for stage)")
+    stage: str | None = Field(None, description="Current pipeline stage")
+    percentage: int | None = Field(None, ge=0, le=100, description="Progress percentage 0-100")
+    message: str | None = Field(None, description="Status message")
+    node: str | None = Field(None, description="LangGraph node name (alias for stage)")
 
     class Config:
         json_schema_extra = {
@@ -41,12 +41,12 @@ class ProgressInfo(BaseModel):
 class CostBreakdown(BaseModel):
     """Cost breakdown by pipeline phase"""
 
-    research: Optional[float] = 0.0
-    outline: Optional[float] = 0.0
-    draft: Optional[float] = 0.0
-    assess: Optional[float] = 0.0
-    refine: Optional[float] = 0.0
-    finalize: Optional[float] = 0.0
+    research: float | None = 0.0
+    outline: float | None = 0.0
+    draft: float | None = 0.0
+    assess: float | None = 0.0
+    refine: float | None = 0.0
+    finalize: float | None = 0.0
     total: float = 0.0
 
     class Config:
@@ -66,12 +66,12 @@ class CostBreakdown(BaseModel):
 class ModelSelection(BaseModel):
     """Model selection by pipeline phase"""
 
-    research: Optional[str] = None
-    outline: Optional[str] = None
-    draft: Optional[str] = None
-    assess: Optional[str] = None
-    refine: Optional[str] = None
-    finalize: Optional[str] = None
+    research: str | None = None
+    outline: str | None = None
+    draft: str | None = None
+    assess: str | None = None
+    refine: str | None = None
+    finalize: str | None = None
 
     class Config:
         json_schema_extra = {
@@ -89,17 +89,17 @@ class ModelSelection(BaseModel):
 class TaskResultContent(BaseModel):
     """Content result fields for completed tasks"""
 
-    content: Optional[str] = Field(None, description="Generated content")
-    excerpt: Optional[str] = Field(None, description="Content excerpt")
-    featured_image_url: Optional[str] = Field(None, description="URL of featured image")
-    featured_image_data: Optional[Dict[str, Any]] = Field(
+    content: str | None = Field(None, description="Generated content")
+    excerpt: str | None = Field(None, description="Content excerpt")
+    featured_image_url: str | None = Field(None, description="URL of featured image")
+    featured_image_data: dict[str, Any] | None = Field(
         None, description="Featured image metadata"
     )
-    qa_feedback: Optional[str] = Field(None, description="QA feedback")
-    quality_score: Optional[float] = Field(None, ge=0, le=100, description="Quality score 0-100")
-    seo_title: Optional[str] = Field(None, description="SEO-optimized title")
-    seo_description: Optional[str] = Field(None, description="SEO meta description")
-    seo_keywords: Optional[List[str]] = Field(None, description="SEO keywords")
+    qa_feedback: str | None = Field(None, description="QA feedback")
+    quality_score: float | None = Field(None, ge=0, le=100, description="Quality score 0-100")
+    seo_title: str | None = Field(None, description="SEO-optimized title")
+    seo_description: str | None = Field(None, description="SEO meta description")
+    seo_keywords: list[str] | None = Field(None, description="SEO keywords")
 
     class Config:
         json_schema_extra = {
@@ -126,23 +126,23 @@ class UnifiedTaskResponse(BaseModel):
     # ========================================================================
     # IDENTIFICATION & METADATA
     # ========================================================================
-    id: Optional[str] = Field(None, description="Task ID (UUID)")
-    task_id: Optional[str] = Field(None, description="Task ID (alias for compatibility)")
-    request_id: Optional[str] = Field(None, description="Request ID for WebSocket tracking")
+    id: str | None = Field(None, description="Task ID (UUID)")
+    task_id: str | None = Field(None, description="Task ID (alias for compatibility)")
+    request_id: str | None = Field(None, description="Request ID for WebSocket tracking")
 
     # Task Classification
-    task_name: Optional[str] = Field(None, description="Task name/title")
+    task_name: str | None = Field(None, description="Task name/title")
     task_type: str = Field(
         "blog_post", description="Type of task (blog_post, social_media, email, etc.)"
     )
-    request_type: Optional[str] = Field("content_generation", description="Request type")
+    request_type: str | None = Field("content_generation", description="Request type")
 
     # Content Metadata
-    topic: Optional[str] = Field(None, description="Content topic/subject")
-    primary_keyword: Optional[str] = Field(None, description="Primary SEO keyword")
-    target_audience: Optional[str] = Field(None, description="Target audience")
-    category: Optional[str] = Field(None, description="Content category")
-    tags: Optional[List[str]] = Field(None, description="Associated tags")
+    topic: str | None = Field(None, description="Content topic/subject")
+    primary_keyword: str | None = Field(None, description="Primary SEO keyword")
+    target_audience: str | None = Field(None, description="Target audience")
+    category: str | None = Field(None, description="Content category")
+    tags: list[str] | None = Field(None, description="Associated tags")
 
     # ========================================================================
     # STATUS & PROGRESS
@@ -150,89 +150,89 @@ class UnifiedTaskResponse(BaseModel):
     status: str = Field(
         ..., description="Task status (pending, generating, completed, failed, etc.)"
     )
-    approval_status: Optional[str] = Field(
+    approval_status: str | None = Field(
         None, description="Approval status (pending, approved, rejected)"
     )
-    publish_status: Optional[str] = Field(None, description="Publish status (draft, published)")
+    publish_status: str | None = Field(None, description="Publish status (draft, published)")
 
     # Real-time Progress (for in-progress tasks)
-    progress: Optional[ProgressInfo] = Field(None, description="Real-time progress info")
-    stage: Optional[str] = Field(None, description="Current pipeline stage")
-    percentage: Optional[int] = Field(None, ge=0, le=100, description="Progress percentage")
-    message: Optional[str] = Field(None, description="Status message")
+    progress: ProgressInfo | None = Field(None, description="Real-time progress info")
+    stage: str | None = Field(None, description="Current pipeline stage")
+    percentage: int | None = Field(None, ge=0, le=100, description="Progress percentage")
+    message: str | None = Field(None, description="Status message")
 
     # ========================================================================
     # CONTENT GENERATION PARAMETERS
     # ========================================================================
-    style: Optional[str] = Field(None, description="Writing style (technical, narrative, etc.)")
-    tone: Optional[str] = Field(None, description="Writing tone (professional, casual, etc.)")
-    target_length: Optional[int] = Field(None, description="Target word count")
+    style: str | None = Field(None, description="Writing style (technical, narrative, etc.)")
+    tone: str | None = Field(None, description="Writing tone (professional, casual, etc.)")
+    target_length: int | None = Field(None, description="Target word count")
 
     # Model Selection & Costs
-    quality_preference: Optional[str] = Field(
+    quality_preference: str | None = Field(
         None, description="Quality preference (budget, balanced, quality, premium)"
     )
-    models_by_phase: Optional[ModelSelection] = Field(
+    models_by_phase: ModelSelection | None = Field(
         None, description="Models selected for each phase"
     )
-    model_used: Optional[str] = Field(None, description="Primary model used")
-    estimated_cost: Optional[float] = Field(None, ge=0, description="Estimated cost in USD")
-    cost_breakdown: Optional[CostBreakdown] = Field(None, description="Cost breakdown by phase")
+    model_used: str | None = Field(None, description="Primary model used")
+    estimated_cost: float | None = Field(None, ge=0, description="Estimated cost in USD")
+    cost_breakdown: CostBreakdown | None = Field(None, description="Cost breakdown by phase")
 
     # ========================================================================
     # RESULTS (For completed/approved tasks)
     # ========================================================================
-    result: Optional[TaskResultContent] = Field(None, description="Task result content")
-    content: Optional[str] = Field(None, description="Generated content (alias for result.content)")
-    excerpt: Optional[str] = Field(None, description="Content excerpt")
-    featured_image_url: Optional[str] = Field(None, description="Featured image URL")
-    featured_image_data: Optional[Dict[str, Any]] = Field(
+    result: TaskResultContent | None = Field(None, description="Task result content")
+    content: str | None = Field(None, description="Generated content (alias for result.content)")
+    excerpt: str | None = Field(None, description="Content excerpt")
+    featured_image_url: str | None = Field(None, description="Featured image URL")
+    featured_image_data: dict[str, Any] | None = Field(
         None, description="Featured image metadata"
     )
-    quality_score: Optional[float] = Field(None, ge=0, le=100, description="Quality score")
-    seo_title: Optional[str] = Field(None, description="SEO title")
-    seo_description: Optional[str] = Field(None, description="SEO description")
-    seo_keywords: Optional[List[str]] = Field(None, description="SEO keywords")
+    quality_score: float | None = Field(None, ge=0, le=100, description="Quality score")
+    seo_title: str | None = Field(None, description="SEO title")
+    seo_description: str | None = Field(None, description="SEO description")
+    seo_keywords: list[str] | None = Field(None, description="SEO keywords")
 
     # ========================================================================
     # CONSTRAINT COMPLIANCE (For generated content)
     # ========================================================================
-    constraint_compliance: Optional[Dict[str, Any]] = Field(
+    constraint_compliance: dict[str, Any] | None = Field(
         None, description="Word count and writing style compliance metrics"
     )
 
     # ========================================================================
     # ERROR HANDLING (For failed tasks)
     # ========================================================================
-    error_message: Optional[str] = Field(None, description="Error message if task failed")
-    error_details: Optional[Dict[str, Any]] = Field(None, description="Detailed error information")
+    error_message: str | None = Field(None, description="Error message if task failed")
+    error_details: dict[str, Any] | None = Field(None, description="Detailed error information")
 
     # ========================================================================
     # TIMESTAMPS
     # ========================================================================
     created_at: datetime | str = Field(..., description="Task creation timestamp (ISO format)")
     updated_at: datetime | str = Field(..., description="Last update timestamp (ISO format)")
-    started_at: Optional[datetime | str] = Field(None, description="Execution start time")
-    completed_at: Optional[datetime | str] = Field(None, description="Completion time")
+    started_at: datetime | str | None = Field(None, description="Execution start time")
+    completed_at: datetime | str | None = Field(None, description="Completion time")
 
     # ========================================================================
     # PUBLISHING & DISTRIBUTION
     # ========================================================================
-    published_url: Optional[str] = Field(
+    published_url: str | None = Field(
         None, description="Published post URL after approval/publishing"
     )
-    post_id: Optional[str] = Field(
+    post_id: str | None = Field(
         None, description="Post ID in CMS (when published to posts table)"
     )
-    post_slug: Optional[str] = Field(None, description="Post slug for URL generation")
+    post_slug: str | None = Field(None, description="Post slug for URL generation")
 
     # ========================================================================
     # BACKEND METADATA (For debugging)
     # ========================================================================
-    agent_id: Optional[str] = Field(None, description="Agent ID that executed task")
-    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
-    task_metadata: Optional[Dict[str, Any]] = Field(None, description="Task-specific metadata")
-    polling_url: Optional[str] = Field(None, description="URL to poll for status")
+    agent_id: str | None = Field(None, description="Agent ID that executed task")
+    metadata: dict[str, Any] | None = Field(None, description="Additional metadata")
+    task_metadata: dict[str, Any] | None = Field(None, description="Task-specific metadata")
+    polling_url: str | None = Field(None, description="URL to poll for status")
 
     class Config:
         json_schema_extra = {

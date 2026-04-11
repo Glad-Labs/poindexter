@@ -45,8 +45,8 @@ class AdminDatabase(DatabaseServiceMixin):
             pool: asyncpg connection pool
         """
         self.pool = pool
-        self._settings_cache: Dict[str, Any] = {}  # key -> {"value": ..., "ts": monotonic}
-        self._all_settings_cache: Dict[str, Any] = {}  # category_key -> {"value": ..., "ts": ...}
+        self._settings_cache: dict[str, Any] = {}  # key -> {"value": ..., "ts": monotonic}
+        self._all_settings_cache: dict[str, Any] = {}  # category_key -> {"value": ..., "ts": ...}
 
     def _invalidate_settings_cache(self) -> None:
         """Clear all settings caches (call after set/delete)."""
@@ -58,7 +58,7 @@ class AdminDatabase(DatabaseServiceMixin):
     # ========================================================================
 
     @log_query_performance(operation="log_cost", category="cost_write")
-    async def log_cost(self, cost_log: Dict[str, Any]) -> CostLogResponse:
+    async def log_cost(self, cost_log: dict[str, Any]) -> CostLogResponse:
         """
         Log cost of LLM API call to cost_logs table.
 
@@ -205,7 +205,7 @@ class AdminDatabase(DatabaseServiceMixin):
     # ========================================================================
 
     @log_query_performance(operation="health_check", category="settings_retrieval")
-    async def health_check(self, service: str = "cofounder") -> Dict[str, Any]:
+    async def health_check(self, service: str = "cofounder") -> dict[str, Any]:
         """
         Check database health.
 
@@ -260,7 +260,7 @@ class AdminDatabase(DatabaseServiceMixin):
     # ========================================================================
 
     @log_query_performance(operation="get_setting", category="settings_retrieval")
-    async def get_setting(self, key: str) -> Optional[SettingResponse]:
+    async def get_setting(self, key: str) -> SettingResponse | None:
         """
         Get a setting by key (with 60s in-memory TTL cache).
 
@@ -292,7 +292,7 @@ class AdminDatabase(DatabaseServiceMixin):
             return None
 
     @log_query_performance(operation="get_all_settings", category="settings_retrieval")
-    async def get_all_settings(self, category: Optional[str] = None) -> List[SettingResponse]:
+    async def get_all_settings(self, category: str | None = None) -> list[SettingResponse]:
         """
         Get all active settings, optionally filtered by category (with 60s TTL cache).
 
@@ -333,9 +333,9 @@ class AdminDatabase(DatabaseServiceMixin):
         self,
         key: str,
         value: Any,
-        category: Optional[str] = None,
-        display_name: Optional[str] = None,
-        description: Optional[str] = None,
+        category: str | None = None,
+        display_name: str | None = None,
+        description: str | None = None,
     ) -> bool:
         """
         Create or update a setting.
@@ -466,8 +466,8 @@ class AdminDatabase(DatabaseServiceMixin):
 
     @log_query_performance(operation="add_log_entry", category="log_write")
     async def add_log_entry(
-        self, agent_name: str, level: str, message: str, context: Optional[Dict] = None
-    ) -> Dict[str, Any]:
+        self, agent_name: str, level: str, message: str, context: dict | None = None
+    ) -> dict[str, Any]:
         """Add a log entry to the logs table."""
         sql = """
             INSERT INTO logs (id, agent_name, level, message, context, created_at)
@@ -492,8 +492,8 @@ class AdminDatabase(DatabaseServiceMixin):
 
     @log_query_performance(operation="get_logs", category="log_retrieval")
     async def get_logs(
-        self, agent_name: Optional[str] = None, level: Optional[str] = None, limit: int = 100
-    ) -> List[Dict[str, Any]]:
+        self, agent_name: str | None = None, level: str | None = None, limit: int = 100
+    ) -> list[dict[str, Any]]:
         """Retrieve log entries with optional filters."""
         conditions = []
         params: list = []
@@ -525,7 +525,7 @@ class AdminDatabase(DatabaseServiceMixin):
     # ================================================================
 
     @log_query_performance(operation="add_financial_entry", category="financial_write")
-    async def add_financial_entry(self, entry_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def add_financial_entry(self, entry_data: dict[str, Any]) -> dict[str, Any]:
         """Add a financial entry."""
         sql = """
             INSERT INTO financial_entries (entry_type, amount, currency, description, category, date, metadata, created_at)
@@ -550,7 +550,7 @@ class AdminDatabase(DatabaseServiceMixin):
             return {}
 
     @log_query_performance(operation="get_financial_summary", category="financial_retrieval")
-    async def get_financial_summary(self, days: int = 30) -> Dict[str, Any]:
+    async def get_financial_summary(self, days: int = 30) -> dict[str, Any]:
         """Get financial summary for the specified period."""
         # Use parameterized query instead of string formatting to prevent SQL injection.
         # Even though `days` is typed as int, callers may pass unsanitized input.
@@ -577,7 +577,7 @@ class AdminDatabase(DatabaseServiceMixin):
 
     @log_query_performance(operation="update_agent_status", category="agent_write")
     async def update_agent_status(
-        self, agent_name: str, status: str, last_run=None, metadata: Optional[Dict] = None
+        self, agent_name: str, status: str, last_run=None, metadata: dict | None = None
     ) -> bool:
         """Update or insert agent status."""
         sql = """
@@ -603,7 +603,7 @@ class AdminDatabase(DatabaseServiceMixin):
             logger.error("[update_agent_status] Failed to update agent status", exc_info=True)
             return False
 
-    async def get_agent_status(self, agent_name: str) -> Optional[Dict[str, Any]]:
+    async def get_agent_status(self, agent_name: str) -> dict[str, Any] | None:
         """Get current status of an agent."""
         sql = "SELECT * FROM agent_status WHERE agent_name = $1"
         try:

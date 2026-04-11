@@ -35,7 +35,7 @@ if env_path.exists():
     logger.info(f"📄 Loaded environment from: {env_path}")
 else:
     logger.warning(f"⚠️  .env.local not found at {env_path}")
-    logger.info(f"   Checking for environment variables instead...")
+    logger.info("   Checking for environment variables instead...")
 
 
 def get_database_url():
@@ -120,7 +120,7 @@ def apply_migrations():
         logger.info(f"\n📝 Applying migration: {migration_name}")
 
         try:
-            with open(migration_file, "r") as f:
+            with open(migration_file) as f:
                 sql = f.read()
 
             cursor.execute(sql)

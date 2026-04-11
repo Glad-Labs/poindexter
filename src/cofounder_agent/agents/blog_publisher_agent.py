@@ -53,7 +53,7 @@ class BlogPublisherAgent:
             await self.database_service.initialize()
             self._db_initialized = True
 
-    async def run(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    async def run(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """
         Create and publish a blog post.
 

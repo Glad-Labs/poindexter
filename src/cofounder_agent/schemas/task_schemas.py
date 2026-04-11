@@ -44,71 +44,69 @@ class UnifiedTaskRequest(BaseModel):
     )
 
     # CONTENT-SPECIFIC FIELDS (for blog_post, social_media, email, newsletter)
-    style: Optional[
-        Literal["technical", "narrative", "listicle", "educational", "thought-leadership"]
-    ] = Field("narrative", description="Content style (blog_post, social_media, email only)")
-    tone: Optional[Literal["professional", "casual", "academic", "inspirational"]] = Field(
+    style: Literal["technical", "narrative", "listicle", "educational", "thought-leadership"] | None = Field("narrative", description="Content style (blog_post, social_media, email only)")
+    tone: Literal["professional", "casual", "academic", "inspirational"] | None = Field(
         "professional", description="Content tone (blog_post, social_media, email only)"
     )
-    target_length: Optional[int] = Field(
+    target_length: int | None = Field(
         1500,
         ge=200,
         le=5000,
         description="Target word count for content (200-5000, blog_post only)",
     )
-    generate_featured_image: Optional[bool] = Field(
+    generate_featured_image: bool | None = Field(
         True, description="Search for featured image (blog_post only)"
     )
-    tags: Optional[List[str]] = Field(
+    tags: list[str] | None = Field(
         None, min_items=0, max_items=10, description="Tags for categorization (max 10)"  # type: ignore[call-overload]
     )
 
     # SOCIAL MEDIA SPECIFIC
-    platforms: Optional[List[str]] = Field(
+    platforms: list[str] | None = Field(
         None,
         description="Target platforms for social_media tasks (twitter, linkedin, instagram, etc.)",
     )
 
     # BUSINESS ANALYTICS SPECIFIC
-    metrics: Optional[List[str]] = Field(
+    metrics: list[str] | None = Field(
         None, description="Metrics to analyze (revenue, churn, conversion_rate, etc.)"
     )
-    time_period: Optional[str] = Field(
+    time_period: str | None = Field(
         None, description="Analysis time period (last_month, last_quarter, ytd, custom)"
     )
-    business_context: Optional[Dict[str, Any]] = Field(
+    business_context: dict[str, Any] | None = Field(
         None, description="Business context for analytics (industry, size, goals)"
     )
 
     # DATA RETRIEVAL SPECIFIC
-    data_sources: Optional[List[str]] = Field(
+    data_sources: list[str] | None = Field(
         None, description="Data sources to query (api, database, csv, etc.)"
     )
-    filters: Optional[Dict[str, Any]] = Field(None, description="Data filters and query parameters")
+    filters: dict[str, Any] | None = Field(None, description="Data filters and query parameters")
 
     # COMMON OPTIONAL
-    description: Optional[str] = Field(
+    description: str | None = Field(
         None,
         description="Human-written task description (distinct from AI-generated excerpt). Useful for campaign briefs, e.g. 'Write a blog post about X for our Q1 campaign'.",
         max_length=1000,
     )
-    category: Optional[str] = Field("general", description="Content category", max_length=50)
-    target_audience: Optional[str] = Field(
+    category: str | None = Field("general", description="Content category", max_length=50)
+    target_audience: str | None = Field(
         "General",
         description="Target audience for content",
         max_length=100,
     )
-    primary_keyword: Optional[str] = Field(None, description="Primary SEO keyword", max_length=50)
-    models_by_phase: Optional[Dict[str, str]] = Field(
+    primary_keyword: str | None = Field(None, description="Primary SEO keyword", max_length=50)
+    models_by_phase: dict[str, str] | None = Field(
         None, description="Per-phase model selection (research, creative, qa, etc.)"
     )
     # Legacy alias — callers using model_selections are mapped to models_by_phase (#952)
-    model_selections: Optional[Dict[str, str]] = Field(
+    model_selections: dict[str, str] | None = Field(
         None,
         description="DEPRECATED: Use models_by_phase. Legacy per-phase model selections.",
         exclude=True,
     )
-    quality_preference: Optional[Literal["fast", "balanced", "quality"]] = Field(
+    quality_preference: Literal["fast", "balanced", "quality"] | None = Field(
         "balanced", description="Quality vs speed preference"
     )
 
@@ -123,19 +121,19 @@ class UnifiedTaskRequest(BaseModel):
                 values["models_by_phase"] = legacy
         return values
 
-    enforce_constraints: Optional[bool] = Field(
+    enforce_constraints: bool | None = Field(
         True,
         description="Whether to enforce word count and style validation gates. Set False to skip validation failures.",
     )
-    context: Optional[Dict[str, Any]] = Field(
+    context: dict[str, Any] | None = Field(
         None, description="Request context (writing_style_id, user_id, etc.)"
     )
-    content_constraints: Optional[Dict[str, Any]] = Field(
+    content_constraints: dict[str, Any] | None = Field(
         None,
         description="Content constraints (word_count, writing_style, tone, word_count_tolerance). "
         "Values here override top-level style/tone/target_length.",
     )
-    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata for task")
+    metadata: dict[str, Any] | None = Field(None, description="Additional metadata for task")
 
     class Config:
         json_schema_extra = {
@@ -192,7 +190,7 @@ class ContentConstraints(BaseModel):
         le=20,
         description="Acceptable variance from target word count (percentage, 5-20%)",
     )
-    per_phase_overrides: Optional[Dict[str, int]] = Field(
+    per_phase_overrides: dict[str, int] | None = Field(
         default=None,
         description="Override word count targets per phase (research, outline, draft, etc.)",
     )
@@ -231,27 +229,27 @@ class TaskCreateRequest(BaseModel):
     category: str = Field(
         default="general", max_length=50, description="Content category (max 50 chars)"
     )
-    writing_style_id: Optional[str] = Field(
+    writing_style_id: str | None = Field(
         default=None, description="UUID of the writing sample to use for style guidance (optional)"
     )
-    model_selections: Optional[Dict[str, str]] = Field(
+    model_selections: dict[str, str] | None = Field(
         default_factory=dict,
         description="Per-phase model selections (research, outline, draft, assess, refine, finalize)",
     )
-    quality_preference: Optional[str] = Field(
+    quality_preference: str | None = Field(
         default="balanced",
         pattern="^(fast|balanced|quality)$",
         description="Quality preference: fast (cheapest), balanced, or quality (best)",
     )
-    estimated_cost: Optional[float] = Field(
+    estimated_cost: float | None = Field(
         default=0.0, ge=0.0, description="Estimated task cost in USD"
     )
     # NEW: Content constraints
-    content_constraints: Optional[ContentConstraints] = Field(
+    content_constraints: ContentConstraints | None = Field(
         default_factory=ContentConstraints,
         description="Content generation constraints (word count, writing style, etc.)",
     )
-    metadata: Optional[Dict[str, Any]] = Field(
+    metadata: dict[str, Any] | None = Field(
         default_factory=dict, description="Additional metadata"
     )
 
@@ -282,24 +280,24 @@ class TaskCreateRequest(BaseModel):
 class TaskResponse(BaseModel):
     """Schema for task response"""
 
-    id: Optional[str] = None
+    id: str | None = None
     task_name: str
-    agent_id: Optional[str] = None
+    agent_id: str | None = None
     status: str
     topic: str
-    primary_keyword: Optional[str]
-    target_audience: Optional[str]
-    category: Optional[str]
+    primary_keyword: str | None
+    target_audience: str | None
+    category: str | None
     created_at: str
     updated_at: str
-    started_at: Optional[str] = None
-    completed_at: Optional[str] = None
-    metadata: Dict[str, Any] = {}
-    task_metadata: Dict[str, Any] = {}
-    result: Optional[Dict[str, Any]] = None
-    error_message: Optional[str] = None
-    error_details: Optional[Dict[str, Any]] = None
-    model_selections: Optional[Dict[str, str]] = Field(default_factory=dict)
+    started_at: str | None = None
+    completed_at: str | None = None
+    metadata: dict[str, Any] = {}
+    task_metadata: dict[str, Any] = {}
+    result: dict[str, Any] | None = None
+    error_message: str | None = None
+    error_details: dict[str, Any] | None = None
+    model_selections: dict[str, str] | None = Field(default_factory=dict)
 
     @property
     def title(self) -> str:
@@ -333,7 +331,7 @@ class TaskResponse(BaseModel):
 class TaskListResponse(BaseModel):
     """Schema for task list response with pagination"""
 
-    tasks: List[UnifiedTaskResponse]
+    tasks: list[UnifiedTaskResponse]
     total: int
     offset: int
     limit: int
@@ -368,10 +366,10 @@ class IntentTaskRequest(BaseModel):
     """Request for natural language task creation."""
 
     user_input: str = Field(..., description="Natural language task description")
-    user_context: Optional[Dict[str, Any]] = Field(
+    user_context: dict[str, Any] | None = Field(
         None, description="User context (preferences, settings)"
     )
-    business_metrics: Optional[Dict[str, Any]] = Field(
+    business_metrics: dict[str, Any] | None = Field(
         None, description="Budget, deadline, quality preference"
     )
 
@@ -379,22 +377,22 @@ class IntentTaskRequest(BaseModel):
 class TaskIntentResponse(BaseModel):
     """Response from intent detection and planning."""
 
-    task_id: Optional[str] = Field(None, description="Temp task ID for confirmation")
-    intent_request: Dict[str, Any] = Field(
+    task_id: str | None = Field(None, description="Temp task ID for confirmation")
+    intent_request: dict[str, Any] = Field(
         ..., description="Parsed intent (task_type, parameters, subtasks)"
     )
-    execution_plan: Dict[str, Any] = Field(..., description="Execution plan summary for UI")
+    execution_plan: dict[str, Any] = Field(..., description="Execution plan summary for UI")
     ready_to_execute: bool = Field(True, description="Whether user can proceed with execution")
-    warnings: Optional[List[str]] = Field(None, description="Warnings (e.g., 'No QA review')")
+    warnings: list[str] | None = Field(None, description="Warnings (e.g., 'No QA review')")
 
 
 class TaskConfirmRequest(BaseModel):
     """Request to confirm and execute a task from intent plan."""
 
-    intent_request: Dict[str, Any] = Field(..., description="Original intent request")
-    execution_plan: Dict[str, Any] = Field(..., description="Execution plan (full version)")
+    intent_request: dict[str, Any] = Field(..., description="Original intent request")
+    execution_plan: dict[str, Any] = Field(..., description="Execution plan (full version)")
     user_confirmed: bool = Field(True, description="User confirmed the plan")
-    modifications: Optional[Dict[str, Any]] = Field(None, description="User modifications to plan")
+    modifications: dict[str, Any] | None = Field(None, description="User modifications to plan")
 
 
 class TaskConfirmResponse(BaseModel):
@@ -411,10 +409,10 @@ class ApproveTaskRequest(BaseModel):
 
     approved: bool = Field(True, description="True to approve, False to reject")
     auto_publish: bool = Field(False, description="Automatically publish after approval")
-    human_feedback: Optional[str] = Field(None, description="Feedback from reviewer")
-    reviewer_id: Optional[str] = Field(None, description="ID of the reviewer")
-    featured_image_url: Optional[str] = Field(None, description="Featured image URL for the post")
-    image_source: Optional[str] = Field(None, description="Source of image (pexels, sdxl, etc.)")
+    human_feedback: str | None = Field(None, description="Feedback from reviewer")
+    reviewer_id: str | None = Field(None, description="ID of the reviewer")
+    featured_image_url: str | None = Field(None, description="Featured image URL for the post")
+    image_source: str | None = Field(None, description="Source of image (pexels, sdxl, etc.)")
 
     model_config = ConfigDict(
         json_schema_extra={

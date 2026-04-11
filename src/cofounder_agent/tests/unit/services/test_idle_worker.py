@@ -279,7 +279,7 @@ class TestMarkCompleted:
     def test_sets_completion_key(self):
         worker = IdleWorker(AsyncMock())
         worker._mark_completed("audit_quality")
-        assert f"audit_quality_completed" in worker._last_run
+        assert "audit_quality_completed" in worker._last_run
 
     def test_completion_cooldown_extends_interval(self):
         """After _mark_completed, task should use 4x interval."""

@@ -1,9 +1,9 @@
 """Unified Content Router Service — centralized blog post generation pipeline."""
 
 import asyncio
+from typing import Any, Dict, List, Optional
 
 from services.logger_config import get_logger
-from typing import Any, Dict, List, Optional
 
 from .ai_content_generator import get_content_generator
 from .audit_log import audit_log_bg
@@ -136,6 +136,7 @@ def _scrub_fabricated_links(content: str) -> str:
     keeping the link text but removing the bogus href.
     """
     import re
+
     from services.site_config import site_config
 
     # Domains we trust (our own site + major reference sites)
@@ -234,7 +235,7 @@ def _scrub_fabricated_links(content: str) -> str:
 class ContentTaskStore:
     """Unified task storage adapter delegating to persistent DatabaseService backend."""
 
-    def __init__(self, database_service: Optional[DatabaseService] = None):
+    def __init__(self, database_service: DatabaseService | None = None):
         self.database_service = database_service
 
     @property
@@ -248,11 +249,11 @@ class ContentTaskStore:
         style: str,
         tone: str,
         target_length: int,
-        tags: Optional[List[str]] = None,
+        tags: list[str] | None = None,
         generate_featured_image: bool = True,
         request_type: str = "basic",
         task_type: str = "blog_post",
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """Create a new task in persistent storage. Returns task ID."""
         logger.info("[CONTENT_TASK_STORE] Creating task (async)")
@@ -303,13 +304,13 @@ class ContentTaskStore:
             logger.error("[CONTENT_TASK_STORE] ERROR: %s", e, exc_info=True)
             raise
 
-    async def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
+    async def get_task(self, task_id: str) -> dict[str, Any] | None:
         """Get task by ID from persistent storage (async, non-blocking)"""
         if not self.database_service:
             return None
         return await self.database_service.get_task(task_id)
 
-    async def update_task(self, task_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    async def update_task(self, task_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:
         """Update task data in persistent storage (async, non-blocking)"""
         if not self.database_service:
             return False
@@ -330,8 +331,8 @@ class ContentTaskStore:
         return await self.database_service.delete_task(task_id)
 
     async def list_tasks(
-        self, status: Optional[str] = None, limit: int = 50, offset: int = 0
-    ) -> List[Dict[str, Any]]:
+        self, status: str | None = None, limit: int = 50, offset: int = 0
+    ) -> list[dict[str, Any]]:
         """List tasks from persistent storage with optional filtering (async, non-blocking)"""
         if not self.database_service:
             return []
@@ -348,10 +349,10 @@ class ContentTaskStore:
 
 
 # Global unified task store (lazy-initialized)
-_content_task_store: Optional[ContentTaskStore] = None
+_content_task_store: ContentTaskStore | None = None
 
 
-def get_content_task_store(database_service: Optional[DatabaseService] = None) -> ContentTaskStore:
+def get_content_task_store(database_service: DatabaseService | None = None) -> ContentTaskStore:
     """
     Get the global unified content task store (lazy-initialized).
     Allows injecting database_service during startup.
@@ -429,7 +430,7 @@ async def _check_title_originality(title: str) -> dict:
 
 async def _generate_canonical_title(
     topic: str, primary_keyword: str, content_excerpt: str, existing_titles: str = ""
-) -> Optional[str]:
+) -> str | None:
     """Generate an SEO-optimized title via LLM, avoiding similarity to existing titles."""
     try:
         from .model_consolidation_service import get_model_consolidation_service
@@ -548,10 +549,10 @@ def _parse_model_preferences(models_by_phase):
 
 
 async def _build_writing_style_context(
-    database_service: Optional[DatabaseService],
+    database_service: DatabaseService | None,
     max_samples: int = 3,
     max_words_per_sample: int = 500,
-) -> Optional[str]:
+) -> str | None:
     """Fetch active writing style samples for voice matching. Returns None if unavailable."""
     if not database_service:
         return None
@@ -604,8 +605,8 @@ async def _build_writing_style_context(
 
 
 async def _build_rag_context(
-    database_service: Optional[DatabaseService], topic: str
-) -> Optional[str]:
+    database_service: DatabaseService | None, topic: str
+) -> str | None:
     """Search pgvector for similar published posts. Returns None if unavailable."""
     if not database_service or not getattr(database_service, "embeddings", None):
         return None
@@ -1269,9 +1270,10 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
         try:
             import os as _os
             import tempfile as _tf
-            import httpx as _hx2
-            from services.gpu_scheduler import gpu as _gpu
 
+            import httpx as _hx2
+
+            from services.gpu_scheduler import gpu as _gpu
             from services.site_config import site_config as _sc2
             sdxl_url = _sc2.get("sdxl_server_url", "http://host.docker.internal:9836")
             ollama_url = _sc2.get("ollama_base_url", "http://host.docker.internal:11434")
@@ -1345,8 +1347,9 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
                     # Upload to R2 CDN
                     img_url = tmp_path
                     try:
-                        from services.r2_upload_service import upload_to_r2
                         import uuid as _uuid
+
+                        from services.r2_upload_service import upload_to_r2
                         r2_key = f"images/inline/{_uuid.uuid4().hex[:12]}.png"
                         r2_url = await upload_to_r2(tmp_path, r2_key, content_type="image/png")
                         if r2_url:
@@ -1451,6 +1454,7 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
         try:
             import os
             import tempfile
+
             from services.site_config import site_config
 
             # Use LLM-generated image prompt if available, otherwise fall back to generic
@@ -1571,8 +1575,9 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
                 # Upload to R2 CDN (replaced Cloudinary — zero egress fees)
                 image_url = output_path  # Fallback to local path
                 try:
-                    from services.r2_upload_service import upload_to_r2
                     import uuid as _r2_uuid
+
+                    from services.r2_upload_service import upload_to_r2
                     _r2_id = task_id or _r2_uuid.uuid4().hex[:12]
                     r2_key = f"images/featured/{_r2_id}.jpg"
                     r2_url = await upload_to_r2(output_path, r2_key, content_type="image/jpeg")
@@ -1711,9 +1716,11 @@ async def _stage_generate_media_scripts(
     """
     logger.info("STAGE 4B: Generating media scripts (podcast + video scenes)...")
 
-    import httpx
     import os
     import re
+
+    import httpx
+
     from services.site_config import site_config
 
     ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
@@ -1726,7 +1733,7 @@ async def _stage_generate_media_scripts(
     if model == "auto":
         model = "llama3:latest"
 
-    from services.podcast_service import _strip_markdown, _normalize_for_speech
+    from services.podcast_service import _normalize_for_speech, _strip_markdown
     clean_content = _strip_markdown(content_text)
 
     podcast_script = ""
@@ -1982,16 +1989,16 @@ async def process_content_generation_task(
     style: str,
     tone: str,
     target_length: int,
-    tags: Optional[List[str]] = None,
+    tags: list[str] | None = None,
     generate_featured_image: bool = True,
-    database_service: Optional[DatabaseService] = None,
-    task_id: Optional[str] = None,
+    database_service: DatabaseService | None = None,
+    task_id: str | None = None,
     # NEW: Model selection parameters (Week 1)
-    models_by_phase: Optional[Dict[str, str]] = None,
-    quality_preference: Optional[str] = None,
-    category: Optional[str] = None,
-    target_audience: Optional[str] = None,
-) -> Dict[str, Any]:
+    models_by_phase: dict[str, str] | None = None,
+    quality_preference: str | None = None,
+    category: str | None = None,
+    target_audience: str | None = None,
+) -> dict[str, Any]:
     """Run the full content generation pipeline (verify, generate, QA, images, SEO, finalize)."""
     from uuid import uuid4
 
@@ -2347,8 +2354,8 @@ async def process_content_generation_task(
 
 
 async def _select_category_for_topic(
-    topic: str, database_service: DatabaseService, requested_category: Optional[str] = None
-) -> Optional[str]:
+    topic: str, database_service: DatabaseService, requested_category: str | None = None
+) -> str | None:
     """Select category by requested slug, keyword matching, or default to 'technology'. Returns UUID."""
     # Priority 1: Use the requested category if valid
     if requested_category:
@@ -2394,7 +2401,7 @@ async def _select_category_for_topic(
         return None
 
 
-async def _get_or_create_default_author(database_service: DatabaseService) -> Optional[str]:
+async def _get_or_create_default_author(database_service: DatabaseService) -> str | None:
     """Get or create the default 'Poindexter AI' author. Returns UUID."""
     try:
         async with database_service.pool.acquire() as conn:

@@ -11,7 +11,6 @@ import pytest
 
 from services.websocket_manager import WebSocketManager, WebSocketMessage
 
-
 # ---------------------------------------------------------------------------
 # WebSocketMessage (dataclass kept for compat)
 # ---------------------------------------------------------------------------

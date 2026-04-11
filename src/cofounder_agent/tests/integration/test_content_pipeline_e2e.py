@@ -276,8 +276,8 @@ class TestQAReview:
     )
     async def test_qa_with_gemma3_27b(self):
         """QA review specifically with gemma3:27b model produces valid JSON output."""
-        from services.ollama_client import OllamaClient
         from services.multi_model_qa import QA_PROMPT
+        from services.ollama_client import OllamaClient
 
         client = OllamaClient()
         try:
@@ -503,8 +503,8 @@ class TestThinkingModels:
         chain-of-thought reasoning consumes tokens before visible output starts.
         With complex prompts, qwen3.5 may use 4000+ tokens on reasoning alone.
         """
-        from services.ollama_client import OllamaClient
         from services.multi_model_qa import QA_PROMPT
+        from services.ollama_client import OllamaClient
 
         qwen_model = _find_ollama_model("qwen3.5")
         if not qwen_model:

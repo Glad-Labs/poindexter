@@ -42,7 +42,7 @@ class EmbeddingService:
         """Generate SHA-256 hash of content for deduplication."""
         return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
-    async def embed_post(self, post_dict: Dict[str, Any]) -> Optional[str]:
+    async def embed_post(self, post_dict: dict[str, Any]) -> str | None:
         """
         Embed a blog post by combining title, excerpt, and truncated content.
 
@@ -91,7 +91,7 @@ class EmbeddingService:
 
     async def embed_brain_knowledge(
         self, entity: str, attribute: str, value: str
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Embed a brain knowledge triple (entity, attribute, value).
 
@@ -142,7 +142,7 @@ class EmbeddingService:
             )
             raise
 
-    async def embed_all_posts(self, posts: List[Dict[str, Any]]) -> Dict[str, int]:
+    async def embed_all_posts(self, posts: list[dict[str, Any]]) -> dict[str, int]:
         """
         Batch embed all published posts (for initial migration).
 
@@ -160,9 +160,9 @@ class EmbeddingService:
         failed = 0
 
         # First pass: determine which posts need embedding
-        to_embed: List[Dict[str, Any]] = []
-        combined_texts: List[str] = []
-        content_hashes: List[str] = []
+        to_embed: list[dict[str, Any]] = []
+        combined_texts: list[str] = []
+        content_hashes: list[str] = []
 
         for post in posts:
             post_id = str(post.get("id", ""))

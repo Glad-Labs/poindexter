@@ -12,7 +12,7 @@ from services.logger_config import get_logger
 from .base_phase import BasePhase, PhaseConfig, PhaseInputSpec, PhaseInputType, PhaseOutputSpec
 
 
-async def _resolve_database_service(config: Dict[str, Any]) -> Tuple[Any, bool]:
+async def _resolve_database_service(config: dict[str, Any]) -> tuple[Any, bool]:
     """Return database service and whether this phase created it."""
     db_service = config.get("database_service")
     if db_service is not None:
@@ -146,7 +146,7 @@ class CreatePostPhase(BasePhase):
             },
         )
 
-    async def execute(self, inputs: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, inputs: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
         """Create a post record"""
 
         is_valid, error = await self.validate_inputs(inputs)
@@ -275,7 +275,7 @@ class PublishPostPhase(BasePhase):
             },
         )
 
-    async def execute(self, inputs: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, inputs: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
         """Publish a post"""
 
         is_valid, error = await self.validate_inputs(inputs)

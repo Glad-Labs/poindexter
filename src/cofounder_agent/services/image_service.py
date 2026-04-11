@@ -25,6 +25,7 @@ Cost: $0/month for all options (local GPU or CPU fallback)
 
 import asyncio
 import importlib
+
 from services.logger_config import get_logger
 
 # Module-level logger (unified across the codebase). Used once at import
@@ -95,16 +96,16 @@ class ImageModelConfig:
     default_steps: int
     default_guidance_scale: float
     pipeline_class: str  # dotted import path within diffusers
-    lora_repo: Optional[str] = None
-    lora_weight_name: Optional[str] = None
-    scheduler_override: Optional[str] = None  # e.g. "EulerDiscreteScheduler"
-    scheduler_kwargs: Optional[Dict[str, Any]] = None
+    lora_repo: str | None = None
+    lora_weight_name: str | None = None
+    scheduler_override: str | None = None  # e.g. "EulerDiscreteScheduler"
+    scheduler_kwargs: dict[str, Any] | None = None
     torch_dtype_str: str = "float16"  # "float16" or "bfloat16"
     vram_gb: float = 6.0
     notes: str = ""
 
 
-IMAGE_MODEL_REGISTRY: Dict[ImageModel, ImageModelConfig] = {
+IMAGE_MODEL_REGISTRY: dict[ImageModel, ImageModelConfig] = {
     ImageModel.SDXL_BASE: ImageModelConfig(
         model_id="stabilityai/stable-diffusion-xl-base-1.0",
         display_name="SDXL Base",
@@ -157,11 +158,11 @@ class FeaturedImageMetadata:
     def __init__(
         self,
         url: str,
-        thumbnail: Optional[str] = None,
+        thumbnail: str | None = None,
         photographer: str = "Unknown",
         photographer_url: str = "",
-        width: Optional[int] = None,
-        height: Optional[int] = None,
+        width: int | None = None,
+        height: int | None = None,
         alt_text: str = "",
         caption: str = "",
         source: str = "pexels",
@@ -179,7 +180,7 @@ class FeaturedImageMetadata:
         self.search_query = search_query
         self.retrieved_at = datetime.now()
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for database storage"""
         return {
             "url": self.url,
@@ -195,7 +196,7 @@ class FeaturedImageMetadata:
             "retrieved_at": self.retrieved_at.isoformat(),
         }
 
-    def to_markdown(self, caption_override: Optional[str] = None) -> str:
+    def to_markdown(self, caption_override: str | None = None) -> str:
         """Generate markdown with photographer attribution"""
         caption = caption_override or self.caption or self.alt_text or "Featured Image"
 
@@ -236,16 +237,16 @@ class ImageService:
 
         # Image generation state (lazy-loaded on first generate_image call)
         self._gen_pipe = None  # Active generation pipeline
-        self._active_model: Optional[ImageModel] = None  # Currently loaded model
+        self._active_model: ImageModel | None = None  # Currently loaded model
         self.sdxl_available = False  # Kept for backward compat (True when any model loaded)
         self.sdxl_initialized = False  # Track if we've attempted initialization
         self.use_device = "cpu"  # Updated during model initialization
         # NOTE: Models are lazily initialized only when generate_image() is called.
         # This avoids loading huge models if only Pexels search is needed.
 
-        self.search_cache: Dict[str, List[FeaturedImageMetadata]] = {}
+        self.search_cache: dict[str, list[FeaturedImageMetadata]] = {}
 
-    def _initialize_model(self, model: Optional[ImageModel] = None) -> None:
+    def _initialize_model(self, model: ImageModel | None = None) -> None:
         """
         Initialize or switch the active image generation model.
 
@@ -548,11 +549,11 @@ class ImageService:
     async def search_featured_image(
         self,
         topic: str,
-        keywords: Optional[List[str]] = None,
+        keywords: list[str] | None = None,
         orientation: str = "landscape",
         size: str = "medium",
         page: int = 1,
-    ) -> Optional[FeaturedImageMetadata]:
+    ) -> FeaturedImageMetadata | None:
         """
         Search for featured image using Pexels API.
 
@@ -640,8 +641,8 @@ class ImageService:
         self,
         topic: str,
         count: int = 5,
-        keywords: Optional[List[str]] = None,
-    ) -> List[FeaturedImageMetadata]:
+        keywords: list[str] | None = None,
+    ) -> list[FeaturedImageMetadata]:
         """
         Get multiple images for content gallery.
 
@@ -687,7 +688,7 @@ class ImageService:
         orientation: str = "landscape",
         size: str = "medium",
         page: int = 1,
-    ) -> List[FeaturedImageMetadata]:
+    ) -> list[FeaturedImageMetadata]:
         """
         Internal method to search Pexels API (async-only).
 
@@ -757,12 +758,12 @@ class ImageService:
         self,
         prompt: str,
         output_path: str,
-        negative_prompt: Optional[str] = None,
-        num_inference_steps: Optional[int] = None,
-        guidance_scale: Optional[float] = None,
+        negative_prompt: str | None = None,
+        num_inference_steps: int | None = None,
+        guidance_scale: float | None = None,
         high_quality: bool = True,
-        task_id: Optional[str] = None,
-        model: Optional[ImageModel] = None,
+        task_id: str | None = None,
+        model: ImageModel | None = None,
     ) -> bool:
         """
         Generate an image using the configured (or specified) model.
@@ -888,10 +889,10 @@ class ImageService:
         self,
         prompt: str,
         output_path: str,
-        negative_prompt: Optional[str] = None,
+        negative_prompt: str | None = None,
         num_inference_steps: int = 30,
         guidance_scale: float = 7.5,
-        task_id: Optional[str] = None,
+        task_id: str | None = None,
     ) -> None:
         """
         Synchronous image generation using the active model pipeline.
@@ -958,12 +959,12 @@ class ImageService:
     # MODEL INTROSPECTION
     # =========================================================================
 
-    def get_active_model(self) -> Optional[ImageModel]:
+    def get_active_model(self) -> ImageModel | None:
         """Return the currently loaded model enum, or None if no model is loaded."""
         return self._active_model
 
     @staticmethod
-    def list_available_models() -> Dict[str, Dict[str, Any]]:
+    def list_available_models() -> dict[str, dict[str, Any]]:
         """Return metadata for all registered image models."""
         return {
             m.value: {
@@ -982,7 +983,7 @@ class ImageService:
     def generate_image_markdown(
         self,
         image: FeaturedImageMetadata,
-        caption: Optional[str] = None,
+        caption: str | None = None,
     ) -> str:
         """Generate markdown for image with attribution"""
         return image.to_markdown(caption)
@@ -992,7 +993,7 @@ class ImageService:
         image_url: str,
         max_width: int = 1200,
         max_height: int = 630,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Optimize image for web delivery.
 
@@ -1014,11 +1015,11 @@ class ImageService:
             "note": "Image optimization not yet implemented",
         }
 
-    def get_search_cache(self, query: str) -> Optional[List[FeaturedImageMetadata]]:
+    def get_search_cache(self, query: str) -> list[FeaturedImageMetadata] | None:
         """Get cached search results"""
         return self.search_cache.get(query)
 
-    def set_search_cache(self, query: str, results: List[FeaturedImageMetadata]) -> None:
+    def set_search_cache(self, query: str, results: list[FeaturedImageMetadata]) -> None:
         """Cache search results (24-hour TTL in production)"""
         self.search_cache[query] = results
 

@@ -53,6 +53,7 @@ class IdleWorker:
     async def _create_gitea_issue(self, title: str, body: str) -> bool:
         """Create a deduplicated Gitea issue for tracking discovered problems."""
         import base64
+
         import httpx
 
         gitea_url = site_config.get("gitea_url", "http://localhost:3001")
@@ -606,9 +607,10 @@ class IdleWorker:
     async def _regenerate_stock_images(self) -> dict:
         """Find posts with Pexels stock photos and replace with SDXL-generated images."""
         try:
-            import asyncpg
             import os
             import tempfile
+
+            import asyncpg
 
             # Find posts with pexels URLs (stock photos)
             cloud_url = os.getenv("DATABASE_URL", "")
@@ -719,9 +721,11 @@ class IdleWorker:
     async def _backfill_podcasts(self) -> dict:
         """Generate podcast episodes for published posts that don't have them yet."""
         try:
-            import asyncpg
             import os
-            from services.podcast_service import PodcastService, PODCAST_DIR
+
+            import asyncpg
+
+            from services.podcast_service import PODCAST_DIR, PodcastService
 
             cloud_url = os.getenv("DATABASE_URL", "")
             if not cloud_url:
@@ -764,8 +768,10 @@ class IdleWorker:
     async def _backfill_videos(self) -> dict:
         """Generate videos for published posts that have podcasts but no video."""
         try:
-            import asyncpg
             import os
+
+            import asyncpg
+
             from services.podcast_service import PODCAST_DIR
             from services.video_service import VIDEO_DIR, generate_video_for_post
 
@@ -815,7 +821,9 @@ class IdleWorker:
     async def _fix_uncategorized_posts(self) -> dict:
         """Find published posts with no category and assign one based on content."""
         try:
-            import asyncpg, os
+            import os
+
+            import asyncpg
             cloud = await asyncpg.connect(os.getenv("DATABASE_URL", ""))
             posts = await cloud.fetch(
                 "SELECT id, title FROM posts WHERE status = 'published' AND category_id IS NULL LIMIT 5"
@@ -835,7 +843,7 @@ class IdleWorker:
             if fixed:
                 await self._create_gitea_issue(
                     f"content: assigned category to {fixed} uncategorized posts",
-                    f"Posts defaulted to Technology category. Review and reassign if needed.",
+                    "Posts defaulted to Technology category. Review and reassign if needed.",
                 )
             return {"fixed": fixed}
         except Exception as e:
@@ -844,7 +852,9 @@ class IdleWorker:
     async def _fix_missing_seo(self) -> dict:
         """Find posts missing SEO title/description and flag them."""
         try:
-            import asyncpg, os
+            import os
+
+            import asyncpg
             cloud = await asyncpg.connect(os.getenv("DATABASE_URL", ""))
             missing = await cloud.fetch("""
                 SELECT id, title FROM posts
@@ -868,7 +878,10 @@ class IdleWorker:
     async def _fix_broken_internal_links(self) -> dict:
         """Remove internal links that point to unpublished/deleted posts."""
         try:
-            import asyncpg, os, re
+            import os
+            import re
+
+            import asyncpg
             cloud = await asyncpg.connect(os.getenv("DATABASE_URL", ""))
 
             pub_rows = await cloud.fetch("SELECT slug FROM posts WHERE status = 'published'")
@@ -902,7 +915,11 @@ class IdleWorker:
     async def _fix_broken_external_links(self) -> dict:
         """Check and remove broken external URLs from published posts (5 posts per cycle)."""
         try:
-            import asyncpg, httpx, os, re
+            import os
+            import re
+
+            import asyncpg
+            import httpx
             cloud = await asyncpg.connect(os.getenv("DATABASE_URL", ""))
 
             rows = await cloud.fetch("""
@@ -960,7 +977,9 @@ class IdleWorker:
     async def _detect_duplicate_posts(self) -> dict:
         """Detect posts with very similar titles and flag for review."""
         try:
-            import asyncpg, os
+            import os
+
+            import asyncpg
             cloud = await asyncpg.connect(os.getenv("DATABASE_URL", ""))
             posts = await cloud.fetch("SELECT id, title FROM posts WHERE status = 'published' ORDER BY title")
             await cloud.close()
@@ -1101,8 +1120,9 @@ class IdleWorker:
     async def _sync_page_views(self) -> dict:
         """Pull new page_views from cloud DB into local brain DB for Grafana dashboards."""
         try:
-            import asyncpg
             import os
+
+            import asyncpg
 
             cloud_url = os.getenv("DATABASE_URL", "")
             if not cloud_url:
@@ -1168,8 +1188,9 @@ class IdleWorker:
     async def _sync_newsletter_subscribers(self) -> dict:
         """Pull new/updated newsletter_subscribers from cloud DB into local brain DB."""
         try:
-            import asyncpg
             import os
+
+            import asyncpg
 
             cloud_url = os.getenv("DATABASE_URL", "")
             if not cloud_url:
@@ -1407,10 +1428,11 @@ class IdleWorker:
     async def _verify_published_posts(self) -> dict:
         """Verify recently published posts return HTTP 200 on the live site."""
         try:
-            import asyncpg
-            import httpx
             import json
             import os
+
+            import asyncpg
+            import httpx
 
             cloud_url = os.getenv("DATABASE_URL", "")
             if not cloud_url:

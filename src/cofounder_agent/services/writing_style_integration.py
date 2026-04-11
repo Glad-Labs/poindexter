@@ -37,8 +37,8 @@ class WritingStyleIntegrationService:
         self.writing_style_service = WritingStyleService(database_service)
 
     async def get_sample_for_content_generation(
-        self, writing_style_id: Optional[str], user_id: Optional[str] = None
-    ) -> Optional[Dict[str, Any]]:
+        self, writing_style_id: str | None, user_id: str | None = None
+    ) -> dict[str, Any] | None:
         """
         Get writing sample for use in content generation with full analysis.
 
@@ -90,7 +90,7 @@ class WritingStyleIntegrationService:
             )
             return None
 
-    def _analyze_sample(self, sample_text: str) -> Dict[str, Any]:
+    def _analyze_sample(self, sample_text: str) -> dict[str, Any]:
         """
         Analyze writing sample characteristics.
 
@@ -234,7 +234,7 @@ class WritingStyleIntegrationService:
         }
 
     async def generate_creative_agent_prompt_injection(
-        self, writing_style_id: Optional[str], user_id: Optional[str], base_prompt: str
+        self, writing_style_id: str | None, user_id: str | None, base_prompt: str
     ) -> str:
         """
         Generate enhanced prompt for creative agent that includes writing sample guidance.
@@ -281,7 +281,7 @@ class WritingStyleIntegrationService:
             return base_prompt
 
     @staticmethod
-    def _build_analysis_guidance(analysis: Dict[str, Any]) -> str:
+    def _build_analysis_guidance(analysis: dict[str, Any]) -> str:
         """
         Build guidance text based on sample analysis.
 
@@ -320,8 +320,8 @@ class WritingStyleIntegrationService:
         return guidance.strip()
 
     async def verify_style_match(
-        self, generated_content: str, writing_style_id: str, user_id: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, generated_content: str, writing_style_id: str, user_id: str | None = None
+    ) -> dict[str, Any]:
         """
         Verify if generated content matches the requested writing style.
 
@@ -359,8 +359,8 @@ class WritingStyleIntegrationService:
 
     @staticmethod
     def _compare_analyses(
-        sample_analysis: Dict[str, Any], generated_analysis: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        sample_analysis: dict[str, Any], generated_analysis: dict[str, Any]
+    ) -> dict[str, Any]:
         """
         Compare sample and generated content analyses.
 

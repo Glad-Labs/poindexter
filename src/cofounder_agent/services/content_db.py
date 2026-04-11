@@ -54,10 +54,10 @@ class ContentDatabase(DatabaseServiceMixin):
             pool: asyncpg connection pool
         """
         self.pool = pool
-        self._cache: Dict[str, tuple] = {}  # key -> (data, timestamp)
+        self._cache: dict[str, tuple] = {}  # key -> (data, timestamp)
 
     @log_query_performance(operation="create_post", category="content_write")
-    async def create_post(self, post_data: Dict[str, Any]) -> PostResponse:
+    async def create_post(self, post_data: dict[str, Any]) -> PostResponse:
         """
         Create new post in posts table with all metadata fields.
 
@@ -187,7 +187,7 @@ class ContentDatabase(DatabaseServiceMixin):
     @log_query_performance(
         operation="get_post_by_slug", category="content_retrieval", slow_threshold_ms=50
     )
-    async def get_post_by_slug(self, slug: str) -> Optional[PostResponse]:
+    async def get_post_by_slug(self, slug: str) -> PostResponse | None:
         """
         Get post by slug - used to check for existing posts before creation.
 
@@ -225,7 +225,7 @@ class ContentDatabase(DatabaseServiceMixin):
             return None
 
     @log_query_performance(operation="update_post", category="content_write")
-    async def update_post(self, post_id: int, updates: Dict[str, Any]) -> bool:
+    async def update_post(self, post_id: int, updates: dict[str, Any]) -> bool:
         """
         Update a post with new values (e.g., featured_image_url, status).
 
@@ -256,7 +256,7 @@ class ContentDatabase(DatabaseServiceMixin):
 
             # Filter to only allowed fields; ParameterizedQueryBuilder will also
             # run SQLIdentifierValidator.safe_identifier() on each column name.
-            filtered: Dict[str, Any] = {
+            filtered: dict[str, Any] = {
                 k: v for k, v in updates.items() if k in _ALLOWED_POST_COLUMNS
             }
             for skipped in set(updates) - _ALLOWED_POST_COLUMNS:
@@ -303,7 +303,7 @@ class ContentDatabase(DatabaseServiceMixin):
         self._cache[key] = (value, time.monotonic())
 
     @log_query_performance(operation="get_all_categories", category="content_retrieval")
-    async def get_all_categories(self) -> List[CategoryResponse]:
+    async def get_all_categories(self) -> list[CategoryResponse]:
         """
         Get all categories for matching. Results are cached for 60s.
 
@@ -326,7 +326,7 @@ class ContentDatabase(DatabaseServiceMixin):
             return []
 
     @log_query_performance(operation="get_all_tags", category="content_retrieval")
-    async def get_all_tags(self) -> List[TagResponse]:
+    async def get_all_tags(self) -> list[TagResponse]:
         """
         Get all tags for matching. Results are cached for 60s.
 
@@ -349,7 +349,7 @@ class ContentDatabase(DatabaseServiceMixin):
             return []
 
     @log_query_performance(operation="get_author_by_name", category="content_retrieval")
-    async def get_author_by_name(self, name: str) -> Optional[AuthorResponse]:
+    async def get_author_by_name(self, name: str) -> AuthorResponse | None:
         """
         Get author by name.
 
@@ -372,7 +372,7 @@ class ContentDatabase(DatabaseServiceMixin):
 
     @log_query_performance(operation="create_quality_evaluation", category="content_write")
     async def create_quality_evaluation(
-        self, eval_data: Dict[str, Any]
+        self, eval_data: dict[str, Any]
     ) -> QualityEvaluationResponse:
         """
         Create quality evaluation record with enhanced context data and content metrics.
@@ -440,7 +440,7 @@ class ContentDatabase(DatabaseServiceMixin):
 
     @log_query_performance(operation="create_quality_improvement_log", category="content_write")
     async def create_quality_improvement_log(
-        self, log_data: Dict[str, Any]
+        self, log_data: dict[str, Any]
     ) -> QualityImprovementLogResponse:
         """
         Log content quality improvement through refinement.
@@ -577,7 +577,7 @@ class ContentDatabase(DatabaseServiceMixin):
             )
 
     async def create_orchestrator_training_data(
-        self, train_data: Dict[str, Any]
+        self, train_data: dict[str, Any]
     ) -> OrchestratorTrainingDataResponse:
         """
         Capture execution for training/learning pipeline.

@@ -29,15 +29,15 @@ class PhaseMapper:
     4. Manual override/user mapping
     """
 
-    def __init__(self, registry: Optional[PhaseRegistry] = None):
+    def __init__(self, registry: PhaseRegistry | None = None):
         self.registry = registry or PhaseRegistry.get_instance()
 
     def map_phases(
         self,
         source_phase_name: str,
         target_phase_name: str,
-        user_overrides: Optional[Dict[str, str]] = None,
-    ) -> Dict[str, str]:
+        user_overrides: dict[str, str] | None = None,
+    ) -> dict[str, str]:
         """
         Generate mapping from source phase outputs to target phase inputs.
 
@@ -88,8 +88,8 @@ class PhaseMapper:
         return mapping
 
     def _find_best_match(
-        self, target_key: str, target_input: Any, source_outputs: Dict[str, Any]
-    ) -> Optional[str]:
+        self, target_key: str, target_input: Any, source_outputs: dict[str, Any]
+    ) -> str | None:
         """
         Find the best matching output field for a given input field.
 
@@ -118,8 +118,8 @@ class PhaseMapper:
         return None
 
     def _rank_by_similarity(
-        self, target_key: str, target_input: Any, source_outputs: Dict[str, Any]
-    ) -> List[Tuple[str, float]]:
+        self, target_key: str, target_input: Any, source_outputs: dict[str, Any]
+    ) -> list[tuple[str, float]]:
         """
         Rank source output fields by semantic similarity to target input.
 
@@ -159,8 +159,8 @@ class PhaseMapper:
         return SequenceMatcher(None, a, b).ratio()
 
     def validate_mapping(
-        self, source_phase: PhaseDefinition, target_phase: PhaseDefinition, mapping: Dict[str, str]
-    ) -> Tuple[bool, List[str]]:
+        self, source_phase: PhaseDefinition, target_phase: PhaseDefinition, mapping: dict[str, str]
+    ) -> tuple[bool, list[str]]:
         """
         Validate that a mapping is valid (all target inputs can be satisfied).
 
@@ -189,8 +189,8 @@ class PhaseMapper:
 
 
 def build_full_phase_pipeline(
-    phase_names: List[str], user_mappings: Optional[Dict[str, Dict[str, str]]] = None
-) -> Dict[str, Dict[str, str]]:
+    phase_names: list[str], user_mappings: dict[str, dict[str, str]] | None = None
+) -> dict[str, dict[str, str]]:
     """
     Build complete input mapping for all phases in a workflow.
 

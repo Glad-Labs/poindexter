@@ -27,7 +27,7 @@ class PostgreSQLPublishingAgent:
     No Strapi integration - pure PostgreSQL storage.
     """
 
-    def __init__(self, cms_client: Optional[PostgresCMSClient] = None):
+    def __init__(self, cms_client: PostgresCMSClient | None = None):
         """
         Initialize PostgreSQL Publishing Agent.
 
@@ -94,7 +94,7 @@ class PostgreSQLPublishingAgent:
             logger.error(f"❌ Publishing preparation failed: {e}", exc_info=True)
             raise
 
-    async def run_async(self, post: BlogPost) -> Tuple[str, str]:
+    async def run_async(self, post: BlogPost) -> tuple[str, str]:
         """
         Actually publish the post to PostgreSQL (async version).
 

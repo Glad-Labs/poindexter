@@ -15,19 +15,18 @@ Usage:
 
 import os as _os
 import re
-
-from services.site_config import site_config as _sc
 import time
 from typing import Dict, List, Optional, Tuple
 
 import httpx
 
 from services.logger_config import get_logger
+from services.site_config import site_config as _sc
 
 logger = get_logger(__name__)
 
 # Cache entry: (is_valid: bool, status_code: int | None, checked_at: float)
-_CacheEntry = Tuple[bool, Optional[int], float]
+_CacheEntry = tuple[bool, int | None, float]
 
 # 7 days in seconds
 _CACHE_TTL = 7 * 24 * 60 * 60
@@ -56,13 +55,13 @@ class URLValidator:
     def __init__(self, timeout: float = 5.0, cache_ttl: int = _CACHE_TTL):
         self._timeout = timeout
         self._cache_ttl = cache_ttl
-        self._cache: Dict[str, _CacheEntry] = {}
+        self._cache: dict[str, _CacheEntry] = {}
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
-    def extract_urls(self, content: str) -> List[str]:
+    def extract_urls(self, content: str) -> list[str]:
         """Extract all unique URLs from markdown / HTML content.
 
         Skips internal gladlabs.io URLs and anchor-only fragments.
@@ -70,7 +69,7 @@ class URLValidator:
         if not content:
             return []
 
-        urls: List[str] = []
+        urls: list[str] = []
         seen: set = set()
 
         for match in _URL_PATTERN.finditer(content):
@@ -136,7 +135,7 @@ class URLValidator:
         self._cache_set(url, is_valid, status_code)
         return is_valid
 
-    async def validate_urls(self, urls: List[str]) -> Dict[str, str]:
+    async def validate_urls(self, urls: list[str]) -> dict[str, str]:
         """Batch-validate a list of URLs.
 
         Returns dict mapping each URL to "valid" or "invalid".
@@ -146,7 +145,7 @@ class URLValidator:
 
         import asyncio
 
-        results: Dict[str, str] = {}
+        results: dict[str, str] = {}
 
         async def _check(u: str):
             ok = await self.validate_url(u)
@@ -166,7 +165,7 @@ class URLValidator:
     # Cache helpers
     # ------------------------------------------------------------------
 
-    def _cache_get(self, url: str) -> Optional[bool]:
+    def _cache_get(self, url: str) -> bool | None:
         entry = self._cache.get(url)
         if entry is None:
             return None
@@ -176,10 +175,10 @@ class URLValidator:
             return None
         return is_valid
 
-    def _cache_set(self, url: str, is_valid: bool, status_code: Optional[int]):
+    def _cache_set(self, url: str, is_valid: bool, status_code: int | None):
         self._cache[url] = (is_valid, status_code, time.time())
 
-    def cache_stats(self) -> Dict[str, int]:
+    def cache_stats(self) -> dict[str, int]:
         """Return cache statistics for monitoring."""
         now = time.time()
         active = sum(1 for _, _, t in self._cache.values() if now - t <= self._cache_ttl)
@@ -204,7 +203,7 @@ class URLValidator:
 # Module-level singleton
 # ============================================================================
 
-_instance: Optional[URLValidator] = None
+_instance: URLValidator | None = None
 
 
 def get_url_validator() -> URLValidator:

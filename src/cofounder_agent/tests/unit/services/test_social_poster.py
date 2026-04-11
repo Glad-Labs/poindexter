@@ -1,21 +1,21 @@
 """Unit tests for social_poster.py — social media post generation and distribution."""
 
-import pytest
-import httpx
-from unittest.mock import AsyncMock, patch, MagicMock
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import httpx
+import pytest
 
 from services.social_poster import (
-    SocialPost,
-    _build_twitter_prompt,
-    _build_linkedin_prompt,
-    _generate_social_text,
-    generate_social_posts,
-    generate_and_distribute_social_posts,
-    TWITTER_CHAR_LIMIT,
     LINKEDIN_CHAR_LIMIT,
+    TWITTER_CHAR_LIMIT,
+    SocialPost,
+    _build_linkedin_prompt,
+    _build_twitter_prompt,
+    _generate_social_text,
+    generate_and_distribute_social_posts,
+    generate_social_posts,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

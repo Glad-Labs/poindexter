@@ -39,9 +39,9 @@ class WritingStyleDatabase(DatabaseServiceMixin):
         user_id: str,
         title: str,
         content: str,
-        description: Optional[str] = None,
+        description: str | None = None,
         set_as_active: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Create a new writing sample.
 
@@ -98,7 +98,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
             raise
 
     @log_query_performance(operation="get_writing_sample", category="writing_style_retrieval")
-    async def get_writing_sample(self, sample_id: str) -> Optional[Dict[str, Any]]:
+    async def get_writing_sample(self, sample_id: str) -> dict[str, Any] | None:
         """
         Get a specific writing sample by ID.
 
@@ -129,7 +129,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
     @log_query_performance(operation="get_user_writing_samples", category="writing_style_retrieval")
     async def get_user_writing_samples(
         self, user_id: str, limit: int = 100
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Get writing samples for a user.
 
@@ -165,7 +165,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
     @log_query_performance(
         operation="get_active_writing_sample", category="writing_style_retrieval"
     )
-    async def get_active_writing_sample(self, user_id: str) -> Optional[Dict[str, Any]]:
+    async def get_active_writing_sample(self, user_id: str) -> dict[str, Any] | None:
         """
         Get the active/current writing sample for a user.
 
@@ -196,7 +196,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
             raise
 
     @log_query_performance(operation="set_active_writing_sample", category="writing_style_write")
-    async def set_active_writing_sample(self, user_id: str, sample_id: str) -> Dict[str, Any]:
+    async def set_active_writing_sample(self, user_id: str, sample_id: str) -> dict[str, Any]:
         """
         Set a writing sample as the active one for a user.
 
@@ -247,10 +247,10 @@ class WritingStyleDatabase(DatabaseServiceMixin):
         self,
         sample_id: str,
         user_id: str,
-        title: Optional[str] = None,
-        description: Optional[str] = None,
-        content: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        title: str | None = None,
+        description: str | None = None,
+        content: str | None = None,
+    ) -> dict[str, Any]:
         """
         Update a writing sample.
 
@@ -266,7 +266,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
         """
         try:
             # Collect only the fields being changed
-            update_dict: Dict[str, Any] = {}
+            update_dict: dict[str, Any] = {}
             if title is not None:
                 update_dict["title"] = title
             if description is not None:
@@ -362,7 +362,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
             raise
 
     @staticmethod
-    def _format_sample(row) -> Dict[str, Any]:
+    def _format_sample(row) -> dict[str, Any]:
         """Format database row into dict response"""
         if not row:
             return {}

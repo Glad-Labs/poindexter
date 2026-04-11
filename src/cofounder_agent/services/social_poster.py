@@ -19,12 +19,13 @@ Usage from task_executor or any post-publish hook:
     )
 """
 
-from services.logger_config import get_logger
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import List, Optional
 
 import httpx
+
+from services.logger_config import get_logger
 
 from .ollama_client import OllamaClient
 
@@ -35,11 +36,13 @@ logger = get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 from services.site_config import site_config as _sc
+
 SITE_BASE_URL = _sc.get("site_url", "https://localhost:3000")
 
 # Notification targets (mirrors task_executor._notify_openclaw)
 from services.telegram_config import TELEGRAM_BOT_TOKEN as _TELEGRAM_BOT_TOKEN
 from services.telegram_config import TELEGRAM_CHAT_ID as _TELEGRAM_CHAT_ID
+
 _OPENCLAW_URL = _sc.get("openclaw_gateway_url", "http://localhost:18789")
 # Same key as task_executor._notify_openclaw uses; unifying here.
 _OPENCLAW_TOKEN = _sc.get("openclaw_webhook_token", "hooks-gladlabs")
@@ -83,7 +86,7 @@ class SocialPost:
 # ---------------------------------------------------------------------------
 
 
-def _build_twitter_prompt(title: str, slug: str, excerpt: str, keywords: List[str]) -> str:
+def _build_twitter_prompt(title: str, slug: str, excerpt: str, keywords: list[str]) -> str:
     post_url = f"{SITE_BASE_URL}/posts/{slug}"
     hashtags = " ".join(f"#{kw.replace(' ', '')}" for kw in keywords[:3])
     return (
@@ -102,7 +105,7 @@ def _build_twitter_prompt(title: str, slug: str, excerpt: str, keywords: List[st
     )
 
 
-def _build_linkedin_prompt(title: str, slug: str, excerpt: str, keywords: List[str]) -> str:
+def _build_linkedin_prompt(title: str, slug: str, excerpt: str, keywords: list[str]) -> str:
     post_url = f"{SITE_BASE_URL}/posts/{slug}"
     hashtags = " ".join(f"#{kw.replace(' ', '')}" for kw in keywords[:3])
     return (
@@ -126,7 +129,7 @@ async def _generate_social_text(
     prompt: str,
     char_limit: int,
     platform: str,
-    ollama: Optional[OllamaClient] = None,
+    ollama: OllamaClient | None = None,
 ) -> str:
     """Call the local Ollama LLM and return the generated text, trimmed to limit."""
     client = ollama or OllamaClient()
@@ -201,9 +204,9 @@ async def generate_social_posts(
     title: str,
     slug: str,
     excerpt: str,
-    keywords: Optional[List[str]] = None,
-    ollama: Optional[OllamaClient] = None,
-) -> List[SocialPost]:
+    keywords: list[str] | None = None,
+    ollama: OllamaClient | None = None,
+) -> list[SocialPost]:
     """
     Generate social media posts for X/Twitter and LinkedIn.
 
@@ -219,7 +222,7 @@ async def generate_social_posts(
     """
     keywords = keywords or []
     post_url = f"{SITE_BASE_URL}/posts/{slug}"
-    posts: List[SocialPost] = []
+    posts: list[SocialPost] = []
 
     # --- Twitter ---
     twitter_prompt = _build_twitter_prompt(title, slug, excerpt, keywords)
@@ -250,9 +253,9 @@ async def generate_and_distribute_social_posts(
     title: str,
     slug: str,
     excerpt: str,
-    keywords: Optional[List[str]] = None,
-    ollama: Optional[OllamaClient] = None,
-) -> List[SocialPost]:
+    keywords: list[str] | None = None,
+    ollama: OllamaClient | None = None,
+) -> list[SocialPost]:
     """
     End-to-end: generate social posts and distribute them via notifications.
 

@@ -119,7 +119,7 @@ class PostgreSQLImageAgent:
         )
         return post
 
-    async def _generate_image_metadata(self, post: BlogPost) -> List[dict]:
+    async def _generate_image_metadata(self, post: BlogPost) -> list[dict]:
         """
         Generate image metadata/descriptions using the LLM.
 
@@ -220,7 +220,7 @@ Only return the JSON array, no other text."""
 
     async def _process_single_image_async(
         self, metadata: dict, post: BlogPost, index: int
-    ) -> Optional[ImageDetails]:
+    ) -> ImageDetails | None:
         """
         Async process a single image: search Pexels, get image details.
 
@@ -285,7 +285,7 @@ Only return the JSON array, no other text."""
 
     def _process_single_image(
         self, metadata: dict, post: BlogPost, index: int
-    ) -> Optional[ImageDetails]:
+    ) -> ImageDetails | None:
         """
         Process a single image: get URL from Pexels, store metadata.
 

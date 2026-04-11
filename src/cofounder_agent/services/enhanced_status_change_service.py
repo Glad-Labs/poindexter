@@ -28,10 +28,10 @@ class EnhancedStatusChangeService:
         self,
         task_id: str,
         new_status: str,
-        reason: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        user_id: Optional[str] = None,
-    ) -> Tuple[bool, str, List[str]]:
+        reason: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        user_id: str | None = None,
+    ) -> tuple[bool, str, list[str]]:
         """
         Validate and execute status change with full audit trail.
 
@@ -130,7 +130,7 @@ class EnhancedStatusChangeService:
             logger.error("[_validate_and_change_status] %s", error, exc_info=True)
             return False, error, ["internal_error"]
 
-    async def get_status_audit_trail(self, task_id: str, limit: int = 50) -> Dict[str, Any]:
+    async def get_status_audit_trail(self, task_id: str, limit: int = 50) -> dict[str, Any]:
         """
         Get complete audit trail for a task.
 
@@ -151,7 +151,7 @@ class EnhancedStatusChangeService:
             )
             return {"task_id": task_id, "history_count": 0, "history": [], "error": str(e)}
 
-    async def get_validation_failures(self, task_id: str, limit: int = 50) -> Dict[str, Any]:
+    async def get_validation_failures(self, task_id: str, limit: int = 50) -> dict[str, Any]:
         """
         Get all validation failures for a task.
 

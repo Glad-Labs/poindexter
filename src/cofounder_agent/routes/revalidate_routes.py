@@ -9,7 +9,6 @@ Endpoints:
 - POST /api/revalidate-cache - Revalidate paths on public site (requires auth token)
 """
 
-from services.logger_config import get_logger
 import os
 from typing import Any, Dict, Optional
 
@@ -18,6 +17,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from middleware.api_token_auth import verify_api_token
+from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -27,10 +27,10 @@ router = APIRouter(prefix="/api", tags=["cache"])
 class RevalidateCacheRequest(BaseModel):
     """Request to revalidate specific paths"""
 
-    paths: Optional[list] = None
+    paths: list | None = None
 
 
-async def trigger_nextjs_revalidation(paths: Optional[list] = None) -> bool:
+async def trigger_nextjs_revalidation(paths: list | None = None) -> bool:
     """
     Trigger Next.js ISR revalidation on the public site.
 
@@ -119,7 +119,7 @@ async def trigger_nextjs_revalidation(paths: Optional[list] = None) -> bool:
 async def revalidate_cache(
     request_data: RevalidateCacheRequest,
     token: str = Depends(verify_api_token),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Securely revalidate public site cache after publishing content.
 

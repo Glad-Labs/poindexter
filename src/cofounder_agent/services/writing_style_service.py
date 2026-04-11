@@ -53,7 +53,7 @@ class WritingStyleService:
             )
             return ""
 
-    async def get_style_prompt_for_generation(self, user_id: str) -> Optional[Dict[str, Any]]:
+    async def get_style_prompt_for_generation(self, user_id: str) -> dict[str, Any] | None:
         """
         Get writing sample data structured for use during content generation.
 
@@ -93,7 +93,7 @@ class WritingStyleService:
 
     async def get_style_prompt_for_specific_sample(
         self, writing_style_id: str
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Get writing sample data for a specific writing sample ID.
 
@@ -157,7 +157,7 @@ class WritingStyleService:
         return text
 
     @classmethod
-    def _format_sample_for_prompt(cls, sample: Dict[str, Any]) -> str:
+    def _format_sample_for_prompt(cls, sample: dict[str, Any]) -> str:
         """
         Format a writing sample for inclusion in LLM prompts.
 

@@ -17,9 +17,11 @@ Pull models: ollama pull qwen3:8b
 import asyncio
 import json
 import os
-from typing import Any, AsyncIterator, Dict, List, Optional
+from collections.abc import AsyncIterator
+from typing import Any, Dict, List, Optional
 
 import httpx
+
 from services.logger_config import get_logger
 
 logger = get_logger(__name__)
@@ -101,9 +103,9 @@ class OllamaClient:
         self.model = model or DEFAULT_MODEL
         self.timeout = timeout
         self.client = httpx.AsyncClient(timeout=timeout)
-        self._model_cache: Dict[str, Dict[str, Any]] = {}
+        self._model_cache: dict[str, dict[str, Any]] = {}
         self._cache_ts: float = 0
-        self._resolved_default: Optional[str] = None  # Lazily resolved from installed models
+        self._resolved_default: str | None = None  # Lazily resolved from installed models
 
         # Electricity cost parameters — updated at runtime via configure_electricity()
         self._gpu_power_watts: float = DEFAULT_GPU_POWER_WATTS
@@ -127,7 +129,7 @@ class OllamaClient:
             electricity_rate_kwh=self._electricity_rate_kwh,
         )
 
-    async def resolve_model(self, model: Optional[str] = None) -> str:
+    async def resolve_model(self, model: str | None = None) -> str:
         """Resolve a model name, handling 'auto' by discovering the best installed model.
 
         Resolution order:
@@ -190,7 +192,7 @@ class OllamaClient:
             logger.error("[check_health] Ollama health check failed: %s", e, exc_info=True)
             return False
 
-    async def list_models(self) -> List[Dict[str, Any]]:
+    async def list_models(self) -> list[dict[str, Any]]:
         """List available Ollama models with metadata."""
         try:
             response = await self.client.get(f"{self.base_url}/api/tags", timeout=10.0)
@@ -203,7 +205,7 @@ class OllamaClient:
             logger.error("[list_models] Failed to list models", error=str(e), exc_info=True)
             return []
 
-    async def get_model_profiles(self, force_refresh: bool = False) -> Dict[str, Dict[str, Any]]:
+    async def get_model_profiles(self, force_refresh: bool = False) -> dict[str, dict[str, Any]]:
         """
         Build model profiles dynamically from the running Ollama instance.
         Cached for 5 minutes to avoid hammering the API.
@@ -217,7 +219,7 @@ class OllamaClient:
             return self._model_cache
 
         models = await self.list_models()
-        profiles: Dict[str, Dict[str, Any]] = {}
+        profiles: dict[str, dict[str, Any]] = {}
 
         for m in models:
             name = m.get("name", "")
@@ -242,7 +244,7 @@ class OllamaClient:
         logger.info("Built %d model profiles from Ollama", len(profiles))
         return profiles
 
-    def get_model_profile(self, model: str) -> Optional[Dict[str, Any]]:
+    def get_model_profile(self, model: str) -> dict[str, Any] | None:
         """Get cached model profile. Call get_model_profiles() first to populate."""
         return self._model_cache.get(model)
 
@@ -290,12 +292,12 @@ class OllamaClient:
     async def generate(
         self,
         prompt: str,
-        model: Optional[str] = None,
-        system: Optional[str] = None,
+        model: str | None = None,
+        system: str | None = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
         stream: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Generate completion from Ollama model.
 
         Internally uses /api/chat (the modern Ollama endpoint) by converting
@@ -306,12 +308,12 @@ class OllamaClient:
         model = await self.resolve_model(model)
 
         # Build chat messages from prompt + optional system
-        messages: List[Dict[str, str]] = []
+        messages: list[dict[str, str]] = []
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
 
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "model": model,
             "messages": messages,
             "stream": stream,
@@ -365,18 +367,18 @@ class OllamaClient:
 
     async def chat(
         self,
-        messages: List[Dict[str, str]],
-        model: Optional[str] = None,
+        messages: list[dict[str, str]],
+        model: str | None = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        max_tokens: int | None = None,
+    ) -> dict[str, Any]:
         """
         Chat completion using Ollama's native /api/chat endpoint.
         Supports full message history with roles.
         """
         model = await self.resolve_model(model)
 
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "model": model,
             "messages": messages,
             "stream": False,
@@ -452,13 +454,13 @@ class OllamaClient:
     async def generate_with_retry(
         self,
         prompt: str,
-        model: Optional[str] = None,
-        system: Optional[str] = None,
+        model: str | None = None,
+        system: str | None = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
         max_retries: int = 3,
         base_delay: float = 1.0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Generate completion with exponential backoff retry."""
         model = model or self.model
         last_error = None
@@ -514,21 +516,21 @@ class OllamaClient:
     async def stream_generate(
         self,
         prompt: str,
-        model: Optional[str] = None,
-        system: Optional[str] = None,
+        model: str | None = None,
+        system: str | None = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
     ) -> AsyncIterator[str]:
         """Stream generation from Ollama model using /api/chat."""
         model = model or self.model
 
         # Build chat messages from prompt + optional system
-        messages: List[Dict[str, str]] = []
+        messages: list[dict[str, str]] = []
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
 
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "model": model,
             "messages": messages,
             "stream": True,

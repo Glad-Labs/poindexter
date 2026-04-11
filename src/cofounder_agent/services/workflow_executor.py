@@ -39,10 +39,10 @@ class WorkflowExecutor:
     """
 
     # Class-level cache for imported agent modules — avoids re-importing on every phase
-    _agent_module_cache: Dict[str, Any] = {}
+    _agent_module_cache: dict[str, Any] = {}
 
     def __init__(
-        self, registry: Optional[PhaseRegistry] = None, mapper: Optional[PhaseMapper] = None
+        self, registry: PhaseRegistry | None = None, mapper: PhaseMapper | None = None
     ):
         self.registry = registry or PhaseRegistry.get_instance()
         self.mapper = mapper or PhaseMapper(self.registry)
@@ -50,10 +50,10 @@ class WorkflowExecutor:
     async def execute_workflow(
         self,
         workflow: CustomWorkflow,
-        initial_inputs: Optional[Dict[str, Any]] = None,
-        execution_id: Optional[str] = None,
-        progress_service: Optional[Any] = None,
-    ) -> Dict[str, PhaseResult]:
+        initial_inputs: dict[str, Any] | None = None,
+        execution_id: str | None = None,
+        progress_service: Any | None = None,
+    ) -> dict[str, PhaseResult]:
         """
         Execute a workflow and return results from all phases.
 
@@ -94,8 +94,8 @@ class WorkflowExecutor:
             raise WorkflowExecutionError(f"Failed to build phase pipeline: {str(e)}") from e
 
         # Initialize results storage
-        phase_results: Dict[str, PhaseResult] = {}
-        phase_outputs: Dict[str, Dict[str, Any]] = {}  # For passing data between phases
+        phase_results: dict[str, PhaseResult] = {}
+        phase_outputs: dict[str, dict[str, Any]] = {}  # For passing data between phases
 
         # Prepare initial input for first phase
         first_phase_inputs = dict(initial_inputs or {})
@@ -229,10 +229,10 @@ class WorkflowExecutor:
         self,
         phase: WorkflowPhase,
         phase_index: int,
-        initial_inputs: Dict[str, Any],
-        previous_outputs: Dict[str, Dict[str, Any]],
-        phase_mapping: Dict[str, str],
-    ) -> Tuple[Dict[str, Any], Dict[str, InputTrace]]:
+        initial_inputs: dict[str, Any],
+        previous_outputs: dict[str, dict[str, Any]],
+        phase_mapping: dict[str, str],
+    ) -> tuple[dict[str, Any], dict[str, InputTrace]]:
         """
         Prepare input dict for a phase, merging auto-mapped inputs and user inputs.
 
@@ -303,7 +303,7 @@ class WorkflowExecutor:
         return inputs, traces
 
     async def _execute_phase(
-        self, phase: WorkflowPhase, inputs: Dict[str, Any], execution_id: str
+        self, phase: WorkflowPhase, inputs: dict[str, Any], execution_id: str
     ) -> PhaseResult:
         """
         Execute a single phase and return the result.
@@ -394,7 +394,7 @@ class WorkflowExecutor:
                 tokens_used=None,
             )
 
-    def _get_agent(self, agent_type: str) -> Optional[Any]:
+    def _get_agent(self, agent_type: str) -> Any | None:
         """
         Get an agent instance by agent_type string.
 
@@ -468,7 +468,7 @@ class WorkflowExecutor:
             logger.error("[_get_agent] Error loading agent '%s': %s", agent_type, e, exc_info=True)
             return None
 
-    def _normalize_phases(self, phases: List[Any]) -> List[WorkflowPhase]:
+    def _normalize_phases(self, phases: list[Any]) -> list[WorkflowPhase]:
         """Convert phases to WorkflowPhase objects"""
         normalized = []
 

@@ -37,7 +37,7 @@ MAX_CONCURRENT = 3
 class WebResearcher:
     """Free web research using DuckDuckGo + content extraction."""
 
-    async def search(self, query: str, num_results: int = 5) -> List[Dict[str, str]]:
+    async def search(self, query: str, num_results: int = 5) -> list[dict[str, str]]:
         """Search the web and extract content from top results.
 
         Returns list of dicts with: title, url, snippet, content
@@ -67,11 +67,11 @@ class WebResearcher:
         logger.info("[RESEARCH] Web search: %d results for '%s'", len(results), query[:50])
         return results
 
-    async def search_simple(self, query: str, num_results: int = 5) -> List[Dict[str, str]]:
+    async def search_simple(self, query: str, num_results: int = 5) -> list[dict[str, str]]:
         """Quick search — just titles, URLs, and snippets. No content extraction."""
         return await self._ddg_search(query, num_results)
 
-    async def _ddg_search(self, query: str, num_results: int) -> List[Dict[str, str]]:
+    async def _ddg_search(self, query: str, num_results: int) -> list[dict[str, str]]:
         """Search DuckDuckGo (free, no API key needed)."""
         try:
             from duckduckgo_search import DDGS
@@ -154,7 +154,7 @@ class WebResearcher:
             logger.debug("[RESEARCH] Content extraction failed for %s: %s", url[:50], e)
             return ""
 
-    def format_for_prompt(self, results: List[Dict[str, str]], max_chars: int = 3000) -> str:
+    def format_for_prompt(self, results: list[dict[str, str]], max_chars: int = 3000) -> str:
         """Format research results for injection into an LLM prompt."""
         if not results:
             return ""

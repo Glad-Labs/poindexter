@@ -9,12 +9,12 @@ Provides:
 """
 
 import json
-from services.logger_config import get_logger
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from schemas.custom_workflow_schemas import CustomWorkflow, WorkflowPhase, WorkflowValidationResult
+from services.logger_config import get_logger
 from services.phase_registry import PhaseRegistry
 from services.workflow_executor import WorkflowExecutor
 from services.workflow_validator import WorkflowValidator
@@ -29,7 +29,7 @@ class CustomWorkflowsService:
     def __init__(self, database_service):
         """Initialize with database service"""
         self.database_service = database_service
-        self._available_phases_cache: Optional[List[Dict[str, Any]]] = None
+        self._available_phases_cache: list[dict[str, Any]] | None = None
         self.phase_registry = PhaseRegistry.get_instance()
         self.workflow_validator = WorkflowValidator()
         self.workflow_executor = WorkflowExecutor()
@@ -72,7 +72,7 @@ class CustomWorkflowsService:
             logger.error("Failed to create workflow: %s", e, exc_info=True)
             raise
 
-    async def get_workflow(self, workflow_id: str, owner_id: str) -> Optional[CustomWorkflow]:
+    async def get_workflow(self, workflow_id: str, owner_id: str) -> CustomWorkflow | None:
         """
         Retrieve a workflow by ID (user must own it or it must be a template).
 
@@ -103,7 +103,7 @@ class CustomWorkflowsService:
             logger.error("Error retrieving workflow %s: %s", workflow_id, e, exc_info=True)
             raise
 
-    async def get_workflow_by_name(self, name: str, owner_id: str) -> Optional[CustomWorkflow]:
+    async def get_workflow_by_name(self, name: str, owner_id: str) -> CustomWorkflow | None:
         """
         Retrieve a workflow by name for a given owner.
 
@@ -134,7 +134,7 @@ class CustomWorkflowsService:
 
     async def list_workflows(
         self, owner_id: str, include_templates: bool = True, page: int = 1, page_size: int = 20
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         List workflows for a user.
 
@@ -295,7 +295,7 @@ class CustomWorkflowsService:
         valid, errors, warnings = self.workflow_validator.validate_workflow(workflow)
         return WorkflowValidationResult(valid=valid, errors=errors, warnings=warnings)
 
-    async def get_available_phases(self) -> List[Dict[str, Any]]:
+    async def get_available_phases(self) -> list[dict[str, Any]]:
         """
         Get list of available phases that can be used in workflows.
 
@@ -453,14 +453,14 @@ class CustomWorkflowsService:
         execution_status: str,
         phase_results: dict,
         duration_ms: int,
-        initial_input: Optional[dict] = None,
-        final_output: Optional[dict] = None,
-        error_message: Optional[str] = None,
+        initial_input: dict | None = None,
+        final_output: dict | None = None,
+        error_message: str | None = None,
         completed_phases: int = 0,
         total_phases: int = 0,
         progress_percent: int = 0,
-        tags: Optional[list] = None,
-        metadata: Optional[dict] = None,
+        tags: list | None = None,
+        metadata: dict | None = None,
     ) -> bool:
         """
         Save workflow execution results to database.
@@ -548,8 +548,8 @@ class CustomWorkflowsService:
             return False
 
     async def get_workflow_execution(
-        self, execution_id: str, owner_id: Optional[str] = None
-    ) -> Optional[Dict]:
+        self, execution_id: str, owner_id: str | None = None
+    ) -> dict | None:
         """
         Get a workflow execution by ID.
 
@@ -588,7 +588,7 @@ class CustomWorkflowsService:
         owner_id: str,
         limit: int = 50,
         offset: int = 0,
-        status: Optional[str] = None,
+        status: str | None = None,
     ):
         """
         Get executions for a workflow.
@@ -607,7 +607,7 @@ class CustomWorkflowsService:
             # Use ParameterizedQueryBuilder for safe, consistent parameterization.
             # Window function keeps COUNT and data in one round-trip.
             builder = ParameterizedQueryBuilder()
-            where_conditions: List[tuple] = [
+            where_conditions: list[tuple] = [
                 ("workflow_id", SQLOperator.EQ, workflow_id),
                 ("owner_id", SQLOperator.EQ, owner_id),
             ]
@@ -652,7 +652,7 @@ class CustomWorkflowsService:
                 "offset": offset,
             }
 
-    def _row_to_execution(self, row) -> Dict:
+    def _row_to_execution(self, row) -> dict:
         """Convert database row to execution dictionary"""
         return {
             "id": str(row["id"]),

@@ -6,18 +6,16 @@ and graceful skip when the Dev.to API key is not configured.
 All database and HTTP calls are mocked — no real connections required.
 """
 
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 
-from unittest.mock import PropertyMock
-
 # Ensure site_config returns a test URL for SITE_URL
 from services.site_config import site_config
+
 site_config._config["site_url"] = "https://test.example.com"
 
-from services.devto_service import DevToCrossPostService, SITE_URL
-
+from services.devto_service import SITE_URL, DevToCrossPostService
 
 # ---------------------------------------------------------------------------
 # Fixtures

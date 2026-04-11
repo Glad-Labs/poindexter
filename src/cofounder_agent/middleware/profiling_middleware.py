@@ -6,8 +6,9 @@ Stores metrics to database for historical analysis and bottleneck detection.
 """
 
 import time
+from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict, Optional
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -25,7 +26,7 @@ class ProfileData:
         self.endpoint = endpoint
         self.method = method
         self.start_time = time.time()
-        self.status_code: Optional[int] = None
+        self.status_code: int | None = None
         self.duration_ms: float = 0
         self.timestamp = datetime.now(timezone.utc)
         self.is_slow = False
@@ -37,7 +38,7 @@ class ProfileData:
         self.duration_ms = (time.time() - self.start_time) * 1000
         self.is_slow = self.duration_ms > self.slow_threshold_ms
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert profile to dictionary for storage"""
         return {
             "endpoint": self.endpoint,
@@ -67,7 +68,7 @@ class ProfilingMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.profiles: list[ProfileData] = []
         self.max_profiles = 1000  # Store last 1000 profiles
-        self.slow_endpoints: Dict[str, list[ProfileData]] = {}
+        self.slow_endpoints: dict[str, list[ProfileData]] = {}
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """Process request and track timing"""
@@ -127,11 +128,11 @@ class ProfilingMiddleware(BaseHTTPMiddleware):
             f"took {profile.duration_ms:.0f}ms (status: {profile.status_code})"
         )
 
-    def get_recent_profiles(self, limit: int = 100) -> list[Dict[str, Any]]:
+    def get_recent_profiles(self, limit: int = 100) -> list[dict[str, Any]]:
         """Get recent request profiles"""
         return [p.to_dict() for p in self.profiles[-limit:]]
 
-    def get_slow_endpoints(self, threshold_ms: int = 1000) -> Dict[str, Any]:
+    def get_slow_endpoints(self, threshold_ms: int = 1000) -> dict[str, Any]:
         """Get endpoints that exceed threshold with average latency"""
         slow_stats = {}
 
@@ -151,9 +152,9 @@ class ProfilingMiddleware(BaseHTTPMiddleware):
 
         return slow_stats
 
-    def get_endpoint_stats(self) -> Dict[str, Any]:
+    def get_endpoint_stats(self) -> dict[str, Any]:
         """Get statistics for all endpoints"""
-        stats_by_endpoint: Dict[str, list[ProfileData]] = {}
+        stats_by_endpoint: dict[str, list[ProfileData]] = {}
 
         for profile in self.profiles:
             if profile.endpoint not in stats_by_endpoint:

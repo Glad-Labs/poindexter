@@ -197,7 +197,7 @@ async def update_task_status_enterprise(
 
 @status_router.put(
     "/{task_id}/status/validated",
-    response_model=Dict[str, Any],
+    response_model=dict[str, Any],
     summary="Update task status with enhanced validation and audit trail",
     tags=["Task Status Management"],
 )
@@ -373,7 +373,7 @@ async def get_task_status_info(
 
 @status_router.get(
     "/{task_id}/status-history",
-    response_model=Dict[str, Any],
+    response_model=dict[str, Any],
     summary="Get status change history for a task",
     tags=["Task Status Management"],
 )
@@ -449,7 +449,7 @@ async def get_task_status_history(
 
 @status_router.get(
     "/{task_id}/status-history/failures",
-    response_model=Dict[str, Any],
+    response_model=dict[str, Any],
     summary="Get validation failures for a task",
     tags=["Task Status Management"],
 )
@@ -618,7 +618,7 @@ async def update_task(
 )
 async def update_task_content(
     task_id: str,
-    updates: Dict[str, Any],
+    updates: dict[str, Any],
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):

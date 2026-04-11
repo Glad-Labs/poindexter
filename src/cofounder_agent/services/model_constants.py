@@ -10,7 +10,7 @@ Centralized location for model metadata to avoid duplication across:
 from typing import Dict
 
 # Model cost definitions (API call costs in USD)
-MODEL_COSTS: Dict[str, float] = {
+MODEL_COSTS: dict[str, float] = {
     # Ollama models (FREE — local inference on RTX 5090 32GB)
     "ollama/qwen3.5:35b": 0.0,  # Best prose quality for blog writing
     "ollama/qwen3.5:122b": 0.0,  # Top-tier (needs CPU offload)

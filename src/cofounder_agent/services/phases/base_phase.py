@@ -32,8 +32,8 @@ class PhaseInputSpec:
     description: str
     source: PhaseInputType = PhaseInputType.OPTIONAL
     required: bool = True
-    default: Optional[Any] = None
-    accepts_from_phases: Optional[List[str]] = None  # Which phases can provide this
+    default: Any | None = None
+    accepts_from_phases: list[str] | None = None  # Which phases can provide this
 
 
 @dataclass
@@ -51,9 +51,9 @@ class PhaseConfig:
 
     name: str  # Human-readable name
     description: str  # What it does
-    inputs: List[PhaseInputSpec]  # Required/optional inputs
-    outputs: List[PhaseOutputSpec]  # What it produces
-    configurable_params: Dict[str, Any]  # {param_name: default_value}
+    inputs: list[PhaseInputSpec]  # Required/optional inputs
+    outputs: list[PhaseOutputSpec]  # What it produces
+    configurable_params: dict[str, Any]  # {param_name: default_value}
 
 
 class BasePhase(ABC):
@@ -91,7 +91,7 @@ class BasePhase(ABC):
         """
 
     @abstractmethod
-    async def execute(self, inputs: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, inputs: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
         """
         Execute the phase.
 
@@ -108,7 +108,7 @@ class BasePhase(ABC):
         Should set self.status, self.result, and self.error appropriately.
         """
 
-    async def validate_inputs(self, inputs: Dict[str, Any]) -> tuple[bool, Optional[str]]:
+    async def validate_inputs(self, inputs: dict[str, Any]) -> tuple[bool, str | None]:
         """
         Validate that inputs satisfy the phase's requirements.
 

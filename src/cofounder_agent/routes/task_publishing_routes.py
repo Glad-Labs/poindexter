@@ -41,8 +41,8 @@ async def _embed_published_post(db_service: DatabaseService, post_dict: dict) ->
     and returns silently so the publish flow is never interrupted.
     """
     try:
-        from services.ollama_client import OllamaClient
         from services.embedding_service import EmbeddingService
+        from services.ollama_client import OllamaClient
 
         embeddings_db = getattr(db_service, "embeddings", None)
         if not embeddings_db:
@@ -166,10 +166,10 @@ def clean_generated_content(content: str, title: str = "") -> str:
 async def approve_task(
     task_id: str,
     approved: bool = True,
-    human_feedback: Optional[str] = None,
-    reviewer_id: Optional[str] = None,
-    featured_image_url: Optional[str] = None,
-    image_source: Optional[str] = None,
+    human_feedback: str | None = None,
+    reviewer_id: str | None = None,
+    featured_image_url: str | None = None,
+    image_source: str | None = None,
     auto_publish: bool = True,
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
@@ -550,8 +550,8 @@ async def go_live(
     # Queue social/podcast/video (they check for existing files)
     if _should_run_post_publish_hooks():
         try:
-            from services.task_executor import _notify_openclaw
             from services.site_config import site_config as _sc
+            from services.task_executor import _notify_openclaw
             _site_url = _sc.require("site_url")
             await _notify_openclaw(
                 f"🚀 Published: \"{row['title']}\"\n{_site_url}/posts/{row['slug']}",
@@ -652,8 +652,8 @@ class GenerateImageRequest(BaseModel):
     """Request model for image generation"""
 
     source: str = "pexels"  # "pexels" or "sdxl"
-    topic: Optional[str] = None
-    content_summary: Optional[str] = None
+    topic: str | None = None
+    content_summary: str | None = None
     page: int = 1  # Pagination for Pexels results (1-based)
 
 
@@ -668,7 +668,7 @@ async def generate_task_image(
     request: GenerateImageRequest,
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """
     Generate or fetch an image for a task using Pexels or SDXL.
 
@@ -921,7 +921,7 @@ async def generate_task_image(
                     status_code=408,
                     detail="Image generation timeout. Please try again with 'pexels' source.",
                 ) from exc
-            except (OSError, IOError, RuntimeError, ValueError) as e:
+            except (OSError, RuntimeError, ValueError) as e:
                 logger.error(
                     "SDXL image generation error - %s: %s", type(e).__name__, e, exc_info=True
                 )

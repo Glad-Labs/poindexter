@@ -25,7 +25,6 @@ from services.workflow_validator import (
     WorkflowValidator,
 )
 
-
 # ---------------------------------------------------------------------------
 # Stub registry / mapper that don't touch the real singleton
 # ---------------------------------------------------------------------------
@@ -33,8 +32,8 @@ from services.workflow_validator import (
 
 def _make_phase_def(
     name: str,
-    inputs: Optional[Dict[str, bool]] = None,
-    outputs: Optional[List[str]] = None,
+    inputs: dict[str, bool] | None = None,
+    outputs: list[str] | None = None,
     timeout: int = 300,
     retries: int = 3,
 ) -> PhaseDefinition:
@@ -63,21 +62,21 @@ def _make_phase_def(
 
 
 class StubRegistry:
-    def __init__(self, phases: Dict[str, PhaseDefinition]):
+    def __init__(self, phases: dict[str, PhaseDefinition]):
         self._phases = phases
 
     def phase_exists(self, name: str) -> bool:
         return name in self._phases
 
-    def get_phase(self, name: str) -> Optional[PhaseDefinition]:
+    def get_phase(self, name: str) -> PhaseDefinition | None:
         return self._phases.get(name)
 
 
 class StubMapper:
     """Fake PhaseMapper. Returns whatever map_phases is configured to return."""
 
-    def __init__(self, return_mapping: Optional[Dict[str, str]] = None,
-                 raise_error: Optional[Exception] = None):
+    def __init__(self, return_mapping: dict[str, str] | None = None,
+                 raise_error: Exception | None = None):
         self._mapping = return_mapping or {}
         self._raise = raise_error
         self.calls = []
@@ -89,7 +88,7 @@ class StubMapper:
         return self._mapping
 
 
-def _make_workflow(phases: List[WorkflowPhase], name="Test WF") -> CustomWorkflow:
+def _make_workflow(phases: list[WorkflowPhase], name="Test WF") -> CustomWorkflow:
     return CustomWorkflow(name=name, description="A workflow for testing", phases=phases)
 
 

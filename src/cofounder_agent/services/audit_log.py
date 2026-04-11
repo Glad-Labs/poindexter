@@ -17,11 +17,12 @@ Usage:
 """
 
 import asyncio
-from services.logger_config import get_logger
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from asyncpg import Pool
+
+from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -51,8 +52,8 @@ def get_audit_logger() -> Optional["AuditLogger"]:
 def audit_log_bg(
     event_type: str,
     source: str,
-    details: Optional[Dict[str, Any]] = None,
-    task_id: Optional[str] = None,
+    details: dict[str, Any] | None = None,
+    task_id: str | None = None,
     severity: str = "info",
 ) -> None:
     """Schedule an audit-log insert as a background task.
@@ -108,8 +109,8 @@ class AuditLogger:
         self,
         event_type: str,
         source: str,
-        details: Optional[Dict[str, Any]] = None,
-        task_id: Optional[str] = None,
+        details: dict[str, Any] | None = None,
+        task_id: str | None = None,
         severity: str = "info",
     ) -> None:
         """Insert a single audit-log row.
@@ -141,13 +142,13 @@ class AuditLogger:
 
     async def query(
         self,
-        event_type: Optional[str] = None,
-        source: Optional[str] = None,
-        task_id: Optional[str] = None,
-        severity: Optional[str] = None,
-        since: Optional[datetime] = None,
+        event_type: str | None = None,
+        source: str | None = None,
+        task_id: str | None = None,
+        severity: str | None = None,
+        since: datetime | None = None,
         limit: int = 100,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Query the audit log with optional filters.
 
         Returns rows as plain dicts, ordered newest-first.

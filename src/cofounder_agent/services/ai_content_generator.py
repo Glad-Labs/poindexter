@@ -24,6 +24,7 @@ from typing import Any, Dict, Optional, Tuple
 import httpx
 
 from services.logger_config import get_logger
+
 from .prompt_manager import get_prompt_manager
 from .provider_checker import ProviderChecker
 
@@ -37,7 +38,7 @@ class ContentValidationResult:
         self,
         is_valid: bool,
         quality_score: float,
-        issues: Optional[list[str]] = None,
+        issues: list[str] | None = None,
         feedback: str = "",
     ):
         self.is_valid = is_valid
@@ -223,7 +224,7 @@ class AIContentGenerator:
         target_length: int,
         tags: list[str],
         research_context: str = "",
-    ) -> Tuple[str, str, Any]:
+    ) -> tuple[str, str, Any]:
         """Load system prompt, generation prompt, and refinement prompt getter from prompt manager.
 
         Returns (system_prompt, generation_prompt, get_refinement_prompt_fn).
@@ -303,11 +304,11 @@ class AIContentGenerator:
         tone: str,
         target_length: int,
         tags: list[str],
-        preferred_model: Optional[str],
-        preferred_provider: Optional[str],
-        writing_style_context: Optional[str] = None,
-        research_context: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        preferred_model: str | None,
+        preferred_provider: str | None,
+        writing_style_context: str | None = None,
+        research_context: str | None = None,
+    ) -> dict[str, Any]:
         """Set up logging, check providers, load prompts, and initialize metrics.
 
         Returns a context dict containing all shared state needed by provider methods.
@@ -464,8 +465,8 @@ class AIContentGenerator:
         return generated_content
 
     async def _refine_ollama_content(
-        self, ollama, model_name: str, generated_content: str, validation, ctx: Dict[str, Any]
-    ) -> Optional[Tuple[str, str, Dict[str, Any]]]:
+        self, ollama, model_name: str, generated_content: str, validation, ctx: dict[str, Any]
+    ) -> tuple[str, str, dict[str, Any]] | None:
         """Attempt to refine Ollama-generated content that failed QA.
 
         Returns result tuple if refinement produces acceptable content, or None.
@@ -561,7 +562,7 @@ class AIContentGenerator:
             ctx["_refined_content"] = refined_content
         return None
 
-    async def _try_ollama(self, ctx: Dict[str, Any]) -> Optional[Tuple[str, str, Dict[str, Any]]]:
+    async def _try_ollama(self, ctx: dict[str, Any]) -> tuple[str, str, dict[str, Any]] | None:
         """Try Ollama local provider with refinement loop. Returns result tuple or None."""
         use_ollama = ctx["use_ollama"]
         skip_ollama = ctx["skip_ollama"]
@@ -790,8 +791,8 @@ class AIContentGenerator:
         return None
 
     async def _try_huggingface(
-        self, ctx: Dict[str, Any]
-    ) -> Optional[Tuple[str, str, Dict[str, Any]]]:
+        self, ctx: dict[str, Any]
+    ) -> tuple[str, str, dict[str, Any]] | None:
         """Try HuggingFace provider. Returns result tuple or None."""
         metrics = ctx["metrics"]
         generation_prompt = ctx["generation_prompt"]
@@ -870,7 +871,7 @@ class AIContentGenerator:
     # Paid provider methods (_try_anthropic, _try_gemini_fallback, _try_openai) removed.
     # Policy: Ollama-only. See session 55 notes.
 
-    def _handle_all_providers_failed(self, ctx: Dict[str, Any]) -> Tuple[str, str, Dict[str, Any]]:
+    def _handle_all_providers_failed(self, ctx: dict[str, Any]) -> tuple[str, str, dict[str, Any]]:
         """Handle the case where all AI providers failed. Returns fallback content."""
         metrics = ctx["metrics"]
         attempts = ctx["attempts"]
@@ -928,11 +929,11 @@ class AIContentGenerator:
         tone: str,
         target_length: int,
         tags: list[str],
-        preferred_model: Optional[str] = None,
-        preferred_provider: Optional[str] = None,
-        writing_style_context: Optional[str] = None,
-        research_context: Optional[str] = None,
-    ) -> Tuple[str, str, Dict[str, Any]]:
+        preferred_model: str | None = None,
+        preferred_provider: str | None = None,
+        writing_style_context: str | None = None,
+        research_context: str | None = None,
+    ) -> tuple[str, str, dict[str, Any]]:
         """
         Generate a blog post using best available model with self-checking.
 
@@ -1049,7 +1050,7 @@ Take action today—the insights you gain will compound over time.
 
 
 # Global instance
-_generator: Optional[AIContentGenerator] = None
+_generator: AIContentGenerator | None = None
 
 
 def get_content_generator() -> AIContentGenerator:

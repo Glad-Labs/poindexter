@@ -4,15 +4,15 @@ Tests for R2 upload service — Cloudflare R2 media uploads.
 
 import os
 from pathlib import Path
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from services.r2_upload_service import (
-    upload_to_r2,
-    upload_podcast_episode,
-    upload_video_episode,
     _CONTENT_TYPES,
+    upload_podcast_episode,
+    upload_to_r2,
+    upload_video_episode,
 )
 
 

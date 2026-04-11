@@ -4,17 +4,17 @@ Unit tests for services/quality_models.py
 Tests data models, enums, and serialization for quality assessment.
 """
 
-import pytest
 from datetime import datetime, timezone
+
+import pytest
 
 from services.quality_models import (
     EvaluationMethod,
+    QualityAssessment,
+    QualityDimensions,
     QualityScore,
     RefinementType,
-    QualityDimensions,
-    QualityAssessment,
 )
-
 
 # ---------------------------------------------------------------------------
 # EvaluationMethod enum

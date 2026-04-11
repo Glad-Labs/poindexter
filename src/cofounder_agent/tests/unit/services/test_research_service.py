@@ -12,7 +12,6 @@ import pytest
 
 from services.research_service import KNOWN_REFERENCES, ResearchService
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

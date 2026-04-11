@@ -36,7 +36,7 @@ class SiteConfig:
     """
 
     def __init__(self):
-        self._config: Dict[str, str] = {}
+        self._config: dict[str, str] = {}
         self._loaded = False
 
     async def load(self, pool) -> int:
@@ -129,7 +129,7 @@ class SiteConfig:
         """Whether the config has been loaded from DB."""
         return self._loaded
 
-    def all(self) -> Dict[str, str]:
+    def all(self) -> dict[str, str]:
         """Get all loaded config values (for debugging)."""
         return dict(self._config)
 

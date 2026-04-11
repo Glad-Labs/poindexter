@@ -81,8 +81,8 @@ class ErrorResponse(BaseModel):
 
     error_code: str
     message: str
-    details: Optional[Dict[str, Any]] = None
-    request_id: Optional[str] = None
+    details: dict[str, Any] | None = None
+    request_id: str | None = None
 
     class Config:
         json_schema_extra = {
@@ -121,11 +121,11 @@ class AppError(Exception):
     def __init__(
         self,
         message: str,
-        error_code: Optional[ErrorCode] = None,
-        http_status_code: Optional[int] = None,
-        details: Optional[Dict[str, Any]] = None,
-        cause: Optional[Exception] = None,
-        request_id: Optional[str] = None,
+        error_code: ErrorCode | None = None,
+        http_status_code: int | None = None,
+        details: dict[str, Any] | None = None,
+        cause: Exception | None = None,
+        request_id: str | None = None,
     ):
         """
         Initialize application error.
@@ -185,9 +185,9 @@ class ValidationError(AppError):
     def __init__(
         self,
         message: str,
-        field: Optional[str] = None,
-        value: Optional[Any] = None,
-        constraint: Optional[str] = None,
+        field: str | None = None,
+        value: Any | None = None,
+        constraint: str | None = None,
         **kwargs,
     ):
         details = {"field": field, "constraint": constraint}
@@ -208,8 +208,8 @@ class NotFoundError(AppError):
     def __init__(
         self,
         message: str,
-        resource_type: Optional[str] = None,
-        resource_id: Optional[str] = None,
+        resource_type: str | None = None,
+        resource_id: str | None = None,
         **kwargs,
     ):
         details = {}
@@ -272,7 +272,7 @@ def handle_error(
     error: Exception,
     default_code: ErrorCode = ErrorCode.INTERNAL_ERROR,
     log_exception: bool = True,
-    context: Optional[Dict[str, Any]] = None,
+    context: dict[str, Any] | None = None,
 ) -> AppError:
     """
     Convert any exception to AppError for consistent handling.
@@ -308,7 +308,7 @@ def handle_error(
 
 def create_error_response(
     error: Exception,
-    request_id: Optional[str] = None,
+    request_id: str | None = None,
 ) -> ErrorResponse:
     """
     Create standardized error response from any exception.

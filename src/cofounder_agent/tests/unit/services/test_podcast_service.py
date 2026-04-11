@@ -1,16 +1,19 @@
 """Unit tests for podcast_service.py — markdown stripping and script building."""
 
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
-from pathlib import Path
 import tempfile
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from services.podcast_service import (
-    PodcastService,
     EpisodeResult,
-    _strip_markdown,
-    _build_script_fallback as _build_script,
+    PodcastService,
     _estimate_duration_from_text,
+    _strip_markdown,
+)
+from services.podcast_service import (
+    _build_script_fallback as _build_script,
 )
 
 

@@ -42,10 +42,10 @@ class DevToCrossPostService:
 
     def __init__(self, pool):
         self.pool = pool
-        self._api_key: Optional[str] = None
+        self._api_key: str | None = None
         self._api_key_loaded = False
 
-    async def _get_api_key(self) -> Optional[str]:
+    async def _get_api_key(self) -> str | None:
         """Fetch the Dev.to API key from app_settings (cached per instance)."""
         if self._api_key_loaded:
             return self._api_key
@@ -97,7 +97,7 @@ class DevToCrossPostService:
         return content.strip()
 
     @staticmethod
-    def _normalize_tags(tags: List[str]) -> List[str]:
+    def _normalize_tags(tags: list[str]) -> list[str]:
         """Normalize tags for Dev.to: max 4, lowercase, no spaces, alphanumeric only.
 
         Handles edge case where seo_keywords are stored as individual characters
@@ -130,8 +130,8 @@ class DevToCrossPostService:
         title: str,
         content_markdown: str,
         canonical_url: str,
-        tags: Optional[List[str]] = None,
-    ) -> Optional[str]:
+        tags: list[str] | None = None,
+    ) -> str | None:
         """Cross-post an article to Dev.to as a draft.
 
         Args:
@@ -204,7 +204,7 @@ class DevToCrossPostService:
             logger.warning("[DEVTO] Cross-post failed: %s", e)
             return None
 
-    async def cross_post_by_post_id(self, post_id: str) -> Optional[str]:
+    async def cross_post_by_post_id(self, post_id: str) -> str | None:
         """Cross-post a published post by its database ID.
 
         Fetches the post from DB, cross-posts to Dev.to, and stores the

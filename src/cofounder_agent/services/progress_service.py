@@ -5,9 +5,10 @@ Provides callbacks and storage for tracking generation progress
 to be streamed to WebSocket clients in real-time.
 """
 
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict, Optional
 
 from services.logger_config import get_logger
 
@@ -26,7 +27,7 @@ class GenerationProgress:
     current_stage: str = ""  # "base_model", "refiner_model", "encoding", etc.
     elapsed_time: float = 0.0
     estimated_remaining: float = 0.0
-    error: Optional[str] = None
+    error: str | None = None
     message: str = ""
     timestamp: str = ""
 
@@ -34,7 +35,7 @@ class GenerationProgress:
         if not self.timestamp:
             self.timestamp = datetime.now(timezone.utc).isoformat()
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization"""
         return asdict(self)
 
@@ -44,9 +45,9 @@ class ProgressService:
 
     def __init__(self):
         # Store progress by task_id: {task_id -> GenerationProgress}
-        self._progress: Dict[str, GenerationProgress] = {}
+        self._progress: dict[str, GenerationProgress] = {}
         # Store callbacks by task_id: {task_id -> [callback1, callback2, ...]}
-        self._callbacks: Dict[str, list[Callable]] = {}
+        self._callbacks: dict[str, list[Callable]] = {}
 
     def create_progress(self, task_id: str, total_steps: int = 50) -> GenerationProgress:
         """Initialize progress tracking for a new task"""
@@ -60,7 +61,7 @@ class ProgressService:
         logger.info("Created progress tracker for %s", task_id)
         return progress
 
-    def get_progress(self, task_id: str) -> Optional[GenerationProgress]:
+    def get_progress(self, task_id: str) -> GenerationProgress | None:
         """Get current progress for a task"""
         return self._progress.get(task_id)
 
@@ -68,10 +69,10 @@ class ProgressService:
         self,
         task_id: str,
         current_step: int,
-        total_steps: Optional[int] = None,
-        stage: Optional[str] = None,
-        elapsed_time: Optional[float] = None,
-        message: Optional[str] = None,
+        total_steps: int | None = None,
+        stage: str | None = None,
+        elapsed_time: float | None = None,
+        message: str | None = None,
     ) -> GenerationProgress:
         """Update progress for a generation step"""
         progress = self._progress.get(task_id)
@@ -112,7 +113,7 @@ class ProgressService:
 
     def mark_complete(
         self, task_id: str, message: str = "Generation complete"
-    ) -> Optional[GenerationProgress]:
+    ) -> GenerationProgress | None:
         """Mark a task as completed"""
         progress = self._progress.get(task_id)
         if progress:
@@ -128,7 +129,7 @@ class ProgressService:
 
         return progress
 
-    def mark_failed(self, task_id: str, error: str) -> Optional[GenerationProgress]:
+    def mark_failed(self, task_id: str, error: str) -> GenerationProgress | None:
         """Mark a task as failed"""
         progress = self._progress.get(task_id)
         if progress:
@@ -166,7 +167,7 @@ class ProgressService:
 
 
 # Global progress service instance
-_progress_service: Optional[ProgressService] = None
+_progress_service: ProgressService | None = None
 
 
 def get_progress_service() -> ProgressService:

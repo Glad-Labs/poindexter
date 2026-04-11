@@ -17,16 +17,17 @@ Usage:
     # context is a formatted string ready for the generation prompt
 """
 
-from services.logger_config import get_logger
 import os
 import re
 from typing import Dict, List, Optional
+
+from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
 # Verified reference links — official documentation that won't go stale.
 # These are real URLs to real documentation. NO fabricated links.
-KNOWN_REFERENCES: Dict[str, List[Dict[str, str]]] = {
+KNOWN_REFERENCES: dict[str, list[dict[str, str]]] = {
     "fastapi": [
         {"title": "FastAPI Official Documentation", "url": "https://fastapi.tiangolo.com"},
         {"title": "FastAPI Tutorial - First Steps", "url": "https://fastapi.tiangolo.com/tutorial/first-steps/"},
@@ -165,7 +166,7 @@ class ResearchService:
                      topic[:40], len(refs), len(internal), len(web_results))
         return context
 
-    def _find_references(self, topic: str) -> List[Dict[str, str]]:
+    def _find_references(self, topic: str) -> list[dict[str, str]]:
         """Match topic keywords against known reference database."""
         topic_lower = topic.lower()
         matched = []
@@ -190,7 +191,7 @@ class ResearchService:
 
         return matched[:8]  # Cap at 8 references
 
-    async def _find_internal_links(self, topic: str) -> List[Dict[str, str]]:
+    async def _find_internal_links(self, topic: str) -> list[dict[str, str]]:
         """Find existing published posts related to the topic."""
         if not self.pool:
             return []
@@ -217,7 +218,7 @@ class ResearchService:
             logger.debug("[RESEARCH] Internal link search failed: %s", e)
             return []
 
-    async def _web_search(self, topic: str) -> List[Dict[str, str]]:
+    async def _web_search(self, topic: str) -> list[dict[str, str]]:
         """Search the web for fresh sources (free — DuckDuckGo, no API key)."""
         try:
             from services.web_research import WebResearcher

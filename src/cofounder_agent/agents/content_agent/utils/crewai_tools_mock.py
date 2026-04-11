@@ -82,7 +82,7 @@ class DirectoryReadTool(BaseTool):
         super().__init__(name="DirectoryReadTool", description="List and read directory contents")
         self.directory = directory
 
-    def __call__(self, directory_path: Optional[str] = None) -> str:
+    def __call__(self, directory_path: str | None = None) -> str:
         path = directory_path or self.directory
         logger.warning("[MOCK] DirectoryReadTool called for: %s — returning placeholder", path)
         return f"[MOCK] Directory read not available (crewai_tools not installed). Path: {path}"

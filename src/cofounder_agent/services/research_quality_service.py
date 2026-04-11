@@ -88,8 +88,8 @@ class ResearchQualityService:
         self.logger = logger
 
     def filter_and_score(
-        self, results: List[Dict], query: Optional[str] = None
-    ) -> List[ScoredSource]:
+        self, results: list[dict], query: str | None = None
+    ) -> list[ScoredSource]:
         """
         Filter and score research results
 
@@ -165,7 +165,7 @@ class ResearchQualityService:
 
         return sources
 
-    def _is_valid_result(self, result: Dict) -> bool:
+    def _is_valid_result(self, result: dict) -> bool:
         """
         Check if result is valid and useful
 
@@ -242,7 +242,7 @@ class ResearchQualityService:
         # Lesser-known sources
         return 0.5
 
-    def _score_snippet_quality(self, snippet: str, query: Optional[str] = None) -> float:
+    def _score_snippet_quality(self, snippet: str, query: str | None = None) -> float:
         """
         Score snippet quality (0.0-1.0)
 
@@ -287,7 +287,7 @@ class ResearchQualityService:
 
         return min(1.0, max(0.0, score))
 
-    def _score_recency(self, result: Dict) -> float:
+    def _score_recency(self, result: dict) -> float:
         """
         Score based on recency (if available)
 
@@ -312,7 +312,7 @@ class ResearchQualityService:
         # Older (> 1 month): okay
         return 0.6
 
-    def _deduplicate(self, sources: List[ScoredSource]) -> List[ScoredSource]:
+    def _deduplicate(self, sources: list[ScoredSource]) -> list[ScoredSource]:
         """
         Remove nearly-duplicate results
 
@@ -368,7 +368,7 @@ class ResearchQualityService:
         matcher = SequenceMatcher(None, text_a.lower(), text_b.lower())
         return matcher.ratio()
 
-    def _recalculate_uniqueness(self, sources: List[ScoredSource]) -> List[ScoredSource]:
+    def _recalculate_uniqueness(self, sources: list[ScoredSource]) -> list[ScoredSource]:
         """Recalculate uniqueness scores after deduplication"""
         # After deduplication, all remaining sources have high uniqueness
         for source in sources:
@@ -376,7 +376,7 @@ class ResearchQualityService:
 
         return sources
 
-    def format_context(self, sources: List[ScoredSource]) -> str:
+    def format_context(self, sources: list[ScoredSource]) -> str:
         """
         Format scored sources into context string for content generation
 

@@ -90,7 +90,7 @@ class DocumentAccessTool(FileReadTool):  # type: ignore[misc]
         super().__init__()
         logger.info("DocumentAccessTool initialized")
 
-    def read_research_file(self, file_path: str) -> Optional[str]:
+    def read_research_file(self, file_path: str) -> str | None:
         """Read a research document with error handling"""
         try:
             content = self.run(file_path)
@@ -113,7 +113,7 @@ class DirectoryAccessTool(DirectoryReadTool):  # type: ignore[misc]
     **No API Required:** Local directory access
     """
 
-    def __init__(self, directory: Optional[str] = None):
+    def __init__(self, directory: str | None = None):
         if directory:
             super().__init__(directory=directory)
         else:
@@ -135,7 +135,7 @@ class DataProcessingTool(CodeInterpreterTool):  # type: ignore[misc]
         super().__init__()
         logger.info("DataProcessingTool initialized")
 
-    def process_data(self, code: str) -> Optional[str]:
+    def process_data(self, code: str) -> str | None:
         """Execute data processing code with error handling"""
         try:
             result = self.run(code)
@@ -193,7 +193,7 @@ class CrewAIToolsFactory:
         return cls._instances["document_access"]
 
     @classmethod
-    def get_directory_tool(cls, directory: Optional[str] = None) -> DirectoryAccessTool:
+    def get_directory_tool(cls, directory: str | None = None) -> DirectoryAccessTool:
         """Get or create directory access tool"""
         tool_key = f"directory_access_{directory or 'root'}"
         if tool_key not in cls._instances:

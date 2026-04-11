@@ -4,13 +4,13 @@ Newsletter & Email Campaign Routes
 Endpoints for managing email campaign subscriptions and newsletter signups.
 """
 
-from services.logger_config import get_logger
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr
 
 from middleware.api_token_auth import verify_api_token
+from services.logger_config import get_logger
 from utils.rate_limiter import limiter
 from utils.route_utils import get_database_dependency
 
@@ -24,10 +24,10 @@ class NewsletterSubscribeRequest(BaseModel):
     """Newsletter subscription request"""
 
     email: EmailStr
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    company: Optional[str] = None
-    interest_categories: Optional[List[str]] = None  # ["AI", "Technology", "Automation"]
+    first_name: str | None = None
+    last_name: str | None = None
+    company: str | None = None
+    interest_categories: list[str] | None = None  # ["AI", "Technology", "Automation"]
     marketing_consent: bool = False
 
 
@@ -36,7 +36,7 @@ class NewsletterSubscribeResponse(BaseModel):
 
     success: bool
     message: str
-    subscriber_id: Optional[int] = None
+    subscriber_id: int | None = None
 
     model_config = {"from_attributes": True}
 
@@ -45,7 +45,7 @@ class NewsletterUnsubscribeRequest(BaseModel):
     """Newsletter unsubscribe request"""
 
     email: str
-    reason: Optional[str] = None
+    reason: str | None = None
 
 
 @router.post("/subscribe", response_model=NewsletterSubscribeResponse)

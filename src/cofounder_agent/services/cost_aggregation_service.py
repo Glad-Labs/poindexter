@@ -33,7 +33,7 @@ class CostAggregationService:
         self.db = db_service
         self.monthly_budget = 150.0  # Default solopreneur budget
 
-    async def get_summary(self, user_id: Optional[str] = None) -> Dict[str, Any]:
+    async def get_summary(self, user_id: str | None = None) -> dict[str, Any]:
         """
         Get cost summary for current month
 
@@ -120,8 +120,8 @@ class CostAggregationService:
             return self._get_empty_summary()
 
     async def get_breakdown_by_phase(
-        self, period: str = "week", user_id: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, period: str = "week", user_id: str | None = None
+    ) -> dict[str, Any]:
         """
         Get cost breakdown by pipeline phase
 
@@ -202,8 +202,8 @@ class CostAggregationService:
             return self._get_empty_breakdown_by_phase(period)
 
     async def get_breakdown_by_model(
-        self, period: str = "week", user_id: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, period: str = "week", user_id: str | None = None
+    ) -> dict[str, Any]:
         """
         Get cost breakdown by AI model
 
@@ -280,7 +280,7 @@ class CostAggregationService:
             )
             return self._get_empty_breakdown_by_model(period)
 
-    async def get_history(self, period: str = "week") -> Dict[str, Any]:
+    async def get_history(self, period: str = "week") -> dict[str, Any]:
         """
         Get daily cost history and trends
 
@@ -370,8 +370,8 @@ class CostAggregationService:
             return self._get_empty_history(period)
 
     async def get_budget_status(
-        self, monthly_budget: float = 150.0, user_id: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, monthly_budget: float = 150.0, user_id: str | None = None
+    ) -> dict[str, Any]:
         """
         Get current budget status and alerts
 
@@ -495,7 +495,7 @@ class CostAggregationService:
             logger.error("[_get_budget_status] Error getting budget status: %s", e, exc_info=True)
             return self._get_empty_budget_status(monthly_budget)
 
-    async def recalculate_all(self) -> Dict[str, Any]:
+    async def recalculate_all(self) -> dict[str, Any]:
         """Force recalculation of all metrics"""
         logger.info("Recalculating all cost metrics...")
         return await self.get_summary()
@@ -504,7 +504,7 @@ class CostAggregationService:
     # Helper methods for empty/default responses
     # ========================================================================
 
-    def _get_empty_summary(self) -> Dict[str, Any]:
+    def _get_empty_summary(self) -> dict[str, Any]:
         return {
             "total_spent": 0.0,
             "today_cost": 0.0,
@@ -518,7 +518,7 @@ class CostAggregationService:
             "last_updated": datetime.now(timezone.utc).isoformat(),
         }
 
-    def _get_empty_breakdown_by_phase(self, period: str) -> Dict[str, Any]:
+    def _get_empty_breakdown_by_phase(self, period: str) -> dict[str, Any]:
         return {
             "period": period,
             "phases": [],
@@ -526,7 +526,7 @@ class CostAggregationService:
             "last_updated": datetime.now(timezone.utc).isoformat(),
         }
 
-    def _get_empty_breakdown_by_model(self, period: str) -> Dict[str, Any]:
+    def _get_empty_breakdown_by_model(self, period: str) -> dict[str, Any]:
         return {
             "period": period,
             "models": [],
@@ -534,7 +534,7 @@ class CostAggregationService:
             "last_updated": datetime.now(timezone.utc).isoformat(),
         }
 
-    def _get_empty_history(self, period: str) -> Dict[str, Any]:
+    def _get_empty_history(self, period: str) -> dict[str, Any]:
         return {
             "period": period,
             "daily_data": [],
@@ -543,7 +543,7 @@ class CostAggregationService:
             "last_updated": datetime.now(timezone.utc).isoformat(),
         }
 
-    def _get_empty_budget_status(self, monthly_budget: float) -> Dict[str, Any]:
+    def _get_empty_budget_status(self, monthly_budget: float) -> dict[str, Any]:
         return {
             "monthly_budget": monthly_budget,
             "amount_spent": 0.0,

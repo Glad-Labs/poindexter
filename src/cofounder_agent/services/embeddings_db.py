@@ -38,8 +38,8 @@ class EmbeddingsDatabase(DatabaseServiceMixin):
         source_id: str,
         content_hash: str,
         embedding: list[float],
-        metadata: Optional[Dict[str, Any]] = None,
-        embedding_model: Optional[str] = None,
+        metadata: dict[str, Any] | None = None,
+        embedding_model: str | None = None,
     ) -> str:
         """
         Store an embedding vector in the database.
@@ -107,9 +107,9 @@ class EmbeddingsDatabase(DatabaseServiceMixin):
         self,
         embedding: list[float],
         limit: int = 10,
-        source_type: Optional[str] = None,
+        source_type: str | None = None,
         min_similarity: float = 0.0,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Search for similar embeddings using cosine similarity.
 
@@ -172,7 +172,7 @@ class EmbeddingsDatabase(DatabaseServiceMixin):
 
     async def get_embedding(
         self, source_type: str, source_id: str
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Get a specific embedding by source type and ID.
 
@@ -209,7 +209,7 @@ class EmbeddingsDatabase(DatabaseServiceMixin):
             return None
 
     async def delete_embeddings(
-        self, source_type: str, source_id: Optional[str] = None
+        self, source_type: str, source_id: str | None = None
     ) -> int:
         """
         Delete embeddings by source type and optionally source ID.

@@ -51,14 +51,14 @@ async def log_decision(
     pool,
     decision_type: str,
     decision_point: str,
-    context: Dict[str, Any],
-    decision: Dict[str, Any],
-    task_id: Optional[str] = None,
-    post_id: Optional[str] = None,
-    model_used: Optional[str] = None,
-    duration_ms: Optional[int] = None,
+    context: dict[str, Any],
+    decision: dict[str, Any],
+    task_id: str | None = None,
+    post_id: str | None = None,
+    model_used: str | None = None,
+    duration_ms: int | None = None,
     cost_usd: float = 0.0,
-) -> Optional[str]:
+) -> str | None:
     """Log an ML decision to the decision_log table.
 
     Returns the decision_id (UUID) for later outcome recording.
@@ -95,7 +95,7 @@ async def log_decision(
 async def record_outcome(
     pool,
     decision_id: str,
-    outcome: Dict[str, Any],
+    outcome: dict[str, Any],
 ) -> bool:
     """Record the outcome of a previously logged decision.
 
@@ -119,8 +119,8 @@ async def get_past_decisions(
     decision_type: str,
     limit: int = 50,
     with_outcomes_only: bool = False,
-    task_id: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+    task_id: str | None = None,
+) -> list[dict[str, Any]]:
     """Query past decisions for learning.
 
     Returns decisions with their outcomes so agents can learn
@@ -161,7 +161,7 @@ async def get_decision_stats(
     pool,
     decision_type: str,
     days: int = 30,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Get aggregate stats for a decision type.
 
     Useful for dashboards and understanding decision patterns.

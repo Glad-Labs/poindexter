@@ -4,13 +4,13 @@ Metrics Service for Poindexter (the AI cofounder pipeline).
 This module provides centralized metrics collection and reporting.
 """
 
-from services.logger_config import get_logger
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 # Import configuration
 from config import get_config
+from services.logger_config import get_logger
 
 # Get configuration
 config = get_config()
@@ -23,11 +23,11 @@ class TaskMetrics:
     def __init__(self, task_id: str) -> None:
         self.task_id = task_id
         self.start_time: float = time.time()
-        self.end_time: Optional[float] = None
+        self.end_time: float | None = None
         self.queue_wait_ms: float = 0.0
-        self.phases: Dict[str, Any] = {}
-        self.llm_calls: List[Dict[str, Any]] = []
-        self.errors: List[Dict[str, Any]] = []
+        self.phases: dict[str, Any] = {}
+        self.llm_calls: list[dict[str, Any]] = []
+        self.errors: list[dict[str, Any]] = []
         self.total_tokens_in: int = 0
         self.total_tokens_out: int = 0
         self.total_cost_usd: float = 0.0
@@ -45,7 +45,7 @@ class TaskMetrics:
         phase: str,
         start_ts: float,
         status: str = "success",
-        error: Optional[str] = None,
+        error: str | None = None,
     ) -> None:
         """Record end of a phase."""
         duration_ms = (time.monotonic() - start_ts) * 1000
@@ -70,10 +70,10 @@ class TaskMetrics:
         cost_usd: float,
         duration_ms: float,
         status: str = "success",
-        error: Optional[str] = None,
+        error: str | None = None,
     ) -> None:
         """Record a single LLM API call."""
-        entry: Dict[str, Any] = {
+        entry: dict[str, Any] = {
             "phase": phase,
             "model": model,
             "provider": provider,
@@ -122,7 +122,7 @@ class TaskMetrics:
         phase_total = sum(p.get("duration_ms", 0) for p in self.phases.values())
         return self.queue_wait_ms + phase_total
 
-    def get_phase_breakdown(self) -> Dict[str, float]:
+    def get_phase_breakdown(self) -> dict[str, float]:
         return {name: data.get("duration_ms", 0) for name, data in self.phases.items()}
 
     # --- Error rate ---
@@ -135,7 +135,7 @@ class TaskMetrics:
 
     # --- Serialization ---
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "task_id": self.task_id,
             "start_time": datetime.fromtimestamp(self.start_time, tz=timezone.utc).isoformat(),
@@ -163,8 +163,8 @@ class TaskMetrics:
 class MetricsService:
     """Centralized metrics collection service."""
 
-    def __init__(self, database_service: Optional[Any] = None) -> None:
-        self._metrics: Dict[str, Any] = {}
+    def __init__(self, database_service: Any | None = None) -> None:
+        self._metrics: dict[str, Any] = {}
         self._database_service = database_service
 
     async def save_metrics(self, task_metrics: "TaskMetrics") -> bool:
@@ -179,7 +179,7 @@ class MetricsService:
             logger.error("[save_metrics] Failed to persist metrics: %s", e, exc_info=True)
             return False
 
-    async def get_metrics(self) -> Dict[str, Any]:
+    async def get_metrics(self) -> dict[str, Any]:
         """Get aggregated task and system metrics from the database.
 
         Delegates to DatabaseService.get_metrics() when a database_service is

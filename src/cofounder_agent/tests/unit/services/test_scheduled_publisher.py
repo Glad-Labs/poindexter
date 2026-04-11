@@ -10,7 +10,6 @@ import pytest
 
 from services.scheduled_publisher import run_scheduled_publisher
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

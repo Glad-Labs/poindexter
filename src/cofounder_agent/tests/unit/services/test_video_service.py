@@ -4,21 +4,20 @@ Tests for video service — narrated slideshow video generation from posts.
 
 import os
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch, mock_open
+from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pytest
 
 from services.video_service import (
     VideoResult,
-    generate_video_for_post,
-    generate_video_episode,
-    generate_short_video_for_post,
     _extract_images_from_content,
     _generate_images_for_video,
     _generate_images_from_scenes,
     _generate_short_summary_audio,
+    generate_short_video_for_post,
+    generate_video_episode,
+    generate_video_for_post,
 )
-
 
 # ---------------------------------------------------------------------------
 # VideoResult dataclass

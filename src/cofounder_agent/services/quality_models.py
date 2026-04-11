@@ -39,13 +39,13 @@ class QualityScore:
     # Feedback
     passing: bool  # True if overall_score >= 70.0 (70/100 = passing for 0-100 scale)
     feedback: str  # Human-readable feedback
-    suggestions: List[str]  # Improvement suggestions
+    suggestions: list[str]  # Improvement suggestions
 
     # Metadata
     evaluation_timestamp: str
     evaluated_by: str = "QualityEvaluator"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for database storage"""
         return {
             "overall_score": self.overall_score,
@@ -145,7 +145,7 @@ class QualityDimensions:
 
         return raw_average
 
-    def to_dict(self) -> Dict[str, float]:
+    def to_dict(self) -> dict[str, float]:
         """Convert to dictionary"""
         return {
             "clarity": self.clarity,
@@ -171,7 +171,7 @@ class QualityAssessment:
 
     # Feedback
     feedback: str  # Summary feedback
-    suggestions: List[str]  # Improvement suggestions
+    suggestions: list[str]  # Improvement suggestions
 
     # Evaluation details
     evaluation_method: EvaluationMethod
@@ -179,11 +179,11 @@ class QualityAssessment:
     evaluated_by: str = "UnifiedQualityService"
 
     # Content metadata
-    content_length: Optional[int] = None
-    word_count: Optional[int] = None
+    content_length: int | None = None
+    word_count: int | None = None
 
     # Flesch-Kincaid Grade Level (complementary readability metric)
-    flesch_kincaid_grade_level: Optional[float] = None
+    flesch_kincaid_grade_level: float | None = None
 
     # Truncation detection
     truncation_detected: bool = False
@@ -193,7 +193,7 @@ class QualityAssessment:
     max_refinements: int = 3
     needs_refinement: bool = False
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for database storage"""
         return {
             **self.dimensions.to_dict(),

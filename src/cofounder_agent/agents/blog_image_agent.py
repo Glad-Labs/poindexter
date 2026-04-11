@@ -35,7 +35,7 @@ class BlogImageAgent:
         logger.info("Initializing BlogImageAgent")
         self.image_service = get_image_service()
 
-    async def run(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    async def run(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """
         Search for featured image for blog post.
 

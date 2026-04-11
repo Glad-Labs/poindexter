@@ -381,7 +381,7 @@ class TestIsAvailable:
 class TestSessionCleanup:
     @pytest.mark.asyncio
     async def test_closes_all_active_clients(self):
-        from services.huggingface_client import _session_cleanup, _active_clients
+        from services.huggingface_client import _active_clients, _session_cleanup
 
         # Stash any pre-existing entries from earlier tests
         original = list(_active_clients)
@@ -404,7 +404,7 @@ class TestSessionCleanup:
 
     @pytest.mark.asyncio
     async def test_swallows_close_errors(self):
-        from services.huggingface_client import _session_cleanup, _active_clients
+        from services.huggingface_client import _active_clients, _session_cleanup
 
         original = list(_active_clients)
         _active_clients.clear()
@@ -421,7 +421,7 @@ class TestSessionCleanup:
 
     @pytest.mark.asyncio
     async def test_empty_list_no_op(self):
-        from services.huggingface_client import _session_cleanup, _active_clients
+        from services.huggingface_client import _active_clients, _session_cleanup
 
         original = list(_active_clients)
         _active_clients.clear()

@@ -35,7 +35,8 @@ Usage:
 
 import asyncio
 import json
-from typing import Any, Callable, Dict, Optional
+from collections.abc import Callable
+from typing import Any, Dict, Optional
 
 import aiohttp
 import websockets
@@ -57,8 +58,8 @@ class WorkflowProgressClient:
         """
         self.base_url = base_url.rstrip("/")
         self.api_base = f"{self.base_url}/api/workflow-progress"
-        self.session: Optional[aiohttp.ClientSession] = None
-        self.ws_connections: Dict[str, Any] = {}
+        self.session: aiohttp.ClientSession | None = None
+        self.ws_connections: dict[str, Any] = {}
 
     async def _ensure_session(self) -> aiohttp.ClientSession:
         """Ensure HTTP session is initialized"""
@@ -83,10 +84,10 @@ class WorkflowProgressClient:
     async def initialize_progress(
         self,
         execution_id: str,
-        workflow_id: Optional[str] = None,
-        template: Optional[str] = None,
+        workflow_id: str | None = None,
+        template: str | None = None,
         total_phases: int = 0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Initialize progress tracking for a workflow execution.
 
@@ -119,7 +120,7 @@ class WorkflowProgressClient:
         self,
         execution_id: str,
         message: str = "Starting workflow execution...",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Mark execution as started.
 
@@ -147,8 +148,8 @@ class WorkflowProgressClient:
         execution_id: str,
         phase_index: int,
         phase_name: str,
-        message: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        message: str | None = None,
+    ) -> dict[str, Any]:
         """
         Mark the start of a workflow phase.
 
@@ -182,9 +183,9 @@ class WorkflowProgressClient:
         self,
         execution_id: str,
         phase_name: str,
-        phase_output: Optional[Dict[str, Any]] = None,
-        duration_ms: Optional[float] = None,
-    ) -> Dict[str, Any]:
+        phase_output: dict[str, Any] | None = None,
+        duration_ms: float | None = None,
+    ) -> dict[str, Any]:
         """
         Mark a phase as completed.
 
@@ -218,7 +219,7 @@ class WorkflowProgressClient:
         execution_id: str,
         phase_name: str,
         error: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Mark a phase as failed.
 
@@ -248,10 +249,10 @@ class WorkflowProgressClient:
     async def mark_complete(
         self,
         execution_id: str,
-        final_output: Optional[Dict[str, Any]] = None,
-        duration_ms: Optional[float] = None,
+        final_output: dict[str, Any] | None = None,
+        duration_ms: float | None = None,
         message: str = "Workflow execution completed",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Mark execution as completed.
 
@@ -284,8 +285,8 @@ class WorkflowProgressClient:
         self,
         execution_id: str,
         error: str,
-        failed_phase: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        failed_phase: str | None = None,
+    ) -> dict[str, Any]:
         """
         Mark execution as failed.
 
@@ -311,7 +312,7 @@ class WorkflowProgressClient:
             logger.error(f"Failed to mark execution as failed: {e}", exc_info=True)
             raise
 
-    async def get_status(self, execution_id: str) -> Dict[str, Any]:
+    async def get_status(self, execution_id: str) -> dict[str, Any]:
         """
         Get current progress status.
 
@@ -332,7 +333,7 @@ class WorkflowProgressClient:
             logger.error(f"Failed to get progress status: {e}", exc_info=True)
             raise
 
-    async def cleanup(self, execution_id: str) -> Dict[str, Any]:
+    async def cleanup(self, execution_id: str) -> dict[str, Any]:
         """
         Clean up progress tracking for an execution.
 
@@ -356,7 +357,7 @@ class WorkflowProgressClient:
     async def subscribe_progress(
         self,
         execution_id: str,
-        callback: Callable[[Dict[str, Any]], Any],
+        callback: Callable[[dict[str, Any]], Any],
         auto_reconnect: bool = True,
     ) -> None:
         """

@@ -39,7 +39,7 @@ class JWTBlocklistService:
     """
 
     def __init__(self) -> None:
-        self._pool: Optional[Any] = None
+        self._pool: Any | None = None
 
     async def initialize(self, pool: Any) -> None:
         """Wire up the asyncpg pool.  Call once after DB is ready."""

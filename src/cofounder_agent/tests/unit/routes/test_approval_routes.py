@@ -20,8 +20,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import routes.approval_routes as approval_module
-from routes.approval_routes import router
 from middleware.api_token_auth import verify_api_token
+from routes.approval_routes import router
 from tests.unit.routes.conftest import TEST_USER, make_mock_db
 from utils.route_utils import get_database_dependency
 

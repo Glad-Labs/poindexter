@@ -38,8 +38,8 @@ _CONTENT_TYPES = {
 async def upload_to_r2(
     local_path: str,
     r2_key: str,
-    content_type: Optional[str] = None,
-) -> Optional[str]:
+    content_type: str | None = None,
+) -> str | None:
     """Upload a file to Cloudflare R2 and return its public URL.
 
     Args:
@@ -102,7 +102,7 @@ async def upload_to_r2(
         return None
 
 
-async def upload_podcast_episode(post_id: str) -> Optional[str]:
+async def upload_podcast_episode(post_id: str) -> str | None:
     """Upload a podcast episode MP3 to R2. Returns public URL or None.
     Uses versioned path (podcast_cdn_version) for cache-busting."""
     try:
@@ -117,7 +117,7 @@ async def upload_podcast_episode(post_id: str) -> Optional[str]:
     return None
 
 
-async def upload_video_episode(post_id: str) -> Optional[str]:
+async def upload_video_episode(post_id: str) -> str | None:
     """Upload a video episode MP4 to R2. Returns public URL or None."""
     video_dir = Path(os.path.expanduser("~")) / ".poindexter" / "video"
     mp4_path = video_dir / f"{post_id}.mp4"

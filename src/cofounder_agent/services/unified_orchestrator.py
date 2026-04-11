@@ -31,12 +31,12 @@ Architecture:
 
 import asyncio
 import json
-from services.logger_config import get_logger
 import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+from services.logger_config import get_logger
 from services.orchestrator_types import ExecutionResult, ExecutionStatus, Request, RequestType
 from services.websocket_event_broadcaster import emit_task_progress
 
@@ -219,8 +219,8 @@ class UnifiedOrchestrator:
         raise ValueError(f"Unknown agent: '{agent_name}'. Not in registry or fallback mapping.")
 
     async def process_request(
-        self, user_input: str, context: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+        self, user_input: str, context: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """
         Process a user request end-to-end.
 
@@ -302,7 +302,7 @@ class UnifiedOrchestrator:
     # ========================================================================
 
     async def _parse_request(
-        self, user_input: str, request_id: str, context: Optional[Dict[str, Any]] = None
+        self, user_input: str, request_id: str, context: dict[str, Any] | None = None
     ) -> Request:
         """
         Parse natural language request and extract intent.
@@ -434,9 +434,9 @@ class UnifiedOrchestrator:
                 context=context or {},
             )
 
-    def _extract_content_params(self, text: str) -> Dict[str, Any]:
+    def _extract_content_params(self, text: str) -> dict[str, Any]:
         """Extract content parameters from natural language or structured format."""
-        params: Dict[str, Any] = {}
+        params: dict[str, Any] = {}
 
         # Try structured format first: "Key: value\n..."
         _FIELD_MAP = {
@@ -493,8 +493,8 @@ class UnifiedOrchestrator:
     # ========================================================================
 
     def _get_model_for_phase(
-        self, phase: str, model_selections: Dict[str, str], quality_preference: str
-    ) -> Optional[str]:
+        self, phase: str, model_selections: dict[str, str], quality_preference: str
+    ) -> str | None:
         """
         Get the appropriate LLM model for a given generation phase.
 
@@ -1001,7 +1001,7 @@ class UnifiedOrchestrator:
 
         return content, feedback, quality_score
 
-    async def _run_image_stage(self, request, task_id, topic) -> Optional[str]:
+    async def _run_image_stage(self, request, task_id, topic) -> str | None:
         """STAGE 4: Image Selection (60% -> 75%). Returns featured image URL or None."""
         logger.info("[%s] STAGE 4: Image Selection", request.request_id)
         try:
@@ -1274,7 +1274,7 @@ class UnifiedOrchestrator:
     # UTILITY METHODS
     # ========================================================================
 
-    def _get_system_info(self) -> Dict[str, Any]:
+    def _get_system_info(self) -> dict[str, Any]:
         """Get system information"""
         return {
             "status": "operational",
@@ -1301,7 +1301,7 @@ class UnifiedOrchestrator:
         except Exception as e:  # pylint: disable=broad-except
             logger.error("Failed to store execution result: %s", e, exc_info=True)
 
-    def _result_to_dict(self, result: ExecutionResult) -> Dict[str, Any]:
+    def _result_to_dict(self, result: ExecutionResult) -> dict[str, Any]:
         """Convert ExecutionResult to dictionary"""
         return {
             "request_id": result.request_id,

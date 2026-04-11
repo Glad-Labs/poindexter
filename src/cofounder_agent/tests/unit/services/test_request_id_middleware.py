@@ -12,6 +12,7 @@ Tests:
 
 import logging
 import uuid
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 

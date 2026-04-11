@@ -9,8 +9,8 @@ import pytest
 
 from services.content_validator import (
     GLAD_LABS_FACTS,
-    validate_content,
     ValidationResult,
+    validate_content,
 )
 
 

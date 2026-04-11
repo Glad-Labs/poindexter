@@ -5,10 +5,10 @@ log_decision, record_outcome, get_past_decisions, get_decision_stats.
 Tests use a mocked asyncpg pool — no DB.
 """
 
+import json
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
-import json
 import pytest
 
 from services.decision_service import (
@@ -17,7 +17,6 @@ from services.decision_service import (
     log_decision,
     record_outcome,
 )
-
 
 # ---------------------------------------------------------------------------
 # log_decision

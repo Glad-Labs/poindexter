@@ -33,7 +33,7 @@ class SettingsService:
     # Public API
     # ------------------------------------------------------------------
 
-    async def get(self, key: str, default: Optional[str] = None) -> Optional[str]:
+    async def get(self, key: str, default: str | None = None) -> str | None:
         """Get a setting value, using cache.
 
         Falls back to the matching environment variable (upper-cased key) when
@@ -65,9 +65,9 @@ class SettingsService:
         self,
         key: str,
         value: str,
-        category: Optional[str] = None,
-        description: Optional[str] = None,
-        is_secret: Optional[bool] = None,
+        category: str | None = None,
+        description: str | None = None,
+        is_secret: bool | None = None,
     ):
         """Set a setting value (upsert).
 

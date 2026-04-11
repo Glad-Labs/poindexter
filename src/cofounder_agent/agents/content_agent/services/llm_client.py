@@ -40,9 +40,10 @@ _fix_sys_path_for_venv()
 import asyncio
 import hashlib
 import json
-from services.logger_config import get_logger
 import os
 import time
+
+from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -170,7 +171,7 @@ class LLMClient:
         cache_path = self._get_cache_path(prompt, "json")
         if cache_path.exists():
             logger.info("Returning cached JSON response for prompt.")
-            async with aiofiles.open(cache_path, "r") as f:
+            async with aiofiles.open(cache_path) as f:
                 content = await f.read()
                 return json.loads(content)
 
@@ -255,7 +256,7 @@ class LLMClient:
         if cache_path.exists():
             logger.info("Returning cached text response for prompt.")
             # Use aiofiles to avoid blocking the event loop on file reads (issue #789).
-            async with aiofiles.open(cache_path, "r", encoding="utf-8") as f:
+            async with aiofiles.open(cache_path, encoding="utf-8") as f:
                 return await f.read()
 
         _llm_start = time.perf_counter()
@@ -325,7 +326,7 @@ class LLMClient:
         if cache_path.exists():
             logger.info("Returning cached summary for prompt.")
             # Use aiofiles to avoid blocking the event loop on file reads (issue #789).
-            async with aiofiles.open(cache_path, "r", encoding="utf-8") as f:
+            async with aiofiles.open(cache_path, encoding="utf-8") as f:
                 return await f.read()
 
         _llm_start = time.perf_counter()

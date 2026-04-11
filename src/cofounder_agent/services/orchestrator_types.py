@@ -57,10 +57,10 @@ class Request:
     original_text: str
     request_type: RequestType
     extracted_intent: str
-    parameters: Dict[str, Any] = field(default_factory=dict)
-    context: Dict[str, Any] = field(default_factory=dict)
+    parameters: dict[str, Any] = field(default_factory=dict)
+    context: dict[str, Any] = field(default_factory=dict)
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    user_id: Optional[str] = None  # User ID from auth context
+    user_id: str | None = None  # User ID from auth context
 
 
 @dataclass
@@ -71,7 +71,7 @@ class ExecutionContext:
     request_type: RequestType
     database_service: Any = None
     model_router: Any = None
-    orchestrator_agents: Dict[str, Any] = field(default_factory=dict)
+    orchestrator_agents: dict[str, Any] = field(default_factory=dict)
     quality_service: Any = None
     memory_system: Any = None
 
@@ -86,12 +86,12 @@ class ExecutionResult:
 
     # Result data
     output: Any  # Content, analysis, decision, etc.
-    task_id: Optional[str] = None  # For content tasks
+    task_id: str | None = None  # For content tasks
 
     # Quality metrics
-    quality_score: Optional[float] = None
-    passed_quality: Optional[bool] = None
-    feedback: Optional[str] = None
+    quality_score: float | None = None
+    passed_quality: bool | None = None
+    feedback: str | None = None
 
     # Execution details
     duration_ms: float = 0
@@ -99,13 +99,13 @@ class ExecutionResult:
     refinement_attempts: int = 0
 
     # Training data
-    training_example: Optional[Dict[str, Any]] = None  # For model improvement
+    training_example: dict[str, Any] | None = None  # For model improvement
 
     # Metadata
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for storage."""
         return {
             "request_id": self.request_id,

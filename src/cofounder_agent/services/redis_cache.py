@@ -25,7 +25,8 @@ import asyncio
 import json
 import logging
 import os
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from services.logger_config import get_logger
 from services.site_config import site_config
@@ -86,7 +87,7 @@ class RedisCache:
             value = await redis_cache.get(key)
     """
 
-    def __init__(self, redis_instance: Optional[Redis] = None, enabled: bool = False):
+    def __init__(self, redis_instance: Redis | None = None, enabled: bool = False):
         """
         Initialize RedisCache with a Redis instance.
 
@@ -94,7 +95,7 @@ class RedisCache:
             redis_instance: Connected Redis instance (or None if disabled)
             enabled: Whether caching is enabled
         """
-        self._instance: Optional[Redis] = redis_instance
+        self._instance: Redis | None = redis_instance
         self._enabled = enabled
 
     @classmethod
@@ -147,7 +148,7 @@ class RedisCache:
         """Check if Redis is initialized and available."""
         return self._enabled and self._instance is not None
 
-    async def get(self, key: str) -> Optional[Any]:
+    async def get(self, key: str) -> Any | None:
         """
         Get value from cache.
 
@@ -175,7 +176,7 @@ class RedisCache:
             logger.error("[_get] Cache get error for %s: %s", key, e, exc_info=True)
             return None
 
-    async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+    async def set(self, key: str, value: Any, ttl: int | None = None) -> bool:
         """
         Set value in cache.
 
@@ -271,8 +272,8 @@ class RedisCache:
             return False
 
     async def get_or_set(
-        self, key: str, fetch_fn: Callable, ttl: Optional[int] = None
-    ) -> Optional[Any]:
+        self, key: str, fetch_fn: Callable, ttl: int | None = None
+    ) -> Any | None:
         """
         Get value from cache, or fetch and cache if missing.
 
@@ -341,7 +342,7 @@ class RedisCache:
             logger.error("[_incr] Cache incr error for %s: %s", key, e, exc_info=True)
             return amount
 
-    async def health_check(self) -> Dict[str, Any]:
+    async def health_check(self) -> dict[str, Any]:
         """
         Check Redis health status.
 

@@ -19,7 +19,7 @@ class ServiceContainer:
     """Centralized service registry and dependency injection container."""
 
     _instance: Optional["ServiceContainer"] = None
-    _services: Dict[str, Any] = {}
+    _services: dict[str, Any] = {}
 
     def __new__(cls) -> "ServiceContainer":
         """Singleton pattern for ServiceContainer."""
@@ -35,7 +35,7 @@ class ServiceContainer:
         """Get a service from the container."""
         return self._services.get(name)
 
-    def get_all(self) -> Dict[str, Any]:
+    def get_all(self) -> dict[str, Any]:
         """Get all registered services."""
         return self._services.copy()
 

@@ -14,7 +14,6 @@ import pytest
 
 from services.redis_cache import CacheConfig, RedisCache, cached
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

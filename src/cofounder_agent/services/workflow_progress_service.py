@@ -5,9 +5,10 @@ Provides progress tracking and callbacks for streaming workflow execution
 progress to WebSocket clients in real-time.
 """
 
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from services.logger_config import get_logger
 
@@ -19,8 +20,8 @@ class WorkflowProgress:
     """Represents the current state of a workflow execution"""
 
     execution_id: str
-    workflow_id: Optional[str] = None
-    template: Optional[str] = None
+    workflow_id: str | None = None
+    template: str | None = None
     status: str = "pending"  # pending, executing, completed, failed
     current_phase: int = 0  # 0-based index
     total_phases: int = 0
@@ -31,15 +32,15 @@ class WorkflowProgress:
     elapsed_time: float = 0.0
     estimated_remaining: float = 0.0
     message: str = ""
-    error: Optional[str] = None
-    phase_results: Dict[str, Any] = field(default_factory=dict)
+    error: str | None = None
+    phase_results: dict[str, Any] = field(default_factory=dict)
     timestamp: str = ""
 
     def __post_init__(self):
         if not self.timestamp:
             self.timestamp = datetime.now().isoformat()
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization"""
         return asdict(self)
 
@@ -49,15 +50,15 @@ class WorkflowProgressService:
 
     def __init__(self):
         # Store progress by execution_id: {execution_id -> WorkflowProgress}
-        self._progress: Dict[str, WorkflowProgress] = {}
+        self._progress: dict[str, WorkflowProgress] = {}
         # Store callbacks by execution_id: {execution_id -> [callback1, callback2, ...]}
-        self._callbacks: Dict[str, List[Callable]] = {}
+        self._callbacks: dict[str, list[Callable]] = {}
 
     def create_progress(
         self,
         execution_id: str,
-        workflow_id: Optional[str] = None,
-        template: Optional[str] = None,
+        workflow_id: str | None = None,
+        template: str | None = None,
         total_phases: int = 0,
     ) -> WorkflowProgress:
         """Initialize progress tracking for a new workflow execution"""
@@ -75,7 +76,7 @@ class WorkflowProgressService:
         )
         return progress
 
-    def get_progress(self, execution_id: str) -> Optional[WorkflowProgress]:
+    def get_progress(self, execution_id: str) -> WorkflowProgress | None:
         """Get current progress for an execution"""
         return self._progress.get(execution_id)
 
@@ -99,8 +100,8 @@ class WorkflowProgressService:
         execution_id: str,
         phase_index: int,
         phase_name: str,
-        message: Optional[str] = None,
-    ) -> Optional[WorkflowProgress]:
+        message: str | None = None,
+    ) -> WorkflowProgress | None:
         """Mark phase execution start"""
         progress = self._progress.get(execution_id)
         if not progress:
@@ -127,9 +128,9 @@ class WorkflowProgressService:
         self,
         execution_id: str,
         phase_name: str,
-        phase_output: Optional[Dict[str, Any]] = None,
-        duration_ms: Optional[float] = None,
-    ) -> Optional[WorkflowProgress]:
+        phase_output: dict[str, Any] | None = None,
+        duration_ms: float | None = None,
+    ) -> WorkflowProgress | None:
         """Mark phase as completed"""
         progress = self._progress.get(execution_id)
         if not progress:
@@ -163,7 +164,7 @@ class WorkflowProgressService:
         execution_id: str,
         phase_name: str,
         error: str,
-    ) -> Optional[WorkflowProgress]:
+    ) -> WorkflowProgress | None:
         """Mark phase as failed"""
         progress = self._progress.get(execution_id)
         if not progress:
@@ -186,10 +187,10 @@ class WorkflowProgressService:
     def mark_complete(
         self,
         execution_id: str,
-        final_output: Optional[Dict[str, Any]] = None,
-        duration_ms: Optional[float] = None,
+        final_output: dict[str, Any] | None = None,
+        duration_ms: float | None = None,
         message: str = "Workflow execution completed",
-    ) -> Optional[WorkflowProgress]:
+    ) -> WorkflowProgress | None:
         """Mark workflow execution as completed"""
         progress = self._progress.get(execution_id)
         if not progress:
@@ -214,8 +215,8 @@ class WorkflowProgressService:
         self,
         execution_id: str,
         error: str,
-        failed_phase: Optional[str] = None,
-    ) -> Optional[WorkflowProgress]:
+        failed_phase: str | None = None,
+    ) -> WorkflowProgress | None:
         """Mark workflow execution as failed"""
         progress = self._progress.get(execution_id)
         if not progress:
@@ -238,7 +239,7 @@ class WorkflowProgressService:
         self,
         execution_id: str,
         elapsed_time: float,
-    ) -> Optional[WorkflowProgress]:
+    ) -> WorkflowProgress | None:
         """Update elapsed time for execution"""
         progress = self._progress.get(execution_id)
         if not progress:
@@ -309,7 +310,7 @@ class WorkflowProgressService:
 
 
 # Global singleton instance
-_workflow_progress_service: Optional[WorkflowProgressService] = None
+_workflow_progress_service: WorkflowProgressService | None = None
 
 
 def get_workflow_progress_service() -> WorkflowProgressService:

@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.settings_service import SettingsService, _SECRET_MASK
+from services.settings_service import _SECRET_MASK, SettingsService
 
 
 def _make_pool(rows=None):

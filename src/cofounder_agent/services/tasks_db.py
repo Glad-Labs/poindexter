@@ -69,7 +69,7 @@ class TasksDatabase(DatabaseServiceMixin):
         self.pool = pool
 
     @log_query_performance(operation="get_pending_tasks", category="task_retrieval")
-    async def get_pending_tasks(self, limit: int = 10) -> List[dict]:
+    async def get_pending_tasks(self, limit: int = 10) -> list[dict]:
         """
         Get pending tasks from content_tasks.
 
@@ -120,7 +120,7 @@ class TasksDatabase(DatabaseServiceMixin):
             )
             return []
 
-    async def get_all_tasks(self, limit: int = 100) -> List[TaskResponse]:
+    async def get_all_tasks(self, limit: int = 100) -> list[TaskResponse]:
         """
         Get all tasks from content_tasks.
 
@@ -143,7 +143,7 @@ class TasksDatabase(DatabaseServiceMixin):
             return []
 
     @log_query_performance(operation="add_task", category="task_write")
-    async def add_task(self, task_data: Dict[str, Any]) -> str:
+    async def add_task(self, task_data: dict[str, Any]) -> str:
         """
         Add a new task to the database using content_tasks table.
 
@@ -251,7 +251,7 @@ class TasksDatabase(DatabaseServiceMixin):
             raise
 
     @log_query_performance(operation="bulk_add_tasks", category="task_write")
-    async def bulk_add_tasks(self, tasks: List[Dict[str, Any]]) -> List[str]:
+    async def bulk_add_tasks(self, tasks: list[dict[str, Any]]) -> list[str]:
         """
         Add multiple tasks in a single connection acquire using executemany.
 
@@ -334,7 +334,7 @@ class TasksDatabase(DatabaseServiceMixin):
             raise
 
     @log_query_performance(operation="get_task", category="task_retrieval")
-    async def get_task(self, task_id: str) -> Optional[dict]:
+    async def get_task(self, task_id: str) -> dict | None:
         """
         Get a task from content_tasks by ID.
 
@@ -379,7 +379,7 @@ class TasksDatabase(DatabaseServiceMixin):
             logger.error("Failed to get task %s: %s", task_id, e, exc_info=True)
             return None
 
-    async def get_tasks_by_ids(self, task_ids: List[str]) -> Dict[str, dict]:
+    async def get_tasks_by_ids(self, task_ids: list[str]) -> dict[str, dict]:
         """
         Fetch multiple tasks in a single query.
 
@@ -416,8 +416,8 @@ class TasksDatabase(DatabaseServiceMixin):
         self,
         task_id: str,
         status: str,
-        result: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
+        result: str | None = None,
+    ) -> dict[str, Any] | None:
         """
         Update task status in content_tasks.
 
@@ -474,7 +474,7 @@ class TasksDatabase(DatabaseServiceMixin):
             return None
 
     @log_query_performance(operation="update_task", category="task_write")
-    async def update_task(self, task_id: str, updates: Dict[str, Any]) -> Optional[dict]:
+    async def update_task(self, task_id: str, updates: dict[str, Any]) -> dict | None:
         """
         Update task fields in content_tasks.
 
@@ -594,11 +594,11 @@ class TasksDatabase(DatabaseServiceMixin):
         self,
         offset: int = 0,
         limit: int = 20,
-        status: Optional[str] = None,
-        category: Optional[str] = None,
-        search: Optional[str] = None,
-        site_id: Optional[str] = None,
-    ) -> tuple[List[Dict[str, Any]], int]:
+        status: str | None = None,
+        category: str | None = None,
+        search: str | None = None,
+        site_id: str | None = None,
+    ) -> tuple[list[dict[str, Any]], int]:
         """
         Get paginated tasks from content_tasks with optional filtering.
 
@@ -709,7 +709,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 approved=0,
             )
 
-    async def get_queued_tasks(self, limit: int = 5) -> List[TaskResponse]:
+    async def get_queued_tasks(self, limit: int = 5) -> list[TaskResponse]:
         """
         Get top queued/pending tasks from content_tasks.
 
@@ -758,11 +758,11 @@ class TasksDatabase(DatabaseServiceMixin):
 
     async def get_tasks_by_date_range(
         self,
-        start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None,
-        status: Optional[str] = None,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+        status: str | None = None,
         limit: int = 500,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Get tasks from content_tasks within date range for analytics.
 
@@ -825,9 +825,9 @@ class TasksDatabase(DatabaseServiceMixin):
 
     async def get_kpi_aggregates(
         self,
-        start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None,
-    ) -> Dict[str, Any]:
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+    ) -> dict[str, Any]:
         """
         Compute KPI aggregates for the analytics dashboard using a single SQL query.
 
@@ -956,8 +956,8 @@ class TasksDatabase(DatabaseServiceMixin):
         task_id: str,
         old_status: str,
         new_status: str,
-        reason: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        reason: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> bool:
         """
         Log a status change to task_status_history table.
@@ -991,7 +991,7 @@ class TasksDatabase(DatabaseServiceMixin):
             logger.error("Failed to log status change: %s", e, exc_info=True)
             return False
 
-    async def get_status_history(self, task_id: str, limit: int = 100) -> List[Dict[str, Any]]:
+    async def get_status_history(self, task_id: str, limit: int = 100) -> list[dict[str, Any]]:
         """
         Get status change history for a task.
 
@@ -1057,7 +1057,7 @@ class TasksDatabase(DatabaseServiceMixin):
             logger.error("Failed to get status history: %s", e, exc_info=True)
             return []
 
-    async def get_validation_failures(self, task_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+    async def get_validation_failures(self, task_id: str, limit: int = 50) -> list[dict[str, Any]]:
         """
         Get all validation failures for a task by querying status history.
 
@@ -1121,7 +1121,7 @@ class TasksDatabase(DatabaseServiceMixin):
         self,
         stale_threshold_minutes: int = 60,
         max_retries: int = 3,
-    ) -> Dict[str, int]:
+    ) -> dict[str, int]:
         """
         Find and reset stale in-progress tasks atomically.
 
@@ -1156,8 +1156,8 @@ class TasksDatabase(DatabaseServiceMixin):
                         return {"reset": 0, "failed": 0}
 
                     # Partition into reset vs. fail buckets
-                    reset_ids: List[str] = []
-                    fail_ids: List[str] = []
+                    reset_ids: list[str] = []
+                    fail_ids: list[str] = []
 
                     for row in stale_rows:
                         task_id = row["task_id"]
@@ -1214,9 +1214,9 @@ class TasksDatabase(DatabaseServiceMixin):
 
     async def bulk_update_task_statuses(
         self,
-        task_ids: List[str],
+        task_ids: list[str],
         new_status: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Validate and update multiple task statuses in two queries (not 2N).
 
@@ -1270,7 +1270,7 @@ class TasksDatabase(DatabaseServiceMixin):
     @log_query_performance(operation="claim_next_task", category="task_write")
     async def claim_next_task(
         self, worker_id: str, task_categories: list = None
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Atomically claim the next pending task using FOR UPDATE SKIP LOCKED.
 
         This prevents race conditions when multiple workers poll simultaneously.

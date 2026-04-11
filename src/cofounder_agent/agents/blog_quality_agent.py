@@ -41,7 +41,7 @@ class BlogQualityAgent:
             model_router=model_router, database_service=database_service
         )
 
-    async def run(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    async def run(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """
         Evaluate blog post quality.
 

@@ -227,7 +227,7 @@ _structlog_configured = configure_structlog()
 # ============================================================================
 
 
-def get_logger(name: Optional[str] = None):
+def get_logger(name: str | None = None):
     """
     Get a logger instance with centralized configuration.
 

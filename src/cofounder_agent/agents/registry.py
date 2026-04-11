@@ -12,20 +12,20 @@ class AgentRegistry:
 
     def __init__(self):
         """Initialize empty agent registry."""
-        self._agents: Dict[str, Dict[str, Any]] = {}
-        self._agent_categories: Dict[str, List[str]] = {
+        self._agents: dict[str, dict[str, Any]] = {}
+        self._agent_categories: dict[str, list[str]] = {
             "content": [],
             "utility": [],
         }
-        self._agent_phases: Dict[str, List[str]] = {}
+        self._agent_phases: dict[str, list[str]] = {}
 
     def register(
         self,
         name: str,
         agent_class: Any,
         category: str = "utility",
-        phases: Optional[List[str]] = None,
-        capabilities: Optional[List[str]] = None,
+        phases: list[str] | None = None,
+        capabilities: list[str] | None = None,
         description: str = "",
         version: str = "1.0",
     ) -> None:
@@ -60,26 +60,26 @@ class AgentRegistry:
             f"Registered agent: {name} v{version} (category: {category}, phases: {phases or 'none'})"
         )
 
-    def get(self, agent_name: str) -> Optional[Dict[str, Any]]:
+    def get(self, agent_name: str) -> dict[str, Any] | None:
         """Get agent metadata by name, or None."""
         return self._agents.get(agent_name)
 
-    def get_agent_class(self, agent_name: str) -> Optional[Any]:
+    def get_agent_class(self, agent_name: str) -> Any | None:
         """Get agent class for instantiation, or None."""
         agent = self._agents.get(agent_name)
         return agent["class"] if agent else None
 
-    def list_agents(self, category: Optional[str] = None) -> List[str]:
+    def list_agents(self, category: str | None = None) -> list[str]:
         """List registered agent names, optionally filtered by category."""
         if category:
             return self._agent_categories.get(category, [])
         return list(self._agents.keys())
 
-    def list_by_phase(self, phase: str) -> List[str]:
+    def list_by_phase(self, phase: str) -> list[str]:
         """List agent names that handle a specific pipeline phase."""
         return self._agent_phases.get(phase, [])
 
-    def list_by_capability(self, capability: str) -> List[str]:
+    def list_by_capability(self, capability: str) -> list[str]:
         """List agent names with a specific capability."""
         return [
             name
@@ -87,7 +87,7 @@ class AgentRegistry:
             if capability in metadata.get("capabilities", [])
         ]
 
-    def list_categories(self) -> Dict[str, List[str]]:
+    def list_categories(self) -> dict[str, list[str]]:
         """Get all non-empty categories with their agent names."""
         return {
             cat: agents
@@ -95,21 +95,21 @@ class AgentRegistry:
             if agents
         }
 
-    def get_metadata(self, agent_name: str) -> Optional[Dict[str, Any]]:
+    def get_metadata(self, agent_name: str) -> dict[str, Any] | None:
         """Alias for get() -- returns full agent metadata."""
         return self._agents.get(agent_name)
 
-    def get_capabilities(self, agent_name: str) -> List[str]:
+    def get_capabilities(self, agent_name: str) -> list[str]:
         """Get capabilities list for an agent."""
         agent = self._agents.get(agent_name)
         return agent.get("capabilities", []) if agent else []
 
-    def get_phases(self, agent_name: str) -> List[str]:
+    def get_phases(self, agent_name: str) -> list[str]:
         """Get phases handled by an agent."""
         agent = self._agents.get(agent_name)
         return agent.get("phases", []) if agent else []
 
-    def get_serializable_metadata(self, agent_name: str) -> Optional[Dict[str, Any]]:
+    def get_serializable_metadata(self, agent_name: str) -> dict[str, Any] | None:
         """Get metadata for a single agent, excluding the class object."""
         agent = self.get(agent_name)
         if not agent:
@@ -124,7 +124,7 @@ class AgentRegistry:
             "version": agent.get("version", "1.0"),
         }
 
-    def list_all_with_metadata(self) -> List[Dict[str, Any]]:
+    def list_all_with_metadata(self) -> list[dict[str, Any]]:
         """Get all agents with serializable metadata (no class objects)."""
         return [
             {
@@ -146,7 +146,7 @@ class AgentRegistry:
 
 
 # Global registry instance
-_agent_registry: Optional[AgentRegistry] = None
+_agent_registry: AgentRegistry | None = None
 
 
 def get_agent_registry() -> AgentRegistry:
