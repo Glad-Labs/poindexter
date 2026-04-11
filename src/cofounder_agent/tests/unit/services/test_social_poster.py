@@ -313,8 +313,9 @@ class TestNotify:
     """Test the _notify function with mocked httpx."""
 
     @pytest.mark.asyncio
+    @patch("services.social_poster._get_discord_ops_channel", return_value="test-discord-channel-id")
     @patch("services.social_poster.httpx.AsyncClient")
-    async def test_sends_telegram_and_discord(self, mock_client_cls):
+    async def test_sends_telegram_and_discord(self, mock_client_cls, mock_channel):
         from services.social_poster import _notify
 
         mock_client = AsyncMock()
