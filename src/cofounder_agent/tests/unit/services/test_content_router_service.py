@@ -952,3 +952,615 @@ class TestGetOrCreateDefaultAuthor:
         db.pool.acquire = MagicMock(side_effect=RuntimeError("conn lost"))
         result = await _get_or_create_default_author(db)
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# _generate_canonical_title
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestGenerateCanonicalTitle:
+    @pytest.mark.asyncio
+    async def test_returns_cleaned_title_on_success(self):
+        from services.content_router_service import _generate_canonical_title
+
+        fake_response = MagicMock()
+        fake_response.text = '  "Why Local LLMs Beat the Cloud"  '
+
+        fake_service = MagicMock()
+        fake_service.generate = AsyncMock(return_value=fake_response)
+
+        fake_pm = MagicMock()
+        fake_pm.get_prompt = MagicMock(return_value="Generate an SEO title for: {content}")
+
+        with patch("services.model_consolidation_service.get_model_consolidation_service",
+                   return_value=fake_service), \
+             patch("services.content_router_service.get_prompt_manager",
+                   return_value=fake_pm):
+            result = await _generate_canonical_title(
+                topic="Local LLMs",
+                primary_keyword="Ollama",
+                content_excerpt="Running LLMs locally...",
+            )
+
+        assert result == "Why Local LLMs Beat the Cloud"
+
+    @pytest.mark.asyncio
+    async def test_truncates_long_title(self):
+        from services.content_router_service import _generate_canonical_title
+
+        fake_response = MagicMock()
+        fake_response.text = "x" * 200
+
+        fake_service = MagicMock()
+        fake_service.generate = AsyncMock(return_value=fake_response)
+        fake_pm = MagicMock()
+        fake_pm.get_prompt = MagicMock(return_value="prompt")
+
+        with patch("services.model_consolidation_service.get_model_consolidation_service",
+                   return_value=fake_service), \
+             patch("services.content_router_service.get_prompt_manager",
+                   return_value=fake_pm):
+            result = await _generate_canonical_title("topic", "kw", "excerpt")
+
+        assert result is not None
+        assert len(result) <= 100
+        assert result.endswith("...")
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_model_returns_empty(self):
+        from services.content_router_service import _generate_canonical_title
+
+        fake_response = MagicMock()
+        fake_response.text = ""
+        fake_service = MagicMock()
+        fake_service.generate = AsyncMock(return_value=fake_response)
+        fake_pm = MagicMock()
+        fake_pm.get_prompt = MagicMock(return_value="prompt")
+
+        with patch("services.model_consolidation_service.get_model_consolidation_service",
+                   return_value=fake_service), \
+             patch("services.content_router_service.get_prompt_manager",
+                   return_value=fake_pm):
+            result = await _generate_canonical_title("topic", "kw", "excerpt")
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_exception(self):
+        from services.content_router_service import _generate_canonical_title
+
+        fake_service = MagicMock()
+        fake_service.generate = AsyncMock(side_effect=RuntimeError("LLM down"))
+        fake_pm = MagicMock()
+        fake_pm.get_prompt = MagicMock(return_value="prompt")
+
+        with patch("services.model_consolidation_service.get_model_consolidation_service",
+                   return_value=fake_service), \
+             patch("services.content_router_service.get_prompt_manager",
+                   return_value=fake_pm):
+            result = await _generate_canonical_title("topic", "kw", "excerpt")
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_includes_existing_titles_warning_in_prompt(self):
+        """When existing_titles is provided, it's appended with an AVOID SIMILARITY warning."""
+        from services.content_router_service import _generate_canonical_title
+
+        captured_prompt = {}
+
+        async def _capture_generate(**kwargs):
+            captured_prompt["text"] = kwargs.get("prompt", "")
+            resp = MagicMock()
+            resp.text = "title"
+            return resp
+
+        fake_service = MagicMock()
+        fake_service.generate = AsyncMock(side_effect=_capture_generate)
+        fake_pm = MagicMock()
+        fake_pm.get_prompt = MagicMock(return_value="base prompt")
+
+        with patch("services.model_consolidation_service.get_model_consolidation_service",
+                   return_value=fake_service), \
+             patch("services.content_router_service.get_prompt_manager",
+                   return_value=fake_pm):
+            await _generate_canonical_title(
+                "topic", "kw", "excerpt",
+                existing_titles="- Existing Title 1\n- Existing Title 2",
+            )
+
+        assert "AVOID SIMILARITY" in captured_prompt["text"]
+        assert "Existing Title 1" in captured_prompt["text"]
+
+
+# ---------------------------------------------------------------------------
+# _stage_quality_evaluation
+# ---------------------------------------------------------------------------
+
+
+def _make_quality_result(
+    overall_score=85.0, passing=True, truncation=False,
+    clarity=80, accuracy=85, completeness=80, relevance=90,
+    seo_quality=75, readability=80, engagement=80,
+):
+    qr = MagicMock()
+    qr.overall_score = overall_score
+    qr.passing = passing
+    qr.truncation_detected = truncation
+    qr.dimensions = MagicMock()
+    qr.dimensions.clarity = clarity
+    qr.dimensions.accuracy = accuracy
+    qr.dimensions.completeness = completeness
+    qr.dimensions.relevance = relevance
+    qr.dimensions.seo_quality = seo_quality
+    qr.dimensions.readability = readability
+    qr.dimensions.engagement = engagement
+    return qr
+
+
+@pytest.mark.unit
+class TestStageQualityEvaluation:
+    @pytest.mark.asyncio
+    async def test_populates_result_dict_on_success(self):
+        from services.content_router_service import _stage_quality_evaluation
+
+        qa = MagicMock()
+        qa.evaluate = AsyncMock(return_value=_make_quality_result(
+            overall_score=87.5, passing=True,
+        ))
+        result = {"stages": {}}
+
+        qr = await _stage_quality_evaluation(
+            topic="AI trends",
+            tags=["ai", "ml"],
+            content_text="Body text.",
+            quality_service=qa,
+            result=result,
+        )
+
+        assert result["quality_score"] == 87.5
+        assert result["quality_passing"] is True
+        assert result["truncation_detected"] is False
+        assert result["stages"]["2b_quality_evaluated_initial"] is True
+        assert "clarity" in result["quality_details_initial"]
+        assert qr.overall_score == 87.5
+
+    @pytest.mark.asyncio
+    async def test_truncation_detected_warning(self):
+        from services.content_router_service import _stage_quality_evaluation
+
+        qa = MagicMock()
+        qa.evaluate = AsyncMock(return_value=_make_quality_result(truncation=True))
+        result = {"stages": {}}
+
+        await _stage_quality_evaluation("t", ["x"], "body", qa, result)
+        assert result["truncation_detected"] is True
+
+    @pytest.mark.asyncio
+    async def test_none_quality_result_raises(self):
+        from services.content_router_service import _stage_quality_evaluation
+
+        qa = MagicMock()
+        qa.evaluate = AsyncMock(return_value=None)
+        result = {"stages": {}}
+
+        with pytest.raises(ValueError, match="no result"):
+            await _stage_quality_evaluation("t", ["x"], "body", qa, result)
+
+    @pytest.mark.asyncio
+    async def test_empty_tags_falls_back_to_topic_as_keyword(self):
+        from services.content_router_service import _stage_quality_evaluation
+
+        captured_context = {}
+
+        async def _capture(**kwargs):
+            captured_context.update(kwargs.get("context", {}))
+            return _make_quality_result()
+
+        qa = MagicMock()
+        qa.evaluate = AsyncMock(side_effect=_capture)
+        result = {"stages": {}}
+
+        await _stage_quality_evaluation(
+            topic="Docker",
+            tags=None,
+            content_text="body",
+            quality_service=qa,
+            result=result,
+        )
+
+        assert captured_context["keywords"] == ["Docker"]
+
+
+# ---------------------------------------------------------------------------
+# _stage_generate_seo_metadata
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestStageGenerateSeoMetadata:
+    def _make_seo_generator(self, seo_assets):
+        gen = MagicMock()
+        gen.metadata_gen = MagicMock()
+        gen.metadata_gen.generate_seo_assets = MagicMock(return_value=seo_assets)
+        return gen
+
+    @pytest.mark.asyncio
+    async def test_populates_result_on_success(self):
+        from services.content_router_service import _stage_generate_seo_metadata
+
+        seo = self._make_seo_generator({
+            "seo_title": "Why Docker Wins",
+            "meta_description": "Docker provides containerization that simplifies deployment.",
+            "meta_keywords": ["docker", "containers", "devops"],
+        })
+        result = {"stages": {}}
+
+        with patch("services.content_router_service.get_seo_content_generator", return_value=seo):
+            title, desc, keywords = await _stage_generate_seo_metadata(
+                topic="Docker",
+                tags=["docker"],
+                content_text="About docker.",
+                content_generator=MagicMock(),
+                result=result,
+            )
+
+        assert title == "Why Docker Wins"
+        assert "containerization" in desc
+        assert keywords == ["docker", "containers", "devops"]
+        assert result["stages"]["4_seo_metadata_generated"] is True
+        assert result["seo_title"] == "Why Docker Wins"
+
+    @pytest.mark.asyncio
+    async def test_title_truncated_to_60_chars(self):
+        from services.content_router_service import _stage_generate_seo_metadata
+
+        long_title = "x" * 200
+        seo = self._make_seo_generator({
+            "seo_title": long_title,
+            "meta_description": "desc",
+            "meta_keywords": [],
+        })
+        result = {"stages": {}}
+
+        with patch("services.content_router_service.get_seo_content_generator", return_value=seo):
+            title, _, _ = await _stage_generate_seo_metadata(
+                "topic", [], "text", MagicMock(), result,
+            )
+
+        assert len(title) == 60
+
+    @pytest.mark.asyncio
+    async def test_description_truncated_to_160_chars(self):
+        from services.content_router_service import _stage_generate_seo_metadata
+
+        long_desc = "x" * 500
+        seo = self._make_seo_generator({
+            "seo_title": "t",
+            "meta_description": long_desc,
+            "meta_keywords": [],
+        })
+        result = {"stages": {}}
+
+        with patch("services.content_router_service.get_seo_content_generator", return_value=seo):
+            _, desc, _ = await _stage_generate_seo_metadata(
+                "topic", [], "text", MagicMock(), result,
+            )
+
+        assert len(desc) == 160
+
+    @pytest.mark.asyncio
+    async def test_missing_title_falls_back_to_topic(self):
+        from services.content_router_service import _stage_generate_seo_metadata
+
+        seo = self._make_seo_generator({
+            "seo_title": None,
+            "meta_description": "desc",
+            "meta_keywords": [],
+        })
+        result = {"stages": {}}
+
+        with patch("services.content_router_service.get_seo_content_generator", return_value=seo):
+            title, _, _ = await _stage_generate_seo_metadata(
+                topic="Kubernetes deployment patterns",
+                tags=[],
+                content_text="text",
+                content_generator=MagicMock(),
+                result=result,
+            )
+
+        assert title == "Kubernetes deployment patterns"[:60]
+
+    @pytest.mark.asyncio
+    async def test_keywords_limited_to_ten(self):
+        from services.content_router_service import _stage_generate_seo_metadata
+
+        many_keywords = [f"kw{i}" for i in range(20)]
+        seo = self._make_seo_generator({
+            "seo_title": "t",
+            "meta_description": "d",
+            "meta_keywords": many_keywords,
+        })
+        result = {"stages": {}}
+
+        with patch("services.content_router_service.get_seo_content_generator", return_value=seo):
+            _, _, keywords = await _stage_generate_seo_metadata(
+                "topic", [], "text", MagicMock(), result,
+            )
+
+        assert len(keywords) == 10
+
+    @pytest.mark.asyncio
+    async def test_invalid_keywords_filtered(self):
+        """Empty strings, None, non-strings should be dropped."""
+        from services.content_router_service import _stage_generate_seo_metadata
+
+        seo = self._make_seo_generator({
+            "seo_title": "t",
+            "meta_description": "d",
+            "meta_keywords": ["docker", "", None, "  ", "k8s", 42],
+        })
+        result = {"stages": {}}
+
+        with patch("services.content_router_service.get_seo_content_generator", return_value=seo):
+            _, _, keywords = await _stage_generate_seo_metadata(
+                "topic", [], "text", MagicMock(), result,
+            )
+
+        assert keywords == ["docker", "k8s"]
+
+    @pytest.mark.asyncio
+    async def test_none_assets_raises(self):
+        from services.content_router_service import _stage_generate_seo_metadata
+
+        seo = self._make_seo_generator(None)
+        result = {"stages": {}}
+
+        with patch("services.content_router_service.get_seo_content_generator", return_value=seo):
+            with pytest.raises(ValueError, match="SEO metadata"):
+                await _stage_generate_seo_metadata(
+                    "topic", [], "text", MagicMock(), result,
+                )
+
+    @pytest.mark.asyncio
+    async def test_keywords_fall_back_to_tags(self):
+        """When meta_keywords is missing, the tags arg is used."""
+        from services.content_router_service import _stage_generate_seo_metadata
+
+        seo = self._make_seo_generator({
+            "seo_title": "t",
+            "meta_description": "d",
+            # no meta_keywords
+        })
+        result = {"stages": {}}
+
+        with patch("services.content_router_service.get_seo_content_generator", return_value=seo):
+            _, _, keywords = await _stage_generate_seo_metadata(
+                "topic", ["tag1", "tag2"], "text", MagicMock(), result,
+            )
+
+        assert keywords == ["tag1", "tag2"]
+
+
+# ---------------------------------------------------------------------------
+# _stage_finalize_task
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestStageFinalizeTask:
+    @pytest.mark.asyncio
+    async def test_updates_task_with_all_fields(self):
+        from services.content_router_service import _stage_finalize_task
+
+        db = MagicMock()
+        db.update_task = AsyncMock()
+        qr = _make_quality_result(overall_score=82.0)
+        result = {
+            "stages": {},
+            "featured_image_url": "https://img.example/hero.jpg",
+            "quality_score": 82.0,
+        }
+
+        await _stage_finalize_task(
+            database_service=db,
+            task_id="task-1",
+            topic="Docker",
+            style="balanced",
+            tone="professional",
+            content_text="Body content here.",
+            quality_result=qr,
+            seo_title="Docker Guide",
+            seo_description="Learn Docker",
+            seo_keywords=["docker", "devops"],
+            category="technology",
+            target_audience="developers",
+            result=result,
+        )
+
+        db.update_task.assert_awaited_once()
+        kwargs = db.update_task.await_args.kwargs
+        assert kwargs["task_id"] == "task-1"
+        updates = kwargs["updates"]
+        assert updates["status"] == "awaiting_approval"
+        assert updates["approval_status"] == "pending"
+        assert updates["quality_score"] == 82
+        assert updates["featured_image_url"] == "https://img.example/hero.jpg"
+        assert updates["style"] == "balanced"
+        assert updates["tone"] == "professional"
+
+    @pytest.mark.asyncio
+    async def test_result_dict_marked_awaiting_approval(self):
+        from services.content_router_service import _stage_finalize_task
+
+        db = MagicMock()
+        db.update_task = AsyncMock()
+        qr = _make_quality_result()
+        result = {"stages": {}}
+
+        await _stage_finalize_task(
+            db, "t1", "topic", "s", "t", "content", qr,
+            "seo_title", "seo_desc", ["kw"], "tech", "devs", result,
+        )
+
+        assert result["status"] == "awaiting_approval"
+        assert result["approval_status"] == "pending"
+        assert result["stages"]["5_post_created"] is False
+
+    @pytest.mark.asyncio
+    async def test_seo_keywords_joined_to_string(self):
+        from services.content_router_service import _stage_finalize_task
+
+        db = MagicMock()
+        db.update_task = AsyncMock()
+        qr = _make_quality_result()
+        result = {"stages": {}}
+
+        await _stage_finalize_task(
+            db, "t1", "topic", "s", "t", "content", qr,
+            "seo_title", "seo_desc",
+            ["docker", "k8s", "devops"],
+            "tech", "devs", result,
+        )
+
+        updates = db.update_task.await_args.kwargs["updates"]
+        assert updates["seo_keywords"] == "docker, k8s, devops"
+
+    @pytest.mark.asyncio
+    async def test_prefers_multi_model_qa_score_over_early_eval(self):
+        """When result['quality_score'] is set (from multi-model QA), use it over quality_result.overall_score."""
+        from services.content_router_service import _stage_finalize_task
+
+        db = MagicMock()
+        db.update_task = AsyncMock()
+        qr = _make_quality_result(overall_score=65.0)  # Early eval score
+        result = {
+            "stages": {},
+            "quality_score": 88.0,  # Multi-model QA score (should win)
+        }
+
+        await _stage_finalize_task(
+            db, "t1", "topic", "s", "t", "content", qr,
+            "seo_title", "seo_desc", [], "tech", "devs", result,
+        )
+
+        updates = db.update_task.await_args.kwargs["updates"]
+        assert updates["quality_score"] == 88  # int(round(88.0))
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_early_eval_when_qa_score_missing(self):
+        from services.content_router_service import _stage_finalize_task
+
+        db = MagicMock()
+        db.update_task = AsyncMock()
+        qr = _make_quality_result(overall_score=72.7)
+        result = {"stages": {}}  # no quality_score
+
+        await _stage_finalize_task(
+            db, "t1", "topic", "s", "t", "content", qr,
+            "seo_title", "seo_desc", [], "tech", "devs", result,
+        )
+
+        updates = db.update_task.await_args.kwargs["updates"]
+        assert updates["quality_score"] == 73  # int(round(72.7))
+
+    @pytest.mark.asyncio
+    async def test_task_metadata_contains_all_fields(self):
+        from services.content_router_service import _stage_finalize_task
+
+        db = MagicMock()
+        db.update_task = AsyncMock()
+        qr = _make_quality_result()
+        result = {
+            "stages": {},
+            "featured_image_url": "https://img/hero.jpg",
+            "featured_image_alt": "alt text",
+            "podcast_script": "podcast body",
+            "video_scenes": [{"scene": 1}],
+            "short_summary_script": "short summary",
+        }
+
+        await _stage_finalize_task(
+            db, "t1", "topic", "s", "t", "Body content here", qr,
+            "seo_title", "seo_desc", [], "tech", "devs", result,
+        )
+
+        updates = db.update_task.await_args.kwargs["updates"]
+        meta = updates["task_metadata"]
+        assert meta["featured_image_url"] == "https://img/hero.jpg"
+        assert meta["featured_image_alt"] == "alt text"
+        assert meta["podcast_script"] == "podcast body"
+        assert meta["video_scenes"] == [{"scene": 1}]
+        assert meta["short_summary_script"] == "short summary"
+        assert meta["content"] == "Body content here"
+        assert meta["word_count"] == 3
+
+    @pytest.mark.asyncio
+    async def test_category_prefers_result_over_arg(self):
+        """If result['category'] is set, it wins over the category arg."""
+        from services.content_router_service import _stage_finalize_task
+
+        db = MagicMock()
+        db.update_task = AsyncMock()
+        qr = _make_quality_result()
+        result = {"stages": {}, "category": "ai"}
+
+        await _stage_finalize_task(
+            db, "t1", "topic", "s", "t", "content", qr,
+            "seo_title", "seo_desc", [], "tech", "devs", result,
+        )
+
+        updates = db.update_task.await_args.kwargs["updates"]
+        assert updates["category"] == "ai"  # from result, not from arg
+
+    @pytest.mark.asyncio
+    async def test_target_audience_defaults_to_general(self):
+        from services.content_router_service import _stage_finalize_task
+
+        db = MagicMock()
+        db.update_task = AsyncMock()
+        qr = _make_quality_result()
+        result = {"stages": {}}
+
+        await _stage_finalize_task(
+            db, "t1", "topic", "s", "t", "content", qr,
+            "seo_title", "seo_desc", [], "tech",
+            target_audience=None,
+            result=result,
+        )
+
+        updates = db.update_task.await_args.kwargs["updates"]
+        assert updates["target_audience"] == "General"
+
+
+# ---------------------------------------------------------------------------
+# _stage_verify_task — error path (existing test file only covers happy path)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestStageVerifyTaskErrorPaths:
+    @pytest.mark.asyncio
+    async def test_task_not_found_sets_stage_false(self):
+        db = AsyncMock()
+        db.get_task = AsyncMock(return_value=None)
+        result = {"stages": {}}
+
+        await _stage_verify_task(db, "missing-task", result)
+
+        assert result["stages"]["1_content_task_created"] is False
+        # content_task_id should NOT be set when task not found
+        assert "content_task_id" not in result
+
+    @pytest.mark.asyncio
+    async def test_db_exception_sets_stage_false_and_swallows(self):
+        db = AsyncMock()
+        db.get_task = AsyncMock(side_effect=RuntimeError("db down"))
+        result = {"stages": {}}
+
+        # Should not raise
+        await _stage_verify_task(db, "task-1", result)
+
+        assert result["stages"]["1_content_task_created"] is False
