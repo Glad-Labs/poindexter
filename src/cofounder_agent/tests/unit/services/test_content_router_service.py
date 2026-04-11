@@ -1564,3 +1564,400 @@ class TestStageVerifyTaskErrorPaths:
         await _stage_verify_task(db, "task-1", result)
 
         assert result["stages"]["1_content_task_created"] is False
+
+
+# ---------------------------------------------------------------------------
+# _stage_capture_training_data
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestStageCaptureTrainingData:
+    def _make_qr(self, **overrides):
+        qr = _make_quality_result(**overrides)
+        qr.feedback = "Good content"
+        qr.suggestions = ["Add citations"]
+        qr.evaluation_method = "pattern-based"
+        return qr
+
+    @pytest.mark.asyncio
+    async def test_happy_path_writes_both_records(self):
+        from services.content_router_service import _stage_capture_training_data
+
+        db = MagicMock()
+        db.create_quality_evaluation = AsyncMock()
+        db.create_orchestrator_training_data = AsyncMock()
+        qr = self._make_qr(overall_score=85.0, passing=True)
+        result = {"stages": {}}
+
+        await _stage_capture_training_data(
+            database_service=db,
+            task_id="task-1",
+            topic="Docker",
+            style="balanced",
+            tone="professional",
+            target_length=1500,
+            tags=["docker", "devops"],
+            content_text="First paragraph.\n\nSecond paragraph with more content.",
+            quality_result=qr,
+            featured_image={"url": "https://img/hero.jpg"},
+            result=result,
+        )
+
+        db.create_quality_evaluation.assert_awaited_once()
+        db.create_orchestrator_training_data.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_quality_eval_failure_non_fatal(self):
+        from services.content_router_service import _stage_capture_training_data
+
+        db = MagicMock()
+        db.create_quality_evaluation = AsyncMock(side_effect=RuntimeError("QA table missing"))
+        db.create_orchestrator_training_data = AsyncMock()
+        qr = self._make_qr()
+        result = {"stages": {}}
+
+        # Should not raise even though quality_eval insert failed
+        await _stage_capture_training_data(
+            db, "t1", "topic", "s", "t", 1000, [], "content text", qr, None, result,
+        )
+
+        # Training data still attempted despite earlier failure
+        db.create_orchestrator_training_data.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_training_data_failure_non_fatal(self):
+        from services.content_router_service import _stage_capture_training_data
+
+        db = MagicMock()
+        db.create_quality_evaluation = AsyncMock()
+        db.create_orchestrator_training_data = AsyncMock(
+            side_effect=RuntimeError("ON CONFLICT race"),
+        )
+        qr = self._make_qr()
+        result = {"stages": {}}
+
+        # Should not raise
+        await _stage_capture_training_data(
+            db, "t1", "topic", "s", "t", 1000, [], "content", qr, None, result,
+        )
+
+    @pytest.mark.asyncio
+    async def test_quality_score_normalized_to_0_1(self):
+        """quality_score in training data is normalized from 0-100 to 0.0-1.0."""
+        from services.content_router_service import _stage_capture_training_data
+
+        captured = {}
+
+        async def _capture_td(data):
+            captured.update(data)
+
+        db = MagicMock()
+        db.create_quality_evaluation = AsyncMock()
+        db.create_orchestrator_training_data = AsyncMock(side_effect=_capture_td)
+        qr = self._make_qr(overall_score=85.0)
+        result = {"stages": {}}
+
+        await _stage_capture_training_data(
+            db, "t1", "topic", "s", "t", 1000, [], "content", qr, None, result,
+        )
+
+        assert captured["quality_score"] == 0.85
+
+    @pytest.mark.asyncio
+    async def test_quality_score_capped_at_1(self):
+        """Above-100 scores should clamp to 1.0."""
+        from services.content_router_service import _stage_capture_training_data
+
+        captured = {}
+
+        async def _capture_td(data):
+            captured.update(data)
+
+        db = MagicMock()
+        db.create_quality_evaluation = AsyncMock()
+        db.create_orchestrator_training_data = AsyncMock(side_effect=_capture_td)
+        qr = self._make_qr(overall_score=150.0)  # Over 100
+        result = {"stages": {}}
+
+        await _stage_capture_training_data(
+            db, "t1", "topic", "s", "t", 1000, [], "content", qr, None, result,
+        )
+
+        assert captured["quality_score"] == 1.0
+
+    @pytest.mark.asyncio
+    async def test_readability_metrics_computed(self):
+        from services.content_router_service import _stage_capture_training_data
+
+        captured_eval = {}
+
+        async def _capture(data):
+            captured_eval.update(data)
+
+        db = MagicMock()
+        db.create_quality_evaluation = AsyncMock(side_effect=_capture)
+        db.create_orchestrator_training_data = AsyncMock()
+        qr = self._make_qr()
+        result = {"stages": {}}
+
+        content = "First sentence. Second sentence. Third sentence.\n\nSecond paragraph here."
+
+        await _stage_capture_training_data(
+            db, "t1", "topic", "s", "t", 1000, [], content, qr, None, result,
+        )
+
+        ctx = captured_eval["context_data"]
+        metrics = ctx["readability_metrics"]
+        assert metrics["paragraph_count"] == 2
+        assert metrics["word_count"] == len(content.split())
+        assert metrics["sentence_count"] >= 3
+
+    @pytest.mark.asyncio
+    async def test_has_featured_image_flag_reflects_arg(self):
+        from services.content_router_service import _stage_capture_training_data
+
+        captured_eval = {}
+        captured_td = {}
+
+        async def _ce(data):
+            captured_eval.update(data)
+
+        async def _ct(data):
+            captured_td.update(data)
+
+        db = MagicMock()
+        db.create_quality_evaluation = AsyncMock(side_effect=_ce)
+        db.create_orchestrator_training_data = AsyncMock(side_effect=_ct)
+        qr = self._make_qr()
+        result = {"stages": {}}
+
+        # With featured image
+        await _stage_capture_training_data(
+            db, "t1", "topic", "s", "t", 1000, [], "content", qr,
+            featured_image={"url": "https://img/x.jpg"}, result=result,
+        )
+        assert captured_eval["context_data"]["has_featured_image"] is True
+
+        # Reset and test without featured image
+        captured_eval.clear()
+        captured_td.clear()
+        await _stage_capture_training_data(
+            db, "t1", "topic", "s", "t", 1000, [], "content", qr,
+            featured_image=None, result=result,
+        )
+        assert captured_eval["context_data"]["has_featured_image"] is False
+
+    @pytest.mark.asyncio
+    async def test_zero_word_content_does_not_divide_by_zero(self):
+        from services.content_router_service import _stage_capture_training_data
+
+        db = MagicMock()
+        db.create_quality_evaluation = AsyncMock()
+        db.create_orchestrator_training_data = AsyncMock()
+        qr = self._make_qr()
+        result = {"stages": {}}
+
+        # Empty content — word_count will be 0
+        await _stage_capture_training_data(
+            db, "t1", "topic", "s", "t", 1000, [], "", qr, None, result,
+        )
+        # Should not raise ZeroDivisionError
+
+    @pytest.mark.asyncio
+    async def test_training_data_passes_success_flag_from_passing(self):
+        from services.content_router_service import _stage_capture_training_data
+
+        captured = {}
+
+        async def _ct(data):
+            captured.update(data)
+
+        db = MagicMock()
+        db.create_quality_evaluation = AsyncMock()
+        db.create_orchestrator_training_data = AsyncMock(side_effect=_ct)
+        qr = self._make_qr(passing=False)
+        result = {"stages": {}}
+
+        await _stage_capture_training_data(
+            db, "t1", "topic", "s", "t", 1000, [], "content", qr, None, result,
+        )
+        assert captured["success"] is False
+
+
+# ---------------------------------------------------------------------------
+# _stage_generate_media_scripts — the non-critical media stage
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestStageGenerateMediaScripts:
+    @pytest.mark.asyncio
+    async def test_happy_path_populates_result(self):
+        from services.content_router_service import _stage_generate_media_scripts
+
+        # Mock the dependencies that _stage_generate_media_scripts imports lazily
+        fake_site_config = MagicMock()
+        fake_site_config.get = MagicMock(side_effect=lambda k, d=None: {
+            "ollama_base_url": "http://localhost:11434",
+            "video_scene_model": "llama3:latest",
+            "default_ollama_model": "llama3:latest",
+            "site_name": "TestSite",
+        }.get(k, d))
+
+        # podcast_service mocks
+        fake_podcast_service = MagicMock()
+        fake_podcast_service._strip_markdown = MagicMock(return_value="clean content text")
+        fake_podcast_service._normalize_for_speech = MagicMock(side_effect=lambda t: t)
+        fake_podcast_service._build_script_with_llm = AsyncMock(
+            return_value="[HOST 1] Welcome to the show.\n" * 30  # > 200 chars
+        )
+
+        # gpu scheduler mock — gpu.lock is an async context manager
+        class _FakeLock:
+            async def __aenter__(self):
+                return None
+            async def __aexit__(self, *exc):
+                return False
+
+        fake_gpu = MagicMock()
+        fake_gpu.lock = MagicMock(return_value=_FakeLock())
+        fake_gpu_scheduler = MagicMock()
+        fake_gpu_scheduler.gpu = fake_gpu
+
+        # httpx.AsyncClient — returns fake scene output
+        scene_response_text = (
+            "1. Cinematic shot of a server rack\n"
+            "2. Close-up of code on a screen\n"
+            "3. Wide shot of a data center\n"
+            "4. Abstract digital network visualization\n"
+            "5. Developer workstation with multiple monitors\n"
+            "6. Cloud infrastructure diagram\n"
+            "\n"
+            "SHORT:\n"
+            "Here's a 60-second summary of the article. It covers key takeaways "
+            "and ends with a call to action. Full article at TestSite."
+        )
+
+        fake_response = MagicMock()
+        fake_response.json = MagicMock(return_value={"response": scene_response_text})
+        fake_response.raise_for_status = MagicMock()
+
+        fake_client = AsyncMock()
+        fake_client.post = AsyncMock(return_value=fake_response)
+        fake_client.__aenter__ = AsyncMock(return_value=fake_client)
+        fake_client.__aexit__ = AsyncMock(return_value=False)
+
+        fake_httpx = MagicMock()
+        fake_httpx.AsyncClient = MagicMock(return_value=fake_client)
+        fake_httpx.Timeout = MagicMock(return_value=None)
+
+        db = MagicMock()
+        result = {"stages": {}}
+
+        with patch.dict("sys.modules", {
+            "services.site_config": MagicMock(site_config=fake_site_config),
+            "services.podcast_service": fake_podcast_service,
+            "services.gpu_scheduler": fake_gpu_scheduler,
+        }), patch("httpx.AsyncClient", fake_httpx.AsyncClient), \
+             patch("httpx.Timeout", fake_httpx.Timeout):
+            await _stage_generate_media_scripts(
+                database_service=db,
+                task_id="t1",
+                title="Why Docker Wins",
+                content_text="Docker changed containerization.",
+                result=result,
+            )
+
+        assert result["stages"]["4b_media_scripts"] is True
+        assert result["podcast_script_length"] > 200
+        assert result["video_scenes_count"] >= 1
+        assert result["short_summary_length"] > 0
+
+    @pytest.mark.asyncio
+    async def test_exception_non_fatal(self):
+        """If the media generation blows up, the stage records false but the pipeline continues."""
+        from services.content_router_service import _stage_generate_media_scripts
+
+        fake_site_config = MagicMock()
+        fake_site_config.get = MagicMock(return_value="http://localhost:11434")
+
+        fake_podcast_service = MagicMock()
+        fake_podcast_service._strip_markdown = MagicMock(return_value="clean")
+        fake_podcast_service._build_script_with_llm = AsyncMock(side_effect=RuntimeError("LLM down"))
+
+        class _FakeLock:
+            async def __aenter__(self):
+                return None
+            async def __aexit__(self, *exc):
+                return False
+
+        fake_gpu = MagicMock()
+        fake_gpu.lock = MagicMock(return_value=_FakeLock())
+        fake_gpu_scheduler = MagicMock()
+        fake_gpu_scheduler.gpu = fake_gpu
+
+        db = MagicMock()
+        result = {"stages": {}}
+
+        with patch.dict("sys.modules", {
+            "services.site_config": MagicMock(site_config=fake_site_config),
+            "services.podcast_service": fake_podcast_service,
+            "services.gpu_scheduler": fake_gpu_scheduler,
+        }):
+            # Should not raise
+            await _stage_generate_media_scripts(db, "t1", "title", "content", result)
+
+        assert result["stages"]["4b_media_scripts"] is False
+
+    @pytest.mark.asyncio
+    async def test_short_podcast_script_is_rejected(self):
+        """Podcast scripts under 200 chars are discarded as unusable."""
+        from services.content_router_service import _stage_generate_media_scripts
+
+        fake_site_config = MagicMock()
+        fake_site_config.get = MagicMock(side_effect=lambda k, d=None: {
+            "ollama_base_url": "http://localhost:11434",
+            "site_name": "Site",
+        }.get(k, d))
+
+        fake_podcast_service = MagicMock()
+        fake_podcast_service._strip_markdown = MagicMock(return_value="clean")
+        fake_podcast_service._normalize_for_speech = MagicMock(side_effect=lambda t: t)
+        fake_podcast_service._build_script_with_llm = AsyncMock(
+            return_value="too short",  # Under 200 chars
+        )
+
+        class _FakeLock:
+            async def __aenter__(self):
+                return None
+            async def __aexit__(self, *exc):
+                return False
+
+        fake_gpu = MagicMock()
+        fake_gpu.lock = MagicMock(return_value=_FakeLock())
+        fake_gpu_scheduler = MagicMock()
+        fake_gpu_scheduler.gpu = fake_gpu
+
+        # httpx returns empty scene output so the second LLM call produces nothing
+        fake_response = MagicMock()
+        fake_response.json = MagicMock(return_value={"response": ""})
+        fake_response.raise_for_status = MagicMock()
+        fake_client = AsyncMock()
+        fake_client.post = AsyncMock(return_value=fake_response)
+        fake_client.__aenter__ = AsyncMock(return_value=fake_client)
+        fake_client.__aexit__ = AsyncMock(return_value=False)
+
+        db = MagicMock()
+        result = {"stages": {}}
+
+        with patch.dict("sys.modules", {
+            "services.site_config": MagicMock(site_config=fake_site_config),
+            "services.podcast_service": fake_podcast_service,
+            "services.gpu_scheduler": fake_gpu_scheduler,
+        }), patch("httpx.AsyncClient", MagicMock(return_value=fake_client)), \
+             patch("httpx.Timeout", MagicMock(return_value=None)):
+            await _stage_generate_media_scripts(db, "t1", "title", "content", result)
+
+        # The short script is discarded — result["podcast_script"] should be empty
+        assert result.get("podcast_script_length", 0) == 0
