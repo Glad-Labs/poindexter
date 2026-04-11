@@ -242,3 +242,285 @@ class TestSetupSentryConvenience:
             result = setup_sentry(app, "test-service")
         mock_init.assert_called_once_with(app, "test-service")
         assert result is True
+
+    def test_setup_sentry_default_service_name(self):
+        from services.sentry_integration import SentryIntegration, setup_sentry
+
+        app = MagicMock()
+        with patch.object(SentryIntegration, "initialize", return_value=False) as mock_init:
+            setup_sentry(app)
+        mock_init.assert_called_once_with(app, "cofounder-agent")
+
+
+class TestCaptureExceptionEdgeCases:
+    """Exception-path coverage for capture_exception."""
+
+    def setup_method(self):
+        from services.sentry_integration import SentryIntegration
+        SentryIntegration._initialized = False
+        SentryIntegration._sentry_enabled = False
+
+    @patch("services.sentry_integration.sentry_sdk")
+    def test_swallows_internal_exception(self, mock_sentry):
+        """If sentry_sdk.capture_exception itself raises, the call should not propagate."""
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._sentry_enabled = True
+        mock_scope = MagicMock()
+        mock_sentry.push_scope.return_value.__enter__ = MagicMock(return_value=mock_scope)
+        mock_sentry.push_scope.return_value.__exit__ = MagicMock(return_value=False)
+        mock_sentry.capture_exception.side_effect = RuntimeError("sentry down")
+
+        # Should not raise
+        SentryIntegration.capture_exception(ValueError("app error"))
+
+    @patch("services.sentry_integration.sentry_sdk")
+    def test_no_context_no_set_context(self, mock_sentry):
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._sentry_enabled = True
+        mock_scope = MagicMock()
+        mock_sentry.push_scope.return_value.__enter__ = MagicMock(return_value=mock_scope)
+        mock_sentry.push_scope.return_value.__exit__ = MagicMock(return_value=False)
+
+        SentryIntegration.capture_exception(ValueError("e"))
+        mock_scope.set_context.assert_not_called()
+        mock_scope.set_level.assert_called_once_with("error")
+
+    @patch("services.sentry_integration.sentry_sdk")
+    def test_custom_level_passed_to_scope(self, mock_sentry):
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._sentry_enabled = True
+        mock_scope = MagicMock()
+        mock_sentry.push_scope.return_value.__enter__ = MagicMock(return_value=mock_scope)
+        mock_sentry.push_scope.return_value.__exit__ = MagicMock(return_value=False)
+
+        SentryIntegration.capture_exception(ValueError("e"), level="warning")
+        mock_scope.set_level.assert_called_once_with("warning")
+
+
+class TestCaptureMessageEdgeCases:
+    def setup_method(self):
+        from services.sentry_integration import SentryIntegration
+        SentryIntegration._initialized = False
+        SentryIntegration._sentry_enabled = False
+
+    @patch("services.sentry_integration.sentry_sdk")
+    def test_swallows_internal_exception(self, mock_sentry):
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._sentry_enabled = True
+        mock_scope = MagicMock()
+        mock_sentry.push_scope.return_value.__enter__ = MagicMock(return_value=mock_scope)
+        mock_sentry.push_scope.return_value.__exit__ = MagicMock(return_value=False)
+        mock_sentry.capture_message.side_effect = RuntimeError("down")
+
+        SentryIntegration.capture_message("hello")  # should not raise
+
+    @patch("services.sentry_integration.sentry_sdk")
+    def test_with_context_sets_each_key(self, mock_sentry):
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._sentry_enabled = True
+        mock_scope = MagicMock()
+        mock_sentry.push_scope.return_value.__enter__ = MagicMock(return_value=mock_scope)
+        mock_sentry.push_scope.return_value.__exit__ = MagicMock(return_value=False)
+
+        SentryIntegration.capture_message(
+            "hello",
+            level="info",
+            context={"task": {"id": "abc"}, "user": {"id": "u1"}},
+        )
+
+        # set_context called for each key in context
+        assert mock_scope.set_context.call_count == 2
+
+
+class TestUserContextEdgeCases:
+    def setup_method(self):
+        from services.sentry_integration import SentryIntegration
+        SentryIntegration._initialized = False
+        SentryIntegration._sentry_enabled = False
+
+    def test_set_user_disabled_is_noop(self):
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._sentry_enabled = False
+        SentryIntegration.set_user_context("u1", "a@b.com", "matt")  # should not raise
+
+    def test_clear_user_disabled_is_noop(self):
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._sentry_enabled = False
+        SentryIntegration.clear_user_context()  # should not raise
+
+    @patch("services.sentry_integration.sentry_sdk")
+    def test_set_user_swallows_exception(self, mock_sentry):
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._sentry_enabled = True
+        mock_sentry.set_user.side_effect = RuntimeError("down")
+        SentryIntegration.set_user_context("u1")  # should not raise
+
+    @patch("services.sentry_integration.sentry_sdk")
+    def test_clear_user_swallows_exception(self, mock_sentry):
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._sentry_enabled = True
+        mock_sentry.set_user.side_effect = RuntimeError("down")
+        SentryIntegration.clear_user_context()  # should not raise
+
+    @patch("services.sentry_integration.sentry_sdk")
+    def test_set_user_default_email_and_username_empty(self, mock_sentry):
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._sentry_enabled = True
+        SentryIntegration.set_user_context("u1")
+        mock_sentry.set_user.assert_called_once_with(
+            {"id": "u1", "email": "", "username": ""}
+        )
+
+
+class TestBreadcrumbEdgeCases:
+    def setup_method(self):
+        from services.sentry_integration import SentryIntegration
+        SentryIntegration._initialized = False
+        SentryIntegration._sentry_enabled = False
+
+    def test_disabled_is_noop(self):
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._sentry_enabled = False
+        SentryIntegration.add_breadcrumb("cat", "msg")  # should not raise
+
+    @patch("services.sentry_integration.sentry_sdk")
+    def test_swallows_exception(self, mock_sentry):
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._sentry_enabled = True
+        mock_sentry.add_breadcrumb.side_effect = RuntimeError("down")
+        SentryIntegration.add_breadcrumb("cat", "msg")  # should not raise
+
+    @patch("services.sentry_integration.sentry_sdk")
+    def test_default_data_is_empty_dict(self, mock_sentry):
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._sentry_enabled = True
+        SentryIntegration.add_breadcrumb("cat", "msg")
+        kwargs = mock_sentry.add_breadcrumb.call_args.kwargs
+        assert kwargs["data"] == {}
+
+
+class TestStartTransactionEdgeCases:
+    def setup_method(self):
+        from services.sentry_integration import SentryIntegration
+        SentryIntegration._initialized = False
+        SentryIntegration._sentry_enabled = False
+
+    @patch("services.sentry_integration.sentry_sdk")
+    def test_swallows_exception_returns_none(self, mock_sentry):
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._sentry_enabled = True
+        mock_sentry.start_transaction.side_effect = RuntimeError("down")
+        result = SentryIntegration.start_transaction("test")
+        assert result is None
+
+    @patch("services.sentry_integration.sentry_sdk")
+    def test_passes_op_and_description(self, mock_sentry):
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._sentry_enabled = True
+        SentryIntegration.start_transaction("my-task", op="task", description="A task")
+        mock_sentry.start_transaction.assert_called_once_with(
+            name="my-task", op="task", description="A task"
+        )
+
+
+class TestBeforeSendEdgeCases:
+    def test_no_request_in_event(self):
+        from services.sentry_integration import SentryIntegration
+
+        event = {"level": "error", "message": "boom"}
+        result = SentryIntegration._before_send(event, {"exc_info": True})
+        # Should not crash, returns the event unchanged
+        assert result is event
+
+    def test_no_url_in_request(self):
+        from services.sentry_integration import SentryIntegration
+
+        event = {
+            "level": "error",
+            "request": {"headers": {"authorization": "Bearer x"}},
+        }
+        result = SentryIntegration._before_send(event, {"exc_info": True})
+        # Authorization header redacted, no crash on missing URL
+        assert result["request"]["headers"]["authorization"] == "[REDACTED]"
+
+    def test_url_without_api_key(self):
+        from services.sentry_integration import SentryIntegration
+
+        event = {
+            "level": "error",
+            "request": {
+                "headers": {},
+                "url": "https://api.example.com/posts",
+            },
+        }
+        result = SentryIntegration._before_send(event, {"exc_info": True})
+        # URL unchanged
+        assert result["request"]["url"] == "https://api.example.com/posts"
+
+    def test_headers_without_sensitive_keys(self):
+        from services.sentry_integration import SentryIntegration
+
+        event = {
+            "level": "error",
+            "request": {
+                "headers": {"content-type": "application/json", "user-agent": "test"},
+                "url": "https://example.com",
+            },
+        }
+        result = SentryIntegration._before_send(event, {"exc_info": True})
+        # No redaction needed
+        assert result["request"]["headers"]["content-type"] == "application/json"
+
+    def test_warning_level_passes_through(self):
+        from services.sentry_integration import SentryIntegration
+
+        event = {"level": "warning", "message": "warn"}
+        result = SentryIntegration._before_send(event, {})
+        assert result == event
+
+    def test_exc_info_in_hint_triggers_redaction(self):
+        """Even if level isn't 'error', presence of exc_info in hint triggers redaction."""
+        from services.sentry_integration import SentryIntegration
+
+        event = {
+            "level": "info",  # not error
+            "request": {
+                "headers": {"authorization": "Bearer secret"},
+                "url": "https://example.com",
+            },
+        }
+        result = SentryIntegration._before_send(event, {"exc_info": ValueError("e")})
+        assert result["request"]["headers"]["authorization"] == "[REDACTED]"
+
+
+class TestInitializeSdkUnavailable:
+    def setup_method(self):
+        from services.sentry_integration import SentryIntegration
+        SentryIntegration._initialized = False
+        SentryIntegration._sentry_enabled = False
+
+    @patch("services.sentry_integration.SENTRY_AVAILABLE", False)
+    @patch("services.sentry_integration.sentry_sdk", None)
+    def test_returns_false_when_sdk_not_installed(self):
+        from services.sentry_integration import SentryIntegration
+
+        app = MagicMock()
+        result = SentryIntegration.initialize(app)
+        assert result is False
+        # Should not have set _initialized=True (returns early)
+        assert SentryIntegration._initialized is False
