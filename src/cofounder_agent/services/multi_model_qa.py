@@ -479,8 +479,13 @@ class MultiModelQA:
                 sources_block=sources_block,
             )
 
-            # Model and token limits configurable via app_settings
-            default_model = "glm-4.7-5090:latest"
+            # Model and token limits configurable via app_settings.
+            # Default is gemma3:27b — glm-4.7 was the prior default but
+            # Matt's 2026-04-11 direction: "ditch glm-4.7 for now and
+            # use a better writing model. It's more tuned for coding
+            # and it keeps giving us trouble" (empty responses on long
+            # prompts, thinking-model token budget issues).
+            default_model = "gemma3:27b"
             thinking_max = 1500
             standard_max = 300
             temperature = 0.3

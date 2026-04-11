@@ -723,6 +723,39 @@ Return ONLY the revised article text. Do not include meta-commentary,
 notes about what you changed, or markdown code fences around the output."""
 
 
+_QA_AGGREGATE_REWRITE_PROMPT = """You are revising your own draft to fix
+EVERY issue a team of editors identified. Do NOT rewrite the entire
+article. Do NOT add new sections. Only fix the specific problems
+listed below, making the minimum changes needed to resolve each one.
+
+Keep the same structure, same headings, same code examples where they
+aren't affected by the issues, same length (within 10%).
+
+TITLE: {title}
+
+ISSUES TO FIX (from programmatic validator + LLM critics + consistency checker):
+{issues_to_fix}
+
+How to interpret:
+- "[critical]" means the issue will block publishing if not fixed. Top priority.
+- "[warning]" means it will drag the score down but won't veto. Fix these too.
+- "Contradictions:" lines mean sections disagree with each other — rewrite the
+  weaker or later one to align with the stronger or earlier one.
+- "Fabricated" or "Impossible" lines mean the draft made up a person, statistic,
+  quote, or company claim. Remove the fabrication entirely; do NOT replace it
+  with another made-up fact — either soften to a general statement or cut.
+- "Generic section title" means replace the heading with a creative, benefit-
+  focused alternative (never "Introduction", "Conclusion", "Summary", etc.).
+- "Filler intro" means rewrite the first paragraph with a concrete hook, not
+  "In this post..." or "In today's fast-paced world...".
+
+ORIGINAL DRAFT:
+{content}
+
+Return ONLY the revised article text. Do not include meta-commentary,
+notes about what you changed, or markdown code fences around the output."""
+
+
 async def _self_review_and_revise(
     content_text: str, title: str, topic: str
 ) -> tuple:
@@ -2170,18 +2203,65 @@ async def process_content_generation_task(
 
             # Consistency rewrite loop: if QA rejects for cross-section
             # contradictions, send the draft back through the writer
-            # with the SPECIFIC contradictions the gate found, then
-            # re-run QA. We allow up to qa_consistency_max_rewrites
-            # attempts (default 1) before giving up and rejecting.
-            # Rationale (2026-04-11): contradictions make us look stupid
-            # in public. Rewriting is cheap, rejecting is wasteful.
-            _max_consistency_rewrites = 1
+            # with EVERY issue the QA reviewers flagged (validator warnings,
+            # critic complaints, topic delivery issues, contradictions,
+            # image relevance, preview visuals) then re-run QA. Allow up
+            # to qa_max_rewrites attempts (default 2) before giving up.
+            # Rationale (2026-04-11): contradictions and fabrications make
+            # us look stupid in public. A full rewrite pass is cheap compared
+            # to publishing bad content or hard-rejecting good content that
+            # just needs a fix.
+            _max_rewrites = 2
             try:
-                _mr = await _settings_service.get("qa_consistency_max_rewrites")
+                _mr = (
+                    await _settings_service.get("qa_max_rewrites")
+                    or await _settings_service.get("qa_consistency_max_rewrites")
+                )
                 if _mr is not None:
-                    _max_consistency_rewrites = int(_mr)
+                    _max_rewrites = int(_mr)
             except Exception:
                 pass
+
+            def _aggregate_issues_to_fix(qa_result) -> str:
+                """Collect every flagged issue into a structured list the
+                writer can act on in a single rewrite pass.
+
+                Pulls from:
+                  - ValidationResult (programmatic validator)
+                  - Each ReviewerResult in qa_result.reviews where the
+                    reviewer reported non-approval OR a sub-threshold score
+
+                Returns a multi-line string with [severity] tags so the
+                writer prompt can prioritize.
+                """
+                lines: list[str] = []
+                # Programmatic validator — every ValidationIssue comes through
+                # with a severity (critical/warning) AND a description. Priority.
+                try:
+                    _vr = qa_result.validation
+                    if _vr is not None and _vr.issues:
+                        for _issue in _vr.issues:
+                            lines.append(
+                                f"[{_issue.severity}] {_issue.category}: {_issue.description}"
+                            )
+                except Exception:
+                    pass
+                # Reviewers — include any that didn't approve. For the
+                # consistency gate specifically, also include moderate-
+                # confidence reports because the gate's soft-veto might
+                # let those through but the issue is still real.
+                for _r in qa_result.reviews:
+                    if _r.reviewer == "programmatic_validator":
+                        continue  # already surfaced via validation above
+                    if _r.approved:
+                        # Skip approved reviewers unless the score is
+                        # borderline (< 75). Borderline is often the
+                        # model saying "fine but could be better."
+                        if _r.score >= 75:
+                            continue
+                    severity = "critical" if not _r.approved else "warning"
+                    lines.append(f"[{severity}] {_r.reviewer}: {_r.feedback}")
+                return "\n".join(lines[:30])  # cap so the prompt stays bounded
 
             _qa_result = None
             _rewrite_attempts = 0
@@ -2198,57 +2278,44 @@ async def process_content_generation_task(
                 if _qa_result is None:
                     break
 
-                # The consistency gate is allowed to report contradictions
-                # even when the overall multi-model QA result is approved
-                # (soft-veto allows borderline cases through). We trigger a
-                # rewrite on ANY gate-reported contradiction, because
-                # contradictions make the blog look stupid in public — Matt
-                # would rather pay one extra generation cycle than publish
-                # a post where section 2 disagrees with section 4.
-                _consistency_review = next(
-                    (r for r in _qa_result.reviews if r.reviewer == "internal_consistency"),
-                    None,
-                )
-                _consistency_flagged = (
-                    _consistency_review is not None
-                    and not _consistency_review.approved
-                )
+                _issues_to_fix = _aggregate_issues_to_fix(_qa_result)
 
-                if _qa_result.approved and not _consistency_flagged:
-                    break  # Clean pass — nothing to rewrite
+                # Clean pass — approved AND no aggregated issues. Done.
+                if _qa_result.approved and not _issues_to_fix:
+                    break
 
-                # Reject without rewrite if a NON-consistency reviewer failed
-                # (programmatic validator, topic delivery, main critic). Those
-                # failure modes aren't fixable by targeted contradiction edits.
-                _other_failure = any(
-                    (not r.approved) and r.reviewer != "internal_consistency"
+                # Topic-delivery failure means the content is about the
+                # wrong thing — can't be fixed with targeted edits, bail.
+                _topic_delivery_failed = any(
+                    (not r.approved) and r.reviewer == "topic_delivery"
                     for r in _qa_result.reviews
                 )
-                if _other_failure and not _qa_result.approved:
+                if _topic_delivery_failed:
                     break
 
-                if _rewrite_attempts >= _max_consistency_rewrites:
-                    # Out of attempts. Fall through with whatever we have.
-                    break
+                if _rewrite_attempts >= _max_rewrites:
+                    break  # Out of attempts — fall through with whatever we have.
 
-                if _consistency_review is None:
-                    break
-                _contradictions_text = _consistency_review.feedback
+                if not _issues_to_fix:
+                    break  # Nothing specific to rewrite against
+
                 logger.warning(
-                    "[QA_REWRITE] Task %s: contradictions detected, attempting rewrite (%d/%d): %s",
-                    task_id[:8], _rewrite_attempts + 1, _max_consistency_rewrites,
-                    _contradictions_text[:200],
+                    "[QA_REWRITE] Task %s: %d issues flagged, attempting aggregate rewrite (%d/%d)",
+                    task_id[:8],
+                    _issues_to_fix.count("\n") + 1,
+                    _rewrite_attempts + 1,
+                    _max_rewrites,
                 )
                 audit_log_bg("qa_rewrite_triggered", "content_router", {
                     "attempt": _rewrite_attempts + 1,
-                    "gate_score": _consistency_review.score,
-                    "contradictions": _contradictions_text[:500],
+                    "issue_count": _issues_to_fix.count("\n") + 1,
+                    "issues_sample": _issues_to_fix[:500],
                 }, task_id=task_id, severity="info")
 
                 try:
-                    _revise_prompt = _SELF_REVIEW_REVISE_PROMPT.format(
+                    _revise_prompt = _QA_AGGREGATE_REWRITE_PROMPT.format(
                         title=result.get("seo_title", topic),
-                        contradictions=_contradictions_text,
+                        issues_to_fix=_issues_to_fix,
                         content=content_text,
                     )
                     from services.ollama_client import OllamaClient
@@ -2265,31 +2332,42 @@ async def process_content_generation_task(
                             temperature=0.4,
                             max_tokens=8000,
                         )
+                        # Fallback to gemma3:27b if the primary writer
+                        # returns empty or too-short — known pattern with
+                        # thinking models on long prompts.
+                        _revised_text = (_rev_result.get("text") or "").strip()
+                        if len(_revised_text) < int(0.5 * len(content_text)):
+                            logger.info(
+                                "[QA_REWRITE] Task %s: primary writer returned %d chars, trying fallback",
+                                task_id[:8], len(_revised_text),
+                            )
+                            _fb_result = await _rev_client.generate(
+                                prompt=_revise_prompt,
+                                model="gemma3:27b",
+                                temperature=0.4,
+                                max_tokens=8000,
+                            )
+                            _revised_text = (_fb_result.get("text") or "").strip()
                     finally:
                         try:
                             await _rev_client.close()
                         except Exception:
                             pass
-                    _revised_text = (_rev_result.get("text") or "").strip()
                     if len(_revised_text) >= int(0.5 * len(content_text)):
                         content_text = _revised_text
-                        # Persist the revised content so publish downstream
-                        # picks up the fixed version.
                         await database_service.update_task(task_id, {
                             "content": content_text,
                         })
                         logger.info(
-                            "[QA_REWRITE] Task %s: rewrite succeeded (%d -> %d chars), re-running QA",
-                            task_id[:8],
-                            len(_rev_result.get("text", "")),
-                            len(content_text),
+                            "[QA_REWRITE] Task %s: rewrite succeeded (%d chars), re-running QA",
+                            task_id[:8], len(content_text),
                         )
                         _rewrite_attempts += 1
                         continue
                     else:
                         logger.warning(
-                            "[QA_REWRITE] Task %s: rewrite returned too-short output (%d chars vs %d original)",
-                            task_id[:8], len(_revised_text), len(content_text),
+                            "[QA_REWRITE] Task %s: rewrite + fallback both returned too-short output (%d chars)",
+                            task_id[:8], len(_revised_text),
                         )
                         break
                 except Exception as _rw_err:
