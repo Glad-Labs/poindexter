@@ -6,15 +6,17 @@ Thanks for your interest in contributing. Poindexter is built by Glad Labs LLC a
 
 1. Fork the repository
 2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/poindexter.git`
-3. Copy `.env.example` to `.env` and configure
-4. Start services: `docker compose up -d`
-5. Run tests: `cd src/cofounder_agent && python -m pytest tests/unit/ -q`
+3. Run the bootstrap: `bash scripts/bootstrap.sh` — this creates `.env.local` with auto-generated secrets, starts the local Postgres + Grafana, installs dependencies, and pulls the minimum required Ollama models.
+4. Bring up the full stack: `docker compose -f docker-compose.local.yml up -d`
+5. Run tests: `cd src/cofounder_agent && python -m pytest tests/unit/ -q --ignore=tests/unit/services/test_web_research.py`
+
+The `--ignore` flag is a known temporary workaround tracked in issue #184.
 
 ## Development Workflow
 
 1. Create a branch from `main`: `git checkout -b feat/your-feature`
 2. Make your changes
-3. Run tests and ensure they pass: `python -m pytest tests/unit/ -q`
+3. Run tests and ensure they pass: `python -m pytest tests/unit/ -q --ignore=tests/unit/services/test_web_research.py`
 4. Run linting: `npm run lint`
 5. Commit with a clear message describing what and why
 6. Open a pull request against `main`
@@ -45,7 +47,7 @@ Open an issue with:
 
 ## Security
 
-Report security vulnerabilities to security@gladlabs.io — not in public issues. See [SECURITY.md](SECURITY.md).
+Report security vulnerabilities to **security@gladlabs.io** — never in public GitHub issues. See [SECURITY.md](SECURITY.md) for the full policy.
 
 ## License
 

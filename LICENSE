@@ -3,39 +3,95 @@ Poindexter — AI Content Pipeline (built by Glad Labs LLC)
 
 Copyright (C) 2025-2026 Matthew M. Gladding (Glad Labs, LLC)
 
-This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option) any
+later version.
 
-This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+details.
 
-You should have received a copy of the GNU Affero General Public License along with this program. If not, see https://www.gnu.org/licenses/.
+You should have received a copy of the GNU Affero General Public License along
+with this program. If not, see https://www.gnu.org/licenses/.
 
-Full License Terms
-The complete GNU AGPL 3.0 license text is available at: https://www.gnu.org/licenses/agpl-3.0.html
+================================================================================
+FULL LICENSE TERMS
+================================================================================
+
+The complete GNU AGPL 3.0 license text is available at:
+https://www.gnu.org/licenses/agpl-3.0.html
 
 Key points of the AGPL 3.0:
 
-Freedom to Use: You are free to run the program for any purpose
-Freedom to Study: You can access and study the source code
-Freedom to Distribute: You can distribute copies to others
-Freedom to Modify: You can modify the code and distribute modifications
-Copyleft Requirement: If you run modified versions on a network server, you must provide source code to users
-Commercial & Proprietary Use
-Poindexter is licensed under the GNU AGPL 3.0. This means it is free to use for any project that also complies with the AGPL 3.0.
+  - Freedom to Use: You are free to run the program for any purpose.
+  - Freedom to Study: You can access and study the source code.
+  - Freedom to Distribute: You can distribute copies to others.
+  - Freedom to Modify: You can modify the code and distribute modifications.
+  - Copyleft Requirement: If you run modified versions on a network server,
+    you must provide source code to users of that server.
 
-Commercial License
-A commercial license is required for any use of this software in a closed-source, proprietary application or for any use that does not comply with the terms of the AGPL 3.0.
+The network-use clause is the central difference between AGPL 3.0 and the
+plain GPL. If you run a modified Poindexter as a service that other people
+interact with over a network, those users have the right to receive your
+modified source code.
 
-To purchase a commercial license or inquire about licensing options, please contact:
+================================================================================
+COMMERCIAL USE
+================================================================================
 
-📧 sales@gladlabs.io
+Poindexter is licensed under the GNU AGPL 3.0. This means it is free to use
+for any project that also complies with the AGPL 3.0 — including commercial
+use, as long as your downstream complies with the same copyleft and source
+disclosure requirements.
 
-Third-Party Dependencies
-This software includes components with the following licenses:
+A separate commercial license is available for organizations that need to use
+Poindexter (or a derivative work) in a closed-source proprietary product, or
+in a way that does not comply with the AGPL 3.0 source disclosure requirements.
 
-FastAPI: MIT License
-React: MIT License
-PostgreSQL: PostgreSQL License (permissive open-source)
-smolagents: MIT License
-See individual component repositories for complete license information
-Important Notice
-This software is provided AS-IS without warranty of any kind. Users are responsible for ensuring compliance with all applicable laws and licenses, including the AGPL 3.0.
+For commercial licensing inquiries, support contracts, or anything else not
+covered by the AGPL, contact:
+
+    📧 sales@gladlabs.io
+
+================================================================================
+THIRD-PARTY DEPENDENCIES
+================================================================================
+
+Poindexter depends on a number of open-source libraries. The full dependency
+manifests live in:
+
+  - src/cofounder_agent/pyproject.toml  (Python backend)
+  - package.json                        (Node tooling)
+  - mcp-server/pyproject.toml           (MCP server)
+
+Notable dependencies and their licenses:
+
+  - FastAPI                MIT License
+  - asyncpg                Apache License 2.0
+  - PostgreSQL + pgvector  PostgreSQL License (permissive)
+  - Pydantic               MIT License
+  - httpx                  BSD-3-Clause
+  - Ollama                 MIT License
+  - CrewAI                 MIT License
+  - Grafana OSS            AGPL 3.0
+  - Prometheus             Apache License 2.0
+  - Next.js                MIT License (frontend, not shipped in public repo)
+
+This list is not exhaustive — it covers the most architecturally significant
+dependencies. See each component's own repository or distribution for the
+complete and authoritative license terms.
+
+================================================================================
+NO WARRANTY
+================================================================================
+
+This software is provided AS-IS without warranty of any kind, express or
+implied. Users are responsible for ensuring compliance with all applicable
+laws and licenses, including the AGPL 3.0 and the licenses of all upstream
+dependencies.
+
+In no event shall Glad Labs LLC, Matthew M. Gladding, or any contributors be
+liable for any claim, damages, or other liability arising from the use of
+this software.
