@@ -25,6 +25,26 @@ from utils.text_utils import extract_title_from_content
 logger = get_logger(__name__)
 
 
+# Strong references to fire-and-forget background tasks. Without this,
+# asyncio may garbage-collect pending tasks before they run. See RUF006
+# and https://docs.python.org/3/library/asyncio-task.html#asyncio.create_task
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _spawn_background(coro, name: str | None = None) -> asyncio.Task:
+    """Schedule a coroutine as a fire-and-forget task, keeping a strong
+    reference so asyncio doesn't collect it mid-run."""
+    task = asyncio.ensure_future(coro)
+    if name:
+        try:
+            task.set_name(name)
+        except Exception:
+            pass
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return task
+
+
 class PublishResult:
     """Return value from publish_post_from_task."""
 
@@ -476,8 +496,13 @@ async def publish_post_from_task(
             background_tasks.add_task(_sync_published_post, post_id)
             background_tasks.add_task(_embed_published_post, db_service, post_dict)
         else:
-            asyncio.ensure_future(_sync_published_post(post_id))
-            asyncio.ensure_future(_embed_published_post(db_service, post_dict))
+            _spawn_background(
+                _sync_published_post(post_id), name=f"sync_published_post({post_id})"
+            )
+            _spawn_background(
+                _embed_published_post(db_service, post_dict),
+                name=f"embed_published_post({post_id})",
+            )
         logger.info("[publish_service] Queued sync + embed for post %s", post_id)
 
     # ---------------------------------------------------------------
@@ -499,11 +524,12 @@ async def publish_post_from_task(
                         excerpt=seo_description, keywords=_seo_kw,
                     )
                 else:
-                    asyncio.ensure_future(
+                    _spawn_background(
                         generate_and_distribute_social_posts(
                             title=_title, slug=slug,
                             excerpt=seo_description, keywords=_seo_kw,
-                        )
+                        ),
+                        name=f"social_posts({slug})",
                     )
                 logger.info("[SOCIAL] Queued social post generation for %s", slug)
         except Exception as e:
@@ -521,7 +547,10 @@ async def publish_post_from_task(
                 devto_svc.cross_post_by_post_id, post_id
             )
         else:
-            asyncio.ensure_future(devto_svc.cross_post_by_post_id(post_id))
+            _spawn_background(
+                devto_svc.cross_post_by_post_id(post_id),
+                name=f"devto_crosspost({post_id})",
+            )
         logger.info("[DEVTO] Queued cross-post for post %s", post_id)
     except Exception as e:
         logger.debug("[DEVTO] Cross-posting setup failed (non-fatal): %s", e)
@@ -551,7 +580,9 @@ async def publish_post_from_task(
         if background_tasks:
             background_tasks.add_task(export_post, _pool, slug)
         else:
-            asyncio.ensure_future(export_post(_pool, slug))
+            _spawn_background(
+                export_post(_pool, slug), name=f"static_export({slug})"
+            )
         logger.info("[STATIC_EXPORT] Queued export for %s", slug)
     except Exception as e:
         logger.debug("[STATIC_EXPORT] Failed to queue export (non-fatal): %s", e)
@@ -561,7 +592,10 @@ async def publish_post_from_task(
     # ---------------------------------------------------------------
     site_url = site_config.require("site_url")
     published_url_full = f"{site_url}/posts/{slug}"
-    asyncio.ensure_future(_ping_search_engines(site_url, published_url_full))
+    _spawn_background(
+        _ping_search_engines(site_url, published_url_full),
+        name=f"ping_search_engines({slug})",
+    )
 
     # ---------------------------------------------------------------
     # 11b. Generate podcast episode (fire-and-forget, local worker only)
@@ -579,9 +613,10 @@ async def publish_post_from_task(
                     pre_generated_script=_pre_script,
                 )
             else:
-                asyncio.ensure_future(
+                _spawn_background(
                     generate_podcast_episode(post_id, post_title, post_content,
-                                            pre_generated_script=_pre_script)
+                                            pre_generated_script=_pre_script),
+                    name=f"podcast_episode({post_id})",
                 )
             logger.info("[PODCAST] Queued episode generation for post %s", post_id)
         except Exception as e:
@@ -600,9 +635,10 @@ async def publish_post_from_task(
                     pre_generated_scenes=_video_scenes,
                 )
             else:
-                asyncio.ensure_future(
+                _spawn_background(
                     generate_video_episode(post_id, post_title, post_content,
-                                          pre_generated_scenes=_video_scenes)
+                                          pre_generated_scenes=_video_scenes),
+                    name=f"video_episode({post_id})",
                 )
             logger.info("[VIDEO] Queued video generation for post %s", post_id)
         except Exception as e:
@@ -633,7 +669,10 @@ async def publish_post_from_task(
                 except Exception as e:
                     logger.warning("[SHORT] Unexpected error for post %s: %s", pid, e)
 
-            asyncio.ensure_future(_gen_short(post_id, post_title, post_content, _video_scenes, _short_summary))
+            _spawn_background(
+                _gen_short(post_id, post_title, post_content, _video_scenes, _short_summary),
+                name=f"short_video({post_id})",
+            )
             logger.info("[SHORT] Queued short video generation for post %s", post_id)
         except Exception as e:
             logger.debug("[SHORT] Failed to queue short video (non-fatal): %s", e)
@@ -678,7 +717,9 @@ async def publish_post_from_task(
             except Exception as _e:
                 logger.warning("[R2] Feed regen failed (non-fatal): %s", _e)
 
-        asyncio.ensure_future(_upload_media_to_r2(post_id))
+        _spawn_background(
+            _upload_media_to_r2(post_id), name=f"upload_media_r2({post_id})"
+        )
 
     # ---------------------------------------------------------------
     # 11f. Newsletter to subscribers (fire-and-forget)
@@ -693,7 +734,10 @@ async def publish_post_from_task(
             except Exception as e:
                 logger.debug("[NEWSLETTER] Failed (non-fatal): %s", e)
 
-        asyncio.ensure_future(_send_newsletter(post_id, post_title, seo_description, slug))
+        _spawn_background(
+            _send_newsletter(post_id, post_title, seo_description, slug),
+            name=f"send_newsletter({post_id})",
+        )
 
     # ---------------------------------------------------------------
     # 12. Send notification

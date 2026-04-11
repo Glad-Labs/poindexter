@@ -9,6 +9,7 @@ Provides:
 - Progress tracking and WebSocket integration (Phase 2)
 """
 
+import asyncio
 import uuid
 from typing import Any, Dict, List, Optional
 
@@ -353,14 +354,21 @@ class TemplateExecutionService:
                 total_phases=total_phases,
             )
 
-            # Register callback for WebSocket broadcasting
+            # Register callback for WebSocket broadcasting. We keep strong refs
+            # to the created tasks so asyncio doesn't garbage-collect them
+            # before they run — without this, progress broadcasts silently
+            # vanish under load (RUF006).
+            _broadcast_tasks: set[asyncio.Task] = set()
+
             def broadcast_callback(progress):
                 """Callback to broadcast progress via WebSocket"""
                 try:
-                    import asyncio
-
-                    # Schedule the broadcast in a non-blocking way
-                    asyncio.create_task(broadcast_workflow_progress(actual_execution_id, progress))
+                    task = asyncio.create_task(
+                        broadcast_workflow_progress(actual_execution_id, progress),
+                        name=f"broadcast_progress({actual_execution_id})",
+                    )
+                    _broadcast_tasks.add(task)
+                    task.add_done_callback(_broadcast_tasks.discard)
                 except Exception as e:
                     logger.error(
                         "[_broadcast_callback] Could not broadcast progress: %s", e, exc_info=True
