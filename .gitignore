@@ -92,9 +92,12 @@ tmpclaude*
 docs/archive/
 
 # ============================================================
-# Documentation (proprietary — the product, not the code)
+# Documentation
 # ============================================================
-docs/
+# Public docs live under docs/ and are tracked. Only archive/
+# snapshot subdirs are ignored (they are rotated locally).
+docs/archive/
+docs/tmp/
 
 # ============================================================
 # Logs (never commit)
