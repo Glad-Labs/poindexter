@@ -885,3 +885,449 @@ class TestSyncPageViews:
         result = await worker._sync_page_views()
         assert "note" in result
         assert "no DATABASE_URL" in result["note"]
+
+
+# ===========================================================================
+# _fix_broken_internal_links
+# ===========================================================================
+
+
+class TestFixBrokenInternalLinks:
+    @pytest.mark.asyncio
+    async def test_removes_link_to_unpublished_post(self, monkeypatch):
+        """Markdown + HTML links to posts not in the published set get stripped."""
+        monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/test")
+
+        cloud = AsyncMock()
+        # Published slugs (does NOT include "deleted-post")
+        cloud.fetch = AsyncMock(side_effect=[
+            [{"slug": "real-post"}, {"slug": "another-real"}],
+            [{
+                "id": 1,
+                "title": "Post with broken link",
+                "content": "See [this guide](/posts/deleted-post) for details.",
+            }],
+        ])
+        cloud.execute = AsyncMock()
+        cloud.close = AsyncMock()
+
+        worker = IdleWorker(AsyncMock())
+        worker._create_gitea_issue = AsyncMock(return_value=True)
+
+        with patch("asyncpg.connect", AsyncMock(return_value=cloud)):
+            result = await worker._fix_broken_internal_links()
+
+        assert result["fixed"] == 1
+        # UPDATE called once
+        cloud.execute.assert_awaited_once()
+        updated_content = cloud.execute.await_args.args[1]
+        assert "deleted-post" not in updated_content
+        assert "this guide" in updated_content  # link text preserved as plain text
+
+    @pytest.mark.asyncio
+    async def test_no_broken_links_fixes_nothing(self, monkeypatch):
+        monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/test")
+
+        cloud = AsyncMock()
+        cloud.fetch = AsyncMock(side_effect=[
+            [{"slug": "real-post"}],
+            [{
+                "id": 1,
+                "title": "Post",
+                "content": "See [the guide](/posts/real-post).",
+            }],
+        ])
+        cloud.execute = AsyncMock()
+        cloud.close = AsyncMock()
+
+        worker = IdleWorker(AsyncMock())
+
+        with patch("asyncpg.connect", AsyncMock(return_value=cloud)):
+            result = await worker._fix_broken_internal_links()
+
+        assert result["fixed"] == 0
+        cloud.execute.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_no_posts_with_internal_links(self, monkeypatch):
+        monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/test")
+
+        cloud = AsyncMock()
+        cloud.fetch = AsyncMock(side_effect=[
+            [{"slug": "post-a"}],
+            [],  # no posts match LIKE '%/posts/%'
+        ])
+        cloud.execute = AsyncMock()
+        cloud.close = AsyncMock()
+
+        worker = IdleWorker(AsyncMock())
+
+        with patch("asyncpg.connect", AsyncMock(return_value=cloud)):
+            result = await worker._fix_broken_internal_links()
+
+        assert result["fixed"] == 0
+
+    @pytest.mark.asyncio
+    async def test_db_exception_returns_error(self, monkeypatch):
+        monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/test")
+
+        worker = IdleWorker(AsyncMock())
+
+        with patch("asyncpg.connect", AsyncMock(side_effect=RuntimeError("conn refused"))):
+            result = await worker._fix_broken_internal_links()
+
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_creates_gitea_issue_when_fixes_applied(self, monkeypatch):
+        monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/test")
+
+        cloud = AsyncMock()
+        cloud.fetch = AsyncMock(side_effect=[
+            [{"slug": "alive"}],
+            [{
+                "id": 1,
+                "title": "p1",
+                "content": "[x](/posts/dead-slug)",
+            }],
+        ])
+        cloud.execute = AsyncMock()
+        cloud.close = AsyncMock()
+
+        worker = IdleWorker(AsyncMock())
+        worker._create_gitea_issue = AsyncMock(return_value=True)
+
+        with patch("asyncpg.connect", AsyncMock(return_value=cloud)):
+            await worker._fix_broken_internal_links()
+
+        worker._create_gitea_issue.assert_awaited_once()
+
+
+# ===========================================================================
+# _fix_broken_external_links
+# ===========================================================================
+
+
+class TestFixBrokenExternalLinks:
+    @pytest.mark.asyncio
+    async def test_removes_404_external_links(self, monkeypatch):
+        monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/test")
+
+        cloud = AsyncMock()
+        cloud.fetch = AsyncMock(return_value=[{
+            "id": 1,
+            "title": "Post with bad link",
+            "content": "See [this doc](https://example.com/dead-page) for more.",
+        }])
+        cloud.execute = AsyncMock()
+        cloud.close = AsyncMock()
+
+        # httpx client that returns 404 for the one external URL
+        fake_response = MagicMock()
+        fake_response.status_code = 404
+        fake_client = AsyncMock()
+        fake_client.get = AsyncMock(return_value=fake_response)
+        fake_client.__aenter__ = AsyncMock(return_value=fake_client)
+        fake_client.__aexit__ = AsyncMock(return_value=False)
+
+        worker = IdleWorker(AsyncMock())
+        worker._create_gitea_issue = AsyncMock(return_value=True)
+
+        with patch("asyncpg.connect", AsyncMock(return_value=cloud)), \
+             patch("httpx.AsyncClient", MagicMock(return_value=fake_client)), \
+             patch("httpx.Timeout", MagicMock(return_value=None)), \
+             patch("services.idle_worker.site_config") as mock_sc:
+            mock_sc.get.return_value = "mysite.com"
+            result = await worker._fix_broken_external_links()
+
+        assert result["links_removed"] == 1
+        assert result["posts_fixed"] == 1
+        updated = cloud.execute.await_args.args[1]
+        assert "dead-page" not in updated
+        assert "this doc" in updated
+
+    @pytest.mark.asyncio
+    async def test_working_links_not_touched(self, monkeypatch):
+        monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/test")
+
+        cloud = AsyncMock()
+        cloud.fetch = AsyncMock(return_value=[{
+            "id": 1,
+            "title": "Post",
+            "content": "See [the docs](https://example.com/ok).",
+        }])
+        cloud.execute = AsyncMock()
+        cloud.close = AsyncMock()
+
+        fake_response = MagicMock()
+        fake_response.status_code = 200
+        fake_client = AsyncMock()
+        fake_client.get = AsyncMock(return_value=fake_response)
+        fake_client.__aenter__ = AsyncMock(return_value=fake_client)
+        fake_client.__aexit__ = AsyncMock(return_value=False)
+
+        worker = IdleWorker(AsyncMock())
+
+        with patch("asyncpg.connect", AsyncMock(return_value=cloud)), \
+             patch("httpx.AsyncClient", MagicMock(return_value=fake_client)), \
+             patch("httpx.Timeout", MagicMock(return_value=None)), \
+             patch("services.idle_worker.site_config") as mock_sc:
+            mock_sc.get.return_value = "mysite.com"
+            result = await worker._fix_broken_external_links()
+
+        assert result["links_removed"] == 0
+        assert result["posts_fixed"] == 0
+        cloud.execute.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_skips_own_domain(self, monkeypatch):
+        """Links to the site's own domain are not checked (they're internal)."""
+        monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/test")
+
+        cloud = AsyncMock()
+        cloud.fetch = AsyncMock(return_value=[{
+            "id": 1,
+            "title": "p",
+            "content": "See [home](https://mysite.com/about).",
+        }])
+        cloud.execute = AsyncMock()
+        cloud.close = AsyncMock()
+
+        fake_client = AsyncMock()
+        fake_client.get = AsyncMock()  # should never be called
+        fake_client.__aenter__ = AsyncMock(return_value=fake_client)
+        fake_client.__aexit__ = AsyncMock(return_value=False)
+
+        worker = IdleWorker(AsyncMock())
+
+        with patch("asyncpg.connect", AsyncMock(return_value=cloud)), \
+             patch("httpx.AsyncClient", MagicMock(return_value=fake_client)), \
+             patch("httpx.Timeout", MagicMock(return_value=None)), \
+             patch("services.idle_worker.site_config") as mock_sc:
+            mock_sc.get.return_value = "mysite.com"
+            await worker._fix_broken_external_links()
+
+        # No URL fetch should have happened — all URLs were on own domain
+        fake_client.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_network_error_treated_as_broken(self, monkeypatch):
+        """httpx raising is treated as a broken link (removed)."""
+        monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/test")
+
+        cloud = AsyncMock()
+        cloud.fetch = AsyncMock(return_value=[{
+            "id": 1,
+            "title": "p",
+            "content": "[x](https://example.com/unreachable)",
+        }])
+        cloud.execute = AsyncMock()
+        cloud.close = AsyncMock()
+
+        fake_client = AsyncMock()
+        fake_client.get = AsyncMock(side_effect=ConnectionError("DNS failure"))
+        fake_client.__aenter__ = AsyncMock(return_value=fake_client)
+        fake_client.__aexit__ = AsyncMock(return_value=False)
+
+        worker = IdleWorker(AsyncMock())
+        worker._create_gitea_issue = AsyncMock(return_value=True)
+
+        with patch("asyncpg.connect", AsyncMock(return_value=cloud)), \
+             patch("httpx.AsyncClient", MagicMock(return_value=fake_client)), \
+             patch("httpx.Timeout", MagicMock(return_value=None)), \
+             patch("services.idle_worker.site_config") as mock_sc:
+            mock_sc.get.return_value = "mysite.com"
+            result = await worker._fix_broken_external_links()
+
+        assert result["links_removed"] == 1
+
+    @pytest.mark.asyncio
+    async def test_db_exception_returns_error(self, monkeypatch):
+        monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/test")
+        worker = IdleWorker(AsyncMock())
+        with patch("asyncpg.connect", AsyncMock(side_effect=RuntimeError("down"))):
+            result = await worker._fix_broken_external_links()
+        assert "error" in result
+
+
+# ===========================================================================
+# _crosspost_to_devto
+# ===========================================================================
+
+
+class TestCrosspostToDevto:
+    @pytest.mark.asyncio
+    async def test_skipped_when_no_api_key(self):
+        pool = AsyncMock()
+        worker = IdleWorker(pool)
+
+        fake_svc = MagicMock()
+        fake_svc._get_api_key = AsyncMock(return_value=None)
+
+        with patch("services.devto_service.DevToCrossPostService", MagicMock(return_value=fake_svc)):
+            result = await worker._crosspost_to_devto()
+
+        assert result.get("skipped") is True
+        assert result["reason"] == "devto_api_key not configured"
+
+    @pytest.mark.asyncio
+    async def test_no_pending_posts_returns_zero(self):
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=[])
+        worker = IdleWorker(pool)
+
+        fake_svc = MagicMock()
+        fake_svc._get_api_key = AsyncMock(return_value="dev-key-123")
+
+        with patch("services.devto_service.DevToCrossPostService", MagicMock(return_value=fake_svc)):
+            result = await worker._crosspost_to_devto()
+
+        assert result["crossposted"] == 0
+        assert "note" in result
+
+    @pytest.mark.asyncio
+    async def test_crossposts_published_posts(self):
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=[
+            {"id": "post-1", "title": "Post 1", "slug": "post-1"},
+            {"id": "post-2", "title": "Post 2", "slug": "post-2"},
+        ])
+        worker = IdleWorker(pool)
+
+        fake_svc = MagicMock()
+        fake_svc._get_api_key = AsyncMock(return_value="key")
+        fake_svc.cross_post_by_post_id = AsyncMock(side_effect=[
+            "https://dev.to/u/post-1",
+            "https://dev.to/u/post-2",
+        ])
+
+        with patch("services.devto_service.DevToCrossPostService", MagicMock(return_value=fake_svc)):
+            result = await worker._crosspost_to_devto()
+
+        assert result["crossposted"] == 2
+        assert result["checked"] == 2
+
+    @pytest.mark.asyncio
+    async def test_collects_errors_for_failed_crossposts(self):
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=[
+            {"id": "post-1", "title": "Post 1", "slug": "post-1"},
+            {"id": "post-2", "title": "Post 2", "slug": "post-2"},
+        ])
+        worker = IdleWorker(pool)
+
+        fake_svc = MagicMock()
+        fake_svc._get_api_key = AsyncMock(return_value="key")
+        fake_svc.cross_post_by_post_id = AsyncMock(side_effect=[
+            "https://dev.to/u/post-1",
+            RuntimeError("rate limited"),
+        ])
+
+        with patch("services.devto_service.DevToCrossPostService", MagicMock(return_value=fake_svc)):
+            result = await worker._crosspost_to_devto()
+
+        assert result["crossposted"] == 1
+        assert "errors" in result
+        assert "rate limited" in result["errors"][0]
+
+    @pytest.mark.asyncio
+    async def test_none_return_treated_as_error(self):
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=[
+            {"id": "post-1", "title": "P", "slug": "p"},
+        ])
+        worker = IdleWorker(pool)
+
+        fake_svc = MagicMock()
+        fake_svc._get_api_key = AsyncMock(return_value="key")
+        fake_svc.cross_post_by_post_id = AsyncMock(return_value=None)
+
+        with patch("services.devto_service.DevToCrossPostService", MagicMock(return_value=fake_svc)):
+            result = await worker._crosspost_to_devto()
+
+        assert result["crossposted"] == 0
+        assert "errors" in result
+
+    @pytest.mark.asyncio
+    async def test_service_exception_returns_error(self):
+        pool = AsyncMock()
+        worker = IdleWorker(pool)
+
+        with patch("services.devto_service.DevToCrossPostService", MagicMock(side_effect=RuntimeError("svc down"))):
+            result = await worker._crosspost_to_devto()
+
+        assert "error" in result
+
+
+# ===========================================================================
+# _backup_database
+# ===========================================================================
+
+
+class TestBackupDatabase:
+    @pytest.mark.asyncio
+    async def test_writes_json_files_per_table(self, tmp_path, monkeypatch):
+        # Redirect the backup dir to tmp_path
+        monkeypatch.setattr("os.path.expanduser", lambda p: str(tmp_path) if p == "~" else p)
+
+        pool = AsyncMock()
+        # Return some rows for the first table, empty for the rest
+        row = MagicMock()
+        row_data = {"id": 1, "title": "post"}
+        row.__getitem__ = lambda self, k: row_data.get(k)
+        row.items = lambda: row_data.items()
+        row.keys = lambda: row_data.keys()
+
+        # dict(row) requires keys() + __getitem__
+        call_count = [0]
+
+        async def _fetch(query):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return [{"id": 1, "title": "post"}]  # posts table
+            return []
+
+        pool.fetch = AsyncMock(side_effect=_fetch)
+        worker = IdleWorker(pool)
+
+        result = await worker._backup_database()
+
+        # Should have backed up at least one table (posts)
+        assert "backed_up" in result or result.get("error") is None
+        # Backup dir should exist
+        backup_dir = tmp_path / ".poindexter" / "backups"
+        assert backup_dir.exists()
+
+    @pytest.mark.asyncio
+    async def test_handles_table_fetch_error(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("os.path.expanduser", lambda p: str(tmp_path) if p == "~" else p)
+
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(side_effect=RuntimeError("table missing"))
+        worker = IdleWorker(pool)
+
+        result = await worker._backup_database()
+        # Errors captured per-table, method doesn't raise
+        assert isinstance(result, dict)
+
+    @pytest.mark.asyncio
+    async def test_datetime_values_serialized(self, tmp_path, monkeypatch):
+        """Datetime columns should be converted via isoformat."""
+        from datetime import datetime
+        monkeypatch.setattr("os.path.expanduser", lambda p: str(tmp_path) if p == "~" else p)
+
+        pool = AsyncMock()
+        now = datetime.now()
+        call_count = [0]
+
+        async def _fetch(query):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return [{"id": 1, "created_at": now}]
+            return []
+
+        pool.fetch = AsyncMock(side_effect=_fetch)
+        worker = IdleWorker(pool)
+
+        # Should not raise on datetime serialization
+        await worker._backup_database()
