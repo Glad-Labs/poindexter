@@ -18,7 +18,7 @@ from enum import Enum
 from typing import Any, Dict, Optional
 
 from fastapi import HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from services.logger_config import get_logger
 
@@ -84,8 +84,8 @@ class ErrorResponse(BaseModel):
     details: dict[str, Any] | None = None
     request_id: str | None = None
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "error_code": "VALIDATION_ERROR",
                 "message": "Invalid input parameter",
@@ -93,6 +93,7 @@ class ErrorResponse(BaseModel):
                 "request_id": "req-12345",
             }
         }
+    )
 
 
 # ============================================================================

@@ -135,8 +135,8 @@ class UnifiedTaskRequest(BaseModel):
     )
     metadata: dict[str, Any] | None = Field(None, description="Additional metadata for task")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "examples": [
                 {
                     "task_type": "blog_post",
@@ -170,6 +170,7 @@ class UnifiedTaskRequest(BaseModel):
                 },
             ]
         }
+    )
 
 
 class ContentConstraints(BaseModel):
@@ -199,8 +200,8 @@ class ContentConstraints(BaseModel):
         description="If True, fail task if constraints not met; if False, warn but continue",
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "word_count": 2000,
                 "writing_style": "narrative",
@@ -209,6 +210,7 @@ class ContentConstraints(BaseModel):
                 "strict_mode": False,
             }
         }
+    )
 
 
 class TaskCreateRequest(BaseModel):
@@ -253,8 +255,8 @@ class TaskCreateRequest(BaseModel):
         default_factory=dict, description="Additional metadata"
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "task_name": "Blog Post - AI in Healthcare",
                 "topic": "How AI is Transforming Healthcare",
@@ -275,6 +277,7 @@ class TaskCreateRequest(BaseModel):
                 "metadata": {"priority": "high"},
             }
         }
+    )
 
 
 class TaskResponse(BaseModel):
@@ -309,8 +312,8 @@ class TaskResponse(BaseModel):
         """Alias for task_name for frontend compatibility"""
         return self.task_name
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "id": "550e8400-e29b-41d4-a716-446655440000",
                 "task_name": "Blog Post - AI in Healthcare",
@@ -326,6 +329,7 @@ class TaskResponse(BaseModel):
                 "completed_at": "2024-01-15T10:45:00Z",
             }
         }
+    )
 
 
 class TaskListResponse(BaseModel):
@@ -348,8 +352,8 @@ class MetricsResponse(BaseModel):
     avg_execution_time: float = Field(..., description="Average execution time in seconds")
     total_cost: float = Field(..., description="Total estimated cost in USD")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "total_tasks": 150,
                 "completed_tasks": 120,
@@ -360,6 +364,7 @@ class MetricsResponse(BaseModel):
                 "total_cost": 125.50,
             }
         }
+    )
 
 
 class IntentTaskRequest(BaseModel):

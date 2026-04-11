@@ -16,7 +16,7 @@ Benefits:
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ProgressInfo(BaseModel):
@@ -27,8 +27,8 @@ class ProgressInfo(BaseModel):
     message: str | None = Field(None, description="Status message")
     node: str | None = Field(None, description="LangGraph node name (alias for stage)")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "stage": "draft",
                 "percentage": 50,
@@ -36,6 +36,7 @@ class ProgressInfo(BaseModel):
                 "node": "draft",
             }
         }
+    )
 
 
 class CostBreakdown(BaseModel):
@@ -49,8 +50,8 @@ class CostBreakdown(BaseModel):
     finalize: float | None = 0.0
     total: float = 0.0
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "research": 0.001,
                 "outline": 0.0005,
@@ -61,6 +62,7 @@ class CostBreakdown(BaseModel):
                 "total": 0.0075,
             }
         }
+    )
 
 
 class ModelSelection(BaseModel):
@@ -73,8 +75,8 @@ class ModelSelection(BaseModel):
     refine: str | None = None
     finalize: str | None = None
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "research": "ultra_cheap",
                 "outline": "cheap",
@@ -84,6 +86,7 @@ class ModelSelection(BaseModel):
                 "finalize": "balanced",
             }
         }
+    )
 
 
 class TaskResultContent(BaseModel):
@@ -101,8 +104,8 @@ class TaskResultContent(BaseModel):
     seo_description: str | None = Field(None, description="SEO meta description")
     seo_keywords: list[str] | None = Field(None, description="SEO keywords")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "content": "# Blog Post Title\n\nContent here...",
                 "excerpt": "Short summary of the content",
@@ -113,6 +116,7 @@ class TaskResultContent(BaseModel):
                 "seo_keywords": ["keyword1", "keyword2"],
             }
         }
+    )
 
 
 class UnifiedTaskResponse(BaseModel):
@@ -234,8 +238,8 @@ class UnifiedTaskResponse(BaseModel):
     task_metadata: dict[str, Any] | None = Field(None, description="Task-specific metadata")
     polling_url: str | None = Field(None, description="URL to poll for status")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "id": "550e8400-e29b-41d4-a716-446655440000",
                 "task_name": "Blog Post - The Future of AI",
@@ -281,6 +285,7 @@ class UnifiedTaskResponse(BaseModel):
                 "completed_at": "2025-12-22T10:35:00Z",
             }
         }
+    )
 
 
 # Aliases for backward compatibility

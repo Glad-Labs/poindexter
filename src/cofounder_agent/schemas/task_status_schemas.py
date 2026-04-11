@@ -7,7 +7,7 @@ with comprehensive status handling.
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, validator
 
 
 class TaskStatusUpdateRequest(BaseModel):
@@ -103,10 +103,8 @@ class TaskStatusInfo(BaseModel):
         description="Minutes elapsed since status change",
     )
 
-    class Config:
-        """Pydantic config."""
-
-        schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "task_id": "550e8400-e29b-41d4-a716-446655440000",
                 "current_status": "awaiting_approval",
@@ -120,6 +118,7 @@ class TaskStatusInfo(BaseModel):
                 "duration_minutes": 25.5,
             }
         }
+    )
 
 
 class TaskStatusFilterRequest(BaseModel):
