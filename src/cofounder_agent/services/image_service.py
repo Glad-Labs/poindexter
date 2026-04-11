@@ -546,6 +546,76 @@ class ImageService:
     # FEATURED IMAGE SEARCH (Pexels - Free, Unlimited)
     # =========================================================================
 
+    async def _llm_semantic_pexels_query(self, topic: str) -> str | None:
+        """Ask the LLM for a Pexels-friendly semantic query.
+
+        The raw topic is often a literal keyword match in Pexels that
+        produces terrible featured images: "DuckDB vs Postgres" returns
+        a photo of an actual duck, "Kubernetes pod lifecycle" returns a
+        pea pod, etc. This converts the topic into a concept-level query
+        ("data analytics dashboard", "container orchestration workspace")
+        that retrieves professional stock photos instead of literal
+        keyword matches.
+
+        Returns None if Ollama is unavailable or the response is empty
+        — callers fall back to the raw topic.
+        """
+        try:
+            import asyncio
+            from services.ollama_client import OllamaClient
+        except Exception:
+            return None
+
+        client = OllamaClient(timeout=30)
+        try:
+            prompt = (
+                "Convert this blog topic into a 3-5 word Pexels stock photo "
+                "search query that represents the CONCEPT or ABSTRACT IDEA, "
+                "NOT the literal words. Avoid brand names, product names, and "
+                "technical jargon — Pexels doesn't have photos of software.\n\n"
+                "Focus on what the reader cares about: the work being done, "
+                "the problem being solved, the emotion involved, or the "
+                "industry context.\n\n"
+                "Examples:\n"
+                "- Topic: 'Postgres row-level security for multi-tenant SaaS'\n"
+                "  Query: secure database architecture\n"
+                "- Topic: 'When to choose DuckDB over Postgres for analytics'\n"
+                "  Query: data analytics dashboard\n"
+                "- Topic: 'Building a FastAPI background task queue'\n"
+                "  Query: server room infrastructure\n"
+                "- Topic: 'Why local LLMs beat cloud APIs for indie hackers'\n"
+                "  Query: modern developer workspace\n"
+                "- Topic: 'Kubernetes pod lifecycle debugging'\n"
+                "  Query: data center network cables\n\n"
+                f"Topic: {topic}\n\n"
+                "Respond with ONLY the search query (3-5 words, no quotes, no explanation):"
+            )
+            result = await asyncio.wait_for(
+                client.generate(
+                    prompt=prompt,
+                    model="gemma3:27b",
+                    temperature=0.4,
+                    max_tokens=30,
+                ),
+                timeout=20,
+            )
+            text = (result.get("text") or "").strip()
+            # Strip common LLM quote/markdown wrappers
+            text = text.strip('"').strip("'").strip("`").strip()
+            # Take first non-empty line (models sometimes add an empty trailer)
+            for line in text.split("\n"):
+                line = line.strip().strip('"').strip("'").strip()
+                if line and 3 <= len(line) <= 80:
+                    return line
+        except Exception as e:
+            logger.debug("LLM semantic query failed for '%s': %s", topic[:40], e)
+        finally:
+            try:
+                await client.close()
+            except Exception:
+                pass
+        return None
+
     async def search_featured_image(
         self,
         topic: str,
@@ -575,8 +645,23 @@ class ImageService:
             logger.warning("Pexels API key not configured (checked env + DB)")
             return None
 
-        # Build search queries prioritizing concept/topic over people
-        search_queries = [topic]
+        # Build search queries, prioritizing a concept-level query over
+        # the raw topic. An LLM preprocessing step converts topics like
+        # "DuckDB vs Postgres for analytics" into "data analytics
+        # dashboard" so Pexels returns relevant stock photos instead of
+        # matching on "duck" the animal.
+        search_queries: list[str] = []
+        semantic_query = await self._llm_semantic_pexels_query(topic)
+        if semantic_query:
+            search_queries.append(semantic_query)
+            logger.info(
+                "[FEATURED] Using semantic Pexels query: '%s' (from topic '%s')",
+                semantic_query, topic[:60],
+            )
+        # Always include the raw topic as a fallback — if the semantic
+        # query returns zero results, the raw topic might still hit
+        # something.
+        search_queries.append(topic)
 
         # Add concept-based fallbacks (no people)
         concept_keywords = [
