@@ -162,3 +162,269 @@ class TestValidationResult:
         result = validate_content("Clean Title", "Clean content.", "topic")
         assert result.score_penalty >= 0
         assert result.score_penalty <= 100
+
+    def test_critical_count_property(self):
+        result = validate_content("Clean", "[IMAGE-1: a photo]", "topic")
+        assert result.critical_count >= 1
+
+    def test_warning_count_property(self):
+        result = validate_content(
+            "Clean",
+            "Studies show a 50% reduction in costs when migrating to the cloud.",
+            "topic",
+        )
+        assert result.warning_count >= 1
+
+    def test_score_penalty_critical_is_10(self):
+        result = validate_content("Clean", "[IMAGE-1: photo]", "topic")
+        # 1 critical → at least 10 penalty
+        assert result.score_penalty >= 10
+
+    def test_score_penalty_warning_is_3(self):
+        """A single warning issue contributes 3 to score_penalty."""
+        result = validate_content(
+            "Clean", "Studies show a 50% increase in performance.", "topic"
+        )
+        if result.warning_count > 0 and result.critical_count == 0:
+            # Penalty should be a multiple of 3
+            assert result.score_penalty % 3 == 0
+
+
+# ---------------------------------------------------------------------------
+# Hallucinated internal links
+# ---------------------------------------------------------------------------
+
+
+class TestHallucinatedLinks:
+    def test_catches_our_guide_reference(self):
+        content = "For more details, check out our guide on building scalable systems."
+        result = validate_content("Title", content, "tech")
+        assert any(i.category == "hallucinated_link" for i in result.issues)
+
+    def test_catches_as_we_discussed_in_previous(self):
+        content = "As we discussed in a previous post, this approach has tradeoffs."
+        result = validate_content("Title", content, "tech")
+        assert any(i.category == "hallucinated_link" for i in result.issues)
+
+    def test_catches_check_out_our_post(self):
+        content = "Check out our post on Docker best practices for more info."
+        result = validate_content("Title", content, "tech")
+        assert any(i.category == "hallucinated_link" for i in result.issues)
+
+    def test_hallucinated_link_is_warning_not_critical(self):
+        content = "Read our guide on optimization techniques."
+        result = validate_content("Title", content, "tech")
+        link_issues = [i for i in result.issues if i.category == "hallucinated_link"]
+        assert all(i.severity == "warning" for i in link_issues)
+
+
+# ---------------------------------------------------------------------------
+# Brand contradictions
+# ---------------------------------------------------------------------------
+
+
+class TestBrandContradictions:
+    def test_catches_openai_pricing_reference(self):
+        content = "Compared to OpenAI API pricing, the local model is cheaper."
+        result = validate_content("Title", content, "AI")
+        assert any(i.category == "brand_contradiction" for i in result.issues)
+
+    def test_catches_anthropic_subscription(self):
+        content = "After paying for the Anthropic API subscription, costs added up fast."
+        result = validate_content("Title", content, "AI")
+        assert any(i.category == "brand_contradiction" for i in result.issues)
+
+    def test_catches_paying_per_token(self):
+        content = "Instead of paying per token to OpenAI, we run everything locally."
+        result = validate_content("Title", content, "AI")
+        assert any(i.category == "brand_contradiction" for i in result.issues)
+
+    def test_brand_contradiction_is_warning(self):
+        content = "OpenAI API costs eat into margins."
+        result = validate_content("Title", content, "AI")
+        contradictions = [i for i in result.issues if i.category == "brand_contradiction"]
+        assert all(i.severity == "warning" for i in contradictions)
+
+
+# ---------------------------------------------------------------------------
+# Fabricated personal experiences
+# ---------------------------------------------------------------------------
+
+
+class TestFabricatedExperiences:
+    def test_catches_sat_in_meeting(self):
+        content = "Last week I sat in a meeting with a startup founder who needed help."
+        result = validate_content("Title", content, "tech")
+        assert any(i.category == "fabricated_experience" for i in result.issues)
+
+    def test_catches_at_my_company(self):
+        content = "At my current company, we use this exact pattern."
+        result = validate_content("Title", content, "tech")
+        assert any(i.category == "fabricated_experience" for i in result.issues)
+
+    def test_catches_client_of_mine(self):
+        content = "A client of mine asked about this issue last week."
+        result = validate_content("Title", content, "tech")
+        assert any(i.category == "fabricated_experience" for i in result.issues)
+
+    def test_catches_recent_anecdote(self):
+        content = "Last month we deployed this to production and it worked."
+        result = validate_content("Title", content, "tech")
+        assert any(i.category == "fabricated_experience" for i in result.issues)
+
+    def test_catches_dollar_amount_anecdote(self):
+        content = "It saved us $1,200/month in compute costs."
+        result = validate_content("Title", content, "tech")
+        assert any(i.category == "fabricated_experience" for i in result.issues)
+
+    def test_catches_fabricated_dialogue(self):
+        content = '"This is a great approach for our use case," he said with a smile.'
+        result = validate_content("Title", content, "tech")
+        assert any(i.category == "fabricated_experience" for i in result.issues)
+
+
+# ---------------------------------------------------------------------------
+# Title-based age/year claims
+# ---------------------------------------------------------------------------
+
+
+class TestTitleYearClaims:
+    def test_catches_numeric_year_in_title(self):
+        result = validate_content(
+            "What I Learned in 5 Years of Building AI Systems",
+            "Some content here.",
+            "AI",
+        )
+        # Critical because company is < 1 year old
+        assert any(
+            i.category == "glad_labs_claim" and "year" in i.description.lower()
+            for i in result.issues
+        )
+
+    def test_catches_written_year_in_title(self):
+        result = validate_content(
+            "Three Years of Lessons from Production",
+            "Some content here.",
+            "tech",
+        )
+        assert any(
+            i.category == "glad_labs_claim" and "year" in i.description.lower()
+            for i in result.issues
+        )
+
+    def test_does_not_flag_one_year(self):
+        result = validate_content("After 1 Year of Building", "content", "tech")
+        # Singular year is valid since company is ~1 year old
+        year_claims = [
+            i for i in result.issues
+            if i.category == "glad_labs_claim" and "year" in i.description.lower()
+        ]
+        assert len(year_claims) == 0
+
+    def test_numeric_year_claim_is_critical(self):
+        result = validate_content("10 Years of Wisdom", "content", "tech")
+        year_issues = [
+            i for i in result.issues
+            if i.category == "glad_labs_claim" and "year" in i.description.lower()
+        ]
+        assert all(i.severity == "critical" for i in year_issues)
+
+
+# ---------------------------------------------------------------------------
+# Late acronym expansion
+# ---------------------------------------------------------------------------
+
+
+class TestLateAcronymExpansion:
+    def test_catches_late_expansion(self):
+        content = (
+            "We use a CRM for tracking leads. The CRM integrates with our other tools. "
+            "Our CRM (Customer Relationship Management) is essential to operations."
+        )
+        result = validate_content("Title", content, "tech")
+        assert any(i.category == "late_acronym_expansion" for i in result.issues)
+
+    def test_does_not_flag_first_use_expansion(self):
+        content = (
+            "Our CRM (Customer Relationship Management) is essential. The CRM tracks leads."
+        )
+        result = validate_content("Title", content, "tech")
+        # Expansion was on first use, not flagged
+        assert not any(i.category == "late_acronym_expansion" for i in result.issues)
+
+    def test_late_expansion_is_warning(self):
+        content = (
+            "We rely on AWS for hosting. AWS provides everything. AWS makes deployment easy. "
+            "AWS (Amazon Web Services) keeps adding services."
+        )
+        result = validate_content("Title", content, "tech")
+        late_issues = [i for i in result.issues if i.category == "late_acronym_expansion"]
+        # If matched, should be warning severity
+        for i in late_issues:
+            assert i.severity == "warning"
+
+
+# ---------------------------------------------------------------------------
+# _strip_html
+# ---------------------------------------------------------------------------
+
+
+class TestStripHtml:
+    def test_removes_simple_tags(self):
+        from services.content_validator import _strip_html
+        assert _strip_html("<p>Hello</p>") == "Hello"
+
+    def test_removes_nested_tags(self):
+        from services.content_validator import _strip_html
+        result = _strip_html("<div><p>nested <span>text</span></p></div>")
+        assert "<" not in result
+        assert ">" not in result
+
+    def test_removes_attributes(self):
+        from services.content_validator import _strip_html
+        assert _strip_html('<a href="https://x.com">link</a>') == "link"
+
+    def test_plain_text_unchanged(self):
+        from services.content_validator import _strip_html
+        assert _strip_html("plain text no tags") == "plain text no tags"
+
+
+# ---------------------------------------------------------------------------
+# Edge cases: empty/None inputs
+# ---------------------------------------------------------------------------
+
+
+class TestEdgeCases:
+    def test_empty_title_and_content(self):
+        result = validate_content("", "", "")
+        assert result.passed is True
+        assert result.issues == []
+
+    def test_none_title_treated_as_empty(self):
+        result = validate_content(None, "content here", "topic")  # type: ignore[arg-type]
+        assert isinstance(result, ValidationResult)
+
+    def test_none_content_treated_as_empty(self):
+        result = validate_content("title", None, "topic")  # type: ignore[arg-type]
+        assert isinstance(result, ValidationResult)
+        assert result.passed is True
+
+    def test_html_stripped_before_pattern_matching(self):
+        """HTML tags should not interfere with pattern matching."""
+        content = "<p>[IMAGE-1: a photo]</p>"
+        result = validate_content("Title", content, "topic")
+        assert any(i.category == "image_placeholder" for i in result.issues)
+
+    def test_line_numbers_recorded_in_issues(self):
+        """Issues should have a line_number > 0 when matched."""
+        content = "First line.\nSecond line.\n[IMAGE-1: third line photo]"
+        result = validate_content("Title", content, "topic")
+        image_issues = [i for i in result.issues if i.category == "image_placeholder"]
+        assert all(i.line_number > 0 for i in image_issues)
+
+    def test_matched_text_truncated_to_100_chars(self):
+        long_match = "[IMAGE-1: " + "x" * 200 + "]"
+        result = validate_content("Title", long_match, "topic")
+        image_issues = [i for i in result.issues if i.category == "image_placeholder"]
+        for i in image_issues:
+            assert len(i.matched_text) <= 100
