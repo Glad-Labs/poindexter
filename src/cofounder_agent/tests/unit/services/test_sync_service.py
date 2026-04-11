@@ -569,3 +569,364 @@ class TestGetStatus:
         result = await svc.get_status()
         assert "error" in result["local"]
         assert "local down" in result["local"]["error"]
+
+
+# ---------------------------------------------------------------------------
+# pull_page_views
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestPullPageViews:
+    @pytest.mark.asyncio
+    async def test_returns_skipped_when_pools_missing(self):
+        svc = SyncService(cloud_url="x", local_url="y")
+        result = await svc.pull_page_views()
+        assert result["status"] == "skipped"
+
+    @pytest.mark.asyncio
+    async def test_returns_zero_when_no_new_rows(self):
+        svc = SyncService(cloud_url="x", local_url="y")
+        local_pool, local_conn = _make_pool()
+        cloud_pool, cloud_conn = _make_pool()
+        svc._local_pool = local_pool
+        svc._cloud_pool = cloud_pool
+
+        local_conn.execute = AsyncMock()
+        local_conn.fetchrow = AsyncMock(return_value=_make_record({"max_ts": None}))
+        cloud_conn.fetch = AsyncMock(return_value=[])
+
+        result = await svc.pull_page_views()
+        assert result["rows_pulled"] == 0
+
+    @pytest.mark.asyncio
+    async def test_uses_watermark_when_max_ts_set(self):
+        svc = SyncService(cloud_url="x", local_url="y")
+        local_pool, local_conn = _make_pool()
+        cloud_pool, cloud_conn = _make_pool()
+        svc._local_pool = local_pool
+        svc._cloud_pool = cloud_pool
+
+        watermark = datetime(2026, 4, 1, 0, 0, 0)
+        local_conn.execute = AsyncMock()
+        local_conn.fetchrow = AsyncMock(return_value=_make_record({"max_ts": watermark}))
+        cloud_conn.fetch = AsyncMock(return_value=[])
+
+        await svc.pull_page_views()
+
+        # cloud.fetch should have been called with the watermark
+        cloud_conn.fetch.assert_awaited_once()
+        args = cloud_conn.fetch.await_args.args
+        assert "WHERE created_at > $1" in args[0]
+        assert args[1] == watermark
+
+    @pytest.mark.asyncio
+    async def test_pulls_and_upserts_rows(self):
+        svc = SyncService(cloud_url="x", local_url="y")
+        local_pool, local_conn = _make_pool()
+        cloud_pool, cloud_conn = _make_pool()
+        svc._local_pool = local_pool
+        svc._cloud_pool = cloud_pool
+
+        rows = [
+            _make_record({
+                "id": 1, "path": "/a", "slug": "a", "referrer": None,
+                "user_agent": "test", "created_at": datetime(2026, 4, 1),
+            }),
+            _make_record({
+                "id": 2, "path": "/b", "slug": "b", "referrer": "https://x",
+                "user_agent": "test2", "created_at": datetime(2026, 4, 2),
+            }),
+        ]
+
+        local_conn.execute = AsyncMock()
+        local_conn.fetchrow = AsyncMock(return_value=_make_record({"max_ts": None}))
+        cloud_conn.fetch = AsyncMock(return_value=rows)
+
+        # Local transaction context manager
+        class _FakeTxCtx:
+            async def __aenter__(self):
+                return None
+            async def __aexit__(self, *exc):
+                return False
+        local_conn.transaction = MagicMock(return_value=_FakeTxCtx())
+
+        result = await svc.pull_page_views()
+
+        assert result["rows_pulled"] == 2
+        # local.execute called once for CREATE TABLE + 2 inserts = 3 total
+        assert local_conn.execute.await_count == 3
+
+    @pytest.mark.asyncio
+    async def test_exception_returns_error_dict(self):
+        svc = SyncService(cloud_url="x", local_url="y")
+        local_pool, local_conn = _make_pool()
+        cloud_pool, _ = _make_pool()
+        svc._local_pool = local_pool
+        svc._cloud_pool = cloud_pool
+
+        local_conn.execute = AsyncMock(side_effect=RuntimeError("create table failed"))
+
+        result = await svc.pull_page_views()
+        assert "error" in result
+        assert "create table failed" in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# _pull_web_analytics
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestPullWebAnalytics:
+    @pytest.mark.asyncio
+    async def test_returns_zero_when_no_rows(self):
+        svc = SyncService(cloud_url="x", local_url="y")
+        local_pool, local_conn = _make_pool()
+        cloud_pool, cloud_conn = _make_pool()
+        svc._local_pool = local_pool
+        svc._cloud_pool = cloud_pool
+
+        local_conn.fetchrow = AsyncMock(return_value=_make_record({"max_ts": None}))
+        cloud_conn.fetch = AsyncMock(return_value=[])
+
+        result = await svc._pull_web_analytics()
+        assert result["rows_pulled"] == 0
+
+    @pytest.mark.asyncio
+    async def test_uses_watermark_when_max_ts_set(self):
+        svc = SyncService(cloud_url="x", local_url="y")
+        local_pool, local_conn = _make_pool()
+        cloud_pool, cloud_conn = _make_pool()
+        svc._local_pool = local_pool
+        svc._cloud_pool = cloud_pool
+
+        watermark = datetime(2026, 4, 1)
+        local_conn.fetchrow = AsyncMock(return_value=_make_record({"max_ts": watermark}))
+        cloud_conn.fetch = AsyncMock(return_value=[])
+
+        await svc._pull_web_analytics()
+
+        args = cloud_conn.fetch.await_args.args
+        assert "tracked_at > $1" in args[0]
+        assert args[1] == watermark
+
+    @pytest.mark.asyncio
+    async def test_inserts_rows_with_upsert(self):
+        svc = SyncService(cloud_url="x", local_url="y")
+        local_pool, local_conn = _make_pool()
+        cloud_pool, cloud_conn = _make_pool()
+        svc._local_pool = local_pool
+        svc._cloud_pool = cloud_pool
+
+        rows = [
+            _make_record({
+                "id": "wa-1", "page_id": "p1", "sessions": 100, "users": 80,
+                "page_views": 200, "bounce_rate": 0.3, "avg_session_duration": 60,
+                "conversion_rate": 0.05, "tracked_date": "2026-04-01",
+                "tracked_at": datetime(2026, 4, 1),
+            }),
+        ]
+
+        local_conn.fetchrow = AsyncMock(return_value=_make_record({"max_ts": None}))
+        cloud_conn.fetch = AsyncMock(return_value=rows)
+        local_conn.execute = AsyncMock()
+
+        class _FakeTxCtx:
+            async def __aenter__(self):
+                return None
+            async def __aexit__(self, *exc):
+                return False
+        local_conn.transaction = MagicMock(return_value=_FakeTxCtx())
+
+        result = await svc._pull_web_analytics()
+
+        assert result["rows_pulled"] == 1
+        local_conn.execute.assert_awaited_once()
+        sql = local_conn.execute.await_args.args[0]
+        assert "INSERT INTO web_analytics" in sql
+        assert "ON CONFLICT" in sql
+
+
+# ---------------------------------------------------------------------------
+# pull_newsletter_subscribers
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestPullNewsletterSubscribers:
+    @pytest.mark.asyncio
+    async def test_returns_skipped_when_pools_missing(self):
+        svc = SyncService(cloud_url="x", local_url="y")
+        result = await svc.pull_newsletter_subscribers()
+        assert result["status"] == "skipped"
+
+    @pytest.mark.asyncio
+    async def test_returns_zero_when_no_rows(self):
+        svc = SyncService(cloud_url="x", local_url="y")
+        local_pool, local_conn = _make_pool()
+        cloud_pool, cloud_conn = _make_pool()
+        svc._local_pool = local_pool
+        svc._cloud_pool = cloud_pool
+
+        local_conn.execute = AsyncMock()
+        local_conn.fetchrow = AsyncMock(return_value=_make_record({"max_ts": None}))
+        cloud_conn.fetch = AsyncMock(return_value=[])
+
+        result = await svc.pull_newsletter_subscribers()
+        assert result["rows_pulled"] == 0
+
+    @pytest.mark.asyncio
+    async def test_uses_watermark_when_max_ts_set(self):
+        svc = SyncService(cloud_url="x", local_url="y")
+        local_pool, local_conn = _make_pool()
+        cloud_pool, cloud_conn = _make_pool()
+        svc._local_pool = local_pool
+        svc._cloud_pool = cloud_pool
+
+        watermark = datetime(2026, 4, 1)
+        local_conn.execute = AsyncMock()
+        local_conn.fetchrow = AsyncMock(return_value=_make_record({"max_ts": watermark}))
+        cloud_conn.fetch = AsyncMock(return_value=[])
+
+        await svc.pull_newsletter_subscribers()
+
+        args = cloud_conn.fetch.await_args.args
+        assert "updated_at > $1" in args[0]
+        assert args[1] == watermark
+
+    @pytest.mark.asyncio
+    async def test_pulls_and_upserts_subscribers(self):
+        svc = SyncService(cloud_url="x", local_url="y")
+        local_pool, local_conn = _make_pool()
+        cloud_pool, cloud_conn = _make_pool()
+        svc._local_pool = local_pool
+        svc._cloud_pool = cloud_pool
+
+        rows = [
+            _make_record({
+                "id": 1, "email": "a@b.com", "first_name": "Alice",
+                "last_name": "Anderson", "company": "Acme",
+                "interest_categories": "[]", "subscribed_at": datetime(2026, 4, 1),
+                "ip_address": "1.2.3.4", "user_agent": "test",
+                "verified": True, "verification_token": None,
+                "verified_at": datetime(2026, 4, 1),
+                "unsubscribed_at": None, "unsubscribe_reason": None,
+                "created_at": datetime(2026, 4, 1), "updated_at": datetime(2026, 4, 1),
+                "marketing_consent": True,
+            }),
+        ]
+
+        local_conn.execute = AsyncMock()
+        local_conn.fetchrow = AsyncMock(return_value=_make_record({"max_ts": None}))
+        cloud_conn.fetch = AsyncMock(return_value=rows)
+
+        class _FakeTxCtx:
+            async def __aenter__(self):
+                return None
+            async def __aexit__(self, *exc):
+                return False
+        local_conn.transaction = MagicMock(return_value=_FakeTxCtx())
+
+        result = await svc.pull_newsletter_subscribers()
+
+        assert result["rows_pulled"] == 1
+        # CREATE TABLE + 1 INSERT = 2 execute calls
+        assert local_conn.execute.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_exception_returns_error_dict(self):
+        svc = SyncService(cloud_url="x", local_url="y")
+        local_pool, local_conn = _make_pool()
+        cloud_pool, _ = _make_pool()
+        svc._local_pool = local_pool
+        svc._cloud_pool = cloud_pool
+
+        local_conn.execute = AsyncMock(side_effect=RuntimeError("table create failed"))
+
+        result = await svc.pull_newsletter_subscribers()
+        assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# _pull_newsletter_stats
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestPullNewsletterStats:
+    @pytest.mark.asyncio
+    async def test_stores_snapshot_in_sync_metrics(self):
+        svc = SyncService(cloud_url="x", local_url="y")
+        local_pool, local_conn = _make_pool()
+        cloud_pool, cloud_conn = _make_pool()
+        svc._local_pool = local_pool
+        svc._cloud_pool = cloud_pool
+
+        cloud_conn.fetchrow = AsyncMock(return_value=_make_record({
+            "total": 100,
+            "verified": 80,
+            "unsubscribed": 5,
+            "latest_signup": datetime(2026, 4, 9),
+        }))
+        local_conn.execute = AsyncMock()
+
+        result = await svc._pull_newsletter_stats()
+
+        assert result["total"] == 100
+        assert result["verified"] == 80
+        assert result["unsubscribed"] == 5
+        assert result["latest_signup"] is not None
+        # CREATE TABLE + INSERT = 2 calls
+        assert local_conn.execute.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_handles_null_latest_signup(self):
+        svc = SyncService(cloud_url="x", local_url="y")
+        local_pool, local_conn = _make_pool()
+        cloud_pool, cloud_conn = _make_pool()
+        svc._local_pool = local_pool
+        svc._cloud_pool = cloud_pool
+
+        cloud_conn.fetchrow = AsyncMock(return_value=_make_record({
+            "total": 0, "verified": 0, "unsubscribed": 0, "latest_signup": None,
+        }))
+        local_conn.execute = AsyncMock()
+
+        result = await svc._pull_newsletter_stats()
+        assert result["latest_signup"] is None
+
+
+# ---------------------------------------------------------------------------
+# pull_metrics — page_views delegation path
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestPullMetricsPageViews:
+    @pytest.mark.asyncio
+    async def test_includes_page_views_result(self):
+        svc = SyncService(cloud_url="x", local_url="y")
+        svc._cloud_pool = MagicMock()
+        svc._local_pool = MagicMock()
+
+        with patch.object(svc, "pull_page_views", new_callable=AsyncMock, return_value={"rows_pulled": 42}), \
+             patch.object(svc, "_pull_web_analytics", new_callable=AsyncMock, return_value={"rows_pulled": 0}), \
+             patch.object(svc, "_pull_newsletter_stats", new_callable=AsyncMock, return_value={"total": 0}):
+            result = await svc.pull_metrics()
+
+        assert result["page_views"] == {"rows_pulled": 42}
+
+    @pytest.mark.asyncio
+    async def test_page_views_exception_captured(self):
+        svc = SyncService(cloud_url="x", local_url="y")
+        svc._cloud_pool = MagicMock()
+        svc._local_pool = MagicMock()
+
+        with patch.object(svc, "pull_page_views", new_callable=AsyncMock, side_effect=RuntimeError("pv fail")), \
+             patch.object(svc, "_pull_web_analytics", new_callable=AsyncMock, return_value={"rows_pulled": 0}), \
+             patch.object(svc, "_pull_newsletter_stats", new_callable=AsyncMock, return_value={"total": 0}):
+            result = await svc.pull_metrics()
+
+        assert "error" in result["page_views"]
+        assert "pv fail" in result["page_views"]["error"]
