@@ -645,3 +645,532 @@ class TestSettingExists:
         db = _make_db(pool)
         result = await db.setting_exists("k")
         assert result is False
+
+
+# ---------------------------------------------------------------------------
+# add_log_entry
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestAddLogEntry:
+    @pytest.mark.asyncio
+    async def test_success_returns_row_dict(self):
+        row = {
+            "id": "log-uuid-1",
+            "agent_name": "writer",
+            "level": "INFO",
+            "message": "task started",
+            "context": None,
+            "created_at": datetime.now(timezone.utc),
+        }
+        pool = _make_pool(fetchrow_result=row)
+        db = _make_db(pool)
+
+        result = await db.add_log_entry("writer", "INFO", "task started")
+
+        assert result["agent_name"] == "writer"
+        assert result["level"] == "INFO"
+        assert result["message"] == "task started"
+
+    @pytest.mark.asyncio
+    async def test_serializes_context_dict_as_json(self):
+        captured = {}
+
+        async def _capture(sql, log_id, agent_name, level, message, context):
+            captured["context"] = context
+            return {
+                "id": log_id,
+                "agent_name": agent_name,
+                "level": level,
+                "message": message,
+                "context": context,
+                "created_at": datetime.now(timezone.utc),
+            }
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.fetchrow = AsyncMock(side_effect=_capture)
+        db = _make_db(pool)
+
+        await db.add_log_entry("agent", "WARN", "msg", context={"task_id": "abc", "step": 3})
+
+        import json
+        assert captured["context"] is not None
+        decoded = json.loads(captured["context"])
+        assert decoded == {"task_id": "abc", "step": 3}
+
+    @pytest.mark.asyncio
+    async def test_none_context_passed_as_null(self):
+        captured = {}
+
+        async def _capture(sql, log_id, agent_name, level, message, context):
+            captured["context"] = context
+            return {"id": log_id}
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.fetchrow = AsyncMock(side_effect=_capture)
+        db = _make_db(pool)
+
+        await db.add_log_entry("agent", "DEBUG", "no ctx")
+
+        assert captured["context"] is None
+
+    @pytest.mark.asyncio
+    async def test_empty_row_returns_id_only(self):
+        pool = _make_pool(fetchrow_result=None)
+        db = _make_db(pool)
+        result = await db.add_log_entry("a", "INFO", "m")
+        assert "id" in result
+        assert isinstance(result["id"], str)
+
+    @pytest.mark.asyncio
+    async def test_db_error_returns_error_dict(self):
+        pool = _make_pool(fetchrow_side_effect=RuntimeError("DB down"))
+        db = _make_db(pool)
+        result = await db.add_log_entry("agent", "ERROR", "boom")
+        assert result.get("error") == "Failed to save log entry"
+        assert "id" in result
+
+
+# ---------------------------------------------------------------------------
+# get_logs
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestGetLogs:
+    @pytest.mark.asyncio
+    async def test_no_filters_returns_all(self):
+        rows = [
+            {"id": "1", "agent_name": "a", "level": "INFO", "message": "m1"},
+            {"id": "2", "agent_name": "b", "level": "WARN", "message": "m2"},
+        ]
+        pool = _make_pool(fetch_result=rows)
+        db = _make_db(pool)
+        result = await db.get_logs()
+        assert len(result) == 2
+        assert result[0]["id"] == "1"
+
+    @pytest.mark.asyncio
+    async def test_agent_name_filter_in_sql_and_params(self):
+        captured = {}
+
+        async def _capture(sql, *params):
+            captured["sql"] = sql
+            captured["params"] = params
+            return []
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.fetch = AsyncMock(side_effect=_capture)
+        db = _make_db(pool)
+
+        await db.get_logs(agent_name="writer", limit=50)
+
+        assert "agent_name = $1" in captured["sql"]
+        assert "WHERE" in captured["sql"]
+        assert captured["params"][0] == "writer"
+        assert captured["params"][-1] == 50  # limit always last
+
+    @pytest.mark.asyncio
+    async def test_level_filter_in_sql_and_params(self):
+        captured = {}
+
+        async def _capture(sql, *params):
+            captured["sql"] = sql
+            captured["params"] = params
+            return []
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.fetch = AsyncMock(side_effect=_capture)
+        db = _make_db(pool)
+
+        await db.get_logs(level="ERROR")
+
+        assert "level = $1" in captured["sql"]
+        assert captured["params"][0] == "ERROR"
+
+    @pytest.mark.asyncio
+    async def test_both_filters_combined_with_and(self):
+        captured = {}
+
+        async def _capture(sql, *params):
+            captured["sql"] = sql
+            captured["params"] = params
+            return []
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.fetch = AsyncMock(side_effect=_capture)
+        db = _make_db(pool)
+
+        await db.get_logs(agent_name="x", level="ERROR", limit=10)
+
+        assert "agent_name = $1" in captured["sql"]
+        assert "level = $2" in captured["sql"]
+        assert " AND " in captured["sql"]
+        assert captured["params"] == ("x", "ERROR", 10)
+
+    @pytest.mark.asyncio
+    async def test_default_limit_100_appended(self):
+        captured = {}
+
+        async def _capture(sql, *params):
+            captured["params"] = params
+            return []
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.fetch = AsyncMock(side_effect=_capture)
+        db = _make_db(pool)
+
+        await db.get_logs()
+        assert captured["params"][-1] == 100
+
+    @pytest.mark.asyncio
+    async def test_db_error_returns_empty_list(self):
+        pool = _make_pool(fetch_side_effect=RuntimeError("DB down"))
+        db = _make_db(pool)
+        result = await db.get_logs()
+        assert result == []
+
+
+# ---------------------------------------------------------------------------
+# add_financial_entry
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestAddFinancialEntry:
+    @pytest.mark.asyncio
+    async def test_success_returns_row_dict(self):
+        row = {
+            "id": 7,
+            "entry_type": "expense",
+            "amount": 19.99,
+            "currency": "USD",
+            "description": "OpenAI credit",
+            "category": "ai",
+        }
+        pool = _make_pool(fetchrow_result=row)
+        db = _make_db(pool)
+        result = await db.add_financial_entry({
+            "entry_type": "expense",
+            "amount": 19.99,
+            "description": "OpenAI credit",
+            "category": "ai",
+        })
+        assert result["amount"] == 19.99
+        assert result["entry_type"] == "expense"
+
+    @pytest.mark.asyncio
+    async def test_default_field_values_when_unspecified(self):
+        captured = {}
+
+        async def _capture(sql, entry_type, amount, currency, description, category, date, metadata):
+            captured.update({
+                "entry_type": entry_type,
+                "amount": amount,
+                "currency": currency,
+                "description": description,
+                "category": category,
+                "metadata": metadata,
+            })
+            return {"id": 1}
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.fetchrow = AsyncMock(side_effect=_capture)
+        db = _make_db(pool)
+
+        await db.add_financial_entry({})
+
+        assert captured["entry_type"] == "expense"
+        assert captured["amount"] == 0
+        assert captured["currency"] == "USD"
+        assert captured["description"] is None
+        assert captured["category"] is None
+        # metadata is JSON-serialized empty dict
+        import json
+        assert json.loads(captured["metadata"]) == {}
+
+    @pytest.mark.asyncio
+    async def test_metadata_serialized_as_json(self):
+        captured = {}
+
+        async def _capture(sql, entry_type, amount, currency, description, category, date, metadata):
+            captured["metadata"] = metadata
+            return {"id": 1}
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.fetchrow = AsyncMock(side_effect=_capture)
+        db = _make_db(pool)
+
+        await db.add_financial_entry({"metadata": {"vendor": "openai", "ref": "inv-42"}})
+
+        import json
+        assert json.loads(captured["metadata"]) == {"vendor": "openai", "ref": "inv-42"}
+
+    @pytest.mark.asyncio
+    async def test_db_error_returns_empty_dict(self):
+        pool = _make_pool(fetchrow_side_effect=RuntimeError("DB down"))
+        db = _make_db(pool)
+        result = await db.add_financial_entry({"amount": 1.0})
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_none_row_returns_empty_dict(self):
+        pool = _make_pool(fetchrow_result=None)
+        db = _make_db(pool)
+        result = await db.add_financial_entry({"amount": 1.0})
+        assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# get_financial_summary
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestGetFinancialSummary:
+    @pytest.mark.asyncio
+    async def test_success_returns_summary_dict(self):
+        row = {
+            "total_amount": 1234.56,
+            "entry_count": 42,
+            "total_revenue": 2000.00,
+            "total_expenses": 765.44,
+        }
+        pool = _make_pool(fetchrow_result=row)
+        db = _make_db(pool)
+        result = await db.get_financial_summary(days=30)
+        assert result["total_amount"] == 1234.56
+        assert result["entry_count"] == 42
+        assert result["total_revenue"] == 2000.00
+
+    @pytest.mark.asyncio
+    async def test_days_passed_as_int_param(self):
+        captured = {}
+
+        async def _capture(sql, days):
+            captured["days"] = days
+            captured["sql"] = sql
+            return {"total_amount": 0, "entry_count": 0}
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.fetchrow = AsyncMock(side_effect=_capture)
+        db = _make_db(pool)
+
+        await db.get_financial_summary(days=7)
+
+        assert captured["days"] == 7
+        assert isinstance(captured["days"], int)
+        assert "make_interval" in captured["sql"]
+
+    @pytest.mark.asyncio
+    async def test_string_days_coerced_to_int(self):
+        """Even if a caller passes a string, it gets coerced (defense vs. SQL injection)."""
+        captured = {}
+
+        async def _capture(sql, days):
+            captured["days"] = days
+            return {"total_amount": 0, "entry_count": 0}
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.fetchrow = AsyncMock(side_effect=_capture)
+        db = _make_db(pool)
+
+        await db.get_financial_summary(days="14")  # type: ignore[arg-type]
+
+        assert captured["days"] == 14
+        assert isinstance(captured["days"], int)
+
+    @pytest.mark.asyncio
+    async def test_none_row_returns_zero_defaults(self):
+        pool = _make_pool(fetchrow_result=None)
+        db = _make_db(pool)
+        result = await db.get_financial_summary()
+        assert result["total_amount"] == 0
+        assert result["entry_count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_db_error_returns_full_zero_dict(self):
+        pool = _make_pool(fetchrow_side_effect=RuntimeError("DB down"))
+        db = _make_db(pool)
+        result = await db.get_financial_summary()
+        assert result["total_amount"] == 0
+        assert result["entry_count"] == 0
+        assert result["total_revenue"] == 0
+        assert result["total_expenses"] == 0
+
+
+# ---------------------------------------------------------------------------
+# update_agent_status
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestUpdateAgentStatus:
+    @pytest.mark.asyncio
+    async def test_success_returns_true(self):
+        pool = _make_pool()
+        db = _make_db(pool)
+        result = await db.update_agent_status("writer", "running")
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_default_last_run_is_now(self):
+        captured = {}
+
+        async def _capture(sql, agent_name, status, last_heartbeat, metadata):
+            captured["last_heartbeat"] = last_heartbeat
+            return "OK"
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.execute = AsyncMock(side_effect=_capture)
+        db = _make_db(pool)
+
+        before = datetime.now(timezone.utc)
+        await db.update_agent_status("writer", "running")
+        after = datetime.now(timezone.utc)
+
+        assert isinstance(captured["last_heartbeat"], datetime)
+        assert before <= captured["last_heartbeat"] <= after
+
+    @pytest.mark.asyncio
+    async def test_explicit_last_run_passed_through(self):
+        captured = {}
+        explicit = datetime(2024, 6, 1, 12, 0, tzinfo=timezone.utc)
+
+        async def _capture(sql, agent_name, status, last_heartbeat, metadata):
+            captured["last_heartbeat"] = last_heartbeat
+            return "OK"
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.execute = AsyncMock(side_effect=_capture)
+        db = _make_db(pool)
+
+        await db.update_agent_status("writer", "idle", last_run=explicit)
+        assert captured["last_heartbeat"] == explicit
+
+    @pytest.mark.asyncio
+    async def test_metadata_serialized_as_json(self):
+        captured = {}
+
+        async def _capture(sql, agent_name, status, last_heartbeat, metadata):
+            captured["metadata"] = metadata
+            return "OK"
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.execute = AsyncMock(side_effect=_capture)
+        db = _make_db(pool)
+
+        await db.update_agent_status("w", "running", metadata={"task": "abc"})
+
+        import json
+        assert json.loads(captured["metadata"]) == {"task": "abc"}
+
+    @pytest.mark.asyncio
+    async def test_none_metadata_passed_as_null(self):
+        captured = {}
+
+        async def _capture(sql, agent_name, status, last_heartbeat, metadata):
+            captured["metadata"] = metadata
+            return "OK"
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.execute = AsyncMock(side_effect=_capture)
+        db = _make_db(pool)
+
+        await db.update_agent_status("w", "running")
+        assert captured["metadata"] is None
+
+    @pytest.mark.asyncio
+    async def test_upsert_sql_uses_on_conflict(self):
+        captured = {}
+
+        async def _capture(sql, *args):
+            captured["sql"] = sql
+            return "OK"
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.execute = AsyncMock(side_effect=_capture)
+        db = _make_db(pool)
+
+        await db.update_agent_status("w", "running")
+        assert "ON CONFLICT" in captured["sql"]
+        assert "agent_status" in captured["sql"]
+
+    @pytest.mark.asyncio
+    async def test_db_error_returns_false(self):
+        pool = _make_pool(execute_side_effect=RuntimeError("DB down"))
+        db = _make_db(pool)
+        result = await db.update_agent_status("w", "running")
+        assert result is False
+
+
+# ---------------------------------------------------------------------------
+# get_agent_status
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestGetAgentStatus:
+    @pytest.mark.asyncio
+    async def test_found_returns_dict(self):
+        row = {
+            "agent_name": "writer",
+            "status": "running",
+            "last_heartbeat": datetime.now(timezone.utc),
+            "metadata": None,
+        }
+        pool = _make_pool(fetchrow_result=row)
+        db = _make_db(pool)
+        result = await db.get_agent_status("writer")
+        assert result is not None
+        assert result["agent_name"] == "writer"
+        assert result["status"] == "running"
+
+    @pytest.mark.asyncio
+    async def test_not_found_returns_none(self):
+        pool = _make_pool(fetchrow_result=None)
+        db = _make_db(pool)
+        result = await db.get_agent_status("missing")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_passes_agent_name_param(self):
+        captured = {}
+
+        async def _capture(sql, agent_name):
+            captured["agent_name"] = agent_name
+            captured["sql"] = sql
+            return None
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.fetchrow = AsyncMock(side_effect=_capture)
+        db = _make_db(pool)
+
+        await db.get_agent_status("special-agent")
+        assert captured["agent_name"] == "special-agent"
+        assert "agent_status" in captured["sql"]
+        assert "WHERE agent_name = $1" in captured["sql"]
+
+    @pytest.mark.asyncio
+    async def test_db_error_returns_none(self):
+        pool = _make_pool(fetchrow_side_effect=RuntimeError("DB down"))
+        db = _make_db(pool)
+        result = await db.get_agent_status("w")
+        assert result is None
