@@ -31,6 +31,8 @@ class WorkerService:
         self._running = False
         self._capabilities = {}
         self._current_task_id = None
+        # Strong ref to the heartbeat task so asyncio doesn't GC it.
+        self._heartbeat_task: asyncio.Task | None = None
 
     @property
     def capabilities(self) -> dict[str, Any]:
@@ -74,7 +76,9 @@ class WorkerService:
     async def start_heartbeat(self):
         """Start the heartbeat loop."""
         self._running = True
-        asyncio.create_task(self._heartbeat_loop())
+        self._heartbeat_task = asyncio.create_task(
+            self._heartbeat_loop(), name=f"heartbeat({self.worker_id})"
+        )
         logger.info("[WORKER] Heartbeat started (every %ds)", HEARTBEAT_INTERVAL)
 
     async def stop(self):

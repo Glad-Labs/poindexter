@@ -27,6 +27,8 @@ class WebhookDeliveryService:
         self.webhook_token = site_config.get("openclaw_webhook_token", "")
         self._running = False
         self._client = None
+        # Strong ref to the delivery loop task so asyncio doesn't GC it.
+        self._delivery_task: asyncio.Task | None = None
 
     async def start(self):
         """Start the delivery loop."""
@@ -40,7 +42,9 @@ class WebhookDeliveryService:
             timeout=httpx.Timeout(10.0, connect=3.0)
         )
         logger.info("[WEBHOOK] Delivery service started, polling every %ds", POLL_INTERVAL)
-        asyncio.create_task(self._delivery_loop())
+        self._delivery_task = asyncio.create_task(
+            self._delivery_loop(), name="webhook_delivery_loop"
+        )
 
     async def stop(self):
         """Stop the delivery loop."""
