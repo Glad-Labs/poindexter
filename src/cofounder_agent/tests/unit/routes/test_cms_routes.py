@@ -386,3 +386,166 @@ class TestCmsStatus:
         body = resp.text
         # The raw exception message must NOT appear in the response
         assert "SECRET_DB_PASSWORD_EXPOSED" not in body
+
+
+# ---------------------------------------------------------------------------
+# convert_markdown_to_html — pure helper
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestConvertMarkdownToHtml:
+    def test_empty_returns_empty(self):
+        from routes.cms_routes import convert_markdown_to_html
+        assert convert_markdown_to_html("") == ""
+
+    def test_none_returns_empty(self):
+        from routes.cms_routes import convert_markdown_to_html
+        assert convert_markdown_to_html(None) == ""  # type: ignore[arg-type]
+
+    def test_headings_convert_to_h_tags(self):
+        from routes.cms_routes import convert_markdown_to_html
+        html = convert_markdown_to_html("# Title\n\nParagraph.")
+        assert "<h1>" in html and "</h1>" in html
+        assert "Title" in html
+        assert "<p>" in html
+
+    def test_bold_and_italic(self):
+        from routes.cms_routes import convert_markdown_to_html
+        html = convert_markdown_to_html("**bold** and *italic*.")
+        assert "<strong>" in html or "<b>" in html
+        assert "<em>" in html or "<i>" in html
+
+    def test_code_fence(self):
+        from routes.cms_routes import convert_markdown_to_html
+        html = convert_markdown_to_html("```python\nprint('hi')\n```")
+        assert "<code" in html or "<pre" in html
+
+    def test_already_html_passed_through(self):
+        """Content starting with a tag is treated as already-HTML."""
+        from routes.cms_routes import convert_markdown_to_html
+        already_html = "<article><p>Hello</p></article>"
+        result = convert_markdown_to_html(already_html)
+        assert result == already_html
+
+    def test_comment_block_not_treated_as_html(self):
+        """Content starting with <![ is markdown (CDATA), not HTML."""
+        from routes.cms_routes import convert_markdown_to_html
+        # This should still get markdown processing because it starts with <!
+        content = "<![CDATA[stuff]]> after the cdata"
+        result = convert_markdown_to_html(content)
+        # Result should be processed (though CDATA may be kept as-is)
+        assert result is not None
+
+    def test_lists_convert(self):
+        from routes.cms_routes import convert_markdown_to_html
+        html = convert_markdown_to_html("- item one\n- item two\n- item three")
+        assert "<ul>" in html
+        assert "<li>" in html
+
+    def test_error_falls_back_to_original(self):
+        """If markdown library raises, return the raw content unchanged."""
+        from unittest.mock import patch
+        from routes.cms_routes import convert_markdown_to_html
+        with patch("markdown.markdown", side_effect=RuntimeError("parser broke")):
+            result = convert_markdown_to_html("# Title\n\nBody.")
+        assert result == "# Title\n\nBody."
+
+
+# ---------------------------------------------------------------------------
+# generate_excerpt_from_content
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestGenerateExcerpt:
+    def test_empty_returns_empty(self):
+        from routes.cms_routes import generate_excerpt_from_content
+        assert generate_excerpt_from_content("") == ""
+
+    def test_skips_headers(self):
+        from routes.cms_routes import generate_excerpt_from_content
+        content = "# Main Heading\n\n## Subheading\n\nActual content goes here."
+        excerpt = generate_excerpt_from_content(content)
+        assert "Main Heading" not in excerpt
+        assert "Actual content" in excerpt
+
+    def test_respects_length_limit(self):
+        from routes.cms_routes import generate_excerpt_from_content
+        long_content = "word " * 200
+        excerpt = generate_excerpt_from_content(long_content, length=100)
+        assert len(excerpt) <= 110  # allow for ellipsis padding
+
+    def test_adds_ellipsis_when_truncated(self):
+        from routes.cms_routes import generate_excerpt_from_content
+        long = "This is a long paragraph that should definitely exceed the limit. " * 5
+        excerpt = generate_excerpt_from_content(long, length=80)
+        assert excerpt.endswith("...")
+
+    def test_no_ellipsis_when_short(self):
+        from routes.cms_routes import generate_excerpt_from_content
+        short = "Just a brief sentence."
+        excerpt = generate_excerpt_from_content(short, length=200)
+        assert not excerpt.endswith("...")
+
+    def test_removes_markdown_brackets(self):
+        from routes.cms_routes import generate_excerpt_from_content
+        content = "See [this link](https://example.com) for details."
+        excerpt = generate_excerpt_from_content(content)
+        assert "[" not in excerpt
+        assert "]" not in excerpt
+        # Parens also stripped
+        assert "(" not in excerpt
+
+    def test_removes_backticks(self):
+        from routes.cms_routes import generate_excerpt_from_content
+        content = "Use `pip install foo` to install."
+        excerpt = generate_excerpt_from_content(content)
+        assert "`" not in excerpt
+
+
+# ---------------------------------------------------------------------------
+# map_featured_image_to_coverimage
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestMapFeaturedImageToCoverimage:
+    def test_adds_coverimage_when_featured_set(self):
+        from routes.cms_routes import map_featured_image_to_coverimage
+        post = {"title": "My Post", "featured_image_url": "https://img/hero.jpg"}
+        result = map_featured_image_to_coverimage(post)
+        assert result["coverImage"] is not None
+        assert result["coverImage"]["data"]["attributes"]["url"] == "https://img/hero.jpg"
+
+    def test_alt_text_includes_title(self):
+        from routes.cms_routes import map_featured_image_to_coverimage
+        post = {"title": "My Post", "featured_image_url": "https://img/x.jpg"}
+        result = map_featured_image_to_coverimage(post)
+        alt = result["coverImage"]["data"]["attributes"]["alternativeText"]
+        assert "My Post" in alt
+
+    def test_no_image_returns_null_coverimage(self):
+        from routes.cms_routes import map_featured_image_to_coverimage
+        post = {"title": "Post", "featured_image_url": None}
+        result = map_featured_image_to_coverimage(post)
+        assert result["coverImage"] is None
+
+    def test_empty_string_returns_null(self):
+        from routes.cms_routes import map_featured_image_to_coverimage
+        post = {"title": "Post", "featured_image_url": ""}
+        result = map_featured_image_to_coverimage(post)
+        assert result["coverImage"] is None
+
+    def test_missing_title_uses_fallback_alt(self):
+        from routes.cms_routes import map_featured_image_to_coverimage
+        post = {"featured_image_url": "https://img/x.jpg"}
+        result = map_featured_image_to_coverimage(post)
+        alt = result["coverImage"]["data"]["attributes"]["alternativeText"]
+        assert "post" in alt.lower()
+
+    def test_returns_same_dict_mutated(self):
+        from routes.cms_routes import map_featured_image_to_coverimage
+        post = {"title": "P", "featured_image_url": "https://img/x.jpg"}
+        result = map_featured_image_to_coverimage(post)
+        assert result is post  # same dict, mutated in place
