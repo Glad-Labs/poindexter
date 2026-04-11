@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import Enum
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SettingDataTypeEnum(str, Enum):
@@ -93,8 +93,7 @@ class SettingCreate(BaseModel):
         default_factory=list, description="Tags for filtering and organization"
     )
 
-    class Config:
-        extra = "allow"  # Allow additional fields for flexible key-value storage
+    model_config = ConfigDict(extra="allow")
 
 
 class SettingUpdate(BaseModel):
@@ -106,9 +105,7 @@ class SettingUpdate(BaseModel):
     is_read_only: bool | None = Field(None, description="Update read-only flag")
     tags: list[str] | None = Field(None, description="Updated tags")
 
-    class Config:
-        extra = "allow"  # Allow additional fields for simple key-value updates
-        validate_assignment = True
+    model_config = ConfigDict(extra="allow", validate_assignment=True)
 
     def has_updates(self) -> bool:
         """Check if any fields have been provided for update"""
@@ -137,8 +134,7 @@ class SettingResponse(SettingBase):
         None, description="Preview of value (for encrypted values)"
     )
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SettingListResponse(BaseModel):
