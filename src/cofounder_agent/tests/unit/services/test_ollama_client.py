@@ -512,3 +512,225 @@ class TestConfigureElectricity:
         c.configure_electricity()  # No args
         assert c._electricity_rate_kwh == original_rate
         assert c._gpu_power_watts == original_power
+
+
+# ===========================================================================
+# resolve_model
+# ===========================================================================
+
+
+class TestResolveModel:
+    @pytest.mark.asyncio
+    async def test_explicit_model_returned_as_is(self):
+        c = OllamaClient()
+        result = await c.resolve_model("qwen3:8b")
+        assert result == "qwen3:8b"
+
+    @pytest.mark.asyncio
+    async def test_explicit_non_auto_model_skips_discovery(self):
+        c = OllamaClient()
+        c.list_models = AsyncMock()  # would not be called
+        result = await c.resolve_model("custom-model:latest")
+        assert result == "custom-model:latest"
+        c.list_models.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_cached_default_returned_on_repeat_call(self):
+        c = OllamaClient()
+        c._resolved_default = "previously-resolved:latest"
+        c.list_models = AsyncMock()
+        result = await c.resolve_model("auto")
+        assert result == "previously-resolved:latest"
+        c.list_models.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_preferred_from_config_wins(self):
+        c = OllamaClient()
+        c._resolved_default = None
+        c.list_models = AsyncMock(return_value=[
+            {"name": "qwen3:8b", "size": 5000000000},
+            {"name": "matt-favorite:latest", "size": 8000000000},
+            {"name": "gemma3:27b", "size": 16000000000},
+        ])
+        with patch("services.ollama_client._sc_get", return_value="matt-favorite:latest"):
+            result = await c.resolve_model("auto")
+        assert result == "matt-favorite:latest"
+        # Cached for next call
+        assert c._resolved_default == "matt-favorite:latest"
+
+    @pytest.mark.asyncio
+    async def test_largest_non_embedding_model_when_no_preferred(self):
+        c = OllamaClient()
+        c._resolved_default = None
+        c.list_models = AsyncMock(return_value=[
+            {"name": "qwen3:8b", "size": 5000000000},
+            {"name": "gemma3:27b", "size": 16000000000},
+            {"name": "nomic-embed-text", "size": 274000000},
+        ])
+        with patch("services.ollama_client._sc_get", return_value=""):
+            result = await c.resolve_model("auto")
+        # Largest (gemma3:27b at 16GB), embedding model excluded
+        assert result == "gemma3:27b"
+
+    @pytest.mark.asyncio
+    async def test_filters_out_embedding_models_even_if_largest(self):
+        """nomic-embed-text size shouldn't matter — it's always excluded by name."""
+        c = OllamaClient()
+        c._resolved_default = None
+        c.list_models = AsyncMock(return_value=[
+            {"name": "nomic-embed-text", "size": 999999999999},  # huge
+            {"name": "qwen3:8b", "size": 5000000000},
+        ])
+        with patch("services.ollama_client._sc_get", return_value=""):
+            result = await c.resolve_model("auto")
+        assert result == "qwen3:8b"
+
+    @pytest.mark.asyncio
+    async def test_list_models_exception_falls_back_to_llama3(self):
+        c = OllamaClient()
+        c._resolved_default = None
+        c.list_models = AsyncMock(side_effect=RuntimeError("api down"))
+        with patch("services.ollama_client._sc_get", return_value=""):
+            result = await c.resolve_model("auto")
+        assert result == "llama3:latest"
+
+    @pytest.mark.asyncio
+    async def test_no_installed_models_falls_back_to_llama3(self):
+        c = OllamaClient()
+        c._resolved_default = None
+        c.list_models = AsyncMock(return_value=[])
+        with patch("services.ollama_client._sc_get", return_value=""):
+            result = await c.resolve_model("auto")
+        assert result == "llama3:latest"
+
+
+# ===========================================================================
+# embed
+# ===========================================================================
+
+
+class TestEmbed:
+    @pytest.mark.asyncio
+    async def test_returns_first_embedding_vector(self):
+        c = OllamaClient()
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "embeddings": [[0.1, 0.2, 0.3, 0.4]]
+        }
+        mock_resp.raise_for_status = MagicMock()
+        c.client = MagicMock()
+        c.client.post = AsyncMock(return_value=mock_resp)
+
+        result = await c.embed("hello world")
+        assert result == [0.1, 0.2, 0.3, 0.4]
+
+    @pytest.mark.asyncio
+    async def test_uses_default_model(self):
+        c = OllamaClient()
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"embeddings": [[0.1]]}
+        mock_resp.raise_for_status = MagicMock()
+        c.client = MagicMock()
+        c.client.post = AsyncMock(return_value=mock_resp)
+
+        await c.embed("text")
+        payload = c.client.post.await_args.kwargs["json"]
+        assert payload["model"] == "nomic-embed-text"
+        assert payload["input"] == "text"
+
+    @pytest.mark.asyncio
+    async def test_custom_model(self):
+        c = OllamaClient()
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"embeddings": [[0.1]]}
+        mock_resp.raise_for_status = MagicMock()
+        c.client = MagicMock()
+        c.client.post = AsyncMock(return_value=mock_resp)
+
+        await c.embed("text", model="custom-embed-model")
+        payload = c.client.post.await_args.kwargs["json"]
+        assert payload["model"] == "custom-embed-model"
+
+    @pytest.mark.asyncio
+    async def test_empty_embeddings_raises_ollama_error(self):
+        from services.ollama_client import OllamaError
+
+        c = OllamaClient()
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"embeddings": []}
+        mock_resp.raise_for_status = MagicMock()
+        c.client = MagicMock()
+        c.client.post = AsyncMock(return_value=mock_resp)
+
+        with pytest.raises(OllamaError, match="No embeddings"):
+            await c.embed("text")
+
+    @pytest.mark.asyncio
+    async def test_http_error_propagates(self):
+        c = OllamaClient()
+        c.client = MagicMock()
+        c.client.post = AsyncMock(side_effect=httpx.HTTPError("connection refused"))
+
+        with pytest.raises(httpx.HTTPError):
+            await c.embed("text")
+
+
+# ===========================================================================
+# embed_batch
+# ===========================================================================
+
+
+class TestEmbedBatch:
+    @pytest.mark.asyncio
+    async def test_returns_all_embeddings(self):
+        c = OllamaClient()
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "embeddings": [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]]
+        }
+        mock_resp.raise_for_status = MagicMock()
+        c.client = MagicMock()
+        c.client.post = AsyncMock(return_value=mock_resp)
+
+        result = await c.embed_batch(["a", "b", "c"])
+        assert len(result) == 3
+        assert result[0] == [0.1, 0.2]
+        assert result[2] == [0.5, 0.6]
+
+    @pytest.mark.asyncio
+    async def test_count_mismatch_raises_ollama_error(self):
+        from services.ollama_client import OllamaError
+
+        c = OllamaClient()
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "embeddings": [[0.1]]  # only 1 embedding for 3 texts
+        }
+        mock_resp.raise_for_status = MagicMock()
+        c.client = MagicMock()
+        c.client.post = AsyncMock(return_value=mock_resp)
+
+        with pytest.raises(OllamaError, match="Expected 3 embeddings, got 1"):
+            await c.embed_batch(["a", "b", "c"])
+
+    @pytest.mark.asyncio
+    async def test_passes_list_as_input(self):
+        c = OllamaClient()
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"embeddings": [[0.1], [0.2]]}
+        mock_resp.raise_for_status = MagicMock()
+        c.client = MagicMock()
+        c.client.post = AsyncMock(return_value=mock_resp)
+
+        await c.embed_batch(["text1", "text2"])
+        payload = c.client.post.await_args.kwargs["json"]
+        assert payload["input"] == ["text1", "text2"]
+
+    @pytest.mark.asyncio
+    async def test_http_error_propagates(self):
+        c = OllamaClient()
+        c.client = MagicMock()
+        c.client.post = AsyncMock(side_effect=httpx.HTTPError("server error"))
+
+        with pytest.raises(httpx.HTTPError):
+            await c.embed_batch(["a", "b"])
