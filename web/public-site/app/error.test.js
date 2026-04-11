@@ -165,7 +165,7 @@ describe('Error Page', () => {
     expect(container.firstChild).toBeInTheDocument();
   });
 
-  it.skip('should not show sensitive error details (known issue: error.tsx exposes raw message)', () => {
+  it('should not show sensitive error details in the Error Details section', () => {
     const sensitiveError = new Error(
       'Database connection string: postgresql://...'
     );
@@ -173,9 +173,11 @@ describe('Error Page', () => {
       <ErrorPage error={sensitiveError} reset={mockReset} />
     );
 
-    // TODO: error.tsx "Error Details" section displays error.message verbatim.
-    // This should be sanitized to prevent leaking sensitive data.
+    // error.tsx renders a generic message in the Error Details section,
+    // never error.message verbatim. This test locks that in so a future
+    // refactor can't silently reintroduce the leak.
     expect(container.textContent).not.toContain('postgresql://');
+    expect(container.textContent).not.toContain('Database connection string');
   });
 
   it('should display loading state button properly', () => {
