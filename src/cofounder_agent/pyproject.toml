@@ -80,6 +80,7 @@ duckduckgo-search = "^8.1.1"
 beautifulsoup4 = "^4.12"
 edge-tts = "^7.2.8"
 boto3 = "^1.42.84"
+cloudinary = "^1.41"
 
 [tool.poetry.extras]
 ml = ["torch", "transformers", "diffusers"]
