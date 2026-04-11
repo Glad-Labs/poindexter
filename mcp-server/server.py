@@ -349,28 +349,6 @@ async def list_settings(category: str = "") -> str:
 
 
 # ============================================================================
-# COMPOSE TOOLS
-# ============================================================================
-
-@mcp.tool()
-def compose_plan(intent: str) -> str:
-    """Create a process execution plan from natural language intent. Returns a plan for review before execution."""
-    result = _api("POST", "/api/compose/plan", {"intent": intent})
-    if "error" in result:
-        return f"Error: {result['error']}"
-    return result.get("summary", json.dumps(result, indent=2))
-
-
-@mcp.tool()
-def compose_execute(intent: str) -> str:
-    """Execute a business process immediately from natural language intent."""
-    result = _api("POST", "/api/compose/execute", {"intent": intent})
-    if "error" in result:
-        return f"Error: {result['error']}"
-    return result.get("summary", json.dumps(result, indent=2))
-
-
-# ============================================================================
 # SEMANTIC MEMORY TOOLS (pgvector)
 # ============================================================================
 

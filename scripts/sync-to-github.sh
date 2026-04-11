@@ -28,6 +28,7 @@ git rm -r --cached --quiet docs/ 2>/dev/null || true
 git rm -r --cached --quiet .shared-context/ 2>/dev/null || true
 git rm -r --cached --quiet marketing/ 2>/dev/null || true
 git rm -r --cached --quiet src/cofounder_agent/writing_samples/ 2>/dev/null || true
+git rm -r --cached --quiet mcp-server-gladlabs/ 2>/dev/null || true
 git rm --cached --quiet .github/COMMIT_MESSAGE_*.txt 2>/dev/null || true
 git rm --cached --quiet .github/create-tech-debt-issues.sh 2>/dev/null || true
 git rm --cached --quiet .github/tech-debt-issues.json 2>/dev/null || true
