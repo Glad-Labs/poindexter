@@ -258,7 +258,16 @@ def score_relevance(content: str, context: dict[str, Any], cfg: dict | None = No
 
 
 def score_seo(content: str, context: dict[str, Any], cfg: dict | None = None) -> float:
-    """Score SEO quality. Baseline tunable via qa_seo_baseline."""
+    """Score SEO quality. Baseline tunable via qa_seo_baseline.
+
+    Awards points for:
+    - Markdown headers (+1.0)
+    - Paragraph breaks (+1.0)
+    - Topic in the opening line (+1.0)
+    - Primary keywords present anywhere in the content (+1.5)
+    - Primary keywords missing (-1.0, dragging an otherwise-fine post
+      below the passing threshold)
+    """
     cfg = cfg or qa_cfg()
     score = cfg["seo_baseline"]
 
@@ -275,7 +284,18 @@ def score_seo(content: str, context: dict[str, Any], cfg: dict | None = None) ->
     if topic and content.lower().startswith(topic.lower()):
         score += 1.0
 
-    return min(score, 10.0)
+    # Primary keyword presence. Previously the pipeline computed
+    # check_keywords() and threw the result away, so a post could
+    # completely ignore the requested keywords and still get the
+    # full SEO score.
+    context_has_keywords = bool(context.get("keywords"))
+    if context_has_keywords:
+        if check_keywords(content, context):
+            score += 1.5
+        else:
+            score -= 1.0
+
+    return max(0.0, min(score, 10.0))
 
 
 def score_readability(content: str) -> float:

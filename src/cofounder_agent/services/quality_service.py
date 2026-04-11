@@ -228,10 +228,9 @@ class UnifiedQualityService:
         # Calculate basic metrics
         word_count = len(content.split())
         sentence_count = len(re.split(r"[.!?]+", content))
-        paragraphs = len(content.split("\n\n"))
 
-        # Extract patterns
-        has_keywords = self._check_keywords(content, context)
+        # Extract patterns. Keyword presence is factored into _score_seo()
+        # directly now (it used to be computed here and silently discarded).
         clarity_score = self._score_clarity(content, sentence_count, word_count)
         readability_score = self._score_readability(content)
 
