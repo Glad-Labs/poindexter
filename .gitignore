@@ -115,7 +115,6 @@ docs/archive-*.tar.gz
 Modelfile*
 *.gguf
 .env.local.backup
-infrastructure/headscale/certs/key.pem
 scripts/secrets-to-scrub.txt
 mcp.json
 .env.vercel
@@ -123,9 +122,6 @@ mcp.json
 
 # Branded frontend (private — not part of the open-source engine)
 web/public-site/
-
-# VPN config (private infrastructure)
-infrastructure/headscale/certs/
 
 
 # Premium Grafana dashboards (kept locally for Matt's Grafana, never committed)

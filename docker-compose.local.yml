@@ -1,32 +1,11 @@
-# Glad Labs — Self-Hosted Operations Stack
+# Poindexter — Self-Hosted Operations Stack
 # Everything local, open source, $0/month
 #
 # Start all:  docker compose -f docker-compose.local.yml up -d
-# Start core: docker compose -f docker-compose.local.yml up -d postgres-local grafana headscale
+# Start core: docker compose -f docker-compose.local.yml up -d postgres-local grafana
 # Start git:  docker compose -f docker-compose.local.yml up -d gitea woodpecker-server woodpecker-agent
 
 services:
-  # ===========================================
-  # Headscale — self-hosted Tailscale (replaces Tailscale cloud)
-  # ===========================================
-  headscale:
-    image: headscale/headscale:latest
-    container_name: gladlabs-headscale
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-      - "9090:9090"
-    command: serve
-    volumes:
-      - headscale-data:/var/lib/headscale
-      - ./infrastructure/headscale/config.yaml:/etc/headscale/config.yaml
-      - ./infrastructure/headscale/certs:/etc/headscale/certs
-    healthcheck:
-      test: ["CMD", "headscale", "health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-
   postgres-local:
     image: pgvector/pgvector:pg16
     container_name: poindexter-postgres-local
@@ -278,8 +257,6 @@ volumes:
     name: gladlabs-gitea-data
   woodpecker-data:
     name: gladlabs-woodpecker-data
-  headscale-data:
-    name: gladlabs-headscale-data
   prometheus-data:
     name: gladlabs-prometheus-data
   pgadmin-data:

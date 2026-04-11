@@ -34,7 +34,6 @@ git rm -r --cached --quiet src/cofounder_agent/writing_samples/ 2>/dev/null || t
 git rm -r --cached --quiet mcp-server-gladlabs/ 2>/dev/null || true          # private operator MCP server
 
 # === Private infrastructure (Matt's local setup, not useful publicly) ===
-git rm -r --cached --quiet infrastructure/headscale/ 2>/dev/null || true     # VPN control server + certs (has home LAN IP)
 git rm --cached --quiet .woodpecker.yml 2>/dev/null || true                  # internal Gitea CI config
 git rm --cached --quiet scripts/migrate-poindexter-rename.sh 2>/dev/null || true  # one-shot rebrand script, specific to Matt's install
 

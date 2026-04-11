@@ -1,24 +1,22 @@
-# Glad Labs — Personal Media Operating System
+# Poindexter — single-container standalone compose file
 #
-# One command to run the entire system locally:
+# This is the simplest way to run the pipeline: one compose file, one
+# Postgres, one FastAPI backend, no Woodpecker / Gitea / Grafana. Use this
+# if you're bootstrapping Poindexter for the first time on a fresh machine.
+# For the full operator stack (Grafana, pgAdmin, Prometheus, Gitea, etc.)
+# see docker-compose.local.yml instead.
+#
+# Start:
 #   docker compose up -d
 #
-# This starts:
-#   - PostgreSQL database (port 5432)
-#   - FastAPI content pipeline + admin panel (port 8000)
-#   - OpenClaw gateway for Discord/Telegram operations
+# Ports:
+#   - PostgreSQL: 5432
+#   - FastAPI backend + admin: 8000
 #
 # Prerequisites:
-#   1. Copy .env.example to .env and fill in your API keys
-#   2. Set up OpenClaw config in ~/.openclaw/ (see docs/openclaw/README.md)
-#
-# After starting:
-#   - API docs: http://localhost:8000/api/docs
-#   - Admin panel: http://localhost:8000/admin
-#   - OpenClaw connects to Discord/Telegram automatically
-#
-# Optional: Run Ollama natively on your host for free local LLM inference.
-# The FastAPI backend will auto-detect it at http://host.docker.internal:11434
+#   1. Copy .env.example to .env and fill in your values
+#   2. Optional: install Ollama natively on the host for free local LLM
+#      inference — the backend auto-detects it at host.docker.internal:11434
 
 services:
   # ===========================================
