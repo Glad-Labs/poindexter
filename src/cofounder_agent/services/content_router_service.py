@@ -2167,15 +2167,138 @@ async def process_content_generation_task(
                 pool=database_service.pool,
                 settings_service=_settings_service,
             )
-            _qa_result = await _run_stage_with_timeout(
-                _qa.review(
-                    title=_normalize_text(result.get("seo_title", topic)),
-                    content=_normalize_text(content_text),
-                    topic=topic,
-                    research_sources=result.get("research_context"),
-                ),
-                "cross_model_qa", task_id,
-            )
+
+            # Consistency rewrite loop: if QA rejects for cross-section
+            # contradictions, send the draft back through the writer
+            # with the SPECIFIC contradictions the gate found, then
+            # re-run QA. We allow up to qa_consistency_max_rewrites
+            # attempts (default 1) before giving up and rejecting.
+            # Rationale (2026-04-11): contradictions make us look stupid
+            # in public. Rewriting is cheap, rejecting is wasteful.
+            _max_consistency_rewrites = 1
+            try:
+                _mr = await _settings_service.get("qa_consistency_max_rewrites")
+                if _mr is not None:
+                    _max_consistency_rewrites = int(_mr)
+            except Exception:
+                pass
+
+            _qa_result = None
+            _rewrite_attempts = 0
+            while True:
+                _qa_result = await _run_stage_with_timeout(
+                    _qa.review(
+                        title=_normalize_text(result.get("seo_title", topic)),
+                        content=_normalize_text(content_text),
+                        topic=topic,
+                        research_sources=result.get("research_context"),
+                    ),
+                    "cross_model_qa", task_id,
+                )
+                if _qa_result is None:
+                    break
+
+                # The consistency gate is allowed to report contradictions
+                # even when the overall multi-model QA result is approved
+                # (soft-veto allows borderline cases through). We trigger a
+                # rewrite on ANY gate-reported contradiction, because
+                # contradictions make the blog look stupid in public — Matt
+                # would rather pay one extra generation cycle than publish
+                # a post where section 2 disagrees with section 4.
+                _consistency_review = next(
+                    (r for r in _qa_result.reviews if r.reviewer == "internal_consistency"),
+                    None,
+                )
+                _consistency_flagged = (
+                    _consistency_review is not None
+                    and not _consistency_review.approved
+                )
+
+                if _qa_result.approved and not _consistency_flagged:
+                    break  # Clean pass — nothing to rewrite
+
+                # Reject without rewrite if a NON-consistency reviewer failed
+                # (programmatic validator, topic delivery, main critic). Those
+                # failure modes aren't fixable by targeted contradiction edits.
+                _other_failure = any(
+                    (not r.approved) and r.reviewer != "internal_consistency"
+                    for r in _qa_result.reviews
+                )
+                if _other_failure and not _qa_result.approved:
+                    break
+
+                if _rewrite_attempts >= _max_consistency_rewrites:
+                    # Out of attempts. Fall through with whatever we have.
+                    break
+
+                if _consistency_review is None:
+                    break
+                _contradictions_text = _consistency_review.feedback
+                logger.warning(
+                    "[QA_REWRITE] Task %s: contradictions detected, attempting rewrite (%d/%d): %s",
+                    task_id[:8], _rewrite_attempts + 1, _max_consistency_rewrites,
+                    _contradictions_text[:200],
+                )
+                audit_log_bg("qa_rewrite_triggered", "content_router", {
+                    "attempt": _rewrite_attempts + 1,
+                    "gate_score": _consistency_review.score,
+                    "contradictions": _contradictions_text[:500],
+                }, task_id=task_id, severity="info")
+
+                try:
+                    _revise_prompt = _SELF_REVIEW_REVISE_PROMPT.format(
+                        title=result.get("seo_title", topic),
+                        contradictions=_contradictions_text,
+                        content=content_text,
+                    )
+                    from services.ollama_client import OllamaClient
+                    _rev_client = OllamaClient(timeout=240)
+                    try:
+                        _writer_model = (
+                            await _settings_service.get("pipeline_writer_model")
+                            or "qwen3:30b"
+                        )
+                        _writer_model = _writer_model.removeprefix("ollama/")
+                        _rev_result = await _rev_client.generate(
+                            prompt=_revise_prompt,
+                            model=_writer_model,
+                            temperature=0.4,
+                            max_tokens=8000,
+                        )
+                    finally:
+                        try:
+                            await _rev_client.close()
+                        except Exception:
+                            pass
+                    _revised_text = (_rev_result.get("text") or "").strip()
+                    if len(_revised_text) >= int(0.5 * len(content_text)):
+                        content_text = _revised_text
+                        # Persist the revised content so publish downstream
+                        # picks up the fixed version.
+                        await database_service.update_task(task_id, {
+                            "content": content_text,
+                        })
+                        logger.info(
+                            "[QA_REWRITE] Task %s: rewrite succeeded (%d -> %d chars), re-running QA",
+                            task_id[:8],
+                            len(_rev_result.get("text", "")),
+                            len(content_text),
+                        )
+                        _rewrite_attempts += 1
+                        continue
+                    else:
+                        logger.warning(
+                            "[QA_REWRITE] Task %s: rewrite returned too-short output (%d chars vs %d original)",
+                            task_id[:8], len(_revised_text), len(content_text),
+                        )
+                        break
+                except Exception as _rw_err:
+                    logger.warning(
+                        "[QA_REWRITE] Task %s: rewrite failed (non-fatal): %s",
+                        task_id[:8], _rw_err,
+                    )
+                    break
+
             if _qa_result is None:
                 logger.warning("Cross-model QA timed out for task %s — using early QA score", task_id[:8])
                 result["qa_final_score"] = quality_result.overall_score
@@ -2197,6 +2320,7 @@ async def process_content_generation_task(
                      "feedback": r.feedback, "provider": r.provider}
                     for r in _qa_result.reviews
                 ]
+                result["qa_rewrite_attempts"] = _rewrite_attempts
                 # Log QA review cost to database
                 if _qa_result.cost_log and database_service:
                     try:
@@ -2214,12 +2338,13 @@ async def process_content_generation_task(
 
                 if not _qa_result.approved:
                     logger.warning(
-                        "[MULTI_QA] Content rejected for task %s:\n%s",
-                        task_id[:8], _qa_result.summary,
+                        "[MULTI_QA] Content rejected for task %s after %d rewrite attempt(s):\n%s",
+                        task_id[:8], _rewrite_attempts, _qa_result.summary,
                     )
                     audit_log_bg("qa_failed", "content_router", {
                         "score": _qa_result.final_score, "stage": "multi_model_qa",
                         "summary": _qa_result.summary[:300],
+                        "rewrite_attempts": _rewrite_attempts,
                     }, task_id=task_id, severity="warning")
                     result["status"] = "rejected"
                     await database_service.update_task(task_id, {
@@ -2230,6 +2355,7 @@ async def process_content_generation_task(
                     return result
                 audit_log_bg("qa_passed", "content_router", {
                     "score": _qa_result.final_score, "stage": "multi_model_qa",
+                    "rewrite_attempts": _rewrite_attempts,
                 }, task_id=task_id)
                 logger.info("[MULTI_QA] Content approved for task %s: %s", task_id[:8], _qa_result.summary.split("\\n")[0])
 
