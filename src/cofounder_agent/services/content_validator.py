@@ -271,6 +271,50 @@ def validate_content(title: str, content: str, topic: str = "") -> ValidationRes
                 matched_text=title,
             ))
 
+    # 8b. Structural banned headers — the prompts already tell the LLM not to
+    # use generic section titles like "## Introduction" / "## Conclusion", but
+    # some models ignore the rule. This is a warning (not critical): the post
+    # is readable, but the score drops so the model learns the pattern over
+    # time and we prefer regenerating when it happens.
+    BANNED_HEADER_WORDS = {
+        "introduction",
+        "conclusion",
+        "summary",
+        "background",
+        "overview",
+        "final thoughts",
+        "wrap-up",
+        "wrap up",
+        "the end",
+    }
+    for m in re.finditer(r"^#{2,3}\s+(.+?)\s*$", content, re.MULTILINE):
+        heading = m.group(1).strip().lower().rstrip(":")
+        if heading in BANNED_HEADER_WORDS:
+            issues.append(ValidationIssue(
+                severity="warning",
+                category="banned_header",
+                description=f"Generic section title: '{m.group(1).strip()}' — use a creative, benefit-focused heading instead",
+                matched_text=m.group(0)[:80],
+            ))
+
+    # 8c. "In this post/article/guide" intros — a common LLM crutch the
+    # prompts already ban. Warning-level; penalizes the score without
+    # killing the post outright.
+    first_500 = content[:500]
+    for pat in (
+        r"\bIn this (?:post|article|guide|blog post|tutorial)[,\s]",
+        r"\bIn today'?s (?:fast-paced|digital|modern|competitive)",
+    ):
+        m = re.search(pat, first_500, re.IGNORECASE)
+        if m:
+            issues.append(ValidationIssue(
+                severity="warning",
+                category="filler_intro",
+                description=f"Filler intro phrase: '{m.group(0).strip()}' — start with a concrete hook instead",
+                matched_text=m.group(0)[:80],
+            ))
+            break
+
     # 9. Check for late acronym expansions — e.g. "CRM (Customer Relationship Management)"
     #    when the acronym was already used earlier without expansion
     for m in re.finditer(r'\b([A-Z]{2,6})\s*\(([A-Z][a-z][\w\s]{5,50})\)', content):

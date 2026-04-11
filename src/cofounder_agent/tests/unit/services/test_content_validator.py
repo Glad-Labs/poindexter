@@ -428,3 +428,73 @@ class TestEdgeCases:
         image_issues = [i for i in result.issues if i.category == "image_placeholder"]
         for i in image_issues:
             assert len(i.matched_text) <= 100
+
+
+class TestBannedHeaders:
+    """Structural warning when posts use generic section titles. The prompt
+    already tells the LLM not to, but some models ignore it — this is a
+    backstop that penalizes the score (warning, not critical)."""
+
+    def test_conclusion_header_is_warning(self):
+        content = "Some intro paragraph.\n\n## Conclusion\n\nwrap up.\n"
+        result = validate_content("Title", content, "topic")
+        banned = [i for i in result.issues if i.category == "banned_header"]
+        assert banned, "Expected banned_header issue for ## Conclusion"
+        assert banned[0].severity == "warning"
+        assert result.passed is True  # warning does not fail content
+
+    def test_introduction_header_is_warning(self):
+        content = "First line.\n\n## Introduction\n\nhi there.\n"
+        result = validate_content("Title", content, "topic")
+        assert any(i.category == "banned_header" for i in result.issues)
+
+    def test_summary_header_is_warning(self):
+        content = "Some content.\n\n## Summary\n\nhere it is.\n"
+        result = validate_content("Title", content, "topic")
+        assert any(i.category == "banned_header" for i in result.issues)
+
+    def test_creative_header_is_ok(self):
+        content = "Content.\n\n## Why Most Developers Get This Wrong\n\nBody.\n"
+        result = validate_content("Title", content, "topic")
+        assert not any(i.category == "banned_header" for i in result.issues)
+
+    def test_conclusion_case_insensitive(self):
+        content = "Body.\n\n### CONCLUSION\n\nwrap.\n"
+        result = validate_content("Title", content, "topic")
+        assert any(i.category == "banned_header" for i in result.issues)
+
+    def test_trailing_colon_still_caught(self):
+        content = "Body.\n\n## Conclusion:\n\nwrap.\n"
+        result = validate_content("Title", content, "topic")
+        assert any(i.category == "banned_header" for i in result.issues)
+
+
+class TestFillerIntros:
+    """'In this post/article' and 'In today's fast-paced' are common LLM
+    crutches. Warning-level, same policy as banned headers."""
+
+    def test_in_this_post_intro_flagged(self):
+        content = "In this post, we will explore how to build a thing.\n\n## Body\n\ncontent.\n"
+        result = validate_content("Title", content, "topic")
+        assert any(i.category == "filler_intro" for i in result.issues)
+
+    def test_in_this_article_intro_flagged(self):
+        content = "In this article we will cover the steps.\n\n## Section\n\ncontent.\n"
+        result = validate_content("Title", content, "topic")
+        assert any(i.category == "filler_intro" for i in result.issues)
+
+    def test_in_todays_fast_paced_flagged(self):
+        content = "In today's fast-paced digital world, things move quickly.\n\n## Body\n\nx.\n"
+        result = validate_content("Title", content, "topic")
+        assert any(i.category == "filler_intro" for i in result.issues)
+
+    def test_strong_hook_is_fine(self):
+        content = "PostgreSQL will crumble under load if you ignore connection pooling.\n\n## Body\n\nx.\n"
+        result = validate_content("Title", content, "topic")
+        assert not any(i.category == "filler_intro" for i in result.issues)
+
+    def test_only_checks_first_500_chars(self):
+        """Filler phrases deep in the body should NOT trigger (intro-only check)."""
+        content = "Strong hook about concrete problem. " + ("Body text. " * 60) + "In this post, deep content.\n"
+        result = validate_content("Title", content, "topic")
+        assert not any(i.category == "filler_intro" for i in result.issues)
