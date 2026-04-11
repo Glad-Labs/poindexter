@@ -549,3 +549,416 @@ class TestMapFeaturedImageToCoverimage:
         post = {"title": "P", "featured_image_url": "https://img/x.jpg"}
         result = map_featured_image_to_coverimage(post)
         assert result is post  # same dict, mutated in place
+
+
+# ---------------------------------------------------------------------------
+# PATCH /api/posts/{post_id} — update_post
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestUpdatePost:
+    def test_success_returns_200(self):
+        conn = MagicMock()
+        conn.execute = AsyncMock(return_value="UPDATE 1")
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=conn)
+        cm.__aexit__ = AsyncMock(return_value=None)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=cm)
+
+        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+            client = TestClient(_build_app())
+            resp = client.patch(
+                "/api/posts/post-001",
+                json={"title": "New Title", "content": "New body"},
+                headers={"Authorization": "Bearer test-token"},
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True
+
+    def test_no_valid_fields_returns_400(self):
+        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=MagicMock())):
+            client = TestClient(_build_app())
+            resp = client.patch(
+                "/api/posts/post-001",
+                json={"bogus_field": "value"},
+                headers={"Authorization": "Bearer test-token"},
+            )
+        assert resp.status_code == 400
+        assert "No valid fields" in resp.json()["detail"]
+
+    def test_post_not_found_returns_404(self):
+        conn = MagicMock()
+        conn.execute = AsyncMock(return_value="UPDATE 0")
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=conn)
+        cm.__aexit__ = AsyncMock(return_value=None)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=cm)
+
+        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+            client = TestClient(_build_app())
+            resp = client.patch(
+                "/api/posts/missing-id",
+                json={"title": "x"},
+                headers={"Authorization": "Bearer test-token"},
+            )
+        assert resp.status_code == 404
+
+    def test_invalid_published_at_returns_400(self):
+        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=MagicMock())):
+            client = TestClient(_build_app())
+            resp = client.patch(
+                "/api/posts/post-001",
+                json={"title": "x", "published_at": "not-a-date"},
+                headers={"Authorization": "Bearer test-token"},
+            )
+        assert resp.status_code == 400
+        assert "ISO 8601" in resp.json()["detail"]
+
+    def test_scheduled_without_published_at_returns_400(self):
+        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=MagicMock())):
+            client = TestClient(_build_app())
+            resp = client.patch(
+                "/api/posts/post-001",
+                json={"status": "scheduled"},
+                headers={"Authorization": "Bearer test-token"},
+            )
+        assert resp.status_code == 400
+        assert "published_at is required" in resp.json()["detail"]
+
+    def test_scheduled_with_past_date_returns_400(self):
+        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=MagicMock())):
+            client = TestClient(_build_app())
+            resp = client.patch(
+                "/api/posts/post-001",
+                json={
+                    "status": "scheduled",
+                    "published_at": "2020-01-01T00:00:00Z",
+                },
+                headers={"Authorization": "Bearer test-token"},
+            )
+        assert resp.status_code == 400
+        assert "future" in resp.json()["detail"]
+
+    def test_scheduled_with_future_date_succeeds(self):
+        conn = MagicMock()
+        conn.execute = AsyncMock(return_value="UPDATE 1")
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=conn)
+        cm.__aexit__ = AsyncMock(return_value=None)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=cm)
+
+        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+            client = TestClient(_build_app())
+            resp = client.patch(
+                "/api/posts/post-001",
+                json={
+                    "status": "scheduled",
+                    "published_at": "2099-01-01T00:00:00Z",
+                },
+                headers={"Authorization": "Bearer test-token"},
+            )
+        assert resp.status_code == 200
+
+    def test_z_suffix_normalized_to_utc(self):
+        """ISO dates ending in Z should be accepted."""
+        conn = MagicMock()
+        conn.execute = AsyncMock(return_value="UPDATE 1")
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=conn)
+        cm.__aexit__ = AsyncMock(return_value=None)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=cm)
+
+        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+            client = TestClient(_build_app())
+            resp = client.patch(
+                "/api/posts/post-001",
+                json={"published_at": "2099-06-15T12:00:00Z", "title": "x"},
+                headers={"Authorization": "Bearer test-token"},
+            )
+        assert resp.status_code == 200
+
+    def test_filters_out_disallowed_fields(self):
+        """Fields not in the allowed set get dropped before SQL."""
+        conn = MagicMock()
+        conn.execute = AsyncMock(return_value="UPDATE 1")
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=conn)
+        cm.__aexit__ = AsyncMock(return_value=None)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=cm)
+
+        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+            client = TestClient(_build_app())
+            resp = client.patch(
+                "/api/posts/post-001",
+                json={
+                    "title": "x",
+                    "admin_override": "bypass",  # not in allowed list
+                    "deleted_at": "now",  # not in allowed list
+                },
+                headers={"Authorization": "Bearer test-token"},
+            )
+        assert resp.status_code == 200
+        # The UPDATE SQL should not mention admin_override or deleted_at
+        sql_arg = conn.execute.await_args.args[0]
+        assert "admin_override" not in sql_arg
+        assert "deleted_at" not in sql_arg
+
+
+# ---------------------------------------------------------------------------
+# DELETE /api/posts/{post_id} — delete_post
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestDeletePost:
+    def test_success_returns_204(self):
+        conn = MagicMock()
+        conn.execute = AsyncMock(return_value="DELETE 1")
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=conn)
+        cm.__aexit__ = AsyncMock(return_value=None)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=cm)
+
+        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+            client = TestClient(_build_app())
+            resp = client.delete(
+                "/api/posts/post-001",
+                headers={"Authorization": "Bearer test-token"},
+            )
+
+        assert resp.status_code == 204
+
+    def test_not_found_returns_404(self):
+        conn = MagicMock()
+        conn.execute = AsyncMock(return_value="DELETE 0")
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=conn)
+        cm.__aexit__ = AsyncMock(return_value=None)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=cm)
+
+        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+            client = TestClient(_build_app())
+            resp = client.delete(
+                "/api/posts/missing-id",
+                headers={"Authorization": "Bearer test-token"},
+            )
+        assert resp.status_code == 404
+
+    def test_delete_uses_id_param(self):
+        """Verify the SQL uses the post_id from the URL."""
+        conn = MagicMock()
+        conn.execute = AsyncMock(return_value="DELETE 1")
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=conn)
+        cm.__aexit__ = AsyncMock(return_value=None)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=cm)
+
+        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+            client = TestClient(_build_app())
+            client.delete(
+                "/api/posts/abc-123",
+                headers={"Authorization": "Bearer test-token"},
+            )
+
+        args = conn.execute.await_args.args
+        assert "DELETE FROM posts" in args[0]
+        assert args[1] == "abc-123"
+
+
+# ---------------------------------------------------------------------------
+# GET /api/categories/{slug} — get_category_by_slug
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestGetCategoryBySlug:
+    def test_success_returns_category(self):
+        conn = MagicMock()
+        conn.fetchrow = AsyncMock(return_value={
+            "id": "cat-1",
+            "name": "Tech",
+            "slug": "tech",
+            "description": "Tech stuff",
+            "created_at": NOW,
+            "updated_at": NOW,
+        })
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=conn)
+        cm.__aexit__ = AsyncMock(return_value=None)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=cm)
+
+        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+            client = TestClient(_build_app())
+            resp = client.get("/api/categories/tech")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["data"]["slug"] == "tech"
+        assert body["data"]["name"] == "Tech"
+
+    def test_not_found_returns_404(self):
+        conn = MagicMock()
+        conn.fetchrow = AsyncMock(return_value=None)
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=conn)
+        cm.__aexit__ = AsyncMock(return_value=None)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=cm)
+
+        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+            client = TestClient(_build_app())
+            resp = client.get("/api/categories/missing")
+        assert resp.status_code == 404
+
+    def test_timestamps_isoformatted(self):
+        conn = MagicMock()
+        conn.fetchrow = AsyncMock(return_value={
+            "id": "c1", "name": "T", "slug": "t",
+            "description": None, "created_at": NOW, "updated_at": NOW,
+        })
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=conn)
+        cm.__aexit__ = AsyncMock(return_value=None)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=cm)
+
+        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+            client = TestClient(_build_app())
+            data = client.get("/api/categories/t").json()
+
+        # Timestamps should be ISO format strings
+        assert isinstance(data["data"]["created_at"], str)
+        assert "T" in data["data"]["created_at"]
+
+    def test_null_timestamps_become_none(self):
+        conn = MagicMock()
+        conn.fetchrow = AsyncMock(return_value={
+            "id": "c1", "name": "T", "slug": "t",
+            "description": None, "created_at": None, "updated_at": None,
+        })
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=conn)
+        cm.__aexit__ = AsyncMock(return_value=None)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=cm)
+
+        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+            client = TestClient(_build_app())
+            data = client.get("/api/categories/t").json()
+
+        assert data["data"]["created_at"] is None
+        assert data["data"]["updated_at"] is None
+
+
+# ---------------------------------------------------------------------------
+# POST /api/track/view — track_page_view
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestTrackPageView:
+    def test_valid_path_returns_204(self):
+        conn = MagicMock()
+        conn.execute = AsyncMock()
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=conn)
+        cm.__aexit__ = AsyncMock(return_value=None)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=cm)
+
+        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+            client = TestClient(_build_app())
+            resp = client.post("/api/track/view", json={
+                "path": "/posts/my-slug",
+                "slug": "my-slug",
+                "referrer": "https://google.com",
+            })
+
+        assert resp.status_code == 204
+
+    def test_empty_path_still_returns_204_but_skips_db(self):
+        """Empty path is a no-op early return."""
+        pool_mock = AsyncMock()
+        with patch("routes.cms_routes.get_db_pool", new=pool_mock):
+            client = TestClient(_build_app())
+            resp = client.post("/api/track/view", json={"path": ""})
+
+        assert resp.status_code == 204
+        # get_db_pool should NOT have been called since we bailed early
+        pool_mock.assert_not_called()
+
+    def test_no_auth_required(self):
+        """track_page_view should be callable without Authorization header."""
+        conn = MagicMock()
+        conn.execute = AsyncMock()
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=conn)
+        cm.__aexit__ = AsyncMock(return_value=None)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=cm)
+
+        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+            client = TestClient(_build_app())
+            resp = client.post("/api/track/view", json={"path": "/posts/x"})
+        # 204 = success, no auth challenge
+        assert resp.status_code == 204
+
+    def test_db_failure_is_non_fatal(self):
+        """Page view tracking failures must not crash the endpoint."""
+        pool_mock = AsyncMock(side_effect=RuntimeError("DB down"))
+        with patch("routes.cms_routes.get_db_pool", new=pool_mock):
+            client = TestClient(_build_app())
+            resp = client.post("/api/track/view", json={"path": "/posts/x"})
+        assert resp.status_code == 204
+
+    def test_long_path_truncated(self):
+        """Paths longer than 500 chars get truncated, not rejected."""
+        conn = MagicMock()
+        conn.execute = AsyncMock()
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=conn)
+        cm.__aexit__ = AsyncMock(return_value=None)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=cm)
+
+        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+            client = TestClient(_build_app())
+            long_path = "/posts/" + "x" * 1000
+            resp = client.post("/api/track/view", json={"path": long_path, "slug": "x"})
+
+        assert resp.status_code == 204
+        # First INSERT gets the truncated path
+        first_call = conn.execute.await_args_list[0]
+        stored_path = first_call.args[1]
+        assert len(stored_path) <= 500
+
+    def test_slug_triggers_view_count_update(self):
+        """Non-empty slug triggers an UPDATE posts SET view_count."""
+        conn = MagicMock()
+        conn.execute = AsyncMock()
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=conn)
+        cm.__aexit__ = AsyncMock(return_value=None)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=cm)
+
+        with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+            client = TestClient(_build_app())
+            client.post("/api/track/view", json={"path": "/posts/x", "slug": "x"})
+
+        # Two execute calls: INSERT page_views + UPDATE posts
+        assert conn.execute.await_count == 2
+        second_sql = conn.execute.await_args_list[1].args[0]
+        assert "UPDATE posts" in second_sql
+        assert "view_count" in second_sql
