@@ -5,27 +5,43 @@
 ### Renamed
 
 - **Project rebrand: Glad Labs Engine → Poindexter (built by Glad Labs LLC).** The public product is now known as Poindexter. Glad Labs LLC remains the legal entity and copyright holder. Migration impact for existing users:
-  - Database renamed from `gladlabs_brain` → `poindexter_brain`, role from `gladlabs` → `poindexter` (run `bash scripts/migrate-poindexter-rename.sh` to apply).
-  - Customer-facing containers renamed: `gladlabs-worker` → `poindexter-worker`, `gladlabs-postgres-local` → `poindexter-postgres-local`, `gladlabs-grafana` → `poindexter-grafana`, `gladlabs-brain-daemon` → `poindexter-brain-daemon`, `gladlabs-prometheus` → `poindexter-prometheus`, `gladlabs-pgadmin` → `poindexter-pgadmin`. Internal containers (gitea, woodpecker, headscale) keep their legacy names.
+  - Database renamed from `gladlabs_brain` → `poindexter_brain`, role from `gladlabs` → `poindexter`.
+  - Customer-facing containers renamed: `gladlabs-worker` → `poindexter-worker`, `gladlabs-postgres-local` → `poindexter-postgres-local`, `gladlabs-grafana` → `poindexter-grafana`, `gladlabs-brain-daemon` → `poindexter-brain-daemon`, `gladlabs-prometheus` → `poindexter-prometheus`, `gladlabs-pgadmin` → `poindexter-pgadmin`. Internal containers (gitea, woodpecker) keep their legacy names.
   - Data root moved from `~/.gladlabs` → `~/.poindexter`. Move the directory once before restarting the worker.
   - Customer-facing env vars: `GLADLABS_KEY` → `POINDEXTER_KEY`, `GLADLABS_API_URL` → `POINDEXTER_API_URL`, etc. Old names still accepted as a fallback.
   - Prometheus metric prefix: `gladlabs_*` → `poindexter_*` on the worker `/metrics` endpoint.
   - Public GitHub repo: `glad-labs-engine` → `poindexter`.
+  - Local Postgres password rebranded from `gladlabs-brain-local` to `poindexter-brain-local` via `ALTER USER poindexter WITH PASSWORD 'poindexter-brain-local'` on the live DB. All `.env`, MCP configs, and prompts repo scripts updated to match.
+  - `.env.example`: `glad_labs_dev` → `poindexter_dev` (CREATE DATABASE, DATABASE_URL, DATABASE_NAME), `gladlabs_auth` → `poindexter_auth` in the commented AUTH_COOKIE_NAME example.
+  - Hardcoded defaults scrubbed across `brain/health_probes.py`, `brain/brain_daemon.py`, `scripts/daemon.py`, `scripts/regen-featured-images.py`, and `mcp-server/server.py` so a fresh customer install doesn't carry gladlabs-branded defaults (GITEA_USER, GITEA_REPO, GRAFANA_PASSWORD, SITE_URL, LOG_FILE path, R2 bucket, check_health site URL).
 
 ### Added
 
-- Comprehensive unit test coverage push: 256 new unit tests across 14 operationally critical files (image_decision_agent, web_research, quality_service, workflow_validator, static_export_service, video_service, image_service, sync_service, decision_service, ai_content_generator, content_router_service helpers, idle_worker, gpu_scheduler, topic_discovery, tasks_db). Total unit test count: 4,252 passing.
-- New runbook docs in the prompts repo: `TROUBLESHOOTING.md` (9 entries covering issues that took 10+ minutes to diagnose) and `operations/CI-Deploy-Chain.md` explaining the Gitea → Woodpecker + GitHub Actions → Vercel cascade.
-- New `scripts/migrate-poindexter-rename.sh` migration script for the rebrand.
+- **MCP server split**: the single `gladlabs` Claude Code MCP entry was split into two distinct servers. `poindexter` (public, ships with the product) exposes the content-pipeline tool surface — `create_post`, `list_tasks`, `approve_post`, `reject_post`, `publish_post`, `get_post_count`, `check_health`, `get_budget`, `get_setting`, `set_setting`, `list_settings`, `search_memory`, `recall_decision`, `find_similar_posts`, `memory_stats`, `get_audit_log`, `get_audit_summary`, `rebuild_static_export`, `get_brain_knowledge`. `gladlabs` (private operator layer, excluded from the public GitHub mirror) ships `discord_post`, `discord_status`, `operator_status` with scaffolding for future lemonsqueezy/prompt-pack/guide-buyer tools.
+- **Support doc**: new `SUPPORT.md` with a "where to ask" matrix covering bug reports, feature requests, configuration questions, commercial licensing, code-of-conduct concerns, security, and paid support/prompts pack.
+- **Security doc rewrite**: `SECURITY.md` reworked with complete secrets list, threat model section, and explicit DEVELOPMENT_MODE caveat.
+- **Contributing guide**: `CONTRIBUTING.md` with PR workflow, branch naming, and test expectations.
+- **Code of conduct**: `CODE_OF_CONDUCT.md`.
+- **Comprehensive unit test coverage push**: 960+ new unit tests across 30+ files. Total unit test count now 4,957 passing (up from 4,252 at the start of the push). Coverage density closed cold spots on: admin_db, custom_workflows_service, sync_service, error_handler, content_validator, logger_config, embeddings_db, sentry_integration, model_router, quality_scorers, template_execution_service, quality_models, sql_safety, content_router_service (two batches covering canonical title, quality eval, SEO metadata, finalize, capture_training_data, media_scripts), idle_worker (fix_broken_internal_links, fix_broken_external_links, crosspost_to_devto, backup), multi_model_qa (settings overrides, research sources, critic-skipped fallback), tasks_db (bulk_add_tasks, kpi aggregates, status change logging, validation failures), ai_content_generator (\_prepare_generation_context), quality_service (\_detect_artifacts, \_score_llm_patterns), cost_aggregation_service (history trends, budget projection), content_db (cache helpers), cms_routes (pure helpers + update/delete/track/category handlers).
+
+### Changed
+
+- **Headscale removed**: Matt switched back to Tailscale cloud for VPN. The headscale container, its `gladlabs-headscale-data` volume, the `infrastructure/headscale/` directory (including the previously-tracked TLS private key), and all references in `docker-compose.local.yml`, `.gitignore`, `scripts/verify-setup.sh`, and `scripts/sync-to-github.sh` are gone.
+- **Useless root files removed** from the public repo: `.env.production.example` (Railway-specific, referenced the deprecated coordinator mode), `vercel.json` (pointed at the excluded `web/public-site/` directory), `.worktreeinclude` (Claude Code internal workflow file).
+- **Public mirror exclusions expanded** in `scripts/sync-to-github.sh`: `CLAUDE.md` (personal Claude Code instructions with bank balance, internal URLs, memory file paths), `infrastructure/headscale/` entire directory (was only excluding `certs/`), `.woodpecker.yml` (internal Gitea CI config), `scripts/migrate-poindexter-rename.sh` (one-shot migration specific to Matt's install), `src/cofounder_agent/.coverage` (pytest-cov SQLite artifact).
+- **Code quality pass**: ran `ruff check --fix` on safe modernization rules across 170 files. Fixed 1,894 of 2,434 warnings (78% reduction). Changes: `typing.List/Dict/Tuple/Set` → lowercase builtins (Python 3.9+), `Optional[X]` → `X | None` (Python 3.10+), import sort + unused import cleanup, trailing whitespace, deprecated typing imports. Zero semantic impact. All tests still pass.
 
 ### Fixed
 
+- **Dead compose tools removed** from `mcp-server/server.py`: `compose_plan` and `compose_execute` were scaffolding for never-implemented `/api/compose/plan` and `/api/compose/execute` backend routes (verified via HTTP 404 and full grep of `src/`). Removing them cleans up the MCP tool surface.
 - Bootstrap.sh: generates `WOODPECKER_SECRET` (was a P0 blocker for fresh installs that ran bootstrap → docker compose up).
 - Bootstrap.sh: seeded `pipeline_writer_model` and `pipeline_critic_model` defaults now match what the script auto-pulls (`ollama/qwen3:8b`, `ollama/gemma3:27b`) instead of referencing models a customer wouldn't have.
 - Bootstrap.sh: hard-fails on missing entropy source (was silently producing deterministic-by-time `change-me-{epoch}` secrets).
 - Bootstrap.sh: final-message commands now match the README (canonical path is `docker compose -f docker-compose.local.yml up -d`, port 8002).
 - README and bootstrap.sh: aligned on a single working `curl` example for the first-post test.
 - README: added a one-line note that Windows customers need Git Bash or WSL.
+- README: test-count badge bumped to track actual suite size; depersonalized references to "Matt's daily-driver setup" for public consumption.
+- CHANGELOG: all 994 historical commit/issue URLs rewritten from `Glad-Labs/glad-labs-codebase` (the pre-rebrand repo name) to `Glad-Labs/poindexter` so links resolve in the public mirror.
 - Distribution layer constants moved to `app_settings` (`short_video_post_publish_delay_seconds`, `media_r2_upload_delay_seconds`, `internal_api_base_url`).
 - pyflakes sweep across `routes/` and `utils/` — removed unused imports/locals, converted silent-pass `except` blocks to logged warnings.
 
@@ -33,6 +49,7 @@
 
 - `bootstrap.sh` still has structural rough edges from the dogfood install pass (silent failure cleanup, version checks, schema drift, theater steps). Likely needs a full rewrite to fix properly.
 - `tests/unit/services/test_web_research.py` is `--ignored` in CI pending investigation.
+- `sentry-sdk` is pinned to `^1.40` in `pyproject.toml` — v2.x has been out for a while. Not CVE-flagged but worth a bump for its own reasons.
 
 ---
 
