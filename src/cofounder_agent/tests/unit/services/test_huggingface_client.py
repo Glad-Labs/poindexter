@@ -303,3 +303,131 @@ class TestHuggingFaceChatCompletion:
         ):
             with pytest.raises(RuntimeError, match="Model down"):
                 await client.chat_completion(MODEL_ID, [{"role": "user", "content": "Hi"}])
+
+
+# ===========================================================================
+# is_available
+# ===========================================================================
+
+
+class TestIsAvailable:
+    @pytest.mark.asyncio
+    async def test_returns_true_on_200(self):
+        client = HuggingFaceClient(api_token="token")
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_response)
+
+        with patch.object(client, "_ensure_session", new=AsyncMock(return_value=mock_session)):
+            result = await client.is_available()
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_returns_true_on_302(self):
+        """302 means the model is loading — counts as available."""
+        client = HuggingFaceClient(api_token="token")
+
+        mock_response = AsyncMock()
+        mock_response.status = 302
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_response)
+
+        with patch.object(client, "_ensure_session", new=AsyncMock(return_value=mock_session)):
+            result = await client.is_available()
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_returns_false_on_503(self):
+        client = HuggingFaceClient(api_token="token")
+
+        mock_response = AsyncMock()
+        mock_response.status = 503
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_response)
+
+        with patch.object(client, "_ensure_session", new=AsyncMock(return_value=mock_session)):
+            result = await client.is_available()
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_returns_false_on_exception(self):
+        client = HuggingFaceClient(api_token="token")
+
+        with patch.object(
+            client,
+            "_ensure_session",
+            new=AsyncMock(side_effect=ConnectionError("network down")),
+        ):
+            result = await client.is_available()
+        assert result is False
+
+
+# ===========================================================================
+# _session_cleanup
+# ===========================================================================
+
+
+class TestSessionCleanup:
+    @pytest.mark.asyncio
+    async def test_closes_all_active_clients(self):
+        from services.huggingface_client import _session_cleanup, _active_clients
+
+        # Stash any pre-existing entries from earlier tests
+        original = list(_active_clients)
+        _active_clients.clear()
+
+        client_a = HuggingFaceClient(api_token="a")
+        client_b = HuggingFaceClient(api_token="b")
+        client_a.close = AsyncMock()
+        client_b.close = AsyncMock()
+        _active_clients.extend([client_a, client_b])
+
+        await _session_cleanup()
+
+        client_a.close.assert_awaited_once()
+        client_b.close.assert_awaited_once()
+        assert _active_clients == []
+
+        # Restore
+        _active_clients.extend(original)
+
+    @pytest.mark.asyncio
+    async def test_swallows_close_errors(self):
+        from services.huggingface_client import _session_cleanup, _active_clients
+
+        original = list(_active_clients)
+        _active_clients.clear()
+
+        client = HuggingFaceClient(api_token="x")
+        client.close = AsyncMock(side_effect=RuntimeError("close failed"))
+        _active_clients.append(client)
+
+        # Must not raise — shutdown cleanup is best-effort
+        await _session_cleanup()
+        assert _active_clients == []
+
+        _active_clients.extend(original)
+
+    @pytest.mark.asyncio
+    async def test_empty_list_no_op(self):
+        from services.huggingface_client import _session_cleanup, _active_clients
+
+        original = list(_active_clients)
+        _active_clients.clear()
+
+        # Should not raise even with no active clients
+        await _session_cleanup()
+        assert _active_clients == []
+
+        _active_clients.extend(original)
