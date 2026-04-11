@@ -588,3 +588,472 @@ class TestGetAvailablePhases:
         result = await service.get_available_phases()
 
         assert result == []
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_skips_registry_call(self):
+        """Second call should return cached value without re-calling phase_registry."""
+        service = _make_service()
+        service._available_phases_cache = [{"name": "cached_phase"}]
+
+        result = await service.get_available_phases()
+
+        assert result == [{"name": "cached_phase"}]
+        service.phase_registry.list_phases.assert_not_called()  # type: ignore[attr-defined]
+
+    @pytest.mark.asyncio
+    async def test_first_call_populates_cache(self):
+        service = _make_service()
+        mock_phase = MagicMock()
+        mock_phase.name = "research"
+        mock_phase.agent_type = "agent"
+        mock_phase.description = "d"
+        mock_phase.timeout_seconds = 1
+        mock_phase.max_retries = 1
+        mock_phase.required = True
+        mock_phase.quality_threshold = 0.5
+        mock_phase.tags = []
+        mock_phase.input_schema = {}
+        mock_phase.output_schema = {}
+        service.phase_registry.list_phases.return_value = [mock_phase]  # type: ignore[attr-defined]
+
+        await service.get_available_phases()
+        assert service._available_phases_cache is not None
+        assert len(service._available_phases_cache) == 1
+
+
+# ---------------------------------------------------------------------------
+# _insert_workflow (private)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestInsertWorkflow:
+    @pytest.mark.asyncio
+    async def test_serializes_phases_as_json(self):
+        captured = {}
+
+        async def _capture(sql, *args):
+            captured["sql"] = sql
+            captured["args"] = args
+
+        pool = _make_pool()
+        pool.execute = AsyncMock(side_effect=_capture)
+        service = _make_service(pool=pool)
+
+        wf = _make_workflow(id="wf-1", owner_id="user-123", tags=["a", "b"])
+        wf.created_at = _NOW
+        wf.updated_at = _NOW
+        await service._insert_workflow(wf)
+
+        # phases is the 4th positional arg ($4 in SQL)
+        phases_json = captured["args"][3]
+        decoded = json.loads(phases_json)
+        assert isinstance(decoded, list)
+        assert decoded[0]["name"] == "research"
+
+    @pytest.mark.asyncio
+    async def test_tags_serialized_as_json(self):
+        captured = {}
+
+        async def _capture(sql, *args):
+            captured["args"] = args
+
+        pool = _make_pool()
+        pool.execute = AsyncMock(side_effect=_capture)
+        service = _make_service(pool=pool)
+
+        wf = _make_workflow(id="wf-1", owner_id="user-1", tags=["seo", "blog"])
+        wf.created_at = _NOW
+        wf.updated_at = _NOW
+        await service._insert_workflow(wf)
+
+        # tags is the 8th positional arg ($8 in SQL)
+        assert json.loads(captured["args"][7]) == ["seo", "blog"]
+
+
+# ---------------------------------------------------------------------------
+# _update_workflow_in_db (private)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestUpdateWorkflowInDb:
+    @pytest.mark.asyncio
+    async def test_serializes_phases_and_tags(self):
+        captured = {}
+
+        async def _capture(sql, *args):
+            captured["args"] = args
+
+        pool = _make_pool()
+        pool.execute = AsyncMock(side_effect=_capture)
+        service = _make_service(pool=pool)
+
+        wf = _make_workflow(id="wf-1", owner_id="user-1", tags=["x"])
+        wf.updated_at = _NOW
+        await service._update_workflow_in_db(wf)
+
+        # phases is $3, tags is $5, id is $7
+        phases_json = captured["args"][2]
+        assert json.loads(phases_json)[0]["name"] == "research"
+        assert json.loads(captured["args"][4]) == ["x"]
+        assert captured["args"][6] == "wf-1"
+
+
+# ---------------------------------------------------------------------------
+# persist_workflow_execution
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestPersistWorkflowExecution:
+    @pytest.mark.asyncio
+    async def test_success_returns_true(self):
+        pool = _make_pool()
+        service = _make_service(pool=pool)
+
+        result = await service.persist_workflow_execution(
+            execution_id="exec-1",
+            workflow_id="wf-1",
+            owner_id="user-1",
+            execution_status="completed",
+            phase_results={"research": {"ok": True}},
+            duration_ms=1500,
+        )
+
+        assert result is True
+        pool.execute.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_db_error_returns_false(self):
+        pool = _make_pool()
+        pool.execute = AsyncMock(side_effect=RuntimeError("DB down"))
+        service = _make_service(pool=pool)
+
+        result = await service.persist_workflow_execution(
+            execution_id="exec-1",
+            workflow_id="wf-1",
+            owner_id="user-1",
+            execution_status="failed",
+            phase_results={},
+            duration_ms=0,
+        )
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_completed_status_sets_completed_at(self):
+        captured = {}
+
+        async def _capture(sql, *args):
+            captured["args"] = args
+
+        pool = _make_pool()
+        pool.execute = AsyncMock(side_effect=_capture)
+        service = _make_service(pool=pool)
+
+        await service.persist_workflow_execution(
+            execution_id="exec-1",
+            workflow_id="wf-1",
+            owner_id="user-1",
+            execution_status="completed",
+            phase_results={},
+            duration_ms=100,
+        )
+
+        # completed_at is the 7th positional arg ($7)
+        assert captured["args"][6] is not None
+
+    @pytest.mark.asyncio
+    async def test_running_status_completed_at_is_none(self):
+        captured = {}
+
+        async def _capture(sql, *args):
+            captured["args"] = args
+
+        pool = _make_pool()
+        pool.execute = AsyncMock(side_effect=_capture)
+        service = _make_service(pool=pool)
+
+        await service.persist_workflow_execution(
+            execution_id="exec-1",
+            workflow_id="wf-1",
+            owner_id="user-1",
+            execution_status="running",  # not completed/failed
+            phase_results={},
+            duration_ms=100,
+        )
+
+        assert captured["args"][6] is None
+
+    @pytest.mark.asyncio
+    async def test_initial_input_serialized_when_provided(self):
+        captured = {}
+
+        async def _capture(sql, *args):
+            captured["args"] = args
+
+        pool = _make_pool()
+        pool.execute = AsyncMock(side_effect=_capture)
+        service = _make_service(pool=pool)
+
+        await service.persist_workflow_execution(
+            execution_id="exec-1",
+            workflow_id="wf-1",
+            owner_id="user-1",
+            execution_status="completed",
+            phase_results={},
+            duration_ms=100,
+            initial_input={"topic": "AI"},
+            final_output={"post_id": 42},
+        )
+
+        # initial_input is $9, final_output is $11
+        assert json.loads(captured["args"][8]) == {"topic": "AI"}
+        assert json.loads(captured["args"][10]) == {"post_id": 42}
+
+    @pytest.mark.asyncio
+    async def test_none_input_output_passed_as_null(self):
+        captured = {}
+
+        async def _capture(sql, *args):
+            captured["args"] = args
+
+        pool = _make_pool()
+        pool.execute = AsyncMock(side_effect=_capture)
+        service = _make_service(pool=pool)
+
+        await service.persist_workflow_execution(
+            execution_id="exec-1",
+            workflow_id="wf-1",
+            owner_id="user-1",
+            execution_status="completed",
+            phase_results={},
+            duration_ms=100,
+        )
+
+        assert captured["args"][8] is None  # initial_input
+        assert captured["args"][10] is None  # final_output
+
+
+# ---------------------------------------------------------------------------
+# get_workflow_execution
+# ---------------------------------------------------------------------------
+
+
+def _make_execution_row(**kwargs):
+    defaults = {
+        "id": "exec-1",
+        "workflow_id": "wf-1",
+        "owner_id": "user-1",
+        "execution_status": "completed",
+        "created_at": _NOW,
+        "started_at": _NOW,
+        "completed_at": _NOW,
+        "duration_ms": 1500,
+        "initial_input": json.dumps({"topic": "AI"}),
+        "phase_results": json.dumps({"research": {"ok": True}}),
+        "final_output": json.dumps({"post_id": 42}),
+        "error_message": None,
+        "progress_percent": 100,
+        "completed_phases": 3,
+        "total_phases": 3,
+        "tags": json.dumps([]),
+        "metadata": json.dumps({}),
+    }
+    defaults.update(kwargs)
+    row = MagicMock()
+    row.__getitem__ = lambda self, k: defaults.get(k)
+    row.get = lambda k, default=None: defaults.get(k, default)
+    row.__bool__ = lambda self: True
+    return row
+
+
+@pytest.mark.unit
+class TestGetWorkflowExecution:
+    @pytest.mark.asyncio
+    async def test_found_with_owner_returns_dict(self):
+        row = _make_execution_row()
+        pool = _make_pool(fetchrow_result=row)
+        service = _make_service(pool=pool)
+
+        result = await service.get_workflow_execution("exec-1", owner_id="user-1")
+
+        assert result is not None
+        assert result["id"] == "exec-1"
+        assert result["execution_status"] == "completed"
+        assert result["duration_ms"] == 1500
+
+    @pytest.mark.asyncio
+    async def test_found_without_owner_returns_dict(self):
+        row = _make_execution_row()
+        pool = _make_pool(fetchrow_result=row)
+        service = _make_service(pool=pool)
+
+        result = await service.get_workflow_execution("exec-1")
+
+        assert result is not None
+        assert result["id"] == "exec-1"
+
+    @pytest.mark.asyncio
+    async def test_not_found_returns_none(self):
+        pool = _make_pool(fetchrow_result=None)
+        service = _make_service(pool=pool)
+
+        result = await service.get_workflow_execution("missing")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_db_error_returns_none(self):
+        pool = _make_pool(fetchrow_side_effect=RuntimeError("DB down"))
+        service = _make_service(pool=pool)
+
+        result = await service.get_workflow_execution("exec-1")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_with_owner_query_includes_owner_check(self):
+        captured = {}
+
+        async def _capture(sql, *args):
+            captured["sql"] = sql
+            captured["args"] = args
+            return None
+
+        pool = _make_pool()
+        pool.fetchrow = AsyncMock(side_effect=_capture)
+        service = _make_service(pool=pool)
+
+        await service.get_workflow_execution("exec-1", owner_id="user-1")
+
+        assert "owner_id = $2" in captured["sql"]
+        assert captured["args"] == ("exec-1", "user-1")
+
+
+# ---------------------------------------------------------------------------
+# get_workflow_executions
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestGetWorkflowExecutions:
+    @pytest.mark.asyncio
+    async def test_success_returns_executions_and_total(self):
+        rows = [
+            _make_execution_row(id="exec-1", total_count=5),
+            _make_execution_row(id="exec-2", total_count=5),
+        ]
+        pool = _make_pool(fetch_result=rows)
+        service = _make_service(pool=pool)
+
+        result = await service.get_workflow_executions("wf-1", "user-1")
+
+        assert result["total"] == 5
+        assert len(result["executions"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_status_filter_added_to_where(self):
+        pool = _make_pool(fetch_result=[])
+        service = _make_service(pool=pool)
+
+        result = await service.get_workflow_executions(
+            "wf-1", "user-1", status="failed"
+        )
+
+        # No rows → empty result
+        assert result["total"] == 0
+        assert result["executions"] == []
+        # And the SQL builder was invoked successfully (no exception)
+
+    @pytest.mark.asyncio
+    async def test_db_error_returns_empty_dict(self):
+        pool = _make_pool(fetch_side_effect=RuntimeError("DB down"))
+        service = _make_service(pool=pool)
+
+        result = await service.get_workflow_executions("wf-1", "user-1")
+
+        assert result["total"] == 0
+        assert result["executions"] == []
+        assert result["limit"] == 50
+        assert result["offset"] == 0
+
+    @pytest.mark.asyncio
+    async def test_pagination_params_returned(self):
+        pool = _make_pool(fetch_result=[])
+        service = _make_service(pool=pool)
+
+        result = await service.get_workflow_executions(
+            "wf-1", "user-1", limit=10, offset=20
+        )
+
+        assert result["limit"] == 10
+        assert result["offset"] == 20
+
+
+# ---------------------------------------------------------------------------
+# _row_to_execution
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestRowToExecution:
+    def test_full_row_serializes_to_dict(self):
+        service = _make_service()
+        row = _make_execution_row()
+
+        result = service._row_to_execution(row)
+
+        assert result["id"] == "exec-1"
+        assert result["workflow_id"] == "wf-1"
+        assert result["execution_status"] == "completed"
+        assert result["duration_ms"] == 1500
+        assert result["initial_input"] == {"topic": "AI"}
+        assert result["phase_results"] == {"research": {"ok": True}}
+        assert result["final_output"] == {"post_id": 42}
+
+    def test_none_input_output_in_row_returns_none(self):
+        service = _make_service()
+        row = _make_execution_row(initial_input=None, final_output=None)
+
+        result = service._row_to_execution(row)
+
+        assert result["initial_input"] is None
+        assert result["final_output"] is None
+
+    def test_phase_results_default_to_empty_dict(self):
+        service = _make_service()
+        row = _make_execution_row(phase_results=None)
+
+        result = service._row_to_execution(row)
+
+        assert result["phase_results"] == {}
+
+    def test_tags_and_metadata_parsed(self):
+        service = _make_service()
+        row = _make_execution_row(
+            tags=json.dumps(["tag1", "tag2"]),
+            metadata=json.dumps({"source": "api"}),
+        )
+
+        result = service._row_to_execution(row)
+
+        assert result["tags"] == ["tag1", "tag2"]
+        assert result["metadata"] == {"source": "api"}
+
+    def test_none_completed_at_returns_none(self):
+        service = _make_service()
+        row = _make_execution_row(completed_at=None)
+
+        result = service._row_to_execution(row)
+
+        assert result["completed_at"] is None
+        assert result["created_at"] is not None  # still set
+
+    def test_datetime_fields_isoformatted(self):
+        service = _make_service()
+        row = _make_execution_row()
+
+        result = service._row_to_execution(row)
+
+        assert result["created_at"] == _NOW.isoformat()
+        assert result["started_at"] == _NOW.isoformat()
