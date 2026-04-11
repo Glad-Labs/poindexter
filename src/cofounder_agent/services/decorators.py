@@ -90,7 +90,7 @@ def log_query_performance(
 
                 return result
 
-            except Exception as e:
+            except Exception:
                 error_occurred = True
                 raise
 

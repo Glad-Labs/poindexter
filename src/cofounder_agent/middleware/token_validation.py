@@ -130,12 +130,10 @@ class TokenValidationMiddleware(BaseHTTPMiddleware):
                     content={"detail": "Invalid authorization header format. Use: Bearer <token>"},
                 )
 
-            # Extract token
-            token = auth_header[7:]  # Remove "Bearer " prefix
-
-            # Validate token using JWTTokenValidator (at dependency level in get_current_user)
-            # This middleware just ensures the token is present and formatted correctly
             # Full validation (expiration, signature) happens in get_current_user()
+            # via the JWTTokenValidator dependency. This middleware only verifies
+            # that the Bearer header is present and correctly formatted — it
+            # intentionally does not parse or validate the token value itself.
 
             # Continue to next middleware/endpoint
             response = await call_next(request)
