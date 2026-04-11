@@ -3,7 +3,9 @@
 **Your PC is a content factory.** Poindexter is an open-source AI content pipeline that researches, writes, reviews, and publishes — autonomously. Built by [Glad Labs LLC](https://www.gladlabs.io).
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-4%2C252_passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-4%2C356_passing-brightgreen)]()
+[![Status](https://img.shields.io/badge/status-alpha-orange.svg)]()
+[![Built by Glad Labs LLC](https://img.shields.io/badge/built_by-Glad_Labs_LLC-blueviolet.svg)](https://www.gladlabs.io)
 
 ## What It Does
 
@@ -65,6 +67,42 @@ For better writing quality, also pull a larger writer model:
 ollama pull qwen3:30b      # 18GB — good balance of speed and quality
 ollama pull glm-4.7:9b     # 6GB — lighter alternative
 ```
+
+## Project Status
+
+Poindexter is in **alpha**. Honestly:
+
+**What works today:**
+
+- The full content pipeline end-to-end on Matt's daily-driver setup (RTX 5090, 64GB RAM, Windows 11 + WSL2). Single-operator content business, ~1–4 published posts/day.
+- 4,300+ unit tests passing in CI on every push.
+- Bootstrap script that takes a fresh clone to a healthy local stack with auto-generated secrets.
+- Live in-place upgrades — Stage 2 of the recent rebrand was applied to a production instance with zero data loss and no downtime for the active task.
+- 6 customer-facing docker containers, 4 internal-only ones. Healthchecks, restart policies, log aggregation.
+- Multi-model QA scoring with deterministic validators, LLM critic chain, and a programmatic anti-hallucination layer.
+- Push-only static export to any S3-compatible storage. The frontend can be Next.js, Hugo, Astro, or a single static HTML file — Poindexter doesn't care.
+
+**What doesn't work yet (or has known rough edges):**
+
+- The bootstrap.sh script has 7 known structural issues from a recent fresh-customer install pass — silent failure modes, missing prereq checks, schema drift between bootstrap and migrations. Tracked in [issue #185](https://github.com/Glad-Labs/poindexter/issues/185). The four P0 blockers from that pass are already fixed; the remaining issues need a structural rewrite.
+- One test file (`tests/unit/services/test_web_research.py`) is `--ignored` in CI pending investigation. Tracked in [issue #184](https://github.com/Glad-Labs/poindexter/issues/184).
+- No managed/hosted Poindexter offering. Self-host only.
+- No multi-tenant deployment recipe. One operator, one machine.
+- Not all dashboards ship publicly — two of the seven Grafana dashboards (cost-analytics, infrastructure-data) are kept as premium artifacts and aren't in the public repo.
+- Native Windows cmd / PowerShell is not supported. Use Git Bash or WSL.
+- Database schema is not yet considered stable across releases. Read the CHANGELOG before upgrading.
+
+If any of those would block your use case, that's worth knowing before you start. If you want to fix one of them, [PRs welcome](CONTRIBUTING.md).
+
+## Screenshots
+
+<!-- TODO: add screenshots once the public site is fully linked.
+     Wishlist:
+       - Grafana "Pipeline Operations" dashboard with live throughput
+       - The OpenClaw approval Discord embed
+       - The Next.js public site rendering a generated post -->
+
+_Screenshots coming. In the meantime, see [gladlabs.io](https://www.gladlabs.io) for live output from the pipeline._
 
 ## Architecture
 
