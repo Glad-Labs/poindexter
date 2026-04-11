@@ -795,3 +795,240 @@ class TestLoadGenerationPrompts:
         # The generation prompt call should have received the joined links string
         gen_call = fake_pm.get_prompt.call_args_list[1]
         assert "Existing Post" in gen_call.kwargs["internal_link_titles"]
+
+
+# ---------------------------------------------------------------------------
+# _prepare_generation_context
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestPrepareGenerationContext:
+    @pytest.mark.asyncio
+    async def test_returns_context_dict_with_all_keys(self):
+        gen = _make_generator()
+        gen._check_ollama_async = AsyncMock()
+        gen.ollama_available = True
+        gen._load_generation_prompts = MagicMock(return_value=("sys", "gen", lambda f, i, c: "refine"))
+
+        ctx = await gen._prepare_generation_context(
+            topic="AI",
+            style="technical",
+            tone="professional",
+            target_length=1500,
+            tags=["ai", "ml"],
+            preferred_model=None,
+            preferred_provider=None,
+        )
+
+        # All expected keys present
+        expected_keys = {
+            "effective_provider", "skip_ollama", "use_ollama",
+            "system_prompt", "generation_prompt", "get_refinement_prompt",
+            "metrics", "start_time", "attempts",
+            "topic", "style", "tone", "target_length", "tags", "preferred_model",
+        }
+        assert expected_keys.issubset(ctx.keys())
+
+    @pytest.mark.asyncio
+    async def test_skip_ollama_when_explicit_non_ollama_provider(self):
+        gen = _make_generator()
+        gen._check_ollama_async = AsyncMock()
+        gen._load_generation_prompts = MagicMock(return_value=("sys", "gen", lambda f, i, c: "x"))
+
+        ctx = await gen._prepare_generation_context(
+            topic="AI", style="s", tone="t", target_length=1000, tags=[],
+            preferred_model=None, preferred_provider="huggingface",
+        )
+
+        assert ctx["skip_ollama"] is True
+        assert ctx["use_ollama"] is False
+        gen._check_ollama_async.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_check_ollama_when_no_provider_specified(self):
+        gen = _make_generator()
+        gen._check_ollama_async = AsyncMock()
+        gen.ollama_available = True
+        gen._load_generation_prompts = MagicMock(return_value=("sys", "gen", lambda f, i, c: "x"))
+
+        ctx = await gen._prepare_generation_context(
+            topic="AI", style="s", tone="t", target_length=1000, tags=[],
+            preferred_model=None, preferred_provider=None,
+        )
+
+        # When preferred_provider is None, the `and` short-circuits to None (falsy)
+        assert not ctx["skip_ollama"]
+        gen._check_ollama_async.assert_called_once()
+        assert ctx["use_ollama"] is True
+
+    @pytest.mark.asyncio
+    async def test_auto_provider_treated_as_no_skip(self):
+        """preferred_provider='auto' should still check Ollama."""
+        gen = _make_generator()
+        gen._check_ollama_async = AsyncMock()
+        gen.ollama_available = True
+        gen._load_generation_prompts = MagicMock(return_value=("sys", "gen", lambda f, i, c: "x"))
+
+        ctx = await gen._prepare_generation_context(
+            topic="AI", style="s", tone="t", target_length=1000, tags=[],
+            preferred_model=None, preferred_provider="auto",
+        )
+
+        assert not ctx["skip_ollama"]
+        gen._check_ollama_async.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_writing_style_context_injected_into_system_prompt(self):
+        gen = _make_generator()
+        gen._check_ollama_async = AsyncMock()
+        gen._load_generation_prompts = MagicMock(
+            return_value=("base system prompt", "gen", lambda f, i, c: "x"),
+        )
+
+        ctx = await gen._prepare_generation_context(
+            topic="AI", style="s", tone="t", target_length=1000, tags=[],
+            preferred_model=None, preferred_provider=None,
+            writing_style_context="Sample 1: a paragraph\nSample 2: another paragraph",
+        )
+
+        assert "Writing Style Reference" in ctx["system_prompt"]
+        assert "Sample 1" in ctx["system_prompt"]
+        assert "base system prompt" in ctx["system_prompt"]
+
+    @pytest.mark.asyncio
+    async def test_no_writing_style_context_leaves_system_prompt_unchanged(self):
+        gen = _make_generator()
+        gen._check_ollama_async = AsyncMock()
+        gen._load_generation_prompts = MagicMock(
+            return_value=("base system prompt", "gen", lambda f, i, c: "x"),
+        )
+
+        ctx = await gen._prepare_generation_context(
+            topic="AI", style="s", tone="t", target_length=1000, tags=[],
+            preferred_model=None, preferred_provider=None,
+        )
+
+        assert "Writing Style Reference" not in ctx["system_prompt"]
+        assert ctx["system_prompt"] == "base system prompt"
+
+    @pytest.mark.asyncio
+    async def test_research_context_passed_to_prompt_loader(self):
+        gen = _make_generator()
+        gen._check_ollama_async = AsyncMock()
+        gen._load_generation_prompts = MagicMock(return_value=("sys", "gen", lambda f, i, c: "x"))
+
+        await gen._prepare_generation_context(
+            topic="AI", style="s", tone="t", target_length=1000, tags=["ai"],
+            preferred_model=None, preferred_provider=None,
+            research_context="Source 1: github.com/example\nSource 2: arxiv.org/1234",
+        )
+
+        call_kwargs = gen._load_generation_prompts.call_args.kwargs
+        assert "github.com" in call_kwargs["research_context"]
+        assert "arxiv.org" in call_kwargs["research_context"]
+
+    @pytest.mark.asyncio
+    async def test_metrics_initialized_with_zero_counters(self):
+        gen = _make_generator()
+        gen._check_ollama_async = AsyncMock()
+        gen._load_generation_prompts = MagicMock(return_value=("sys", "gen", lambda f, i, c: "x"))
+
+        ctx = await gen._prepare_generation_context(
+            topic="AI", style="s", tone="t", target_length=1000, tags=[],
+            preferred_model="llama3:70b", preferred_provider="ollama",
+        )
+
+        metrics = ctx["metrics"]
+        assert metrics["generation_attempts"] == 0
+        assert metrics["refinement_attempts"] == 0
+        assert metrics["validation_results"] == []
+        assert metrics["model_used"] is None
+        assert metrics["final_quality_score"] == 0.0
+        assert metrics["preferred_model"] == "llama3:70b"
+        assert metrics["preferred_provider"] == "ollama"
+
+    @pytest.mark.asyncio
+    async def test_model_selection_log_populated(self):
+        gen = _make_generator()
+        gen._check_ollama_async = AsyncMock()
+        gen.ollama_available = True
+        gen._load_generation_prompts = MagicMock(return_value=("sys", "gen", lambda f, i, c: "x"))
+
+        ctx = await gen._prepare_generation_context(
+            topic="AI", style="s", tone="t", target_length=1000, tags=[],
+            preferred_model="qwen3:30b", preferred_provider="ollama",
+        )
+
+        log = ctx["metrics"]["model_selection_log"]
+        assert log["requested_provider"] == "ollama"
+        assert log["requested_model"] == "qwen3:30b"
+        assert log["skipped_ollama"] is False
+        assert "decision_tree" in log
+
+    @pytest.mark.asyncio
+    async def test_start_time_is_recent(self):
+        import time as _time
+        gen = _make_generator()
+        gen._check_ollama_async = AsyncMock()
+        gen._load_generation_prompts = MagicMock(return_value=("sys", "gen", lambda f, i, c: "x"))
+
+        before = _time.time()
+        ctx = await gen._prepare_generation_context(
+            topic="AI", style="s", tone="t", target_length=1000, tags=[],
+            preferred_model=None, preferred_provider=None,
+        )
+        after = _time.time()
+
+        assert before <= ctx["start_time"] <= after
+
+    @pytest.mark.asyncio
+    async def test_ollama_unavailable_sets_use_ollama_false(self):
+        gen = _make_generator()
+
+        async def _check():
+            gen.ollama_available = False
+
+        gen._check_ollama_async = AsyncMock(side_effect=_check)
+        gen._load_generation_prompts = MagicMock(return_value=("sys", "gen", lambda f, i, c: "x"))
+
+        ctx = await gen._prepare_generation_context(
+            topic="AI", style="s", tone="t", target_length=1000, tags=[],
+            preferred_model=None, preferred_provider=None,
+        )
+
+        assert ctx["use_ollama"] is False
+
+    @pytest.mark.asyncio
+    async def test_attempts_starts_empty(self):
+        gen = _make_generator()
+        gen._check_ollama_async = AsyncMock()
+        gen._load_generation_prompts = MagicMock(return_value=("sys", "gen", lambda f, i, c: "x"))
+
+        ctx = await gen._prepare_generation_context(
+            topic="AI", style="s", tone="t", target_length=1000, tags=[],
+            preferred_model=None, preferred_provider=None,
+        )
+
+        assert ctx["attempts"] == []
+
+    @pytest.mark.asyncio
+    async def test_topic_and_tags_echoed_into_context(self):
+        gen = _make_generator()
+        gen._check_ollama_async = AsyncMock()
+        gen._load_generation_prompts = MagicMock(return_value=("sys", "gen", lambda f, i, c: "x"))
+
+        ctx = await gen._prepare_generation_context(
+            topic="Kubernetes patterns",
+            style="technical",
+            tone="expert",
+            target_length=2500,
+            tags=["k8s", "containers", "devops"],
+            preferred_model=None, preferred_provider=None,
+        )
+
+        assert ctx["topic"] == "Kubernetes patterns"
+        assert ctx["style"] == "technical"
+        assert ctx["tone"] == "expert"
+        assert ctx["target_length"] == 2500
+        assert ctx["tags"] == ["k8s", "containers", "devops"]
