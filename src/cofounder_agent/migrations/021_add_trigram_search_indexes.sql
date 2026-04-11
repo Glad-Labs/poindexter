@@ -3,7 +3,7 @@
 -- pg_trgm GIN indexes allow PostgreSQL to use the index for ILIKE '%term%' queries.
 -- Version: 021
 -- NOTE: pg_trgm extension must be available (it is included in PostgreSQL 9.1+ and
---       enabled on Railway/Heroku/Supabase by default, but may need superuser for new installs).
+--       enabled on most managed Postgres hosts by default, but may need superuser for new installs).
 
 BEGIN;
 

@@ -52,7 +52,6 @@ logging.basicConfig(
 logger = logging.getLogger("brain")
 
 # Local brain DB — the daemon writes ALL data here (brain_knowledge, brain_decisions, etc.)
-# Railway is only used for HTTP health checks, never for DB writes.
 LOCAL_BRAIN_DB = os.getenv(
     "DATABASE_URL",
     "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain",
@@ -63,8 +62,6 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 # Canonical env var; fallback matches services/telegram_config.py
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
-# Detect if running on Railway (cloud) or locally
-IS_RAILWAY = bool(os.getenv("RAILWAY_SERVICE_ID"))
 # Detect Docker (set in docker-compose.local.yml)
 IS_DOCKER = bool(os.getenv("IN_DOCKER"))
 
@@ -102,18 +99,17 @@ async def _load_config_from_db(pool):
     except Exception as e:
         logger.warning("[BRAIN] Could not load config from DB: %s (using defaults)", e, exc_info=True)
 
-# Local-only services (only monitored when running on Matt's PC or in Docker)
-if not IS_RAILWAY:
-    # In Docker, other containers are on the Docker network; host services use host.docker.internal
-    _local_host = "host.docker.internal" if IS_DOCKER else "localhost"
-    # Worker is a sibling container in Docker — use its container name
-    _worker_host = "poindexter-worker" if IS_DOCKER else "localhost"
-    SERVICES.update({
-        "worker": {"url": f"http://{_worker_host}:8002/api/health", "type": "json_status", "critical": False},
-        "openclaw": {"url": f"http://{_local_host}:18789/status", "type": "http", "critical": False},
-        "nvidia_exporter": {"url": "http://poindexter-prometheus:9090/-/healthy" if IS_DOCKER else f"http://{_local_host}:9835/metrics", "type": "http", "critical": False},
-        "windows_exporter": {"url": f"http://{_local_host}:9182/metrics", "type": "http", "critical": False},
-    })
+# Local services always monitored (Poindexter runs on the operator's own machine).
+# In Docker, other containers are on the Docker network; host services use host.docker.internal.
+_local_host = "host.docker.internal" if IS_DOCKER else "localhost"
+# Worker is a sibling container in Docker — use its container name.
+_worker_host = "poindexter-worker" if IS_DOCKER else "localhost"
+SERVICES.update({
+    "worker": {"url": f"http://{_worker_host}:8002/api/health", "type": "json_status", "critical": False},
+    "openclaw": {"url": f"http://{_local_host}:18789/status", "type": "http", "critical": False},
+    "nvidia_exporter": {"url": "http://poindexter-prometheus:9090/-/healthy" if IS_DOCKER else f"http://{_local_host}:9835/metrics", "type": "http", "critical": False},
+    "windows_exporter": {"url": f"http://{_local_host}:9182/metrics", "type": "http", "critical": False},
+})
 
 # External service status pages (always monitored from anywhere)
 EXTERNAL_SERVICES = {
@@ -202,11 +198,7 @@ def send_telegram(message: str):
 
 
 def restart_service(name: str):
-    """Attempt to restart a local service. Only works on the local PC, not Railway."""
-    if IS_RAILWAY:
-        logger.info("[BRAIN] Cannot restart local service %s from Railway — alert sent instead", name)
-        send_telegram(f"Service {name} is down. Brain cannot restart from cloud — check your PC.")
-        return
+    """Attempt to restart a local service on the operator's PC."""
     if IS_DOCKER:
         # In Docker, we can restart sibling containers via the Docker socket (if mounted)
         # or just alert. For now, alert — Matt can add Docker socket mount later.
@@ -703,31 +695,30 @@ async def log_electricity_cost(pool):
         # Try to get real power data from nvidia-smi-exporter (local only)
         watts = None
         power_source = "default"
-        if not IS_RAILWAY:
-            exporter_url = "http://host.docker.internal:9835/metrics" if IS_DOCKER else "http://localhost:9835/metrics"
-            try:
-                resp = urllib.request.urlopen(exporter_url, timeout=3)
-                body = resp.read().decode()
-                psu_watts = None
-                estimate_watts = None
-                for line in body.split("\n"):
-                    if line.startswith("psu_total_power_watts"):
-                        psu_watts = float(line.split()[-1])
-                    elif line.startswith("system_total_power_estimate_watts"):
-                        estimate_watts = float(line.split()[-1])
-                # HX1500i wall power is ground truth; fall back to software estimate
-                if psu_watts:
-                    watts = psu_watts
-                    power_source = "hx1500i"
-                elif estimate_watts:
-                    watts = estimate_watts
-                    power_source = "estimate"
-            except Exception:
-                pass  # Exporter not running, use estimate
+        exporter_url = "http://host.docker.internal:9835/metrics" if IS_DOCKER else "http://localhost:9835/metrics"
+        try:
+            resp = urllib.request.urlopen(exporter_url, timeout=3)
+            body = resp.read().decode()
+            psu_watts = None
+            estimate_watts = None
+            for line in body.split("\n"):
+                if line.startswith("psu_total_power_watts"):
+                    psu_watts = float(line.split()[-1])
+                elif line.startswith("system_total_power_estimate_watts"):
+                    estimate_watts = float(line.split()[-1])
+            # HX1500i wall power is ground truth; fall back to software estimate
+            if psu_watts:
+                watts = psu_watts
+                power_source = "hx1500i"
+            elif estimate_watts:
+                watts = estimate_watts
+                power_source = "estimate"
+        except Exception:
+            pass  # Exporter not running, use estimate
 
         if watts is None:
-            # Estimate: ~80W idle (Railway containers + local standby)
-            watts = 80.0 if IS_RAILWAY else 150.0  # Local PC idles higher
+            # Fallback estimate: local PC idles around 150W
+            watts = 150.0
 
         # Load electricity rate from DB, fallback to default
         rate_per_kwh = 0.29  # $/kWh default

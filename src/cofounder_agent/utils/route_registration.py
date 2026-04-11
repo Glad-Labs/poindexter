@@ -5,7 +5,7 @@ Handles registration of route modules with the FastAPI application.
 Provides dependency injection of database service to route modules.
 
 Deployment modes (controlled by DEPLOYMENT_MODE env var):
-- coordinator (default): Railway cloud — minimal read-only API for Vercel frontend
+- coordinator (default): cloud — minimal read-only API for Vercel frontend
 - worker: Local PC — heavy compute, all write operations, admin APIs
 
 Coordinator routes (public site only — least privilege):
@@ -38,7 +38,7 @@ logger = get_logger(__name__)
 # path /api/tasks/pending-approval is matched before the wildcard /{task_id}.
 # ---------------------------------------------------------------------------
 
-# Routes for coordinator mode (Railway cloud — minimal read-only for Vercel)
+# Routes for coordinator mode (cloud — minimal read-only for Vercel)
 # LEAST PRIVILEGE: only endpoints the public site actually calls
 _COORDINATOR_ROUTES = [
     ("routes.cms_routes", "router", "cms_router", "CMS (posts, categories, tags, search, beacon)"),

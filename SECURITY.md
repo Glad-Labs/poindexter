@@ -58,7 +58,7 @@ The following are gitignored and must never appear in commits, public dashboards
 
 - **Local development:** `.env.local` in the repo root, gitignored.
 - **Self-hosted production:** `.env.local` on the machine running the worker, with file permissions `chmod 600 .env.local`. The worker container reads from this file via docker-compose env_file.
-- **Cloud-hosted production (optional):** your cloud provider's secret manager (Railway env vars, Vercel env vars, AWS Secrets Manager, etc.). Poindexter does not require any specific cloud provider.
+- **Cloud-hosted production (optional):** your cloud provider's secret manager (Vercel env vars, Fly.io secrets, AWS Secrets Manager, etc.). Poindexter does not require any specific cloud provider.
 
 ### Rotation
 
