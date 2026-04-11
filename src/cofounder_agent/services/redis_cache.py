@@ -139,9 +139,15 @@ class RedisCache:
             return cls(redis_instance=redis_instance, enabled=True)
 
         except Exception as e:
-            logger.error("[_create] Failed to connect to Redis: %s", e, exc_info=True)
-            logger.info("   System will continue without caching")
-            logger.info("   To enable caching, ensure Redis is running at: %s", redis_url)
+            # Redis is optional — the system falls back to no-cache mode.
+            # Log at INFO with a short message (not an ERROR + traceback);
+            # the full traceback was previously drowning out real errors
+            # in the startup logs.
+            logger.info(
+                "[redis_cache] Redis not available at %s (%s) — running without cache",
+                redis_url.split('@')[0] if '@' in redis_url else redis_url,
+                type(e).__name__,
+            )
             return cls(redis_instance=None, enabled=False)
 
     async def is_available(self) -> bool:

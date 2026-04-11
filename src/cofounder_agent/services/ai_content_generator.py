@@ -768,7 +768,7 @@ class AIContentGenerator:
                     else:
                         logger.warning("      [FAIL] Generated content too short or empty")
 
-                except asyncio.TimeoutError as e:
+                except asyncio.TimeoutError:
                     # Explicitly catch timeout - model too slow or server unresponsive
                     error_msg = f"Timeout exceeded with {model_name}"
                     logger.warning(

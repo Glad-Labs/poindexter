@@ -13,7 +13,6 @@ and content generation (Phase 3.3).
 """
 
 import re
-from collections import Counter
 from typing import Any, Dict, Optional
 
 from services.database_service import DatabaseService
@@ -210,9 +209,6 @@ class WritingStyleIntegrationService:
         unique_words = len(set(words))
         vocabulary_diversity = unique_words / word_count if word_count > 0 else 0
 
-        # Get most common word types for pattern matching
-        punctuation_marks = Counter([c for c in sample_text if c in ".,!?;:"])
-
         return {
             "detected_tone": detected_tone,
             "detected_style": detected_style,
@@ -339,7 +335,6 @@ class WritingStyleIntegrationService:
             if not sample_data:
                 return {"matched": False, "reason": "Sample not found"}
 
-            sample_text = sample_data.get("sample_text", "")
             sample_analysis = sample_data.get("analysis", {})
             generated_analysis = self._analyze_sample(generated_content)
 
