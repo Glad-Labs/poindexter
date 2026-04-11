@@ -74,21 +74,21 @@ Poindexter is in **alpha**. Honestly:
 
 **What works today:**
 
-- The full content pipeline end-to-end on Matt's daily-driver setup (RTX 5090, 64GB RAM, Windows 11 + WSL2). Single-operator content business, ~1–4 published posts/day.
-- 4,300+ unit tests passing in CI on every push.
+- The full content pipeline end-to-end on the author's daily-driver setup (RTX 5090, 64GB RAM, Windows 11 + WSL2). Single-operator content business, a few published posts per day.
+- 4,700+ unit tests passing in CI on every push.
 - Bootstrap script that takes a fresh clone to a healthy local stack with auto-generated secrets.
-- Live in-place upgrades — Stage 2 of the recent rebrand was applied to a production instance with zero data loss and no downtime for the active task.
-- 6 customer-facing docker containers, 4 internal-only ones. Healthchecks, restart policies, log aggregation.
-- Multi-model QA scoring with deterministic validators, LLM critic chain, and a programmatic anti-hallucination layer.
+- Live in-place upgrades — database renames, container renames, and env var migrations have been applied to a running instance with zero data loss and no downtime for in-flight tasks.
+- Customer-facing Docker containers with healthchecks, restart policies, and log aggregation baked in.
+- Multi-model QA scoring with deterministic validators, an LLM critic chain, and a programmatic anti-hallucination layer.
 - Push-only static export to any S3-compatible storage. The frontend can be Next.js, Hugo, Astro, or a single static HTML file — Poindexter doesn't care.
 
 **What doesn't work yet (or has known rough edges):**
 
-- The bootstrap.sh script has 7 known structural issues from a recent fresh-customer install pass — silent failure modes, missing prereq checks, schema drift between bootstrap and migrations. Tracked in [issue #185](https://github.com/Glad-Labs/poindexter/issues/185). The four P0 blockers from that pass are already fixed; the remaining issues need a structural rewrite.
-- One test file (`tests/unit/services/test_web_research.py`) is `--ignored` in CI pending investigation. Tracked in [issue #184](https://github.com/Glad-Labs/poindexter/issues/184).
+- The `bootstrap.sh` script has structural rough edges from recent fresh-install passes — silent failure modes, missing prereq checks, schema drift between bootstrap and migrations. The P0 blockers from the dogfood pass are fixed; the remaining issues need a structural rewrite. See the "Known issues" section of [CHANGELOG.md](CHANGELOG.md) for the current list.
+- One test file (`tests/unit/services/test_web_research.py`) is `--ignored` in CI pending investigation — flagged in the CHANGELOG.
 - No managed/hosted Poindexter offering. Self-host only.
 - No multi-tenant deployment recipe. One operator, one machine.
-- Not all dashboards ship publicly — two of the seven Grafana dashboards (cost-analytics, infrastructure-data) are kept as premium artifacts and aren't in the public repo.
+- Not all dashboards ship publicly — two of the Grafana dashboards (cost-analytics, infrastructure-data) are kept as premium artifacts and aren't in the public repo.
 - Native Windows cmd / PowerShell is not supported. Use Git Bash or WSL.
 - Database schema is not yet considered stable across releases. Read the CHANGELOG before upgrading.
 
@@ -131,7 +131,7 @@ Any Frontend (reads static JSON from CDN)
 | **Multi-Site**            | One daemon manages N sites. Each site = config row + storage bucket.             |
 | **Self-Healing**          | Brain daemon monitors all services, restarts failures, alerts via Telegram       |
 | **Production Monitoring** | 7 Grafana dashboards included out of the box                                     |
-| **4,000+ Tests**          | Comprehensive unit test coverage across all services                             |
+| **4,700+ Tests**          | Comprehensive unit test coverage across all services                             |
 
 ## Stack
 
