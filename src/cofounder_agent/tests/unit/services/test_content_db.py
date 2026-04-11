@@ -521,3 +521,82 @@ class TestCreateOrchestratorTrainingData:
 
         with pytest.raises(Exception):
             await db.create_orchestrator_training_data({"execution_id": "exec-3"})
+
+
+# ---------------------------------------------------------------------------
+# _cache_get / _cache_set — internal TTL cache
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestCacheHelpers:
+    def test_cache_miss_returns_none(self):
+        db = _make_db()
+        assert db._cache_get("missing_key") is None
+
+    def test_cache_set_then_get_returns_value(self):
+        db = _make_db()
+        db._cache_set("my_key", [{"id": 1, "name": "cat"}])
+        assert db._cache_get("my_key") == [{"id": 1, "name": "cat"}]
+
+    def test_cache_set_stores_tuple_with_timestamp(self):
+        """Internal representation is (value, monotonic timestamp)."""
+        import time
+        db = _make_db()
+        before = time.monotonic()
+        db._cache_set("key", "value")
+        after = time.monotonic()
+
+        entry = db._cache["key"]
+        assert entry[0] == "value"
+        assert before <= entry[1] <= after
+
+    def test_cache_overwrite_updates_timestamp(self):
+        """Setting a key twice should replace both the value AND advance the timestamp."""
+        from unittest.mock import patch
+        db = _make_db()
+        # Use controlled timestamps instead of time.sleep which can be flaky
+        # under parallel test execution.
+        with patch("services.content_db.time") as mock_time:
+            mock_time.monotonic = lambda: 1000.0
+            db._cache_set("key", "v1")
+            first_ts = db._cache["key"][1]
+
+            mock_time.monotonic = lambda: 1005.0
+            db._cache_set("key", "v2")
+            second_ts = db._cache["key"][1]
+
+            assert second_ts > first_ts
+            assert db._cache["key"][0] == "v2"
+
+    def test_cache_expires_after_ttl(self):
+        """Entry older than _CACHE_TTL should return None."""
+        import time
+        from unittest.mock import patch
+        db = _make_db()
+        db._cache_set("key", "value")
+        frozen_now = time.monotonic() + 61
+        with patch("services.content_db.time") as mock_time:
+            mock_time.monotonic = lambda: frozen_now
+            assert db._cache_get("key") is None
+
+    def test_cache_still_valid_within_ttl(self):
+        import time
+        from unittest.mock import patch
+        db = _make_db()
+        db._cache_set("key", "value")
+        within_ttl = time.monotonic() + 30
+        with patch("services.content_db.time") as mock_time:
+            mock_time.monotonic = lambda: within_ttl
+            assert db._cache_get("key") == "value"
+
+    def test_cache_stores_multiple_keys_independently(self):
+        db = _make_db()
+        db._cache_set("categories", [{"id": 1}])
+        db._cache_set("tags", [{"id": 2}])
+        assert db._cache_get("categories") == [{"id": 1}]
+        assert db._cache_get("tags") == [{"id": 2}]
+
+    def test_init_creates_empty_cache(self):
+        db = _make_db()
+        assert db._cache == {}
