@@ -530,8 +530,71 @@ class TaskExecutor:
                     except Exception:
                         logger.debug("[PREVIEW] Failed to create preview token", exc_info=True)
 
+                    # Final visual QA: screenshot the rendered preview and
+                    # run it through the vision model. Only fires when
+                    # qa_preview_screenshot_enabled is true in app_settings
+                    # (default false — opt-in). Result is stored on task
+                    # metadata and surfaced in the approval notification
+                    # so Matt sees it before reviewing.
+                    preview_qa_note = ""
+                    if preview_url:
+                        try:
+                            from services.container import get_service
+                            from services.multi_model_qa import MultiModelQA
+
+                            _settings_svc = get_service("settings")
+                            # Resolve preview URL to one reachable from
+                            # inside the worker container. The external
+                            # preview_base_url may be a Tailscale hostname
+                            # that isn't resolvable here.
+                            _internal_preview_url = f"http://localhost:8002/preview/{preview_token}"
+
+                            _pqa = MultiModelQA(
+                                pool=self.database_service.pool,
+                                settings_service=_settings_svc,
+                            )
+                            _pqa_review = await _pqa._check_rendered_preview(
+                                title=topic,
+                                topic=topic,
+                                preview_url=_internal_preview_url,
+                            )
+                            if _pqa_review is not None:
+                                preview_qa_note = (
+                                    f"Visual QA: {int(_pqa_review.score)}/100 — "
+                                    + _pqa_review.feedback[:200]
+                                )
+                                try:
+                                    await pool.execute(
+                                        """UPDATE content_tasks
+                                           SET metadata = COALESCE(metadata, '{}'::jsonb)
+                                               || jsonb_build_object(
+                                                   'preview_qa_score', $1::numeric,
+                                                   'preview_qa_approved', $2::boolean,
+                                                   'preview_qa_feedback', $3::text
+                                               )
+                                           WHERE task_id = $4""",
+                                        float(_pqa_review.score),
+                                        bool(_pqa_review.approved),
+                                        _pqa_review.feedback[:500],
+                                        task_id,
+                                    )
+                                except Exception as _persist_err:
+                                    logger.debug(
+                                        "[PREVIEW_QA] persist failed: %s", _persist_err
+                                    )
+                                logger.info(
+                                    "[PREVIEW_QA] Task %s visual score=%s approved=%s",
+                                    task_id[:8], _pqa_review.score, _pqa_review.approved,
+                                )
+                        except Exception as _vqa_err:
+                            logger.debug(
+                                "[PREVIEW_QA] skipped (non-critical): %s", _vqa_err
+                            )
+
                     msg = f"Awaiting approval: \"{topic}\"\n"
                     msg += f"Score: {quality_score:.0f}/100\n"
+                    if preview_qa_note:
+                        msg += preview_qa_note + "\n"
                     if preview_url:
                         msg += f"Preview: {preview_url}\n"
                     msg += f"Approve: /approve-post {task_id[:8]}"

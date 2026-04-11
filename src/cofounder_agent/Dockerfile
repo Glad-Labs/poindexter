@@ -2,10 +2,39 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies (including headless graphics libs if needed by indirect deps)
+# Install system dependencies.
+# The chromium deps are here so that playwright's bundled browser can
+# launch inside the container for the preview-screenshot QA reviewer.
+# If the screenshot check is disabled via app_settings (default), these
+# are just cold bytes on disk and the rest of the pipeline is unaffected.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
+    ca-certificates \
+    fonts-liberation \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libatspi2.0-0 \
+    libcairo2 \
+    libcups2 \
+    libdbus-1-3 \
+    libdrm2 \
+    libgbm1 \
+    libglib2.0-0 \
+    libgtk-3-0 \
+    libnspr4 \
+    libnss3 \
+    libpango-1.0-0 \
+    libx11-6 \
+    libxcb1 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxkbcommon0 \
+    libxrandr2 \
+    xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Poetry
@@ -18,6 +47,12 @@ COPY pyproject.toml poetry.lock ./
 # avoiding README.md not found errors in the container)
 RUN poetry config virtualenvs.create false && \
     poetry install --no-interaction --no-ansi --only main --no-root
+
+# Install Playwright's bundled chromium. This downloads ~150MB into
+# /root/.cache/ms-playwright/ during build. We skip the OS deps install
+# step (--with-deps would re-pin apt packages) because we already
+# installed the required libs above.
+RUN python -m playwright install chromium
 
 # Copy application code
 COPY . .

@@ -206,6 +206,7 @@ class MultiModelQA:
         content: str,
         topic: str = "",
         research_sources: str | None = None,
+        preview_url: str | None = None,
     ) -> MultiModelResult:
         """
         Run content through multiple reviewers and aggregate results.
@@ -219,6 +220,13 @@ class MultiModelQA:
                 corpus instead of relying solely on its own (possibly stale)
                 training data. Pass the same research_context string produced
                 by ResearchService.build_context() during generation.
+            preview_url: Optional URL where the post renders as it would
+                appear to readers (e.g. /preview/{hash}). When provided and
+                qa_preview_screenshot_enabled is true, a new reviewer
+                captures a screenshot of the rendered page and feeds it
+                to the vision model for a final "yup looks good" layout
+                sanity check. Without it, or with the flag off, the
+                reviewer is skipped.
 
         Returns MultiModelResult with approval decision and individual reviews.
         """
@@ -294,6 +302,20 @@ class MultiModelQA:
         image_review = await self._check_image_relevance(title, topic, content)
         if image_review is not None:
             reviews.append(image_review)
+
+        # 2e. Rendered-preview gate — the final "yup looks good"
+        # sanity check. Screenshots the post's /preview/{hash} URL
+        # via Playwright-chromium and feeds the PNG to the vision
+        # model to catch layout breaks, missing CSS, overflowing
+        # tables, broken images, mangled HTML — the stuff that no
+        # text-only QA can see. Opt-in via qa_preview_screenshot_enabled.
+        # Skipped entirely if preview_url is None.
+        if preview_url:
+            preview_review = await self._check_rendered_preview(
+                title, topic, preview_url
+            )
+            if preview_review is not None:
+                reviews.append(preview_review)
 
         # 3. Aggregate scores — weights configurable via app_settings
         validator_weight = 0.4
@@ -901,6 +923,187 @@ class MultiModelQA:
             approved=passed,
             score=float(overall),
             feedback=feedback[:500],
+            provider="vision_gate",
+        )
+
+    async def _check_rendered_preview(
+        self, title: str, topic: str, preview_url: str
+    ) -> ReviewerResult | None:
+        """Gate: does the rendered preview page look like a real blog post?
+
+        Captures a screenshot of ``preview_url`` via headless chromium
+        and sends it to the vision model for a holistic layout/quality
+        check. Catches issues that no text-only QA can see: overflowing
+        tables, missing CSS, broken images, empty sections, mangled
+        blockquotes, and general "this looks amateur" vibes.
+
+        Opt-in via qa_preview_screenshot_enabled (default false). The
+        reviewer returns None — skipped, no veto — when the flag is off,
+        when Playwright isn't installed, when the screenshot fails, or
+        when the vision model is unreachable.
+
+        Settings:
+            qa_preview_screenshot_enabled  — default "false"
+            qa_preview_vision_model        — default "qwen3-vl:30b"
+            qa_preview_pass_threshold      — default 70 (min score)
+            qa_preview_viewport_width      — default 1280
+            qa_preview_viewport_height     — default 1024
+        """
+        import asyncio
+        import base64
+        import json
+        import re
+
+        enabled = False
+        model = "qwen3-vl:30b"
+        pass_threshold = 70
+        viewport_width = 1280
+        viewport_height = 1024
+        if self.settings:
+            try:
+                enabled = str(
+                    await self.settings.get("qa_preview_screenshot_enabled") or "false"
+                ).lower() == "true"
+                model = (
+                    await self.settings.get("qa_preview_vision_model") or model
+                )
+                model = model.removeprefix("ollama/")
+                pass_threshold = int(
+                    await self.settings.get("qa_preview_pass_threshold") or 70
+                )
+                viewport_width = int(
+                    await self.settings.get("qa_preview_viewport_width") or 1280
+                )
+                viewport_height = int(
+                    await self.settings.get("qa_preview_viewport_height") or 1024
+                )
+            except Exception:
+                pass
+
+        if not enabled or not preview_url:
+            return None
+
+        try:
+            from services.preview_screenshot import capture_preview_screenshot
+        except Exception as e:
+            logger.debug("[PREVIEW_QA] screenshot service import failed: %s", e)
+            return None
+
+        png_bytes = await capture_preview_screenshot(
+            preview_url,
+            viewport_width=viewport_width,
+            viewport_height=viewport_height,
+            full_page=True,
+        )
+        if not png_bytes:
+            return None
+
+        b64 = base64.b64encode(png_bytes).decode("ascii")
+
+        prompt = (
+            "You are the final visual reviewer for a blog post before it goes "
+            "live. The attached image is a full-page screenshot of the post "
+            "as it will appear to readers.\n\n"
+            f"TITLE: {title}\n"
+            f"TOPIC: {topic}\n\n"
+            "Rate 0-100 how professional and readable the rendered page looks. "
+            "Deductions for:\n"
+            "  - Broken or missing images (placeholder icons, alt text showing)\n"
+            "  - Layout problems (overflowing tables, code blocks spilling outside the container)\n"
+            "  - Empty or near-empty sections\n"
+            "  - Mangled HTML (raw tags visible, unclosed quotes, escaped entities)\n"
+            "  - Visually unbalanced pages (a wall of text with no breaks)\n"
+            "  - Anything that would make a reader bounce in 3 seconds\n\n"
+            "A clean, professional post scores 80+. A post with any ONE serious "
+            "visual defect scores below 60.\n\n"
+            "Respond with ONLY valid JSON:\n"
+            '{"score": int, "approved": true/false, "issues": ["specific visual problem 1", ...]}'
+        )
+
+        try:
+            import httpx
+        except Exception:
+            return None
+
+        try:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(180.0, connect=5.0)
+            ) as client:
+                payload = {
+                    "model": model,
+                    "stream": False,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": prompt,
+                            "images": [b64],
+                        }
+                    ],
+                    "options": {"temperature": 0.2, "num_predict": 500},
+                }
+                resp = await asyncio.wait_for(
+                    client.post(
+                        "http://host.docker.internal:11434/api/chat",
+                        json=payload,
+                    ),
+                    timeout=200,
+                )
+                if resp.status_code != 200:
+                    logger.warning(
+                        "[PREVIEW_QA] ollama returned HTTP %d: %s",
+                        resp.status_code, resp.text[:200],
+                    )
+                    return None
+                data = resp.json()
+                text = data.get("message", {}).get("content", "")
+        except Exception as e:
+            logger.warning("[PREVIEW_QA] ollama call failed (non-critical): %s", e)
+            return None
+
+        if not text:
+            return None
+
+        # Parse JSON
+        json_text = text
+        if "```" in text:
+            m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+            if m:
+                json_text = m.group(1)
+        try:
+            parsed = json.loads(json_text)
+        except json.JSONDecodeError:
+            m = re.search(r"\{[^{}]*\"score\".*?\}", text, re.DOTALL)
+            if not m:
+                logger.warning("[PREVIEW_QA] unparseable response: %s", text[:200])
+                return None
+            try:
+                parsed = json.loads(m.group(0))
+            except json.JSONDecodeError:
+                return None
+
+        try:
+            score = float(parsed.get("score", 0))
+        except Exception:
+            return None
+        issues = parsed.get("issues") or []
+        if not isinstance(issues, list):
+            issues = [str(issues)]
+        passed = score >= pass_threshold and (
+            bool(parsed.get("approved", True)) if "approved" in parsed else True
+        )
+
+        feedback_parts = [f"Preview screenshot QA: {int(score)}/100"]
+        if issues:
+            feedback_parts.append(
+                "Issues: " + "; ".join(str(i)[:60] for i in issues[:3])
+            )
+        feedback = " — ".join(feedback_parts)[:500]
+
+        return ReviewerResult(
+            reviewer="rendered_preview",
+            approved=passed,
+            score=score,
+            feedback=feedback,
             provider="vision_gate",
         )
 

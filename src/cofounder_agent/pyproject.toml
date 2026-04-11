@@ -81,6 +81,7 @@ beautifulsoup4 = "^4.12"
 edge-tts = "^7.2.8"
 boto3 = "^1.42.84"
 cloudinary = "^1.41"
+playwright = "^1.47"
 
 [tool.poetry.extras]
 ml = ["torch", "transformers", "diffusers"]
