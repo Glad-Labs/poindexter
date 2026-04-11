@@ -66,6 +66,10 @@ class TokenValidationMiddleware(BaseHTTPMiddleware):
         "/ws",  # WebSocket
     }
 
+    # Paths hit by scrapers/health checks — we don't want one INFO log per
+    # poll, so the dev-bypass message is demoted to DEBUG for these.
+    _NOISY_PATH_PREFIXES = ("/api/prometheus", "/api/health", "/api/metrics")
+
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """Process incoming request with token validation"""
 
@@ -77,9 +81,15 @@ class TokenValidationMiddleware(BaseHTTPMiddleware):
                 site_config.get("disable_auth_for_dev", "false").lower() == "true"
                 and site_config.get("development_mode", "false").lower() == "true"
             ):
-                logger.info(
-                    f"[TokenValidation] DISABLE_AUTH_FOR_DEV=true, bypassing auth for {request.url.path}"
-                )
+                path = request.url.path
+                if path.startswith(self._NOISY_PATH_PREFIXES):
+                    logger.debug(
+                        "[TokenValidation] DISABLE_AUTH_FOR_DEV=true, bypassing auth for %s", path
+                    )
+                else:
+                    logger.info(
+                        "[TokenValidation] DISABLE_AUTH_FOR_DEV=true, bypassing auth for %s", path
+                    )
                 return await call_next(request)
 
             # Skip validation for WebSocket connections
