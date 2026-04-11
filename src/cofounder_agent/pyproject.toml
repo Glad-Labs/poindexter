@@ -28,7 +28,7 @@ psycopg2-binary = "^2.9"
 # AI/LLM Integration
 anthropic = ">=0.84.0"
 openai = "^1.0"
-requests = "^2.33"
+# `requests` removed — zero imports anywhere in tracked code. Use httpx.
 google-genai = ">=1.0"             # Official Google Generative AI SDK
                                    # which still uses GenerativeModel(). Remove after migrating llm_client.py.
 
@@ -46,7 +46,7 @@ numpy = "^1.24"
 # Logging & Monitoring
 python-json-logger = "^2.0"
 setuptools = "<81"  # Pin to avoid pkg_resources deprecation (see: setuptools#3932)
-sentry-sdk = {extras = ["fastapi"], version = "^1.40"}
+sentry-sdk = {extras = ["fastapi"], version = "^2.20"}
 
 # Storage & Files
 python-multipart = "^0.0.22"
@@ -56,13 +56,14 @@ aiofiles = "^25"
 # ML/AI - Image Generation (SDXL)
 torch = { version = ">=2.0.0", optional = true }
 transformers = { version = ">=4.40.0", optional = true }
-accelerate = { version = ">=0.24.0", optional = true }
+# `accelerate` removed — zero imports in tracked code. Was optional ml extra.
 
 # Additional Required Packages
 structlog = "^25"
 pyjwt = ">=2.12.0,<3.0.0"  # CVE GHSA-752w-5fwx-jx9f fix — pin to safe 2.x series
 redis = "^5.0"
 diffusers = { version = "^0.36.0", optional = true }
+# `peft` removed — zero imports in tracked code. Was optional ml extra.
 
 # Content Processing
 markdown = "^3.5"
@@ -75,14 +76,13 @@ cryptography = ">=46.0.5"  # CVE GHSA-r6ph-v2qm-q3c2 fix — minimum safe versio
 sqladmin = "^0.24"
 email-validator = "^2.3.0"
 resend = "^2.27.0"
-peft = { version = "^0.18.1", optional = true }
 duckduckgo-search = "^8.1.1"
 beautifulsoup4 = "^4.12"
 edge-tts = "^7.2.8"
 boto3 = "^1.42.84"
 
 [tool.poetry.extras]
-ml = ["torch", "transformers", "accelerate", "diffusers", "peft"]
+ml = ["torch", "transformers", "diffusers"]
 
 [tool.poetry.group.dev.dependencies]
 # Testing
