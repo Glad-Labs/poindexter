@@ -60,7 +60,12 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
     },
 )
 async def list_settings(
-    category: SettingCategoryEnum | None = Query(None, description="Filter by category"),
+    # Accept raw strings — the DB has many categories beyond the original
+    # enum (pipeline, quality, models, content, tokens, identity, etc.) and
+    # locking this to SettingCategoryEnum rejects every real-world filter.
+    # Same pattern as SettingResponse.category which overrides the strict
+    # enum for the same reason.
+    category: str | None = Query(None, description="Filter by category"),
     environment: SettingEnvironmentEnum | None = Query(
         None, description="Filter by environment"
     ),
@@ -75,7 +80,7 @@ async def list_settings(
     try:
         # Get all active settings from database (optionally filtered by category)
         all_settings = await db_service.get_all_settings(
-            category=category.value if category else None
+            category=category if category else None
         )
 
         # Apply pagination
@@ -320,3 +325,54 @@ async def update_setting(
     except Exception as exc:
         logger.error("[settings_routes] Failed to update setting", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to update setting") from exc
+
+
+@router.post(
+    "/{setting_id}/activate",
+    status_code=status.HTTP_200_OK,
+    summary="Toggle is_active on a setting (soft delete / re-enable)",
+    responses={
+        200: {"description": "Activation state updated"},
+        401: {"description": "Unauthorized"},
+        403: {"description": "Forbidden"},
+        404: {"description": "Setting not found"},
+    },
+)
+async def toggle_setting_active(
+    setting_id: str = Path(..., description="Setting key name"),
+    active: bool = Body(..., embed=True, description="New is_active value"),
+    token: str = Depends(verify_api_token),
+    db_service: DatabaseService = Depends(get_database_dependency),
+):
+    """Enable or disable a setting without rewriting its value.
+
+    Added for Gitea #192 / Matt 2026-04-12 soft-delete + fallback testing
+    work. Flips the `is_active` flag via `admin_db.set_setting_active`,
+    which also invalidates the worker's 60s settings cache so the next
+    `get_setting` call reflects the change immediately.
+
+    Body:
+        {"active": true}  → re-enable
+        {"active": false} → soft-delete
+    """
+    try:
+        updated = await db_service.admin.set_setting_active(setting_id, active)
+        if not updated:
+            raise HTTPException(
+                status_code=404, detail=f"Setting '{setting_id}' not found"
+            )
+        return {
+            "key": setting_id,
+            "is_active": active,
+            "message": f"Setting {'enabled' if active else 'disabled'}",
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(
+            "[settings_routes] Failed to toggle setting_id=%s active=%s",
+            setting_id, active, exc_info=True,
+        )
+        raise HTTPException(
+            status_code=500, detail=f"Failed to toggle setting: {exc}"
+        ) from exc

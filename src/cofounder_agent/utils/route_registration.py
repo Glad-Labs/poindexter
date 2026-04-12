@@ -60,6 +60,7 @@ _WORKER_ROUTES = [
     ("routes.settings_routes", "router", "settings_router", "settings read/write"),
     ("routes.metrics_routes", "metrics_router", "metrics_router", "metrics & analytics"),
     ("routes.pipeline_events_routes", "router", "pipeline_events_router", "pipeline events observability (/api/pipeline, /pipeline)"),
+    ("routes.memory_dashboard_routes", "router", "memory_dashboard_router", "shared-memory observability (/api/memory/*, /memory)"),
 ]
 
 # Backward-compatible alias: defaults to coordinator manifest

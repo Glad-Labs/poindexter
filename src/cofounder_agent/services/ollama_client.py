@@ -36,18 +36,52 @@ def _sc_get(key: str, default: str = "") -> str:
     from services.site_config import site_config
     return site_config.get(key, default)
 
-DEFAULT_MODEL = _sc_get("default_ollama_model", "auto")
-DEFAULT_BASE_URL = (
-    _sc_get("ollama_base_url") or _sc_get("ollama_host") or "http://host.docker.internal:11434"
-)
+# All config below is resolved lazily via _default_*() helpers because
+# site_config is empty at module-import time (loaded later in the lifespan).
+# A cached module-level read would freeze env-fallback defaults and silently
+# ignore any app_settings overrides set after first import.
 
-# GPU electricity cost defaults (RTX 5090: 575W TDP, ~300W typical inference)
-DEFAULT_GPU_POWER_WATTS = float(_sc_get("gpu_inference_watts", "300"))
-DEFAULT_ELECTRICITY_RATE_KWH = float(_sc_get("electricity_rate_kwh", "0.12"))
 
-# Context window limit — prevents models from allocating massive KV caches.
-# Default 8192 is plenty for article generation and saves ~15GB VRAM vs 65K context.
-DEFAULT_NUM_CTX = int(_sc_get("ollama_num_ctx", "8192"))
+def _default_model() -> str:
+    return _sc_get("default_ollama_model", "auto")
+
+
+def _default_base_url() -> str:
+    return (
+        _sc_get("ollama_base_url")
+        or _sc_get("ollama_host")
+        or "http://host.docker.internal:11434"
+    )
+
+
+def _default_gpu_power_watts() -> float:
+    """GPU electricity cost default (RTX 5090: 575W TDP, ~300W typical inference)."""
+    try:
+        return float(_sc_get("gpu_inference_watts", "300"))
+    except (ValueError, TypeError) as exc:
+        raise RuntimeError(
+            f"Invalid app_settings value for gpu_inference_watts: {exc}"
+        ) from exc
+
+
+def _default_electricity_rate_kwh() -> float:
+    try:
+        return float(_sc_get("electricity_rate_kwh", "0.12"))
+    except (ValueError, TypeError) as exc:
+        raise RuntimeError(
+            f"Invalid app_settings value for electricity_rate_kwh: {exc}"
+        ) from exc
+
+
+def _default_num_ctx() -> int:
+    """Context window limit — prevents models from allocating massive KV caches.
+    Default 8192 is plenty for article generation and saves ~15GB VRAM vs 65K context."""
+    try:
+        return int(_sc_get("ollama_num_ctx", "8192"))
+    except (ValueError, TypeError) as exc:
+        raise RuntimeError(
+            f"Invalid app_settings value for ollama_num_ctx: {exc}"
+        ) from exc
 
 
 # ============================================================================
@@ -57,8 +91,8 @@ DEFAULT_NUM_CTX = int(_sc_get("ollama_num_ctx", "8192"))
 
 def calculate_electricity_cost(
     duration_seconds: float,
-    gpu_power_watts: float = DEFAULT_GPU_POWER_WATTS,
-    electricity_rate_kwh: float = DEFAULT_ELECTRICITY_RATE_KWH,
+    gpu_power_watts: float | None = None,
+    electricity_rate_kwh: float | None = None,
 ) -> float:
     """Calculate electricity cost for a GPU inference call.
 
@@ -74,8 +108,10 @@ def calculate_electricity_cost(
     """
     if duration_seconds <= 0:
         return 0.0
-    kwh = (gpu_power_watts / 1000.0) * (duration_seconds / 3600.0)
-    return round(kwh * electricity_rate_kwh, 8)
+    watts = gpu_power_watts if gpu_power_watts is not None else _default_gpu_power_watts()
+    rate = electricity_rate_kwh if electricity_rate_kwh is not None else _default_electricity_rate_kwh()
+    kwh = (watts / 1000.0) * (duration_seconds / 3600.0)
+    return round(kwh * rate, 8)
 
 
 class OllamaError(Exception):
@@ -99,8 +135,8 @@ class OllamaClient:
     """
 
     def __init__(self, base_url: str | None = None, model: str | None = None, timeout: int | None = None):
-        self.base_url = (base_url or DEFAULT_BASE_URL).rstrip("/")
-        self.model = model or DEFAULT_MODEL
+        self.base_url = (base_url or _default_base_url()).rstrip("/")
+        self.model = model or _default_model()
         # Default timeout is high (600s) because a 70B+ writer model can
         # easily take 3-10 minutes to generate a long blog post on a
         # single GPU. The old default of 120s silently dropped big-model
@@ -118,8 +154,8 @@ class OllamaClient:
         self._resolved_default: str | None = None  # Lazily resolved from installed models
 
         # Electricity cost parameters — updated at runtime via configure_electricity()
-        self._gpu_power_watts: float = DEFAULT_GPU_POWER_WATTS
-        self._electricity_rate_kwh: float = DEFAULT_ELECTRICITY_RATE_KWH
+        self._gpu_power_watts: float = _default_gpu_power_watts()
+        self._electricity_rate_kwh: float = _default_electricity_rate_kwh()
 
         logger.info("Ollama client initialized", base_url=self.base_url, model=self.model)
 
@@ -333,7 +369,7 @@ class OllamaClient:
             "model": model,
             "messages": messages,
             "stream": stream,
-            "options": {"temperature": temperature, "num_ctx": DEFAULT_NUM_CTX},
+            "options": {"temperature": temperature, "num_ctx": _default_num_ctx()},
         }
 
         if max_tokens:
@@ -355,6 +391,18 @@ class OllamaClient:
             # plain string and not have to defensively (result.get("text")
             # or "").
             text = msg.get("content") or ""
+            # Loud diagnostic: thinking models (qwen3, qwen3.5, glm-4.7)
+            # split their output into `message.content` (final answer) and
+            # `message.thinking` (reasoning trace). When num_predict is too
+            # small, the thinking phase eats the entire budget and content
+            # comes back empty. Without this log, callers only see "empty
+            # response" and fall back silently — invisible on the dashboard.
+            _thinking = msg.get("thinking") or ""
+            if not text and _thinking:
+                logger.warning(
+                    "Ollama thinking-model returned empty content with %d-char thinking trace — increase num_predict to give it room to produce the final answer after reasoning",
+                    len(_thinking),
+                )
 
             duration_s = result.get("total_duration", 0) / 1e9
             electricity_cost = calculate_electricity_cost(
@@ -404,7 +452,7 @@ class OllamaClient:
             "model": model,
             "messages": messages,
             "stream": False,
-            "options": {"temperature": temperature, "num_ctx": DEFAULT_NUM_CTX},
+            "options": {"temperature": temperature, "num_ctx": _default_num_ctx()},
         }
 
         if max_tokens:
@@ -556,7 +604,7 @@ class OllamaClient:
             "model": model,
             "messages": messages,
             "stream": True,
-            "options": {"temperature": temperature, "num_ctx": DEFAULT_NUM_CTX},
+            "options": {"temperature": temperature, "num_ctx": _default_num_ctx()},
         }
 
         if max_tokens:

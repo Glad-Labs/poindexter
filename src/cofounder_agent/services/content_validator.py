@@ -117,6 +117,98 @@ LEAKED_IMAGE_PROMPT_PATTERNS = [
     r"(?:^|\n)\s*\*(?:A |An |Imagine |Visual |Split|Close)[^*]{40,}\*",  # standalone `*A description...*`
 ]
 
+# First-person pronouns in titles. Matt 2026-04-11: "Another issue I found
+# is one of the posts uses we in the title." The pipeline is a solo + AI
+# operation — titles like "How We Built X" are corporate/team-speak that
+# implies a team the author doesn't have. It's the same class of problem
+# as FABRICATED_EXPERIENCE_PATTERNS (which handles the post body), just
+# applied specifically to the title line.
+#
+# Matched bare — an issue here is CRITICAL because titles are the first
+# thing readers see and sharing a title like "How We Built..." to an
+# audience that knows you're solo is an immediate credibility hit.
+FIRST_PERSON_TITLE_PATTERNS = [
+    r"\b(?:we|our|us|my|mine)\b",
+    # Standalone "I" needs a negative lookahead for "/" so "I/O" doesn't match.
+    r"\bi(?!/)(?:'ve|'m|'ll|'d)?\b",
+    r"\bwe(?:'ve|'re|'ll|'d)\b",
+]
+
+# Known-wrong facts are now loaded from the `fact_overrides` DB table.
+# Manage via pgAdmin or API — no redeployment needed.
+# Cached in-memory with a 5-minute TTL.
+import time as _time
+
+_fact_overrides_cache: list[tuple[str, str, str]] = []
+_fact_overrides_ts: float = 0.0
+_FACT_OVERRIDES_TTL = 300  # seconds
+
+
+def _load_fact_overrides_sync() -> list[tuple[str, str, str]]:
+    """Load active fact overrides from DB (sync, cached).
+
+    Returns list of (pattern, correct_fact, severity) tuples.
+    Falls back to empty list if DB unavailable.
+    """
+    global _fact_overrides_cache, _fact_overrides_ts
+    now = _time.time()
+    if _fact_overrides_cache and (now - _fact_overrides_ts) < _FACT_OVERRIDES_TTL:
+        return _fact_overrides_cache
+
+    try:
+        import asyncio
+        from services.db_service import get_db_service
+        db = get_db_service()
+        pool = getattr(db, "pool", None)
+        if not pool:
+            return _fact_overrides_cache
+
+        async def _fetch():
+            async with pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT pattern, correct_fact, severity FROM fact_overrides WHERE active = true"
+                )
+            return [(r["pattern"], r["correct_fact"], r["severity"]) for r in rows]
+
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # We're inside an async context — create a task won't work here,
+            # but validate_content is called synchronously from async code.
+            # Use the cached value and schedule a background refresh.
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(asyncio.run, _fetch())
+                result = future.result(timeout=5)
+        else:
+            result = asyncio.run(_fetch())
+
+        _fact_overrides_cache = result
+        _fact_overrides_ts = now
+        logger.debug("[VALIDATOR] Loaded %d fact overrides from DB", len(result))
+    except Exception as e:
+        logger.debug("[VALIDATOR] fact_overrides DB load failed (using cache): %s", e)
+
+    return _fact_overrides_cache
+
+
+# Legacy alias — kept so nothing breaks if referenced externally
+KNOWN_WRONG_HARDWARE_PATTERNS: list[tuple[str, str]] = []
+
+# Filler phrases the writer falls back on when it has nothing specific to
+# say. Every post I audited on 2026-04-11 had at least one of these. They
+# add nothing and signal "AI-generated" to any attentive reader. Warning
+# level — they hurt quality but don't rise to the fabrication bar.
+FILLER_PHRASE_PATTERNS = [
+    r"\bmany organizations have found\b",
+    r"\bmany companies have found\b",
+    r"\bmany (?:teams|developers|users) have discovered\b",
+    r"\bthe landscape (?:of .+? )?is constantly evolving\b",
+    r"\bin today'?s (?:fast-paced|rapidly evolving|digital|modern)\b",
+    r"\bthe (?:journey|possibilities) (?:is|are) (?:rewarding|endless)\b",
+    r"\bthe future of .+? is (?:here|local|bright|within reach)\b",
+    r"\bunlock the (?:full )?potential of\b",
+]
+
 # LLM image placeholder artifacts — [IMAGE-1: description], [IMAGE: ...], etc.
 IMAGE_PLACEHOLDER_PATTERNS = [
     r"\[IMAGE(?:-\d+)?:\s*[^\]]+\]",  # [IMAGE-1: description] or [IMAGE: description]
@@ -258,6 +350,63 @@ def validate_content(title: str, content: str, topic: str = "") -> ValidationRes
     issues.extend(_check_patterns(
         full_text, IMAGE_PLACEHOLDER_PATTERNS, "critical", "image_placeholder",
         "LLM image placeholder left in content: '{matched}'"
+    ))
+
+    # 7c. Known-wrong facts — loaded from DB (fact_overrides table).
+    # Each row has its own explanation so the rewrite prompt carries the
+    # correction, not just "you lied". Manageable via pgAdmin, no redeploy.
+    _fact_overrides = _load_fact_overrides_sync()
+    clean_full = _strip_html(full_text)
+    for _hw_pat, _hw_reason, _hw_sev in _fact_overrides:
+        for _hw_line_idx, _hw_line in enumerate(clean_full.split("\n"), 1):
+            for _hw_match in re.finditer(_hw_pat, _hw_line, re.IGNORECASE):
+                issues.append(ValidationIssue(
+                    severity=_hw_sev,
+                    category="known_wrong_fact",
+                    description=f"{_hw_reason} Matched: '{_hw_match.group(0)[:80]}'",
+                    matched_text=_hw_match.group(0)[:100],
+                    line_number=_hw_line_idx,
+                ))
+
+    # 7c-bis. First-person pronouns in TITLE only. The body has its own
+    # fabricated_experience check; this one specifically guards the headline.
+    #
+    # Strip quoted substrings first so idioms like "It Works on My Machine"
+    # don't false-positive. Both curly and straight quotes (single and
+    # double) are handled. If the pronoun survives quote-stripping, it's
+    # a real first-person claim.
+    _title_str = title or ""
+    _quote_stripped = re.sub(
+        r"""(?x)
+        (?: \"[^\"]*\"      # "double quoted"
+          | '[^']*'         # 'single quoted'
+          | \u201c[^\u201d]*\u201d   # curly-double quoted
+          | \u2018[^\u2019]*\u2019   # curly-single quoted
+        )
+        """,
+        " ",
+        _title_str,
+    )
+    for _fp_pat in FIRST_PERSON_TITLE_PATTERNS:
+        _fp_match = re.search(_fp_pat, _quote_stripped, re.IGNORECASE)
+        if _fp_match:
+            issues.append(ValidationIssue(
+                severity="critical",
+                category="first_person_title",
+                description=(
+                    f"Title contains first-person pronoun '{_fp_match.group(0)}'. "
+                    f"Titles must be third-person — Glad Labs is a solo+AI operation, "
+                    f"'How We Built X' implies a team that doesn't exist."
+                ),
+                matched_text=_title_str[:100],
+            ))
+            break  # one hit is enough; don't spam multiple issues for the same title
+
+    # 7d. Filler phrases — "many organizations have found...", "the journey
+    # is rewarding", etc. Warning level, score penalty only.
+    issues.extend(_check_patterns(
+        full_text, FILLER_PHRASE_PATTERNS, "warning", "filler_phrase",
+        "Filler phrase: '{matched}' — replace with a specific, concrete claim"
     ))
 
     # 8. Check title for impossible claims (numeric and written-out years)

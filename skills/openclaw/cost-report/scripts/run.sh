@@ -1,48 +1,82 @@
 #!/bin/bash
-# scripts/run.sh — Fetch and display cost/spending metrics
+# scripts/run.sh — Cost + budget + operational metrics for the Glad Labs pipeline.
+#
+# Hits two API endpoints:
+#   GET /api/metrics/costs/budget    — money spent vs limits
+#   GET /api/metrics/operational     — task counts and worker state
+#
+# The old /api/metrics root path was removed in the 2026-04 pipeline refactor.
+# If you see a 404 on either of the new paths, confirm the worker container is
+# running and that the routes are registered (routes/metrics_routes.py).
+
+set -euo pipefail
 
 FASTAPI_URL="${FASTAPI_URL:-http://localhost:8002}"
-POINDEXTER_KEY="${POINDEXTER_KEY:-${GLADLABS_KEY}}"
+POINDEXTER_KEY="${POINDEXTER_KEY:-${GLADLABS_KEY:-}}"
 
 if [ -z "$POINDEXTER_KEY" ]; then
-  echo "Error: POINDEXTER_KEY not configured (set POINDEXTER_KEY in your env)"
+  echo "Error: POINDEXTER_KEY not configured (set POINDEXTER_KEY or GLADLABS_KEY in your env)" >&2
   exit 1
 fi
 
-echo "Fetching cost metrics..."
+MODE="${1:-all}"
 
-RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "${FASTAPI_URL}/api/metrics" \
-  -H "Authorization: Bearer ${POINDEXTER_KEY}" \
-  -H "Content-Type: application/json")
+fetch() {
+  local path="$1"
+  curl -s -w "\n%{http_code}" -X GET "${FASTAPI_URL}${path}" \
+    -H "Authorization: Bearer ${POINDEXTER_KEY}" \
+    -H "Content-Type: application/json"
+}
 
-HTTP_CODE=$(echo "$RESPONSE" | tail -1)
-BODY=$(echo "$RESPONSE" | sed '$d')
-
-if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-  echo "=== Cost Report ==="
+print_section() {
+  local title="$1"
+  local body="$2"
+  echo "=== $title ==="
+  echo "$body" | python -m json.tool 2>/dev/null || echo "$body"
   echo ""
+}
 
-  # Extract cost-related fields if present
-  TOTAL_COST=$(echo "$BODY" | python -c "import sys,json; d=json.load(sys.stdin); print(d.get('total_cost') or d.get('cost_summary',{}).get('total','N/A'))" 2>/dev/null || echo "N/A")
-  echo "Total Cost: $TOTAL_COST"
+show_budget() {
+  local resp http body
+  resp=$(fetch "/api/metrics/costs/budget")
+  http=$(echo "$resp" | tail -1)
+  body=$(echo "$resp" | sed '$d')
+  if [ "$http" -ge 200 ] && [ "$http" -lt 300 ]; then
+    print_section "Budget" "$body"
+  else
+    echo "Error fetching /api/metrics/costs/budget: HTTP $http" >&2
+    echo "$body" >&2
+    return 1
+  fi
+}
 
-  # Show per-model breakdown if available
-  echo ""
-  echo "--- Per-Model Breakdown ---"
-  echo "$BODY" | python -c "
-import sys,json
-d=json.load(sys.stdin)
-costs = d.get('cost_by_model') or d.get('model_costs')
-if costs:
-    print(json.dumps(costs, indent=2))
-" 2>/dev/null
+show_operational() {
+  local resp http body
+  resp=$(fetch "/api/metrics/operational")
+  http=$(echo "$resp" | tail -1)
+  body=$(echo "$resp" | sed '$d')
+  if [ "$http" -ge 200 ] && [ "$http" -lt 300 ]; then
+    print_section "Operational Metrics" "$body"
+  else
+    echo "Error fetching /api/metrics/operational: HTTP $http" >&2
+    echo "$body" >&2
+    return 1
+  fi
+}
 
-  # Show full response as fallback
-  echo ""
-  echo "--- Full Metrics ---"
-  echo "$BODY" | python -m json.tool 2>/dev/null || echo "$BODY"
-else
-  echo "Error: API returned HTTP $HTTP_CODE"
-  echo "$BODY" | python -m json.tool 2>/dev/null || echo "$BODY"
-  exit 1
-fi
+case "$MODE" in
+  budget)
+    show_budget
+    ;;
+  operational)
+    show_operational
+    ;;
+  all|"")
+    show_budget
+    show_operational
+    ;;
+  *)
+    echo "Usage: run.sh [budget|operational|all]" >&2
+    exit 1
+    ;;
+esac

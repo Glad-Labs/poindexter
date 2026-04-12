@@ -259,29 +259,47 @@ class AdminDatabase(DatabaseServiceMixin):
     # SETTINGS MANAGEMENT
     # ========================================================================
 
+    # NOTE 2026-04-12: These methods used to query the `settings` table, which
+    # is an abandoned schema with 4 stale rows. The live configuration lives in
+    # `app_settings` (237+ rows, actively written by MCP, `site_config`, the
+    # worker, and migration 023 / 024). Migrating here so GET /api/settings
+    # and PUT /api/settings/{key} return the real data. Tracked during
+    # Gitea #192 slice work on 2026-04-12. The old `settings` table should
+    # be dropped in a follow-up migration once everything is verified.
+    #
+    # The `app_settings` schema is simpler than the old `settings` schema:
+    # it lacks `display_name`, `is_active`, `modified_at`, `updated_by`.
+    # `display_name` is dropped (the key itself is the display name).
+    # `is_active` is dropped (every row is always active — delete == hard
+    # delete now).
+    _APP_SETTINGS_COLUMNS = (
+        "id, key, value, category, description, is_secret, is_active, "
+        "created_at, updated_at"
+    )
+
     @log_query_performance(operation="get_setting", category="settings_retrieval")
-    async def get_setting(self, key: str) -> SettingResponse | None:
-        """
-        Get a setting by key (with 60s in-memory TTL cache).
+    async def get_setting(
+        self, key: str, include_inactive: bool = False
+    ) -> SettingResponse | None:
+        """Get a setting by key from `app_settings` (60s in-memory TTL cache).
 
-        Args:
-            key: Setting key identifier
-
-        Returns:
-            Setting dict or None if not found
+        By default, only active rows (`is_active = true`) are returned —
+        soft-deleted rows are hidden. Pass `include_inactive=True` for admin
+        or debug workflows that need to see disabled keys.
         """
-        # Check cache first
-        cached = self._settings_cache.get(key)
+        cache_key = f"{key}|{include_inactive}"
+        cached = self._settings_cache.get(cache_key)
         if cached and (time.monotonic() - cached["ts"]) < self._SETTINGS_CACHE_TTL:
             return cached["value"]
 
-        sql = "SELECT * FROM settings WHERE key = $1 AND is_active = true"
+        where = "key = $1" if include_inactive else "key = $1 AND is_active = true"
+        sql = f"SELECT {self._APP_SETTINGS_COLUMNS} FROM app_settings WHERE {where}"
 
         try:
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(sql, key)
                 result = ModelConverter.to_setting_response(row) if row else None
-                self._settings_cache[key] = {"value": result, "ts": time.monotonic()}
+                self._settings_cache[cache_key] = {"value": result, "ts": time.monotonic()}
                 return result
         except Exception as e:
             logger.error(
@@ -292,27 +310,32 @@ class AdminDatabase(DatabaseServiceMixin):
             return None
 
     @log_query_performance(operation="get_all_settings", category="settings_retrieval")
-    async def get_all_settings(self, category: str | None = None) -> list[SettingResponse]:
-        """
-        Get all active settings, optionally filtered by category (with 60s TTL cache).
+    async def get_all_settings(
+        self, category: str | None = None, include_inactive: bool = False
+    ) -> list[SettingResponse]:
+        """Get all settings from `app_settings`, optionally filtered by category.
 
-        Args:
-            category: Optional category filter
-
-        Returns:
-            List of setting dicts
+        By default, only active rows are returned. Pass `include_inactive=True`
+        to surface soft-deleted rows too (useful for admin/debug).
         """
-        cache_key = category or "__all__"
+        cache_key = f"{category or '__all__'}|{include_inactive}"
         cached = self._all_settings_cache.get(cache_key)
         if cached and (time.monotonic() - cached["ts"]) < self._SETTINGS_CACHE_TTL:
             return cached["value"]
 
+        where_clauses: list[str] = []
+        params: list[Any] = []
         if category:
-            sql = "SELECT * FROM settings WHERE category = $1 AND is_active = true ORDER BY key"
-            params = [category]
-        else:
-            sql = "SELECT * FROM settings WHERE is_active = true ORDER BY key"
-            params = []
+            where_clauses.append(f"category = ${len(params) + 1}")
+            params.append(category)
+        if not include_inactive:
+            where_clauses.append("is_active = true")
+
+        where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+        sql = (
+            f"SELECT {self._APP_SETTINGS_COLUMNS} FROM app_settings "
+            f"{where_sql} ORDER BY key"
+        )
 
         try:
             async with self.pool.acquire() as conn:
@@ -337,38 +360,33 @@ class AdminDatabase(DatabaseServiceMixin):
         display_name: str | None = None,
         description: str | None = None,
     ) -> bool:
-        """
-        Create or update a setting.
+        """Create or update a setting in `app_settings`.
 
-        Args:
-            key: Setting key identifier
-            value: Setting value (will be stored as text)
-            category: Optional category for grouping
-            display_name: Optional display name for UI
-            description: Optional description
+        Upserts always set `is_active = true` — writing a value is an
+        implicit "bring this setting back" operation. To disable a key
+        without losing the value, call `set_setting_active(key, False)`.
 
-        Returns:
-            True if successful
+        `display_name` is accepted for back-compat but ignored.
         """
+        del display_name
         try:
             value_str = json.dumps(value) if isinstance(value, (dict, list)) else str(value)
 
             async with self.pool.acquire() as conn:
                 await conn.execute(
                     """
-                    INSERT INTO settings (key, value, category, display_name, description, is_active, modified_at)
-                    VALUES ($1, $2, $3, $4, $5, true, NOW())
+                    INSERT INTO app_settings (key, value, category, description, is_active)
+                    VALUES ($1, $2, COALESCE($3, 'general'), COALESCE($4, ''), true)
                     ON CONFLICT (key) DO UPDATE SET
-                        value = $2,
-                        category = $3,
-                        display_name = $4,
-                        description = $5,
-                        modified_at = NOW()
+                        value       = EXCLUDED.value,
+                        category    = COALESCE(EXCLUDED.category, app_settings.category),
+                        description = COALESCE(EXCLUDED.description, app_settings.description),
+                        is_active   = true,
+                        updated_at  = NOW()
                     """,
                     key,
                     value_str,
                     category,
-                    display_name,
                     description,
                 )
                 self._invalidate_settings_cache()
@@ -382,24 +400,59 @@ class AdminDatabase(DatabaseServiceMixin):
             )
             return False
 
-    @log_query_performance(operation="delete_setting", category="settings_write")
-    async def delete_setting(self, key: str) -> bool:
-        """
-        Soft delete a setting (mark as inactive).
+    @log_query_performance(operation="set_setting_active", category="settings_write")
+    async def set_setting_active(self, key: str, active: bool) -> bool:
+        """Toggle `is_active` without touching the value.
 
-        Args:
-            key: Setting key identifier
-
-        Returns:
-            True if successful
+        Use this for fallback / A-B testing: flip the setting off to test
+        default behavior, flip it back on to restore. Returns True if a
+        row was found and updated, False if the key doesn't exist.
         """
         try:
             async with self.pool.acquire() as conn:
-                await conn.execute(
-                    "UPDATE settings SET is_active = false, modified_at = NOW() WHERE key = $1", key
+                result = await conn.execute(
+                    "UPDATE app_settings SET is_active = $2, updated_at = NOW() WHERE key = $1",
+                    key,
+                    active,
                 )
+                affected = int(result.split()[-1]) if result else 0
                 self._invalidate_settings_cache()
-                logger.info("Setting deleted: %s", key)
+                logger.info(
+                    "Setting %s %s (rows affected=%d)",
+                    key,
+                    "enabled" if active else "disabled",
+                    affected,
+                )
+                return affected > 0
+        except Exception as e:
+            logger.error(
+                "[set_setting_active] Failed for key=%s active=%s: %s",
+                key, active, e,
+                exc_info=True,
+            )
+            return False
+
+    @log_query_performance(operation="delete_setting", category="settings_write")
+    async def delete_setting(self, key: str, hard: bool = False) -> bool:
+        """Delete a setting.
+
+        Default is SOFT delete (sets `is_active = false`) — the row + value
+        stays recoverable via `set_setting_active(key, True)`. Pass
+        `hard=True` for tests and admin cleanup that needs the row
+        permanently removed.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                if hard:
+                    await conn.execute("DELETE FROM app_settings WHERE key = $1", key)
+                    logger.info("Setting hard-deleted: %s", key)
+                else:
+                    await conn.execute(
+                        "UPDATE app_settings SET is_active = false, updated_at = NOW() WHERE key = $1",
+                        key,
+                    )
+                    logger.info("Setting soft-deleted: %s", key)
+                self._invalidate_settings_cache()
                 return True
         except Exception as e:
             logger.error(
@@ -447,7 +500,7 @@ class AdminDatabase(DatabaseServiceMixin):
         Returns:
             True if setting exists and is active
         """
-        sql = "SELECT EXISTS(SELECT 1 FROM settings WHERE key = $1 AND is_active = true)"
+        sql = "SELECT EXISTS(SELECT 1 FROM app_settings WHERE key = $1)"
         try:
             async with self.pool.acquire() as conn:
                 result = await conn.fetchval(sql, key)

@@ -10,3 +10,10 @@ scrape_configs:
     metrics_path: /api/prometheus
     static_configs:
       - targets: ["worker:8002"]
+
+  # System-level metrics (CPU, RAM, disk, network)
+  # windows_exporter running on host at :9182
+  - job_name: windows
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["host.docker.internal:9182"]

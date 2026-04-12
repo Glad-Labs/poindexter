@@ -508,3 +508,167 @@ class TestFillerIntros:
         content = "Strong hook about concrete problem. " + ("Body text. " * 60) + "In this post, deep content.\n"
         result = validate_content("Title", content, "topic")
         assert not any(i.category == "filler_intro" for i in result.issues)
+
+
+# ============================================================================
+# Known-Wrong Hardware Facts (added 2026-04-11, Gitea #192)
+# ============================================================================
+
+
+class TestKnownWrongHardwareFacts:
+    """Regression tests for the RTX 5090 24GB VRAM false claim.
+
+    The writer (gemma3:27b) has a training cutoff before the 5090 launch
+    and "remembers" it as having 24GB VRAM. The actual spec is 32GB.
+    This validator catches that specific false claim as a CRITICAL issue.
+
+    Patterns are now loaded from the fact_overrides DB table at runtime.
+    Tests mock _load_fact_overrides_sync to inject the patterns without a DB.
+    """
+
+    # The same patterns that are seeded in the fact_overrides table
+    _TEST_OVERRIDES = [
+        (
+            r"(?:RTX\s*)?5090[^.]{0,80}?(?:24\s*GB|24GB|24\s*gigabytes)(?!\s*(?:/|per|plus))",
+            "RTX 5090 has 32GB VRAM, not 24GB.",
+            "critical",
+        ),
+        (
+            r"(?:24\s*GB|24GB|24\s*gigabytes)(?:\s+of)?\s+(?:VRAM|video\s+memory|GDDR\w*)[^.]{0,80}?(?:RTX\s*)?5090",
+            "RTX 5090 has 32GB VRAM, not 24GB.",
+            "critical",
+        ),
+    ]
+
+    @pytest.fixture(autouse=True)
+    def _mock_fact_overrides(self, monkeypatch):
+        """Inject test patterns without hitting the DB."""
+        import services.content_validator as cv
+        monkeypatch.setattr(cv, "_load_fact_overrides_sync", lambda: self._TEST_OVERRIDES)
+
+    def test_rtx_5090_24gb_detected(self):
+        content = "The NVIDIA GeForce RTX 5090, with its massive VRAM (24GB), allows local inference."
+        result = validate_content("Title", content, "topic")
+        hw_issues = [i for i in result.issues if i.category == "known_wrong_fact"]
+        assert len(hw_issues) >= 1
+        assert result.passed is False  # critical = blocks approval
+
+    def test_rtx_5090_24gb_reversed_order(self):
+        """'24GB VRAM on the 5090' (number before product name) is also caught."""
+        content = "With 24GB of VRAM, the RTX 5090 is a beast for local AI."
+        result = validate_content("Title", content, "topic")
+        hw_issues = [i for i in result.issues if i.category == "known_wrong_fact"]
+        assert len(hw_issues) >= 1
+
+    def test_rtx_5090_32gb_is_fine(self):
+        """Correct spec (32GB) should NOT be flagged."""
+        content = "The RTX 5090 ships with 32GB GDDR7 VRAM for local LLM inference."
+        result = validate_content("Title", content, "topic")
+        hw_issues = [i for i in result.issues if i.category == "known_wrong_fact"]
+        assert hw_issues == []
+
+    def test_false_positive_cost_not_triggered(self):
+        """'5090 costs $24,000' should NOT match (24 is a dollar amount, not GB)."""
+        content = "The RTX 5090 system costs approximately $24,000 fully loaded."
+        result = validate_content("Title", content, "topic")
+        hw_issues = [i for i in result.issues if i.category == "known_wrong_fact"]
+        assert hw_issues == []
+
+    def test_false_positive_other_gpu_not_triggered(self):
+        """'RTX 4090 24GB' should NOT match (4090 actually has 24GB — it's correct)."""
+        content = "The RTX 4090 with its 24GB VRAM was the previous king of consumer AI."
+        result = validate_content("Title", content, "topic")
+        hw_issues = [i for i in result.issues if i.category == "known_wrong_fact"]
+        assert hw_issues == []
+
+
+# ============================================================================
+# First-Person Title Patterns (added 2026-04-11)
+# ============================================================================
+
+
+class TestFirstPersonTitle:
+    """Regression tests for the first-person-pronoun title validator.
+
+    Matt: 'Another issue I found is one of the posts uses we in the title.'
+    The pipeline is a solo+AI operation — titles like "How We Built X"
+    imply a team that doesn't exist. Marked as CRITICAL.
+    """
+
+    def test_how_we_built_caught(self):
+        result = validate_content("How We Built a Self-Operating Content Business", "body", "")
+        fp = [i for i in result.issues if i.category == "first_person_title"]
+        assert len(fp) == 1
+        assert result.passed is False
+
+    def test_my_journey_caught(self):
+        result = validate_content("My Journey Into Local LLMs", "body", "")
+        fp = [i for i in result.issues if i.category == "first_person_title"]
+        assert len(fp) == 1
+
+    def test_our_caught(self):
+        result = validate_content("How We Reduced Our Cloud Bill by 80%", "body", "")
+        fp = [i for i in result.issues if i.category == "first_person_title"]
+        assert len(fp) >= 1
+
+    def test_works_on_my_machine_idiom_not_caught(self):
+        """Quoted idiom 'Works on My Machine' should be stripped before matching."""
+        result = validate_content(
+            "Beyond 'Works on My Machine': The Architecture of a Bulletproof PostgreSQL System",
+            "body", "",
+        )
+        fp = [i for i in result.issues if i.category == "first_person_title"]
+        assert fp == []
+
+    def test_it_works_on_my_machine_double_quotes_not_caught(self):
+        result = validate_content(
+            'The "It Works on My Machine" Myth: How to Ship FastAPI Apps',
+            "body", "",
+        )
+        fp = [i for i in result.issues if i.category == "first_person_title"]
+        assert fp == []
+
+    def test_clean_third_person_title_ok(self):
+        result = validate_content("Why VRAM Bandwidth Trumps Compute", "body", "")
+        fp = [i for i in result.issues if i.category == "first_person_title"]
+        assert fp == []
+
+    def test_io_performance_not_caught(self):
+        """'I/O' in a title should NOT trigger the 'I' pattern."""
+        result = validate_content("Optimizing I/O Performance for Database Workloads", "body", "")
+        fp = [i for i in result.issues if i.category == "first_person_title"]
+        assert fp == []
+
+
+# ============================================================================
+# Filler Phrase Patterns (added 2026-04-11)
+# ============================================================================
+
+
+class TestFillerPhrases:
+    """Test filler-phrase detector in the body text."""
+
+    def test_many_organizations_have_found(self):
+        content = "Many organizations have found that self-hosting is cost-effective. Details here."
+        result = validate_content("Title", content, "topic")
+        filler = [i for i in result.issues if i.category == "filler_phrase"]
+        assert len(filler) >= 1
+        assert result.passed is True  # warning, not critical
+
+    def test_future_of_ai_is_here(self):
+        content = "The future of AI is here and it's running on local hardware."
+        result = validate_content("Title", content, "topic")
+        filler = [i for i in result.issues if i.category == "filler_phrase"]
+        assert len(filler) >= 1
+
+    def test_unlock_the_potential(self):
+        content = "Unlock the full potential of your local GPU with these techniques."
+        result = validate_content("Title", content, "topic")
+        filler = [i for i in result.issues if i.category == "filler_phrase"]
+        assert len(filler) >= 1
+
+    def test_concrete_claim_not_flagged(self):
+        content = "Quantized 4-bit models run at 45 tokens/second on the RTX 5090."
+        result = validate_content("Title", content, "topic")
+        filler = [i for i in result.issues if i.category == "filler_phrase"]
+        assert filler == []

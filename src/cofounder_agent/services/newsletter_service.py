@@ -24,7 +24,13 @@ from services.site_config import site_config
 
 logger = get_logger(__name__)
 
-SITE_URL = site_config.get("site_url", "")
+
+def _site_url() -> str:
+    """Return the canonical site URL. Reads site_config lazily because
+    this module may be imported before site_config has been populated
+    from the DB. Fails loud (RuntimeError) if the setting is missing —
+    silently sending newsletters with broken links would be worse."""
+    return site_config.require("site_url")
 
 
 def _cfg() -> dict:
@@ -60,8 +66,8 @@ async def _get_active_subscribers(pool) -> list[dict]:
 def _build_html(title: str, excerpt: str, slug: str, first_name: str | None = None) -> str:
     """Build a simple, clean newsletter email body."""
     greeting = f"Hi {first_name}," if first_name else "Hi there,"
-    post_url = f"{SITE_URL}/posts/{slug}"
-    unsubscribe_url = f"{SITE_URL}/newsletter/unsubscribe"
+    post_url = f"{_site_url()}/posts/{slug}"
+    unsubscribe_url = f"{_site_url()}/newsletter/unsubscribe"
 
     return f"""\
 <!DOCTYPE html>
@@ -130,7 +136,7 @@ async def _send_via_smtp(cfg: dict, to_email: str, subject: str, html: str) -> b
         msg["From"] = f"{cfg['from_name']} <{cfg['from_email']}>"
         msg["To"] = to_email
         msg["Subject"] = subject
-        msg["List-Unsubscribe"] = f"<{SITE_URL}/newsletter/unsubscribe>"
+        msg["List-Unsubscribe"] = f"<{_site_url()}/newsletter/unsubscribe>"
         msg.attach(MIMEText(html, "html"))
 
         await aiosmtplib.send(

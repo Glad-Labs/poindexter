@@ -5,7 +5,8 @@ description = "Poindexter backend — FastAPI + specialized AI agents. Built by 
 authors = ["Matthew M. Gladding <mattg@gladlabs.io>"]
 readme = "README.md"
 packages = [
-    { include = "cofounder_agent", from = "." }
+    { include = "cofounder_agent", from = "." },
+    { include = "poindexter", from = "." }
 ]
 
 [tool.poetry.dependencies]
@@ -76,7 +77,7 @@ cryptography = ">=46.0.5"  # CVE GHSA-r6ph-v2qm-q3c2 fix — minimum safe versio
 sqladmin = "^0.24"
 email-validator = "^2.3.0"
 resend = "^2.27.0"
-duckduckgo-search = "^8.1.1"
+ddgs = "^9.0"
 beautifulsoup4 = "^4.12"
 edge-tts = "^7.2.8"
 boto3 = "^1.42.84"
@@ -112,6 +113,9 @@ ipython = "^8.0"
 
 [tool.poetry.scripts]
 api = "cofounder_agent.main:app"
+# Plain `poindexter <command>` CLI (no `python -m` required).
+# Same entry point as python -m poindexter — routes through app.main.
+poindexter = "poindexter.cli.app:main"
 
 [build-system]
 requires = ["poetry-core"]

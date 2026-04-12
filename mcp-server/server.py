@@ -15,12 +15,14 @@ Usage:
     # Or via uvx in Claude desktop config
 """
 
+import hashlib
 import json
 import logging
 import os
 import subprocess
 import urllib.parse
 import urllib.request
+from datetime import datetime, timezone
 from typing import Any
 
 import asyncpg
@@ -431,8 +433,118 @@ async def recall_decision(topic: str) -> str:
 
 @mcp.tool()
 async def find_similar_posts(topic: str, top_k: int = 5) -> str:
-    """Find published blog posts similar to a topic. Use before creating new content to avoid duplicates."""
-    return await search_memory(topic, top_k=top_k, source_filter="post")
+    """Find published blog posts similar to a topic. Use before creating new content to avoid duplicates.
+
+    Filters to `source_table='posts'`. (Was `source_filter="post"` singular until
+    2026-04-11 — that silently returned zero rows every call because the actual
+    DB value is plural. Caught and fixed during shared-memory architecture work.)
+    """
+    return await search_memory(topic, top_k=top_k, source_filter="posts")
+
+
+@mcp.tool()
+async def store_memory(
+    text: str,
+    writer: str = "claude-code",
+    source_id: str = "",
+    tags: str = "",
+    source_table: str = "memory",
+) -> str:
+    """Write a memory note directly into the shared pgvector store.
+
+    Use this when an agent learns something worth recording DURING a session —
+    a decision, a user preference, a non-obvious finding — and wants it to be
+    immediately queryable from every other tool (Claude Code, OpenClaw, the
+    worker's RAG context, the poindexter CLI). Skips the file-based flow
+    entirely; the note is embedded and indexed before this function returns.
+
+    The `writer` column added in migration 024 makes origin explicit, so two
+    different tools writing to source_id="shared/decision_123.md" under
+    different writers don't collide.
+
+    Args:
+        text: The full text to store. Usually 200-2000 chars. Will be embedded
+              by nomic-embed-text (768 dim).
+        writer: Origin label. Standard values: "claude-code", "openclaw",
+                "worker", "user". New writers are fine — just stay consistent.
+        source_id: Stable identifier for this memory entry. If empty, a
+                   timestamp-based ID is generated. Use for dedup: calling
+                   store_memory with the same source_id updates the existing
+                   row in place rather than creating a duplicate.
+        tags: Comma-separated tag list for metadata (e.g. "decision,pipeline,2026-q2").
+        source_table: Top-level namespace. Default "memory" for notes; use
+                      "audit" for sync-state events etc. Don't write to
+                      "posts"/"issues" — those are managed by the auto-embed job.
+    """
+    try:
+        text = (text or "").strip()
+        if not text:
+            return "store_memory failed: text is empty."
+        if not writer:
+            return "store_memory failed: writer is required (e.g. 'claude-code', 'openclaw', 'user')."
+
+        if not source_id:
+            # Generate a stable-ish id so duplicate calls in quick succession
+            # get a unique row. Use writer + epoch seconds + hash of text.
+            epoch = int(datetime.now(timezone.utc).timestamp())
+            short = hashlib.sha256(text.encode("utf-8")).hexdigest()[:10]
+            source_id = f"{writer}/adhoc-{epoch}-{short}.md"
+
+        content_hash_value = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        embedding = await _embed_text(text)
+        if not embedding or len(embedding) != 768:
+            return f"store_memory failed: got {len(embedding) if embedding else 0}-dim vector from embedder (expected 768)."
+
+        metadata: dict[str, Any] = {
+            "origin": writer,
+            "writer": writer,
+            "stored_via": "mcp.store_memory",
+            "stored_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if tags:
+            metadata["tags"] = [t.strip() for t in tags.split(",") if t.strip()]
+
+        vector_str = "[" + ",".join(str(v) for v in embedding) + "]"
+        preview = text[:500].replace("\n", " ").strip()
+        now = datetime.now(timezone.utc)
+
+        pool = await _get_pool()
+        await pool.execute(
+            """
+            INSERT INTO embeddings (source_table, source_id, chunk_index,
+                                    content_hash, text_preview,
+                                    embedding_model, embedding, metadata,
+                                    writer, origin_path,
+                                    created_at, updated_at)
+            VALUES ($1, $2, 0, $3, $4, $5, $6::vector, $7::jsonb, $8, $9, $10, $10)
+            ON CONFLICT (source_table, source_id, chunk_index, embedding_model)
+            DO UPDATE SET content_hash = EXCLUDED.content_hash,
+                          text_preview = EXCLUDED.text_preview,
+                          embedding    = EXCLUDED.embedding,
+                          metadata     = EXCLUDED.metadata,
+                          writer       = EXCLUDED.writer,
+                          origin_path  = EXCLUDED.origin_path,
+                          updated_at   = EXCLUDED.updated_at
+            """,
+            source_table,
+            source_id,
+            content_hash_value,
+            preview,
+            EMBED_MODEL,
+            vector_str,
+            json.dumps(metadata),
+            writer,
+            source_id,
+            now,
+        )
+
+        return (
+            f"Stored: [{source_table}/{writer}] {source_id}\n"
+            f"  {len(text)} chars, 768-dim vector, content_hash={content_hash_value[:12]}...\n"
+            f"  Queryable via search_memory immediately."
+        )
+    except Exception as e:
+        return f"store_memory failed: {e}"
 
 
 @mcp.tool()

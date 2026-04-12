@@ -76,9 +76,13 @@ class TestRouteManifestStructure:
         for entry in _COORDINATOR_ROUTES:
             assert entry[2] in worker_keys, f"Coordinator route {entry[2]} not in worker"
 
-    def test_worker_manifest_has_9_routes(self):
-        """Worker manifest should have exactly 9 route entries."""
-        assert len(_WORKER_ROUTES) == 9
+    def test_worker_manifest_has_11_routes(self):
+        """Worker manifest should have exactly 11 route entries.
+
+        Updated 2026-04-12: added pipeline_events (observability) +
+        memory_dashboard (shared-memory stats/search) routes.
+        """
+        assert len(_WORKER_ROUTES) == 11
 
     def test_worker_approval_router_is_first(self):
         """Approval router should be first in the worker manifest."""
