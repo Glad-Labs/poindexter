@@ -98,9 +98,9 @@ class TestRejectTask:
                 },
             )
         data = resp.json()
-        assert data["status"] == "failed_revisions_requested"
+        assert data["status"] == "rejected_retry"
 
-    def test_reject_without_revisions_sets_failed_status(self):
+    def test_reject_without_revisions_sets_rejected_final_status(self):
         mock_db = make_mock_db()
         mock_db.get_task = AsyncMock(return_value=AWAITING_TASK)
         client = TestClient(_build_app(mock_db))
@@ -115,7 +115,7 @@ class TestRejectTask:
                 },
             )
         data = resp.json()
-        assert data["status"] == "failed"
+        assert data["status"] == "rejected_final"
 
     def test_reject_nonexistent_task_returns_404(self):
         mock_db = make_mock_db()

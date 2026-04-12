@@ -151,18 +151,6 @@ class Site(Base):
     updated_at = Column(DateTime)
 
 
-class Setting(Base):
-    __tablename__ = "settings"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    key = Column(String(255), unique=True)
-    value = Column(JSONB)
-    description = Column(Text)
-    updated_by = Column(String(255))
-    created_at = Column(DateTime)
-    updated_at = Column(DateTime)
-
-
 class WebhookEvent(Base):
     __tablename__ = "webhook_events"
 
