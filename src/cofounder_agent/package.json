@@ -1,6 +1,6 @@
 {
   "name": "poindexter-cofounder-agent",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Poindexter cofounder agent — FastAPI backend with autonomous agents, multi-provider LLM routing, and comprehensive error handling. Built by Glad Labs LLC.",
   "license": "AGPL-3.0-or-later",
