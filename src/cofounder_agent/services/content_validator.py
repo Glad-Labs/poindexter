@@ -157,24 +157,29 @@ def _load_fact_overrides_sync() -> list[tuple[str, str, str]]:
 
     try:
         import asyncio
-        from services.db_service import get_db_service
-        db = get_db_service()
-        pool = getattr(db, "pool", None)
-        if not pool:
+        import os
+
+        db_url = os.getenv("DATABASE_URL", "")
+        if not db_url:
             return _fact_overrides_cache
 
         async def _fetch():
-            async with pool.acquire() as conn:
+            import asyncpg
+            conn = await asyncpg.connect(db_url, timeout=5)
+            try:
                 rows = await conn.fetch(
                     "SELECT pattern, correct_fact, severity FROM fact_overrides WHERE active = true"
                 )
-            return [(r["pattern"], r["correct_fact"], r["severity"]) for r in rows]
+                return [(r["pattern"], r["correct_fact"], r["severity"]) for r in rows]
+            finally:
+                await conn.close()
 
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # We're inside an async context — create a task won't work here,
-            # but validate_content is called synchronously from async code.
-            # Use the cached value and schedule a background refresh.
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(asyncio.run, _fetch())
