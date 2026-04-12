@@ -208,7 +208,10 @@ def send_discord(message: str, webhook_url: str | None = None):
         req = urllib.request.Request(
             url,
             data=payload,
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "PoinDexterBrain/1.0",
+            },
         )
         urllib.request.urlopen(req, timeout=10)
     except Exception as e:
