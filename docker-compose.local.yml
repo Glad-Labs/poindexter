@@ -228,9 +228,13 @@ services:
       COMPANY_NAME: ${COMPANY_NAME:-Glad Labs}
       HOST_HOME: ${HOST_HOME:-${USERPROFILE:-/root}}
       API_TOKEN: ${API_TOKEN:?API_TOKEN must be set}
+      PYTHONDONTWRITEBYTECODE: "1"
     volumes:
       - ${USERPROFILE:-.}/.poindexter:/root/.poindexter
       - ${USERPROFILE:-.}/Downloads/glad-labs-generated-images:/root/Downloads/glad-labs-generated-images
+      # Dev mount: edit Python files on host, restart worker to pick up changes.
+      # No docker cp needed. Read-only to prevent __pycache__ writes to source.
+      - ./src/cofounder_agent:/app:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
