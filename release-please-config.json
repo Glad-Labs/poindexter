@@ -32,7 +32,8 @@
           "path": "src/cofounder_agent/package.json",
           "jsonpath": "$.version"
         }
-      ]
+      ],
+      "versioning-strategy": "always-bump-minor"
     }
   },
   "changelog-sections": [
