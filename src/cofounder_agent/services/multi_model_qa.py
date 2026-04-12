@@ -243,14 +243,28 @@ class MultiModelQA:
         )
         reviews.append(validator_review)
 
-        # If programmatic validator finds critical issues, reject immediately
-        if not validation.passed:
+        # If programmatic validator finds critical issues, check whether they
+        # are ONLY known_wrong_fact issues. Those get a second chance via web
+        # fact-check — the validator's regex might be stale while the web has
+        # the truth. All other critical categories reject immediately.
+        _fact_only_rejection = (
+            not validation.passed
+            and all(
+                i.severity != "critical" or i.category == "known_wrong_fact"
+                for i in validation.issues
+            )
+        )
+        if not validation.passed and not _fact_only_rejection:
             logger.warning("[MULTI_QA] Programmatic validator rejected: %d critical issues", validation.critical_count)
             return MultiModelResult(
                 approved=False,
                 final_score=max(0, 100 - validation.score_penalty),
                 reviews=reviews,
                 validation=validation,
+            )
+        if _fact_only_rejection:
+            logger.info(
+                "[MULTI_QA] Validator flagged known_wrong_fact only — deferring to web fact-check"
             )
 
         # 2. Cross-model review using a DIFFERENT provider than the writer
@@ -303,7 +317,19 @@ class MultiModelQA:
         if image_review is not None:
             reviews.append(image_review)
 
-        # 2e. Rendered-preview gate — the final "yup looks good"
+        # 2e. Web fact-check gate — uses DuckDuckGo to verify claims
+        # that the LLM critic or validator flagged. Catches training-
+        # cutoff false positives: if the web confirms a claim about a
+        # post-cutoff product, the gate overrides the rejection.
+        web_fc_enabled = True
+        if self.settings:
+            web_fc_enabled = (await self.settings.get("qa_web_factcheck_enabled") or "true").lower() != "false"
+        if web_fc_enabled:
+            web_review = await self._web_fact_check(title, topic, content, reviews)
+            if web_review is not None:
+                reviews.append(web_review)
+
+        # 2f. Rendered-preview gate — the final "yup looks good"
         # sanity check. Screenshots the post's /preview/{hash} URL
         # via Playwright-chromium and feeds the PNG to the vision
         # model to catch layout breaks, missing CSS, overflowing
@@ -337,6 +363,7 @@ class MultiModelQA:
                 "ollama": critic_weight,
                 "consistency_gate": gate_weight,
                 "vision_gate": gate_weight,
+                "web_factcheck": gate_weight,
             }
             total_weight = sum(weights.get(r.provider, 0.5) for r in scored_reviews)
             final_score = sum(
@@ -368,6 +395,21 @@ class MultiModelQA:
         if critic_skipped:
             # Validator-only: use its raw score, don't pretend cross-model passed
             final_score = validator_review.score
+
+        # If the validator had a fact-only rejection, check whether the web
+        # fact-check gate rescued it. If web verified the claims (approved=True),
+        # override the validator's rejection. If not, hard reject.
+        if _fact_only_rejection:
+            web_fc = next((r for r in reviews if r.reviewer == "web_factcheck"), None)
+            if web_fc and web_fc.approved:
+                logger.info("[MULTI_QA] Web fact-check overrides known_wrong_fact rejection")
+                # Restore validator approval since web confirmed the facts
+                validator_review.approved = True
+                all_passed = not any(_reviewer_vetoes(r) for r in reviews)
+            else:
+                logger.warning("[MULTI_QA] Web fact-check did NOT verify — upholding rejection")
+                all_passed = False
+
         approved = all_passed and final_score >= approval_threshold
 
         result = MultiModelResult(
@@ -408,7 +450,28 @@ class MultiModelQA:
             except Exception:
                 pass
         if model_override != fallback_model:
-            logger.info("[MULTI_QA] Primary critic failed, trying fallback model: %s", fallback_model)
+            logger.warning(
+                "[MULTI_QA] Primary critic %s failed (empty response or error), falling back to %s",
+                model_override, fallback_model,
+            )
+            # Loud audit event — makes critic fallback visible on the
+            # /pipeline dashboard. Without this, a thinking-mode critic
+            # that eats its own token budget silently degrades every
+            # run and nobody notices.
+            try:
+                from services.audit_log import audit_log_bg
+                audit_log_bg(
+                    "critic_fallback", "multi_model_qa",
+                    {
+                        "configured_critic": model_override or "default",
+                        "fallback_critic": fallback_model,
+                        "reason": "primary_returned_empty_or_errored",
+                        "stage": "cross_model_qa",
+                    },
+                    severity="warning",
+                )
+            except Exception as _exc:
+                logger.debug("critic_fallback audit failed: %s", _exc)
             fallback_result = await self._review_with_ollama(
                 title, content, topic,
                 model_override=fallback_model,
@@ -1111,5 +1174,132 @@ class MultiModelQA:
             feedback=feedback,
             provider="vision_gate",
         )
+
+    async def _web_fact_check(
+        self,
+        title: str,
+        topic: str,
+        content: str,
+        existing_reviews: list[ReviewerResult],
+    ) -> ReviewerResult | None:
+        """Web-grounded fact check for claims the LLM critic can't verify.
+
+        Extracts product names, version numbers, and spec claims from the
+        content, runs a quick DuckDuckGo search, and checks whether the
+        web corroborates or contradicts them. This is the fix for the
+        training-cutoff problem: local models reject "RTX 5090 has 32GB
+        VRAM" because they were trained before release, but a web search
+        confirms it in seconds.
+
+        Returns a ReviewerResult with provider='web_factcheck'.
+        Returns None if no checkable claims found or search fails.
+        """
+        import re
+
+        try:
+            from services.web_research import WebResearcher
+
+            # Extract product/hardware claims worth verifying.
+            # Look for patterns like "RTX 5090", "Llama 4", version numbers,
+            # and spec claims (e.g., "32GB VRAM", "192GB/s bandwidth").
+            product_patterns = [
+                # GPU/hardware: "RTX 5090", "RX 9070", "M4 Ultra"
+                r"\b(?:RTX|GTX|RX|Arc|M\d)\s*\d{3,5}(?:\s*(?:Ti|XT|Super|Ultra|Max|Pro))?\b",
+                # Specific spec claims: "32GB VRAM", "256-bit bus"
+                r"\b\d+\s*(?:GB|TB|MHz|GHz)\s+(?:VRAM|RAM|memory|DDR\w*|GDDR\w*|bandwidth|bus)\b",
+                # Software versions: "Python 3.14", "Node.js 24", "CUDA 13"
+                r"\b(?:Python|Node\.?js?|CUDA|PyTorch|TensorFlow|Docker|Kubernetes)\s+\d+(?:\.\d+)*\b",
+                # LLM models: "Llama 4", "Gemma 3", "Qwen 3.5"
+                r"\b(?:Llama|Gemma|Qwen|Mistral|Phi|DeepSeek|Command R)\s*\d+(?:\.\d+)*\b",
+            ]
+
+            claims = set()
+            clean = re.sub(r"<[^>]+>", "", content)
+            for pat in product_patterns:
+                for m in re.finditer(pat, clean, re.IGNORECASE):
+                    claims.add(m.group(0).strip())
+
+            if not claims:
+                logger.debug("[WEB_FACTCHECK] No product/spec claims found, skipping")
+                return None
+
+            # Also check if any reviewer flagged uncertain/fabrication concerns
+            critic_concerned = any(
+                not r.approved or r.score < 75
+                for r in existing_reviews
+                if r.provider == "ollama"
+            )
+
+            # Limit to 3 most important claims to keep searches fast
+            claims_list = sorted(claims)[:3]
+            logger.info(
+                "[WEB_FACTCHECK] Verifying %d claims: %s (critic_concerned=%s)",
+                len(claims_list), claims_list, critic_concerned,
+            )
+
+            researcher = WebResearcher()
+            verified = 0
+            contradicted = 0
+            evidence_lines = []
+
+            for claim in claims_list:
+                # Build a focused search query
+                query = f"{claim} specs official"
+                results = await researcher.search(query, num_results=3)
+                if not results:
+                    evidence_lines.append(f"  {claim}: no web results found")
+                    continue
+
+                # Check if any result's content/snippet mentions the claim
+                combined_text = " ".join(
+                    (r.get("snippet", "") + " " + r.get("content", ""))[:500]
+                    for r in results
+                ).lower()
+                claim_lower = claim.lower()
+
+                # Extract the key terms from the claim for fuzzy matching
+                claim_terms = [t for t in re.split(r"\s+", claim_lower) if len(t) > 2]
+                matches = sum(1 for t in claim_terms if t in combined_text)
+                match_ratio = matches / len(claim_terms) if claim_terms else 0
+
+                if match_ratio >= 0.6:
+                    verified += 1
+                    evidence_lines.append(f"  {claim}: VERIFIED (web confirms)")
+                else:
+                    # Not necessarily contradicted — might just be too niche
+                    evidence_lines.append(f"  {claim}: unverified (weak web signal)")
+
+            total = len(claims_list)
+            if total == 0:
+                return None
+
+            score = 100 * verified / total if total > 0 else 50
+            # Boost score if nothing was actively contradicted
+            if contradicted == 0 and score < 70:
+                score = max(score, 60)  # "inconclusive" floor
+
+            passed = score >= 50
+            evidence_str = "\n".join(evidence_lines)
+            feedback = (
+                f"Web fact-check: {verified}/{total} claims verified, "
+                f"{contradicted} contradicted.\n{evidence_str}"
+            )[:500]
+
+            logger.info(
+                "[WEB_FACTCHECK] Result: %d/%d verified, score=%.0f, passed=%s",
+                verified, total, score, passed,
+            )
+
+            return ReviewerResult(
+                reviewer="web_factcheck",
+                approved=passed,
+                score=score,
+                feedback=feedback,
+                provider="web_factcheck",
+            )
+
+        except Exception as e:
+            logger.warning("[WEB_FACTCHECK] Failed (non-fatal): %s", e)
+            return None
 
     # _review_with_gemini removed — Ollama-only policy

@@ -1,4 +1,4 @@
-# Grafana Contact Points — Telegram notifications for Glad Labs brain DB alerts
+# Grafana Contact Points — Telegram + Discord fallback for Glad Labs alerts
 # Mounted into Grafana via docker-compose at /etc/grafana/provisioning/alerting/
 apiVersion: 1
 
@@ -13,3 +13,11 @@ contactPoints:
           chatid: "5318613610"
           parse_mode: HTML
           disable_notifications: false
+  - orgId: 1
+    name: Glad Labs Discord
+    receivers:
+      - uid: gladlabs-discord-ops
+        type: discord
+        settings:
+          url: "https://discord.com/api/webhooks/1490741146589073408/RHrfkeUBWBVz6oFiwwu_8atmadxL47mCosQHPl-8Hl8qb29fs7GXYAuQCRntGh5YFQag"
+          use_discord_username: true

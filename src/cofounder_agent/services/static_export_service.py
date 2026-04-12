@@ -79,7 +79,8 @@ async def _fetch_published_posts(pool, include_content: bool = False) -> list[di
         rows = await conn.fetch(f"""
             SELECT id, title, slug, excerpt, featured_image_url, cover_image_url,
                    author_id, category_id, status, seo_title, seo_description,
-                   seo_keywords, published_at, created_at, updated_at
+                   seo_keywords, published_at, created_at, updated_at,
+                   distributed_at
                    {content_col}
             FROM posts
             WHERE status = 'published'
@@ -137,6 +138,7 @@ def _post_summary(post: dict) -> dict:
         "published_at": post["published_at"].isoformat() if post.get("published_at") else None,
         "created_at": post["created_at"].isoformat() if post.get("created_at") else None,
         "updated_at": post["updated_at"].isoformat() if post.get("updated_at") else None,
+        "distributed_at": post["distributed_at"].isoformat() if post.get("distributed_at") else None,
     }
 
 
@@ -168,9 +170,22 @@ def _post_full(post: dict) -> dict:
 
 
 def _build_json_feed(posts: list[dict], site_url: str, site_title: str) -> dict:
-    """Build a JSON Feed 1.1 compliant feed."""
+    """Build a JSON Feed 1.1 compliant feed.
+
+    Only includes posts with distributed_at set AND published after the
+    feed cutoff (2026-04-12).  This prevents dlvr.it from re-distributing
+    old/migrated posts.
+    """
+    from datetime import datetime, timezone
+    FEED_CUTOFF = datetime(2026, 4, 12, tzinfo=timezone.utc)
+    feed_posts = [
+        p for p in posts
+        if p.get("distributed_at")
+        and p.get("published_at")
+        and p["published_at"] >= FEED_CUTOFF
+    ]
     items = []
-    for post in posts[:50]:
+    for post in feed_posts[:50]:
         item = {
             "id": f"{site_url}/posts/{post['slug']}",
             "url": f"{site_url}/posts/{post['slug']}",

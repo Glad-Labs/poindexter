@@ -74,7 +74,10 @@ class WebResearcher:
     async def _ddg_search(self, query: str, num_results: int) -> list[dict[str, str]]:
         """Search DuckDuckGo (free, no API key needed)."""
         try:
-            from duckduckgo_search import DDGS
+            try:
+                from ddgs import DDGS
+            except ImportError:
+                from duckduckgo_search import DDGS  # legacy fallback
 
             # Run in thread to avoid blocking (ddgs is sync)
             def _search():

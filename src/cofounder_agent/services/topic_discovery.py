@@ -520,6 +520,8 @@ class TopicDiscovery:
         "fine-tun", "rag", "embeddings", "vector database",
         "generative ai", "diffusion", "lora",
         "ai agent", "autonomous agent", "copilot", "chatbot", "prompt engineering",
+        "quantiz", "gguf", "ggml", "awq", "gptq", "token throughput",
+        "inference speed", "context window", "context length",
         # Self-hosted / local-first (brand identity)
         "self-host", "self host", "local-first", "homelab", "home server",
         "own your data", "data sovereignty", "vendor lock-in",

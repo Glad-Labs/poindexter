@@ -434,6 +434,10 @@ async def publish_post_from_task(
     if scheduled_at:
         post_data["published_at"] = scheduled_at
 
+    # Mark non-draft posts as eligible for feed distribution
+    if not draft_mode:
+        post_data["distributed_at"] = scheduled_at or datetime.now(timezone.utc)
+
     try:
         post = await db_service.create_post(post_data)
     except Exception as e:

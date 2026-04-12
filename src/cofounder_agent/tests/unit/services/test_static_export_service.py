@@ -26,7 +26,7 @@ from services.static_export_service import (
 # Sample data
 # ---------------------------------------------------------------------------
 
-_NOW = datetime(2026, 4, 8, 12, 0, 0, tzinfo=timezone.utc)
+_NOW = datetime(2026, 4, 13, 12, 0, 0, tzinfo=timezone.utc)  # After FEED_CUTOFF (2026-04-12)
 
 _SAMPLE_POST = {
     "id": "abc-123",
@@ -45,6 +45,7 @@ _SAMPLE_POST = {
     "published_at": _NOW,
     "created_at": _NOW,
     "updated_at": _NOW,
+    "distributed_at": _NOW,
 }
 
 _SAMPLE_CATEGORIES = [
@@ -73,7 +74,7 @@ class TestPostSummary:
 
     def test_published_at_is_iso_string(self):
         result = _post_summary(_SAMPLE_POST)
-        assert result["published_at"] == "2026-04-08T12:00:00+00:00"
+        assert result["published_at"] == "2026-04-13T12:00:00+00:00"
 
     def test_featured_image_falls_back_to_cover(self):
         post = {**_SAMPLE_POST, "featured_image_url": None, "cover_image_url": "https://cover.png"}
@@ -189,7 +190,7 @@ class TestToJson:
     def test_serializes_datetime(self):
         data = {"ts": _NOW}
         result = _to_json(data)
-        assert "2026-04-08T12:00:00" in result
+        assert "2026-04-13T12:00:00" in result
 
     def test_handles_nested_structures(self):
         data = {"posts": [{"title": "Hello", "published_at": _NOW}]}

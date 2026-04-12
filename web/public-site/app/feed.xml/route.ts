@@ -20,9 +20,17 @@ interface Post {
   content?: string;
   published_at?: string;
   updated_at?: string;
+  distributed_at?: string;
   seo_description?: string;
   featured_image_url?: string;
 }
+
+/**
+ * Only include posts that have been explicitly marked for distribution
+ * and were published after this cutoff.  Prevents dlvr.it from
+ * re-distributing old/migrated posts.
+ */
+const FEED_CUTOFF = '2026-04-12T00:00:00Z';
 
 export async function GET() {
   try {
@@ -34,7 +42,9 @@ export async function GET() {
     let posts: Post[] = [];
     if (response.ok) {
       const data = await response.json();
-      posts = (data.posts || []).slice(0, 20); // RSS feed: latest 20 posts
+      posts = (data.posts || [])
+        .filter((p: Post) => p.distributed_at && (p.published_at || '') >= FEED_CUTOFF)
+        .slice(0, 20);
     }
 
     const now = new Date().toUTCString();

@@ -387,6 +387,71 @@ class TaskExecutor:
                 )
                 return
 
+            # Pre-generation semantic duplicate check — reject near-duplicate
+            # topics BEFORE the writer burns GPU time on content we already have.
+            #
+            # Matt 2026-04-11: "We should be taking advantage of the vector db
+            # as much as possible. Built by bots for bots kinda thing."
+            #
+            # Strategy: embed the topic string, search `source_table='posts'`
+            # at a high cosine-similarity floor, and if anything crosses the
+            # threshold, reject loud with the matching slugs + similarity
+            # scores. The post embeddings come from `scripts/auto-embed.py`
+            # which syncs nightly (so newly-published posts are visible to
+            # the next task's dedup check). Gated on `enable_semantic_dedup`
+            # so it can be disabled without a code change.
+            if topic and await self._semantic_dedup_enabled():
+                _dup_hit = await self._check_semantic_duplicate(topic)
+                if _dup_hit is not None:
+                    _reason, _matches = _dup_hit
+                    # _matches is now list[MemoryHit] from MemoryClient
+                    # (previously list[dict] from EmbeddingsDatabase).
+                    _top_sim = max(
+                        (getattr(m, "similarity", 0) for m in _matches),
+                        default=0,
+                    )
+                    logger.warning(
+                        "[TASK_SINGLE] Rejecting semantic duplicate: topic=%r matches=%d top_sim=%.3f",
+                        topic[:60], len(_matches), _top_sim,
+                    )
+                    await self.database_service.update_task(
+                        task_id=task_id,
+                        updates={
+                            "status": "rejected",
+                            "error_message": _reason,
+                            "result": '{"reason": "Semantic duplicate: matches an existing published post"}',
+                        },
+                    )
+                    # Loud audit event — surfaces on /pipeline dashboard.
+                    try:
+                        from services.audit_log import audit_log_bg
+                        audit_log_bg(
+                            "semantic_dedup_rejected", "task_executor",
+                            {
+                                "topic": topic[:200],
+                                "match_count": len(_matches),
+                                "top_similarity": round(_top_sim, 4),
+                                "matches": [
+                                    {
+                                        "post_id": getattr(m, "source_id", None),
+                                        "similarity": round(
+                                            getattr(m, "similarity", 0), 4
+                                        ),
+                                        "title": (
+                                            getattr(m, "metadata", {}) or {}
+                                        ).get("title", ""),
+                                        "writer": getattr(m, "writer", None),
+                                    }
+                                    for m in _matches[:5]
+                                ],
+                                "stage": "pre_generation",
+                            },
+                            task_id=task_id, severity="warning",
+                        )
+                    except Exception as _audit_err:
+                        logger.debug("semantic_dedup audit log failed: %s", _audit_err)
+                    return
+
             # Set per-task timeout. Default 15 min; configurable via
             # app_settings key 'task_timeout_seconds' so operators can
             # bump it when running a bigger (slower) writer model like
@@ -761,6 +826,106 @@ class TaskExecutor:
             return default
         except Exception:
             return default
+
+    async def _semantic_dedup_enabled(self) -> bool:
+        """Gate for the pre-generation semantic duplicate check.
+
+        Defaults to True (enabled) per Matt's 2026-04-11 direction to use the
+        vector db aggressively. Flip `enable_semantic_dedup=false` in
+        app_settings to disable without a code change.
+        """
+        raw = await self._get_setting("enable_semantic_dedup", "true")
+        return (raw or "true").strip().lower() not in ("false", "0", "no", "off")
+
+    async def _check_semantic_duplicate(
+        self, topic: str
+    ) -> tuple[str, list[Any]] | None:
+        """Embed the topic and search pgvector for near-duplicate published posts.
+
+        Migrated 2026-04-11 from direct `database_service.embeddings.search_similar`
+        to `poindexter.memory.MemoryClient.find_similar_posts` per Gitea #192
+        slice 3. The helper hardcodes `source_table='posts'` so the
+        singular/plural silent-zero-result bug can never recur here.
+
+        Returns (reason, matches) when the topic looks like a duplicate of an
+        existing post (cosine similarity >= threshold). Returns None when the
+        topic looks original OR when the embedding / search infrastructure
+        isn't available — we deliberately never block task creation on
+        dedup-layer errors because a broken embedder shouldn't strand the
+        whole queue.
+
+        Threshold is tunable via `semantic_dedup_threshold` (default 0.75).
+        Matches are pulled from `source_table='posts'`, so only fully published
+        posts count — drafts and awaiting_approval tasks do NOT block new
+        queueing (deliberate: we still want the human review queue to fill up
+        with variants of a topic if the author hasn't approved the first one).
+        """
+        # Pull threshold lazily so the DB value is always honored.
+        _raw_threshold = "0.75"
+        try:
+            _raw_threshold = await self._get_setting("semantic_dedup_threshold", "0.75")
+            threshold = float(_raw_threshold)
+        except (ValueError, TypeError) as exc:
+            logger.warning(
+                "Invalid semantic_dedup_threshold in app_settings (%r): %s — "
+                "falling back to 0.75",
+                _raw_threshold, exc,
+            )
+            threshold = 0.75
+
+        try:
+            from poindexter.memory import MemoryClient
+
+            async with MemoryClient() as mem:
+                matches = await mem.find_similar_posts(
+                    topic, limit=5, min_similarity=threshold
+                )
+        except Exception as exc:
+            logger.warning(
+                "[TASK_SINGLE] semantic_dedup check failed (non-fatal, task will proceed): %s",
+                exc,
+            )
+            return None
+
+        if not matches:
+            return None  # nothing crossed the threshold — topic is fresh enough
+
+        # Build a human-readable reason block with the top matches. Keep it
+        # short; this lands in task.error_message which is surfaced in the
+        # /pipeline dashboard, MCP list_tasks, and Discord alerts.
+        pool = self.database_service.pool if self.database_service else None
+        match_lines: list[str] = []
+        for hit in matches[:3]:
+            sim = hit.similarity
+            source_id = hit.source_id
+            title = (hit.metadata or {}).get("title") or "(unknown title)"
+            slug = ""
+            if pool:
+                try:
+                    # auto-embed.py stores post source_ids as either the raw
+                    # UUID or "post/<uuid>". Strip the prefix before the DB
+                    # lookup to cover both shapes.
+                    lookup_id = source_id.removeprefix("post/")
+                    row = await pool.fetchrow(
+                        "SELECT slug FROM posts WHERE id::text = $1 LIMIT 1",
+                        lookup_id,
+                    )
+                    if row and row["slug"]:
+                        slug = row["slug"]
+                except Exception:
+                    pass
+            url = f"/posts/{slug}" if slug else f"(post id: {source_id})"
+            match_lines.append(f"  - {sim:.3f}  {title[:80]}  {url}")
+
+        reason = (
+            f"Semantic duplicate: topic '{topic[:80]}' is ≥{threshold:.2f} similar to "
+            f"{len(matches)} existing published post(s). Top matches:\n"
+            + "\n".join(match_lines)
+            + f"\n\nIf this topic really is different enough, either lower "
+            f"semantic_dedup_threshold in app_settings or disable the check entirely "
+            f"with enable_semantic_dedup=false."
+        )
+        return reason, matches
 
     async def _get_model_selections(self, task_id: str) -> dict:
         """Read model_selections directly from DB (bypasses TaskResponse serialization)."""

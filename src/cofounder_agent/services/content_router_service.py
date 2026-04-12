@@ -33,41 +33,56 @@ _DEFAULT_STAGE_TIMEOUTS = {
 }
 
 
-def _load_stage_timeouts() -> dict:
-    """Build stage timeouts from defaults, overridden by app_settings keys like stage_timeout_draft."""
+# Map app_settings keys to stage names. Resolved lazily per-call because
+# site_config is empty at module-import time (it's populated later in the
+# lifespan, after the DB pool is ready). A cached module-level dict would
+# freeze the defaults before the DB was consulted — exactly the silent
+# misconfiguration swallow that cost task 408.
+_STAGE_TIMEOUT_OVERRIDES = {
+    "stage_timeout_verify_task": "verify_task",
+    "stage_timeout_draft": "generate_content",
+    "stage_timeout_qa": "quality_evaluation",
+    "stage_timeout_url_validation": "url_validation",
+    "stage_timeout_inline_images": "replace_inline_images",
+    "stage_timeout_featured_image": "source_featured_image",
+    "stage_timeout_cross_model_qa": "cross_model_qa",
+    "stage_timeout_seo": "generate_seo_metadata",
+    "stage_timeout_media_scripts": "generate_media_scripts",
+    "stage_timeout_training_data": "capture_training_data",
+    "stage_timeout_finalize": "finalize_task",
+}
+
+# Reverse lookup: stage_name -> setting_key (for loud error messages)
+_STAGE_NAME_TO_SETTING = {v: k for k, v in _STAGE_TIMEOUT_OVERRIDES.items()}
+
+
+def _get_stage_timeout(stage_name: str) -> int:
+    """Resolve a stage timeout from app_settings at call time.
+
+    Reads site_config every call (cheap dict lookup). If the DB has an
+    override value that can't be parsed as int, this raises RuntimeError
+    rather than silently falling back — matches the project-wide
+    "no silent defaults" rule.
+    """
     from services.site_config import site_config
 
-    timeouts = dict(_DEFAULT_STAGE_TIMEOUTS)
-    # Map app_settings keys to stage names
-    _overrides = {
-        "stage_timeout_verify_task": "verify_task",
-        "stage_timeout_draft": "generate_content",
-        "stage_timeout_qa": "quality_evaluation",
-        "stage_timeout_url_validation": "url_validation",
-        "stage_timeout_inline_images": "replace_inline_images",
-        "stage_timeout_featured_image": "source_featured_image",
-        "stage_timeout_cross_model_qa": "cross_model_qa",
-        "stage_timeout_seo": "generate_seo_metadata",
-        "stage_timeout_media_scripts": "generate_media_scripts",
-        "stage_timeout_training_data": "capture_training_data",
-        "stage_timeout_finalize": "finalize_task",
-    }
-    for setting_key, stage_name in _overrides.items():
-        val = site_config.get(setting_key)
-        if val is not None:
+    setting_key = _STAGE_NAME_TO_SETTING.get(stage_name)
+    if setting_key:
+        raw = site_config.get(setting_key)
+        if raw:  # Non-empty string
             try:
-                timeouts[stage_name] = int(val)
-            except (ValueError, TypeError):
-                pass
-    return timeouts
-
-
-STAGE_TIMEOUTS = _load_stage_timeouts()
+                return int(raw)
+            except (ValueError, TypeError) as exc:
+                raise RuntimeError(
+                    f"Invalid app_settings value for {setting_key}: "
+                    f"expected integer, got {raw!r}"
+                ) from exc
+    return _DEFAULT_STAGE_TIMEOUTS.get(stage_name, 120)
 
 
 async def _run_stage_with_timeout(coro, stage_name: str, task_id: str):
     """Wrap a stage coroutine with a timeout. On timeout, log and return None."""
-    timeout = STAGE_TIMEOUTS.get(stage_name, 120)
+    timeout = _get_stage_timeout(stage_name)
     try:
         return await asyncio.wait_for(coro, timeout=timeout)
     except asyncio.TimeoutError:
@@ -607,23 +622,23 @@ async def _build_writing_style_context(
 async def _build_rag_context(
     database_service: DatabaseService | None, topic: str
 ) -> str | None:
-    """Search pgvector for similar published posts. Returns None if unavailable."""
-    if not database_service or not getattr(database_service, "embeddings", None):
+    """Search pgvector for similar published posts. Returns None if unavailable.
+
+    Migrated 2026-04-11 from direct `database_service.embeddings.search_similar`
+    calls to `poindexter.memory.MemoryClient.find_similar_posts` per Gitea #192
+    slice 3. The MemoryClient helper hardcodes `source_table='posts'` so the
+    singular/plural silent-zero-result bug can never recur here.
+    """
+    if not topic or not topic.strip():
         return None
 
     try:
-        from .ollama_client import OllamaClient
+        from poindexter.memory import MemoryClient
 
-        ollama = OllamaClient()
-        topic_embedding = await ollama.embed(topic)
-        await ollama.close()
-
-        similar_posts = await database_service.embeddings.search_similar(
-            embedding=topic_embedding,
-            limit=5,
-            source_type="post",
-            min_similarity=0.3,
-        )
+        async with MemoryClient() as mem:
+            similar_posts = await mem.find_similar_posts(
+                topic, limit=5, min_similarity=0.3
+            )
 
         if not similar_posts:
             return None
@@ -633,24 +648,27 @@ async def _build_rag_context(
             "RELATED POSTS WE'VE PUBLISHED (reference for internal linking, avoid repeating same angles):"
         ]
         pool = database_service.pool if database_service else None
-        for i, match in enumerate(similar_posts, 1):
-            post_id = match.get("source_id", "")
-            similarity = match.get("similarity", 0)
-            metadata = match.get("metadata") or {}
-            title = metadata.get("title", "Untitled")
+        for i, hit in enumerate(similar_posts, 1):
+            post_id = hit.source_id
+            similarity = hit.similarity
+            title = (hit.metadata or {}).get("title", "Untitled")
 
-            # Try to fetch slug and excerpt from the posts table
+            # Try to fetch slug and excerpt from the posts table.
+            # source_id for a post row is the post UUID (sometimes prefixed
+            # with "post/"), so try both shapes.
             slug = ""
             excerpt = ""
             if pool:
                 try:
+                    # Strip optional "post/" prefix that auto-embed.py adds.
+                    lookup_id = post_id.removeprefix("post/")
                     row = await pool.fetchrow(
                         "SELECT slug, excerpt FROM posts WHERE id::text = $1 LIMIT 1",
-                        post_id,
+                        lookup_id,
                     )
                     if row:
-                        slug = row.get("slug", "")
-                        excerpt = row.get("excerpt", "") or ""
+                        slug = row.get("slug") or ""
+                        excerpt = row.get("excerpt") or ""
                 except Exception:
                     pass  # Non-critical — use metadata title only
 
@@ -2087,11 +2105,38 @@ async def process_content_generation_task(
             "generate_content", task_id,
         )
         if gen_result is None:
-            raise RuntimeError(f"Stage 'generate_content' timed out after {STAGE_TIMEOUTS['generate_content']}s — cannot continue without content")
+            raise RuntimeError(f"Stage 'generate_content' timed out after {_get_stage_timeout('generate_content')}s — cannot continue without content")
         content_text, model_used, metrics, title = gen_result
         audit_log_bg("generation_complete", "content_router", {
             "model": model_used, "word_count": len(content_text.split()) if content_text else 0,
         }, task_id=task_id)
+
+        # Observability: detect silent writer fallback. If the DB configured
+        # pipeline_writer_model (e.g. qwen2.5:72b) differs from the model
+        # that actually produced the draft (e.g. gemma3:27b), fire a LOUD
+        # audit event. Without this, a timed-out 72B silently degrades to
+        # a 27B and nobody notices — which cost us task 033803c9 on 2026-04-11.
+        try:
+            from services.site_config import site_config as _sc_writer_check
+            _configured_writer = (_sc_writer_check.get("pipeline_writer_model", "") or "").removeprefix("ollama/")
+            _actual_writer = (model_used or "").removeprefix("ollama/")
+            if _configured_writer and _actual_writer and _configured_writer != _actual_writer:
+                logger.warning(
+                    "[WRITER_FALLBACK] Configured %s but actually generated with %s for task %s",
+                    _configured_writer, _actual_writer, task_id[:8],
+                )
+                audit_log_bg(
+                    "writer_fallback", "content_router",
+                    {
+                        "configured_writer": _configured_writer,
+                        "actual_writer": _actual_writer,
+                        "reason": "primary_model_failed_or_timed_out",
+                        "stage": "generate_content",
+                    },
+                    task_id=task_id, severity="warning",
+                )
+        except Exception as _exc:
+            logger.debug("writer_fallback check failed: %s", _exc)
 
         # Stage 2B: Quality evaluation (critical — fail pipeline on timeout)
         quality_result = await _run_stage_with_timeout(
@@ -2099,7 +2144,7 @@ async def process_content_generation_task(
             "quality_evaluation", task_id,
         )
         if quality_result is None:
-            raise RuntimeError(f"Stage 'quality_evaluation' timed out after {STAGE_TIMEOUTS['quality_evaluation']}s — cannot continue without QA score")
+            raise RuntimeError(f"Stage 'quality_evaluation' timed out after {_get_stage_timeout('quality_evaluation')}s — cannot continue without QA score")
         audit_log_bg("qa_passed" if quality_result.overall_score >= 50 else "qa_failed", "content_router", {
             "score": quality_result.overall_score, "stage": "early_eval",
         }, task_id=task_id)
@@ -2344,9 +2389,12 @@ async def process_content_generation_task(
                     from services.ollama_client import OllamaClient
                     _rev_client = OllamaClient(timeout=240)
                     try:
+                        # Default to a proven NON-THINKING writer. The old
+                        # default of qwen3:30b silently burned the token
+                        # budget on <think> tags and returned empty.
                         _writer_model = (
                             await _settings_service.get("pipeline_writer_model")
-                            or "qwen3:30b"
+                            or "gemma3:27b"
                         )
                         _writer_model = _writer_model.removeprefix("ollama/")
                         _rev_result = await _rev_client.generate(
@@ -2357,12 +2405,29 @@ async def process_content_generation_task(
                         )
                         # Fallback to gemma3:27b if the primary writer
                         # returns empty or too-short — known pattern with
-                        # thinking models on long prompts.
+                        # thinking models on long prompts (qwen3.x family
+                        # burns the entire token budget on <think> tags
+                        # and returns an empty assistant message).
                         _revised_text = (_rev_result.get("text") or "").strip()
                         if len(_revised_text) < int(0.5 * len(content_text)):
-                            logger.info(
-                                "[QA_REWRITE] Task %s: primary writer returned %d chars, trying fallback",
-                                task_id[:8], len(_revised_text),
+                            logger.warning(
+                                "[QA_REWRITE] Task %s: primary writer %s returned %d chars — likely thinking-mode eating the token budget. Falling back to gemma3:27b.",
+                                task_id[:8], _writer_model, len(_revised_text),
+                            )
+                            # Loud audit event — makes the silent fallback
+                            # visible on the /pipeline dashboard.
+                            audit_log_bg(
+                                "writer_fallback", "content_router",
+                                {
+                                    "configured_writer": _writer_model,
+                                    "actual_writer": "gemma3:27b",
+                                    "reason": "primary_returned_empty_on_rewrite",
+                                    "stage": "qa_rewrite",
+                                    "attempt": _rewrite_attempts + 1,
+                                    "primary_chars": len(_revised_text),
+                                    "expected_min_chars": int(0.5 * len(content_text)),
+                                },
+                                task_id=task_id, severity="warning",
                             )
                             _fb_result = await _rev_client.generate(
                                 prompt=_revise_prompt,

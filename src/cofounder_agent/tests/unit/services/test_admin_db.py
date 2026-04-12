@@ -393,8 +393,9 @@ class TestGetSetting:
         pool = _make_pool()
         db = _make_db(pool)
         sentinel = _make_setting_sentinel()
-        # Populate cache manually
-        db._settings_cache["cached_key"] = {"value": sentinel, "ts": time.monotonic()}
+        # Populate cache manually — cache key format is "key|include_inactive"
+        # since the 2026-04-12 is_active migration.
+        db._settings_cache["cached_key|False"] = {"value": sentinel, "ts": time.monotonic()}
 
         result = await db.get_setting("cached_key")
         assert result is sentinel
@@ -461,7 +462,8 @@ class TestGetAllSettings:
         pool = _make_pool()
         db = _make_db(pool)
         cached_list = [_make_setting_sentinel()]
-        db._all_settings_cache["__all__"] = {"value": cached_list, "ts": time.monotonic()}
+        # Cache key format is "category_or___all__|include_inactive" since 2026-04-12.
+        db._all_settings_cache["__all__|False"] = {"value": cached_list, "ts": time.monotonic()}
 
         result = await db.get_all_settings()
         assert result is cached_list

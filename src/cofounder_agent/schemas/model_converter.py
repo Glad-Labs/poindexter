@@ -312,10 +312,29 @@ class ModelConverter:
 
     @staticmethod
     def to_setting_response(row: Any) -> SettingResponse:
-        """Convert row to SettingResponse model."""
+        """Convert row to SettingResponse model.
+
+        Handles both the legacy `settings` table schema (with `modified_at`,
+        `display_name`, `is_active`) and the current `app_settings` schema
+        (which only has `updated_at`). The admin_db layer switched to
+        `app_settings` on 2026-04-12 as part of Gitea #192 — this converter
+        provides defaults for the fields that only existed in the old
+        schema so the Pydantic model still validates.
+        """
         data = ModelConverter._normalize_row_data(row)
         if "id" in data:
             data["id"] = str(data["id"])
+
+        # Back-fill fields that exist in SettingResponse but not in the
+        # current `app_settings` schema. `modified_at` mirrors `updated_at`
+        # (they tracked the same concept in the old schema).
+        if "modified_at" not in data and "updated_at" in data:
+            data["modified_at"] = data["updated_at"]
+        if "display_name" not in data:
+            data["display_name"] = None
+        if "is_active" not in data:
+            data["is_active"] = True
+
         return SettingResponse(**data)
 
     @staticmethod

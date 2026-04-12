@@ -1,4 +1,4 @@
-# Grafana Notification Policies — route all alerts to Telegram
+# Grafana Notification Policies — primary: Telegram, fallback: Discord #ops
 apiVersion: 1
 
 policies:
@@ -10,3 +10,10 @@ policies:
     group_wait: 30s
     group_interval: 5m
     repeat_interval: 1h
+    routes:
+      # Send all alerts to Discord as well (redundancy)
+      - receiver: Glad Labs Discord
+        continue: true
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 1h

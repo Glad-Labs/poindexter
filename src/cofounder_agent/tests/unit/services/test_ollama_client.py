@@ -12,9 +12,9 @@ import httpx
 import pytest
 
 from services.ollama_client import (
-    DEFAULT_BASE_URL,
-    DEFAULT_MODEL,
     OllamaClient,
+    _default_base_url,
+    _default_model,
     calculate_electricity_cost,
     initialize_ollama_client,
 )
@@ -57,11 +57,11 @@ SAMPLE_GENERATE_RESPONSE = {
 class TestOllamaClientInit:
     def test_default_base_url(self):
         c = OllamaClient()
-        assert c.base_url == DEFAULT_BASE_URL
+        assert c.base_url == _default_base_url()
 
     def test_default_model(self):
         c = OllamaClient()
-        assert c.model == DEFAULT_MODEL
+        assert c.model == _default_model()
 
     def test_custom_base_url(self):
         c = OllamaClient(base_url="http://remote:11434")

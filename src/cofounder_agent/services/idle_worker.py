@@ -232,6 +232,12 @@ class IdleWorker:
             results["utility_rates"] = await self._update_utility_rates()
             await self._persist_mark_run("utility_rates")
 
+        # 17. Memory staleness check — alert when any pgvector writer goes stale
+        # (every 30 min; internal cooldown prevents Discord spam).
+        if self._is_due("memory_stale_check", 30):
+            results["memory_stale_check"] = await self._check_memory_staleness()
+            await self._persist_mark_run("memory_stale_check")
+
         # 17. Post-publish verification — check recently published posts are accessible (every 2 hours)
         if self._is_due("publish_verify", 120):
             results["publish_verify"] = await self._verify_published_posts()
@@ -987,6 +993,176 @@ class IdleWorker:
             return {"checked": len(rows), "posts_fixed": posts_fixed, "links_removed": broken_total}
         except Exception as e:
             return {"error": str(e)}
+
+    async def _check_memory_staleness(self) -> dict:
+        """Scan the shared-memory writers for stale syncs and alert.
+
+        For each writer row in `MemoryClient.stats()['by_writer']`, compare
+        age against a per-writer threshold (app_settings key
+        `memory_stale_threshold_seconds_<writer>`, global fallback
+        `memory_stale_threshold_seconds`, default 6h). If age > threshold AND
+        we haven't alerted on this writer in the last
+        `memory_stale_alert_cooldown_seconds` (default 6h), fire:
+            1. A `memory_sync_stale` audit_log event (visible on /pipeline)
+            2. A Discord ops-channel message via the existing webhook
+
+        Dedup state lives in app_settings under `memory_stale_last_alerts`
+        as a JSON blob mapping writer → ISO timestamp of last alert.
+        """
+        from datetime import datetime, timezone
+
+        stats = None
+        try:
+            from poindexter.memory import MemoryClient
+
+            async with MemoryClient() as mem:
+                stats = await mem.stats()
+        except Exception as e:
+            return {"error": f"stats fetch failed: {e}"}
+
+        if not stats or "by_writer" not in stats:
+            return {"error": "no stats data"}
+
+        now = datetime.now(timezone.utc)
+
+        # Load cooldown state.
+        raw_last = await self._get_setting("memory_stale_last_alerts", "{}")
+        try:
+            last_alerts: dict[str, str] = json.loads(raw_last) if raw_last else {}
+            if not isinstance(last_alerts, dict):
+                last_alerts = {}
+        except (json.JSONDecodeError, TypeError):
+            last_alerts = {}
+
+        cooldown = 6 * 3600
+        try:
+            cooldown_raw = await self._get_setting(
+                "memory_stale_alert_cooldown_seconds", "21600"
+            )
+            cooldown = int(cooldown_raw)
+        except (ValueError, TypeError):
+            pass
+
+        global_threshold = 6 * 3600
+        try:
+            global_threshold = int(
+                await self._get_setting("memory_stale_threshold_seconds", "21600")
+            )
+        except (ValueError, TypeError):
+            pass
+
+        stale_writers: list[dict] = []
+        alerts_fired: list[str] = []
+        new_last_alerts = dict(last_alerts)
+
+        for writer, data in stats["by_writer"].items():
+            newest = data.get("newest")
+            if newest is None:
+                continue
+            # asyncpg returns datetime; normalize to aware UTC.
+            if hasattr(newest, "tzinfo") and newest.tzinfo is None:
+                newest = newest.replace(tzinfo=timezone.utc)
+            age_seconds = int((now - newest).total_seconds())
+
+            # Per-writer threshold overrides the global one.
+            per_key = f"memory_stale_threshold_seconds_{writer}"
+            try:
+                threshold = int(await self._get_setting(per_key, str(global_threshold)))
+            except (ValueError, TypeError):
+                threshold = global_threshold
+
+            if age_seconds <= threshold:
+                continue
+
+            # Past threshold — decide if we should alert.
+            stale_writers.append(
+                {
+                    "writer": writer,
+                    "age_seconds": age_seconds,
+                    "threshold": threshold,
+                    "count": int(data.get("count") or 0),
+                    "newest": newest.isoformat(),
+                }
+            )
+
+            last_iso = new_last_alerts.get(writer)
+            should_alert = True
+            if last_iso:
+                try:
+                    last_dt = datetime.fromisoformat(last_iso)
+                    if last_dt.tzinfo is None:
+                        last_dt = last_dt.replace(tzinfo=timezone.utc)
+                    if (now - last_dt).total_seconds() < cooldown:
+                        should_alert = False
+                except ValueError:
+                    pass
+
+            if not should_alert:
+                continue
+
+            # Fire audit event (visible on /pipeline dashboard + Grafana)
+            try:
+                from services.audit_log import audit_log_bg
+                audit_log_bg(
+                    "memory_sync_stale", "idle_worker",
+                    {
+                        "writer": writer,
+                        "age_seconds": age_seconds,
+                        "threshold_seconds": threshold,
+                        "count": int(data.get("count") or 0),
+                        "newest": newest.isoformat(),
+                    },
+                    severity="warning",
+                )
+            except Exception as e:
+                logger.debug("[MEMORY_STALE] audit event failed: %s", e)
+
+            # Discord ops-channel notification
+            try:
+                from services.task_executor import _notify_openclaw
+                age_hours = age_seconds / 3600
+                msg = (
+                    f"[MEMORY STALE] writer `{writer}` hasn't been embedded in "
+                    f"{age_hours:.1f}h (threshold {threshold // 3600}h). "
+                    f"{data.get('count', 0)} rows in pgvector, newest={newest.isoformat()}. "
+                    f"Check /memory dashboard."
+                )
+                await _notify_openclaw(msg, critical=False)
+                alerts_fired.append(writer)
+            except Exception as e:
+                logger.debug("[MEMORY_STALE] discord notify failed: %s", e)
+
+            new_last_alerts[writer] = now.isoformat()
+
+        # Persist updated cooldown state
+        if new_last_alerts != last_alerts:
+            try:
+                await self.pool.execute(
+                    "INSERT INTO app_settings (key, value) VALUES ($1, $2) "
+                    "ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()",
+                    "memory_stale_last_alerts",
+                    json.dumps(new_last_alerts),
+                )
+            except Exception as e:
+                logger.debug("[MEMORY_STALE] state persist failed: %s", e)
+
+        return {
+            "stale_count": len(stale_writers),
+            "alerts_fired": len(alerts_fired),
+            "stale": stale_writers,
+        }
+
+    async def _get_setting(self, key: str, default: str) -> str:
+        """Read an app_setting with fallback. Used by the memory staleness check."""
+        try:
+            row = await self.pool.fetchrow(
+                "SELECT value FROM app_settings WHERE key = $1", key
+            )
+            if row and row["value"]:
+                return row["value"]
+        except Exception:
+            pass
+        return default
 
     async def _detect_duplicate_posts(self) -> dict:
         """Detect posts with very similar titles and flag for review."""

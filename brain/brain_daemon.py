@@ -197,6 +197,24 @@ def send_telegram(message: str):
         logger.error("[BRAIN] Telegram send failed: %s", e, exc_info=True)
 
 
+def send_discord(message: str, webhook_url: str | None = None):
+    """Send message to Discord via webhook — no dependencies."""
+    url = webhook_url or os.getenv("DISCORD_LAB_LOGS_WEBHOOK_URL", "")
+    if not url:
+        logger.debug("[BRAIN] No Discord webhook URL — skipping")
+        return
+    try:
+        payload = json.dumps({"content": message}).encode()
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        urllib.request.urlopen(req, timeout=10)
+    except Exception as e:
+        logger.error("[BRAIN] Discord send failed: %s", e)
+
+
 def restart_service(name: str):
     """Attempt to restart a local service on the operator's PC."""
     if IS_DOCKER:
@@ -634,6 +652,7 @@ async def generate_daily_digest(pool):
             f"Spend: ${float(stats['month_spend']):.2f} MTD"
         )
         send_telegram(msg)
+        send_discord(msg)  # #lab-logs channel
 
         # Mark sent
         await pool.execute("""
@@ -770,6 +789,30 @@ async def log_electricity_cost(pool):
 
         logger.debug("[BRAIN] Electricity: %.0fW (%s), %.4f kWh, $%.6f (%s)",
                      watts, power_source, kwh, cost_usd, cost_type)
+
+        # PSU sensor watchdog — alert if real PSU data isn't available
+        try:
+            prev = await pool.fetchrow(
+                "SELECT value FROM brain_knowledge WHERE entity = 'psu_watchdog' AND attribute = 'last_source'"
+            )
+            prev_source = prev["value"] if prev else None
+
+            if power_source == "hx1500i" and prev_source != "hx1500i":
+                # PSU sensors recovered
+                send_telegram("PSU sensors recovered — using real HX1500i wall power data")
+                send_discord("✅ PSU sensors recovered — using real HX1500i wall power data")
+            elif power_source != "hx1500i" and prev_source == "hx1500i":
+                # PSU sensors dropped
+                send_telegram(f"⚠️ PSU sensors dropped — falling back to {power_source} ({watts:.0f}W). iCUE may have lost the HX1500i connection.")
+                send_discord(f"⚠️ PSU sensors dropped — falling back to {power_source} ({watts:.0f}W). iCUE may have lost the HX1500i connection.")
+
+            await pool.execute("""
+                INSERT INTO brain_knowledge (entity, attribute, value, confidence, source)
+                VALUES ('psu_watchdog', 'last_source', $1, 1.0, 'brain_daemon')
+                ON CONFLICT (entity, attribute) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+            """, power_source)
+        except Exception:
+            pass  # watchdog is best-effort
 
     except Exception as e:
         logger.debug("[BRAIN] Electricity cost logging failed: %s", e)

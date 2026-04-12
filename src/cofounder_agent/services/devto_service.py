@@ -34,7 +34,14 @@ logger = get_logger(__name__)
 from services.site_config import site_config
 
 DEVTO_API_BASE = "https://dev.to/api"
-SITE_URL = site_config.get("site_url", "")
+
+
+def _site_url() -> str:
+    """Return the canonical site URL. Reads site_config lazily because
+    this module may be imported before site_config has been populated
+    from the DB. Fails loud (RuntimeError) if the setting is missing —
+    an empty canonical URL silently produces broken relative paths."""
+    return site_config.require("site_url")
 
 
 class DevToCrossPostService:
@@ -71,14 +78,14 @@ class DevToCrossPostService:
         # Convert relative links like [text](/posts/slug) to absolute
         content = re.sub(
             r'\[([^\]]+)\]\((/[^)]+)\)',
-            lambda m: f'[{m.group(1)}]({SITE_URL}{m.group(2)})',
+            lambda m: f'[{m.group(1)}]({_site_url()}{m.group(2)})',
             content,
         )
 
         # Convert relative image paths to absolute
         content = re.sub(
             r'!\[([^\]]*)\]\((/[^)]+)\)',
-            lambda m: f'![{m.group(1)}]({SITE_URL}{m.group(2)})',
+            lambda m: f'![{m.group(1)}]({_site_url()}{m.group(2)})',
             content,
         )
 
@@ -228,7 +235,7 @@ class DevToCrossPostService:
             return None
 
         # Build canonical URL
-        canonical_url = f"{SITE_URL}/posts/{row['slug']}"
+        canonical_url = f"{_site_url()}/posts/{row['slug']}"
 
         # Parse tags from seo_keywords
         tags = []

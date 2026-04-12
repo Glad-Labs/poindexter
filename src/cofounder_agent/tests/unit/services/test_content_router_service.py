@@ -28,8 +28,8 @@ from services.content_router_service import (
     ContentTaskStore,
     _check_title_originality,
     _get_or_create_default_author,
+    _get_stage_timeout,
     _is_stage_enabled,
-    _load_stage_timeouts,
     _normalize_text,
     _parse_model_preferences,
     _run_stage_with_timeout,
@@ -612,7 +612,10 @@ class TestRunStageWithTimeout:
             await asyncio.sleep(100)
             return "never"
 
-        with patch.dict("services.content_router_service.STAGE_TIMEOUTS", {"slow": 0.01}):
+        with patch(
+            "services.content_router_service._get_stage_timeout",
+            return_value=0.01,
+        ):
             result = await _run_stage_with_timeout(slow_stage(), "slow", "task-123")
         assert result is None
 
@@ -746,35 +749,41 @@ class TestScrubFabricatedLinksEdgeCases:
 
 
 # ---------------------------------------------------------------------------
-# _load_stage_timeouts
+# _get_stage_timeout — lazy, DB-backed, loud on bad config
 # ---------------------------------------------------------------------------
 
 
-class TestLoadStageTimeouts:
-    def test_returns_dict_of_int_timeouts(self):
+class TestGetStageTimeout:
+    def test_returns_default_when_no_override(self):
+        """With no app_settings override, falls back to the module default."""
         with patch("services.site_config.site_config") as mock_sc:
-            mock_sc.get.return_value = None  # no overrides
-            result = _load_stage_timeouts()
-        assert isinstance(result, dict)
-        # Should contain at least the well-known stage names
-        assert "verify_task" in result
-        assert "generate_content" in result
-        assert "quality_evaluation" in result
-        for value in result.values():
-            assert isinstance(value, int)
+            mock_sc.get.return_value = ""  # site_config.get returns "" when unset
+            result = _get_stage_timeout("generate_content")
+        assert isinstance(result, int)
+        assert result > 0
 
     def test_app_settings_override_applied(self):
+        """DB-configured value is picked up at call time (no module-import cache)."""
         with patch("services.site_config.site_config") as mock_sc:
-            mock_sc.get.side_effect = lambda k, d=None: "999" if k == "stage_timeout_draft" else None
-            result = _load_stage_timeouts()
-        assert result["generate_content"] == 999
+            mock_sc.get.side_effect = lambda k, d="": "999" if k == "stage_timeout_draft" else ""
+            result = _get_stage_timeout("generate_content")
+        assert result == 999
 
-    def test_invalid_override_value_silently_ignored(self):
+    def test_invalid_override_raises_loudly(self):
+        """Regression: invalid app_settings values must NOT be silently ignored.
+        Task 408 timed out at the default because the old _load_stage_timeouts
+        silently swallowed parsing errors and used module-import-time state."""
         with patch("services.site_config.site_config") as mock_sc:
-            mock_sc.get.side_effect = lambda k, d=None: "not-a-number" if k == "stage_timeout_qa" else None
-            result = _load_stage_timeouts()
-        # quality_evaluation falls back to its default
-        assert isinstance(result["quality_evaluation"], int)
+            mock_sc.get.side_effect = lambda k, d="": "not-a-number" if k == "stage_timeout_qa" else ""
+            with pytest.raises(RuntimeError, match="Invalid app_settings"):
+                _get_stage_timeout("quality_evaluation")
+
+    def test_unknown_stage_uses_fallback(self):
+        """A stage name not in the override map returns the hardcoded 120s fallback."""
+        with patch("services.site_config.site_config") as mock_sc:
+            mock_sc.get.return_value = ""
+            result = _get_stage_timeout("this_stage_does_not_exist")
+        assert result == 120
 
 
 # ---------------------------------------------------------------------------
