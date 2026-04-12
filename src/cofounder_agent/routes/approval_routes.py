@@ -72,7 +72,8 @@ async def reject_task(
     """Reject a task and send it back for revisions.
 
     Only tasks with status 'awaiting_approval' can be rejected.
-    If allow_revisions=true, status becomes 'failed_revisions_requested'.
+    If allow_revisions=true, status becomes 'rejected_retry'.
+    If allow_revisions=false, status becomes 'rejected_final'.
     """
     try:
         operator = get_operator_identity()
@@ -91,7 +92,7 @@ async def reject_task(
             )
 
         # Determine final status based on revision allowance
-        final_status = "failed_revisions_requested" if request.allow_revisions else "failed"
+        final_status = "rejected_retry" if request.allow_revisions else "rejected_final"
         rejection_date = datetime.now(timezone.utc)
 
         # Update task with rejection metadata

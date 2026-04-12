@@ -975,17 +975,17 @@ class TaskExecutor:
            metadata has no allow_revisions key. → RETRY.
 
         2. Human rejected with allow_revisions=true ("not this one, try again")
-           status = 'failed_revisions_requested'
+           status = 'rejected_retry'
            approval_status = 'rejected', metadata.allow_revisions = true. → RETRY.
 
         3. Human rejected with allow_revisions=false ("archive it, permanent")
-           status = 'failed'
+           status = 'rejected_final'
            approval_status = 'rejected', metadata.allow_revisions = false. → SKIP.
 
         The single source of truth for "should this retry" is
         metadata.allow_revisions — explicit false means no, anything else
         (true or absent) means yes. Both 'failed' and
-        'failed_revisions_requested' statuses are eligible; approval_status
+        'rejected_retry' statuses are eligible; approval_status
         is NOT checked because case 2 has approval_status='rejected' but
         should still retry.
         """
@@ -997,7 +997,7 @@ class TaskExecutor:
                 SELECT task_id, status, topic, task_metadata,
                        COALESCE((task_metadata::jsonb->>'retry_count')::int, 0) as retry_count
                 FROM content_tasks
-                WHERE status IN ('failed', 'failed_revisions_requested')
+                WHERE status IN ('failed', 'rejected_retry', 'failed_revisions_requested')
                 AND created_at > NOW() - INTERVAL '24 hours'
                 AND COALESCE((task_metadata::jsonb->>'retry_count')::int, 0) < $1
                 AND COALESCE((metadata::jsonb->>'allow_revisions')::text, 'true') != 'false'

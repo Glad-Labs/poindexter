@@ -11,7 +11,7 @@ Covers:
 - Flow 4: Rejection with feedback stores feedback in metadata
 - Flow 5: Unauthenticated requests return 401/403
 - Flow 6: Approving a task that is not awaiting_approval returns 400
-- Flow 7: Rejecting with allow_revisions=True produces failed_revisions_requested status
+- Flow 7: Rejecting with allow_revisions=True produces rejected_retry status
 """
 
 import sys
@@ -282,7 +282,7 @@ class TestApproveTaskFlow:
 
 
 # ---------------------------------------------------------------------------
-# Flow 2: Reject task -- awaiting_approval -> failed / failed_revisions_requested
+# Flow 2: Reject task -- awaiting_approval -> failed / rejected_retry
 # ---------------------------------------------------------------------------
 
 
@@ -318,7 +318,7 @@ class TestRejectTaskFlow:
         with patch(_BROADCAST_APPROVAL, new=AsyncMock()), patch(_OPERATOR_IDENTITY_APPROVAL, return_value=TEST_OPERATOR):
             client = TestClient(_build_approval_app(db, for_reject=True))
             data = self._reject(client, payload=payload).json()
-        assert data["status"] == "failed_revisions_requested"
+        assert data["status"] == "rejected_retry"
 
     def test_reject_without_revisions_sets_failed_status(self):
         db = _make_mock_db_for_reject()
