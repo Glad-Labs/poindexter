@@ -391,18 +391,24 @@ class OllamaClient:
             # plain string and not have to defensively (result.get("text")
             # or "").
             text = msg.get("content") or ""
-            # Loud diagnostic: thinking models (qwen3, qwen3.5, glm-4.7)
-            # split their output into `message.content` (final answer) and
-            # `message.thinking` (reasoning trace). When num_predict is too
-            # small, the thinking phase eats the entire budget and content
-            # comes back empty. Without this log, callers only see "empty
-            # response" and fall back silently — invisible on the dashboard.
+            # Thinking models (qwen3, qwen3.5, glm-4.7) split output into
+            # `message.content` (final answer) and `message.thinking`
+            # (reasoning trace). When num_predict is too small, the thinking
+            # phase eats the entire budget and content comes back empty.
             _thinking = msg.get("thinking") or ""
             if not text and _thinking:
                 logger.warning(
-                    "Ollama thinking-model returned empty content with %d-char thinking trace — increase num_predict to give it room to produce the final answer after reasoning",
+                    "Ollama thinking-model returned empty content with %d-char thinking trace — extracting last paragraph from thinking as fallback",
                     len(_thinking),
                 )
+                # Try to salvage the answer from the thinking trace.
+                # Thinking models often reach their conclusion in the final
+                # lines before the budget runs out.
+                lines = [ln.strip() for ln in _thinking.strip().splitlines() if ln.strip()]
+                if lines:
+                    # Take the last non-empty line as the likely answer
+                    text = lines[-1]
+                    logger.info("Salvaged %d-char answer from thinking trace", len(text))
 
             duration_s = result.get("total_duration", 0) / 1e9
             electricity_cost = calculate_electricity_cost(

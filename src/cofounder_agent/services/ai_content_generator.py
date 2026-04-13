@@ -495,8 +495,9 @@ class AIContentGenerator:
         )
 
         # Try to refine with same model
-        # Calculate max tokens for refinement pass (4.5x multiplier for comprehensive refinement)
-        max_tokens_refinement = int(target_length * 4.5)
+        # Calculate max tokens for refinement pass — extra headroom for thinking models
+        _is_thinking_refine = any(t in model_name.lower() for t in ("qwen3", "glm-4", "deepseek-r1"))
+        max_tokens_refinement = int(target_length * (7.0 if _is_thinking_refine else 4.5))
         response = await ollama.generate(
             prompt=refinement_prompt,
             system=system_prompt,
@@ -660,9 +661,13 @@ class AIContentGenerator:
                     logger.info("      Generating content...")
 
                     # Calculate max tokens: markdown content + headers + lists need ~2-2.5 tokens per word
-                    # Using 4x multiplier to prevent truncation mid-sentence
-                    max_tokens = int(target_length * 4.0)
-                    logger.debug("      Max tokens: %d (target_length: %d)", max_tokens, target_length)
+                    # Using 4x multiplier to prevent truncation mid-sentence.
+                    # Thinking models (qwen3, qwen3.5, glm-4.7) use part of the budget for
+                    # internal reasoning, so we give them extra headroom.
+                    _is_thinking = any(t in model_name.lower() for t in ("qwen3", "glm-4", "deepseek-r1"))
+                    _multiplier = 6.0 if _is_thinking else 4.0
+                    max_tokens = int(target_length * _multiplier)
+                    logger.debug("      Max tokens: %d (target_length: %d, thinking=%s)", max_tokens, target_length, _is_thinking)
 
                     response = await ollama.generate(
                         prompt=generation_prompt,

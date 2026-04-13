@@ -505,6 +505,30 @@ class TopicDiscovery:
         except Exception as e:
             logger.warning("[TOPIC_DISCOVERY] Dedup failed: %s", e)
 
+        # Intra-batch dedup: if two topics in this batch are similar,
+        # mark the lower-scored one as duplicate.
+        for i, t1 in enumerate(topics):
+            if t1.is_duplicate:
+                continue
+            t1_words = set(t1.title.lower().split())
+            if len(t1_words) <= 3:
+                continue
+            for t2 in topics[i + 1:]:
+                if t2.is_duplicate:
+                    continue
+                t2_words = set(t2.title.lower().split())
+                if len(t2_words) <= 3:
+                    continue
+                overlap = len(t1_words & t2_words)
+                fwd = overlap / len(t1_words)
+                rev = overlap / len(t2_words)
+                if fwd >= 0.5 or rev >= 0.5:
+                    t2.is_duplicate = True
+                    logger.info(
+                        "[DEDUP] Intra-batch: '%s' ≈ '%s' (fwd=%.0f%% rev=%.0f%%)",
+                        t2.title[:40], t1.title[:40], fwd * 100, rev * 100,
+                    )
+
         return topics
 
     # Keywords that indicate a topic is relevant to this site's niche.
@@ -623,6 +647,15 @@ class TopicDiscovery:
         # Reject news/current events/junk
         if self._is_news_or_junk(title):
             return ""
+        # Reject academic papers / government publications
+        if re.search(r"(?:Special Publication|NIST|RFC \d{3,}|arXiv|doi\.org|ISBN)", title, re.IGNORECASE):
+            return ""
+        # Reject titles that are mostly ALLCAPS (academic/government docs)
+        words = title.split()
+        if len(words) >= 3:
+            caps_words = sum(1 for w in words if w.isupper() and len(w) > 2)
+            if caps_words / len(words) > 0.4:
+                return ""
         # Remove bracket prefixes: [Show HN], [OC], etc.
         title = re.sub(r'^\[.*?\]\s*', '', title)
         # Remove site name suffixes: | Site Name, - Blog Name
@@ -630,4 +663,13 @@ class TopicDiscovery:
         title = re.sub(r'\s*[-–—]\s*\w+\.?\w*$', '', title)
         # Remove leading product name + colon ("Freestyle: Sandboxes..." → "Sandboxes...")
         title = re.sub(r'^[A-Z][\w]*(?:\s+[A-Z][\w]*)?\s*[:–—]\s*', '', title)
-        return title.strip()
+        # Strip trailing author names ("... Scott Rose", "... Alper Kerman")
+        # Only match when preceded by lowercase text (not title-case content words)
+        # and the title is long enough that stripping won't gut it.
+        if len(title.split()) >= 6:
+            title = re.sub(r'(?<=[a-z.,;:)])\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2}\s*$', '', title)
+        # Reject if too short after cleanup (gibberish fragments)
+        title = title.strip()
+        if len(title) < 10:
+            return ""
+        return title

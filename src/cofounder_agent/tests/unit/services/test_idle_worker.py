@@ -28,12 +28,16 @@ class TestRunCycleSkipsWhenBusy:
     @pytest.mark.asyncio
     async def test_skips_when_tasks_pending(self):
         pool = _make_pool(pending_count=5)
-        # Mark all lightweight/pre-check tasks as recently run so they don't fire
+        # Mark all lightweight/pre-gate tasks as recently run so they don't fire
         worker = IdleWorker(pool)
         now = time.time()
         worker._last_run["sync_page_views"] = now
         worker._last_run["sync_newsletter_subscribers"] = now
         worker._last_run["expire_stale_approvals"] = now
+        # Non-GPU tasks that now run before the gate
+        worker._last_run["topic_discovery"] = now
+        worker._last_run["topic_gaps"] = now
+        worker._last_run["context_sync"] = now
         result = await worker.run_cycle()
         assert result.get("skipped") is True
         assert "5 active tasks" in result.get("reason", "")

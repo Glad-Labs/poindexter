@@ -549,8 +549,8 @@ class MultiModelQA:
             # and it keeps giving us trouble" (empty responses on long
             # prompts, thinking-model token budget issues).
             default_model = "gemma3:27b"
-            thinking_max = 1500
-            standard_max = 300
+            thinking_max = 8000  # Thinking models need budget for reasoning + actual review output
+            standard_max = 1500
             temperature = 0.3
             if self.settings:
                 default_model = await self.settings.get("pipeline_critic_model") or default_model

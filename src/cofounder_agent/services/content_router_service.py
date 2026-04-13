@@ -464,11 +464,12 @@ async def _generate_canonical_title(
         if existing_titles:
             prompt += f"\n\n⚠️ AVOID SIMILARITY to these recent titles:\n{existing_titles}\n\nYour title must be DISTINCTLY DIFFERENT in structure and wording."
 
-        # Use model consolidation service for intelligent provider fallback
+        # Use model consolidation service for intelligent provider fallback.
+        # Higher max_tokens gives thinking models room for reasoning + answer.
         result = await service.generate(
             prompt=prompt,
             temperature=0.7,
-            # Service will automatically select best available model
+            max_tokens=4000,
         )
 
         if result and result.text:

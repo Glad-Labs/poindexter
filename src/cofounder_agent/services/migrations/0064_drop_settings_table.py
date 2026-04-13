@@ -12,7 +12,7 @@ from services.logger_config import get_logger
 logger = get_logger(__name__)
 
 
-async def run(conn):
+async def run_migration(conn):
     """Drop the abandoned settings table if it exists."""
     exists = await conn.fetchval(
         "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'settings')"
