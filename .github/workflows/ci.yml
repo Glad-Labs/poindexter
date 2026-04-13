@@ -45,13 +45,23 @@ jobs:
           cd src/cofounder_agent && poetry install --no-root
 
       - name: Frontend tests
-        run: npm run test:ci
+        run: |
+          if [ -d "web/public-site" ]; then
+            npm run test:ci
+          else
+            echo "web/public-site not present (gitignored private frontend) — skipping frontend tests"
+          fi
 
       - name: Backend unit tests
         run: cd src/cofounder_agent && poetry run pytest tests/unit/ -q --tb=short --ignore=tests/unit/services/test_web_research.py
 
       - name: Linting
-        run: npm run lint
+        run: |
+          if [ -d "web/public-site" ]; then
+            npm run lint
+          else
+            echo "web/public-site not present — skipping frontend lint"
+          fi
 
       - name: Security audit
         run: npm audit --audit-level=moderate

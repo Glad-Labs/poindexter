@@ -11,7 +11,7 @@ services:
     container_name: poindexter-postgres-local
     restart: unless-stopped
     ports:
-      - "5433:5432"
+      - "15432:5432"
     environment:
       POSTGRES_DB: ${LOCAL_POSTGRES_DB:-poindexter_brain}
       POSTGRES_USER: ${LOCAL_POSTGRES_USER:-poindexter}
@@ -247,6 +247,40 @@ services:
       retries: 3
 
   # ===========================================
+  # SDXL Image Server — GPU-accelerated image generation
+  # ===========================================
+  sdxl-server:
+    build:
+      context: ./scripts
+      dockerfile: Dockerfile.sdxl
+    container_name: poindexter-sdxl-server
+    restart: unless-stopped
+    ports:
+      - "9836:9836"
+    environment:
+      POINDEXTER_BRAIN_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?LOCAL_POSTGRES_PASSWORD must be set}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
+    volumes:
+      - ${USERPROFILE:-.}/.poindexter/generated-images:/root/.poindexter/generated-images
+      - ${USERPROFILE:-.}/.cache/huggingface:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:9836/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ===========================================
   # pgAdmin — PostgreSQL web UI
   # ===========================================
   pgadmin:
@@ -254,7 +288,7 @@ services:
     container_name: poindexter-pgadmin
     restart: unless-stopped
     ports:
-      - "5050:80"
+      - "5480:80"
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@localhost}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:?PGADMIN_PASSWORD must be set}
