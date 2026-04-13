@@ -221,10 +221,35 @@ def send_discord(message: str, webhook_url: str | None = None):
 def restart_service(name: str):
     """Attempt to restart a local service on the operator's PC."""
     if IS_DOCKER:
-        # In Docker, we can restart sibling containers via the Docker socket (if mounted)
-        # or just alert. For now, alert — Matt can add Docker socket mount later.
-        logger.info("[BRAIN] Cannot restart %s from Docker container — alerting instead", name)
-        send_telegram(f"Service {name} is down. Brain is in Docker — restart manually or mount Docker socket.")
+        # Docker socket is mounted — restart sibling containers directly.
+        _container_map = {
+            "worker": "poindexter-worker",
+            "api": "poindexter-worker",
+            "site": "poindexter-worker",
+            "sdxl": "poindexter-sdxl-server",
+            "sdxl-server": "poindexter-sdxl-server",
+        }
+        container = _container_map.get(name)
+        if container:
+            try:
+                result = subprocess.run(
+                    ["docker", "restart", container],
+                    capture_output=True, text=True, timeout=30,
+                )
+                if result.returncode == 0:
+                    logger.info("[BRAIN] Docker-restarted container %s", container)
+                    send_telegram(f"Auto-restarted {container}")
+                else:
+                    logger.warning("[BRAIN] Docker restart failed for %s: %s", container, result.stderr[:100])
+                    send_telegram(f"Failed to restart {container}: {result.stderr[:100]}")
+            except FileNotFoundError:
+                logger.warning("[BRAIN] Docker CLI not available in container — install docker-cli or mount the binary")
+                send_telegram(f"Service {name} is down. Docker CLI not found in brain container.")
+            except Exception as e:
+                logger.warning("[BRAIN] Docker restart error for %s: %s", name, e)
+                send_telegram(f"Service {name} is down. Restart failed: {e}")
+        else:
+            send_telegram(f"Service {name} is down — no container mapping for auto-restart.")
         return
     try:
         kwargs = {}
