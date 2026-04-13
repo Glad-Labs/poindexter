@@ -186,6 +186,8 @@ services:
       GITEA_PASS: ${GITEA_PASSWORD:-}
       DISCORD_LAB_LOGS_WEBHOOK_URL: ${DISCORD_LAB_LOGS_WEBHOOK_URL:-}
       IN_DOCKER: "true"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
@@ -235,6 +237,7 @@ services:
       # Dev mount: edit Python files on host, restart worker to pick up changes.
       # No docker cp needed. Read-only to prevent __pycache__ writes to source.
       - ./src/cofounder_agent:/app:ro
+      - ./scripts:/opt/scripts:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

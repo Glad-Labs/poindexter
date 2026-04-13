@@ -1,6 +1,7 @@
 """Idle Worker — background maintenance tasks that run when the pipeline has no active content generation."""
 
 import json
+import os
 import time
 
 from services.logger_config import get_logger
@@ -597,8 +598,9 @@ class IdleWorker:
         """Run the shared context sync script."""
         try:
             import asyncio
+            _scripts_dir = "/opt/scripts" if os.path.isdir("/opt/scripts") else "scripts"
             proc = await asyncio.create_subprocess_exec(
-                "python", "scripts/sync-shared-context.py",
+                "python", f"{_scripts_dir}/sync-shared-context.py",
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
                 cwd=site_config.get("repo_root", "/app"),
             )
@@ -613,8 +615,11 @@ class IdleWorker:
         """Embed new/changed posts into pgvector."""
         try:
             import asyncio
+            # scripts/ is mounted at /opt/scripts in Docker (can't mount
+            # under /app because /app is a read-only bind mount).
+            _scripts_dir = "/opt/scripts" if os.path.isdir("/opt/scripts") else "scripts"
             proc = await asyncio.create_subprocess_exec(
-                "python", "scripts/auto-embed.py", "--phase", "posts",
+                "python", f"{_scripts_dir}/auto-embed.py", "--phase", "posts",
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
                 cwd=site_config.get("repo_root", "/app"),
             )
