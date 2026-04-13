@@ -1,0 +1,37 @@
+# SDXL Image Generation Server — GPU-accelerated container
+# Requires NVIDIA runtime (deploy.resources.reservations.devices in compose)
+FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
+
+WORKDIR /app
+
+# System deps for Pillow / image handling
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 libglib2.0-0 wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python deps
+RUN pip install --no-cache-dir \
+    fastapi \
+    uvicorn[standard] \
+    asyncpg \
+    diffusers \
+    "transformers>=4.44,<5.0" \
+    accelerate \
+    safetensors \
+    pydantic \
+    httpx \
+    xformers \
+    invisible-watermark \
+    peft
+
+COPY sdxl-server.py /app/server.py
+
+EXPOSE 9836
+
+# Generated images stored in volume
+RUN mkdir -p /root/.poindexter/generated-images
+
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+    CMD wget -qO /dev/null http://localhost:9836/health || exit 1
+
+CMD ["python", "server.py", "--host", "0.0.0.0", "--port", "9836"]
