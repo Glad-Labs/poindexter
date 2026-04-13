@@ -1518,13 +1518,23 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
                 # Style diversity: check recent images and pick least-used style
                 # Featured image styles — editorial illustration, mood-setting
                 # Goal: trigger imagination, set the stage — NOT literal depiction
-                _IMAGE_STYLES = [
-                    ("editorial illustration of a busy futuristic workspace", "stylized, warm lighting, faceless figures, conceptual art"),
-                    ("dark atmospheric cityscape at night", "neon accents, rain-slicked streets, moody, cinematic"),
-                    ("stylized bird's-eye view of a sprawling tech campus", "golden hour, miniature tilt-shift effect, dreamy"),
-                    ("abstract tech prototype sketch", "blueprint style, glowing lines, futuristic engineering concept art"),
-                    ("conceptual art of a vast digital landscape", "flowing data streams, abstract geometric shapes, ethereal lighting"),
-                ]
+                # Load styles from DB (app_settings.image_styles JSON array)
+                # Fall back to a minimal default if not configured.
+                _IMAGE_STYLES = []
+                try:
+                    import json as _json
+                    _styles_json = site_config.get("image_styles", "")
+                    if _styles_json:
+                        _parsed = _json.loads(_styles_json)
+                        _IMAGE_STYLES = [(s["scene"], s["tags"]) for s in _parsed]
+                except Exception:
+                    pass
+                if not _IMAGE_STYLES:
+                    _IMAGE_STYLES = [
+                        ("flat vector illustration", "simple geometric shapes, cyan and dark navy, clean minimal, no text"),
+                        ("cyberpunk neon style", "dark background, glowing cyan purple neon lines, futuristic, no text"),
+                        ("isometric 3D illustration", "colorful clean technical, low angle, no text"),
+                    ]
                 import random as _rnd
                 # Check what styles were used recently
                 try:
