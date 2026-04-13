@@ -26,12 +26,12 @@ Poindexter is built and maintained by [Glad Labs LLC](https://www.gladlabs.io). 
 
 ### Paid (sold by Glad Labs LLC)
 
-- **Quick Start Guide ($29 one-time)** — opinionated walkthrough of Matt's exact production setup, the model recommendations that actually work, the gotchas not in the public README. The fast path from clone to first published post for someone who'd rather buy than research.
-- **Premium Prompt Pack ($9/month subscription)** — production-tuned prompt templates that replace the basic defaults in `src/cofounder_agent/prompts/*.yaml`. Updated monthly. The default prompts in the public repo are functional but minimal.
+- **Seed Package ($29 one-time)** — Matt's exact production configuration: 185+ tuned app_settings, anti-hallucination fact_overrides database, curated writing style samples, 2 premium Grafana dashboards, and the Quick Start Guide. The difference between default output and content that actually ranks.
+- **Premium ($9/month subscription)** — private repo access with monthly updates from Matt's live production system. New prompt iterations, updated fact-check rules, fresh topic discovery sources, operator Discord channel, and the AI Content Pipeline book (chapters as they ship). Cancel anytime — you keep what you downloaded.
 - **Commercial License** — required if you want to use Poindexter in a closed-source product, or in a way that doesn't comply with the AGPL's source disclosure requirements. Pricing on inquiry.
-- **Custom development and consulting** — for organizations that want a Glad Labs–staffed integration. Inquire at sales@gladlabs.io.
+- **Custom development and consulting** — for organizations that want a Glad Labs-staffed integration. Inquire at sales@gladlabs.io.
 
-The free version is fully functional. The paid offerings exist because Matt runs Poindexter as his own content business and uses the same code, prompts, and operational knowledge — selling a curated version of his production setup is the funding model that lets the open-source side stay maintained.
+The free version is fully functional. The paid tiers exist because Matt runs Poindexter as his own content business daily — the paid offerings are snapshots of his production tuning. The engine improves as a side effect of running the business, and subscribers get those improvements automatically.
 
 ## Response time expectations
 

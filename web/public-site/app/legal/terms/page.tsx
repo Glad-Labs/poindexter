@@ -7,7 +7,7 @@ export const metadata: Metadata = {
 };
 
 export default function TermsOfService() {
-  const lastUpdated = new Date('2026-04-08').toLocaleDateString('en-US', {
+  const lastUpdated = new Date('2026-04-13').toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
@@ -100,7 +100,50 @@ export default function TermsOfService() {
       </p>
 
       <h2 className="text-2xl font-bold text-cyan-300 mt-8 mb-4">
-        8. User Content
+        8. Purchases & Payments
+      </h2>
+      <p>
+        Some products and subscriptions are available for purchase through {SITE_NAME},
+        including digital guides and premium prompt packs. All payments are processed by
+        Lemon Squeezy (Lemon Squeezy LLC), our merchant of record. When you make a purchase:
+      </p>
+      <ul className="list-disc list-inside space-y-2 mb-4">
+        <li>
+          Lemon Squeezy handles all payment processing, billing, and tax
+          collection as the merchant of record
+        </li>
+        <li>
+          Your payment information is collected and stored by Lemon Squeezy, not
+          by {SITE_NAME} — we never see your full card details
+        </li>
+        <li>
+          Digital products are delivered immediately after purchase and are
+          non-refundable unless the product is materially defective
+        </li>
+        <li>
+          Subscriptions may be cancelled at any time through your Lemon Squeezy
+          customer portal — cancellation takes effect at the end of the current
+          billing period
+        </li>
+        <li>
+          Prices are listed in USD and may be subject to applicable sales tax or
+          VAT, collected by Lemon Squeezy based on your location
+        </li>
+      </ul>
+      <p>
+        By making a purchase, you also agree to Lemon Squeezy&apos;s{' '}
+        <a
+          href="https://www.lemonsqueezy.com/terms"
+          className="text-cyan-400 hover:text-cyan-300"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Terms of Service
+        </a>.
+      </p>
+
+      <h2 className="text-2xl font-bold text-cyan-300 mt-8 mb-4">
+        9. User Content
       </h2>
       <p>
         If you submit content to {SITE_NAME} (e.g., comments via Giscus), you
@@ -110,7 +153,7 @@ export default function TermsOfService() {
       </p>
 
       <h2 className="text-2xl font-bold text-cyan-300 mt-8 mb-4">
-        9. Intellectual Property
+        10. Intellectual Property
       </h2>
       <p>
         All content on gladlabs.io — text, graphics, logos, images, and software
@@ -120,7 +163,7 @@ export default function TermsOfService() {
       </p>
 
       <h2 className="text-2xl font-bold text-cyan-300 mt-8 mb-4">
-        10. Modifications
+        11. Modifications
       </h2>
       <p>
         We may update these terms at any time. Continued use of the site means
@@ -129,7 +172,7 @@ export default function TermsOfService() {
       </p>
 
       <h2 className="text-2xl font-bold text-cyan-300 mt-8 mb-4">
-        11. Governing Law
+        12. Governing Law
       </h2>
       <p>
         These terms are governed by the laws of the United States. Any disputes
@@ -137,7 +180,7 @@ export default function TermsOfService() {
       </p>
 
       <h2 className="text-2xl font-bold text-cyan-300 mt-8 mb-4">
-        12. Contact
+        13. Contact
       </h2>
       <p>Questions about these terms? Reach out:</p>
       <div className="bg-gray-800 p-4 rounded-lg mt-4 mb-4">

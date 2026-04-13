@@ -168,10 +168,10 @@ execution and multi-agent orchestration.
 
 ### Backend Architecture
 
-| Component             | Technology                      | Port | Status        |
-| --------------------- | ------------------------------- | ---- | ------------- |
-| **Poindexter Worker** | FastAPI + Python 3.12 + Uvicorn | 8002 | ✅ Production |
-| **CMS Data**          | PostgreSQL (Direct Access)      | 5432 | ✅ Production |
+| Component             | Technology                      | Port  | Status        |
+| --------------------- | ------------------------------- | ----- | ------------- |
+| **Poindexter Worker** | FastAPI + Python 3.12 + Uvicorn | 8002  | ✅ Production |
+| **CMS Data**          | PostgreSQL (Direct Access)      | 15432 | ✅ Production |
 
 **Backend Features:**
 
@@ -193,7 +193,7 @@ execution and multi-agent orchestration.
 | **Storage**    | File system / Cloud Storage                        | Media files and assets         | ✅ Active    |
 | **Task Queue** | REST API + async workers (dev/prod)                | Async task processing          | ✅ Active    |
 | **Deployment** | Local docker-compose (backend) / Vercel (frontend) | Self-hosted on your machine    | ✅ Active    |
-| **Monitoring** | Application Insights (optional)                    | Performance monitoring         | ⏳ Optional  |
+| **Monitoring** | Grafana + Prometheus (self-hosted)                 | 6 dashboards, 361 panels       | ✅ Active    |
 
 ### AI Model Providers (Multi-Provider Support)
 

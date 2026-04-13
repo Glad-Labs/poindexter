@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 };
 
 export default function PrivacyPolicy() {
-  const lastUpdated = new Date('2026-04-08').toLocaleDateString('en-US', {
+  const lastUpdated = new Date('2026-04-13').toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
@@ -301,6 +301,12 @@ export default function PrivacyPolicy() {
             <strong>Cookie Preferences:</strong> Stored in your browser until
             you clear them.
           </li>
+          <li>
+            <strong>Purchase Data:</strong> Transaction records, billing details,
+            and purchase history are retained by Lemon Squeezy as merchant of
+            record in accordance with their retention policy and applicable tax
+            and accounting requirements.
+          </li>
         </ul>
 
         <h2 className="text-2xl font-bold text-cyan-300 mt-8 mb-4">
@@ -390,6 +396,26 @@ export default function PrivacyPolicy() {
                   </a>
                 </td>
               </tr>
+              <tr className="bg-gray-900">
+                <td className="px-3 py-2 border border-gray-600">
+                  Lemon Squeezy LLC
+                </td>
+                <td className="px-3 py-2 border border-gray-600">
+                  Payment Processing (Merchant of Record)
+                </td>
+                <td className="px-3 py-2 border border-gray-600">
+                  Name, email, billing address, payment method, purchase history,
+                  IP address
+                </td>
+                <td className="px-3 py-2 border border-gray-600">
+                  <a
+                    href="https://www.lemonsqueezy.com/privacy"
+                    className="text-cyan-400 hover:text-cyan-300"
+                  >
+                    View Policy
+                  </a>
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -399,8 +425,9 @@ export default function PrivacyPolicy() {
         </h2>
         <p>
           Your data may be processed in the United States by our service
-          providers (Vercel, Sentry, and Google if you consent). These transfers
-          are protected by Standard Contractual Clauses (SCCs) where applicable.
+          providers (Vercel, Sentry, Lemon Squeezy, and Google if you consent).
+          These transfers are protected by Standard Contractual Clauses (SCCs)
+          where applicable.
         </p>
 
         <h2 className="text-2xl font-bold text-cyan-300 mt-8 mb-4">

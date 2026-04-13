@@ -71,8 +71,8 @@
 
 | Feature         | Status  | Notes                                                                            |
 | --------------- | ------- | -------------------------------------------------------------------------------- |
-| Docker Compose  | WORKING | 9 containers, all with health checks and restart policies.                       |
-| PostgreSQL      | WORKING | Local brain DB (port 5433) with pgvector for embeddings.                         |
+| Docker Compose  | WORKING | 10 containers, all with health checks and restart policies.                      |
+| PostgreSQL      | WORKING | Local brain DB (port 15432) with pgvector for embeddings.                        |
 | Grafana         | WORKING | 6 dashboards (approval, pipeline, quality, cost, infrastructure, link registry). |
 | Prometheus      | WORKING | Scrapes GPU (nvidia-smi), worker, and system metrics (windows_exporter).         |
 | Telegram Alerts | WORKING | Brain daemon sends alerts on failures. Bot token configured.                     |

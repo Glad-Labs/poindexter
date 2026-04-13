@@ -3,7 +3,7 @@
 **Your PC is a content factory.** Poindexter is an open-source AI content pipeline that researches, writes, reviews, and publishes — autonomously. Built by [Glad Labs LLC](https://www.gladlabs.io).
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-4%2C757_passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-5%2C000%2B_passing-brightgreen)]()
 [![Status](https://img.shields.io/badge/status-alpha-orange.svg)]()
 [![Built by Glad Labs LLC](https://img.shields.io/badge/built_by-Glad_Labs_LLC-blueviolet.svg)](https://www.gladlabs.io)
 
@@ -21,6 +21,8 @@ One engine that runs your entire content operation:
 8. **Monitors** itself with 7 Grafana dashboards, auto-heals via brain daemon
 
 Run it on your machine. Own your data. No cloud lock-in.
+
+**Not a spam cannon.** 50% of generated drafts are rejected by QA. Six independent reviewers, anti-hallucination validation, and research-backed content. Speed comes from generating more candidates and filtering aggressively — not from lowering the bar.
 
 ## Prerequisites
 
@@ -75,7 +77,7 @@ Poindexter is in **alpha**. Honestly:
 **What works today:**
 
 - The full content pipeline end-to-end on the author's daily-driver setup (RTX 5090, 64GB RAM, Windows 11 + WSL2). Single-operator content business, a few published posts per day.
-- 4,700+ unit tests passing in CI on every push.
+- 5,000+ unit tests passing in CI on every push.
 - Bootstrap script that takes a fresh clone to a healthy local stack with auto-generated secrets.
 - Live in-place upgrades — database renames, container renames, and env var migrations have been applied to a running instance with zero data loss and no downtime for in-flight tasks.
 - Customer-facing Docker containers with healthchecks, restart policies, and log aggregation baked in.
@@ -131,7 +133,7 @@ Any Frontend (reads static JSON from CDN)
 | **Multi-Site**            | One daemon manages N sites. Each site = config row + storage bucket.             |
 | **Self-Healing**          | Brain daemon monitors all services, restarts failures, alerts via Telegram       |
 | **Production Monitoring** | 7 Grafana dashboards included out of the box                                     |
-| **4,700+ Tests**          | Comprehensive unit test coverage across all services                             |
+| **5,000+ Tests**          | Comprehensive unit test coverage across all services                             |
 
 ## Stack
 
@@ -181,10 +183,15 @@ reading.
 
 The engine is free and open-source. For production-quality output:
 
-- **Quick Start Guide ($29)** — curated 30-minute setup path with Matt's exact tuning + seed data + one-shot install script
-- **Premium Subscription ($9/mo)** — monthly prompt improvements + long-form _AI Content Pipeline_ book + Discord access
+| Tier             | Price        | What You Get                                                                                                                |
+| ---------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| **Free**         | $0           | Full pipeline engine, basic prompts, 5 Grafana dashboards                                                                   |
+| **Seed Package** | $29 one-time | Production-tuned config (185+ settings), anti-hallucination rules, writing samples, 2 premium dashboards, Quick Start Guide |
+| **Premium**      | $9/mo        | Monthly updated seeds from live production, private repo access, new fact-check rules, operator Discord, book chapters      |
 
-Available at [gladlabs.io](https://www.gladlabs.io)
+The free tier runs the pipeline end-to-end. The paid tiers give you months of tuning in a single install — the difference between default output and content that actually ranks.
+
+Available at [gladlabs.io/product](https://www.gladlabs.io/product)
 
 ## Contributing
 

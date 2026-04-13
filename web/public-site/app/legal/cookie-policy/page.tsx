@@ -7,7 +7,7 @@ export const metadata: Metadata = {
 };
 
 export default function CookiePolicy() {
-  const lastUpdated = new Date('2026-04-08').toLocaleDateString('en-US', {
+  const lastUpdated = new Date('2026-04-13').toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
@@ -285,6 +285,11 @@ export default function CookiePolicy() {
         <li>
           <strong>GitHub / Giscus</strong> — if you use the comment system on
           blog posts.
+        </li>
+        <li>
+          <strong>Lemon Squeezy LLC</strong> — processes payments as our merchant
+          of record. May set cookies for fraud prevention and checkout session
+          management when you make a purchase.
         </li>
       </ul>
 

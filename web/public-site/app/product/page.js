@@ -115,10 +115,10 @@ const FEATURES = [
 ];
 
 const STATS = [
-  { value: '$30', label: '/mo operating cost' },
-  { value: '4,000+', label: 'tests passing' },
-  { value: '25+', label: 'posts published' },
-  { value: '0', label: 'cloud vendor lock-in' },
+  { value: '$16', label: '/mo operating cost' },
+  { value: '5,000+', label: 'tests passing' },
+  { value: '6', label: 'independent QA reviewers' },
+  { value: '50%', label: 'of drafts rejected by QA' },
 ];
 
 export default function ProductPage() {
@@ -312,6 +312,71 @@ export default function ProductPage() {
       </section>
 
       {/* ============================================================ */}
+      {/* QUALITY NOT SPAM */}
+      {/* ============================================================ */}
+      <section className="relative py-20 px-4 sm:px-6 lg:px-8 bg-slate-900/50">
+        <div className="max-w-4xl mx-auto">
+          <p className="text-sm font-mono text-cyan-500 mb-4 tracking-widest uppercase text-center">
+            Quality, Not Spam
+          </p>
+          <h2 className="text-3xl md:text-4xl font-bold text-white mb-6 text-center font-sora">
+            AI content that{' '}
+            <span className="bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">
+              earns its ranking.
+            </span>
+          </h2>
+          <p className="text-slate-300 text-center mb-12 max-w-2xl mx-auto leading-relaxed">
+            Google&apos;s spam policy targets AI content generated &quot;without
+            adding value for users.&quot; Poindexter is built around the
+            opposite principle: generate more candidates, filter aggressively,
+            publish only what passes.
+          </p>
+
+          <div className="grid md:grid-cols-2 gap-6">
+            <div className="bg-slate-800/40 rounded-xl p-6 border border-slate-700/50">
+              <h3 className="text-lg font-semibold text-white mb-3">6 Independent QA Reviewers</h3>
+              <p className="text-slate-400 text-sm leading-relaxed">
+                Programmatic validator, LLM critic, topic delivery gate,
+                internal consistency gate, vision gate, and preview screenshot
+                check. Different models with different training data catch
+                different blind spots.
+              </p>
+            </div>
+            <div className="bg-slate-800/40 rounded-xl p-6 border border-slate-700/50">
+              <h3 className="text-lg font-semibold text-white mb-3">Anti-Hallucination Layer</h3>
+              <p className="text-slate-400 text-sm leading-relaxed">
+                Deterministic pattern matching catches fabricated people,
+                statistics, quotes, and impossible claims. No LLM can override
+                a regex match. Custom rules via the fact_overrides database.
+              </p>
+            </div>
+            <div className="bg-slate-800/40 rounded-xl p-6 border border-slate-700/50">
+              <h3 className="text-lg font-semibold text-white mb-3">Research-Backed Content</h3>
+              <p className="text-slate-400 text-sm leading-relaxed">
+                Every article starts with web research and source verification.
+                The writer receives real data points, real URLs, and verified
+                facts — not just a bare topic string.
+              </p>
+            </div>
+            <div className="bg-slate-800/40 rounded-xl p-6 border border-slate-700/50">
+              <h3 className="text-lg font-semibold text-white mb-3">50% Rejection Rate by Design</h3>
+              <p className="text-slate-400 text-sm leading-relaxed">
+                Half of generated drafts don&apos;t pass QA. That&apos;s the
+                point. Speed comes from generating more candidates and filtering
+                aggressively — not from lowering the bar.
+              </p>
+            </div>
+          </div>
+
+          <p className="text-slate-500 text-center mt-8 text-sm">
+            The ultimate test: would you be embarrassed if someone realized the
+            article was AI-generated? If no — if the content is genuinely useful
+            regardless of how it was made — it&apos;s ready to publish.
+          </p>
+        </div>
+      </section>
+
+      {/* ============================================================ */}
       {/* PRICING / CTA */}
       {/* ============================================================ */}
       <section className="relative py-20 px-4 sm:px-6 lg:px-8">
@@ -337,7 +402,7 @@ export default function ProductPage() {
               <ul className="space-y-3 text-sm text-slate-300 mb-8">
                 <li className="flex gap-2">
                   <span className="text-cyan-400 flex-shrink-0">+</span>
-                  Full content pipeline
+                  Full content pipeline engine
                 </li>
                 <li className="flex gap-2">
                   <span className="text-cyan-400 flex-shrink-0">+</span>
@@ -345,19 +410,23 @@ export default function ProductPage() {
                 </li>
                 <li className="flex gap-2">
                   <span className="text-cyan-400 flex-shrink-0">+</span>
-                  Basic prompt templates
+                  Basic default prompts
                 </li>
                 <li className="flex gap-2">
                   <span className="text-cyan-400 flex-shrink-0">+</span>
-                  Static JSON export
+                  Static JSON export to any frontend
                 </li>
                 <li className="flex gap-2">
                   <span className="text-cyan-400 flex-shrink-0">+</span>
-                  Community support
+                  5 Grafana monitoring dashboards
+                </li>
+                <li className="flex gap-2">
+                  <span className="text-slate-600 flex-shrink-0">-</span>
+                  <span className="text-slate-500">Default config — functional but untuned</span>
                 </li>
               </ul>
               <a
-                href="https://github.com/Glad-Labs/glad-labs-codebase"
+                href="https://github.com/Glad-Labs/poindexter"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="block w-full text-center px-6 py-3 border border-slate-600 text-slate-300 rounded-xl hover:bg-slate-700/50 transition-colors duration-300 font-medium"
@@ -366,13 +435,13 @@ export default function ProductPage() {
               </a>
             </div>
 
-            {/* Quick Start Guide */}
+            {/* Seed Package */}
             <div className="bg-slate-800/40 rounded-xl p-8 border border-cyan-500/50 relative">
               <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-gradient-to-r from-cyan-500 to-blue-600 rounded-full text-xs font-mono text-white">
                 POPULAR
               </div>
               <h3 className="text-sm font-mono text-cyan-400 uppercase tracking-widest mb-2">
-                Quick Start Guide
+                Seed Package
               </h3>
               <p className="text-3xl font-bold text-white mb-1">$29</p>
               <p className="text-slate-500 text-sm mb-6">one-time</p>
@@ -383,19 +452,23 @@ export default function ProductPage() {
                 </li>
                 <li className="flex gap-2">
                   <span className="text-cyan-400 flex-shrink-0">+</span>
-                  Step-by-step setup guide
+                  Production-tuned config (185+ settings)
                 </li>
                 <li className="flex gap-2">
                   <span className="text-cyan-400 flex-shrink-0">+</span>
-                  First post in 30 minutes
+                  Anti-hallucination rules database
                 </li>
                 <li className="flex gap-2">
                   <span className="text-cyan-400 flex-shrink-0">+</span>
-                  Hardware recommendations
+                  Curated writing style samples
                 </li>
                 <li className="flex gap-2">
                   <span className="text-cyan-400 flex-shrink-0">+</span>
-                  Deployment walkthrough
+                  2 premium Grafana dashboards
+                </li>
+                <li className="flex gap-2">
+                  <span className="text-cyan-400 flex-shrink-0">+</span>
+                  Quick Start Guide (first post in 30 min)
                 </li>
               </ul>
               <span
@@ -418,23 +491,27 @@ export default function ProductPage() {
               <ul className="space-y-3 text-sm text-slate-300 mb-8">
                 <li className="flex gap-2">
                   <span className="text-cyan-400 flex-shrink-0">+</span>
-                  Everything in Quick Start
+                  Everything in Seed Package
                 </li>
                 <li className="flex gap-2">
                   <span className="text-cyan-400 flex-shrink-0">+</span>
-                  Production-grade prompts
+                  Monthly updated seeds from live production
                 </li>
                 <li className="flex gap-2">
                   <span className="text-cyan-400 flex-shrink-0">+</span>
-                  Monthly prompt updates
+                  Private repo with prompt iterations
                 </li>
                 <li className="flex gap-2">
                   <span className="text-cyan-400 flex-shrink-0">+</span>
-                  Advanced documentation
+                  New fact-check rules and topic sources
                 </li>
                 <li className="flex gap-2">
                   <span className="text-cyan-400 flex-shrink-0">+</span>
-                  Priority support
+                  Operator Discord channel
+                </li>
+                <li className="flex gap-2">
+                  <span className="text-cyan-400 flex-shrink-0">+</span>
+                  AI Content Pipeline book (chapters as they ship)
                 </li>
               </ul>
               <span

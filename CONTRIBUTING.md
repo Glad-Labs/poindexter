@@ -10,7 +10,7 @@ Thanks for your interest in contributing. Poindexter is built by Glad Labs LLC a
 4. Bring up the full stack: `docker compose -f docker-compose.local.yml up -d`
 5. Run tests: `cd src/cofounder_agent && python -m pytest tests/unit/ -q --ignore=tests/unit/services/test_web_research.py`
 
-The `--ignore` flag is a known temporary workaround tracked in issue #184.
+The `--ignore` flag is a known temporary workaround for a flaky test dependency.
 
 ## Development Workflow
 

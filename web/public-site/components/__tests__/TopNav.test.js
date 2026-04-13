@@ -5,10 +5,11 @@
  * - Renders nav links
  * - a11y: issue #800 — Articles and Explore links do not have mismatched aria-label
  *   (visible text must be the accessible name per WCAG 2.5.3 Label in Name)
+ * - Search icon opens search input
  */
 
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import TopNavigation from '../TopNav';
 
 // Mock next/link
@@ -19,6 +20,12 @@ jest.mock('next/link', () => {
     </a>
   );
 });
+
+// Mock next/navigation
+const mockPush = jest.fn();
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ push: mockPush }),
+}));
 
 describe('TopNavigation', () => {
   it('renders Articles link', () => {
@@ -46,6 +53,17 @@ describe('TopNavigation', () => {
   it('renders skip-to-main link', () => {
     render(<TopNavigation />);
     expect(screen.getByText('Skip to main content')).toBeInTheDocument();
+  });
+
+  it('renders search button', () => {
+    render(<TopNavigation />);
+    expect(screen.getByRole('button', { name: 'Open search' })).toBeInTheDocument();
+  });
+
+  it('opens search input when search button is clicked', () => {
+    render(<TopNavigation />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open search' }));
+    expect(screen.getByRole('searchbox', { name: 'Search articles' })).toBeInTheDocument();
   });
 });
 
