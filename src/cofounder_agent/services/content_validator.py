@@ -492,6 +492,30 @@ def validate_content(title: str, content: str, topic: str = "") -> ValidationRes
                 matched_text=m.group(0)[:80],
             ))
 
+    # 10. Truncation detection — content that ends mid-sentence indicates
+    # the LLM hit its token limit. This is critical because it means the
+    # reader gets an incomplete article.
+    stripped_content = content.rstrip()
+    if stripped_content and len(stripped_content) > 200:
+        # Check if content ends with a sentence-ending character
+        last_char = stripped_content[-1]
+        if last_char not in '.!?"\u201d)\u2019':
+            # Check it's not a code block or list that legitimately ends without punctuation
+            last_line = stripped_content.split('\n')[-1].strip()
+            _in_code = last_line.startswith('```') or last_line.startswith('    ')
+            _is_heading = last_line.startswith('#')
+            _is_list_item = re.match(r'^[-*\d]+[.)]\s', last_line)
+            if not (_in_code or _is_heading or _is_list_item):
+                issues.append(ValidationIssue(
+                    severity="critical",
+                    category="truncated_content",
+                    description=(
+                        f"Content appears truncated — ends with '{last_line[-60:]}' "
+                        f"which is not a complete sentence. The LLM likely hit its token limit."
+                    ),
+                    matched_text=stripped_content[-100:],
+                ))
+
     # Calculate score penalty
     score_penalty = sum(10 for i in issues if i.severity == "critical")
     score_penalty += sum(3 for i in issues if i.severity == "warning")

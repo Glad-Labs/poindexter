@@ -131,12 +131,28 @@ class IdleWorker:
             results["expire_stale_approvals"] = await self._expire_stale_approvals()
             await self._persist_mark_run("expire_stale_approvals")
 
-        # Check if there are pending content tasks — if so, skip heavier idle work
+        # --- Non-GPU tasks: run even when pipeline is busy ---
+        # Topic discovery (web scraping + DB insert, no GPU)
+        if self._is_due("topic_discovery", 480):
+            results["topic_discovery"] = await self._discover_and_queue_topics()
+            await self._persist_mark_run("topic_discovery")
+
+        # Topic gap analysis (DB query only, no GPU)
+        if self._is_due("topic_gaps", 1440):
+            results["topic_gaps"] = await self._analyze_topic_gaps()
+            await self._persist_mark_run("topic_gaps")
+
+        # Shared context sync (filesystem + DB, no GPU)
+        if self._is_due("context_sync", 30):
+            results["context_sync"] = await self._sync_shared_context()
+            await self._persist_mark_run("context_sync")
+
+        # --- GPU/heavy tasks: skip when pipeline is actively generating ---
         pending = await self.pool.fetchrow(
-            "SELECT COUNT(*) as c FROM content_tasks WHERE status IN ('pending', 'approved', 'in_progress')"
+            "SELECT COUNT(*) as c FROM content_tasks WHERE status IN ('pending', 'in_progress')"
         )
         if pending and pending["c"] > 0:
-            logger.debug("[IDLE] %d active tasks — skipping idle work", pending["c"])
+            logger.debug("[IDLE] %d active tasks — skipping GPU-heavy idle work", pending["c"])
             if results:
                 return results
             return {"skipped": True, "reason": f"{pending['c']} active tasks"}
@@ -151,30 +167,15 @@ class IdleWorker:
             results["link_check"] = await self._check_published_links()
             await self._persist_mark_run("link_check")
 
-        # 3. Topic gap analysis (every 24 hours)
-        if self._is_due("topic_gaps", 1440):
-            results["topic_gaps"] = await self._analyze_topic_gaps()
-            await self._persist_mark_run("topic_gaps")
-
-        # 4. Threshold tuning (every 12 hours)
+        # 3. Threshold tuning (every 12 hours)
         if self._is_due("threshold_tune", 720):
             results["threshold_tune"] = await self._tune_thresholds()
             await self._persist_mark_run("threshold_tune")
 
-        # 5. Stale embedding refresh (every 4 hours)
+        # 4. Stale embedding refresh (every 4 hours)
         if self._is_due("embedding_refresh", 240):
             results["embedding_refresh"] = await self._refresh_stale_embeddings()
             await self._persist_mark_run("embedding_refresh")
-
-        # 6. Topic discovery — find and queue fresh content topics (every 8 hours)
-        if self._is_due("topic_discovery", 480):
-            results["topic_discovery"] = await self._discover_and_queue_topics()
-            await self._persist_mark_run("topic_discovery")
-
-        # 7. Shared context sync (every 30 minutes)
-        if self._is_due("context_sync", 30):
-            results["context_sync"] = await self._sync_shared_context()
-            await self._persist_mark_run("context_sync")
 
         # 8. Auto-embed new/changed posts (every 2 hours)
         if self._is_due("auto_embed", 120):
@@ -249,7 +250,7 @@ class IdleWorker:
             await self._persist_mark_run("devto_crosspost")
 
         # 19. Database backup — export key tables as JSON to local disk (every 24 hours)
-        if self._is_due("db_backup", 1440):
+        if self._is_due("db_backup", 720):
             results["db_backup"] = await self._backup_database()
             await self._persist_mark_run("db_backup")
 
@@ -1751,7 +1752,15 @@ class IdleWorker:
             return {"error": str(e)}
 
     async def _backup_database(self) -> dict:
-        """Export key tables as JSON to ~/.poindexter/backups/ (no pg_dump needed)."""
+        """Full database backup: pg_dump + R2 upload + JSON table export.
+
+        Three layers of backup:
+        1. pg_dump (custom format, compressed) — full schema + data, restorable
+        2. R2 upload — off-site copy of the pg_dump to Cloudflare R2
+        3. JSON export — human-readable table dumps for quick inspection
+
+        Local retention: 14 days. R2 retention: 90 days (managed by R2 lifecycle rules).
+        """
         import json
         import os
         from datetime import datetime, timezone
@@ -1759,18 +1768,94 @@ class IdleWorker:
         backup_dir = os.path.join(os.path.expanduser("~"), ".poindexter", "backups")
         os.makedirs(backup_dir, exist_ok=True)
 
-        tables = [
-            "posts",
-            "app_settings",
-            "brain_knowledge",
-            "brain_decisions",
-            "affiliate_links",
-            "content_tasks",
-            "page_views",
-            "cost_logs",
-        ]
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        result: dict = {"timestamp": timestamp}
 
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        # ── Layer 1: pg_dump ──────────────────────────────────────────
+        dump_file = os.path.join(backup_dir, f"poindexter-db-{timestamp}.dump")
+        try:
+            import asyncio
+            # Parse DATABASE_URL for pg_dump connection params.
+            # The pool connects via Docker networking (postgres-local:5432)
+            # and we need the same host, not localhost.
+            from urllib.parse import urlparse
+            db_url = os.environ.get("DATABASE_URL", "")
+            if db_url:
+                parsed = urlparse(db_url)
+                db_host = parsed.hostname or "postgres-local"
+                db_port = str(parsed.port or 5432)
+                db_name = (parsed.path or "/poindexter_brain").lstrip("/")
+                db_user = parsed.username or "poindexter"
+                db_pass = parsed.password or ""
+            else:
+                db_host = os.environ.get("PGHOST", "postgres-local")
+                db_port = os.environ.get("PGPORT", "5432")
+                db_name = os.environ.get("PGDATABASE", "poindexter_brain")
+                db_user = os.environ.get("PGUSER", "poindexter")
+                db_pass = os.environ.get("PGPASSWORD", "")
+
+            env = os.environ.copy()
+            env["PGPASSWORD"] = db_pass
+
+            proc = await asyncio.create_subprocess_exec(
+                "pg_dump",
+                f"--host={db_host}",
+                f"--port={db_port}",
+                f"--username={db_user}",
+                f"--dbname={db_name}",
+                "--format=custom",
+                "--compress=6",
+                "--no-password",
+                f"--file={dump_file}",
+                env=env,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=300)
+
+            if proc.returncode == 0 and os.path.isfile(dump_file) and os.path.getsize(dump_file) > 0:
+                size_mb = round(os.path.getsize(dump_file) / (1024 * 1024), 2)
+                result["pg_dump"] = f"OK ({size_mb} MB)"
+                logger.info("[BACKUP] pg_dump OK: %s (%s MB)", dump_file, size_mb)
+            else:
+                err_msg = stderr.decode(errors="replace")[:200] if stderr else "unknown error"
+                result["pg_dump"] = f"FAILED: {err_msg}"
+                logger.warning("[BACKUP] pg_dump failed: %s", err_msg)
+                if os.path.isfile(dump_file):
+                    os.remove(dump_file)
+                dump_file = None
+        except FileNotFoundError:
+            result["pg_dump"] = "SKIPPED: pg_dump not installed"
+            logger.info("[BACKUP] pg_dump not available — skipping binary backup")
+            dump_file = None
+        except Exception as e:
+            result["pg_dump"] = f"ERROR: {e}"
+            logger.warning("[BACKUP] pg_dump error: %s", e)
+            dump_file = None
+
+        # ── Layer 2: R2 upload ────────────────────────────────────────
+        if dump_file and os.path.isfile(dump_file):
+            try:
+                from services.r2_upload_service import upload_to_r2
+                r2_key = f"backups/db/poindexter-db-{timestamp}.dump"
+                url = await upload_to_r2(dump_file, r2_key, content_type="application/octet-stream")
+                if url:
+                    result["r2_upload"] = f"OK ({r2_key})"
+                    logger.info("[BACKUP] R2 upload OK: %s", r2_key)
+                else:
+                    result["r2_upload"] = "FAILED: upload_to_r2 returned None (check R2 credentials)"
+                    logger.warning("[BACKUP] R2 upload returned None — check cloudflare_r2_access_key in app_settings")
+            except Exception as e:
+                result["r2_upload"] = f"FAILED: {e}"
+                logger.warning("[BACKUP] R2 upload failed: %s", e)
+        else:
+            result["r2_upload"] = "SKIPPED (no dump file)"
+
+        # ── Layer 3: JSON table export (lightweight, human-readable) ──
+        tables = [
+            "posts", "app_settings", "brain_knowledge", "brain_decisions",
+            "affiliate_links", "content_tasks", "page_views", "cost_logs",
+        ]
         backed_up = []
         errors = []
 
@@ -1780,13 +1865,12 @@ class IdleWorker:
                 if not rows:
                     continue
                 records = [dict(r) for r in rows]
-                # Convert non-serializable types
                 for rec in records:
                     for k, v in rec.items():
                         if hasattr(v, "isoformat"):
                             rec[k] = v.isoformat()
                         elif isinstance(v, (bytes, memoryview)):
-                            rec[k] = None  # skip binary
+                            rec[k] = None
                         elif not isinstance(v, (str, int, float, bool, list, dict, type(None))):
                             rec[k] = str(v)
 
@@ -1797,18 +1881,47 @@ class IdleWorker:
             except Exception as e:
                 errors.append(f"{table}: {e}")
 
-        # Prune old backups — keep last 7 days
+        result["json_export"] = backed_up
+
+        # ── Prune old local backups — keep last 14 days ───────────────
         try:
-            cutoff = time.time() - (7 * 86400)
+            cutoff = time.time() - (14 * 86400)
+            pruned = 0
             for fname in os.listdir(backup_dir):
                 fpath = os.path.join(backup_dir, fname)
                 if os.path.isfile(fpath) and os.path.getmtime(fpath) < cutoff:
                     os.remove(fpath)
+                    pruned += 1
+            if pruned:
+                result["pruned"] = pruned
         except Exception as e:
-            logger.debug("[IDLE] Backup pruning failed: %s", e)
+            logger.debug("[BACKUP] Pruning failed: %s", e)
 
-        logger.info("[IDLE] DB backup: %d tables backed up to %s", len(backed_up), backup_dir)
-        result = {"backed_up": backed_up, "backup_dir": backup_dir}
+        # ── Alert on failure ──────────────────────────────────────────
+        pg_ok = result.get("pg_dump", "").startswith("OK")
+        r2_ok = result.get("r2_upload", "").startswith("OK")
+
+        if not pg_ok or not r2_ok:
+            try:
+                await self._create_gitea_issue(
+                    title=f"[AUTO] Database backup issue — {timestamp}",
+                    body=(
+                        f"Automated backup had issues:\n\n"
+                        f"- pg_dump: {result.get('pg_dump', 'N/A')}\n"
+                        f"- R2 upload: {result.get('r2_upload', 'N/A')}\n"
+                        f"- JSON export: {len(backed_up)} tables\n"
+                    ),
+                )
+            except Exception:
+                pass  # Don't fail the backup over a Gitea issue
+
+        logger.info(
+            "[BACKUP] Complete — pg_dump=%s, R2=%s, JSON=%d tables, dir=%s",
+            result.get("pg_dump", "N/A")[:30],
+            result.get("r2_upload", "N/A")[:30],
+            len(backed_up),
+            backup_dir,
+        )
         if errors:
             result["errors"] = errors[:5]
         return result

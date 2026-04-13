@@ -110,10 +110,11 @@ async def _ping_search_engines(site_url: str, post_url: str) -> None:
         timeout=httpx.Timeout(10.0, connect=3.0)
     ) as client:
         # IndexNow (Bing, Yandex, Naver, Seznam)
+        _indexnow_key = site_config.get("indexnow_key", "34352c4f981b45698941c47eefef2fb4")
         try:
             await client.get(
                 "https://api.indexnow.org/indexnow",
-                params={"url": post_url, "key": "gladlabs"},
+                params={"url": post_url, "key": _indexnow_key},
                 timeout=10,
             )
             logger.info("[SEO] IndexNow ping sent for %s", post_url)

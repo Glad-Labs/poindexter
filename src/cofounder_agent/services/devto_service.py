@@ -126,6 +126,9 @@ class DevToCrossPostService:
         for tag in tags:
             # Lowercase, strip spaces, keep only alphanumeric
             normalized = re.sub(r'[^a-z0-9]', '', tag.lower().strip())
+            # Dev.to enforces max 30 chars per tag
+            if len(normalized) > 30:
+                normalized = normalized[:30]
             if len(normalized) >= 2 and normalized not in cleaned:  # Min 2 chars
                 cleaned.append(normalized)
             if len(cleaned) >= 4:

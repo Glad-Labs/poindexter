@@ -575,9 +575,21 @@ class TestDiscover:
         pool = _make_pool()
         d = TopicDiscovery(pool)
 
-        # Generate 10 brand-relevant topics
+        # Generate 10 brand-relevant topics with distinct titles
+        _titles = [
+            "Building Local LLM Inference Pipelines with Ollama",
+            "GPU Memory Management for Deep Learning Workloads",
+            "Self-Hosted AI Content Generation Architecture",
+            "Automated Quality Assurance for Machine Learning Outputs",
+            "Vector Database Performance Benchmarks Compared",
+            "Fine-Tuning Open Source Models on Consumer Hardware",
+            "Prompt Engineering Patterns for Technical Writing",
+            "Running Stable Diffusion Locally on RTX GPUs",
+            "Embedding Search for Knowledge Base Retrieval",
+            "Edge Inference Deployment Strategies for Solo Developers",
+        ]
         many = [
-            DiscoveredTopic(title=f"AI Self-Hosted Topic {i} About LLMs",
+            DiscoveredTopic(title=_titles[i],
                            category="technology", source="brain", source_url="",
                            relevance_score=float(i))
             for i in range(10)

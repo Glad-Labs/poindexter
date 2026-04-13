@@ -15,9 +15,8 @@
 #   7. Prints next steps
 #
 # After running this, you can:
-#   - Start the backend: cd src/cofounder_agent && poetry run uvicorn main:app --port 8000
-#   - Start the frontend: cd web/public-site && npm run dev
-#   - View dashboards: http://localhost:3000 (admin/admin)
+#   - Start the full stack: docker compose -f docker-compose.local.yml up -d
+#   - View dashboards: http://localhost:3000 (Grafana, password in .env.local)
 
 set -euo pipefail
 
@@ -136,28 +135,15 @@ cd ../..
 ok "Dependencies installed"
 
 # ============================================================
-# 5. Run database migrations
+# 5. Verify database connectivity
 # ============================================================
-info "Running database migrations..."
-cd src/cofounder_agent
-poetry run python -c "
-import asyncio
-import asyncpg
-import os
-
-async def migrate():
-    url = os.getenv('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5432/glad_labs_dev')
-    try:
-        conn = await asyncpg.connect(url)
-        print('Connected to production database — migrations will run on app startup')
-        await conn.close()
-    except Exception as e:
-        print(f'Production DB not reachable (expected for local-only setup): {e}')
-    print('Local brain DB initialized via Docker init.sql')
-
-asyncio.run(migrate())
-" 2>/dev/null || warn "Migration check skipped — will run on first backend start"
-cd ../..
+info "Verifying database connectivity..."
+if PGPASSWORD="${LOCAL_POSTGRES_PASSWORD:-poindexter-brain-local}" psql -h localhost -p 15432 -U "${LOCAL_POSTGRES_USER:-poindexter}" -d "${LOCAL_POSTGRES_DB:-poindexter_brain}" -c "SELECT 1" >/dev/null 2>&1; then
+    ok "Database reachable (migrations will run automatically when the worker starts)"
+else
+    warn "Database not reachable via psql — this is OK if psql is not installed"
+    info "The worker container runs all migrations automatically on first boot"
+fi
 
 # ============================================================
 # 6. Seed default settings
@@ -165,7 +151,7 @@ cd ../..
 info "Seeding default app_settings..."
 
 # These are the configurable knobs — change them in the DB, not in code
-PGPASSWORD="${LOCAL_POSTGRES_PASSWORD:-poindexter-brain-local}" psql -h localhost -p 5433 -U "${LOCAL_POSTGRES_USER:-poindexter}" -d "${LOCAL_POSTGRES_DB:-poindexter_brain}" -c "
+PGPASSWORD="${LOCAL_POSTGRES_PASSWORD:-poindexter-brain-local}" psql -h localhost -p 15432 -U "${LOCAL_POSTGRES_USER:-poindexter}" -d "${LOCAL_POSTGRES_DB:-poindexter_brain}" -c "
 CREATE TABLE IF NOT EXISTS app_settings (
     id SERIAL PRIMARY KEY,
     key VARCHAR(255) UNIQUE NOT NULL,
@@ -201,8 +187,8 @@ INSERT INTO app_settings (key, value, category, description, is_secret) VALUES
 ('pipeline_fallback_model', 'ollama/gemma3:27b', 'models', 'Fallback when primary unavailable', false),
 
 -- Token limits
-('qa_thinking_model_max_tokens', '1500', 'tokens', 'Max tokens for thinking models in QA', false),
-('qa_standard_max_tokens', '300', 'tokens', 'Max tokens for standard models in QA', false),
+('qa_thinking_model_max_tokens', '8000', 'tokens', 'Max tokens for thinking models in QA', false),
+('qa_standard_max_tokens', '1500', 'tokens', 'Max tokens for standard models in QA', false),
 ('qa_temperature', '0.3', 'tokens', 'Temperature for QA reviews', false),
 ('content_temperature', '0.7', 'tokens', 'Temperature for content generation', false),
 ('max_tokens_default', '800', 'tokens', 'Default max tokens', false),
@@ -234,9 +220,11 @@ ON CONFLICT (key) DO NOTHING;
 # ============================================================
 info "Detecting hardware..."
 if command -v python3 >/dev/null 2>&1; then
-    python3 scripts/detect-hardware.py 2>/dev/null || python scripts/detect-hardware.py 2>/dev/null
+    python3 scripts/detect-hardware.py || warn "Hardware detection failed (non-critical)"
 elif command -v python >/dev/null 2>&1; then
-    python scripts/detect-hardware.py 2>/dev/null
+    python scripts/detect-hardware.py || warn "Hardware detection failed (non-critical)"
+else
+    warn "Python not available for hardware detection — using default model recommendations"
 fi
 
 # ============================================================

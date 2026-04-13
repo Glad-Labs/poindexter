@@ -8,7 +8,7 @@ WORKDIR /app
 # container. They're a few hundred MB but cold bytes when the feature
 # is off (qa_preview_screenshot_enabled=false by default).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc libpq-dev curl \
+    gcc libpq-dev curl postgresql-client \
     ca-certificates \
     fonts-liberation \
     libasound2 \
