@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import subprocess
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
@@ -39,7 +40,7 @@ API_URL = os.getenv("POINDEXTER_API_URL") or os.getenv("GLADLABS_API_URL", "http
 API_TOKEN = os.getenv("POINDEXTER_API_TOKEN") or os.getenv("GLADLABS_API_TOKEN", "dev-token")
 LOCAL_DB_DSN = os.getenv(
     "LOCAL_DATABASE_URL",
-    "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain",
+    "postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain",
 )
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
@@ -98,6 +99,13 @@ def _api(method: str, path: str, data: dict | None = None) -> dict:
     try:
         resp = urllib.request.urlopen(req, timeout=15)
         return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        # Capture the response body — it contains the actual error details
+        try:
+            error_body = json.loads(e.read())
+            return {"error": f"HTTP {e.code}", **error_body}
+        except Exception:
+            return {"error": f"HTTP {e.code}: {str(e)[:200]}"}
     except Exception as e:
         return {"error": str(e)[:200]}
 
@@ -152,17 +160,36 @@ async def list_tasks(status: str = "all", limit: int = 10) -> str:
         return f"Error: {e}"
 
 
+async def _resolve_task_id(task_id: str) -> str:
+    """Resolve a short task ID prefix to the full UUID via database lookup."""
+    if len(task_id) >= 32:
+        return task_id
+    try:
+        pool = await _get_pool()
+        row = await pool.fetchrow(
+            "SELECT task_id FROM content_tasks WHERE task_id::text LIKE $1 || '%' LIMIT 1",
+            task_id,
+        )
+        if row:
+            return str(row["task_id"])
+    except Exception:
+        pass
+    return task_id  # Fall back to whatever was given
+
+
 @mcp.tool()
-def approve_post(task_id: str) -> str:
+async def approve_post(task_id: str) -> str:
     """Approve a content task for publishing."""
-    result = _api("POST", f"/api/tasks/{task_id}/approve")
+    full_id = await _resolve_task_id(task_id)
+    result = _api("POST", f"/api/tasks/{full_id}/approve")
     return f"Status: {result.get('status', result.get('error', '?'))}"
 
 
 @mcp.tool()
-def reject_post(task_id: str, reason: str = "Rejected by reviewer") -> str:
+async def reject_post(task_id: str, reason: str = "Rejected by reviewer") -> str:
     """Reject a content task. Provide a reason for feedback to the pipeline."""
-    result = _api("POST", f"/api/tasks/{task_id}/reject", data={
+    full_id = await _resolve_task_id(task_id)
+    result = _api("POST", f"/api/tasks/{full_id}/reject", data={
         "reason": reason,
         "feedback": reason,
         "allow_revisions": False,
@@ -172,9 +199,10 @@ def reject_post(task_id: str, reason: str = "Rejected by reviewer") -> str:
 
 
 @mcp.tool()
-def publish_post(task_id: str) -> str:
+async def publish_post(task_id: str) -> str:
     """Publish an approved content task to the configured site."""
-    result = _api("POST", f"/api/tasks/{task_id}/publish")
+    full_id = await _resolve_task_id(task_id)
+    result = _api("POST", f"/api/tasks/{full_id}/publish")
     return f"Status: {result.get('status', result.get('error', '?'))}"
 
 
@@ -217,7 +245,7 @@ def check_health() -> str:
 
     # Worker
     try:
-        resp = urllib.request.urlopen("http://localhost:8002/api/health", timeout=5)
+        resp = urllib.request.urlopen(f"{API_URL}/api/health", timeout=5)
         data = json.loads(resp.read())
         te = data.get("components", {}).get("task_executor", {})
         checks.append(f"Worker: running={te.get('running')}, processed={te.get('total_processed')}")
