@@ -147,5 +147,5 @@ if ($telegramToken -and $telegramChatId) {
         Write-Log "ERROR: Telegram alert failed: $_"
     }
 } else {
-    Write-Log "WARN: No Telegram credentials — alert not sent"
+    Write-Log "WARN: No Telegram credentials - alert not sent"
 }
