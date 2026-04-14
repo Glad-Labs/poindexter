@@ -384,22 +384,30 @@ async def list_settings(category: str = "") -> str:
 # ============================================================================
 
 @mcp.tool()
-async def search_memory(query: str, top_k: int = 8, source_filter: str = "") -> str:
+async def search_memory(query: str, top_k: int = 8, source_filter: str = "", min_similarity: float = 0.3) -> str:
     """Search semantic memory (pgvector) using natural language.
 
     Searches across ALL embedded content: memory files, blog posts, Gitea issues, audit logs.
     Use this to recall prior decisions, find related content, or check what the system knows.
 
+    Results below min_similarity are filtered out to reduce noise as the
+    embedding count grows. The similarity score is shown per result so
+    callers can gauge relevance.
+
     Args:
         query: Natural language search query (e.g. "cost tracking decisions", "ollama configuration")
         top_k: Number of results to return (default 8)
         source_filter: Optional filter by source_table (e.g. "memory", "post", "issue", "audit")
+        min_similarity: Minimum cosine similarity threshold (default 0.3). Results below this are dropped.
     """
     try:
         embedding = await _embed_text(query)
         pool = await _get_pool()
 
         vector_str = "[" + ",".join(str(v) for v in embedding) + "]"
+
+        # Fetch more candidates than requested so we can filter by threshold
+        fetch_limit = top_k * 3
 
         if source_filter:
             rows = await pool.fetch(
@@ -411,7 +419,7 @@ async def search_memory(query: str, top_k: int = 8, source_filter: str = "") -> 
                 ORDER BY embedding <=> $1::vector
                 LIMIT $3
                 """,
-                vector_str, source_filter, top_k,
+                vector_str, source_filter, fetch_limit,
             )
         else:
             rows = await pool.fetch(
@@ -422,11 +430,14 @@ async def search_memory(query: str, top_k: int = 8, source_filter: str = "") -> 
                 ORDER BY embedding <=> $1::vector
                 LIMIT $2
                 """,
-                vector_str, top_k,
+                vector_str, fetch_limit,
             )
 
+        # Apply similarity threshold and cap at top_k
+        rows = [r for r in rows if float(r["similarity"]) >= min_similarity][:top_k]
+
         if not rows:
-            return f'No results for "{query}". The embedding database may be empty or Ollama may have generated an incompatible vector.'
+            return f'No results for "{query}" above similarity threshold {min_similarity}.'
 
         lines = [f'Memory search: "{query}" ({len(rows)} results)\n']
         for i, row in enumerate(rows, 1):
