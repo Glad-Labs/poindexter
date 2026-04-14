@@ -54,11 +54,11 @@ async function fetchPublishedContent() {
       ? (await postsRes.json()).posts || []
       : [];
 
-    const allCategories: Category[] = categoriesRes.ok
-      ? (await categoriesRes.json()).categories ||
-        (await categoriesRes.json()) ||
-        []
-      : [];
+    let allCategories: Category[] = [];
+    if (categoriesRes.ok) {
+      const catData = await categoriesRes.json();
+      allCategories = catData.categories || catData || [];
+    }
 
     // Extract unique tags from sitemap.json tag URLs, or fall back to empty
     let allTags: Tag[] = [];
