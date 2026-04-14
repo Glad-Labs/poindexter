@@ -16,6 +16,23 @@ services:
       POSTGRES_DB: ${LOCAL_POSTGRES_DB:-poindexter_brain}
       POSTGRES_USER: ${LOCAL_POSTGRES_USER:-poindexter}
       POSTGRES_PASSWORD: ${LOCAL_POSTGRES_PASSWORD:?LOCAL_POSTGRES_PASSWORD must be set}
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=512MB"
+      - "-c"
+      - "effective_cache_size=2GB"
+      - "-c"
+      - "work_mem=8MB"
+      - "-c"
+      - "maintenance_work_mem=128MB"
+      - "-c"
+      - "checkpoint_timeout=10min"
+      - "-c"
+      - "max_wal_size=2GB"
+      - "-c"
+      - "random_page_cost=1.1"
+    shm_size: "256mb"
     volumes:
       - postgres-local-data:/var/lib/postgresql/data
       - ./infrastructure/local-db/init.sql:/docker-entrypoint-initdb.d/01-init.sql
