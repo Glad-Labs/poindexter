@@ -771,6 +771,26 @@ class IdleWorker:
             svc = PodcastService()
             generated = 0
             uploaded = 0
+
+            # First pass: sync existing local episodes to R2 (runs until all caught up)
+            try:
+                from services.r2_upload_service import upload_podcast_episode
+                sync_count = 0
+                for post in posts:
+                    if svc.episode_exists(post["id"]) and sync_count < 5:
+                        try:
+                            r2_url = await upload_podcast_episode(post["id"])
+                            if r2_url:
+                                sync_count += 1
+                        except Exception:
+                            pass
+                if sync_count > 0:
+                    uploaded += sync_count
+                    logger.info("[IDLE] Synced %d podcast episodes to R2", sync_count)
+            except ImportError:
+                pass
+
+            # Second pass: generate new episodes for posts that don't have them
             for post in posts:
                 if svc.episode_exists(post["id"]):
                     continue
