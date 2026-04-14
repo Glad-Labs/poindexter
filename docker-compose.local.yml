@@ -32,6 +32,10 @@ services:
       - "max_wal_size=2GB"
       - "-c"
       - "random_page_cost=1.1"
+      - "-c"
+      - "shared_preload_libraries=pg_stat_statements"
+      - "-c"
+      - "pg_stat_statements.track=all"
     shm_size: "256mb"
     volumes:
       - postgres-local-data:/var/lib/postgresql/data
