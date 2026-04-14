@@ -814,16 +814,15 @@ class TaskExecutor:
             _request_id_var.reset(_trace_token)
 
     async def _get_setting(self, key: str, default: str) -> str:
-        """Read a setting from app_settings, falling back to default."""
-        if not self.database_service or not self.database_service.pool:
+        """Read a setting from app_settings, falling back to default.
+
+        Uses the AdminDatabase's 60-second TTL cache instead of hitting
+        the database directly on every call.
+        """
+        if not self.database_service:
             return default
         try:
-            row = await self.database_service.pool.fetchrow(
-                "SELECT value FROM app_settings WHERE key = $1", key
-            )
-            if row and "value" in row:
-                return row["value"]
-            return default
+            return await self.database_service.get_setting_value(key, default)
         except Exception:
             return default
 
