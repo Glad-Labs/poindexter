@@ -447,7 +447,7 @@ groups:
           team: glad-labs
         annotations:
           summary: "Content worker has not checked in recently"
-          description: "No worker heartbeat in the last 30 minutes. The content pipeline cannot process tasks. Check if the worker process is running."
+          description: "No brain cycle has logged a decision in 30 minutes AND the worker has no recent task activity. The worker process may be crashed."
         data:
           - refId: A
             datasourceUid: local-brain-db
@@ -455,7 +455,7 @@ groups:
               from: 1800
               to: 0
             model:
-              rawSql: "SELECT COUNT(*) as recent_tasks FROM pipeline_tasks_view WHERE updated_at > NOW() - INTERVAL '30 minutes' AND status IN ('in_progress', 'completed', 'failed')"
+              rawSql: "SELECT CASE WHEN (SELECT MAX(created_at) FROM brain_decisions) > NOW() - INTERVAL '10 minutes' THEN 1 ELSE (SELECT COUNT(*) FROM pipeline_tasks_view WHERE updated_at > NOW() - INTERVAL '30 minutes' AND status IN ('in_progress', 'completed', 'failed')) END as worker_ok"
               format: table
               editorMode: code
           - refId: B
@@ -499,7 +499,7 @@ groups:
           team: glad-labs
         annotations:
           summary: "No local model inference in the last 6 hours"
-          description: "No cost_log entries for local models recently. Ollama may be down or unresponsive. Check if ollama serve is running."
+          description: "No local model inference in 6 hours while tasks are pending. Ollama may be down or unresponsive."
         data:
           - refId: A
             datasourceUid: local-brain-db
@@ -507,7 +507,7 @@ groups:
               from: 21600
               to: 0
             model:
-              rawSql: "SELECT COUNT(*) as local_calls FROM cost_logs WHERE cost_type = 'local_compute' AND created_at > NOW() - INTERVAL '6 hours'"
+              rawSql: "SELECT CASE WHEN (SELECT COUNT(*) FROM pipeline_tasks_view WHERE status IN ('pending', 'in_progress')) = 0 THEN 1 ELSE (SELECT COUNT(*) FROM cost_logs WHERE cost_type = 'local_compute' AND created_at > NOW() - INTERVAL '6 hours') END as ollama_ok"
               format: table
               editorMode: code
           - refId: B
