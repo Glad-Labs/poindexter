@@ -435,7 +435,163 @@ groups:
                   reducer:
                     type: last
 
-      # 9. ZERO PUBLISHED POSTS THIS WEEK — no posts published in 7 days
+      # 9. WORKER OFFLINE — API health endpoint not returning healthy worker
+      - uid: brain-worker-offline
+        title: Worker Offline
+        condition: C
+        for: 5m
+        noDataState: Alerting
+        execErrState: Alerting
+        labels:
+          severity: critical
+          team: glad-labs
+        annotations:
+          summary: "Content worker has not checked in recently"
+          description: "No worker heartbeat in the last 30 minutes. The content pipeline cannot process tasks. Check if the worker process is running."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            model:
+              rawSql: "SELECT COUNT(*) as recent_tasks FROM content_tasks WHERE updated_at > NOW() - INTERVAL '30 minutes' AND status IN ('in_progress', 'completed', 'failed')"
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: lt
+                    params:
+                      - 1
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+
+      # 10. OLLAMA DOWN — no cost_logs from local models in last 6 hours during active pipeline
+      - uid: brain-ollama-down
+        title: Ollama Unresponsive
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          team: glad-labs
+        annotations:
+          summary: "No local model inference in the last 6 hours"
+          description: "No cost_log entries for local models recently. Ollama may be down or unresponsive. Check if ollama serve is running."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 21600
+              to: 0
+            model:
+              rawSql: "SELECT COUNT(*) as local_calls FROM cost_logs WHERE cost_type = 'local_compute' AND created_at > NOW() - INTERVAL '6 hours'"
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: lt
+                    params:
+                      - 1
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+
+      # 11. BRAIN HEARTBEAT STALE — brain daemon hasn't logged a decision in 15 min
+      - uid: brain-heartbeat-stale
+        title: Brain Daemon Stale
+        condition: C
+        for: 0s
+        noDataState: Alerting
+        execErrState: Alerting
+        labels:
+          severity: critical
+          team: glad-labs
+        annotations:
+          summary: "Brain daemon has not completed a cycle in 15+ minutes"
+          description: "No brain_decisions logged in {{ $values.B.Value }} minutes. The daemon may be crashed or stuck. The OS-level watchdog should auto-restart it."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            model:
+              rawSql: "SELECT EXTRACT(EPOCH FROM NOW() - MAX(created_at))/60 as minutes_since FROM brain_decisions"
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 15
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+
+      # 12. ZERO PUBLISHED POSTS THIS WEEK — no posts published in 7 days
       - uid: brain-zero-published-week
         title: Zero Published Posts This Week
         condition: C
