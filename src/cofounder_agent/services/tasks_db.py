@@ -67,6 +67,12 @@ class TasksDatabase(DatabaseServiceMixin):
             pool: asyncpg connection pool
         """
         self.pool = pool
+        # Phase 2 dual-write: mirror writes to new pipeline_* tables (#211)
+        try:
+            from services.pipeline_db import PipelineDB
+            self._pipeline = PipelineDB(pool)
+        except Exception:
+            self._pipeline = None
 
     @log_query_performance(operation="get_pending_tasks", category="task_retrieval")
     async def get_pending_tasks(self, limit: int = 10) -> list[dict]:
@@ -245,6 +251,10 @@ class TasksDatabase(DatabaseServiceMixin):
                     task_data.get("user_id", "unknown"),
                     task_data.get("task_type", "unknown"),
                 )
+                # Phase 2 dual-write (#211)
+                if self._pipeline:
+                    await self._pipeline.upsert_task(task_id, insert_data)
+                    await self._pipeline.upsert_version(task_id, insert_data)
                 return str(result)
         except Exception as e:
             logger.error("Failed to add task: %s", e, exc_info=True)
@@ -467,6 +477,13 @@ class TasksDatabase(DatabaseServiceMixin):
                         "Task status updated: %s -> %s | task_type=%s",
                         task_id, status, task_type,
                     )
+                    # Phase 2 dual-write (#211)
+                    if self._pipeline:
+                        await self._pipeline.update_task_status(task_id, status)
+                        if result:
+                            result_data = json.loads(result) if isinstance(result, str) else result
+                            if isinstance(result_data, dict):
+                                await self._pipeline.upsert_version(task_id, result_data)
                     return self._convert_row_to_dict(row)
                 return None
         except Exception as e:
@@ -582,6 +599,10 @@ class TasksDatabase(DatabaseServiceMixin):
 
                 row = await conn.fetchrow(sql, *params)
                 if row:
+                    # Phase 2 dual-write (#211)
+                    if self._pipeline:
+                        await self._pipeline.upsert_task(task_id, normalized_updates)
+                        await self._pipeline.upsert_version(task_id, normalized_updates)
                     task_response = ModelConverter.to_task_response(row)
                     return ModelConverter.to_dict(task_response)
                 logger.warning("Update returned no row for task %s", task_id)
