@@ -137,13 +137,13 @@ async def list_tasks(status: str = "all", limit: int = 10) -> str:
         if status != "all":
             rows = await pool.fetch(
                 "SELECT task_id, topic, status, quality_score, created_at "
-                "FROM content_tasks WHERE status = $1 ORDER BY created_at DESC LIMIT $2",
+                "FROM pipeline_tasks_view WHERE status = $1 ORDER BY created_at DESC LIMIT $2",
                 status, limit,
             )
         else:
             rows = await pool.fetch(
                 "SELECT task_id, topic, status, quality_score, created_at "
-                "FROM content_tasks ORDER BY created_at DESC LIMIT $1",
+                "FROM pipeline_tasks_view ORDER BY created_at DESC LIMIT $1",
                 limit,
             )
         if not rows:
@@ -167,7 +167,7 @@ async def _resolve_task_id(task_id: str) -> str:
     try:
         pool = await _get_pool()
         row = await pool.fetchrow(
-            "SELECT task_id FROM content_tasks WHERE task_id::text LIKE $1 || '%' LIMIT 1",
+            "SELECT task_id FROM pipeline_tasks_view WHERE task_id::text LIKE $1 || '%' LIMIT 1",
             task_id,
         )
         if row:

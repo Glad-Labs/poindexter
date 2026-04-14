@@ -56,7 +56,7 @@ alerts:
             / NULLIF(COUNT(*), 0),
             1
           ) as failure_rate
-        FROM content_tasks
+        FROM pipeline_tasks_view
         WHERE created_at > NOW() - INTERVAL '1 hour'
     threshold:
       operator: gt
@@ -80,7 +80,7 @@ alerts:
       datasource_uid: poindexter-postgres
       rawSql: >
         SELECT COUNT(*) as stuck_count
-        FROM content_tasks
+        FROM pipeline_tasks_view
         WHERE status = 'in_progress'
           AND updated_at < NOW() - INTERVAL '30 minutes'
     threshold:
@@ -110,7 +110,7 @@ alerts:
             / NULLIF(COUNT(*), 0),
             1
           ) as pass_rate
-        FROM content_tasks
+        FROM pipeline_tasks_view
         WHERE quality_score IS NOT NULL
           AND created_at > NOW() - INTERVAL '24 hours'
     threshold:
