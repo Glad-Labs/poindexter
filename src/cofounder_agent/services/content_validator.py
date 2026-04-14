@@ -88,6 +88,21 @@ HALLUCINATED_LINK_PATTERNS = [
     r"(?:check\s+out|see|read)\s+our\s+(?:guide|post|article|tutorial)",
 ]
 
+# Unlinked citations — references to papers/studies/research by name without a URL.
+# These are almost always hallucinated by the LLM. Real citations need real links.
+# Matches patterns like "introduced in Paper Title", "according to Study Name".
+# Only flags if the citation-like text is NOT inside a markdown link [text](url).
+UNLINKED_CITATION_PATTERNS = [
+    # "introduced in Title Case Paper Name" / "proposed in Title Case..."
+    r"(?:introduced|proposed|described|presented|outlined|documented|published)\s+in\s+(?![\[\(])(?:[A-Z][a-z]+(?:\s+[A-Za-z]+){2,8})",
+    # "according to Title Case Source" (not followed by a link)
+    r"(?:according\s+to|as\s+(?:highlighted|noted|reported)\s+(?:in|by))\s+(?![\[\(])(?:[A-Z][a-z]+(?:\s+[A-Za-z]+){1,6})",
+    # Bare paper-style titles: "Word Word: Subtitle With Title Case" (6+ words, colon pattern)
+    r"(?<!\[)(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+){2,}:\s+[A-Z][a-z]+(?:\s+[A-Za-z]+){2,})(?!\])",
+    # "et al." references — almost certainly fabricated
+    r"\b[A-Z][a-z]+\s+et\s+al\.?\s*(?:\(\d{4}\)|\[\d+\])?",
+]
+
 # Brand contradiction — we are Ollama-only, never promote paid cloud APIs
 BRAND_CONTRADICTION_PATTERNS = [
     r"(?:pay(?:ing)?\s+(?:for|per)\s+(?:token|API|inference))\s+(?:to|with|from)\s+(?:OpenAI|Anthropic|Google)",
@@ -337,6 +352,12 @@ def validate_content(title: str, content: str, topic: str = "") -> ValidationRes
     issues.extend(_check_patterns(
         full_text, HALLUCINATED_LINK_PATTERNS, "critical", "hallucinated_link",
         "Hallucinated internal link: '{matched}'"
+    ))
+
+    # 5b. Check for unlinked citations (hallucinated paper/study references)
+    issues.extend(_check_patterns(
+        full_text, UNLINKED_CITATION_PATTERNS, "warning", "unlinked_citation",
+        "Unlinked citation — possible hallucinated reference: '{matched}'"
     ))
 
     # 6. Check for brand contradictions (promoting paid cloud APIs)

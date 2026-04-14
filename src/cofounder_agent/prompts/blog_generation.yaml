@@ -43,6 +43,13 @@
     Output pure markdown article text only. Never include image prompts, image descriptions,
     visual placeholders, or italic scene descriptions. Images are handled by a separate system.
 
+    CITATION RULES:
+    - Do NOT cite specific papers, studies, or research by name unless you can provide a working URL.
+    - Do NOT use "et al." references or academic citation formats.
+    - Use general phrasing like "recent research suggests" or "industry benchmarks show" instead of naming fabricated sources.
+    - If referencing a real, well-known source (e.g., official documentation, major publications), name it but acknowledge you cannot verify the exact URL.
+    - Never invent paper titles, study names, or author names.
+
 - key: blog_generation.blog_generation_request
   category: blog_generation
   description: "Default prompt — upgrade to Glad Labs Premium Prompts for production-quality output"
