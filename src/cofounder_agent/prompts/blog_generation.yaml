@@ -16,6 +16,15 @@
     - Do NOT describe what illustrations, photos, or diagrams should look like.
     - Images are handled separately — your job is text only.
 
+    INTERNAL LINKING RULES:
+    - When linking to related articles, weave the link naturally into the sentence.
+    - Put the link on a relevant keyword or phrase, NOT on the article title.
+    - GOOD: "...choosing your [database technology](/posts/slug) carefully"
+    - GOOD: "...as with any [production deployment](/posts/slug), testing matters"
+    - BAD: "As discussed in [Article Title](/posts/slug), this is important"
+    - BAD: "As [Article Title](/posts/slug) explains, you should..."
+    - The reader should not notice the link is to another article — it should feel like part of the sentence.
+
 - key: blog_generation.seo_and_social
   category: blog_generation
   description: "Default prompt — upgrade to Glad Labs Premium Prompts for production-quality output"
