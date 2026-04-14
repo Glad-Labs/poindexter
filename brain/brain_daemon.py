@@ -917,15 +917,42 @@ async def main():
         # Windows doesn't support add_signal_handler — use KeyboardInterrupt instead
         pass
 
-    # Touch heartbeat file for Docker HEALTHCHECK
-    _heartbeat_path = "/tmp/brain_heartbeat"
+    # Heartbeat file — Layer 1 of the redundancy model.
+    # An OS-level watchdog monitors this file's freshness and restarts the
+    # brain if it goes stale (>15 min). Works on any OS, zero dependencies.
+    _heartbeat_dir = os.path.join(os.path.expanduser("~"), ".poindexter")
+    os.makedirs(_heartbeat_dir, exist_ok=True)
+    _heartbeat_path = os.path.join(_heartbeat_dir, "heartbeat")
+    # Also keep Docker path for container healthcheck compatibility
+    _docker_heartbeat = "/tmp/brain_heartbeat" if IS_DOCKER else None
+
+    def _touch_heartbeat(cycle_issues=0, probe_failures=0):
+        """Write structured heartbeat — timestamp + cycle stats."""
+        data = json.dumps({
+            "ts": time.time(),
+            "iso": datetime.now(timezone.utc).isoformat(),
+            "pid": os.getpid(),
+            "cycle_ok": cycle_issues == 0 and probe_failures == 0,
+            "issues": cycle_issues,
+            "probe_failures": probe_failures,
+        })
+        try:
+            with open(_heartbeat_path, "w") as hb:
+                hb.write(data)
+            if _docker_heartbeat:
+                with open(_docker_heartbeat, "w") as hb:
+                    hb.write(data)
+        except OSError as e:
+            logger.warning("[BRAIN] Failed to write heartbeat: %s", e)
+
+    # Touch heartbeat on startup so watchdog knows we're alive immediately
+    _touch_heartbeat()
 
     while not shutdown.is_set():
         try:
             await run_cycle(pool)
             # Update heartbeat after successful cycle
-            with open(_heartbeat_path, "w") as hb:
-                hb.write(str(time.time()))
+            _touch_heartbeat()
         except Exception as e:
             logger.error("[BRAIN] Cycle failed: %s", e, exc_info=True)
 
