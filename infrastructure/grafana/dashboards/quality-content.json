@@ -89,7 +89,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT ROUND(AVG(quality_score)) AS \"Avg Score\" FROM content_tasks WHERE quality_score IS NOT NULL AND created_at > NOW() - INTERVAL '7 days';",
+          "rawSql": "SELECT ROUND(AVG(quality_score)) AS \"Avg Score\" FROM pipeline_tasks_view WHERE quality_score IS NOT NULL AND created_at > NOW() - INTERVAL '7 days';",
           "refId": "A"
         }
       ],
@@ -163,7 +163,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE status IN ('published', 'awaiting_approval')) / NULLIF(COUNT(*), 0)) AS \"Pass Rate\" FROM content_tasks WHERE created_at > NOW() - INTERVAL '7 days' AND status IN ('published', 'awaiting_approval', 'rejected');",
+          "rawSql": "SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE status IN ('published', 'awaiting_approval')) / NULLIF(COUNT(*), 0)) AS \"Pass Rate\" FROM pipeline_tasks_view WHERE created_at > NOW() - INTERVAL '7 days' AND status IN ('published', 'awaiting_approval', 'rejected');",
           "refId": "A"
         }
       ],
@@ -224,7 +224,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Generated\" FROM content_tasks WHERE created_at > NOW() - INTERVAL '7 days';",
+          "rawSql": "SELECT COUNT(*) AS \"Generated\" FROM pipeline_tasks_view WHERE created_at > NOW() - INTERVAL '7 days';",
           "refId": "A"
         }
       ],
@@ -381,7 +381,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT date_trunc('hour', created_at) AS time, ROUND(AVG(quality_score)) AS \"Avg Quality\", MAX(quality_score) AS \"Max\", MIN(quality_score) AS \"Min\" FROM content_tasks WHERE created_at > NOW() - INTERVAL '7 days' AND quality_score IS NOT NULL GROUP BY 1 ORDER BY 1;",
+          "rawSql": "SELECT date_trunc('hour', created_at) AS time, ROUND(AVG(quality_score)) AS \"Avg Quality\", MAX(quality_score) AS \"Max\", MIN(quality_score) AS \"Min\" FROM pipeline_tasks_view WHERE created_at > NOW() - INTERVAL '7 days' AND quality_score IS NOT NULL GROUP BY 1 ORDER BY 1;",
           "refId": "A"
         }
       ],
@@ -480,7 +480,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT CASE WHEN quality_score >= 90 THEN '90-100 Excellent' WHEN quality_score >= 80 THEN '80-89 Good' WHEN quality_score >= 70 THEN '70-79 Fair' WHEN quality_score >= 60 THEN '60-69 Weak' ELSE '<60 Poor' END AS \"Score\", COUNT(*) AS \"Posts\" FROM content_tasks WHERE quality_score IS NOT NULL AND created_at > NOW() - INTERVAL '30 days' GROUP BY 1 ORDER BY 1 DESC;",
+          "rawSql": "SELECT CASE WHEN quality_score >= 90 THEN '90-100 Excellent' WHEN quality_score >= 80 THEN '80-89 Good' WHEN quality_score >= 70 THEN '70-79 Fair' WHEN quality_score >= 60 THEN '60-69 Weak' ELSE '<60 Poor' END AS \"Score\", COUNT(*) AS \"Posts\" FROM pipeline_tasks_view WHERE quality_score IS NOT NULL AND created_at > NOW() - INTERVAL '30 days' GROUP BY 1 ORDER BY 1 DESC;",
           "refId": "A"
         }
       ],
@@ -614,7 +614,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT date_trunc('day', created_at) AS time, status AS metric, COUNT(*) AS value FROM content_tasks WHERE created_at > NOW() - INTERVAL '14 days' AND status IN ('published', 'rejected', 'awaiting_approval') GROUP BY 1, 2 ORDER BY 1;",
+          "rawSql": "SELECT date_trunc('day', created_at) AS time, status AS metric, COUNT(*) AS value FROM pipeline_tasks_view WHERE created_at > NOW() - INTERVAL '14 days' AND status IN ('published', 'rejected', 'awaiting_approval') GROUP BY 1, 2 ORDER BY 1;",
           "refId": "A"
         }
       ],
@@ -677,7 +677,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COALESCE(category, 'uncategorized') AS metric, COUNT(*) AS value FROM content_tasks WHERE created_at > NOW() - INTERVAL '30 days' GROUP BY 1 ORDER BY 2 DESC LIMIT 10;",
+          "rawSql": "SELECT COALESCE(category, 'uncategorized') AS metric, COUNT(*) AS value FROM pipeline_tasks_view WHERE created_at > NOW() - INTERVAL '30 days' GROUP BY 1 ORDER BY 2 DESC LIMIT 10;",
           "refId": "A"
         }
       ],
@@ -788,7 +788,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT title AS \"Title\", quality_score AS \"Score\", category AS \"Category\" FROM content_tasks WHERE status = 'published' AND quality_score IS NOT NULL ORDER BY quality_score DESC, created_at DESC LIMIT 10;",
+          "rawSql": "SELECT title AS \"Title\", quality_score AS \"Score\", category AS \"Category\" FROM pipeline_tasks_view WHERE status = 'published' AND quality_score IS NOT NULL ORDER BY quality_score DESC, created_at DESC LIMIT 10;",
           "refId": "A"
         }
       ],

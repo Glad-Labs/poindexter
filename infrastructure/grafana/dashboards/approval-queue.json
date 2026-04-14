@@ -65,7 +65,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Awaiting Approval\" FROM content_tasks WHERE status = 'awaiting_approval';",
+          "rawSql": "SELECT COUNT(*) AS \"Awaiting Approval\" FROM pipeline_tasks_view WHERE status = 'awaiting_approval';",
           "refId": "A"
         }
       ],
@@ -120,7 +120,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT ROUND(AVG(quality_score)) AS \"Avg Quality\" FROM content_tasks WHERE status = 'awaiting_approval' AND quality_score IS NOT NULL;",
+          "rawSql": "SELECT ROUND(AVG(quality_score)) AS \"Avg Quality\" FROM pipeline_tasks_view WHERE status = 'awaiting_approval' AND quality_score IS NOT NULL;",
           "refId": "A"
         }
       ],
@@ -168,7 +168,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Approved Today\" FROM content_tasks WHERE status = 'published' AND updated_at > NOW() - INTERVAL '24 hours';",
+          "rawSql": "SELECT COUNT(*) AS \"Approved Today\" FROM pipeline_tasks_view WHERE status = 'published' AND updated_at > NOW() - INTERVAL '24 hours';",
           "refId": "A"
         }
       ],
@@ -216,7 +216,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Auto-Rejected\" FROM content_tasks WHERE status = 'rejected' AND updated_at > NOW() - INTERVAL '24 hours';",
+          "rawSql": "SELECT COUNT(*) AS \"Auto-Rejected\" FROM pipeline_tasks_view WHERE status = 'rejected' AND updated_at > NOW() - INTERVAL '24 hours';",
           "refId": "A"
         }
       ],
@@ -317,7 +317,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT title AS \"Title\", quality_score AS \"Quality\", category AS \"Category\", AGE(NOW(), created_at)::text AS \"Age\", id AS \"Task ID\", (SELECT value FROM app_settings WHERE key = 'preview_base_url') || '/preview/' || (metadata->>'preview_token') AS \"Preview\" FROM content_tasks WHERE status = 'awaiting_approval' ORDER BY quality_score DESC NULLS LAST, created_at DESC LIMIT 50;",
+          "rawSql": "SELECT title AS \"Title\", quality_score AS \"Quality\", category AS \"Category\", AGE(NOW(), created_at)::text AS \"Age\", id AS \"Task ID\", (SELECT value FROM app_settings WHERE key = 'preview_base_url') || '/preview/' || (metadata->>'preview_token') AS \"Preview\" FROM pipeline_tasks_view WHERE status = 'awaiting_approval' ORDER BY quality_score DESC NULLS LAST, created_at DESC LIMIT 50;",
           "refId": "A"
         }
       ],
@@ -381,7 +381,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT CASE WHEN quality_score < 70 THEN '<70' WHEN quality_score < 75 THEN '70-74' WHEN quality_score < 80 THEN '75-79' WHEN quality_score < 85 THEN '80-84' WHEN quality_score < 90 THEN '85-89' ELSE '90+' END AS \"Score Range\", COUNT(*) AS \"Posts\" FROM content_tasks WHERE status = 'awaiting_approval' AND quality_score IS NOT NULL GROUP BY 1 ORDER BY 1;",
+          "rawSql": "SELECT CASE WHEN quality_score < 70 THEN '<70' WHEN quality_score < 75 THEN '70-74' WHEN quality_score < 80 THEN '75-79' WHEN quality_score < 85 THEN '80-84' WHEN quality_score < 90 THEN '85-89' ELSE '90+' END AS \"Score Range\", COUNT(*) AS \"Posts\" FROM pipeline_tasks_view WHERE status = 'awaiting_approval' AND quality_score IS NOT NULL GROUP BY 1 ORDER BY 1;",
           "refId": "A"
         }
       ],
@@ -441,7 +441,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT date_trunc('day', updated_at) AS time, status AS metric, COUNT(*) AS value FROM content_tasks WHERE updated_at > NOW() - INTERVAL '7 days' AND status IN ('published', 'rejected', 'awaiting_approval') GROUP BY 1, 2 ORDER BY 1;",
+          "rawSql": "SELECT date_trunc('day', updated_at) AS time, status AS metric, COUNT(*) AS value FROM pipeline_tasks_view WHERE updated_at > NOW() - INTERVAL '7 days' AND status IN ('published', 'rejected', 'awaiting_approval') GROUP BY 1, 2 ORDER BY 1;",
           "refId": "A"
         }
       ],

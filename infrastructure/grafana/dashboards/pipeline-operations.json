@@ -79,7 +79,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"In Progress\" FROM content_tasks WHERE status = 'in_progress';",
+          "rawSql": "SELECT COUNT(*) AS \"In Progress\" FROM pipeline_tasks_view WHERE status = 'in_progress';",
           "refId": "A"
         }
       ],
@@ -147,7 +147,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Pending\" FROM content_tasks WHERE status = 'pending';",
+          "rawSql": "SELECT COUNT(*) AS \"Pending\" FROM pipeline_tasks_view WHERE status = 'pending';",
           "refId": "A"
         }
       ],
@@ -208,7 +208,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Completed\" FROM content_tasks WHERE status IN ('awaiting_approval', 'published', 'rejected') AND updated_at > NOW() - INTERVAL '1 hour';",
+          "rawSql": "SELECT COUNT(*) AS \"Completed\" FROM pipeline_tasks_view WHERE status IN ('awaiting_approval', 'published', 'rejected') AND updated_at > NOW() - INTERVAL '1 hour';",
           "refId": "A"
         }
       ],
@@ -276,7 +276,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Failed\" FROM content_tasks WHERE status IN ('failed', 'validation_failed', 'validation_error') AND updated_at > NOW() - INTERVAL '24 hours';",
+          "rawSql": "SELECT COUNT(*) AS \"Failed\" FROM pipeline_tasks_view WHERE status IN ('failed', 'validation_failed', 'validation_error') AND updated_at > NOW() - INTERVAL '24 hours';",
           "refId": "A"
         }
       ],
@@ -422,7 +422,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT LEFT(COALESCE(title, topic, '(no title)'), 70) AS \"Title\", status AS \"Status\", stage AS \"Stage\", quality_score AS \"Score\", category AS \"Category\", to_char(updated_at, 'HH24:MI:SS') AS \"Updated\" FROM content_tasks ORDER BY updated_at DESC LIMIT 30;",
+          "rawSql": "SELECT LEFT(COALESCE(title, topic, '(no title)'), 70) AS \"Title\", status AS \"Status\", stage AS \"Stage\", quality_score AS \"Score\", category AS \"Category\", to_char(updated_at, 'HH24:MI:SS') AS \"Updated\" FROM pipeline_tasks_view ORDER BY updated_at DESC LIMIT 30;",
           "refId": "A"
         }
       ],
@@ -509,7 +509,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT date_trunc('hour', created_at) AS time, COUNT(*) AS value FROM content_tasks WHERE created_at > NOW() - INTERVAL '24 hours' GROUP BY 1 ORDER BY 1;",
+          "rawSql": "SELECT date_trunc('hour', created_at) AS time, COUNT(*) AS value FROM pipeline_tasks_view WHERE created_at > NOW() - INTERVAL '24 hours' GROUP BY 1 ORDER BY 1;",
           "refId": "A"
         }
       ],

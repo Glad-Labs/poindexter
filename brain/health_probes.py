@@ -171,7 +171,7 @@ async def probe_quality_score(pool) -> dict:
     # and check that quality_service data exists in recent tasks
     try:
         row = await pool.fetchrow("""
-            SELECT quality_score FROM content_tasks
+            SELECT quality_score FROM pipeline_tasks_view
             WHERE quality_score IS NOT NULL
             ORDER BY updated_at DESC LIMIT 1
         """)
@@ -439,7 +439,7 @@ async def probe_stuck_tasks(pool) -> dict:
     try:
         rows = await pool.fetch("""
             SELECT task_id, topic, updated_at
-            FROM content_tasks
+            FROM pipeline_tasks_view
             WHERE status = 'in_progress'
               AND updated_at < NOW() - INTERVAL '4 hours'
             ORDER BY updated_at ASC LIMIT 5
@@ -461,7 +461,7 @@ async def probe_approval_queue(pool) -> dict:
     """Probe: Alert if approval queue backs up beyond threshold."""
     try:
         row = await pool.fetchrow("""
-            SELECT COUNT(*) as c FROM content_tasks
+            SELECT COUNT(*) as c FROM pipeline_tasks_view
             WHERE status = 'awaiting_approval'
         """)
         count = row["c"] if row else 0
@@ -481,9 +481,9 @@ async def probe_failed_task_spike(pool) -> dict:
     try:
         row = await pool.fetchrow("""
             SELECT
-                (SELECT COUNT(*) FROM content_tasks
+                (SELECT COUNT(*) FROM pipeline_tasks_view
                  WHERE status = 'failed' AND updated_at > NOW() - INTERVAL '24 hours') as recent_failures,
-                (SELECT COUNT(*) FROM content_tasks
+                (SELECT COUNT(*) FROM pipeline_tasks_view
                  WHERE status = 'failed' AND updated_at > NOW() - INTERVAL '7 days') as week_failures
         """)
         recent = row["recent_failures"] if row else 0
@@ -542,14 +542,14 @@ async def probe_cost_freshness(pool) -> dict:
                 SELECT
                     (SELECT MAX(created_at) FROM cost_logs WHERE cost_type IS NULL OR cost_type = 'inference') as last_inference,
                     (SELECT MAX(created_at) FROM cost_logs) as last_any,
-                    (SELECT COUNT(*) FROM content_tasks WHERE status = 'awaiting_approval') as approval_queue
+                    (SELECT COUNT(*) FROM pipeline_tasks_view WHERE status = 'awaiting_approval') as approval_queue
             """)
         except Exception:
             row = await pool.fetchrow("""
                 SELECT
                     (SELECT MAX(created_at) FROM cost_logs) as last_inference,
                     (SELECT MAX(created_at) FROM cost_logs) as last_any,
-                    (SELECT COUNT(*) FROM content_tasks WHERE status = 'awaiting_approval') as approval_queue
+                    (SELECT COUNT(*) FROM pipeline_tasks_view WHERE status = 'awaiting_approval') as approval_queue
             """)
         if not row or not row["last_any"]:
             return {"ok": True, "detail": "no cost_logs entries yet (pipeline idle)"}
@@ -587,7 +587,7 @@ async def probe_podcast_health(pool) -> dict:
         row = await pool.fetchrow("""
             SELECT COUNT(*) as total,
                    MAX(updated_at) as last_gen
-            FROM content_tasks
+            FROM pipeline_tasks_view
             WHERE task_type = 'podcast' OR topic ILIKE '%podcast%'
         """)
         total = row["total"] if row else 0
@@ -749,9 +749,9 @@ async def probe_quality_trend(pool) -> dict:
     try:
         row = await pool.fetchrow("""
             SELECT
-                (SELECT AVG(quality_score) FROM content_tasks
+                (SELECT AVG(quality_score) FROM pipeline_tasks_view
                  WHERE quality_score IS NOT NULL AND updated_at > NOW() - INTERVAL '7 days') as recent_avg,
-                (SELECT AVG(quality_score) FROM content_tasks
+                (SELECT AVG(quality_score) FROM pipeline_tasks_view
                  WHERE quality_score IS NOT NULL
                    AND updated_at BETWEEN NOW() - INTERVAL '14 days' AND NOW() - INTERVAL '7 days') as prior_avg
         """)
@@ -782,7 +782,7 @@ async def probe_topic_quality(pool) -> dict:
                 COUNT(*) as total,
                 COUNT(*) FILTER (WHERE status = 'rejected') as rejected,
                 COUNT(*) FILTER (WHERE quality_score IS NOT NULL AND quality_score < 70) as low_quality
-            FROM content_tasks
+            FROM pipeline_tasks_view
             WHERE created_at > NOW() - INTERVAL '7 days'
         """)
         total = row["total"] if row else 0

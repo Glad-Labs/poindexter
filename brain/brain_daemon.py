@@ -457,7 +457,7 @@ async def _handle_topic_suggestion(pool, item):
 
     # Check for duplicate topics already in the pipeline
     existing = await pool.fetchval(
-        "SELECT COUNT(*) FROM content_tasks WHERE topic ILIKE $1 AND status NOT IN ('failed', 'rejected')",
+        "SELECT COUNT(*) FROM pipeline_tasks_view WHERE topic ILIKE $1 AND status NOT IN ('failed', 'rejected')",
         f"%{topic[:60]}%",
     )
     if existing:
@@ -589,9 +589,9 @@ async def auto_remediate(pool):
         # 3. Detect and alert on pipeline stall (no new tasks in 48h + no pending tasks)
         row = await pool.fetchrow("""
             SELECT
-                (SELECT COUNT(*) FROM content_tasks WHERE status = 'pending') as pending,
-                (SELECT COUNT(*) FROM content_tasks WHERE status = 'in_progress') as active,
-                (SELECT MAX(created_at) FROM content_tasks) as last_task
+                (SELECT COUNT(*) FROM pipeline_tasks_view WHERE status = 'pending') as pending,
+                (SELECT COUNT(*) FROM pipeline_tasks_view WHERE status = 'in_progress') as active,
+                (SELECT MAX(created_at) FROM pipeline_tasks_view) as last_task
         """)
         if row:
             pending = row["pending"] or 0
@@ -614,9 +614,9 @@ async def auto_remediate(pool):
         # 4. Detect failed task ratio spike and alert
         row = await pool.fetchrow("""
             SELECT
-                (SELECT COUNT(*) FROM content_tasks
+                (SELECT COUNT(*) FROM pipeline_tasks_view
                  WHERE status = 'failed' AND updated_at > NOW() - INTERVAL '24 hours') as recent_fails,
-                (SELECT COUNT(*) FROM content_tasks
+                (SELECT COUNT(*) FROM pipeline_tasks_view
                  WHERE updated_at > NOW() - INTERVAL '24 hours') as recent_total
         """)
         if row and row["recent_total"] and row["recent_total"] > 0:
@@ -664,9 +664,9 @@ async def generate_daily_digest(pool):
         stats = await pool.fetchrow("""
             SELECT
                 (SELECT COUNT(*) FROM posts WHERE status = 'published') as total_posts,
-                (SELECT COUNT(*) FROM content_tasks WHERE status = 'awaiting_approval') as approval_queue,
-                (SELECT COUNT(*) FROM content_tasks WHERE status = 'pending') as pending,
-                (SELECT COUNT(*) FROM content_tasks WHERE status = 'failed'
+                (SELECT COUNT(*) FROM pipeline_tasks_view WHERE status = 'awaiting_approval') as approval_queue,
+                (SELECT COUNT(*) FROM pipeline_tasks_view WHERE status = 'pending') as pending,
+                (SELECT COUNT(*) FROM pipeline_tasks_view WHERE status = 'failed'
                     AND updated_at > NOW() - INTERVAL '24 hours') as failed_24h,
                 (SELECT COUNT(*) FROM posts WHERE published_at > NOW() - INTERVAL '24 hours') as published_24h,
                 (SELECT COUNT(*) FROM page_views WHERE created_at >= date_trunc('day', NOW())) as views_today,
@@ -732,7 +732,7 @@ async def update_system_metrics(pool):
             """, str(row["c"]))
 
         # Task counts
-        rows = await pool.fetch("SELECT status, COUNT(*) as c FROM content_tasks GROUP BY status")
+        rows = await pool.fetch("SELECT status, COUNT(*) as c FROM pipeline_tasks_view GROUP BY status")
         for r in rows:
             await pool.execute("""
                 INSERT INTO brain_knowledge (entity, attribute, value, confidence, source)
@@ -802,7 +802,7 @@ async def log_electricity_cost(pool):
 
         # Determine if system is actively generating (check for in_progress tasks)
         active_row = await pool.fetchrow(
-            "SELECT COUNT(*) as c FROM content_tasks WHERE status = 'in_progress'"
+            "SELECT COUNT(*) as c FROM pipeline_tasks_view WHERE status = 'in_progress'"
         )
         is_generating = (active_row["c"] or 0) > 0
         cost_type = "electricity_active" if is_generating else "electricity_idle"

@@ -80,7 +80,7 @@ groups:
               from: 7200
               to: 0
             model:
-              rawSql: "SELECT count(*) as stuck_count FROM content_tasks WHERE status = 'in_progress' AND updated_at < NOW() - INTERVAL '2 hours'"
+              rawSql: "SELECT count(*) as stuck_count FROM pipeline_tasks_view WHERE status = 'in_progress' AND updated_at < NOW() - INTERVAL '2 hours'"
               format: table
               editorMode: code
           - refId: B
@@ -288,7 +288,7 @@ groups:
               from: 604800
               to: 0
             model:
-              rawSql: "SELECT COALESCE(AVG(quality_score), 100) as avg_score FROM content_tasks WHERE quality_score IS NOT NULL AND updated_at > NOW() - INTERVAL '7 days'"
+              rawSql: "SELECT COALESCE(AVG(quality_score), 100) as avg_score FROM pipeline_tasks_view WHERE quality_score IS NOT NULL AND updated_at > NOW() - INTERVAL '7 days'"
               format: table
               editorMode: code
           - refId: B
@@ -383,7 +383,7 @@ groups:
                   reducer:
                     type: last
 
-      # 8. PIPELINE STALLED — zero new content_tasks in last 48h
+      # 8. PIPELINE STALLED — zero new pipeline_tasks_view in last 48h
       - uid: brain-pipeline-stalled
         title: Pipeline Stalled
         condition: C
@@ -403,7 +403,7 @@ groups:
               from: 172800
               to: 0
             model:
-              rawSql: "SELECT COUNT(*) as task_count FROM content_tasks WHERE created_at > NOW() - INTERVAL '48 hours'"
+              rawSql: "SELECT COUNT(*) as task_count FROM pipeline_tasks_view WHERE created_at > NOW() - INTERVAL '48 hours'"
               format: table
               editorMode: code
           - refId: B
@@ -455,7 +455,7 @@ groups:
               from: 1800
               to: 0
             model:
-              rawSql: "SELECT COUNT(*) as recent_tasks FROM content_tasks WHERE updated_at > NOW() - INTERVAL '30 minutes' AND status IN ('in_progress', 'completed', 'failed')"
+              rawSql: "SELECT COUNT(*) as recent_tasks FROM pipeline_tasks_view WHERE updated_at > NOW() - INTERVAL '30 minutes' AND status IN ('in_progress', 'completed', 'failed')"
               format: table
               editorMode: code
           - refId: B
