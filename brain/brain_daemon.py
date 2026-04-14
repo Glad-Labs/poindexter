@@ -558,12 +558,16 @@ async def auto_remediate(pool):
     try:
         actions_taken = []
 
-        # 1. Auto-cancel tasks stuck in_progress > 8 hours (likely crashed)
-        stuck = await pool.fetch("""
+        # 1. Auto-cancel tasks stuck in_progress beyond stale_task_timeout_minutes (default 90 min)
+        timeout_row = await pool.fetchrow(
+            "SELECT value FROM app_settings WHERE key = 'stale_task_timeout_minutes'"
+        )
+        stale_minutes = int(timeout_row["value"]) if timeout_row else 90
+        stuck = await pool.fetch(f"""
             UPDATE content_tasks SET status = 'failed',
-                result = jsonb_build_object('error', 'Auto-cancelled: stuck in_progress > 8h')
+                result = jsonb_build_object('error', 'Auto-cancelled: stuck in_progress > {stale_minutes}m')
             WHERE status = 'in_progress'
-              AND updated_at < NOW() - INTERVAL '8 hours'
+              AND updated_at < NOW() - INTERVAL '{stale_minutes} minutes'
             RETURNING task_id, topic
         """)
         if stuck:
