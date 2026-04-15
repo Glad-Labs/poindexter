@@ -563,16 +563,11 @@ class TopicDiscovery:
         if not text or len(text) < 30:
             return None
 
-        # For issues: extract the title (usually first line after "Issue #N:")
+        # For issues: skip — internal Gitea issues about our own system are not
+        # suitable for public blog topics.  They produce titles like
+        # "Engineering Insight: monitoring: health check endpoint does not expose..."
         if source_table == "issues":
-            match = re.match(r"Issue #\d+:\s*(.+?)(?:\n|State:)", text)
-            if match:
-                title = match.group(1).strip()
-                # Skip trivial issues
-                if len(title) < 20 or any(p in title.lower() for p in ["bump", "typo", "lint", "chore"]):
-                    return None
-                clean = re.sub(r"^(feat|fix|refactor|ops|perf|test|security):\s*", "", title, flags=re.IGNORECASE)
-                return f"Engineering Insight: {clean}" if len(clean) > 20 else None
+            return None
 
         # For memory: skip — internal system state (preferences, decisions, config)
         # is not suitable for blog topics.  Memory-derived topics produced garbage
@@ -580,21 +575,20 @@ class TopicDiscovery:
         if source_table == "memory":
             return None
 
-        # For audit: extract interesting events
+        # For audit: skip — internal audit logs are not blog topics
         if source_table == "audit":
-            if any(kw in text.lower() for kw in ["deploy", "publish", "migration", "alert", "remediat"]):
-                # Find the most descriptive line
-                for line in text.split("\n"):
-                    line = line.strip()
-                    if len(line) > 40:
-                        return f"Operations Playbook: {line[:80]}"
+            return None
 
-        # Generic: use first substantial line
-        for line in text.split("\n"):
-            line = line.strip().lstrip("-# ")
-            if len(line) > 40:
-                return f"Technical Deep Dive: {line[:80]}"
+        # For published posts: these can inspire "related topic" suggestions
+        if source_table == "posts":
+            for line in text.split("\n"):
+                line = line.strip().lstrip("-# ")
+                if len(line) > 40:
+                    return line[:80]
+            return None
 
+        # All other internal sources: skip by default.
+        # Only explicitly handled source types (posts) produce topics.
         return None
 
     async def _deduplicate(self, topics: list[DiscoveredTopic]) -> list[DiscoveredTopic]:
