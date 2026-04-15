@@ -27,7 +27,7 @@ logger = get_logger(__name__)
 # Connection string defaults (overridable via constructor or env)
 # ---------------------------------------------------------------------------
 CLOUD_DATABASE_URL = os.getenv("CLOUD_DATABASE_URL") or os.getenv("DATABASE_URL", "")
-LOCAL_DATABASE_URL = os.getenv("LOCAL_DATABASE_URL", "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain")
+LOCAL_DATABASE_URL = os.getenv("LOCAL_DATABASE_URL", "postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain")
 
 
 class SyncService:
