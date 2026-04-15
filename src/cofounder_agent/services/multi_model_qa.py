@@ -329,7 +329,52 @@ class MultiModelQA:
             if web_review is not None:
                 reviews.append(web_review)
 
-        # 2f. Rendered-preview gate — the final "yup looks good"
+        # 2f. URL verification gate — checks cited links actually resolve (#214)
+        # Not a hard gate — dead links are critical (block), but having good
+        # citations is rewarded with a score bonus (carrot, not stick).
+        try:
+            from services.content_validator import verify_content_urls
+            url_issues = await verify_content_urls(content)
+            dead_links = [i for i in url_issues if i.category == "dead_link"]
+            no_citations = [i for i in url_issues if i.category == "no_citations"]
+
+            if dead_links:
+                # Dead links block publish — this is a fabricated/hallucinated URL
+                url_review = ReviewerResult(
+                    reviewer="url_verifier",
+                    approved=False,
+                    score=max(0, 100 - len(dead_links) * 20),
+                    feedback="; ".join(i.description[:60] for i in dead_links[:3]),
+                    provider="programmatic",
+                )
+                reviews.append(url_review)
+                logger.warning("[MULTI_QA] URL verifier: %d dead links found", len(dead_links))
+            else:
+                # Count verified external citations — bonus scoring
+                import re as _re
+                from urllib.parse import urlparse as _urlparse
+                _ext_urls = [
+                    m.group(2) for m in _re.finditer(r'\[([^\]]*)\]\((https?://[^)]+)\)', content)
+                    if _urlparse(m.group(2)).netloc.lower() not in {"gladlabs.io", "www.gladlabs.io", "localhost"}
+                ]
+                citation_count = len(_ext_urls)
+                # Reward: +5 per verified citation, max +15
+                citation_bonus = min(15, citation_count * 5)
+                url_score = min(100, 80 + citation_bonus)
+                url_review = ReviewerResult(
+                    reviewer="url_verifier",
+                    approved=True,
+                    score=url_score,
+                    feedback=f"{citation_count} verified external citations (+{citation_bonus} bonus)" if citation_count else "No external citations (no penalty, but citations encouraged)",
+                    provider="programmatic",
+                )
+                reviews.append(url_review)
+                if citation_count:
+                    logger.info("[MULTI_QA] URL verifier: %d verified citations (+%d bonus)", citation_count, citation_bonus)
+        except Exception as e:
+            logger.debug("[MULTI_QA] URL verification skipped: %s", e)
+
+        # 2g. Rendered-preview gate — the final "yup looks good"
         # sanity check. Screenshots the post's /preview/{hash} URL
         # via Playwright-chromium and feeds the PNG to the vision
         # model to catch layout breaks, missing CSS, overflowing
@@ -364,6 +409,7 @@ class MultiModelQA:
                 "consistency_gate": gate_weight,
                 "vision_gate": gate_weight,
                 "web_factcheck": gate_weight,
+                "url_verifier": gate_weight,
             }
             total_weight = sum(weights.get(r.provider, 0.5) for r in scored_reviews)
             final_score = sum(
