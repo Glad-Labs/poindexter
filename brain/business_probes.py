@@ -13,9 +13,7 @@ Probes:
 import json
 import logging
 import time
-import urllib.error
 import urllib.request
-from datetime import datetime, timezone
 
 logger = logging.getLogger("brain.business_probes")
 
