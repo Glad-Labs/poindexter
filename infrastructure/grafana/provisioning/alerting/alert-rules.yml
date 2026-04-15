@@ -642,3 +642,159 @@ groups:
                     type: and
                   reducer:
                     type: last
+
+      # 13. GPU METRICS STALE — gpu_metrics not updated in 30 minutes
+      - uid: brain-gpu-metrics-stale
+        title: GPU Metrics Stale
+        condition: C
+        for: 5m
+        noDataState: Alerting
+        execErrState: Error
+        labels:
+          severity: warning
+          team: glad-labs
+        annotations:
+          summary: "GPU metrics scraper stopped collecting data"
+          description: "No gpu_metrics rows in the last 30 minutes. The gpu-scraper.py process may have crashed or lost its DB connection."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            model:
+              rawSql: "SELECT EXTRACT(EPOCH FROM NOW() - MAX(timestamp))/60 as minutes_since FROM gpu_metrics"
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 30
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+
+      # 14. GPU TEMPERATURE HIGH — GPU exceeds 85°C
+      - uid: brain-gpu-temp-high
+        title: GPU Temperature High
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+          team: glad-labs
+        annotations:
+          summary: "GPU temperature exceeded 85°C"
+          description: "GPU temperature is {{ $values.B.Value }}°C. Check cooling, fan speed, and workload. Sustained high temps can damage hardware."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 300
+              to: 0
+            model:
+              rawSql: "SELECT temperature FROM gpu_metrics ORDER BY timestamp DESC LIMIT 1"
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 85
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+
+      # 15. DISK SPACE LOW — less than 50 GB free
+      - uid: brain-disk-space-low
+        title: Disk Space Low
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          team: glad-labs
+        annotations:
+          summary: "Less than 50 GB disk space remaining"
+          description: "Free disk space is {{ $values.B.Value }} GB. Consider running docker-prune.ps1 or cleaning up old data."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 300
+              to: 0
+            model:
+              rawSql: "SELECT pg_database_size('poindexter_brain') / (1024*1024*1024.0) as db_size_gb"
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 5
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
