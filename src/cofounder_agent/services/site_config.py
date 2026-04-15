@@ -64,6 +64,28 @@ class SiteConfig:
             logger.warning("[SITE_CONFIG] Failed to load from DB: %s — using env fallbacks", e)
             return 0
 
+    async def reload(self, pool) -> int:
+        """Reload settings from DB. Call periodically or after settings change.
+
+        Safe to call while the app is running — atomic replacement of config dict.
+        """
+        if pool is None:
+            return 0
+        try:
+            rows = await pool.fetch(
+                "SELECT key, value FROM app_settings WHERE is_secret = false"
+            )
+            new_config = {}
+            for row in rows:
+                if row["value"]:
+                    new_config[row["key"]] = row["value"]
+            self._config = new_config
+            logger.debug("[SITE_CONFIG] Reloaded %d settings", len(new_config))
+            return len(new_config)
+        except Exception as e:
+            logger.warning("[SITE_CONFIG] Reload failed: %s", e)
+            return 0
+
     def require(self, key: str) -> str:
         """Get a REQUIRED config value. Raises if not configured.
 
