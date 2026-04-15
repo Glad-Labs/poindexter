@@ -467,8 +467,8 @@ async def _handle_topic_suggestion(pool, item):
     # Queue as a content task
     metadata = json.dumps({"source": ctx.get("source", "brain_queue"), "suggested_by": ctx.get("suggested_by", "unknown")})
     await pool.execute("""
-        INSERT INTO content_tasks (task_id, task_type, content_type, topic, status, metadata)
-        VALUES (gen_random_uuid()::text, 'blog_post', 'blog_post', $1::text, 'pending', $2::jsonb)
+        INSERT INTO pipeline_tasks (task_id, task_type, topic, status)
+        VALUES (gen_random_uuid()::text, 'blog_post', $1::text, 'pending')
     """, topic, metadata)
     logger.info("[BRAIN] Topic accepted and queued: %s", topic[:80])
     return {"action": "queued_as_content_task"}
@@ -564,8 +564,9 @@ async def auto_remediate(pool):
         )
         stale_minutes = int(timeout_row["value"]) if timeout_row else 90
         stuck = await pool.fetch(f"""
-            UPDATE content_tasks SET status = 'failed',
-                result = jsonb_build_object('error', 'Auto-cancelled: stuck in_progress > {stale_minutes}m')
+            UPDATE pipeline_tasks SET status = 'failed',
+                error_message = 'Auto-cancelled: stuck in_progress > {stale_minutes}m',
+                updated_at = NOW()
             WHERE status = 'in_progress'
               AND updated_at < NOW() - INTERVAL '{stale_minutes} minutes'
             RETURNING task_id, topic
@@ -576,8 +577,9 @@ async def auto_remediate(pool):
 
         # 2. Auto-expire awaiting_approval tasks older than 7 days
         expired = await pool.fetch("""
-            UPDATE content_tasks SET status = 'rejected',
-                result = jsonb_build_object('error', 'Auto-rejected: awaiting_approval > 7 days')
+            UPDATE pipeline_tasks SET status = 'rejected',
+                error_message = 'Auto-rejected: awaiting_approval > 7 days',
+                updated_at = NOW()
             WHERE status = 'awaiting_approval'
               AND updated_at < NOW() - INTERVAL '7 days'
             RETURNING task_id, topic
