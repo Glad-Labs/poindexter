@@ -213,7 +213,7 @@ async def approve_task(
         try:
             UUID(task_id)
         except ValueError:
-            if len(task_id) >= 6:
+            if len(task_id) >= 6 and hasattr(db_service, 'pool') and db_service.pool:
                 resolved = await db_service.pool.fetchval(
                     "SELECT task_id FROM pipeline_tasks WHERE task_id::text LIKE $1 || '%' LIMIT 1",
                     task_id,
@@ -429,7 +429,7 @@ async def publish_task(
         try:
             UUID(task_id)
         except ValueError:
-            if len(task_id) >= 6:
+            if len(task_id) >= 6 and hasattr(db_service, 'pool') and db_service.pool:
                 resolved = await db_service.pool.fetchval(
                     "SELECT task_id FROM pipeline_tasks WHERE task_id::text LIKE $1 || '%' LIMIT 1",
                     task_id,
@@ -617,7 +617,7 @@ async def reject_task(
         try:
             UUID(task_id)
         except ValueError:
-            if len(task_id) >= 6:
+            if len(task_id) >= 6 and hasattr(db_service, 'pool') and db_service.pool:
                 resolved = await db_service.pool.fetchval(
                     "SELECT task_id FROM pipeline_tasks WHERE task_id::text LIKE $1 || '%' LIMIT 1",
                     task_id,
