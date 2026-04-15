@@ -37,6 +37,12 @@ import asyncpg
 
 from health_probes import run_health_probes
 
+try:
+    from business_probes import run_business_probes
+    _HAS_BUSINESS_PROBES = True
+except ImportError:
+    _HAS_BUSINESS_PROBES = False
+
 LOG_DIR = os.path.join(os.path.expanduser("~"), os.getenv("APP_LOG_DIR", ".content-pipeline"))
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIR, "brain.log")
@@ -868,6 +874,14 @@ async def run_cycle(pool):
     # Health probes — exercise services with real inputs (each on its own schedule)
     probe_results = await run_health_probes(pool, send_telegram_fn=send_telegram)
     probe_failures = [name for name, r in probe_results.items() if not r.get("ok")]
+
+    # Business probes — operator-level monitoring (Glad Labs private, #215)
+    if _HAS_BUSINESS_PROBES:
+        try:
+            biz_results = await run_business_probes(pool, send_telegram_fn=send_telegram)
+            probe_results.update(biz_results)
+        except Exception as e:
+            logger.warning("[BRAIN] Business probes failed: %s", e)
 
     all_issues = issues + ext_issues
 
