@@ -209,13 +209,21 @@ async def approve_task(
     ```
     """
     try:
-        # Accept both UUID and numeric task IDs (backwards compatibility)
+        # Accept UUID, numeric ID, or short prefix (first 6+ chars of UUID) (#176)
         try:
             UUID(task_id)
-        except ValueError as exc:
-            # If not a valid UUID, check if it's a numeric ID (legacy tasks)
-            if not task_id.isdigit():
-                raise HTTPException(status_code=400, detail="Invalid task ID format") from exc
+        except ValueError:
+            if len(task_id) >= 6:
+                resolved = await db_service.pool.fetchval(
+                    "SELECT task_id FROM pipeline_tasks WHERE task_id::text LIKE $1 || '%' LIMIT 1",
+                    task_id,
+                )
+                if resolved:
+                    task_id = str(resolved)
+                elif not task_id.isdigit():
+                    raise HTTPException(status_code=400, detail=f"No task found matching prefix '{task_id}'")
+            elif not task_id.isdigit():
+                raise HTTPException(status_code=400, detail="Invalid task ID format")
 
         # Fetch task
         task = await db_service.get_task(task_id)
@@ -417,13 +425,21 @@ async def publish_task(
     ```
     """
     try:
-        # Accept both UUID and numeric task IDs (backwards compatibility)
+        # Accept UUID, numeric ID, or short prefix (first 6+ chars of UUID) (#176)
         try:
             UUID(task_id)
-        except ValueError as exc:
-            # If not a valid UUID, check if it's a numeric ID (legacy tasks)
-            if not task_id.isdigit():
-                raise HTTPException(status_code=400, detail="Invalid task ID format") from exc
+        except ValueError:
+            if len(task_id) >= 6:
+                resolved = await db_service.pool.fetchval(
+                    "SELECT task_id FROM pipeline_tasks WHERE task_id::text LIKE $1 || '%' LIMIT 1",
+                    task_id,
+                )
+                if resolved:
+                    task_id = str(resolved)
+                elif not task_id.isdigit():
+                    raise HTTPException(status_code=400, detail=f"No task found matching prefix '{task_id}'")
+            elif not task_id.isdigit():
+                raise HTTPException(status_code=400, detail="Invalid task ID format")
 
         # Fetch task
         task = await db_service.get_task(task_id)
@@ -597,13 +613,21 @@ async def reject_task(
     ```
     """
     try:
-        # Accept both UUID and numeric task IDs (backwards compatibility)
+        # Accept UUID, numeric ID, or short prefix (first 6+ chars of UUID) (#176)
         try:
             UUID(task_id)
-        except ValueError as exc:
-            # If not a valid UUID, check if it's a numeric ID (legacy tasks)
-            if not task_id.isdigit():
-                raise HTTPException(status_code=400, detail="Invalid task ID format") from exc
+        except ValueError:
+            if len(task_id) >= 6:
+                resolved = await db_service.pool.fetchval(
+                    "SELECT task_id FROM pipeline_tasks WHERE task_id::text LIKE $1 || '%' LIMIT 1",
+                    task_id,
+                )
+                if resolved:
+                    task_id = str(resolved)
+                elif not task_id.isdigit():
+                    raise HTTPException(status_code=400, detail=f"No task found matching prefix '{task_id}'")
+            elif not task_id.isdigit():
+                raise HTTPException(status_code=400, detail="Invalid task ID format")
 
         # Fetch task
         task = await db_service.get_task(task_id)
