@@ -817,12 +817,14 @@ class TaskExecutor:
         """Read a setting from app_settings, falling back to default.
 
         Uses the AdminDatabase's 60-second TTL cache instead of hitting
-        the database directly on every call.
+        the database directly on every call.  Always returns a str —
+        the DB may store booleans or ints, so we coerce here.
         """
         if not self.database_service:
             return default
         try:
-            return await self.database_service.get_setting_value(key, default)
+            raw = await self.database_service.get_setting_value(key, default)
+            return str(raw) if raw is not None else default
         except Exception:
             return default
 
