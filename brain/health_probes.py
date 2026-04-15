@@ -20,12 +20,38 @@ import urllib.request
 
 logger = logging.getLogger("brain.probes")
 
+# Bootstrap defaults — overridden from app_settings on first probe run
 API_URL = os.getenv("API_URL", "http://localhost:8002")
 LOCAL_OLLAMA = os.getenv("OLLAMA_URL", "http://localhost:11434")
 GITEA_URL = os.getenv("GITEA_URL", "http://localhost:3001")
 GITEA_USER = os.getenv("GITEA_USER", "poindexter")
 GITEA_PASS = os.getenv("GITEA_PASS", "")
 GITEA_REPO = os.getenv("GITEA_REPO", "poindexter/poindexter")
+
+_config_synced = False
+
+
+async def _sync_config_from_db(pool):
+    """Pull URL/connection config from app_settings so probes use the
+    canonical values instead of potentially stale env var defaults.
+    Runs once on first probe cycle."""
+    global API_URL, LOCAL_OLLAMA, GITEA_URL, GITEA_USER, GITEA_PASS, _config_synced
+    if _config_synced:
+        return
+    try:
+        rows = await pool.fetch(
+            "SELECT key, value FROM app_settings WHERE key IN "
+            "('api_url', 'internal_api_base_url', 'ollama_base_url', 'gitea_url')"
+        )
+        settings = {r["key"]: r["value"] for r in rows}
+        API_URL = settings.get("internal_api_base_url") or settings.get("api_url") or API_URL
+        LOCAL_OLLAMA = settings.get("ollama_base_url") or LOCAL_OLLAMA
+        GITEA_URL = settings.get("gitea_url") or GITEA_URL
+        _config_synced = True
+        logger.info("[PROBES] Config synced from app_settings: API=%s, Ollama=%s, Gitea=%s",
+                     API_URL, LOCAL_OLLAMA, GITEA_URL)
+    except Exception as e:
+        logger.warning("[PROBES] Failed to sync config from DB, using env defaults: %s", e)
 
 # Track which probe issues we've already created (avoid duplicates)
 _created_issues: set = set()
@@ -932,6 +958,7 @@ ALERT_AFTER_FAILURES = 3  # Alert on Telegram after 3 consecutive failures
 
 async def run_health_probes(pool, send_telegram_fn=None):
     """Run all due health probes, store results in brain_knowledge, alert on failures."""
+    await _sync_config_from_db(pool)
     results = {}
 
     for name, probe_fn in PROBES.items():
