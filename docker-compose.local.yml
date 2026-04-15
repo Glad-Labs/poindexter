@@ -3,7 +3,7 @@
 #
 # Start all:  docker compose -f docker-compose.local.yml up -d
 # Start core: docker compose -f docker-compose.local.yml up -d postgres-local grafana
-# Start git:  docker compose -f docker-compose.local.yml up -d gitea woodpecker-server woodpecker-agent
+# Start git:  docker compose -f docker-compose.local.yml up -d gitea gitea-runner
 
 services:
   postgres-local:
@@ -130,57 +130,24 @@ services:
         condition: service_healthy
 
   # ===========================================
-  # Woodpecker CI — pipelines (replaces GitHub Actions)
+  # Gitea Actions Runner — native CI (replaces Woodpecker)
   # ===========================================
-  woodpecker-server:
-    image: woodpeckerci/woodpecker-server:next
-    container_name: gladlabs-woodpecker
-    restart: unless-stopped
-    ports:
-      - "8280:8000"
-    environment:
-      WOODPECKER_OPEN: "true"
-      WOODPECKER_HOST: ${WOODPECKER_HOST:-http://localhost:8280}
-      WOODPECKER_GITEA: "true"
-      WOODPECKER_GITEA_URL: http://gitea:3000
-      WOODPECKER_GITEA_SKIP_VERIFY: "true"
-      WOODPECKER_GITEA_CLIENT: ${WOODPECKER_GITEA_CLIENT:-change-me}
-      WOODPECKER_GITEA_SECRET: ${WOODPECKER_GITEA_SECRET:-change-me}
-      WOODPECKER_SECRET: ${WOODPECKER_SECRET:?Set in .env}
-      WOODPECKER_ADMIN: gladlabs
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-      - "localhost:host-gateway"
-    volumes:
-      - woodpecker-data:/var/lib/woodpecker
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8000/healthz"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-    depends_on:
-      - gitea
-
-  woodpecker-agent:
-    image: woodpeckerci/woodpecker-agent:next
-    container_name: gladlabs-woodpecker-agent
+  gitea-runner:
+    image: gitea/act_runner:latest
+    container_name: gladlabs-gitea-runner
     restart: unless-stopped
     environment:
-      WOODPECKER_SERVER: woodpecker-server:9000
-      WOODPECKER_AGENT_SECRET: "ZSUZYFMJVQBIUKMC7NVEAFL536C37XUYIRKGR4BUPJQACQCNDI4Q===="
-      WOODPECKER_BACKEND_DOCKER_NETWORK: glad-labs-website_default
-      WOODPECKER_BACKEND_DOCKER_EXTRA_HOSTS: "localhost:host-gateway"
+      GITEA_INSTANCE_URL: http://gitea:3000
+      GITEA_RUNNER_REGISTRATION_TOKEN: ${GITEA_RUNNER_TOKEN:-}
+      GITEA_RUNNER_NAME: local-runner
+      GITEA_RUNNER_LABELS: "ubuntu-latest:docker://node:22-bookworm,python:docker://python:3.12-bookworm"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - gitea-runner-data:/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    healthcheck:
-      test: ["CMD-SHELL", "test -S /var/run/docker.sock"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
     depends_on:
-      - woodpecker-server
+      - gitea
 
   # ===========================================
   # Brain Daemon — standalone monitor, self-healer, knowledge graph
@@ -349,8 +316,8 @@ volumes:
     name: gladlabs-grafana-data
   gitea-data:
     name: gladlabs-gitea-data
-  woodpecker-data:
-    name: gladlabs-woodpecker-data
+  gitea-runner-data:
+    name: gladlabs-gitea-runner-data
   prometheus-data:
     name: gladlabs-prometheus-data
   pgadmin-data:
