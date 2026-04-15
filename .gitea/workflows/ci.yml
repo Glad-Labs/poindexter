@@ -12,15 +12,16 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Backend unit tests
-        working-directory: src/cofounder_agent
         run: |
+          cd src/cofounder_agent
           poetry config virtualenvs.create false
           poetry install --no-root --no-interaction
-          poetry run pytest tests/unit/ -q --tb=short -x \
+          python -m pytest tests/unit/ -q --tb=short -x \
             --ignore=tests/unit/services/test_web_research.py \
-            --ignore=tests/unit/agents/ \
-            --ignore=tests/unit/routes/test_newsletter_routes.py \
             --ignore=tests/unit/services/test_memory_client.py \
             --ignore=tests/unit/services/test_memory_system.py \
             --ignore=tests/unit/services/test_redis_cache.py \
+            --ignore=tests/unit/agents/test_content_agent_pexels_client.py \
+            --ignore=tests/unit/agents/test_content_agent_postgres_image_agent.py \
+            --ignore=tests/unit/routes/test_newsletter_routes.py \
             -p no:cacheprovider
