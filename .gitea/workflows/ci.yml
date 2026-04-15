@@ -1,4 +1,5 @@
 # Gitea Actions CI — custom runner with Python 3.12 + Node 22
+# Total: 5,600+ tests (5,050+ Python unit, 65+ integration, 480+ JS/Jest)
 name: CI — Test
 
 on:
@@ -6,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  test-backend:
     runs-on: ubuntu-latest
     steps:
       - name: Clean workspace
@@ -15,7 +16,6 @@ jobs:
             rm -rf "$GITHUB_WORKSPACE"/*
             rm -rf "$GITHUB_WORKSPACE"/.[!.]*
           fi
-          # Also clean any cached workdirs
           rm -rf /tmp/work 2>/dev/null || true
 
       - uses: actions/checkout@v4
@@ -23,24 +23,67 @@ jobs:
           clean: true
           fetch-depth: 1
 
-      - name: Verify fresh checkout
-        run: |
-          cd src/cofounder_agent
-          grep 'assert.*82.*<=.*result' tests/unit/services/test_multi_model_qa.py | head -1 || echo "STALE: QA test not updated"
-          grep 'test_sentry' tests/unit/services/test_sentry_integration.py > /dev/null 2>&1 && echo "WARN: sentry test exists" || echo "OK: no sentry test"
-
-      - name: Backend unit tests
+      - name: Install Python dependencies
         run: |
           cd src/cofounder_agent
           poetry config virtualenvs.create false
           poetry install --no-root --no-interaction
-          python -m pytest tests/unit/ -q --tb=short -x \
-            --ignore=tests/unit/services/test_web_research.py \
+
+      # Split by directory to avoid cross-directory test state pollution.
+      # Services uses --forked because intra-directory singleton pollution
+      # (ServiceContainer, site_config, etc.) breaks tests when run together.
+      - name: Unit tests — agents
+        run: |
+          cd src/cofounder_agent
+          python -m pytest tests/unit/agents/ -q --tb=short -p no:cacheprovider
+
+      - name: Unit tests — middleware
+        run: |
+          cd src/cofounder_agent
+          python -m pytest tests/unit/middleware/ -q --tb=short -p no:cacheprovider
+
+      - name: Unit tests — routes
+        run: |
+          cd src/cofounder_agent
+          python -m pytest tests/unit/routes/ -q --tb=short -p no:cacheprovider
+
+      - name: Unit tests — services (forked)
+        run: |
+          cd src/cofounder_agent
+          python -m pytest tests/unit/services/ -q --tb=short --forked \
             --ignore=tests/unit/services/test_memory_client.py \
             --ignore=tests/unit/services/test_memory_system.py \
-            --ignore=tests/unit/services/test_redis_cache.py \
-            --ignore=tests/unit/services/test_sentry_integration.py \
-            --ignore=tests/unit/agents/test_content_agent_pexels_client.py \
-            --ignore=tests/unit/agents/test_content_agent_postgres_image_agent.py \
-            --ignore=tests/unit/routes/test_newsletter_routes.py \
+            --ignore=tests/unit/services/test_web_research.py \
             -p no:cacheprovider
+
+      - name: Unit tests — utils
+        run: |
+          cd src/cofounder_agent
+          python -m pytest tests/unit/utils/ -q --tb=short -p no:cacheprovider
+
+      - name: Integration tests
+        run: |
+          cd src/cofounder_agent
+          python -m pytest tests/integration/ -q --tb=short -p no:cacheprovider
+
+  test-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clean workspace
+        run: |
+          if [ -n "$GITHUB_WORKSPACE" ]; then
+            rm -rf "$GITHUB_WORKSPACE"/*
+            rm -rf "$GITHUB_WORKSPACE"/.[!.]*
+          fi
+          rm -rf /tmp/work 2>/dev/null || true
+
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+          fetch-depth: 1
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Frontend tests
+        run: npm test

@@ -86,6 +86,7 @@ pytest-asyncio = "^0.21"
 pytest-cov = "^4.0"
 pytest-timeout = "^2.0"
 pytest-xdist = "^3.0"
+pytest-forked = "^1.6"
 pytest-benchmark = "^4.0"
 
 # Code Quality

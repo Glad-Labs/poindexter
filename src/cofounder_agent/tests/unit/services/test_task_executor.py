@@ -70,6 +70,13 @@ def _make_executor(db=None, orchestrator=None, poll_interval=1):
             orchestrator=orchestrator,
             poll_interval=poll_interval,
         )
+    # Default _get_setting mock — returns the default arg so callers like
+    # _semantic_dedup_enabled, min_curation_score etc. get sensible values
+    # without hitting the DB.  Individual tests can override.
+    async def _fake_get_setting(_key: str, default: str = "") -> str:
+        return default
+
+    executor._get_setting = _fake_get_setting
     return executor
 
 
@@ -777,8 +784,7 @@ class TestGetSetting:
     async def test_returns_db_value_when_present(self):
         from services.task_executor import TaskExecutor
         db = MagicMock()
-        db.pool = MagicMock()
-        db.pool.fetchrow = AsyncMock(return_value={"value": "from_db"})
+        db.get_setting_value = AsyncMock(return_value="from_db")
         executor = TaskExecutor(database_service=db)
         result = await executor._get_setting("key", "default")
         assert result == "from_db"
@@ -787,8 +793,7 @@ class TestGetSetting:
     async def test_returns_default_when_row_missing(self):
         from services.task_executor import TaskExecutor
         db = MagicMock()
-        db.pool = MagicMock()
-        db.pool.fetchrow = AsyncMock(return_value=None)
+        db.get_setting_value = AsyncMock(return_value="default")
         executor = TaskExecutor(database_service=db)
         result = await executor._get_setting("key", "default")
         assert result == "default"
@@ -797,8 +802,7 @@ class TestGetSetting:
     async def test_returns_default_on_db_exception(self):
         from services.task_executor import TaskExecutor
         db = MagicMock()
-        db.pool = MagicMock()
-        db.pool.fetchrow = AsyncMock(side_effect=RuntimeError("conn lost"))
+        db.get_setting_value = AsyncMock(side_effect=RuntimeError("conn lost"))
         executor = TaskExecutor(database_service=db)
         result = await executor._get_setting("key", "default")
         assert result == "default"
