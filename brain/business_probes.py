@@ -36,7 +36,7 @@ def _mark_run(probe_name: str):
 # STATUS DIGEST — 6-hour system summary to Telegram
 # ============================================================================
 
-async def probe_status_digest(pool, send_telegram_fn) -> dict:
+async def probe_status_digest(pool, notify_fn) -> dict:
     """Send a comprehensive system status digest to Telegram.
 
     Runs every 6 hours. Shows all services, all alert states,
@@ -163,7 +163,7 @@ async def probe_status_digest(pool, send_telegram_fn) -> dict:
         lines.extend(alert_lines)
 
         message = "\n".join(lines)
-        send_telegram_fn(message)
+        notify_fn(message)
         _mark_run("status_digest")
 
         logger.info("[BUSINESS_PROBE] Status digest sent to Telegram")
@@ -178,17 +178,17 @@ async def probe_status_digest(pool, send_telegram_fn) -> dict:
 # RUNNER — called from brain daemon's run_cycle
 # ============================================================================
 
-async def run_business_probes(pool, send_telegram_fn) -> dict:
+async def run_business_probes(pool, notify_fn) -> dict:
     """Run all business probes. Called every brain cycle (5 min).
 
     Each probe manages its own schedule internally.
     """
     results = {}
 
-    results["status_digest"] = await probe_status_digest(pool, send_telegram_fn)
+    results["status_digest"] = await probe_status_digest(pool, notify_fn)
 
     # Future probes:
-    # results["email_triage"] = await probe_email_triage(pool, send_telegram_fn)
-    # results["revenue_monitor"] = await probe_revenue_monitor(pool, send_telegram_fn)
+    # results["email_triage"] = await probe_email_triage(pool, notify_fn)
+    # results["revenue_monitor"] = await probe_revenue_monitor(pool, notify_fn)
 
     return results

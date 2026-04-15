@@ -224,6 +224,22 @@ def send_discord(message: str, webhook_url: str | None = None):
         logger.error("[BRAIN] Discord send failed: %s", e)
 
 
+def notify(message: str):
+    """Send to both Telegram (urgent) and Discord #ops (ops log).
+
+    Telegram = alarm bell (phone push notification).
+    Discord #ops = system's voice (scrollable ops history).
+    Discord #lab-logs = public-facing (daily digest only).
+    """
+    send_telegram(message)
+    # Operational messages go to #ops, not #lab-logs
+    ops_webhook = os.getenv("DISCORD_OPS_WEBHOOK_URL", "")
+    if ops_webhook:
+        send_discord(message, webhook_url=ops_webhook)
+    else:
+        send_discord(message)  # fallback to lab-logs if ops not configured
+
+
 def restart_service(name: str):
     """Attempt to restart a local service on the operator's PC."""
     if IS_DOCKER:
@@ -244,18 +260,18 @@ def restart_service(name: str):
                 )
                 if result.returncode == 0:
                     logger.info("[BRAIN] Docker-restarted container %s", container)
-                    send_telegram(f"Auto-restarted {container}")
+                    notify(f"Auto-restarted {container}")
                 else:
                     logger.warning("[BRAIN] Docker restart failed for %s: %s", container, result.stderr[:100])
-                    send_telegram(f"Failed to restart {container}: {result.stderr[:100]}")
+                    notify(f"Failed to restart {container}: {result.stderr[:100]}")
             except FileNotFoundError:
                 logger.warning("[BRAIN] Docker CLI not available in container — install docker-cli or mount the binary")
-                send_telegram(f"Service {name} is down. Docker CLI not found in brain container.")
+                notify(f"Service {name} is down. Docker CLI not found in brain container.")
             except Exception as e:
                 logger.warning("[BRAIN] Docker restart error for %s: %s", name, e)
-                send_telegram(f"Service {name} is down. Restart failed: {e}")
+                notify(f"Service {name} is down. Restart failed: {e}")
         else:
-            send_telegram(f"Service {name} is down — no container mapping for auto-restart.")
+            notify(f"Service {name} is down — no container mapping for auto-restart.")
         return
     try:
         kwargs = {}
@@ -366,17 +382,17 @@ async def monitor_services(pool) -> list:
                             )
                             failures = (action["consecutive_failures"] or 0) + 1
                             if failures >= action["escalate_after_failures"] and action["escalate_after_failures"] > 0:
-                                send_telegram(f"🚨 {name} DOWN ({failures}x): {detail}")
+                                notify(f"🚨 {name} DOWN ({failures}x): {detail}")
                             else:
                                 logger.info("[BRAIN] Alert '%s' logged (failure %d/%d before escalation)",
                                             pattern, failures, action["escalate_after_failures"])
                         else:
                             logger.debug("[BRAIN] Alert '%s' in cooldown", pattern)
                     else:
-                        send_telegram(f"ALERT: {name} is DOWN — {detail}")
+                        notify(f"ALERT: {name} is DOWN — {detail}")
                 except Exception as alert_err:
                     logger.warning("[BRAIN] Alert triage failed: %s — falling back to Telegram", alert_err, exc_info=True)
-                    send_telegram(f"ALERT: {name} is DOWN — {detail}")
+                    notify(f"ALERT: {name} is DOWN — {detail}")
         else:
             logger.debug("[BRAIN] Service %s: OK", name)
 
@@ -420,12 +436,12 @@ async def monitor_external_services(pool) -> list:
             if prev != indicator:
                 logger.warning("[BRAIN] External %s: %s — %s", name, indicator, description)
                 if is_major:
-                    send_telegram(f"🚨 {name.upper()} MAJOR OUTAGE: {description}")
+                    notify(f"🚨 {name.upper()} MAJOR OUTAGE: {description}")
         else:
             # Alert on recovery from major outage only
             if prev and prev in ("major", "critical", "major_outage") and prev != indicator:
                 logger.info("[BRAIN] External %s recovered: %s", name, description)
-                send_telegram(f"✅ {name.upper()} recovered: {description}")
+                notify(f"✅ {name.upper()} recovered: {description}")
             logger.debug("[BRAIN] External %s: OK", name)
 
     return issues
@@ -485,7 +501,7 @@ async def _handle_alert(pool, item):
     ctx = json.loads(item["context"]) if isinstance(item["context"], str) else (item["context"] or {})
     severity = ctx.get("severity", "info")
     source = ctx.get("source", "unknown")
-    send_telegram(f"[{severity.upper()}] {source}: {item['content']}")
+    notify(f"[{severity.upper()}] {source}: {item['content']}")
     return {"action": "forwarded_to_telegram", "severity": severity}
 
 
@@ -637,7 +653,7 @@ async def auto_remediate(pool):
             # Alert on significant actions
             for action in actions_taken:
                 if "cancelled" in action or "high failure" in action or "idle" in action:
-                    send_telegram(f"🔧 Auto-remediation: {action}")
+                    notify(f"🔧 Auto-remediation: {action}")
 
     except Exception as e:
         logger.debug("[BRAIN] Auto-remediation failed: %s", e)
@@ -839,11 +855,11 @@ async def log_electricity_cost(pool):
 
             if power_source == "hx1500i" and prev_source != "hx1500i":
                 # PSU sensors recovered
-                send_telegram("PSU sensors recovered — using real HX1500i wall power data")
+                notify("PSU sensors recovered — using real HX1500i wall power data")
                 send_discord("✅ PSU sensors recovered — using real HX1500i wall power data")
             elif power_source != "hx1500i" and prev_source == "hx1500i":
                 # PSU sensors dropped
-                send_telegram(f"⚠️ PSU sensors dropped — falling back to {power_source} ({watts:.0f}W). iCUE may have lost the HX1500i connection.")
+                notify(f"⚠️ PSU sensors dropped — falling back to {power_source} ({watts:.0f}W). iCUE may have lost the HX1500i connection.")
                 send_discord(f"⚠️ PSU sensors dropped — falling back to {power_source} ({watts:.0f}W). iCUE may have lost the HX1500i connection.")
 
             await pool.execute("""
@@ -872,13 +888,13 @@ async def run_cycle(pool):
     await generate_daily_digest(pool)
 
     # Health probes — exercise services with real inputs (each on its own schedule)
-    probe_results = await run_health_probes(pool, send_telegram_fn=send_telegram)
+    probe_results = await run_health_probes(pool, notify_fn=notify)
     probe_failures = [name for name, r in probe_results.items() if not r.get("ok")]
 
     # Business probes — operator-level monitoring (Glad Labs private, #215)
     if _HAS_BUSINESS_PROBES:
         try:
-            biz_results = await run_business_probes(pool, send_telegram_fn=send_telegram)
+            biz_results = await run_business_probes(pool, notify_fn=notify)
             probe_results.update(biz_results)
         except Exception as e:
             logger.warning("[BRAIN] Business probes failed: %s", e)
