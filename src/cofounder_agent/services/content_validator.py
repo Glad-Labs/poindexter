@@ -557,3 +557,88 @@ def validate_content(title: str, content: str, topic: str = "") -> ValidationRes
             )
 
     return result
+
+
+# ============================================================================
+# ASYNC URL VERIFICATION — checks that cited URLs actually resolve (#214)
+# Call separately from the async pipeline (validate_content is sync)
+# ============================================================================
+
+async def verify_content_urls(content: str) -> list[ValidationIssue]:
+    """Extract all URLs from content and verify they resolve.
+
+    Returns a list of ValidationIssues for dead/broken links.
+    This is async because it makes HTTP requests.
+    """
+    import httpx
+
+    issues: list[ValidationIssue] = []
+    # Extract markdown links: [text](url) and bare https:// URLs
+    url_pattern = re.compile(
+        r'(?:\[([^\]]*)\]\((https?://[^)]+)\))'  # [text](url)
+        r'|(?<![(\[])(https?://[^\s)\]<>"]+)'      # bare url
+    )
+
+    urls_found: list[tuple[str, str]] = []  # (display_text, url)
+    for match in url_pattern.finditer(content):
+        if match.group(2):  # markdown link
+            urls_found.append((match.group(1) or "", match.group(2)))
+        elif match.group(3):  # bare url
+            urls_found.append(("", match.group(3)))
+
+    if not urls_found:
+        return issues
+
+    # Skip internal links (our own site) and known-good domains
+    skip_domains = {"gladlabs.io", "www.gladlabs.io", "localhost"}
+
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(10.0, connect=5.0),
+        follow_redirects=True,
+        headers={"User-Agent": "Mozilla/5.0 (compatible; Poindexter-LinkChecker/1.0)"},
+    ) as client:
+        for display_text, url in urls_found:
+            try:
+                from urllib.parse import urlparse
+                domain = urlparse(url).netloc.lower()
+                if domain in skip_domains or domain.endswith(".localhost"):
+                    continue
+
+                resp = await client.head(url, timeout=10)
+                # Accept 2xx and 3xx as valid
+                if resp.status_code >= 400:
+                    issues.append(ValidationIssue(
+                        severity="critical",
+                        category="dead_link",
+                        description=f"Dead link (HTTP {resp.status_code}): {url[:80]}",
+                        matched_text=f"[{display_text}]({url})" if display_text else url,
+                    ))
+            except httpx.TimeoutException:
+                issues.append(ValidationIssue(
+                    severity="warning",
+                    category="slow_link",
+                    description=f"URL timed out (10s): {url[:80]}",
+                    matched_text=url[:100],
+                ))
+            except Exception as e:
+                issues.append(ValidationIssue(
+                    severity="warning",
+                    category="unresolvable_link",
+                    description=f"Cannot resolve URL: {url[:60]} ({type(e).__name__})",
+                    matched_text=url[:100],
+                ))
+
+    # Citation count check
+    external_citations = [
+        (t, u) for t, u in urls_found
+        if urlparse(u).netloc.lower() not in skip_domains
+    ]
+    if len(external_citations) == 0:
+        issues.append(ValidationIssue(
+            severity="warning",
+            category="no_citations",
+            description="No external citations found. Content should reference real sources.",
+            matched_text="",
+        ))
+
+    return issues
