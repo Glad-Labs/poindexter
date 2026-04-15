@@ -27,7 +27,10 @@ from services.container import service_container
 # Import services
 from services.logger_config import get_logger
 from services.quality_service import UnifiedQualityService
-from services.sentry_integration import setup_sentry
+try:
+    from services.sentry_integration import setup_sentry
+except ImportError:
+    setup_sentry = lambda *a, **kw: None  # Sentry not installed
 from services.telemetry import setup_telemetry
 from utils.connection_health import ConnectionPoolHealth
 
