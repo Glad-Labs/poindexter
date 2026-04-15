@@ -52,7 +52,7 @@ def load_env() -> None:
     if _ENV_LOADED:
         return
 
-    # Try to load .env.local from the project root
+    # Load environment from the project root .env file.
     # File location: src/cofounder_agent/config/__init__.py
     # Go up 3 levels: config/ → cofounder_agent/ → src/ → project_root/
     import logging
@@ -60,28 +60,37 @@ def load_env() -> None:
     logger = logging.getLogger(__name__)
 
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
-    env_local_path = os.path.join(project_root, ".env.local")
 
-    if os.path.exists(env_local_path):
-        load_dotenv(env_local_path, override=False)
-        try:
-            logger.info(f"[INFO] Loaded .env.local from: {env_local_path}")
-        except UnicodeEncodeError:
-            # Windows cp1252 encoding issue with emojis
-            logger.info(f"[INFO] Loaded .env.local from: {env_local_path}")
-    else:
-        # Fallback: try current working directory
-        current_dir_env = os.path.join(os.getcwd(), ".env.local")
-        if os.path.exists(current_dir_env):
-            load_dotenv(current_dir_env, override=True)
+    # Priority: .env (canonical) > .env.local (legacy/override)
+    # override=False means already-set env vars win (e.g. from Docker)
+    loaded = False
+    for env_name in [".env", ".env.local"]:
+        env_path = os.path.join(project_root, env_name)
+        if os.path.exists(env_path):
+            load_dotenv(env_path, override=False)
             try:
-                logger.info(f"[INFO] Loaded .env.local from: {current_dir_env}")
+                logger.info(f"[INFO] Loaded {env_name} from: {env_path}")
             except UnicodeEncodeError:
-                # Windows cp1252 encoding issue with emojis
-                logger.info(f"[INFO] Loaded .env.local from: {current_dir_env}")
-        else:
-            logger.warning(
-                f"[WARNING] .env.local not found at {env_local_path} or {current_dir_env}"
+                logger.info(f"[INFO] Loaded {env_name} from: {env_path}")
+            loaded = True
+            break  # Use the first one found
+
+    if not loaded:
+        # Fallback: try current working directory
+        for env_name in [".env", ".env.local"]:
+            current_dir_env = os.path.join(os.getcwd(), env_name)
+            if os.path.exists(current_dir_env):
+                load_dotenv(current_dir_env, override=False)
+                try:
+                    logger.info(f"[INFO] Loaded {env_name} from: {current_dir_env}")
+                except UnicodeEncodeError:
+                    logger.info(f"[INFO] Loaded {env_name} from: {current_dir_env}")
+                loaded = True
+                break
+
+    if not loaded:
+        logger.warning(
+            f"[WARNING] No .env file found at {project_root} or {os.getcwd()}"
             )
 
     _ENV_LOADED = True
