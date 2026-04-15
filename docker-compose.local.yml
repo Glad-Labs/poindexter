@@ -140,7 +140,7 @@ services:
       GITEA_INSTANCE_URL: http://gitea:3000
       GITEA_RUNNER_REGISTRATION_TOKEN: ${GITEA_RUNNER_TOKEN:-}
       GITEA_RUNNER_NAME: local-runner
-      GITEA_RUNNER_LABELS: "ubuntu-latest:docker://catthehacker/ubuntu:act-latest,python:docker://python:3.12-bookworm,node:docker://node:22-bookworm"
+      GITEA_RUNNER_LABELS: "ubuntu-latest:host"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - gitea-runner-data:/data
