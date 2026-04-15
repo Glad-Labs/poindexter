@@ -34,7 +34,12 @@ _config_synced = False
 async def _sync_config_from_db(pool):
     """Pull URL/connection config from app_settings so probes use the
     canonical values instead of potentially stale env var defaults.
-    Runs once on first probe cycle."""
+    Runs once on first probe cycle.
+
+    Env vars take priority (Docker sets them correctly for the container
+    network), DB values are fallback for local dev where env vars may
+    not be set.
+    """
     global API_URL, LOCAL_OLLAMA, GITEA_URL, GITEA_USER, GITEA_PASS, _config_synced
     if _config_synced:
         return
@@ -44,11 +49,15 @@ async def _sync_config_from_db(pool):
             "('api_url', 'internal_api_base_url', 'ollama_base_url', 'gitea_url')"
         )
         settings = {r["key"]: r["value"] for r in rows}
-        API_URL = settings.get("internal_api_base_url") or settings.get("api_url") or API_URL
-        LOCAL_OLLAMA = settings.get("ollama_base_url") or LOCAL_OLLAMA
-        GITEA_URL = settings.get("gitea_url") or GITEA_URL
+        # Only use DB values when env var wasn't explicitly set
+        if not os.getenv("API_URL"):
+            API_URL = settings.get("internal_api_base_url") or settings.get("api_url") or API_URL
+        if not os.getenv("OLLAMA_URL"):
+            LOCAL_OLLAMA = settings.get("ollama_base_url") or LOCAL_OLLAMA
+        if not os.getenv("GITEA_URL"):
+            GITEA_URL = settings.get("gitea_url") or GITEA_URL
         _config_synced = True
-        logger.info("[PROBES] Config synced from app_settings: API=%s, Ollama=%s, Gitea=%s",
+        logger.info("[PROBES] Config synced: API=%s, Ollama=%s, Gitea=%s (env wins over DB)",
                      API_URL, LOCAL_OLLAMA, GITEA_URL)
     except Exception as e:
         logger.warning("[PROBES] Failed to sync config from DB, using env defaults: %s", e)
