@@ -1,15 +1,10 @@
 import Script from 'next/script';
-import AdSenseScript from '../components/AdSenseScript';
 import CookieConsentBanner from '../components/CookieConsentBanner.jsx';
 import Footer from '../components/Footer';
 import TopNavigation from '../components/TopNav.js';
 import WebVitals from '../components/WebVitals';
-import { Analytics } from '@vercel/analytics/react';
-import { SpeedInsights } from '@vercel/speed-insights/next';
 import { SITE_NAME, SITE_URL, SITE_TAGLINE, PODCAST_NAME } from '@/lib/site.config';
 import '../styles/globals.css';
-
-const GA_ID = process.env.NEXT_PUBLIC_GA_ID || 'G-NJMBCYNDWN';
 
 export const metadata = {
   title: `${SITE_NAME} - ${SITE_TAGLINE}`,

@@ -78,7 +78,7 @@ export default [
       '@next/next/no-html-link-for-pages': 'off',
       '@next/next/no-img-element': 'warn',
       'no-console': 'error',
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
       'no-useless-escape': 'off',
       'no-unreachable': 'warn',
       'no-undef': 'warn',

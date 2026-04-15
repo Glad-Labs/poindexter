@@ -221,7 +221,7 @@ export default function ProductPage() {
           </p>
 
           <div className="space-y-6">
-            {PIPELINE_STEPS.map((step, i) => (
+            {PIPELINE_STEPS.map((step) => (
               <div
                 key={step.step}
                 className="flex gap-6 items-start bg-slate-800/30 rounded-xl p-6 border border-slate-700/30 hover:border-cyan-500/30 transition-colors duration-300"
