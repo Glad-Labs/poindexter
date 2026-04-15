@@ -965,7 +965,7 @@ _failure_counts: dict[str, int] = {}
 ALERT_AFTER_FAILURES = 3  # Alert on Telegram after 3 consecutive failures
 
 
-async def run_health_probes(pool, send_telegram_fn=None):
+async def run_health_probes(pool, notify_fn=None):
     """Run all due health probes, store results in brain_knowledge, alert on failures."""
     await _sync_config_from_db(pool)
     results = {}
@@ -1003,8 +1003,8 @@ async def run_health_probes(pool, send_telegram_fn=None):
 
         # Track failures and alert
         if ok:
-            if _failure_counts.get(name, 0) >= ALERT_AFTER_FAILURES and send_telegram_fn:
-                send_telegram_fn(f"✅ Probe '{name}' recovered: {result.get('detail', '')}")
+            if _failure_counts.get(name, 0) >= ALERT_AFTER_FAILURES and notify_fn:
+                notify_fn(f"✅ Probe '{name}' recovered: {result.get('detail', '')}")
             _failure_counts[name] = 0
         else:
             _failure_counts[name] = _failure_counts.get(name, 0) + 1
@@ -1012,8 +1012,8 @@ async def run_health_probes(pool, send_telegram_fn=None):
                            name, _failure_counts[name], result.get("detail", ""))
             if _failure_counts[name] == ALERT_AFTER_FAILURES:
                 detail = result.get('detail', 'unknown error')
-                if send_telegram_fn:
-                    send_telegram_fn(
+                if notify_fn:
+                    notify_fn(
                         f"🔴 Probe '{name}' failed {ALERT_AFTER_FAILURES}x: {detail}"
                     )
                 # Auto-create Gitea issue for tracking
@@ -1022,7 +1022,7 @@ async def run_health_probes(pool, send_telegram_fn=None):
     # --- Self-healing: execute remediation actions for persistent failures ---
     for name, count in _failure_counts.items():
         if count >= ALERT_AFTER_FAILURES and name in REMEDIATIONS:
-            _try_remediation(name, results.get(name, {}), send_telegram_fn)
+            _try_remediation(name, results.get(name, {}), notify_fn)
 
     if results:
         passed = sum(1 for r in results.values() if r.get("ok"))
@@ -1056,7 +1056,7 @@ def _restart_container(container_name: str) -> tuple[bool, str]:
         return False, f"restart error: {str(e)[:200]}"
 
 
-def _try_remediation(probe_name: str, result: dict, send_telegram_fn=None):
+def _try_remediation(probe_name: str, result: dict, notify_fn=None):
     """Execute a remediation action if cooldown has elapsed."""
     last = _last_remediation.get(probe_name, 0)
     if (time.time() - last) < REMEDIATION_COOLDOWN:
@@ -1085,9 +1085,9 @@ def _try_remediation(probe_name: str, result: dict, send_telegram_fn=None):
     _last_remediation[probe_name] = time.time()
 
     detail = result.get("detail", "")
-    if send_telegram_fn:
+    if notify_fn:
         emoji = "🔧" if ok else "⚠️"
-        send_telegram_fn(
+        notify_fn(
             f"{emoji} Self-heal '{probe_name}': {msg}\n"
             f"Trigger: {detail}"
         )
