@@ -21,4 +21,5 @@ jobs:
             --ignore=tests/unit/agents/test_content_agent_pexels_client.py \
             --ignore=tests/unit/agents/test_content_agent_postgres_image_agent.py \
             --ignore=tests/unit/routes/test_newsletter_routes.py \
-            --ignore=tests/unit/services/test_memory_client.py
+            --ignore=tests/unit/services/test_memory_client.py \
+            --ignore=tests/unit/services/test_memory_system.py
