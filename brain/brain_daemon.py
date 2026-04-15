@@ -54,7 +54,7 @@ logger = logging.getLogger("brain")
 # Local brain DB — the daemon writes ALL data here (brain_knowledge, brain_decisions, etc.)
 LOCAL_BRAIN_DB = os.getenv(
     "DATABASE_URL",
-    "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain",
+    "postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain",
 )
 
 # Telegram for alerts (direct bot API, no OpenClaw dependency)
