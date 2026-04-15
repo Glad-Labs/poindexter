@@ -22,4 +22,20 @@ RUN pip install --no-cache-dir poetry \
 # Confirm git is available (ships with python:bookworm)
 RUN git --version
 
-ENTRYPOINT ["act_runner"]
+# Create startup script that registers + runs daemon
+RUN echo '#!/bin/bash\n\
+set -e\n\
+if [ ! -f /data/.runner ]; then\n\
+  act_runner register \\\n\
+    --instance "$GITEA_INSTANCE_URL" \\\n\
+    --token "$GITEA_RUNNER_REGISTRATION_TOKEN" \\\n\
+    --name "${GITEA_RUNNER_NAME:-local-runner}" \\\n\
+    --labels "${GITEA_RUNNER_LABELS:-ubuntu-latest:host}" \\\n\
+    --no-interactive\n\
+fi\n\
+exec act_runner daemon\n\
+' > /entrypoint.sh && chmod +x /entrypoint.sh
+
+VOLUME /data
+WORKDIR /data
+ENTRYPOINT ["/entrypoint.sh"]
