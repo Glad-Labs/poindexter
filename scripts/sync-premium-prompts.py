@@ -42,7 +42,7 @@ except ImportError:
 DEFAULT_PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent / "glad-labs-prompts"
 DEFAULT_DB_URL = os.environ.get(
     "LOCAL_DATABASE_URL",
-    "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain",
+    "postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain",
 )
 
 # The YAML files in the premium repo that contain prompt_templates-shaped
