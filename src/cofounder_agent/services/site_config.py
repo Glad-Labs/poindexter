@@ -22,7 +22,7 @@ Startup:
 """
 
 import os
-from typing import Any, Dict, Optional
+from typing import Any
 
 from services.logger_config import get_logger
 
