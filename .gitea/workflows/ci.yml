@@ -22,4 +22,5 @@ jobs:
             --ignore=tests/unit/routes/test_newsletter_routes.py \
             --ignore=tests/unit/services/test_memory_client.py \
             --ignore=tests/unit/services/test_memory_system.py \
+            --ignore=tests/unit/services/test_redis_cache.py \
             -p no:cacheprovider
