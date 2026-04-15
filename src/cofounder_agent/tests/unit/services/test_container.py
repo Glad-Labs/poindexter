@@ -20,10 +20,12 @@ from services.container import (
 
 @pytest.fixture(autouse=True)
 def reset_container():
-    """Reset the global service_container before each test."""
+    """Reset the global service_container before each test, restore after."""
+    saved = service_container._services.copy()
     service_container.clear()
     yield
     service_container.clear()
+    service_container._services.update(saved)
 
 
 class TestServiceContainerSingleton:

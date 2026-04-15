@@ -40,7 +40,7 @@ Glad Labs is an AI-operated content business — a solo founder using AI to run 
 - 64 published posts on gladlabs.io
 - 16 custom services built
 - 7 Grafana dashboards, 90+ panels, 5 alert rules
-- 5,564 backend tests passing
+- 5,600+ tests passing (5,050+ Python unit, 65+ integration, 480+ JS/Jest)
 - $30/month operating cost
 - $362.75 in Mercury checking
 
