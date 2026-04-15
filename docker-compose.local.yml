@@ -233,7 +233,7 @@ services:
       postgres-local:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/api/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request,json; r=json.loads(urllib.request.urlopen('http://localhost:8002/api/health').read()); e=r.get('components',{}).get('task_executor',{}); exit(1 if isinstance(e,dict) and e.get('success_count',0)==0 and e.get('error_count',0)>5 else 0)"]
       interval: 60s
       timeout: 10s
       retries: 3

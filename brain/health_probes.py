@@ -83,6 +83,7 @@ PROBE_SCHEDULES = {
     "stuck_tasks": 1800,         # 30 min
     "approval_queue": 3600,      # 1 hour
     "failed_task_spike": 3600,   # 1 hour
+    "worker_error_rate": 300,    # 5 min — catches 100% failure rate fast
     # P1 — business continuity
     "publish_rate": 21600,       # 6 hours
     "cost_freshness": 3600,      # 1 hour
@@ -501,6 +502,57 @@ async def probe_failed_task_spike(pool) -> dict:
         return {"ok": False, "detail": str(e)[:200]}
 
 
+async def probe_worker_error_rate(pool) -> dict:
+    """Probe: Check worker task executor error rate via /api/health.
+
+    Catches the case where the worker process is running and healthy
+    but every task silently fails (e.g., 100% error rate).  Runs every
+    5 minutes so a total pipeline outage is detected within 15 minutes
+    (3 consecutive failures → Telegram alert).
+    """
+    try:
+        ok, data = _http_json(f"{API_URL}/api/health")
+        if not ok:
+            return {"ok": False, "detail": f"Worker API unreachable: {data.get('error', 'unknown')}"}
+
+        executor = data.get("components", {}).get("task_executor", {})
+        if isinstance(executor, str):
+            # executor might be "unavailable"
+            return {"ok": False, "detail": f"Task executor: {executor}"}
+
+        running = executor.get("running", False)
+        if not running:
+            return {"ok": False, "detail": "Task executor is not running"}
+
+        success = executor.get("success_count", 0)
+        errors = executor.get("error_count", 0)
+        total = success + errors
+
+        if total == 0:
+            return {"ok": True, "detail": "No tasks processed yet", "success": 0, "errors": 0}
+
+        error_rate = errors / total
+        # Critical: >50% error rate with at least 3 tasks processed
+        critical = error_rate > 0.5 and total >= 3
+        # Warning: 100% error rate even with few tasks
+        total_failure = success == 0 and errors > 0
+
+        return {
+            "ok": not (critical or total_failure),
+            "error_rate": round(error_rate * 100, 1),
+            "success": success,
+            "errors": errors,
+            "total": total,
+            "detail": (
+                f"{success}✓ {errors}✗ ({error_rate * 100:.0f}% errors)"
+                + (" — CRITICAL: 100% failure" if total_failure else "")
+                + (" — HIGH error rate" if critical and not total_failure else "")
+            ),
+        }
+    except Exception as e:
+        return {"ok": False, "detail": str(e)[:200]}
+
+
 # ---------------------------------------------------------------------------
 # P1 — Business continuity probes
 # ---------------------------------------------------------------------------
@@ -852,6 +904,7 @@ PROBES = {
     "stuck_tasks": probe_stuck_tasks,
     "approval_queue": probe_approval_queue,
     "failed_task_spike": probe_failed_task_spike,
+    "worker_error_rate": probe_worker_error_rate,
     # Content quality
     "quality_score": probe_quality_score,
     "quality_trend": probe_quality_trend,
