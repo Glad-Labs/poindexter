@@ -1,0 +1,38 @@
+# Gitea Actions CI — local test runner
+#
+# Replaces Woodpecker. Runs tests on push to main.
+# Deploys are handled by GitHub Actions (after mirror push).
+
+name: CI — Test
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Backend unit tests
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          pip install --upgrade pip poetry
+          poetry config virtualenvs.create false
+          cd src/cofounder_agent && poetry install --no-root
+          poetry run pytest tests/unit/ -q --tb=short --ignore=tests/unit/services/test_web_research.py
+
+      - name: Frontend tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: |
+          npm ci
+          npm run test:ci
+
+      - name: Linting
+        run: npm run lint
