@@ -20,7 +20,7 @@ import asyncpg
 import httpx
 
 EXPORTER_URL = "http://localhost:9835/metrics"
-LOCAL_DB = "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain"
+LOCAL_DB = "postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain"
 INTERVAL = 60  # seconds
 
 LOG_DIR = Path.home() / ".poindexter"
