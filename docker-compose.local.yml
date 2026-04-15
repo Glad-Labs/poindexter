@@ -201,7 +201,7 @@ services:
       - "8002:8002"
     environment:
       DEPLOYMENT_MODE: worker
-      ENVIRONMENT: production
+      ENVIRONMENT: ${ENVIRONMENT:-development}
       DEVELOPMENT_MODE: "true"
       PORT: "8002"
       # Secrets loaded from DB (app_settings) at startup — no env vars needed
