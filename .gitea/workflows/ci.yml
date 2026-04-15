@@ -1,4 +1,4 @@
-# Gitea Actions CI — local test runner (host mode)
+# Gitea Actions CI — local test runner (custom image with Python + Node)
 name: CI — Test
 
 on:
@@ -11,17 +11,25 @@ jobs:
     steps:
       - name: Checkout
         run: |
-          git clone --depth 1 --branch ${{ github.ref_name }} http://gitea:3000/gladlabs/glad-labs-codebase.git workspace
-          cd workspace
+          cd /tmp
+          git clone --depth 1 --branch ${GITHUB_REF_NAME:-main} ${GITHUB_SERVER_URL:-http://gitea:3000}/${GITHUB_REPOSITORY:-gladlabs/glad-labs-codebase}.git work
+          cp -r work/. ${GITHUB_WORKSPACE:-.}
 
-      - name: Install tools
+      - name: Verify tools
         run: |
-          apk add --no-cache python3 py3-pip nodejs npm
+          python3 --version
+          node --version
+          poetry --version
+          git --version
 
-      - name: Backend tests
+      - name: Backend unit tests
         run: |
-          cd workspace
-          pip3 install --break-system-packages --upgrade pip poetry
+          cd src/cofounder_agent
           poetry config virtualenvs.create false
-          cd src/cofounder_agent && poetry install --no-root
-          poetry run pytest tests/unit/ -q --tb=short --ignore=tests/unit/services/test_web_research.py --ignore=tests/unit/agents/test_content_agent_pexels_client.py --ignore=tests/unit/agents/test_content_agent_postgres_image_agent.py --ignore=tests/unit/routes/test_newsletter_routes.py --ignore=tests/unit/services/test_memory_client.py -x
+          poetry install --no-root --no-interaction
+          poetry run pytest tests/unit/ -q --tb=short -x \
+            --ignore=tests/unit/services/test_web_research.py \
+            --ignore=tests/unit/agents/test_content_agent_pexels_client.py \
+            --ignore=tests/unit/agents/test_content_agent_postgres_image_agent.py \
+            --ignore=tests/unit/routes/test_newsletter_routes.py \
+            --ignore=tests/unit/services/test_memory_client.py
