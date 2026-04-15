@@ -983,9 +983,103 @@ async def run_health_probes(pool, send_telegram_fn=None):
                 # Auto-create Gitea issue for tracking
                 _create_gitea_issue(name, detail)
 
+    # --- Self-healing: execute remediation actions for persistent failures ---
+    for name, count in _failure_counts.items():
+        if count >= ALERT_AFTER_FAILURES and name in REMEDIATIONS:
+            _try_remediation(name, results.get(name, {}), send_telegram_fn)
+
     if results:
         passed = sum(1 for r in results.values() if r.get("ok"))
         total = len(results)
         logger.info("[PROBES] Ran %d probes: %d passed, %d failed", total, passed, total - passed)
 
     return results
+
+
+# ---------------------------------------------------------------------------
+# Self-healing: remediation actions
+# ---------------------------------------------------------------------------
+
+# Track remediation cooldowns (prevent restart loops)
+_last_remediation: dict[str, float] = {}
+REMEDIATION_COOLDOWN = 900  # 15 minutes between remediation attempts per probe
+
+
+def _restart_container(container_name: str) -> tuple[bool, str]:
+    """Restart a Docker container. Returns (success, message)."""
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["docker", "restart", container_name],
+            capture_output=True, text=True, timeout=60,
+        )
+        if result.returncode == 0:
+            return True, f"Restarted {container_name}"
+        return False, f"docker restart failed: {result.stderr[:200]}"
+    except Exception as e:
+        return False, f"restart error: {str(e)[:200]}"
+
+
+def _try_remediation(probe_name: str, result: dict, send_telegram_fn=None):
+    """Execute a remediation action if cooldown has elapsed."""
+    last = _last_remediation.get(probe_name, 0)
+    if (time.time() - last) < REMEDIATION_COOLDOWN:
+        return  # Too soon since last attempt
+
+    action = REMEDIATIONS.get(probe_name)
+    if not action:
+        return
+
+    logger.info("[SELF-HEAL] Attempting remediation for '%s': %s",
+                probe_name, action.get("description", "unknown"))
+
+    ok, msg = False, "no action taken"
+    action_type = action.get("type")
+
+    if action_type == "restart_container":
+        ok, msg = _restart_container(action["container"])
+    elif action_type == "restart_multiple":
+        msgs = []
+        for container in action["containers"]:
+            c_ok, c_msg = _restart_container(container)
+            msgs.append(c_msg)
+            ok = ok or c_ok
+        msg = "; ".join(msgs)
+
+    _last_remediation[probe_name] = time.time()
+
+    detail = result.get("detail", "")
+    if send_telegram_fn:
+        emoji = "🔧" if ok else "⚠️"
+        send_telegram_fn(
+            f"{emoji} Self-heal '{probe_name}': {msg}\n"
+            f"Trigger: {detail}"
+        )
+    logger.info("[SELF-HEAL] %s — %s (probe: %s)",
+                "SUCCESS" if ok else "FAILED", msg, probe_name)
+
+
+# Map probe names to remediation actions.
+# Only non-destructive, data-safe actions — restart services, never delete data.
+REMEDIATIONS = {
+    "worker_error_rate": {
+        "type": "restart_container",
+        "container": "poindexter-worker",
+        "description": "Restart worker when error rate is critical",
+    },
+    "stuck_tasks": {
+        "type": "restart_container",
+        "container": "poindexter-worker",
+        "description": "Restart worker when tasks are stuck",
+    },
+    "grafana_datasources": {
+        "type": "restart_container",
+        "container": "poindexter-grafana",
+        "description": "Restart Grafana when datasources are unhealthy",
+    },
+    "public_site": {
+        "type": "restart_container",
+        "container": "poindexter-worker",
+        "description": "Restart worker when public site API is down",
+    },
+}
