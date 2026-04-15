@@ -2037,6 +2037,7 @@ async def _stage_finalize_task(
             "status": "awaiting_approval",
             "approval_status": "pending",
             "quality_score": final_quality_score,
+            "title": result.get("title") or seo_title or topic,
             "featured_image_url": result.get("featured_image_url"),
             "seo_title": seo_title,
             "seo_description": seo_description,
