@@ -133,7 +133,8 @@ services:
   # Gitea Actions Runner — native CI (replaces Woodpecker)
   # ===========================================
   gitea-runner:
-    image: gitea/act_runner:latest
+    build:
+      context: ./infrastructure/gitea-runner
     container_name: gladlabs-gitea-runner
     restart: unless-stopped
     environment:
