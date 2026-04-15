@@ -109,6 +109,10 @@ class TopicDiscovery:
         knowledge_topics = await self._discover_from_knowledge(categories)
         all_topics.extend(knowledge_topics)
 
+        # Codebase-driven topics (Poindexter's differentiator — #213)
+        codebase_topics = await self._discover_from_codebase()
+        all_topics.extend(codebase_topics)
+
         # Enrichment: scrape from web sources concurrently
         sources = await asyncio.gather(
             self._scrape_hackernews(),
@@ -441,6 +445,160 @@ class TopicDiscovery:
         except Exception as e:
             logger.warning("[TOPIC_DISCOVERY] DuckDuckGo search failed: %s", e)
         return topics
+
+    async def _discover_from_codebase(self) -> list[DiscoveredTopic]:
+        """Discover topics from the actual codebase — git log, tech stack, and config.
+
+        This is Poindexter's differentiator: content that reflects what you actually
+        build, not generic keyword-driven AI slop. No other tool can do this.
+        """
+        topics: list[DiscoveredTopic] = []
+
+        # --- Source 1: Recent git commits (interesting technical decisions) ---
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["git", "log", "--oneline", "--since=7 days ago", "--format=%s"],
+                capture_output=True, text=True, timeout=10,
+                cwd=site_config.get("repo_root", "/app"),
+            )
+            if result.returncode == 0:
+                commits = [line.strip() for line in result.stdout.strip().split("\n") if line.strip()]
+                # Filter for interesting commits (feat, fix, perf — not chore/docs)
+                interesting = [c for c in commits if any(
+                    c.lower().startswith(p) for p in ("feat:", "fix:", "perf:", "refactor:")
+                )]
+                for commit_msg in interesting[:5]:
+                    # Strip the prefix
+                    clean = re.sub(r"^(feat|fix|perf|refactor):\s*", "", commit_msg, flags=re.IGNORECASE)
+                    if len(clean) < 15:
+                        continue
+                    topic = self._rewrite_commit_as_topic(clean)
+                    if topic:
+                        topics.append(DiscoveredTopic(
+                            title=topic,
+                            category="technology",
+                            source="codebase:git",
+                            source_url="",
+                            relevance_score=0.85,
+                        ))
+                logger.info("[TOPIC_DISCOVERY] Git log: %d topics from %d interesting commits", len(topics), len(interesting))
+        except Exception as e:
+            logger.debug("[TOPIC_DISCOVERY] Git log scan failed: %s", e)
+
+        # --- Source 2: Technology stack (dependencies) ---
+        try:
+            if self.pool:
+                # Read tech stack from app_settings
+                row = await self.pool.fetchrow(
+                    "SELECT value FROM app_settings WHERE key = 'gpu_model'"
+                )
+                gpu = row["value"] if row else ""
+
+                # Get unique models used in recent tasks
+                model_rows = await self.pool.fetch(
+                    "SELECT DISTINCT model_used FROM pipeline_tasks_view "
+                    "WHERE model_used IS NOT NULL AND created_at > NOW() - INTERVAL '30 days' LIMIT 10"
+                )
+                models = [r["model_used"] for r in model_rows if r["model_used"]]
+
+                # Generate tech-stack topics
+                if gpu and "5090" in gpu:
+                    topics.append(DiscoveredTopic(
+                        title="Running Large Language Models on Consumer GPUs: What Actually Fits in VRAM",
+                        category="technology",
+                        source="codebase:stack",
+                        source_url="",
+                        relevance_score=0.80,
+                    ))
+                for model in models[:2]:
+                    if "gemma" in model.lower() or "qwen" in model.lower() or "glm" in model.lower():
+                        topics.append(DiscoveredTopic(
+                            title=f"Benchmarking {model.split(':')[0].title()} for Content Generation: Speed, Quality, and Cost",
+                            category="technology",
+                            source="codebase:stack",
+                            source_url="",
+                            relevance_score=0.75,
+                        ))
+        except Exception as e:
+            logger.debug("[TOPIC_DISCOVERY] Stack scan failed: %s", e)
+
+        # --- Source 3: Recent Gitea issues (interesting problems solved) ---
+        try:
+            gitea_url = site_config.get("gitea_url", "http://localhost:3001")
+            gitea_repo = site_config.get("gitea_repo", "gladlabs/glad-labs-codebase")
+            gitea_user = site_config.get("gitea_user", "")
+            gitea_pass = site_config.get("gitea_password", "")
+
+            if gitea_user and gitea_pass:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    resp = await client.get(
+                        f"{gitea_url}/api/v1/repos/{gitea_repo}/issues",
+                        params={"state": "closed", "limit": 10, "sort": "updated", "type": "issues"},
+                        auth=(gitea_user, gitea_pass),
+                    )
+                    if resp.status_code == 200:
+                        issues = resp.json()
+                        for issue in issues[:5]:
+                            title = issue.get("title", "")
+                            # Only architecture/feature issues, not bugs
+                            if any(p in title.lower() for p in ("feat:", "architecture:", "refactor:", "design:")):
+                                topic = self._rewrite_issue_as_topic(title)
+                                if topic:
+                                    topics.append(DiscoveredTopic(
+                                        title=topic,
+                                        category="technology",
+                                        source="codebase:issues",
+                                        source_url=issue.get("html_url", ""),
+                                        relevance_score=0.80,
+                                    ))
+                        logger.info("[TOPIC_DISCOVERY] Gitea issues: %d topics", sum(1 for t in topics if t.source == "codebase:issues"))
+        except Exception as e:
+            logger.debug("[TOPIC_DISCOVERY] Gitea issues scan failed: %s", e)
+
+        return topics
+
+    def _rewrite_commit_as_topic(self, commit_msg: str) -> str | None:
+        """Transform a git commit message into a blog topic.
+
+        Returns None if the commit isn't interesting enough for a post.
+        """
+        # Skip trivial commits
+        skip_patterns = ["bump", "update dep", "fix typo", "lint", "merge", "revert"]
+        if any(p in commit_msg.lower() for p in skip_patterns):
+            return None
+
+        # Map common patterns to topic templates
+        msg_lower = commit_msg.lower()
+        if "split" in msg_lower and "table" in msg_lower:
+            return "When Your Database Table Grows Too Wide: A Practical Guide to Schema Normalization"
+        if "watchdog" in msg_lower or "heartbeat" in msg_lower:
+            return "Building Self-Healing Infrastructure: How Heartbeat Files Keep Services Alive"
+        if "cache" in msg_lower:
+            return "The Art of Caching: When to Cache, What to Cache, and When to Stop"
+        if "alert" in msg_lower or "monitor" in msg_lower:
+            return "Monitoring for Solo Developers: Building an Alert System That Doesn't Cry Wolf"
+        if "vector" in msg_lower or "embedding" in msg_lower:
+            return "Vector Search at Scale: Keeping Embeddings Accurate as Your Database Grows"
+        if "podcast" in msg_lower or "tts" in msg_lower:
+            return "Turning Blog Posts into Podcasts: Automated Audio Content with Edge TTS"
+        if "sitemap" in msg_lower or "seo" in msg_lower:
+            return "The SEO Mistakes That Hide Your Content From Search Engines"
+        if "postgres" in msg_lower or "database" in msg_lower:
+            return "PostgreSQL Performance Tuning for Application Developers"
+
+        # Generic fallback: use the commit message directly as a topic seed
+        if len(commit_msg) > 30:
+            return f"Inside the Engineering: {commit_msg[:80]}"
+        return None
+
+    def _rewrite_issue_as_topic(self, issue_title: str) -> str | None:
+        """Transform a Gitea issue title into a blog topic."""
+        # Strip prefixes
+        clean = re.sub(r"^(feat|fix|refactor|architecture|design|ops|perf):\s*", "", issue_title, flags=re.IGNORECASE)
+        if len(clean) < 20:
+            return None
+        return f"Engineering Deep Dive: {clean}"
 
     async def _deduplicate(self, topics: list[DiscoveredTopic]) -> list[DiscoveredTopic]:
         """Mark topics that duplicate existing published posts."""
