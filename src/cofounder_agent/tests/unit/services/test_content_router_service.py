@@ -1970,3 +1970,77 @@ class TestStageGenerateMediaScripts:
 
         # The short script is discarded — result["podcast_script"] should be empty
         assert result.get("podcast_script_length", 0) == 0
+
+
+# ---------------------------------------------------------------------------
+# Image style rotation dedup (#181)
+# ---------------------------------------------------------------------------
+
+
+class TestImageStyleRotationDedup:
+    """Tests for the in-memory style dedup helpers."""
+
+    def test_record_and_retrieve(self):
+        from services.content_router_service import (
+            _get_in_memory_recent_styles,
+            _recent_style_picks,
+            _record_style_pick,
+        )
+
+        _recent_style_picks.clear()
+        _record_style_pick("cyberpunk neon style")
+        _record_style_pick("flat vector illustration")
+        recent = _get_in_memory_recent_styles()
+        assert "cyberpunk neon style" in recent
+        assert "flat vector illustration" in recent
+
+    def test_dedup_prevents_repeat_in_batch(self):
+        """Simulates a batch: after recording N-1 styles, only the unused one remains."""
+        from services.content_router_service import (
+            _get_in_memory_recent_styles,
+            _recent_style_picks,
+            _record_style_pick,
+        )
+
+        _recent_style_picks.clear()
+        styles = ["style_a", "style_b", "style_c"]
+        _record_style_pick("style_a")
+        _record_style_pick("style_b")
+        mem_recent = set(_get_in_memory_recent_styles())
+        available = [s for s in styles if s not in mem_recent]
+        assert available == ["style_c"]
+
+    def test_all_styles_used_resets_pool(self):
+        """When every style has been picked, the full pool should be available."""
+        from services.content_router_service import (
+            _get_in_memory_recent_styles,
+            _recent_style_picks,
+            _record_style_pick,
+        )
+
+        _recent_style_picks.clear()
+        styles = ["style_a", "style_b"]
+        for s in styles:
+            _record_style_pick(s)
+        mem_recent = set(_get_in_memory_recent_styles())
+        available = [s for s in styles if s not in mem_recent]
+        # All used — caller should reset to full pool
+        assert available == []
+
+    def test_ttl_expiry(self):
+        """Styles older than TTL should not appear in recent list."""
+        import time as _time
+
+        from services.content_router_service import (
+            _STYLE_HISTORY_TTL,
+            _get_in_memory_recent_styles,
+            _recent_style_picks,
+        )
+
+        _recent_style_picks.clear()
+        # Manually insert an expired entry
+        _recent_style_picks.append(("old_style", _time.monotonic() - _STYLE_HISTORY_TTL - 1))
+        _recent_style_picks.append(("new_style", _time.monotonic()))
+        recent = _get_in_memory_recent_styles()
+        assert "old_style" not in recent
+        assert "new_style" in recent
