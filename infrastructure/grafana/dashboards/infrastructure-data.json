@@ -2861,7 +2861,7 @@
             "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT model, provider, ROUND(cost_usd::numeric, 6) as cost, tokens_used, created_at::timestamp(0) FROM cost_logs ORDER BY created_at DESC LIMIT 20",
+          "rawSql": "SELECT model, provider, ROUND(cost_usd::numeric, 6) as cost, total_tokens, created_at::timestamp(0) FROM cost_logs ORDER BY created_at DESC LIMIT 20",
           "refId": "A"
         }
       ],
