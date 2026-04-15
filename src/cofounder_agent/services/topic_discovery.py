@@ -574,14 +574,11 @@ class TopicDiscovery:
                 clean = re.sub(r"^(feat|fix|refactor|ops|perf|test|security):\s*", "", title, flags=re.IGNORECASE)
                 return f"Engineering Insight: {clean}" if len(clean) > 20 else None
 
-        # For memory: extract the decision or fact
+        # For memory: skip — internal system state (preferences, decisions, config)
+        # is not suitable for blog topics.  Memory-derived topics produced garbage
+        # like "Behind the Decisions: name: Autonomous work style description: ..."
         if source_table == "memory":
-            # Memory entries often have "name: X" or start with a decision
-            lines = text.split("\n")
-            for line in lines:
-                line = line.strip().lstrip("-# ")
-                if len(line) > 30 and not line.startswith("---"):
-                    return f"Behind the Decisions: {line[:80]}"
+            return None
 
         # For audit: extract interesting events
         if source_table == "audit":
