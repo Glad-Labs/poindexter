@@ -1,4 +1,4 @@
-# Gitea Actions CI — local test runner (custom image with Python + Node)
+# Gitea Actions CI — custom runner with Python 3.12 + Node 22
 name: CI — Test
 
 on:
@@ -9,18 +9,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        run: |
-          cd /tmp
-          git clone --depth 1 --branch ${GITHUB_REF_NAME:-main} ${GITHUB_SERVER_URL:-http://gitea:3000}/${GITHUB_REPOSITORY:-gladlabs/glad-labs-codebase}.git work
-          cp -r work/. ${GITHUB_WORKSPACE:-.}
-
-      - name: Verify tools
-        run: |
-          python3 --version
-          node --version
-          poetry --version
-          git --version
+      - uses: actions/checkout@v4
 
       - name: Backend unit tests
         run: |
