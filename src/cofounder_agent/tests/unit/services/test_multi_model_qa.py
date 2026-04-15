@@ -113,8 +113,8 @@ class TestValidatorPasses:
             with patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client()):
                 result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
-        # Should have two reviews: programmatic + ollama
-        assert len(result.reviews) == 2
+        # Should have at least programmatic + ollama (url_verifier may also run)
+        assert len(result.reviews) >= 2
         reviewer_names = [r.reviewer for r in result.reviews]
         assert "programmatic_validator" in reviewer_names
         assert "ollama_critic" in reviewer_names
