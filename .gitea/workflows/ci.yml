@@ -10,11 +10,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Clean workspace
-        run: rm -rf $GITHUB_WORKSPACE/* $GITHUB_WORKSPACE/.* 2>/dev/null || true
+        run: |
+          if [ -n "$GITHUB_WORKSPACE" ]; then
+            rm -rf "$GITHUB_WORKSPACE"/*
+            rm -rf "$GITHUB_WORKSPACE"/.[!.]*
+          fi
+          # Also clean any cached workdirs
+          rm -rf /tmp/work 2>/dev/null || true
 
       - uses: actions/checkout@v4
         with:
           clean: true
+          fetch-depth: 1
+
+      - name: Verify fresh checkout
+        run: |
+          cd src/cofounder_agent
+          grep 'assert.*82.*<=.*result' tests/unit/services/test_multi_model_qa.py | head -1 || echo "STALE: QA test not updated"
+          grep 'test_sentry' tests/unit/services/test_sentry_integration.py > /dev/null 2>&1 && echo "WARN: sentry test exists" || echo "OK: no sentry test"
 
       - name: Backend unit tests
         run: |
@@ -26,8 +39,8 @@ jobs:
             --ignore=tests/unit/services/test_memory_client.py \
             --ignore=tests/unit/services/test_memory_system.py \
             --ignore=tests/unit/services/test_redis_cache.py \
+            --ignore=tests/unit/services/test_sentry_integration.py \
             --ignore=tests/unit/agents/test_content_agent_pexels_client.py \
             --ignore=tests/unit/agents/test_content_agent_postgres_image_agent.py \
             --ignore=tests/unit/routes/test_newsletter_routes.py \
-            --ignore=tests/unit/services/test_sentry_integration.py \
             -p no:cacheprovider
