@@ -267,11 +267,13 @@ async def preview_post(preview_token: str):
                 return post
 
             # No post row yet — check content_tasks (pre-approval preview)
+            # Use COALESCE(title, topic) so the generated canonical title
+            # is preferred over the raw topic string.
             task_row = await conn.fetchrow(
                 """
-                SELECT task_id, topic AS title, content, excerpt, featured_image_url,
-                       seo_title, seo_description, seo_keywords, category, quality_score,
-                       status, created_at, updated_at, metadata
+                SELECT task_id, COALESCE(title, topic) AS title, content, excerpt,
+                       featured_image_url, seo_title, seo_description, seo_keywords,
+                       category, quality_score, status, created_at, updated_at, metadata
                 FROM content_tasks
                 WHERE metadata->>'preview_token' = $1
                 """,
