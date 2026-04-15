@@ -478,6 +478,9 @@ class TaskExecutor:
             await self.database_service.tasks.log_status_change(task_id, "pending", "in_progress")
             logger.info("[OK] [TASK_SINGLE] Task marked as in_progress")
 
+            # Notify Discord #ops that a task started generating
+            await _notify_discord(f"Generating: \"{topic[:80]}\" ({category or 'uncategorized'})")
+
             # 2. Run through content router pipeline (the full 6-stage pipeline)
             logger.info(
                 "[TASK_SINGLE] Executing content router pipeline (timeout: %ss)...",
