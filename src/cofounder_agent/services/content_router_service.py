@@ -16,6 +16,33 @@ from .webhook_delivery_service import emit_webhook_event
 
 logger = get_logger(__name__)
 
+# ---------------------------------------------------------------------------
+# Image-style rotation dedup (#181)
+# ---------------------------------------------------------------------------
+# Module-level tracker so concurrent/sequential tasks in the same worker
+# process don't pick the same style.  Entries are (style_name, timestamp).
+# We keep at most _STYLE_HISTORY_SIZE entries and auto-expire after
+# _STYLE_HISTORY_TTL seconds so styles become available again once enough
+# time passes (prevents permanent starvation when the style pool is small).
+import time as _time
+from collections import deque as _deque
+
+_STYLE_HISTORY_SIZE = 10
+_STYLE_HISTORY_TTL = 3600  # 1 hour
+_recent_style_picks: _deque = _deque(maxlen=_STYLE_HISTORY_SIZE)
+
+
+def _record_style_pick(style_name: str) -> None:
+    """Record that *style_name* was just chosen."""
+    _recent_style_picks.append((style_name, _time.monotonic()))
+
+
+def _get_in_memory_recent_styles() -> list:
+    """Return style names picked within the TTL window."""
+    cutoff = _time.monotonic() - _STYLE_HISTORY_TTL
+    return [name for name, ts in _recent_style_picks if ts >= cutoff]
+
+
 # Per-stage timeouts in seconds — easy to tune in one place.
 # Prevents a single slow stage (e.g. Ollama generation) from eating the entire budget.
 _DEFAULT_STAGE_TIMEOUTS = {
@@ -1536,7 +1563,8 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
                         ("isometric 3D illustration", "colorful clean technical, low angle, no text"),
                     ]
                 import random as _rnd
-                # Check what styles were used recently
+                # Check what styles were used recently (DB + in-memory batch dedup)
+                _recent_styles: list[str] = []
                 try:
                     import asyncpg as _apg
                     _cloud_url = os.environ.get("DATABASE_URL", "")
@@ -1550,15 +1578,21 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
                         """)
                         await _cconn.close()
                         _recent_styles = [r["style"] for r in _recent if r["style"]]
-                        # Filter out recently used styles, pick from remaining
-                        _available = [s for s in _IMAGE_STYLES if s[0] not in _recent_styles]
-                        if not _available:
-                            _available = _IMAGE_STYLES  # All used recently, reset
-                        _chosen_style, _style_tags = _rnd.choice(_available)
-                    else:
-                        _chosen_style, _style_tags = _rnd.choice(_IMAGE_STYLES)
                 except Exception:
-                    _chosen_style, _style_tags = _rnd.choice(_IMAGE_STYLES)
+                    pass
+
+                # Merge in-memory picks from the current batch / recent tasks
+                # so concurrent tasks in the same worker won't repeat styles.
+                _mem_recent = _get_in_memory_recent_styles()
+                _all_recent = set(_recent_styles) | set(_mem_recent)
+
+                _available = [s for s in _IMAGE_STYLES if s[0] not in _all_recent]
+                if not _available:
+                    _available = _IMAGE_STYLES  # All used recently, reset pool
+                _chosen_style, _style_tags = _rnd.choice(_available)
+
+                # Record the pick so later tasks in the same batch see it
+                _record_style_pick(_chosen_style)
 
                 # Store chosen style in result metadata for tracking
                 result["image_style"] = _chosen_style
