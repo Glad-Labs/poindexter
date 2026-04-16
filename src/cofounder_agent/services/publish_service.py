@@ -732,7 +732,23 @@ async def publish_post_from_task(
                     await upload_to_r2(_feed_path, "podcast/feed.xml", "application/rss+xml")
                     logger.info("[R2] Podcast RSS feed regenerated on CDN")
             except Exception as _e:
-                logger.warning("[R2] Feed regen failed (non-fatal): %s", _e)
+                logger.warning("[R2] Podcast feed regen failed (non-fatal): %s", _e)
+
+            # Regenerate public video RSS feed on R2
+            try:
+                import httpx as _hx
+
+                from services.site_config import site_config as _scfg
+                _api_base = _scfg.get("internal_api_base_url", "http://localhost:8002")
+                async with _hx.AsyncClient(timeout=_hx.Timeout(30.0, connect=5.0)) as _client:
+                    _feed = await _client.get(f"{_api_base}/api/video/feed.xml", timeout=30)
+                    _feed_path = "/tmp/video-feed.xml"
+                    with open(_feed_path, "w") as _f:
+                        _f.write(_feed.text)
+                    await upload_to_r2(_feed_path, "video/feed.xml", "application/rss+xml")
+                    logger.info("[R2] Video RSS feed regenerated on CDN")
+            except Exception as _e:
+                logger.warning("[R2] Video feed regen failed (non-fatal): %s", _e)
 
         _spawn_background(
             _upload_media_to_r2(post_id), name=f"upload_media_r2({post_id})"
