@@ -43,7 +43,7 @@ Glad Labs is an AI-operated content business — a solo founder using AI to run 
 - 5,097+ Python unit tests passing
 - 200+ app_settings keys (roughly 60 added in the #198 hardening sweep)
 - 1,900+ embeddings across posts / issues / audit / memory / brain
-- $30/month operating cost
+- $0/month infra cost (fully self-hosted; only business-level paid services sit outside the pipeline)
 
 ## Development Commands
 

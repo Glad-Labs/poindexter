@@ -115,7 +115,7 @@ const FEATURES = [
 ];
 
 const STATS = [
-  { value: '$30', label: '/mo operating cost' },
+  { value: '$0', label: '/mo infra cost (self-hosted)' },
   { value: '5,000+', label: 'tests passing' },
   { value: '6', label: 'independent QA reviewers' },
   { value: '50%', label: 'of drafts rejected by QA' },

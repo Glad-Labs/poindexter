@@ -83,8 +83,8 @@ Data flow:
 
 ```env
 # web/public-site/.env.local
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
-NEXT_PUBLIC_FASTAPI_URL=http://localhost:8000
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8002
+NEXT_PUBLIC_FASTAPI_URL=http://localhost:8002
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ```
 
