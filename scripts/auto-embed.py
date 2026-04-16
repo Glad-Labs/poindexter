@@ -560,7 +560,11 @@ async def sync_published_posts(
 
     for post in posts:
         post_id = str(post["id"])
-        source_id = f"post/{post['slug']}"
+        # #198 audit: unified on UUID source_id so auto-embed and the
+        # publish-hook embedder (services/embedding_service.embed_post)
+        # share one namespace. Historical `post/slug-hash` rows from
+        # before 2026-04-16 get cleaned up by the backfill migration.
+        source_id = post_id
         try:
             # Build the embeddable text: title + excerpt + content
             parts = []
