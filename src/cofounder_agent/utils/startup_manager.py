@@ -183,7 +183,7 @@ class StartupManager:
                 "   Set DATABASE_URL or DATABASE_USER environment variables", exc_info=True
             )
             logger.error(
-                "  Example DATABASE_URL: postgresql://user:password@localhost:5432/glad_labs_dev",
+                "  Example DATABASE_URL: postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain",
                 exc_info=True,
             )
             raise SystemExit(1) from e
