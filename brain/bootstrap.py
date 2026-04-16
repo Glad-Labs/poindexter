@@ -163,6 +163,16 @@ def get_bootstrap_value(key: str, default: str = "") -> str:
     return default
 
 
+def get_all_bootstrap_values() -> dict[str, str]:
+    """Return every key-value pair from bootstrap.toml as strings.
+
+    Used by the docker-compose wrapper to export all bootstrap values as
+    environment variables without the caller needing to know the key names.
+    """
+    raw = _read_bootstrap_toml()
+    return {k: str(v).strip() for k, v in raw.items() if v}
+
+
 def bootstrap_file_exists() -> bool:
     """True iff ~/.poindexter/bootstrap.toml exists (used by the setup wizard)."""
     return BOOTSTRAP_FILE.is_file()
