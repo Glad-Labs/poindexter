@@ -251,8 +251,20 @@ class TestStoreEmbeddingFormatting:
         after = datetime.now(timezone.utc)
 
         args = conn.fetchrow.call_args[0]
-        # created_at = $7, updated_at = $8
-        created_at, updated_at = args[7], args[8]
+        # fetchrow(sql, *params) — call_args[0] is (sql, *params), so
+        # index 0 is the SQL string. After the #198 schema fix the
+        # params are:
+        #   [1]  source_table
+        #   [2]  source_id
+        #   [3]  content_hash
+        #   [4]  vector_str
+        #   [5]  embedding_model
+        #   [6]  metadata_json
+        #   [7]  text_preview
+        #   [8]  writer
+        #   [9]  created_at
+        #   [10] updated_at
+        created_at, updated_at = args[9], args[10]
         assert before <= created_at <= after
         assert created_at == updated_at  # both set to `now` in store_embedding
 

@@ -1,5 +1,9 @@
 """
-Tests for R2 upload service — Cloudflare R2 media uploads.
+Tests for object-store upload service — S3-compatible media uploads (R2/S3/B2/MinIO).
+
+After the #198 rename, non-secret values come from `site_config.get()`
+(sync) and secret values come from `site_config.get_secret()` (async).
+Tests mock both entry points.
 """
 
 import os
@@ -16,6 +20,22 @@ from services.r2_upload_service import (
 )
 
 
+def _make_site_config_mock(values: dict[str, str]):
+    """Return a site_config mock where .get() is sync and .get_secret() is async.
+
+    Both read from the same ``values`` dict, supporting both the new
+    ``storage_*`` keys and the legacy ``cloudflare_r2_*`` fallbacks.
+    """
+    mock = MagicMock()
+    mock.get.side_effect = lambda k, d="": values.get(k, d)
+
+    async def _get_secret(k, d=""):
+        return values.get(k, d)
+
+    mock.get_secret = AsyncMock(side_effect=_get_secret)
+    return mock
+
+
 class TestUploadToR2:
     """Core upload_to_r2 function."""
 
@@ -28,8 +48,8 @@ class TestUploadToR2:
     async def test_returns_none_when_no_credentials(self, tmp_path):
         mp3 = tmp_path / "test.mp3"
         mp3.write_bytes(b"fake audio data")
-        with patch("services.r2_upload_service.site_config") as mock_sc:
-            mock_sc.get.return_value = ""
+        mock_sc = _make_site_config_mock({})  # nothing configured
+        with patch("services.r2_upload_service.site_config", mock_sc):
             result = await upload_to_r2(str(mp3), "podcast/test.mp3")
         assert result is None
 
@@ -41,16 +61,15 @@ class TestUploadToR2:
         mock_s3 = MagicMock()
         mock_boto3 = MagicMock()
         mock_boto3.client.return_value = mock_s3
-        with patch("services.r2_upload_service.site_config") as mock_sc, \
+        mock_sc = _make_site_config_mock({
+            "storage_access_key": "test_key",
+            "storage_secret_key": "test_secret",
+            "storage_endpoint": "https://test.r2.dev",
+            "storage_bucket": "test-bucket",
+            "storage_public_url": "https://pub-test.r2.dev",
+        })
+        with patch("services.r2_upload_service.site_config", mock_sc), \
              patch.dict("sys.modules", {"boto3": mock_boto3}):
-            mock_sc.get.side_effect = lambda k, d="": {
-                "cloudflare_r2_access_key": "test_key",
-                "cloudflare_r2_secret_key": "test_secret",
-                "cloudflare_r2_endpoint": "https://test.r2.dev",
-                "cloudflare_r2_bucket": "test-bucket",
-                "r2_public_url": "https://pub-test.r2.dev",
-            }.get(k, d)
-
             result = await upload_to_r2(str(mp3), "podcast/abc.mp3")
 
         assert result == "https://pub-test.r2.dev/podcast/abc.mp3"
@@ -68,13 +87,15 @@ class TestUploadToR2:
         mock_s3 = MagicMock()
         mock_boto3 = MagicMock()
         mock_boto3.client.return_value = mock_s3
-        with patch("services.r2_upload_service.site_config") as mock_sc, \
+        mock_sc = _make_site_config_mock({
+            "storage_access_key": "key",
+            "storage_secret_key": "secret",
+            "storage_endpoint": "https://x.r2.dev",
+            "storage_bucket": "b",
+            "storage_public_url": "https://pub.r2.dev",
+        })
+        with patch("services.r2_upload_service.site_config", mock_sc), \
              patch.dict("sys.modules", {"boto3": mock_boto3}):
-            mock_sc.get.side_effect = lambda k, d="": {
-                "cloudflare_r2_access_key": "key",
-                "cloudflare_r2_secret_key": "secret",
-            }.get(k, d)
-
             await upload_to_r2(str(mp4), "video/abc.mp4")
 
         call_args = mock_s3.upload_file.call_args
@@ -88,13 +109,15 @@ class TestUploadToR2:
         mock_s3 = MagicMock()
         mock_boto3 = MagicMock()
         mock_boto3.client.return_value = mock_s3
-        with patch("services.r2_upload_service.site_config") as mock_sc, \
+        mock_sc = _make_site_config_mock({
+            "storage_access_key": "key",
+            "storage_secret_key": "secret",
+            "storage_endpoint": "https://x.r2.dev",
+            "storage_bucket": "b",
+            "storage_public_url": "https://pub.r2.dev",
+        })
+        with patch("services.r2_upload_service.site_config", mock_sc), \
              patch.dict("sys.modules", {"boto3": mock_boto3}):
-            mock_sc.get.side_effect = lambda k, d="": {
-                "cloudflare_r2_access_key": "key",
-                "cloudflare_r2_secret_key": "secret",
-            }.get(k, d)
-
             await upload_to_r2(str(f), "custom/file.bin", content_type="application/custom")
 
         call_args = mock_s3.upload_file.call_args
@@ -109,13 +132,15 @@ class TestUploadToR2:
         mock_s3.upload_file.side_effect = Exception("Connection refused")
         mock_boto3 = MagicMock()
         mock_boto3.client.return_value = mock_s3
-        with patch("services.r2_upload_service.site_config") as mock_sc, \
+        mock_sc = _make_site_config_mock({
+            "storage_access_key": "key",
+            "storage_secret_key": "secret",
+            "storage_endpoint": "https://x.r2.dev",
+            "storage_bucket": "b",
+            "storage_public_url": "https://pub.r2.dev",
+        })
+        with patch("services.r2_upload_service.site_config", mock_sc), \
              patch.dict("sys.modules", {"boto3": mock_boto3}):
-            mock_sc.get.side_effect = lambda k, d="": {
-                "cloudflare_r2_access_key": "key",
-                "cloudflare_r2_secret_key": "secret",
-            }.get(k, d)
-
             result = await upload_to_r2(str(f), "podcast/fail.mp3")
 
         assert result is None
@@ -125,17 +150,40 @@ class TestUploadToR2:
         f = tmp_path / "test.mp3"
         f.write_bytes(b"data")
 
-        with patch("services.r2_upload_service.site_config") as mock_sc, \
+        mock_sc = _make_site_config_mock({
+            "storage_access_key": "key",
+            "storage_secret_key": "secret",
+            "storage_endpoint": "https://x.r2.dev",
+            "storage_bucket": "b",
+            "storage_public_url": "https://pub.r2.dev",
+        })
+        with patch("services.r2_upload_service.site_config", mock_sc), \
              patch.dict("sys.modules", {"boto3": None}), \
              patch("builtins.__import__", side_effect=ImportError("no boto3")):
-            mock_sc.get.side_effect = lambda k, d="": {
-                "cloudflare_r2_access_key": "key",
-                "cloudflare_r2_secret_key": "secret",
-            }.get(k, d)
-
             result = await upload_to_r2(str(f), "podcast/test.mp3")
 
         assert result is None
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_legacy_cloudflare_keys(self, tmp_path):
+        """#198 migration: code accepts legacy cloudflare_r2_* keys as fallback."""
+        mp3 = tmp_path / "legacy.mp3"
+        mp3.write_bytes(b"data")
+        mock_s3 = MagicMock()
+        mock_boto3 = MagicMock()
+        mock_boto3.client.return_value = mock_s3
+        mock_sc = _make_site_config_mock({
+            # Only legacy keys set — new code should fall back to them.
+            "cloudflare_r2_access_key": "legacy_key",
+            "cloudflare_r2_secret_key": "legacy_secret",
+            "cloudflare_r2_endpoint": "https://legacy.r2.dev",
+            "cloudflare_r2_bucket": "legacy-bucket",
+            "r2_public_url": "https://pub-legacy.r2.dev",
+        })
+        with patch("services.r2_upload_service.site_config", mock_sc), \
+             patch.dict("sys.modules", {"boto3": mock_boto3}):
+            result = await upload_to_r2(str(mp3), "podcast/legacy.mp3")
+        assert result == "https://pub-legacy.r2.dev/podcast/legacy.mp3"
 
 
 class TestContentTypes:

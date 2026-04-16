@@ -82,11 +82,17 @@ class TestEmbedPost:
         ollama.embed.assert_awaited_once()
         embeddings_db.store_embedding.assert_awaited_once()
 
-        # Verify store_embedding was called with correct source_type
+        # Verify store_embedding was called with correct source_type.
+        # #198: unified on plural 'posts' so RAG can query the same
+        # namespace that auto-embed writes to.
         call_kwargs = embeddings_db.store_embedding.call_args
-        assert call_kwargs.kwargs["source_type"] == "post"
+        assert call_kwargs.kwargs["source_type"] == "posts"
         assert call_kwargs.kwargs["source_id"] == "1"
         assert call_kwargs.kwargs["metadata"] == {"title": "Test Title"}
+        # text_preview + writer added in the NOT NULL schema fix — verify
+        # they're populated rather than dropped.
+        assert call_kwargs.kwargs["text_preview"]  # non-empty
+        assert call_kwargs.kwargs["writer"] == "worker"
 
     @pytest.mark.asyncio
     async def test_skips_unchanged_post(self, service, ollama, embeddings_db):

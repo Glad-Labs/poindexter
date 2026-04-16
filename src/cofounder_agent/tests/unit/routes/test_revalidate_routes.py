@@ -117,6 +117,9 @@ class TestRevalidateCache:
         assert resp.status_code == 401
 
     def test_custom_paths_are_forwarded(self):
+        # Since ae8d57b2 the revalidation call also forwards tags (for
+        # tag-based ISR cache invalidation). Default tags are
+        # ['posts', 'post-index']. Verify both arguments are passed.
         custom_paths = ["/blog", "/about"]
         with patch(
             "routes.revalidate_routes.trigger_nextjs_revalidation",
@@ -128,7 +131,11 @@ class TestRevalidateCache:
                 json={"paths": custom_paths},
                 headers=AUTH_HEADERS,
             )
-        mock_trigger.assert_called_once_with(custom_paths)
+        mock_trigger.assert_called_once()
+        call_args = mock_trigger.call_args.args
+        assert call_args[0] == custom_paths
+        # Second positional is default tags (or the caller-provided list)
+        assert call_args[1] == ["posts", "post-index"]
 
     def test_returns_200_with_empty_paths_list(self):
         """Empty paths list falls back to default paths inside the route handler."""

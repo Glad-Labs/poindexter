@@ -38,6 +38,12 @@ class TestRunCycleSkipsWhenBusy:
         worker._last_run["topic_discovery"] = now
         worker._last_run["topic_gaps"] = now
         worker._last_run["context_sync"] = now
+        # #229 event-driven discovery: mock the signal evaluator so it
+        # doesn't fire when the queue is genuinely pending (prevents real
+        # DuckDuckGo/HN/dev.to HTTP calls inside the unit test).
+        worker._should_trigger_discovery = AsyncMock(
+            return_value=(False, "queue_full(5>=2)")
+        )
         result = await worker.run_cycle()
         assert result.get("skipped") is True
         assert "5 active tasks" in result.get("reason", "")
@@ -54,6 +60,11 @@ class TestRunCycleSkipsWhenBusy:
                 attr = getattr(worker, attr_name, None)
                 if callable(attr) and asyncio.iscoroutinefunction(attr):
                     setattr(worker, attr_name, AsyncMock(return_value={}))
+        # _should_trigger_discovery must return a (bool, reason) tuple; the
+        # blanket AsyncMock above returns {} which can't unpack.
+        worker._should_trigger_discovery = AsyncMock(
+            return_value=(False, "mocked_not_triggered")
+        )
         result = await worker.run_cycle()
         assert result.get("skipped") is not True
 
