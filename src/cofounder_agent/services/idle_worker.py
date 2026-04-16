@@ -133,9 +133,21 @@ class IdleWorker:
             await self._persist_mark_run("expire_stale_approvals")
 
         # --- Non-GPU tasks: run even when pipeline is busy ---
-        # Topic discovery (web scraping + DB insert, no GPU)
-        if self._is_due("topic_discovery", 480):
+        # Topic discovery — event-driven (issue #229):
+        # Fires on signals (queue_low, stale_content, rejection_streak, manual).
+        # 24h safety-net cron kept as fallback so the system never stalls
+        # completely if signal evaluation breaks.
+        should_discover, reason = await self._should_trigger_discovery()
+        if should_discover:
+            logger.info("[IDLE] Topic discovery triggered by signal: %s", reason)
             results["topic_discovery"] = await self._discover_and_queue_topics()
+            results["topic_discovery"]["trigger"] = reason
+            await self._persist_mark_run("topic_discovery")
+        elif self._is_due("topic_discovery", 1440):
+            # 24h safety net — shouldn't be needed if signals work
+            logger.warning("[IDLE] Topic discovery: 24h safety-net triggered (signals not firing?)")
+            results["topic_discovery"] = await self._discover_and_queue_topics()
+            results["topic_discovery"]["trigger"] = "safety_net_24h"
             await self._persist_mark_run("topic_discovery")
 
         # Topic gap analysis (DB query only, no GPU)
@@ -571,6 +583,118 @@ class IdleWorker:
 
         except Exception as e:
             return {"error": str(e)}
+
+    async def _should_trigger_discovery(self) -> tuple[bool, str]:
+        """Evaluate whether topic discovery should fire now (issue #229).
+
+        Returns (should_fire, reason).  Signals considered:
+        - Manual trigger: app_settings.topic_discovery_manual_trigger = true
+        - Queue low: pending_tasks < queue_low_threshold (default 2)
+        - Stale content: last published > stale_hours (default 6)
+        - Rejection streak: 3+ consecutive rejections
+        - Cooldown: min 30 min between runs (configurable)
+
+        All thresholds are app_settings knobs so operators can tune per niche.
+        """
+        if not self.pool:
+            return False, "no_pool"
+
+        # 1. Cooldown check
+        try:
+            cooldown_s = int(await self._get_setting(
+                "topic_discovery_min_cooldown_seconds", "1800"
+            ))
+        except (ValueError, TypeError):
+            cooldown_s = 1800  # 30 min default
+
+        try:
+            last_raw = await self._get_setting("idle_last_run_topic_discovery", "0")
+            last_ts = float(last_raw or 0)
+        except (ValueError, TypeError):
+            last_ts = 0.0
+
+        import time
+        now_ts = time.time()
+        if now_ts - last_ts < cooldown_s:
+            return False, "cooldown"
+
+        # 2. Manual trigger (highest priority after cooldown)
+        try:
+            manual = (await self._get_setting(
+                "topic_discovery_manual_trigger", "false"
+            )).strip().lower()
+            if manual == "true":
+                # Clear the flag so it doesn't re-fire every cycle
+                await self.pool.execute(
+                    "UPDATE app_settings SET value = 'false' "
+                    "WHERE key = 'topic_discovery_manual_trigger'"
+                )
+                return True, "manual_trigger"
+        except Exception as e:
+            logger.debug("[IDLE] Manual trigger check failed: %s", e)
+
+        # 3. Queue-low signal
+        try:
+            low_threshold = int(await self._get_setting(
+                "topic_discovery_queue_low_threshold", "2"
+            ))
+        except (ValueError, TypeError):
+            low_threshold = 2
+
+        try:
+            pending = await self.pool.fetchval(
+                "SELECT COUNT(*) FROM content_tasks WHERE status = 'pending'"
+            )
+            if (pending or 0) < low_threshold:
+                return True, f"queue_low({pending}<{low_threshold})"
+        except Exception as e:
+            logger.debug("[IDLE] Queue-low check failed: %s", e)
+
+        # 4. Stale content signal
+        try:
+            stale_hours = int(await self._get_setting(
+                "topic_discovery_stale_hours", "6"
+            ))
+        except (ValueError, TypeError):
+            stale_hours = 6
+
+        try:
+            last_pub = await self.pool.fetchval(
+                "SELECT MAX(published_at) FROM posts WHERE status = 'published'"
+            )
+            if last_pub:
+                from datetime import datetime, timezone
+                if last_pub.tzinfo is None:
+                    last_pub = last_pub.replace(tzinfo=timezone.utc)
+                age_hours = (datetime.now(timezone.utc) - last_pub).total_seconds() / 3600
+                if age_hours > stale_hours:
+                    return True, f"stale_content({age_hours:.1f}h>{stale_hours}h)"
+        except Exception as e:
+            logger.debug("[IDLE] Stale-content check failed: %s", e)
+
+        # 5. Rejection streak signal
+        try:
+            streak_threshold = int(await self._get_setting(
+                "topic_discovery_rejection_streak", "3"
+            ))
+        except (ValueError, TypeError):
+            streak_threshold = 3
+
+        try:
+            recent = await self.pool.fetch(
+                "SELECT status FROM content_tasks "
+                "WHERE updated_at > NOW() - INTERVAL '6 hours' "
+                "ORDER BY updated_at DESC LIMIT $1",
+                streak_threshold,
+            )
+            if len(recent) >= streak_threshold and all(
+                r["status"] in ("rejected", "rejected_final") for r in recent
+            ):
+                return True, f"rejection_streak({streak_threshold})"
+        except Exception as e:
+            logger.debug("[IDLE] Rejection-streak check failed: %s", e)
+
+        return False, "no_signal"
 
     async def _discover_and_queue_topics(self) -> dict:
         """Discover trending topics and queue them as content tasks."""
