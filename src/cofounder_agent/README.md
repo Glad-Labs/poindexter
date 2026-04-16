@@ -1,14 +1,23 @@
-# AI Co-Founder Agent (Backend)
+# Poindexter Worker (Backend)
 
-FastAPI orchestrator for the Glad Labs AI system. Coordinates specialized agents through a multi-provider model router with task management and real-time monitoring.
+FastAPI orchestrator for the Poindexter AI content pipeline. Coordinates specialized agents through a model router with task management, QA gates, and real-time monitoring.
 
 **Version:** 0.1.0
 **Runtime:** Python 3.10+ with FastAPI
-**Port:** 8000
+**Port:** 8002 (Docker) / 8000 (uvicorn default)
 **Database:** PostgreSQL via asyncpg (raw SQL, no ORM)
 **Dependencies:** Poetry (`pyproject.toml`)
 
 ## Quick Start
+
+Recommended: run via Docker Compose from the repo root.
+
+```bash
+# From repo root
+docker compose -f docker-compose.local.yml up -d worker
+```
+
+For local Python development (requires Postgres running on port 15432):
 
 ```bash
 cd src/cofounder_agent
@@ -16,7 +25,7 @@ poetry install
 poetry run uvicorn main:app --reload --port 8000
 ```
 
-Requires `.env.local` at project root with `DATABASE_URL` and at least one LLM API key. See root `.env.example` for all options.
+Requires `.env` at project root with `DATABASE_URL` pointing at your local pgvector. Ollama is the default LLM provider — no cloud API keys required. See root `.env.example` for all options.
 
 ## Directory Structure
 
