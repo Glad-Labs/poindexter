@@ -507,7 +507,7 @@ export default function ProductPage() {
                 </li>
                 <li className="flex gap-2">
                   <span className="text-cyan-400 flex-shrink-0">+</span>
-                  Operator Discord channel
+                  Premium Discord — direct access to Matt
                 </li>
                 <li className="flex gap-2">
                   <span className="text-cyan-400 flex-shrink-0">+</span>
@@ -536,14 +536,22 @@ export default function ProductPage() {
             Stop paying per token. Stop trusting cloud APIs with your content.
             Run the whole pipeline on your own hardware and publish to anywhere.
           </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+          <div className="flex flex-col sm:flex-row gap-4 justify-center flex-wrap">
             <a
-              href="https://github.com/Glad-Labs/glad-labs-codebase"
+              href="https://github.com/Glad-Labs/poindexter"
               target="_blank"
               rel="noopener noreferrer"
               className="px-8 py-4 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-semibold rounded-xl hover:shadow-lg hover:shadow-cyan-500/50 transition-all duration-300"
             >
               View on GitHub
+            </a>
+            <a
+              href="https://discord.gg/GCDBxBVv"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-8 py-4 border border-indigo-500/50 text-indigo-300 font-semibold rounded-xl hover:bg-indigo-500/10 transition-all duration-300"
+            >
+              Join Discord
             </a>
             <Link
               href="/posts"
