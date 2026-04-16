@@ -35,14 +35,15 @@ Glad Labs is an AI-operated content business — a solo founder using AI to run 
 | GitHub        | https://github.com/Glad-Labs/glad-labs-codebase |
 | Project board | https://github.com/orgs/Glad-Labs/projects/2    |
 
-### Key Numbers (as of March 30, 2026)
+### Key Numbers (as of April 16, 2026)
 
-- 64 published posts on gladlabs.io
+- 34+ published posts on gladlabs.io
 - 16 custom services built
 - 7 Grafana dashboards, 90+ panels, 5 alert rules
-- 5,600+ tests passing (5,050+ Python unit, 65+ integration, 480+ JS/Jest)
+- 5,097+ Python unit tests passing
+- 200+ app_settings keys (roughly 60 added in the #198 hardening sweep)
+- 1,900+ embeddings across posts / issues / audit / memory / brain
 - $30/month operating cost
-- $362.75 in Mercury checking
 
 ## Development Commands
 
@@ -156,15 +157,44 @@ Next.js 15 app router. ISR with 5-minute revalidation. Features:
 
 Custom MCP server for Claude desktop app. 12 tools: create_post, approve, publish, check_health, get_budget, compose_plan, compose_execute, get/set/list_settings, get_post_count.
 
-### Configuration
+### Configuration (#198 — no hardcoded values in code)
 
-**Production env vars (minimal — only 3):**
+**Bootstrap is the only config on disk.** Written by `poindexter setup`
+to `~/.poindexter/bootstrap.toml`. Contains ONE value: `database_url`
+(plus optional operator-notification channels for when the system
+can't start cleanly). **No `.env` required.**
 
-- `DATABASE_URL` — Postgres connection string
-- `PORT` — HTTP port
-- `ENVIRONMENT=production`
+```toml
+# ~/.poindexter/bootstrap.toml
+database_url = "postgresql://..."
+telegram_bot_token = ""
+telegram_chat_id = ""
+discord_ops_webhook_url = ""
+```
 
-**Everything else lives in `app_settings` table (33+ keys).** Manage via API or OpenClaw.
+Resolution priority in `brain.bootstrap.resolve_database_url()`:
+explicit CLI arg → bootstrap.toml → DATABASE_URL → LOCAL_DATABASE_URL
+→ POINDEXTER_MEMORY_DSN. If nothing resolves, `require_database_url()`
+fires `notify_operator()` (Telegram → Discord → alerts.log → stderr)
+then `sys.exit(2)`.
+
+**Everything else lives in `app_settings` (200+ keys).** Code accesses
+settings through `services.site_config`:
+
+- `site_config.get(key, default)` — sync, reads from in-memory cache
+  populated at startup
+- `site_config.get_secret(key, default)` — **async**, hits DB each call
+  (secrets are filtered out of the cache, so `is_secret=true` keys
+  MUST be fetched via this method)
+
+For SaaS / A/B-testing readiness, every tunable should be a
+DB-backed setting. Background algorithm windows (anomaly detection,
+dedup lookback, failure rate windows) are NOT exceptions — they're
+also settings with sensible defaults.
+
+**Storage is provider-agnostic.** `storage_*` keys in app*settings
+target any S3-compatible provider (R2, S3, B2, MinIO). The old
+`cloudflare_r2*\*` keys still work as a fallback but are deprecated.
 
 ### Deployment
 
@@ -179,11 +209,12 @@ Custom MCP server for Claude desktop app. 12 tools: create_post, approve, publis
 - **Brain architecture:** System modeled after human brain anatomy — each region independent
 - **PostgreSQL as spinal cord:** All components communicate through shared DB tables, not imports
 - **Anti-hallucination:** Three layers — prompts, LLM QA, programmatic validator
-- **Config in DB, not env vars:** `app_settings` table replaces environment variables
+- **Config in DB, not code:** `app_settings` table replaces environment variables AND hardcoded constants. If you write a literal in production code, ask "could a customer tune this?" — if yes, it goes in app_settings.
+- **Fail loud + notify:** Missing required config triggers `notify_operator()` (Telegram → Discord → alerts.log) then `sys.exit(2)`. No silent fallbacks.
 - **Self-healing:** Brain daemon monitors and restarts services autonomously
 - **Model router first:** Use cost tiers (`free`/`budget`/`standard`/`premium`) not hardcoded model names
 - **Revenue-aware:** Content decisions informed by what generates traffic and money
-- **Matt's preferences:** Autonomous work (don't ask "what's next"), minimize env vars, manage from phone via Telegram/Grafana, no client/agency work — fully automated passive income
+- **Matt's preferences:** Autonomous work (don't ask "what's next"), minimize env vars, manage from phone via Telegram/Grafana, no client/agency work — fully automated passive income. "Think 5 years down the road if this is a SaaS product" — EVERY tunable goes in app_settings, not code.
 
 ## Monitoring
 
