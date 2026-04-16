@@ -49,7 +49,18 @@ class ResearchQualityService:
     - Result filtering and ranking
     """
 
-    # Weights for overall source score
+    # Weights for overall source score — tunable via app_settings so
+    # different niches can prioritize differently (e.g. a news blog
+    # weighs recency higher, a how-to site weighs credibility higher). (#198)
+    @staticmethod
+    def _weight(key: str, default: float) -> float:
+        try:
+            from services.site_config import site_config as _sc
+            return _sc.get_float(f"research_{key}_weight", default)
+        except Exception:
+            return default
+
+    # Class-level snapshots, re-resolved on each instance init below.
     CREDIBILITY_WEIGHT = 0.4
     SNIPPET_QUALITY_WEIGHT = 0.3
     RECENCY_WEIGHT = 0.2
@@ -77,15 +88,36 @@ class ResearchQualityService:
         "apple.com",
     }
 
-    # Minimum snippet length to be useful
+    # Minimum snippet length to be useful — tunable via app_settings.
     MIN_SNIPPET_LENGTH = 50
     MIN_SNIPPET_WORDS = 10
 
-    # Similarity threshold for deduplication
+    # Similarity threshold for deduplication — tunable via app_settings.
     SIMILARITY_THRESHOLD = 0.7  # 70% similar = duplicate
 
     def __init__(self):
         self.logger = logger
+        # Resolve tunables from app_settings on init. Re-instantiate the
+        # service to pick up app_settings changes.
+        self.credibility_weight = self._weight("credibility", self.CREDIBILITY_WEIGHT)
+        self.snippet_quality_weight = self._weight("snippet_quality", self.SNIPPET_QUALITY_WEIGHT)
+        self.recency_weight = self._weight("recency", self.RECENCY_WEIGHT)
+        self.uniqueness_weight = self._weight("uniqueness", self.UNIQUENESS_WEIGHT)
+        try:
+            from services.site_config import site_config as _sc
+            self.min_snippet_length = _sc.get_int(
+                "research_min_snippet_length", self.MIN_SNIPPET_LENGTH
+            )
+            self.min_snippet_words = _sc.get_int(
+                "research_min_snippet_words", self.MIN_SNIPPET_WORDS
+            )
+            self.similarity_threshold = _sc.get_float(
+                "research_dedup_similarity_threshold", self.SIMILARITY_THRESHOLD
+            )
+        except Exception:
+            self.min_snippet_length = self.MIN_SNIPPET_LENGTH
+            self.min_snippet_words = self.MIN_SNIPPET_WORDS
+            self.similarity_threshold = self.SIMILARITY_THRESHOLD
 
     def filter_and_score(
         self, results: list[dict], query: str | None = None
@@ -126,12 +158,12 @@ class ResearchQualityService:
             recency = self._score_recency(result)
             uniqueness = 1.0  # Will be adjusted after deduplication
 
-            # Overall score
+            # Overall score (weights settings-backed, see __init__)
             overall = (
-                credibility * self.CREDIBILITY_WEIGHT
-                + snippet_quality * self.SNIPPET_QUALITY_WEIGHT
-                + recency * self.RECENCY_WEIGHT
-                + uniqueness * self.UNIQUENESS_WEIGHT
+                credibility * self.credibility_weight
+                + snippet_quality * self.snippet_quality_weight
+                + recency * self.recency_weight
+                + uniqueness * self.uniqueness_weight
             )
 
             source = ScoredSource(
@@ -184,10 +216,10 @@ class ResearchQualityService:
 
         # Minimum snippet quality
         snippet = result.get("snippet", "")
-        if len(snippet) < self.MIN_SNIPPET_LENGTH:
+        if len(snippet) < self.min_snippet_length:
             return False
 
-        if len(snippet.split()) < self.MIN_SNIPPET_WORDS:
+        if len(snippet.split()) < self.min_snippet_words:
             return False
 
         return True
@@ -340,7 +372,7 @@ class ResearchQualityService:
                 # Calculate snippet similarity
                 similarity = self._calculate_similarity(source_a.snippet, source_b.snippet)
 
-                if similarity >= self.SIMILARITY_THRESHOLD:
+                if similarity >= self.similarity_threshold:
                     similar_idx = j
                     break
 
