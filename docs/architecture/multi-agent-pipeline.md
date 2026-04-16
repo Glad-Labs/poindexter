@@ -554,7 +554,7 @@ curl http://localhost:8002/api/health
 docker logs -f poindexter-worker
 
 # Monitor memory usage
-curl http://localhost:8000/api/agents/memory/stats
+curl http://localhost:8002/api/agents/memory/stats
 ```
 
 ---

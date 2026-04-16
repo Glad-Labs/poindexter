@@ -259,7 +259,7 @@ Performance tracking for published content.
 
 ## **API Endpoints Reference**
 
-All content endpoints are served by the FastAPI backend at `http://localhost:8000`.
+All content endpoints are served by the FastAPI backend at `http://localhost:8002`.
 See the live OpenAPI spec at `/api/openapi.json` for the full endpoint catalog.
 
 Key content routes:

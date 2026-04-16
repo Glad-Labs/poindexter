@@ -24,12 +24,18 @@
 ## 2. Clone + Configure (5 min)
 
 ```bash
-git clone https://github.com/Glad-Labs/glad-labs-codebase.git
-cd glad-labs-codebase
-cp .env.example .env
+git clone https://github.com/Glad-Labs/poindexter.git
+cd poindexter
+poindexter setup           # wizard writes ~/.poindexter/bootstrap.toml
 ```
 
-### Essential .env settings:
+`poindexter setup` is the only required config step. It asks for your
+Postgres connection (or spins one up locally with `--auto`) and writes
+a single file with safe permissions. Everything else — API keys,
+model thresholds, storage credentials — lives in the `app_settings`
+DB table and is edited at runtime.
+
+### Docker stack secrets (still env-based):
 
 - `API_TOKEN` — generate with `openssl rand -hex 32`
 - `LOCAL_POSTGRES_PASSWORD` — any strong password
@@ -38,7 +44,7 @@ cp .env.example .env
 ### Optional but recommended:
 
 - `PEXELS_API_KEY` — free from pexels.com (for featured images)
-- `SERPER_API_KEY` — free tier from serper.dev (for web research)
+- Web research works out of the box via DuckDuckGo; no API key needed.
 
 ---
 
@@ -102,12 +108,18 @@ your-bucket/static/categories.json      — categories
 your-bucket/static/sitemap.json         — sitemap data
 ```
 
-### Cloudflare R2 setup (free):
+### Storage setup (R2, S3, B2, or MinIO):
 
-1. Create R2 bucket in Cloudflare dashboard
-2. Enable public access
-3. Add to .env: R2 access key, secret, endpoint, bucket name
-4. Set in app_settings: `cloudflare_r2_access_key`, `cloudflare_r2_secret_key`, etc.
+Poindexter is provider-agnostic — any S3-compatible bucket works.
+Cloudflare R2 is the free/default recommendation.
+
+1. Create your bucket (R2 dashboard, AWS console, etc.) with public access
+2. Set these keys in `app_settings` via the settings API or SQL:
+   - `storage_access_key`
+   - `storage_secret_key` (marked `is_secret=true`)
+   - `storage_endpoint`
+   - `storage_bucket`
+   - `storage_public_url`
 
 ### Connect any frontend:
 
