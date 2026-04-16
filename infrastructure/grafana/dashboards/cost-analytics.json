@@ -184,11 +184,11 @@
             "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT ROUND(SUM(cost_usd)::numeric, 4) as total_spend FROM cost_logs WHERE created_at > NOW() - INTERVAL '30 days'",
+          "rawSql": "SELECT ROUND(SUM(cost_usd)::numeric, 4) as total_spend FROM cost_logs WHERE $__timeFilter(created_at)",
           "refId": "A"
         }
       ],
-      "title": "Total Spend (30d)",
+      "title": "Total Spend",
       "type": "stat"
     },
     {
@@ -235,11 +235,11 @@
             "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT SUM(total_tokens) as tokens FROM cost_logs WHERE created_at > NOW() - INTERVAL '30 days'",
+          "rawSql": "SELECT SUM(total_tokens) as tokens FROM cost_logs WHERE $__timeFilter(created_at)",
           "refId": "A"
         }
       ],
-      "title": "Tokens Used (30d)",
+      "title": "Tokens Used",
       "type": "stat"
     },
     {
@@ -294,11 +294,11 @@
             "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT ROUND((SUM(cost_usd) / NULLIF(COUNT(DISTINCT task_id), 0))::numeric, 4) as cost_per_post FROM cost_logs WHERE created_at > NOW() - INTERVAL '30 days' AND task_id IS NOT NULL AND cost_type = 'inference'",
+          "rawSql": "SELECT ROUND((SUM(cost_usd) / NULLIF(COUNT(DISTINCT task_id), 0))::numeric, 4) as cost_per_post FROM cost_logs WHERE $__timeFilter(created_at) AND task_id IS NOT NULL AND cost_type = 'inference'",
           "refId": "A"
         }
       ],
-      "title": "Cost per Post (30d)",
+      "title": "Cost per Post",
       "type": "stat"
     },
     {
@@ -349,11 +349,11 @@
             "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT COUNT(*) as views FROM page_views WHERE created_at > NOW() - INTERVAL '7 days'",
+          "rawSql": "SELECT COUNT(*) as views FROM page_views WHERE $__timeFilter(created_at)",
           "refId": "A"
         }
       ],
-      "title": "Page Views (7d)",
+      "title": "Page Views",
       "type": "stat"
     },
     {
@@ -371,11 +371,11 @@
       "targets": [
         {
           "format": "table",
-          "rawSql": "SELECT ROUND(COALESCE(SUM(cost_usd),0)::numeric,4) FROM cost_logs WHERE created_at>=date_trunc('day',NOW())",
+          "rawSql": "SELECT ROUND(COALESCE(SUM(cost_usd),0)::numeric,4) FROM cost_logs WHERE $__timeFilter(created_at)",
           "refId": "A"
         }
       ],
-      "title": "Today $",
+      "title": "Spend $",
       "type": "stat"
     },
     {
@@ -393,11 +393,11 @@
       "targets": [
         {
           "format": "table",
-          "rawSql": "SELECT ROUND(COALESCE(SUM(cost_usd),0)::numeric,4) FROM cost_logs WHERE created_at>NOW()-INTERVAL '7 days'",
+          "rawSql": "SELECT ROUND(COALESCE(SUM(cost_usd),0)::numeric / GREATEST(EXTRACT(EPOCH FROM ($__timeTo()::timestamp - $__timeFrom()::timestamp)) / 86400, 1), 4) AS avg_daily FROM cost_logs WHERE $__timeFilter(created_at)",
           "refId": "A"
         }
       ],
-      "title": "7-Day $",
+      "title": "Avg $/day",
       "type": "stat"
     },
     {
