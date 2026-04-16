@@ -93,14 +93,22 @@ HALLUCINATED_LINK_PATTERNS = [
 # Matches patterns like "introduced in Paper Title", "according to Study Name".
 # Only flags if the citation-like text is NOT inside a markdown link [text](url).
 UNLINKED_CITATION_PATTERNS = [
-    # "introduced in Title Case Paper Name" / "proposed in Title Case..."
-    r"(?:introduced|proposed|described|presented|outlined|documented|published)\s+in\s+(?![\[\(])(?:[A-Z][a-z]+(?:\s+[A-Za-z]+){2,8})",
+    # "introduced in <Paper Title>" / "proposed in <Title>" — catches ALL-CAPS
+    # acronyms (I-DLM), acronym-colon-title (I-DLM: Introspective...), and
+    # plain title-case paper names.
+    r"(?:introduced|proposed|described|presented|outlined|documented|published)\s+in\s+(?!\[)(?:[A-Z][A-Za-z0-9\-]*(?::\s+)?[A-Za-z]+(?:\s+[A-Za-z]+){1,10})",
+    # "described in 'Paper Title'" — quoted paper references (real papers are linked)
+    r"(?:described|referenced|cited|mentioned)\s+in\s+['\"\u2018\u201c][A-Z][^'\"\u2019\u201d]{15,100}['\"\u2019\u201d]",
     # "according to Title Case Source" (not followed by a link)
-    r"(?:according\s+to|as\s+(?:highlighted|noted|reported)\s+(?:in|by))\s+(?![\[\(])(?:[A-Z][a-z]+(?:\s+[A-Za-z]+){1,6})",
-    # Bare paper-style titles: "Word Word: Subtitle With Title Case" (6+ words, colon pattern)
-    r"(?<!\[)(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+){2,}:\s+[A-Z][a-z]+(?:\s+[A-Za-z]+){2,})(?!\])",
+    r"(?:according\s+to|as\s+(?:highlighted|noted|reported|described|shown)\s+(?:in|by))\s+(?!\[)(?:[A-Z][A-Za-z0-9\-]*(?:\s+[A-Za-z]+){1,6})",
+    # Bare paper-style titles with colon: "Word Word: Subtitle With Title Case"
+    r"(?<!\[)(?:[A-Z][A-Za-z0-9\-]*(?:\s+[A-Z][a-z]+){1,}:\s+[A-Z][a-z]+(?:\s+[A-Za-z]+){2,})(?!\])",
     # "et al." references — almost certainly fabricated
     r"\b[A-Z][a-z]+\s+et\s+al\.?\s*(?:\(\d{4}\)|\[\d+\])?",
+    # arXiv IDs without accompanying URL: "arXiv:2401.12345"
+    r"\barXiv:\s*\d{4}\.\d{4,5}(?!\s*[\]\)])",
+    # DOI without link: "doi:10.xxxx/..."
+    r"\bdoi:\s*10\.\d{4,}/[^\s\]\)]+",
 ]
 
 # Brand contradiction — we are Ollama-only, never promote paid cloud APIs
