@@ -132,7 +132,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Posts approved in the last 24 hours",
+      "description": "Posts approved within the selected time range.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "fixed", "fixedColor": "green" },
@@ -168,11 +168,11 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Approved Today\" FROM pipeline_tasks_view WHERE status = 'published' AND updated_at > NOW() - INTERVAL '24 hours';",
+          "rawSql": "SELECT COUNT(*) AS \"Approved\" FROM pipeline_tasks_view WHERE status = 'published' AND $__timeFilter(updated_at);",
           "refId": "A"
         }
       ],
-      "title": "Approved (24h)",
+      "title": "Approved",
       "type": "stat"
     },
     {
@@ -180,7 +180,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Posts auto-rejected for low quality in the last 24 hours",
+      "description": "Posts auto-rejected for low quality within the selected time range.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "fixed", "fixedColor": "red" },
@@ -216,11 +216,11 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Auto-Rejected\" FROM pipeline_tasks_view WHERE status = 'rejected' AND updated_at > NOW() - INTERVAL '24 hours';",
+          "rawSql": "SELECT COUNT(*) AS \"Auto-Rejected\" FROM pipeline_tasks_view WHERE status = 'rejected' AND $__timeFilter(updated_at);",
           "refId": "A"
         }
       ],
-      "title": "Rejected (24h)",
+      "title": "Rejected",
       "type": "stat"
     },
     {
@@ -393,7 +393,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Approval activity over the last 7 days",
+      "description": "Approval activity over the selected time range.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -441,11 +441,11 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT date_trunc('day', updated_at) AS time, status AS metric, COUNT(*) AS value FROM pipeline_tasks_view WHERE updated_at > NOW() - INTERVAL '7 days' AND status IN ('published', 'rejected', 'awaiting_approval') GROUP BY 1, 2 ORDER BY 1;",
+          "rawSql": "SELECT $__timeGroup(updated_at, '1d') AS time, status AS metric, COUNT(*) AS value FROM pipeline_tasks_view WHERE $__timeFilter(updated_at) AND status IN ('published', 'rejected', 'awaiting_approval') GROUP BY 1, 2 ORDER BY 1;",
           "refId": "A"
         }
       ],
-      "title": "Approval Activity (7 Days)",
+      "title": "Approval Activity",
       "type": "timeseries"
     }
   ],

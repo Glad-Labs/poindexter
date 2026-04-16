@@ -89,11 +89,11 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT ROUND(AVG(quality_score)) AS \"Avg Score\" FROM pipeline_tasks_view WHERE quality_score IS NOT NULL AND created_at > NOW() - INTERVAL '7 days';",
+          "rawSql": "SELECT ROUND(AVG(quality_score)) AS \"Avg Score\" FROM pipeline_tasks_view WHERE quality_score IS NOT NULL AND $__timeFilter(created_at);",
           "refId": "A"
         }
       ],
-      "title": "Average Quality (7 Days)",
+      "title": "Average Quality",
       "type": "stat"
     },
     {
@@ -163,11 +163,11 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE status IN ('published', 'awaiting_approval')) / NULLIF(COUNT(*), 0)) AS \"Pass Rate\" FROM pipeline_tasks_view WHERE created_at > NOW() - INTERVAL '7 days' AND status IN ('published', 'awaiting_approval', 'rejected');",
+          "rawSql": "SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE status IN ('published', 'awaiting_approval')) / NULLIF(COUNT(*), 0)) AS \"Pass Rate\" FROM pipeline_tasks_view WHERE $__timeFilter(created_at) AND status IN ('published', 'awaiting_approval', 'rejected');",
           "refId": "A"
         }
       ],
-      "title": "Pass Rate (7 Days)",
+      "title": "Pass Rate",
       "type": "stat"
     },
     {
@@ -224,11 +224,11 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Generated\" FROM pipeline_tasks_view WHERE created_at > NOW() - INTERVAL '7 days';",
+          "rawSql": "SELECT COUNT(*) AS \"Generated\" FROM pipeline_tasks_view WHERE $__timeFilter(created_at);",
           "refId": "A"
         }
       ],
-      "title": "Posts Generated (7 Days)",
+      "title": "Posts Generated",
       "type": "stat"
     },
     {
@@ -381,11 +381,11 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT date_trunc('hour', created_at) AS time, ROUND(AVG(quality_score)) AS \"Avg Quality\", MAX(quality_score) AS \"Max\", MIN(quality_score) AS \"Min\" FROM pipeline_tasks_view WHERE created_at > NOW() - INTERVAL '7 days' AND quality_score IS NOT NULL GROUP BY 1 ORDER BY 1;",
+          "rawSql": "SELECT $__timeGroup(created_at, $__interval) AS time, ROUND(AVG(quality_score)) AS \"Avg Quality\", MAX(quality_score) AS \"Max\", MIN(quality_score) AS \"Min\" FROM pipeline_tasks_view WHERE $__timeFilter(created_at) AND quality_score IS NOT NULL GROUP BY 1 ORDER BY 1;",
           "refId": "A"
         }
       ],
-      "title": "Quality Score Trend (7 Days)",
+      "title": "Quality Score Trend",
       "type": "timeseries"
     },
     {
@@ -480,11 +480,11 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT CASE WHEN quality_score >= 90 THEN '90-100 Excellent' WHEN quality_score >= 80 THEN '80-89 Good' WHEN quality_score >= 70 THEN '70-79 Fair' WHEN quality_score >= 60 THEN '60-69 Weak' ELSE '<60 Poor' END AS \"Score\", COUNT(*) AS \"Posts\" FROM pipeline_tasks_view WHERE quality_score IS NOT NULL AND created_at > NOW() - INTERVAL '30 days' GROUP BY 1 ORDER BY 1 DESC;",
+          "rawSql": "SELECT CASE WHEN quality_score >= 90 THEN '90-100 Excellent' WHEN quality_score >= 80 THEN '80-89 Good' WHEN quality_score >= 70 THEN '70-79 Fair' WHEN quality_score >= 60 THEN '60-69 Weak' ELSE '<60 Poor' END AS \"Score\", COUNT(*) AS \"Posts\" FROM pipeline_tasks_view WHERE quality_score IS NOT NULL AND $__timeFilter(created_at) GROUP BY 1 ORDER BY 1 DESC;",
           "refId": "A"
         }
       ],
-      "title": "Quality Distribution (30 Days)",
+      "title": "Quality Distribution",
       "type": "barchart"
     },
     {
@@ -614,11 +614,11 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT date_trunc('day', created_at) AS time, status AS metric, COUNT(*) AS value FROM pipeline_tasks_view WHERE created_at > NOW() - INTERVAL '14 days' AND status IN ('published', 'rejected', 'awaiting_approval') GROUP BY 1, 2 ORDER BY 1;",
+          "rawSql": "SELECT $__timeGroup(created_at, $__interval) AS time, status AS metric, COUNT(*) AS value FROM pipeline_tasks_view WHERE $__timeFilter(created_at) AND status IN ('published', 'rejected', 'awaiting_approval') GROUP BY 1, 2 ORDER BY 1;",
           "refId": "A"
         }
       ],
-      "title": "Approval Mix Over Time (14 Days)",
+      "title": "Approval Mix Over Time",
       "type": "timeseries"
     },
     {
@@ -677,11 +677,11 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COALESCE(category, 'uncategorized') AS metric, COUNT(*) AS value FROM pipeline_tasks_view WHERE created_at > NOW() - INTERVAL '30 days' GROUP BY 1 ORDER BY 2 DESC LIMIT 10;",
+          "rawSql": "SELECT COALESCE(category, 'uncategorized') AS metric, COUNT(*) AS value FROM pipeline_tasks_view WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 2 DESC LIMIT 10;",
           "refId": "A"
         }
       ],
-      "title": "Content by Category (30 Days)",
+      "title": "Content by Category",
       "type": "piechart"
     },
     {

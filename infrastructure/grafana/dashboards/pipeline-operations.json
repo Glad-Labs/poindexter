@@ -208,11 +208,11 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Completed\" FROM pipeline_tasks_view WHERE status IN ('awaiting_approval', 'published', 'rejected') AND updated_at > NOW() - INTERVAL '1 hour';",
+          "rawSql": "SELECT COUNT(*) AS \"Completed\" FROM pipeline_tasks_view WHERE status IN ('awaiting_approval', 'published', 'rejected') AND $__timeFilter(updated_at);",
           "refId": "A"
         }
       ],
-      "title": "Completed (1h)",
+      "title": "Completed",
       "type": "stat"
     },
     {
@@ -276,11 +276,11 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Failed\" FROM pipeline_tasks_view WHERE status IN ('failed', 'validation_failed', 'validation_error') AND updated_at > NOW() - INTERVAL '24 hours';",
+          "rawSql": "SELECT COUNT(*) AS \"Failed\" FROM pipeline_tasks_view WHERE status IN ('failed', 'validation_failed', 'validation_error') AND $__timeFilter(updated_at);",
           "refId": "A"
         }
       ],
-      "title": "Failed (24h)",
+      "title": "Failed",
       "type": "stat"
     },
     {
@@ -509,11 +509,11 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT date_trunc('hour', created_at) AS time, COUNT(*) AS value FROM pipeline_tasks_view WHERE created_at > NOW() - INTERVAL '24 hours' GROUP BY 1 ORDER BY 1;",
+          "rawSql": "SELECT $__timeGroup(created_at, $__interval) AS time, COUNT(*) AS value FROM pipeline_tasks_view WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1;",
           "refId": "A"
         }
       ],
-      "title": "Generation Throughput (24h)",
+      "title": "Generation Throughput",
       "type": "barchart"
     },
     {
@@ -598,11 +598,11 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT \"timestamp\" AS time, utilization AS \"GPU Utilization\" FROM gpu_metrics WHERE \"timestamp\" > NOW() - INTERVAL '6 hours' ORDER BY 1;",
+          "rawSql": "SELECT \"timestamp\" AS time, utilization AS \"GPU Utilization\" FROM gpu_metrics WHERE $__timeFilter(\"timestamp\") ORDER BY 1;",
           "refId": "A"
         }
       ],
-      "title": "GPU Utilization (6h)",
+      "title": "GPU Utilization",
       "type": "timeseries"
     }
   ],

@@ -1866,7 +1866,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT to_char(\"timestamp\",'HH24:MI') as sample_time, utilization as util, temperature as temp, ROUND(power_draw::numeric) as watts, memory_used as vram, fan_speed as fan, clock_graphics as clock FROM gpu_metrics WHERE \"timestamp\">NOW()-INTERVAL '2 hours' ORDER BY \"timestamp\" DESC LIMIT 20",
+          "rawSql": "SELECT to_char(\"timestamp\",'HH24:MI') as sample_time, utilization as util, temperature as temp, ROUND(power_draw::numeric) as watts, memory_used as vram, fan_speed as fan, clock_graphics as clock FROM gpu_metrics WHERE $__timeFilter(\"timestamp\") ORDER BY \"timestamp\" DESC LIMIT 20",
           "refId": "A"
         }
       ]
