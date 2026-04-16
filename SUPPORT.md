@@ -26,7 +26,7 @@ Poindexter is built and maintained by [Glad Labs LLC](https://www.gladlabs.io). 
 
 ### Paid (sold by Glad Labs LLC)
 
-- **Seed Package ($29 one-time)** — Matt's exact production configuration: 185+ tuned app_settings, anti-hallucination fact_overrides database, curated writing style samples, 2 premium Grafana dashboards, and the Quick Start Guide. The difference between default output and content that actually ranks.
+- **Seed Package ($29 one-time)** — Matt's exact production configuration: 200+ tuned app_settings, anti-hallucination fact_overrides database, curated writing style samples, 2 premium Grafana dashboards, and the Quick Start Guide. The difference between default output and content that actually ranks.
 - **Premium ($9/month subscription)** — private repo access with monthly updates from Matt's live production system. New prompt iterations, updated fact-check rules, fresh topic discovery sources, operator Discord channel, and the AI Content Pipeline book (chapters as they ship). Cancel anytime — you keep what you downloaded.
 - **Commercial License** — required if you want to use Poindexter in a closed-source product, or in a way that doesn't comply with the AGPL's source disclosure requirements. Pricing on inquiry.
 - **Custom development and consulting** — for organizations that want a Glad Labs-staffed integration. Inquire at sales@gladlabs.io.
