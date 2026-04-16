@@ -202,7 +202,16 @@ class OllamaAdapter(ProviderAdapter):
                 return [m["name"] for m in models]
         except Exception as e:
             logger.warning("[OllamaAdapter] Failed to list models from %s: %s", self.host, e)
-        # Fallback: models known to be installed
+        # Fallback: models known to be installed. Operators with different
+        # hardware can override via app_settings.ollama_fallback_model_list
+        # (comma-separated) — e.g. laptop users may drop the 35B (#198).
+        try:
+            from services.site_config import site_config as _sc
+            _override = _sc.get("ollama_fallback_model_list", "")
+            if _override:
+                return [m.strip() for m in _override.split(",") if m.strip()]
+        except Exception:
+            pass
         return [
             "qwen3.5:35b",
             "qwen3:8b",
