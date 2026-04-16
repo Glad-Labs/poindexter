@@ -185,8 +185,8 @@ The engine is free and open-source. For production-quality output:
 
 | Tier                  | Price        | What You Get                                                                                                                                       |
 | --------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Free**              | $0           | Full pipeline engine, basic prompts, 5 Grafana dashboards                                                                                          |
-| **Quick Start Guide** | $29 one-time | Production-tuned config (185+ settings), anti-hallucination rules, writing samples, 2 premium dashboards, Matt's exact deploy steps                |
+| **Free**              | $0           | Full pipeline engine, basic prompts, 7 Grafana dashboards                                                                                          |
+| **Quick Start Guide** | $29 one-time | Production-tuned config (200+ settings), anti-hallucination rules, writing samples, 2 premium dashboards, Matt's exact deploy steps                |
 | **Premium**           | $9.99/mo     | Everything in Quick Start + monthly updated prompts, private repo access, new fact-check rules, premium Discord, AI Content Pipeline book chapters |
 
 The free tier runs the pipeline end-to-end. The paid tiers give you months of tuning in a single install — the difference between default output and content that actually ranks.
