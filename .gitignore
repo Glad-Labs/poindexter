@@ -56,22 +56,47 @@ screenshots/
 # ============================================================
 # Environment variables & secrets
 # ============================================================
+# Wildcard-ignore every .env variant, then allowlist placeholder
+# files that are safe to commit. This covers .env.<anything-new>
+# automatically — previous explicit list missed new variants.
+.env*
+!.env.example
+!.env*.example
+!.env.template
+!.env*.template
+# Belt-and-suspenders: list common real-env filenames explicitly so
+# a misbehaving tool with weird ordering can't accidentally track them.
 .env
-.env.production
 .env.local
 .env.*.local
-# All real env files are ignored. For public/example configs, commit
-# *.template files instead (e.g., web/oversight-hub/.env.production.template).
-infrastructure/pgadmin/pgpass
-scripts/posts_audit.json
 .env.development
 .env.test
 .env.staging
+.env.production
 .env.old
 .env.local.mstr
+.env.local.backup
+.env.vercel
+# Non-.env secrets
 credentials.json
 service-account-key.json
 token.json
+# OpenClaw MCP config holds DSNs + API tokens — only the .template is committed
+openclaw.json
+infrastructure/openclaw/openclaw.json
+# Claude Code MCP configs (can carry provider tokens)
+mcp.json
+.mcp.json
+infrastructure/pgadmin/pgpass
+scripts/posts_audit.json
+# Key material
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+id_ecdsa
 
 # ============================================================
 # AI & dev tooling state
@@ -117,10 +142,7 @@ docs/archive-*.tar.gz
 # ============================================================
 Modelfile*
 *.gguf
-.env.local.backup
 scripts/secrets-to-scrub.txt
-mcp.json
-.env.vercel
 *.html
 
 # Branded frontend (private — not part of the open-source engine)

@@ -19,5 +19,5 @@ contactPoints:
       - uid: gladlabs-discord-ops
         type: discord
         settings:
-          url: "https://discord.com/api/webhooks/1490741146589073408/RHrfkeUBWBVz6oFiwwu_8atmadxL47mCosQHPl-8Hl8qb29fs7GXYAuQCRntGh5YFQag"
+          url: $__env{DISCORD_OPS_WEBHOOK_URL}
           use_discord_username: true
