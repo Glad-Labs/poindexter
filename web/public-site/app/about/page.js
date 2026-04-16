@@ -106,8 +106,8 @@ export default function AboutPage() {
                   <li>Local AI on RTX 5090 via Ollama</li>
                   <li>Self-hosted: PostgreSQL, Grafana, Gitea, Prometheus</li>
                   <li>Content pipeline with quality gate + human approval</li>
-                  <li>Podcast (edge-tts) + Video (SDXL + ffmpeg)</li>
-                  <li>FastAPI backend, 4,600+ tests</li>
+                  <li>Podcast (Edge TTS) + SDXL image generation</li>
+                  <li>FastAPI backend, 5,000+ tests</li>
                   <li>Next.js 15 on Vercel + Cloudflare R2 CDN</li>
                 </ul>
               </div>
