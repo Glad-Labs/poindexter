@@ -115,7 +115,7 @@ const FEATURES = [
 ];
 
 const STATS = [
-  { value: '$16', label: '/mo operating cost' },
+  { value: '$30', label: '/mo operating cost' },
   { value: '5,000+', label: 'tests passing' },
   { value: '6', label: 'independent QA reviewers' },
   { value: '50%', label: 'of drafts rejected by QA' },
@@ -155,7 +155,7 @@ export default function ProductPage() {
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
             <a
-              href="https://github.com/Glad-Labs/glad-labs-codebase"
+              href="https://github.com/Glad-Labs/poindexter"
               target="_blank"
               rel="noopener noreferrer"
               className="px-8 py-4 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-semibold rounded-xl hover:shadow-lg hover:shadow-cyan-500/50 transition-all duration-300 text-lg"
@@ -418,7 +418,7 @@ export default function ProductPage() {
                 </li>
                 <li className="flex gap-2">
                   <span className="text-cyan-400 flex-shrink-0">+</span>
-                  5 Grafana monitoring dashboards
+                  7 Grafana monitoring dashboards
                 </li>
                 <li className="flex gap-2">
                   <span className="text-slate-600 flex-shrink-0">-</span>
@@ -452,7 +452,7 @@ export default function ProductPage() {
                 </li>
                 <li className="flex gap-2">
                   <span className="text-cyan-400 flex-shrink-0">+</span>
-                  Production-tuned config (185+ settings)
+                  Production-tuned config (200+ settings)
                 </li>
                 <li className="flex gap-2">
                   <span className="text-cyan-400 flex-shrink-0">+</span>
