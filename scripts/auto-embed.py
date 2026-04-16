@@ -721,19 +721,25 @@ async def sync_audit_entries(
 
             emb = await embed_text(http, text[:MAX_CHARS])
 
+            # 2026-04-16 (#198 audit): include `writer` so audit rows
+            # are attributed to 'auto-embed' in the /memory dashboard
+            # instead of appearing with writer=NULL.
             await local_conn.execute(
                 """INSERT INTO embeddings (source_table, source_id, content_hash, chunk_index,
-                   text_preview, embedding_model, embedding, metadata)
-                   VALUES ($1, $2, $3, 0, $4, $5, $6::vector, $7::jsonb)
+                   text_preview, embedding_model, embedding, metadata, writer)
+                   VALUES ($1, $2, $3, 0, $4, $5, $6::vector, $7::jsonb, $8)
                    ON CONFLICT (source_table, source_id, chunk_index, embedding_model)
                    DO UPDATE SET content_hash = $3, embedding = $6::vector,
-                   text_preview = $4, metadata = $7::jsonb, updated_at = NOW()""",
+                   text_preview = $4, metadata = $7::jsonb,
+                   writer = COALESCE(EXCLUDED.writer, embeddings.writer),
+                   updated_at = NOW()""",
                 AUDIT_SOURCE, audit_id, content_hash, text[:500], EMBED_MODEL,
                 json.dumps(emb), json.dumps({
                     "event_type": row["event_type"],
                     "severity": row["severity"],
                     "source": row["source"],
                 }),
+                "auto-embed",
             )
             stats["embedded"] += 1
         except Exception as e:
@@ -748,23 +754,8 @@ async def sync_audit_entries(
 # ---------------------------------------------------------------------------
 
 
-async def main() -> None:
-    start = datetime.now(timezone.utc)
-    logger.info("=" * 60)
-    logger.info("Auto-Embed run started")
-    logger.info("=" * 60)
-
-    http = httpx.AsyncClient()
-
-    # Pre-flight: check Ollama
-    if not await check_ollama(http):
-        logger.warning("Ollama is down or model unavailable — skipping this run.")
-        await http.aclose()
-        return
-
-
 # ---------------------------------------------------------------------------
-# Phase 5: Brain knowledge + decisions
+# Phase 5: Brain knowledge + decisions (defined here so main() can call it)
 # ---------------------------------------------------------------------------
 
 BRAIN_SOURCE = "brain"
@@ -866,6 +857,30 @@ async def sync_brain_tables(
         logger.error(f"brain_decisions fetch failed: {e}")
 
     return stats
+
+
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
+
+
+async def main() -> None:
+    """Run all phases. Restored 2026-04-16 after regression in 87adc204
+    (#198 data-flow audit) — the previous main() silently returned
+    right after the Ollama check, so every cron run was a no-op.
+    """
+    start = datetime.now(timezone.utc)
+    logger.info("=" * 60)
+    logger.info("Auto-Embed run started")
+    logger.info("=" * 60)
+
+    http = httpx.AsyncClient()
+
+    # Pre-flight: check Ollama
+    if not await check_ollama(http):
+        logger.warning("Ollama is down or model unavailable — skipping this run.")
+        await http.aclose()
+        return
 
     local_conn: Optional[asyncpg.Connection] = None
     cloud_conn: Optional[asyncpg.Connection] = None
