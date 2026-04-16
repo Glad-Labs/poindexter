@@ -493,10 +493,11 @@ async def _generate_canonical_title(
 
         # Use model consolidation service for intelligent provider fallback.
         # Higher max_tokens gives thinking models room for reasoning + answer.
+        from services.site_config import site_config as _sc_seo
         result = await service.generate(
             prompt=prompt,
             temperature=0.7,
-            max_tokens=4000,
+            max_tokens=_sc_seo.get_int("content_router_seo_title_max_tokens", 4000),
         )
 
         if result and result.text:
@@ -856,14 +857,15 @@ async def _self_review_and_revise(
             content=content_text[:10000],
         )
         try:
+            from services.site_config import site_config as _sc_detect
             detect_result = await asyncio.wait_for(
                 client.generate(
                     prompt=detect_prompt,
                     model=review_model,
                     temperature=0.2,
-                    max_tokens=800,
+                    max_tokens=_sc_detect.get_int("content_router_detect_max_tokens", 800),
                 ),
-                timeout=90,
+                timeout=_sc_detect.get_int("content_router_detect_timeout_seconds", 90),
             )
         except asyncio.TimeoutError:
             await client.close()
@@ -921,14 +923,15 @@ async def _self_review_and_revise(
         )
         # Reuse the same model for revision to keep voice consistent.
         try:
+            from services.site_config import site_config as _sc_rev
             revise_result = await asyncio.wait_for(
                 client.generate(
                     prompt=revise_prompt,
                     model=review_model,
                     temperature=0.3,
-                    max_tokens=4096,
+                    max_tokens=_sc_rev.get_int("content_router_revise_max_tokens", 4096),
                 ),
-                timeout=180,
+                timeout=_sc_rev.get_int("content_router_revise_timeout_seconds", 180),
             )
         except asyncio.TimeoutError:
             await client.close()
@@ -1263,9 +1266,15 @@ async def _self_review_and_revise(draft: str, title: str, topic: str) -> tuple[s
         f"If you find none, reply with exactly: PASS"
     )
 
+    from services.site_config import site_config as _sc_con
     try:
-        client = OllamaClient(timeout=120)
-        result = await client.generate(prompt=review_prompt, model=review_model, temperature=0.2, max_tokens=1500)
+        client = OllamaClient(
+            timeout=_sc_con.get_int("content_router_contradiction_timeout_seconds", 120)
+        )
+        result = await client.generate(
+            prompt=review_prompt, model=review_model, temperature=0.2,
+            max_tokens=_sc_con.get_int("content_router_contradiction_review_max_tokens", 1500),
+        )
         review_text = (result.get("text") or "").strip()
 
         if not review_text or review_text.upper().startswith("PASS"):
@@ -1286,7 +1295,10 @@ async def _self_review_and_revise(draft: str, title: str, topic: str) -> tuple[s
             f"Output only the revised draft. Keep the structure, length, and tone "
             f"identical. Only change what's needed to resolve the contradictions."
         )
-        revised = await client.generate(prompt=revise_prompt, model=review_model, temperature=0.3, max_tokens=8000)
+        revised = await client.generate(
+            prompt=revise_prompt, model=review_model, temperature=0.3,
+            max_tokens=_sc_con.get_int("content_router_contradiction_revise_max_tokens", 8000),
+        )
         revised_text = (revised.get("text") or "").strip()
 
         # Guard: revision must be a reasonable length
@@ -2541,7 +2553,10 @@ async def process_content_generation_task(
                         content=content_text,
                     )
                     from services.ollama_client import OllamaClient
-                    _rev_client = OllamaClient(timeout=240)
+                    from services.site_config import site_config as _sc_qa_rw
+                    _rev_client = OllamaClient(
+                        timeout=_sc_qa_rw.get_int("content_router_qa_rewrite_timeout_seconds", 240)
+                    )
                     try:
                         # Default to a proven NON-THINKING writer. The old
                         # default of qwen3:30b silently burned the token
@@ -2555,7 +2570,7 @@ async def process_content_generation_task(
                             prompt=_revise_prompt,
                             model=_writer_model,
                             temperature=0.4,
-                            max_tokens=8000,
+                            max_tokens=_sc_qa_rw.get_int("content_router_qa_rewrite_max_tokens", 8000),
                         )
                         # Fallback to gemma3:27b if the primary writer
                         # returns empty or too-short — known pattern with
