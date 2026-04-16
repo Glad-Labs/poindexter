@@ -25,7 +25,7 @@ DEFAULT_TIMEOUT = 15.0
 MAX_CONTENT_CHARS = 50000  # safety cap on extracted text
 USER_AGENT = (
     "Mozilla/5.0 (compatible; PoindexterBot/1.0; +https://www.gladlabs.io) "
-    "— AI content pipeline topic scraper"
+    "AI content pipeline topic scraper"
 )
 
 
