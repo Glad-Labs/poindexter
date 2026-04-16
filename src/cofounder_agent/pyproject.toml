@@ -42,7 +42,7 @@ setuptools = "<81"  # Pin to avoid pkg_resources deprecation (see: setuptools#39
 # sentry-sdk removed — sentry_enabled=false, never configured. Grafana + brain daemon handle monitoring.
 
 # Storage & Files
-python-multipart = "^0.0.22"
+python-multipart = ">=0.0.26"
 # pillow removed — never imported in production code (issue #1341)
 aiofiles = "^25"
 
@@ -75,6 +75,9 @@ edge-tts = "^7.2.8"
 boto3 = "^1.42.84"
 cloudinary = "^1.41"
 playwright = "^1.47"
+pyasn1 = ">=0.6.3"
+mcp = ">=1.23.0"
+pillow = ">=12.2.0"
 
 [tool.poetry.extras]
 ml = ["torch", "transformers", "diffusers"]
