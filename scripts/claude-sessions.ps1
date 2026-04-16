@@ -38,7 +38,7 @@ $TaskPrefix = "Claude Session"
 # Session definitions: name, prompt, schedule, max duration
 $Sessions = @{
     "test-health" = @{
-        Prompt = "You are in the glad-labs-website repo. Run the full Python test suite: cd src/cofounder_agent && python -m pytest tests/unit/ -q --tb=short -p no:cacheprovider. If any tests fail, analyze whether they are simple bugs (wrong mocks, stale assertions, missing imports). Fix the simple ones. For complex failures, add a comment to the test explaining what is broken. Commit fixes to a new branch auto/test-fixes-{date} and create a Gitea PR. If all tests pass, exit with no changes. Do NOT modify production code, only test files."
+        Prompt = "You are in the glad-labs-website repo running autonomously. Run the full Python test suite: cd src/cofounder_agent && python -m pytest tests/unit/ -q --tb=short -p no:cacheprovider. If tests pass, exit with no changes. If tests fail, analyze whether they are simple bugs (wrong mocks, stale assertions, missing imports). Fix the simple ones only. For complex failures, add a # FIXME comment. Use the forgejo MCP tools for Gitea. Create branch auto/test-fixes-{date}, commit, push via git, and create a Gitea PR against main. Do NOT modify production code (only files in tests/). Do NOT push to main directly. Do NOT merge the PR yourself — Matt reviews. Keep output minimal."
         Cron = "0 3 * * *"
         TimeHH = "03"
         TimeMM = "00"
@@ -46,7 +46,7 @@ $Sessions = @{
         MaxMinutes = 30
     }
     "test-expansion" = @{
-        Prompt = "You are in the glad-labs-website repo. Your job is to expand test coverage. 1) Run: cd src/cofounder_agent && python -m pytest tests/unit/ --co -q to see what is tested. 2) List service files: ls src/cofounder_agent/services/*.py. 3) Find a service file that has NO corresponding test file. 4) Write comprehensive unit tests for it (mock all DB/external calls). 5) Run the new tests to verify they pass. 6) Commit to branch auto/test-expand-{date} and create a Gitea PR. Write at least 10 tests. Focus on edge cases and error paths."
+        Prompt = "You are in the glad-labs-website repo running autonomously. Pick ONE existing service test file with low test count (grep 'def test_' tests/unit/services/*.py | cut -d: -f1 | sort | uniq -c | sort -n | head -5). Read that service's source and the existing tests. Add 5-10 NEW test cases covering edge cases and error paths that aren't already covered. Do NOT duplicate existing tests. Run the new tests to verify they pass. Commit to branch auto/test-expand-{date}, push, create a Gitea PR. Do NOT push to main. Keep output minimal."
         Cron = "0 4 * * *"
         TimeHH = "04"
         TimeMM = "00"
@@ -54,7 +54,7 @@ $Sessions = @{
         MaxMinutes = 30
     }
     "issue-resolver" = @{
-        Prompt = "You are in the glad-labs-website repo. Check open Gitea issues for bugs you can fix. Use the forgejo MCP tools to list issues (owner=gladlabs, repo=glad-labs-codebase, state=open). Pick the oldest bug-labeled issue that looks fixable without changing architecture. Read the relevant code, understand the bug, and fix it. Commit to branch auto/fix-issue-{number} and create a Gitea PR referencing the issue. If no issues are simple enough to fix, pick one and add a detailed analysis comment instead. Do NOT close issues, only create PRs. Matt reviews and merges."
+        Prompt = "You are in the glad-labs-website repo running autonomously. Use the forgejo MCP tools to list open issues (owner=gladlabs, repo=glad-labs-codebase, state=open, sort=oldest). Pick ONE issue that is clearly scoped, not marked Backlog, and fixable without architectural decisions. Skip anything involving Lemon Squeezy, DNS, secret rotation, or 'Matt decides' clauses. Read the code, understand the bug, make a targeted fix. Commit to branch auto/fix-issue-{number}, push via git, create a Gitea PR referencing the issue. Do NOT close the issue — let Matt merge the PR. Do NOT push to main. If no suitable issue exists, add an analysis comment to ONE issue explaining what you found. Keep output minimal."
         Cron = "0 5 * * *"
         TimeHH = "05"
         TimeMM = "00"
@@ -62,7 +62,7 @@ $Sessions = @{
         MaxMinutes = 30
     }
     "codebase-audit" = @{
-        Prompt = "You are in the glad-labs-website repo. Run a codebase health audit: 1) Check for unused imports: cd src/cofounder_agent && python -m ruff check --select F401 . 2) Check for security issues: python -m bandit -r services/ routes/ -q. 3) Run pip-audit for dependency vulnerabilities. 4) Check for dead code (functions/classes never imported or called). Fix what is safe to fix (unused imports, simple lint). For security findings, create Gitea issues with details. Commit fixes to auto/audit-{date} and create a Gitea PR."
+        Prompt = "You are in the glad-labs-website repo running autonomously. Run a code quality audit: 1) Unused imports: cd src/cofounder_agent && python -m ruff check --select F401 services/ routes/. 2) Security: python -m bandit -r services/ routes/ -q -ll. 3) Fix only the unused-import issues (safe mechanical fix). For security findings with severity MEDIUM or HIGH, create Gitea issues describing the finding. Commit unused-import fixes to branch auto/audit-{date}, push, create a Gitea PR. Do NOT push to main. Keep output minimal."
         Cron = "0 2 * * 3"
         TimeHH = "02"
         TimeMM = "00"
@@ -70,7 +70,7 @@ $Sessions = @{
         MaxMinutes = 30
     }
     "doc-sync" = @{
-        Prompt = "You are in the glad-labs-website repo. Verify documentation accuracy: 1) Read CLAUDE.md and check that key numbers (test count, service count, etc.) match reality. 2) Read docs/operations/runbook.md and verify commands and URLs are current. 3) Check that documented API endpoints actually exist. 4) Verify documented database tables match the schema. Fix any drift you find. Update counts, URLs, and commands to match current state. Commit to auto/doc-sync-{date} and create a Gitea PR."
+        Prompt = "You are in the glad-labs-website repo running autonomously. Check CLAUDE.md for stale numbers: count tests (python -m pytest tests/unit/ --co -q 2>&1 | tail -1), count services (ls src/cofounder_agent/services/*.py | wc -l), count Grafana dashboards (ls infrastructure/grafana/dashboards/*.json | wc -l). If any CLAUDE.md number is off by >10%, update it. Also verify any referenced file paths in CLAUDE.md still exist. Commit fixes to auto/doc-sync-{date}, push, create a Gitea PR. Do NOT push to main. Keep output minimal."
         Cron = "0 5 * * 5"
         TimeHH = "05"
         TimeMM = "00"
@@ -101,10 +101,14 @@ function Run-Session {
     Write-Host "Max duration: $($session.MaxMinutes) minutes"
 
     # Run Claude Code with the prompt, timeout after MaxMinutes
+    # --dangerously-skip-permissions: required for autonomous sessions to
+    # run Bash, git, edit files, etc. without blocking on prompts.
+    # Safe because sessions are sandboxed to the repo dir and changes go
+    # to branches/PRs, never main.
     $timeout = $session.MaxMinutes * 60
     try {
         $proc = Start-Process -FilePath $Claude `
-            -ArgumentList "-p", "`"$prompt`"", "--output-format", "text" `
+            -ArgumentList "-p", "`"$prompt`"", "--output-format", "text", "--dangerously-skip-permissions" `
             -WorkingDirectory $RepoDir `
             -RedirectStandardOutput $logFile `
             -RedirectStandardError "$logFile.err" `
