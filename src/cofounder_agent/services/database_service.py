@@ -76,7 +76,7 @@ class DatabaseService:
                 raise ValueError(
                     "DATABASE_URL environment variable is required. "
                     "PostgreSQL is REQUIRED for all development and production environments. "
-                    "Local development must use glad_labs_dev PostgreSQL database."
+                    "Local development must use a PostgreSQL database (poindexter_brain)."
                 )
             self.database_url = database_url_env
 
