@@ -32,8 +32,11 @@ class TaskComplexity(str, Enum):
     CRITICAL = "critical"  # qwen3.5:122b — top-tier (CPU offload)
 
 
-# Token limits by task type (reduces over-generation)
-MAX_TOKENS_BY_TASK = {
+# Token limits by task type — defaults used when `model_token_limits_by_task`
+# is not set in app_settings. Operators override per-task budgets by writing
+# a JSON blob to that key; see _token_limits_by_task() below for the runtime
+# merge with these fallbacks (#198).
+_DEFAULT_MAX_TOKENS_BY_TASK = {
     # Simple tasks
     "summary": 150,
     "summarize": 150,
@@ -98,6 +101,56 @@ MAX_TOKENS_BY_TASK = {
     # Default fallback
     "default": 800,
 }
+
+
+# Backward-compat alias: anything outside this module that was importing
+# the constant keeps working. The app_settings-aware lookup lives on
+# ModelRouter.get_max_tokens().
+MAX_TOKENS_BY_TASK = _DEFAULT_MAX_TOKENS_BY_TASK
+
+
+def _token_limits_by_task() -> dict[str, int]:
+    """Resolve task → max_tokens with app_settings overrides.
+
+    app_settings.model_token_limits_by_task is a JSON object
+    (string-or-dict) that gets merged ON TOP of the defaults. Missing
+    keys keep their default. An empty / malformed value logs a warning
+    and falls through to defaults.
+    """
+    import json as _json
+
+    from services.site_config import site_config as _sc
+
+    raw = _sc.get("model_token_limits_by_task", "")
+    if not raw:
+        return _DEFAULT_MAX_TOKENS_BY_TASK
+
+    try:
+        override = _json.loads(raw) if isinstance(raw, str) else raw
+    except (ValueError, TypeError) as e:
+        logger.warning(
+            "[MODEL_ROUTER] model_token_limits_by_task is not valid JSON — "
+            "falling back to defaults (%s)", e,
+        )
+        return _DEFAULT_MAX_TOKENS_BY_TASK
+
+    if not isinstance(override, dict):
+        logger.warning(
+            "[MODEL_ROUTER] model_token_limits_by_task must be a JSON object, "
+            "got %s — using defaults", type(override).__name__,
+        )
+        return _DEFAULT_MAX_TOKENS_BY_TASK
+
+    merged = dict(_DEFAULT_MAX_TOKENS_BY_TASK)
+    for k, v in override.items():
+        try:
+            merged[str(k).lower()] = int(v)
+        except (ValueError, TypeError):
+            logger.warning(
+                "[MODEL_ROUTER] model_token_limits_by_task['%s'] must be int, "
+                "got %r — skipping", k, v,
+            )
+    return merged
 
 
 class ModelRouter:
@@ -330,8 +383,12 @@ class ModelRouter:
         # Extract task keyword from task_type string
         task_lower = task_type.lower()
 
+        # Resolve limits dict once per call — picks up live app_settings
+        # overrides without a restart (#198).
+        limits = _token_limits_by_task()
+
         # Find matching task type
-        for task_keyword, max_tokens in MAX_TOKENS_BY_TASK.items():
+        for task_keyword, max_tokens in limits.items():
             if task_keyword in task_lower:
                 logger.debug(
                     "Token limit applied",
@@ -342,7 +399,7 @@ class ModelRouter:
                 return max_tokens
 
         # Return default if no match found
-        default = MAX_TOKENS_BY_TASK["default"]
+        default = limits.get("default", _DEFAULT_MAX_TOKENS_BY_TASK["default"])
         logger.debug(
             "Token limit applied", task_type=task_type, max_tokens=default, reason="default"
         )
