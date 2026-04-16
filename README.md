@@ -183,15 +183,17 @@ reading.
 
 The engine is free and open-source. For production-quality output:
 
-| Tier             | Price        | What You Get                                                                                                                |
-| ---------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------- |
-| **Free**         | $0           | Full pipeline engine, basic prompts, 5 Grafana dashboards                                                                   |
-| **Seed Package** | $29 one-time | Production-tuned config (185+ settings), anti-hallucination rules, writing samples, 2 premium dashboards, Quick Start Guide |
-| **Premium**      | $9/mo        | Monthly updated seeds from live production, private repo access, new fact-check rules, operator Discord, book chapters      |
+| Tier                  | Price        | What You Get                                                                                                                                       |
+| --------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Free**              | $0           | Full pipeline engine, basic prompts, 5 Grafana dashboards                                                                                          |
+| **Quick Start Guide** | $29 one-time | Production-tuned config (185+ settings), anti-hallucination rules, writing samples, 2 premium dashboards, Matt's exact deploy steps                |
+| **Premium**           | $9.99/mo     | Everything in Quick Start + monthly updated prompts, private repo access, new fact-check rules, premium Discord, AI Content Pipeline book chapters |
 
 The free tier runs the pipeline end-to-end. The paid tiers give you months of tuning in a single install — the difference between default output and content that actually ranks.
 
-Available at [gladlabs.io/product](https://www.gladlabs.io/product)
+- [Buy the Quick Start Guide — $29](https://gladlabs.lemonsqueezy.com/checkout/buy/ece7930f-f35e-44dc-93d2-6f56709b5f52)
+- [Subscribe to Premium — $9.99/mo](https://gladlabs.lemonsqueezy.com/checkout/buy/a5713f22-3c57-47ae-b1ee-5fee3a0b43b9)
+- [Compare tiers on gladlabs.io/product](https://www.gladlabs.io/product)
 
 ## Contributing
 
