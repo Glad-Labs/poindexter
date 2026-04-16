@@ -117,8 +117,12 @@ class TaskExecutor:
         # Used to detect executor stalls (issue #841).
         self._last_task_started_at: float | None = None
         # How long (seconds) the queue may have pending tasks without any being
-        # picked up before we fire a CRITICAL alert.
-        self._IDLE_ALERT_THRESHOLD_S: int = 300  # 5 minutes
+        # picked up before we fire a CRITICAL alert. Tunable via
+        # app_settings.task_executor_idle_alert_threshold_seconds (#198).
+        from services.site_config import site_config as _sc_idle
+        self._IDLE_ALERT_THRESHOLD_S: int = _sc_idle.get_int(
+            "task_executor_idle_alert_threshold_seconds", 300
+        )
         # Timestamp tracker for stale task sweeping (FIX: was dead code)
         self._last_sweep: float = 0.0
 

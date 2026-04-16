@@ -49,16 +49,34 @@ except ImportError:
 logger = get_logger(__name__)
 
 
-class CacheConfig:
-    """Configuration for cache behavior."""
+def _cache_ttl(key: str, default: int) -> int:
+    """Resolve a TTL from app_settings (cache_<key>_ttl_seconds) with a default.
 
-    # Default TTLs (Time-To-Live) in seconds
-    DEFAULT_TTL = 3600  # 1 hour
-    QUERY_CACHE_TTL = 1800  # 30 minutes for DB queries
-    USER_CACHE_TTL = 300  # 5 minutes for user data
-    METRICS_CACHE_TTL = 60  # 1 minute for rapidly changing metrics
-    CONTENT_CACHE_TTL = 7200  # 2 hours for content
-    MODEL_CACHE_TTL = 86400  # 1 day for model configs
+    Read at class-load time — restart the worker to pick up app_settings
+    changes. (#198)
+    """
+    try:
+        from services.site_config import site_config as _sc
+        return _sc.get_int(f"cache_{key}_ttl_seconds", default)
+    except Exception:
+        return default
+
+
+class CacheConfig:
+    """Configuration for cache behavior.
+
+    All TTLs read from app_settings with sensible defaults; operators
+    tune per-category without a code change via keys like
+    `cache_default_ttl_seconds`, `cache_query_ttl_seconds`, etc. (#198)
+    """
+
+    # Default TTLs (Time-To-Live) in seconds — values come from app_settings
+    DEFAULT_TTL = _cache_ttl("default", 3600)        # 1 hour
+    QUERY_CACHE_TTL = _cache_ttl("query", 1800)       # 30 minutes for DB queries
+    USER_CACHE_TTL = _cache_ttl("user", 300)          # 5 minutes for user data
+    METRICS_CACHE_TTL = _cache_ttl("metrics", 60)     # 1 minute for rapidly changing metrics
+    CONTENT_CACHE_TTL = _cache_ttl("content", 7200)   # 2 hours for content
+    MODEL_CACHE_TTL = _cache_ttl("model", 86400)      # 1 day for model configs
 
     # Cache key prefixes for organization
     PREFIX_QUERY = "query:"
