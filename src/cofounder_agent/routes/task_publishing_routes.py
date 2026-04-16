@@ -545,17 +545,27 @@ async def go_live(
         datetime.now(timezone.utc), post_id,
     )
 
-    # Trigger ISR revalidation on the public site so Vercel busts its cache
-    # for the post page, the home page, the archive, and the /posts index.
+    # Trigger ISR revalidation on the public site so Vercel busts its cache.
+    # Includes both routes (revalidatePath) and tags (revalidateTag).
+    # The tags are critical — revalidatePath alone does NOT invalidate the
+    # data cache keyed by fetch URL, so null responses from before publish
+    # stick around for the 5-minute TTL.
     try:
         from routes.revalidate_routes import trigger_nextjs_revalidation
-        reval_ok = await trigger_nextjs_revalidation([
-            f"/posts/{row['slug']}",
-            "/",
-            "/archive",
-            "/archive/1",
-            "/posts",
-        ])
+        reval_ok = await trigger_nextjs_revalidation(
+            paths=[
+                f"/posts/{row['slug']}",
+                "/",
+                "/archive",
+                "/archive/1",
+                "/posts",
+            ],
+            tags=[
+                "posts",
+                "post-index",
+                f"post:{row['slug']}",
+            ],
+        )
         if reval_ok:
             logger.info("[GO-LIVE] ISR revalidation triggered for %s", row["slug"])
         else:

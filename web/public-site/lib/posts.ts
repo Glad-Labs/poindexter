@@ -47,7 +47,9 @@ const POSTS_PER_PAGE = 10;
 async function fetchPostIndex(): Promise<Post[]> {
   try {
     const response = await fetch(`${STATIC_URL}/posts/index.json`, {
-      next: { revalidate: 300 }, // Revalidate every 5 min
+      // Tag-based cache: invalidated by revalidateTag('posts') on publish.
+      // No TTL — stays fresh until an explicit invalidation fires.
+      next: { tags: ['posts', 'post-index'] },
     });
 
     if (!response.ok) {
@@ -85,7 +87,10 @@ export async function getPosts(page: number = 1): Promise<PostsResponse> {
 export async function getPostBySlug(slug: string): Promise<Post | null> {
   try {
     const response = await fetch(`${STATIC_URL}/posts/${slug}.json`, {
-      next: { revalidate: 300 },
+      // Tag-based cache: invalidated by revalidateTag('post:<slug>') on publish.
+      // This fixes the "post not found for 5 minutes" issue where null
+      // responses were TTL-cached for 300s after approval.
+      next: { tags: ['posts', `post:${slug}`] },
     });
 
     if (!response.ok) {

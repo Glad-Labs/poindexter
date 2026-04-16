@@ -1,6 +1,6 @@
 import logger from '@/lib/logger';
 import * as Sentry from '@sentry/nextjs';
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, revalidateTag } from 'next/cache';
 
 /**
  * On-demand ISR revalidation endpoint
@@ -8,6 +8,12 @@ import { revalidatePath } from 'next/cache';
  * Invalidates caches for all pages that display posts
  *
  * Security: Requires REVALIDATE_SECRET token to prevent abuse
+ *
+ * Accepts both `paths` (revalidatePath) and `tags` (revalidateTag).
+ * Tag-based invalidation is preferred for data fetches because
+ * revalidatePath only invalidates the route cache — not the data
+ * cache keyed by fetch URL. Tags kill the null-cached response
+ * that otherwise persists for 300s after a new post goes live.
  */
 export async function POST(request) {
   try {
@@ -31,7 +37,7 @@ export async function POST(request) {
       });
     }
 
-    const { paths = [] } = await request.json();
+    const { paths = [], tags = [] } = await request.json();
 
     // Revalidate specific paths or all post-related paths
     const pathsToRevalidate =
@@ -43,17 +49,27 @@ export async function POST(request) {
             '/posts', // Posts listing
           ];
 
+    // Default tags if none supplied — always invalidate the post index
+    // and any slug-specific data cached under post:<slug>.
+    const tagsToRevalidate = tags.length > 0 ? tags : ['posts', 'post-index'];
+
     logger.log('🔄 Revalidating paths:', pathsToRevalidate);
+    logger.log('🔄 Revalidating tags:', tagsToRevalidate);
 
     for (const path of pathsToRevalidate) {
       await revalidatePath(path, 'page');
     }
 
+    for (const tag of tagsToRevalidate) {
+      revalidateTag(tag);
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Successfully revalidated ${pathsToRevalidate.length} path(s)`,
+        message: `Revalidated ${pathsToRevalidate.length} path(s) + ${tagsToRevalidate.length} tag(s)`,
         paths: pathsToRevalidate,
+        tags: tagsToRevalidate,
         timestamp: new Date().toISOString(),
       }),
       {
