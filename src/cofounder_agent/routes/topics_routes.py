@@ -89,7 +89,6 @@ async def from_url(
     # Classify category if not provided
     category = request.category or _guess_category(scraped)
 
-    import json as _json
     metadata = {
         "source_url": request.url,
         "source_type": scraped.get("content_type", "article"),
@@ -98,33 +97,22 @@ async def from_url(
         "source_published_at": scraped.get("published_at"),
         "angle_hint": request.angle,
         "discovered_by": "url_seed",
-        "target_length": request.target_length or 1500,
-        "style": request.style or "narrative",
-        "tone": request.tone or "professional",
     }
 
-    # Use direct INSERT (same pattern as topic_discovery.queue_topics)
-    # to avoid the legacy add_task path that references nonexistent columns.
-    pool = db_service.pool
-    returned_task_id = await pool.fetchval(
-        """
-        INSERT INTO content_tasks (
-            task_id, task_type, content_type, topic, category, status,
-            style, tone, target_length, metadata
-        )
-        VALUES (
-            gen_random_uuid()::text, 'blog_post', 'blog_post', $1, $2,
-            'pending', $3, $4, $5, $6::jsonb
-        )
-        RETURNING task_id
-        """,
-        topic,
-        category,
-        request.style or "narrative",
-        request.tone or "professional",
-        request.target_length or 1500,
-        _json.dumps(metadata),
-    )
+    # #231 fixed: add_task now only inserts columns that exist in the
+    # content_tasks view. URL-seeded tasks share the same code path as
+    # every other task creation site.
+    returned_task_id = await db_service.add_task({
+        "task_type": "blog_post",
+        "content_type": "blog_post",
+        "status": "pending",
+        "topic": topic,
+        "category": category,
+        "style": request.style or "narrative",
+        "tone": request.tone or "professional",
+        "target_length": request.target_length or 1500,
+        "metadata": metadata,
+    })
     logger.info(
         "[URL_SEED] Task created: %s from %s (%d words scraped)",
         returned_task_id, request.url, scraped.get("word_count", 0),
@@ -193,10 +181,10 @@ async def from_urls(
     scraped_ok.sort(key=richness, reverse=True)
     top = scraped_ok[: request.max_topics]
 
-    # Queue each as a content task (direct INSERT to avoid the legacy
-    # add_task path that references columns not in the content_tasks view).
-    import json as _json
-    pool = db_service.pool
+    # #231 fixed: use add_task() instead of the former direct-INSERT
+    # workaround — the column mismatch that forced the workaround is
+    # resolved (dead columns dropped, functional columns moved to
+    # task_metadata JSONB).
     task_ids: list[dict] = []
     for url, data in top:
         metadata = {
@@ -206,26 +194,18 @@ async def from_urls(
             "source_author": data.get("author"),
             "source_published_at": data.get("published_at"),
             "discovered_by": "url_list",
-            "target_length": 1500,
+        }
+        returned_task_id = await db_service.add_task({
+            "task_type": "blog_post",
+            "content_type": "blog_post",
+            "status": "pending",
+            "topic": data["title"],
+            "category": request.category or _guess_category(data),
             "style": "narrative",
             "tone": "professional",
-        }
-        returned_task_id = await pool.fetchval(
-            """
-            INSERT INTO content_tasks (
-                task_id, task_type, content_type, topic, category, status,
-                style, tone, target_length, metadata
-            )
-            VALUES (
-                gen_random_uuid()::text, 'blog_post', 'blog_post', $1, $2,
-                'pending', 'narrative', 'professional', 1500, $3::jsonb
-            )
-            RETURNING task_id
-            """,
-            data["title"],
-            request.category or _guess_category(data),
-            _json.dumps(metadata),
-        )
+            "target_length": 1500,
+            "metadata": metadata,
+        })
         task_ids.append({
             "task_id": returned_task_id,
             "topic": data["title"],
