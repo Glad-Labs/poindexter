@@ -25,12 +25,15 @@ router = APIRouter(prefix="/api", tags=["cache"])
 
 
 class RevalidateCacheRequest(BaseModel):
-    """Request to revalidate specific paths"""
+    """Request to revalidate specific paths and/or tags"""
 
     paths: list | None = None
+    tags: list | None = None
 
 
-async def trigger_nextjs_revalidation(paths: list | None = None) -> bool:
+async def trigger_nextjs_revalidation(
+    paths: list | None = None, tags: list | None = None
+) -> bool:
     """
     Trigger Next.js ISR revalidation on the public site.
 
@@ -38,13 +41,18 @@ async def trigger_nextjs_revalidation(paths: list | None = None) -> bool:
     when content is published or updated in the FastAPI CMS.
 
     Args:
-        paths: List of paths to revalidate. Defaults to ["/", "/archive"]
+        paths: List of paths to revalidate (routes). Defaults to ["/", "/archive"].
+        tags: List of cache tags to revalidate (data fetches). Defaults to
+            ["posts", "post-index"] so all post data fetches invalidate.
+            Pass ["post:<slug>", "posts"] to target a specific post.
 
     Returns:
         True if revalidation succeeded, False otherwise
     """
     if paths is None:
         paths = ["/", "/archive"]
+    if tags is None:
+        tags = ["posts", "post-index"]
 
     # Get Next.js public site URL from DB config, env, or default
     from services.site_config import site_config
@@ -86,11 +94,12 @@ async def trigger_nextjs_revalidation(paths: list | None = None) -> bool:
         logger.info("Triggering Next.js ISR revalidation...")
         logger.info("   URL: %s", revalidate_url)
         logger.info("   Paths: %s", paths)
+        logger.info("   Tags: %s", tags)
 
         async with httpx.AsyncClient(timeout=10) as client:
             response = await client.post(
                 revalidate_url,
-                json={"paths": paths},
+                json={"paths": paths, "tags": tags},
                 headers={
                     "x-revalidate-secret": revalidate_secret,
                     "Content-Type": "application/json",
@@ -134,12 +143,14 @@ async def revalidate_cache(
         {"success": bool, "message": str, "paths": list}
     """
     paths = request_data.paths or ["/", "/archive"]
+    tags = request_data.tags or ["posts", "post-index"]
 
-    # Trigger ISR revalidation on public site
-    success = await trigger_nextjs_revalidation(paths)
+    # Trigger ISR revalidation on public site (both paths and tags)
+    success = await trigger_nextjs_revalidation(paths, tags)
 
     return {
         "success": success,
         "message": "Cache revalidation " + ("successful" if success else "failed"),
         "paths": paths,
+        "tags": tags,
     }
