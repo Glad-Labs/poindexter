@@ -145,7 +145,7 @@ async def _generate_social_text(
             prompt=prompt,
             model=model,
             temperature=0.8,
-            max_tokens=300,
+            max_tokens=_sc.get_int("social_poster_max_tokens", 300),
         )
         text = result.get("text", "").strip()
 

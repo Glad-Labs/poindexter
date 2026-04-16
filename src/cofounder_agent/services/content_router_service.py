@@ -2600,9 +2600,9 @@ async def process_content_generation_task(
                             )
                             _fb_result = await _rev_client.generate(
                                 prompt=_revise_prompt,
-                                model="gemma3:27b",
+                                model=_sc_qa_rw.get("qa_fallback_writer_model", "gemma3:27b"),
                                 temperature=0.4,
-                                max_tokens=8000,
+                                max_tokens=_sc_qa_rw.get_int("content_router_qa_rewrite_max_tokens", 8000),
                             )
                             _revised_text = (_fb_result.get("text") or "").strip()
                     finally:

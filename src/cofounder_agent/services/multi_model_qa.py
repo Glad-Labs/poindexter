@@ -735,19 +735,23 @@ class MultiModelQA:
                 )
             ollama_model = default_model.removeprefix("ollama/")
 
+            from services.site_config import site_config as _sc_qa_gate
+            _gate_max = _sc_qa_gate.get_int("qa_gate_max_tokens", 600)
+            _gate_timeout = _sc_qa_gate.get_int("qa_gate_timeout_seconds", 60)
             try:
                 result = await asyncio.wait_for(
                     client.generate(
                         prompt=prompt,
                         model=ollama_model,
                         temperature=temperature,
-                        max_tokens=600,
+                        max_tokens=_gate_max,
                     ),
-                    timeout=60,
+                    timeout=_gate_timeout,
                 )
             except asyncio.TimeoutError:
                 logger.warning(
-                    "[MULTI_QA] %s timed out after 60s — gate skipped", reviewer_name
+                    "[MULTI_QA] %s timed out after %ds — gate skipped",
+                    reviewer_name, _gate_timeout,
                 )
                 await client.close()
                 return None
