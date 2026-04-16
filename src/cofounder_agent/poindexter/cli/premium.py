@@ -47,15 +47,29 @@ async def _ls_request(url: str, license_key: str, instance_id: str = "") -> dict
 # ---------------------------------------------------------------------------
 
 async def _get_pool():
-    """Get a connection to the local DB (#198: no hardcoded DSN)."""
+    """Get a connection to the local DB (#198: bootstrap-resolved DSN)."""
     import asyncpg
-    import os
-    dsn = os.getenv("LOCAL_DATABASE_URL") or os.getenv("DATABASE_URL")
+    try:
+        import sys as _sys
+        from pathlib import Path as _Path
+        # Walk up to the repo root (where brain/ lives) rather than a
+        # fixed parents[N] — works from both src/ and installed packages.
+        _here = _Path(__file__).resolve()
+        for _p in _here.parents:
+            if (_p / "brain" / "bootstrap.py").is_file():
+                if str(_p) not in _sys.path:
+                    _sys.path.insert(0, str(_p))
+                break
+        from brain.bootstrap import resolve_database_url
+    except Exception as e:  # pragma: no cover — shouldn't happen
+        raise click.ClickException(f"bootstrap module import failed: {e}")
+
+    dsn = resolve_database_url()
     if not dsn:
         raise click.ClickException(
-            "No database URL configured. Set DATABASE_URL (or LOCAL_DATABASE_URL) "
-            "in the environment. Once the bootstrap wizard lands this will come "
-            "from ~/.poindexter/bootstrap.toml."
+            "No database URL configured. Run `poindexter setup` to create "
+            "~/.poindexter/bootstrap.toml, or set DATABASE_URL in the "
+            "environment."
         )
     return await asyncpg.connect(dsn)
 

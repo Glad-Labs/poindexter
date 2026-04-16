@@ -58,14 +58,13 @@ logging.basicConfig(
 logger = logging.getLogger("brain")
 
 # Local brain DB — the daemon writes ALL data here (brain_knowledge, brain_decisions, etc.)
-# #198: no hardcoded DSN. Fail loud if DATABASE_URL is not set.
-LOCAL_BRAIN_DB = os.getenv("DATABASE_URL", "")
-if not LOCAL_BRAIN_DB:
-    raise RuntimeError(
-        "DATABASE_URL is not set. The brain daemon cannot start without a "
-        "database URL. Configure DATABASE_URL in the environment (or, once "
-        "the bootstrap wizard lands, in ~/.poindexter/bootstrap.toml)."
-    )
+# #198: resolve via bootstrap helper so ~/.poindexter/bootstrap.toml or any
+# of DATABASE_URL / LOCAL_DATABASE_URL / POINDEXTER_MEMORY_DSN works. If
+# none of those yield a value, require_database_url() notifies the operator
+# and exits cleanly.
+from brain.bootstrap import require_database_url
+
+LOCAL_BRAIN_DB = require_database_url(source="brain_daemon")
 
 # Telegram for alerts (direct bot API, no OpenClaw dependency)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")

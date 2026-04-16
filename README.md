@@ -147,7 +147,7 @@ Any Frontend (reads static JSON from CDN)
 
 ## Configuration
 
-Everything lives in the `app_settings` database table — not environment variables. The `.env` file bootstraps the system; after that, all config is managed via API or SQL.
+Everything lives in the `app_settings` database table — not environment variables. The only value you ever write to disk is the database URL itself, in `~/.poindexter/bootstrap.toml` (created by `poindexter setup`). After that, all config is managed via API or SQL.
 
 ```bash
 # View all settings

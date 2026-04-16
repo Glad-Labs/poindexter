@@ -41,20 +41,50 @@ logger = logging.getLogger("poindexter-mcp")
 
 
 def _require_env(*names: str) -> str:
-    """Return the first set env var in order. Raises if none are set."""
+    """Return the first set env var in order. Notify + exit if none are set."""
     for n in names:
         v = os.getenv(n)
         if v:
             return v
-    raise RuntimeError(
-        f"MCP server requires one of these env vars to be set: {', '.join(names)}. "
-        "No hardcoded defaults — see issue #198."
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    _repo_root = _Path(__file__).resolve().parents[1]
+    if str(_repo_root) not in _sys.path:
+        _sys.path.insert(0, str(_repo_root))
+    from brain.operator_notifier import notify_operator
+
+    joined = ", ".join(names)
+    notify_operator(
+        title="MCP server cannot start — missing required env var",
+        detail=(
+            f"Set one of these env vars before launching the MCP server: "
+            f"{joined}.\n\n"
+            "For local dev the Claude desktop config should export "
+            "POINDEXTER_API_URL, POINDEXTER_API_TOKEN, LOCAL_DATABASE_URL, "
+            "and OLLAMA_URL. No hardcoded defaults — see issue #198."
+        ),
+        source="mcp_server",
+        severity="critical",
     )
+    _sys.exit(2)
 
 
 API_URL = _require_env("POINDEXTER_API_URL", "GLADLABS_API_URL")
 API_TOKEN = _require_env("POINDEXTER_API_TOKEN", "GLADLABS_API_TOKEN")
-LOCAL_DB_DSN = _require_env("LOCAL_DATABASE_URL", "DATABASE_URL")
+
+# Route the DB DSN through the bootstrap resolver so ~/.poindexter/bootstrap.toml
+# works for the MCP server just like it does for the brain daemon (#198).
+import sys as _sys_boot
+from pathlib import Path as _Path_boot
+
+_repo_root_boot = _Path_boot(__file__).resolve().parents[1]
+if str(_repo_root_boot) not in _sys_boot.path:
+    _sys_boot.path.insert(0, str(_repo_root_boot))
+from brain.bootstrap import require_database_url
+
+LOCAL_DB_DSN = require_database_url(source="mcp_server")
+
 OLLAMA_URL = _require_env("OLLAMA_URL")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
 

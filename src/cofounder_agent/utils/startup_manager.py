@@ -179,13 +179,36 @@ class StartupManager:
             startup_error = f"FATAL: PostgreSQL connection failed: {str(e)}"
             logger.error(f"  {startup_error}", exc_info=True)
             logger.error("  [FATAL] PostgreSQL is REQUIRED - cannot continue", exc_info=True)
-            logger.error(
-                "   Set DATABASE_URL or DATABASE_USER environment variables", exc_info=True
-            )
-            logger.error(
-                "  Example DATABASE_URL: postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain",
-                exc_info=True,
-            )
+
+            # Notify the operator via every channel we have (Telegram, Discord,
+            # alerts.log, stderr) before exiting. Import locally so a broken
+            # notifier doesn't prevent the logger output above. (#198)
+            try:
+                import sys as _sys
+                from pathlib import Path as _Path
+
+                _repo_root = _Path(__file__).resolve().parents[3]
+                if str(_repo_root) not in _sys.path:
+                    _sys.path.insert(0, str(_repo_root))
+                from brain.operator_notifier import notify_operator
+
+                notify_operator(
+                    title="Worker cannot start — database connection failed",
+                    detail=(
+                        f"{startup_error}\n\n"
+                        "Fix: check that Postgres is running and reachable, "
+                        "and that DATABASE_URL (or DATABASE_HOST/USER/...) is "
+                        "set correctly.\n\n"
+                        "For local dev the DSN usually looks like:\n"
+                        "  postgresql://poindexter:<password>@localhost:15432/poindexter_brain"
+                    ),
+                    source="worker.startup_manager",
+                    severity="critical",
+                )
+            except Exception as notify_err:
+                logger.error(
+                    "  operator_notifier failed: %s", notify_err, exc_info=True
+                )
             raise SystemExit(1) from e
 
     async def _run_migrations(self) -> None:

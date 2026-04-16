@@ -51,12 +51,21 @@ class TestDatabaseServiceInit:
         assert svc.database_url == "postgresql://user:pass@host:5432/db"
 
     def test_reads_database_url_env_var(self, monkeypatch):
+        # #198: when bootstrap.toml has no URL, fall back to env var.
+        # Point the bootstrap resolver at a missing file so the env var
+        # actually reaches this code path.
+        import brain.bootstrap as _boot
+        monkeypatch.setattr(_boot, "BOOTSTRAP_FILE", _boot.BOOTSTRAP_DIR / "nonexistent.toml")
         monkeypatch.setenv("DATABASE_URL", "postgresql://env:env@host/envdb")
         svc = DatabaseService()
         assert svc.database_url == "postgresql://env:env@host/envdb"
 
     def test_raises_when_no_url(self, monkeypatch):
-        monkeypatch.delenv("DATABASE_URL", raising=False)
+        # #198: with bootstrap.toml missing AND env vars unset, we should raise.
+        import brain.bootstrap as _boot
+        monkeypatch.setattr(_boot, "BOOTSTRAP_FILE", _boot.BOOTSTRAP_DIR / "nonexistent.toml")
+        for var in ("DATABASE_URL", "LOCAL_DATABASE_URL", "POINDEXTER_MEMORY_DSN"):
+            monkeypatch.delenv(var, raising=False)
         with pytest.raises(ValueError, match="DATABASE_URL"):
             DatabaseService()
 
