@@ -48,6 +48,13 @@ class EmbeddingService:
 
         Skips re-embedding if the content hash has not changed.
 
+        Historically this method wrote to source_table='post' (singular),
+        but every reader in the codebase queries source_table='posts'
+        (plural — see MemoryClient.find_similar_posts, topic_executor
+        semantic dedup, pgvector ideation). That schema mismatch meant
+        every published post after auto-embed stopped running was
+        invisible to RAG. Unified on plural now (#198 follow-up).
+
         Args:
             post_dict: Dict with keys 'id', 'title', 'excerpt', 'content'.
 
@@ -64,17 +71,19 @@ class EmbeddingService:
         content_hash = self._content_hash(combined)
 
         try:
-            if not await self.db.needs_reembedding("post", post_id, content_hash):
+            if not await self.db.needs_reembedding("posts", post_id, content_hash):
                 logger.info("Skipping post embedding (unchanged)", post_id=post_id)
                 return None
 
             embedding = await self.ollama.embed(combined)
             embedding_id = await self.db.store_embedding(
-                source_type="post",
+                source_type="posts",
                 source_id=post_id,
                 content_hash=content_hash,
                 embedding=embedding,
                 metadata={"title": title},
+                text_preview=combined[:500],
+                writer="worker",
             )
 
             logger.info("Embedded post", post_id=post_id, title=title)
