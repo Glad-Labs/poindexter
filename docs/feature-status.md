@@ -55,7 +55,7 @@
 | Newsletter           | PARTIAL            | Resend API configured. Wired into publish flow. 2 test subscribers. Enabled today — untested in production.                 |
 | X/Twitter Posting    | SCAFFOLD           | Generates post text (280 chars). Does NOT actually post — no API integration. Posts sent to Telegram for manual copy-paste. |
 | LinkedIn Posting     | SCAFFOLD           | Same as X/Twitter — generates text, doesn't post.                                                                           |
-| Video Generation     | NOT BUILT          | Referenced in early marketing. No implementation exists. Removed from product page.                                         |
+| Video Generation     | WORKING            | Ken Burns slideshow MP4s from SDXL images + podcast audio. Host video-server on :9837. Routes + service + tests in place.   |
 
 ### What Distribution Actually Looks Like Today
 
