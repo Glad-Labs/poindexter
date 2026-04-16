@@ -109,28 +109,39 @@ async def _ping_search_engines(site_url: str, post_url: str) -> None:
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(10.0, connect=3.0)
     ) as client:
-        # IndexNow (Bing, Yandex, Naver, Seznam)
+        # IndexNow (Bing, Yandex, Naver, Seznam).
+        # #198: both endpoint + key settings-backed. Setting the endpoint
+        # to '' disables the ping without code changes.
         _indexnow_key = site_config.get("indexnow_key", "34352c4f981b45698941c47eefef2fb4")
-        try:
-            await client.get(
-                "https://api.indexnow.org/indexnow",
-                params={"url": post_url, "key": _indexnow_key},
-                timeout=10,
-            )
-            logger.info("[SEO] IndexNow ping sent for %s", post_url)
-        except Exception as e:
-            logger.debug("[SEO] IndexNow ping failed (non-fatal): %s", e)
+        _indexnow_url = site_config.get(
+            "indexnow_ping_url", "https://api.indexnow.org/indexnow"
+        )
+        if _indexnow_url:
+            try:
+                await client.get(
+                    _indexnow_url,
+                    params={"url": post_url, "key": _indexnow_key},
+                    timeout=10,
+                )
+                logger.info("[SEO] IndexNow ping sent for %s", post_url)
+            except Exception as e:
+                logger.debug("[SEO] IndexNow ping failed (non-fatal): %s", e)
 
-        # Google ping (sitemap-based)
-        try:
-            await client.get(
-                "https://www.google.com/ping",
-                params={"sitemap": f"{site_url}/sitemap.xml"},
-                timeout=10,
-            )
-            logger.info("[SEO] Google sitemap ping sent")
-        except Exception as e:
-            logger.debug("[SEO] Google ping failed (non-fatal): %s", e)
+        # Search-engine sitemap ping (Google's /ping endpoint by default;
+        # set google_sitemap_ping_url='' to skip).
+        _sitemap_ping = site_config.get(
+            "google_sitemap_ping_url", "https://www.google.com/ping"
+        )
+        if _sitemap_ping:
+            try:
+                await client.get(
+                    _sitemap_ping,
+                    params={"sitemap": f"{site_url}/sitemap.xml"},
+                    timeout=10,
+                )
+                logger.info("[SEO] Sitemap ping sent to %s", _sitemap_ping)
+            except Exception as e:
+                logger.debug("[SEO] Sitemap ping failed (non-fatal): %s", e)
 
 
 async def _embed_published_post(db_service, post_dict: dict) -> None:

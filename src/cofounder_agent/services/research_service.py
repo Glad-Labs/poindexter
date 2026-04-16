@@ -27,7 +27,12 @@ logger = get_logger(__name__)
 
 # Verified reference links — official documentation that won't go stale.
 # These are real URLs to real documentation. NO fabricated links.
-KNOWN_REFERENCES: dict[str, list[dict[str, str]]] = {
+#
+# The shipped defaults are a tech/developer-audience set. Customers in
+# other niches (cooking, legal, medical, gardening) override via
+# app_settings.known_references_json — a JSON blob of the same shape
+# as `_DEFAULT_KNOWN_REFERENCES` below. See `get_known_references()`. (#198)
+_DEFAULT_KNOWN_REFERENCES: dict[str, list[dict[str, str]]] = {
     "fastapi": [
         {"title": "FastAPI Official Documentation", "url": "https://fastapi.tiangolo.com"},
         {"title": "FastAPI Tutorial - First Steps", "url": "https://fastapi.tiangolo.com/tutorial/first-steps/"},
@@ -110,6 +115,56 @@ KNOWN_REFERENCES: dict[str, list[dict[str, str]]] = {
 }
 
 
+def get_known_references() -> dict[str, list[dict[str, str]]]:
+    """Return the reference-link database, preferring app_settings if set.
+
+    Looks up `known_references_json` in app_settings; if present and
+    valid, replaces the default tech-oriented list entirely. Malformed
+    JSON logs a warning and falls back to defaults. (#198)
+    """
+    import json as _json
+    try:
+        from services.site_config import site_config as _sc
+        raw = _sc.get("known_references_json", "")
+        if not raw:
+            return _DEFAULT_KNOWN_REFERENCES
+        parsed = _json.loads(raw)
+        if not isinstance(parsed, dict):
+            logger.warning(
+                "[RESEARCH] known_references_json must be a JSON object — using defaults"
+            )
+            return _DEFAULT_KNOWN_REFERENCES
+        # Shape validation: each value must be a list of {title, url} dicts.
+        clean: dict[str, list[dict[str, str]]] = {}
+        for key, entries in parsed.items():
+            if not isinstance(entries, list):
+                continue
+            ok_entries = [
+                {"title": str(e.get("title", "")), "url": str(e.get("url", ""))}
+                for e in entries
+                if isinstance(e, dict) and e.get("url")
+            ]
+            if ok_entries:
+                clean[str(key).lower()] = ok_entries
+        return clean or _DEFAULT_KNOWN_REFERENCES
+    except (ValueError, TypeError) as e:
+        logger.warning(
+            "[RESEARCH] known_references_json is not valid JSON: %s — using defaults", e
+        )
+        return _DEFAULT_KNOWN_REFERENCES
+    except Exception as e:
+        logger.warning(
+            "[RESEARCH] known_references lookup failed: %s — using defaults", e
+        )
+        return _DEFAULT_KNOWN_REFERENCES
+
+
+# Backward-compat alias: modules that imported KNOWN_REFERENCES keep working
+# but get the DEFAULTS. Migrate callers to get_known_references() for the
+# settings-aware version.
+KNOWN_REFERENCES = _DEFAULT_KNOWN_REFERENCES
+
+
 class ResearchService:
     """Builds research context for content generation."""
 
@@ -172,7 +227,8 @@ class ResearchService:
         matched = []
         seen_urls = set()
 
-        for keyword, refs in KNOWN_REFERENCES.items():
+        _refs = get_known_references()
+        for keyword, refs in _refs.items():
             if keyword in topic_lower:
                 for ref in refs:
                     if ref["url"] not in seen_urls:
@@ -181,7 +237,7 @@ class ResearchService:
 
         # Also match individual words for broader coverage
         topic_words = set(re.findall(r"\b\w{4,}\b", topic_lower))
-        for keyword, refs in KNOWN_REFERENCES.items():
+        for keyword, refs in _refs.items():
             kw_words = set(keyword.lower().split())
             if kw_words & topic_words and keyword not in topic_lower:
                 for ref in refs[:1]:  # Only first ref for partial matches

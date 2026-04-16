@@ -39,7 +39,12 @@ class TestPexelsClientInit:
                 PexelsClient()
 
     def test_base_url_defined(self):
-        assert PexelsClient.BASE_URL == "https://api.pexels.com/v1/search"
+        # #198: BASE_URL is now an instance attribute built from
+        # app_settings.pexels_api_base. Default keeps existing behavior.
+        with patch("agents.content_agent.services.pexels_client.config") as mock_cfg:
+            mock_cfg.PEXELS_API_KEY = "test-key"
+            c = PexelsClient()
+            assert c.BASE_URL == "https://api.pexels.com/v1/search"
 
 
 # ---------------------------------------------------------------------------
