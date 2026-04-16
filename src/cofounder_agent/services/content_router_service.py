@@ -2222,6 +2222,12 @@ async def _stage_finalize_task(
         updates={
             "status": "awaiting_approval",
             "approval_status": "pending",
+            # Clear stale error_message from any prior auto-cancel attempt
+            # by the brain daemon. Without this, a worker completion that
+            # races with brain's stuck-task cancel leaves contradictory
+            # metadata: status=awaiting_approval + error_message=
+            # "Auto-cancelled: stuck in_progress > 90m" (#198 follow-up).
+            "error_message": None,
             "quality_score": final_quality_score,
             "title": result.get("title") or seo_title or topic,
             "featured_image_url": result.get("featured_image_url"),
