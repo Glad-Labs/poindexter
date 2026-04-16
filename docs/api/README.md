@@ -36,7 +36,7 @@ All requests to protected endpoints require a JWT Bearer token in the Authorizat
 
 ```bash
 curl -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-     http://localhost:8000/api/tasks
+     http://localhost:8002/api/tasks
 ```
 
 ### Token Sources
@@ -50,7 +50,7 @@ For testing without GitHub OAuth credentials:
 
 ```bash
 curl -H "Authorization: Bearer dev-token" \
-     http://localhost:8000/api/tasks
+     http://localhost:8002/api/tasks
 ```
 
 ### Protected Routes
@@ -116,7 +116,7 @@ List all tasks (paginated).
 
 ```bash
 curl -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-     http://localhost:8000/api/tasks?limit=20&offset=0
+     http://localhost:8002/api/tasks?limit=20&offset=0
 ```
 
 **Response (200 OK):**
