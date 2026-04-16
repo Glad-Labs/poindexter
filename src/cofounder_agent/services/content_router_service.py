@@ -1219,6 +1219,95 @@ async def _stage_generate_content(
     return content_text, model_used, metrics, title
 
 
+async def _self_review_and_revise(draft: str, title: str, topic: str) -> tuple[str, dict]:
+    """Writer self-review pass (issue #170).
+
+    Runs a second Ollama call asking the model to review its own draft
+    for cross-section contradictions. If found, asks the model to fix
+    them. Returns the (possibly-revised) draft and a stats dict.
+
+    Gated by app_settings key `enable_writer_self_review` (default false).
+    When disabled, returns the draft unchanged with stats={'enabled': False}.
+
+    This is the "catch contradictions before QA" prevention layer from
+    issue #170. Without it, contradictions reach the QA gate and force
+    a full regeneration cycle.
+    """
+    from services.site_config import site_config
+    from services.ollama_client import OllamaClient
+
+    stats: dict = {"enabled": False, "contradictions_found": 0, "revised": False}
+
+    enabled = str(site_config.get("enable_writer_self_review", "false")).lower() == "true"
+    if not enabled:
+        return draft, stats
+
+    stats["enabled"] = True
+    if not draft or len(draft) < 500:
+        # Too short to have meaningful cross-section contradictions
+        return draft, stats
+
+    # Use a non-thinking model for review — thinking models burn tokens on <think>
+    review_model = str(site_config.get("writer_self_review_model") or "gemma3:27b").removeprefix("ollama/")
+
+    review_prompt = (
+        f"You are reviewing your own draft for internal contradictions.\n\n"
+        f"TITLE: {title}\n"
+        f"TOPIC: {topic}\n\n"
+        f"DRAFT:\n{draft}\n\n"
+        f"Read every section. Identify any claim in one section that contradicts "
+        f"a claim, code example, or recommendation in another section. "
+        f"Ignore stylistic variation; focus on factual or logical conflicts.\n\n"
+        f"If you find contradictions, output a numbered list of specific corrections "
+        f"needed (one per line, format: 'SECTION X conflicts with SECTION Y: <details>'). "
+        f"If you find none, reply with exactly: PASS"
+    )
+
+    try:
+        client = OllamaClient(timeout=120)
+        result = await client.generate(prompt=review_prompt, model=review_model, temperature=0.2, max_tokens=1500)
+        review_text = (result.get("text") or "").strip()
+
+        if not review_text or review_text.upper().startswith("PASS"):
+            return draft, stats
+
+        # Count contradictions (numbered list items)
+        import re
+        contradictions = [ln for ln in review_text.splitlines() if re.match(r"^\s*\d+[\.\)]\s+", ln)]
+        stats["contradictions_found"] = len(contradictions)
+        if not contradictions:
+            return draft, stats
+
+        # Feed list back to the writer for revision
+        revise_prompt = (
+            f"Here is your draft. Fix these specific contradictions and nothing else:\n\n"
+            f"CONTRADICTIONS TO FIX:\n{review_text}\n\n"
+            f"ORIGINAL DRAFT:\n{draft}\n\n"
+            f"Output only the revised draft. Keep the structure, length, and tone "
+            f"identical. Only change what's needed to resolve the contradictions."
+        )
+        revised = await client.generate(prompt=revise_prompt, model=review_model, temperature=0.3, max_tokens=8000)
+        revised_text = (revised.get("text") or "").strip()
+
+        # Guard: revision must be a reasonable length
+        if len(revised_text) >= int(0.7 * len(draft)):
+            stats["revised"] = True
+            logger.info(
+                "[SELF_REVIEW] Revised draft: %d contradictions found, %d chars in/%d out",
+                len(contradictions), len(draft), len(revised_text),
+            )
+            return revised_text, stats
+        # Fall through — keep the original if revision was too short
+        logger.warning(
+            "[SELF_REVIEW] Revision too short (%d chars), keeping original (%d chars)",
+            len(revised_text), len(draft),
+        )
+    except Exception as e:
+        logger.warning("[SELF_REVIEW] Self-review failed (non-fatal): %s", e)
+
+    return draft, stats
+
+
 async def _stage_quality_evaluation(topic, tags, content_text, quality_service, result):
     """Stage 2B: Early quality evaluation of generated content.
 
@@ -2183,6 +2272,25 @@ async def process_content_generation_task(
                 )
         except Exception as _exc:
             logger.debug("writer_fallback check failed: %s", _exc)
+
+        # Stage 2A.5: Writer self-review (issue #170)
+        # Opt-in via enable_writer_self_review app_setting (default false).
+        # Catches cross-section contradictions at generation time, before
+        # QA has to reject the whole draft.
+        try:
+            revised_text, self_review_stats = await _self_review_and_revise(
+                content_text, result.get("title", ""), topic,
+            )
+            if self_review_stats.get("revised"):
+                content_text = revised_text
+                result["content"] = content_text
+                result["content_length"] = len(content_text)
+            audit_log_bg(
+                "writer_self_review_pass", "content_router",
+                self_review_stats, task_id=task_id,
+            )
+        except Exception as _sr_exc:
+            logger.warning("[SELF_REVIEW] Stage failed (non-fatal): %s", _sr_exc)
 
         # Stage 2B: Quality evaluation (critical — fail pipeline on timeout)
         quality_result = await _run_stage_with_timeout(
