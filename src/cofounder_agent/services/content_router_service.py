@@ -2705,10 +2705,30 @@ async def process_content_generation_task(
                         "rewrite_attempts": _rewrite_attempts,
                     }, task_id=task_id, severity="warning")
                     result["status"] = "rejected"
+                    # Name the reviewer that actually vetoed so the error
+                    # message tells an operator what to fix — previously
+                    # we just grabbed the last reviewer's feedback tail,
+                    # which often looked like a bonus line (e.g.
+                    # "3 verified external citations (+15 bonus)") instead
+                    # of the rejection reason.
+                    _vetoer = next(
+                        (r for r in _qa_result.reviews if not r.approved),
+                        _qa_result.reviews[-1] if _qa_result.reviews else None,
+                    )
+                    if _vetoer:
+                        _feedback = (_vetoer.feedback or "no feedback").strip()[:300]
+                        _reason_msg = (
+                            f"Multi-model QA rejected (score: {_qa_result.final_score:.0f}, "
+                            f"veto: {_vetoer.reviewer} @ {_vetoer.score:.0f}): {_feedback}"
+                        )
+                    else:
+                        _reason_msg = (
+                            f"Multi-model QA rejected (score: {_qa_result.final_score:.0f}): "
+                            "No reviews recorded"
+                        )
                     await database_service.update_task(task_id, {
                         "status": "rejected",
-                        "error_message": f"Multi-model QA rejected (score: {_qa_result.final_score:.0f}): "
-                            + (_qa_result.reviews[-1].feedback[:200] if _qa_result.reviews else "No feedback"),
+                        "error_message": _reason_msg,
                     })
                     return result
                 audit_log_bg("qa_passed", "content_router", {
