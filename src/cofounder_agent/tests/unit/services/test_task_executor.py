@@ -952,3 +952,186 @@ class TestAutoPublishTaskGuards:
 
         await executor._auto_publish_task("t1", 90.0)
         db.update_task_status.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# _auto_retry_failed_tasks — rejection semantics (#178)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestAutoRetryFailedTasks:
+    """Test the auto-retry logic for failed and rejected tasks.
+
+    Three distinct cases per the function's docstring:
+    1. status='failed', no allow_revisions → retry (execution failure)
+    2. status='rejected_retry', allow_revisions=true → retry (human said try again)
+    3. status='rejected_final', allow_revisions=false → skip (hard rejection)
+    """
+
+    def _setup_executor(self, fetch_rows):
+        """Helper: create an executor with a mocked pool returning fetch_rows."""
+        db = MagicMock()
+        db.pool = MagicMock()
+        db.pool.fetch = AsyncMock(return_value=fetch_rows)
+        db.update_task = AsyncMock(return_value={"task_id": "t1"})
+        executor = _make_executor(db=db)
+        executor._get_setting = AsyncMock(return_value="3")  # max_retries
+        return executor, db
+
+    @pytest.mark.asyncio
+    async def test_skips_when_no_database_service(self):
+        from services.task_executor import TaskExecutor
+        executor = TaskExecutor(database_service=None)
+        # Should not raise
+        await executor._auto_retry_failed_tasks()
+
+    @pytest.mark.asyncio
+    async def test_skips_when_pool_is_none(self):
+        from services.task_executor import TaskExecutor
+        db = MagicMock()
+        db.pool = None
+        executor = TaskExecutor(database_service=db)
+        await executor._auto_retry_failed_tasks()
+        # No call should have been made (guard rail works)
+
+    @pytest.mark.asyncio
+    async def test_skips_when_no_eligible_tasks(self):
+        executor, db = self._setup_executor(fetch_rows=[])
+        await executor._auto_retry_failed_tasks()
+        db.pool.fetch.assert_awaited_once()
+        db.update_task.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_retries_case1_execution_failure(self):
+        """Case 1: status='failed', no allow_revisions key → retry."""
+        row = {
+            "task_id": "t1",
+            "status": "failed",
+            "topic": "Test Topic",
+            "task_metadata": {},
+            "retry_count": 0,
+        }
+        executor, db = self._setup_executor(fetch_rows=[row])
+        await executor._auto_retry_failed_tasks()
+        db.update_task.assert_awaited_once()
+        call = db.update_task.call_args
+        assert call[0][0] == "t1"
+        updates = call[0][1]
+        assert updates["status"] == "pending"
+        assert updates["approval_status"] == "pending"
+        assert updates["error_message"] is None
+        assert updates["task_metadata"]["retry_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_retries_case2_human_allowed_revisions(self):
+        """Case 2: status='rejected_retry' (human said try again) → retry."""
+        row = {
+            "task_id": "t2",
+            "status": "rejected_retry",
+            "topic": "Revised Topic",
+            "task_metadata": {"allow_revisions": True},
+            "retry_count": 1,
+        }
+        executor, db = self._setup_executor(fetch_rows=[row])
+        await executor._auto_retry_failed_tasks()
+        db.update_task.assert_awaited_once()
+        call = db.update_task.call_args
+        updates = call[0][1]
+        assert updates["status"] == "pending"
+        # Stale rejection from first pass is cleared
+        assert updates["approval_status"] == "pending"
+        assert updates["task_metadata"]["retry_count"] == 2
+        # Second retry uses different adjustments
+        assert updates["task_metadata"]["retry_adjustments"].get("target_length") == 1000
+
+    @pytest.mark.asyncio
+    async def test_metadata_survives_as_json_string(self):
+        """task_metadata stored as JSON string should parse correctly."""
+        row = {
+            "task_id": "t3",
+            "status": "failed",
+            "topic": "JSON meta",
+            "task_metadata": '{"source": "test"}',  # string not dict
+            "retry_count": 0,
+        }
+        executor, db = self._setup_executor(fetch_rows=[row])
+        await executor._auto_retry_failed_tasks()
+        call = db.update_task.call_args
+        meta = call[0][1]["task_metadata"]
+        assert meta["source"] == "test"
+        assert meta["retry_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_first_retry_uses_qwen_coder(self):
+        """retry_count=0 → adjustments include qwen3-coder writer model."""
+        row = {
+            "task_id": "t4",
+            "status": "failed",
+            "topic": "First retry",
+            "task_metadata": {},
+            "retry_count": 0,
+        }
+        executor, db = self._setup_executor(fetch_rows=[row])
+        await executor._auto_retry_failed_tasks()
+        call = db.update_task.call_args
+        adjustments = call[0][1]["task_metadata"]["retry_adjustments"]
+        assert adjustments["model_selections"]["draft"] == "qwen3-coder:30b"
+
+    @pytest.mark.asyncio
+    async def test_second_retry_shortens_and_skips_image(self):
+        """retry_count=1 → shorter content, skip featured image."""
+        row = {
+            "task_id": "t5",
+            "status": "failed",
+            "topic": "Second retry",
+            "task_metadata": {},
+            "retry_count": 1,
+        }
+        executor, db = self._setup_executor(fetch_rows=[row])
+        await executor._auto_retry_failed_tasks()
+        call = db.update_task.call_args
+        adjustments = call[0][1]["task_metadata"]["retry_adjustments"]
+        assert adjustments["target_length"] == 1000
+        assert adjustments["generate_featured_image"] is False
+
+    @pytest.mark.asyncio
+    async def test_processes_multiple_eligible_tasks(self):
+        """Up to 3 tasks can be retried per sweep."""
+        rows = [
+            {"task_id": f"t{i}", "status": "failed", "topic": f"Topic {i}",
+             "task_metadata": {}, "retry_count": 0}
+            for i in range(3)
+        ]
+        executor, db = self._setup_executor(fetch_rows=rows)
+        await executor._auto_retry_failed_tasks()
+        assert db.update_task.await_count == 3
+
+    @pytest.mark.asyncio
+    async def test_swallows_db_errors(self):
+        """Pool failures should not propagate."""
+        db = MagicMock()
+        db.pool = MagicMock()
+        db.pool.fetch = AsyncMock(side_effect=Exception("DB down"))
+        executor = _make_executor(db=db)
+        executor._get_setting = AsyncMock(return_value="3")
+        # Should not raise
+        await executor._auto_retry_failed_tasks()
+
+    @pytest.mark.asyncio
+    async def test_last_retry_at_timestamp_recorded(self):
+        """Each retry stamps metadata with the retry timestamp."""
+        row = {
+            "task_id": "t6",
+            "status": "failed",
+            "topic": "Stamp test",
+            "task_metadata": {},
+            "retry_count": 0,
+        }
+        executor, db = self._setup_executor(fetch_rows=[row])
+        await executor._auto_retry_failed_tasks()
+        call = db.update_task.call_args
+        meta = call[0][1]["task_metadata"]
+        assert "last_retry_at" in meta
+        # ISO-format timestamp
+        assert "T" in meta["last_retry_at"]
