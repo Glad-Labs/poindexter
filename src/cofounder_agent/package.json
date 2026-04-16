@@ -7,9 +7,9 @@
   "author": "Matthew M. Gladding (Glad Labs, LLC)",
   "scripts": {
     "//": "=== BUILD & CLEANUP ===",
-    "dev": "python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000 --log-level info",
-    "dev:debug": "python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000 --log-level debug",
-    "start": "python -m uvicorn main:app --host 0.0.0.0 --port 8000 --log-level info --workers ${UVICORN_WORKERS:-4}",
+    "dev": "python -m uvicorn main:app --reload --host 0.0.0.0 --port ${PORT:-8002} --log-level info",
+    "dev:debug": "python -m uvicorn main:app --reload --host 0.0.0.0 --port ${PORT:-8002} --log-level debug",
+    "start": "python -m uvicorn main:app --host 0.0.0.0 --port ${PORT:-8002} --log-level info --workers ${UVICORN_WORKERS:-4}",
     "test": "python -m pytest tests/ -v --tb=short",
     "test:smoke": "python -m pytest tests/test_e2e_fixed.py -v --tb=short",
     "test:coverage": "python -m pytest tests/ -v --cov --cov-report=html --cov-report=term",
