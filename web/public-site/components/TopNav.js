@@ -85,6 +85,12 @@ export default function TopNavigation() {
             >
               About
             </Link>
+            <Link
+              href="/product"
+              className="text-cyan-400 hover:text-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:ring-offset-2 focus:ring-offset-slate-950 rounded px-1 font-medium"
+            >
+              Premium
+            </Link>
           </div>
           <div className="flex items-center gap-4">
             {searchOpen ? (

@@ -484,7 +484,7 @@ export default function ProductPage() {
                 Premium
               </h3>
               <p className="text-3xl font-bold text-white mb-1">
-                $9
+                $9.99
                 <span className="text-lg text-slate-400 font-normal">/mo</span>
               </p>
               <p className="text-slate-500 text-sm mb-6">cancel anytime</p>
