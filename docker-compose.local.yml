@@ -102,6 +102,9 @@ services:
     image: gitea/gitea:latest
     container_name: gladlabs-gitea
     restart: unless-stopped
+    # Operator-only: customers fork the public Poindexter repo on GitHub.
+    # Start explicitly: docker compose --profile operator up -d gitea
+    profiles: ["operator"]
     ports:
       - "3001:3000"
       - "2222:22"
@@ -137,6 +140,8 @@ services:
       context: ./infrastructure/gitea-runner
     container_name: gladlabs-gitea-runner
     restart: unless-stopped
+    # Operator-only: only runs alongside gitea
+    profiles: ["operator"]
     environment:
       GITEA_INSTANCE_URL: http://gitea:3000
       GITEA_RUNNER_REGISTRATION_TOKEN: ${GITEA_RUNNER_TOKEN:-}
@@ -280,6 +285,8 @@ services:
     image: dpage/pgadmin4:latest
     container_name: poindexter-pgadmin
     restart: unless-stopped
+    # Optional DB GUI — start with: docker compose --profile operator up -d pgadmin
+    profiles: ["operator"]
     ports:
       - "5480:80"
     environment:
