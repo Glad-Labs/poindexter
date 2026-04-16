@@ -58,10 +58,14 @@ logging.basicConfig(
 logger = logging.getLogger("brain")
 
 # Local brain DB — the daemon writes ALL data here (brain_knowledge, brain_decisions, etc.)
-LOCAL_BRAIN_DB = os.getenv(
-    "DATABASE_URL",
-    "postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain",
-)
+# #198: no hardcoded DSN. Fail loud if DATABASE_URL is not set.
+LOCAL_BRAIN_DB = os.getenv("DATABASE_URL", "")
+if not LOCAL_BRAIN_DB:
+    raise RuntimeError(
+        "DATABASE_URL is not set. The brain daemon cannot start without a "
+        "database URL. Configure DATABASE_URL in the environment (or, once "
+        "the bootstrap wizard lands, in ~/.poindexter/bootstrap.toml)."
+    )
 
 # Telegram for alerts (direct bot API, no OpenClaw dependency)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
@@ -71,10 +75,11 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 # Detect Docker (set in docker-compose.local.yml)
 IS_DOCKER = bool(os.getenv("IN_DOCKER"))
 
-# Service URLs — loaded from DB at startup, these are just initial defaults
-# Updated by _load_config_from_db() before the first monitoring cycle
-_SITE_URL = os.getenv("SITE_URL", "http://localhost:3000")
-_API_BASE_URL = "http://localhost:8002"
+# Service URLs — loaded from DB at startup via _load_config_from_db().
+# Initial values come from env only; no hardcoded localhost fallback (#198).
+# The daemon's first monitoring cycle replaces these with app_settings values.
+_SITE_URL = os.getenv("SITE_URL", "")
+_API_BASE_URL = os.getenv("API_BASE_URL", "")
 
 SERVICES = {
     "site": {"url": _SITE_URL, "type": "http", "critical": True},

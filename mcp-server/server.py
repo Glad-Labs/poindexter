@@ -36,13 +36,26 @@ logger = logging.getLogger("poindexter-mcp")
 
 # Customer-facing env var names — POINDEXTER_*. Old GLADLABS_* names still
 # accepted as fallback for users upgrading from the pre-rebrand release.
-API_URL = os.getenv("POINDEXTER_API_URL") or os.getenv("GLADLABS_API_URL", "http://localhost:8002")
-API_TOKEN = os.getenv("POINDEXTER_API_TOKEN") or os.getenv("GLADLABS_API_TOKEN", "dev-token")
-LOCAL_DB_DSN = os.getenv(
-    "LOCAL_DATABASE_URL",
-    "postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain",
-)
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
+# #198: no hardcoded defaults. Every value must come from the environment;
+# the MCP server fails loud on startup if something required is missing.
+
+
+def _require_env(*names: str) -> str:
+    """Return the first set env var in order. Raises if none are set."""
+    for n in names:
+        v = os.getenv(n)
+        if v:
+            return v
+    raise RuntimeError(
+        f"MCP server requires one of these env vars to be set: {', '.join(names)}. "
+        "No hardcoded defaults — see issue #198."
+    )
+
+
+API_URL = _require_env("POINDEXTER_API_URL", "GLADLABS_API_URL")
+API_TOKEN = _require_env("POINDEXTER_API_TOKEN", "GLADLABS_API_TOKEN")
+LOCAL_DB_DSN = _require_env("LOCAL_DATABASE_URL", "DATABASE_URL")
+OLLAMA_URL = _require_env("OLLAMA_URL")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
 
 # Lazy-initialized connection pool and HTTP client

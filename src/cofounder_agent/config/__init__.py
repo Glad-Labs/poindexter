@@ -37,7 +37,7 @@ class Config:
 
     # Telemetry configuration
     enable_tracing: bool = False
-    otlp_endpoint: str = "http://localhost:4318/v1/traces"
+    otlp_endpoint: str = ""  # empty = tracing disabled (#198)
 
     # Application settings — version is read from APP_VERSION env var or pyproject.toml
     app_version: str = "0.0.0"
@@ -172,7 +172,9 @@ def get_config() -> Config:
         sentry_dsn=os.getenv("SENTRY_DSN"),
         sentry_enabled=os.getenv("SENTRY_ENABLED", "true").lower() in ("true", "1", "yes"),
         enable_tracing=os.getenv("ENABLE_TRACING", "false").lower() == "true",
-        otlp_endpoint=os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318/v1/traces"),
+        # #198: empty default means "tracing not configured" — the tracing
+        # init code skips OTEL export in that case. No hardcoded localhost.
+        otlp_endpoint=os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
         app_version=os.getenv("APP_VERSION", _read_pyproject_version()),
         secret_key=secret_key,
     )

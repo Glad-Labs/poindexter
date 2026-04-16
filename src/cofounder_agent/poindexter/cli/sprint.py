@@ -22,13 +22,21 @@ def _run(coro):
 
 
 def _gitea_env() -> tuple[str, str, str]:
-    url = (
-        os.getenv("GITEA_URL")
-        or "http://localhost:3001"
-    ).rstrip("/")
-    repo = os.getenv("GITEA_REPO") or "gladlabs/glad-labs-codebase"
+    # #198: no silent defaults — operator must set these explicitly
+    url = os.getenv("GITEA_URL")
+    if not url:
+        raise click.ClickException(
+            "GITEA_URL is not set. Configure it in the environment "
+            "(e.g. http://localhost:3001 for local dev)."
+        )
+    repo = os.getenv("GITEA_REPO")
+    if not repo:
+        raise click.ClickException(
+            "GITEA_REPO is not set. Configure it in the environment "
+            "(e.g. gladlabs/glad-labs-codebase)."
+        )
     token = os.getenv("GITEA_TOKEN") or ""
-    return url, repo, token
+    return url.rstrip("/"), repo, token
 
 
 async def _api(path: str, token: str, gitea_url: str) -> list | dict:

@@ -597,8 +597,12 @@ async def verify_content_urls(content: str) -> list[ValidationIssue]:
     if not urls_found:
         return issues
 
-    # Skip internal links (our own site) and known-good domains
-    skip_domains = {"gladlabs.io", "www.gladlabs.io", "localhost"}
+    # Skip internal links (our own site) and known-good domains.
+    # Domain list comes from site_config (site_domains = comma-separated),
+    # not hardcoded — lets operators bring their own brand (#198).
+    _raw = _sc.get("site_domains", "")
+    skip_domains = {d.strip().lower() for d in _raw.split(",") if d.strip()}
+    skip_domains.add("localhost")
 
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(10.0, connect=5.0),

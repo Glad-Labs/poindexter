@@ -17,8 +17,8 @@ from unittest.mock import MagicMock, patch
 # Path to the actual module source
 _SRC = Path(__file__).resolve().parents[3] / "services" / "telegram_config.py"
 
-# Default chat ID used in the module
-_DEFAULT_CHAT_ID = "5318613610"
+# No hardcoded default — missing config returns empty string (#198).
+_DEFAULT_CHAT_ID = ""
 
 
 def _load_telegram_config(
@@ -79,9 +79,11 @@ class TestChatIdResolution:
         mod = _load_telegram_config(db_chat_id="111")
         assert mod.TELEGRAM_CHAT_ID == "111"
 
-    def test_default_when_nothing_set(self):
+    def test_default_is_empty_when_nothing_set(self):
+        # #198: no hardcoded chat_id default — missing config returns empty
+        # so operators have to configure telegram_chat_id explicitly.
         mod = _load_telegram_config(db_chat_id=None)
-        assert mod.TELEGRAM_CHAT_ID == _DEFAULT_CHAT_ID
+        assert mod.TELEGRAM_CHAT_ID == ""
 
 
 # ---------------------------------------------------------------------------
