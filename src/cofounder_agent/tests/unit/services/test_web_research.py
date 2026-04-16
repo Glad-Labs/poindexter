@@ -190,7 +190,12 @@ class TestDDGTimeoutPath:
 
     @pytest.mark.asyncio
     async def test_ddg_returns_results_on_success(self):
-        """Verify _ddg_search transforms raw DDG output into the expected dict shape."""
+        """Verify _ddg_search transforms raw DDG output into the expected dict shape.
+
+        The real library is `ddgs` (new name); `duckduckgo_search` is only
+        a legacy fallback. Patch BOTH so whichever the code picks, the mock
+        wins and no real network call fires.
+        """
         fake_ddgs = MagicMock()
         fake_ddgs_instance = MagicMock()
         fake_ddgs_instance.text.return_value = iter([
@@ -201,7 +206,10 @@ class TestDDGTimeoutPath:
         fake_ddgs.return_value.__enter__ = MagicMock(return_value=fake_ddgs_instance)
         fake_ddgs.return_value.__exit__ = MagicMock(return_value=False)
 
-        with patch.dict("sys.modules", {"duckduckgo_search": MagicMock(DDGS=fake_ddgs)}):
+        with patch.dict("sys.modules", {
+            "ddgs": MagicMock(DDGS=fake_ddgs),
+            "duckduckgo_search": MagicMock(DDGS=fake_ddgs),
+        }):
             researcher = WebResearcher()
             results = await researcher._ddg_search("test", 3)
 

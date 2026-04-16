@@ -508,11 +508,15 @@ class TestSearchByCategory:
 # ===========================================================================
 
 
+_ALL_SOURCES = {"knowledge", "codebase", "hackernews", "devto", "web_search"}
+
+
 class TestDiscover:
     @pytest.mark.asyncio
     async def test_combines_sources_and_returns_top_n(self):
         pool = _make_pool()
         d = TopicDiscovery(pool)
+        d._get_enabled_sources = AsyncMock(return_value=_ALL_SOURCES)
 
         # Stub all the source methods
         d._discover_from_knowledge = AsyncMock(return_value=[
@@ -538,6 +542,7 @@ class TestDiscover:
     async def test_filters_brand_irrelevant(self):
         pool = _make_pool()
         d = TopicDiscovery(pool)
+        d._get_enabled_sources = AsyncMock(return_value=_ALL_SOURCES)
 
         d._discover_from_knowledge = AsyncMock(return_value=[
             DiscoveredTopic(title="Best Recipes for Dinner Tonight",
@@ -557,6 +562,7 @@ class TestDiscover:
     async def test_source_exception_does_not_crash(self):
         pool = _make_pool()
         d = TopicDiscovery(pool)
+        d._get_enabled_sources = AsyncMock(return_value=_ALL_SOURCES)
 
         d._discover_from_knowledge = AsyncMock(return_value=[])
         d._scrape_hackernews = AsyncMock(side_effect=RuntimeError("hn down"))
@@ -574,6 +580,7 @@ class TestDiscover:
     async def test_max_topics_cap(self):
         pool = _make_pool()
         d = TopicDiscovery(pool)
+        d._get_enabled_sources = AsyncMock(return_value=_ALL_SOURCES)
 
         # Generate 10 brand-relevant topics with distinct titles
         _titles = [
@@ -609,6 +616,7 @@ class TestDiscover:
     async def test_category_filter_applied(self):
         pool = _make_pool()
         d = TopicDiscovery(pool)
+        d._get_enabled_sources = AsyncMock(return_value=_ALL_SOURCES)
 
         d._discover_from_knowledge = AsyncMock(return_value=[
             DiscoveredTopic(title="AI Self-Hosted Pipeline for Solo Devs",
