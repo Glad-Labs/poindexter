@@ -232,7 +232,11 @@ class ImageService:
             )
 
         self.pexels_available = bool(self.pexels_api_key)
-        self.pexels_base_url = "https://api.pexels.com/v1"
+        # #198: tunable for API version changes / private image proxies
+        from services.site_config import site_config as _sc_pex
+        self.pexels_base_url = _sc_pex.get(
+            "pexels_api_base", "https://api.pexels.com/v1"
+        ).rstrip("/")
         self.pexels_headers = {"Authorization": self.pexels_api_key} if self.pexels_api_key else {}
 
         # Image generation state (lazy-loaded on first generate_image call)

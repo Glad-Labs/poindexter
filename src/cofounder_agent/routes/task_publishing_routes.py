@@ -765,9 +765,11 @@ async def generate_task_image(
                 else:
                     logger.info("   - No current image")
 
+                from services.site_config import site_config as _sc_pex
+                _pex_base = _sc_pex.get("pexels_api_base", "https://api.pexels.com/v1").rstrip("/")
                 async with aiohttp.ClientSession() as session:
                     async with session.get(
-                        "https://api.pexels.com/v1/search",
+                        f"{_pex_base}/search",
                         params={
                             "query": search_query,
                             "per_page": 50,  # Get more results for better variety

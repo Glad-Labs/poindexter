@@ -15,12 +15,17 @@ class PexelsClient:
     ASYNC-FIRST: All HTTP operations use httpx (no blocking I/O)
     """
 
-    BASE_URL = "https://api.pexels.com/v1/search"
-
     def __init__(self):
         if not config.PEXELS_API_KEY:
             raise ValueError("PEXELS_API_KEY is not set in the environment.")
         self.headers = {"Authorization": config.PEXELS_API_KEY}
+        # #198: tunable via app_settings.pexels_api_base
+        try:
+            from services.site_config import site_config as _sc
+            _base = _sc.get("pexels_api_base", "https://api.pexels.com/v1")
+        except Exception:
+            _base = "https://api.pexels.com/v1"
+        self.BASE_URL = f"{_base.rstrip('/')}/search"
 
     async def search_and_download(self, query: str, file_path: str) -> bool:
         """
