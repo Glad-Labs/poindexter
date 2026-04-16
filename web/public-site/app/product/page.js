@@ -471,11 +471,14 @@ export default function ProductPage() {
                   Quick Start Guide (first post in 30 min)
                 </li>
               </ul>
-              <span
-                className="block w-full text-center px-6 py-3 bg-slate-700 text-slate-400 rounded-xl cursor-not-allowed font-medium"
+              <a
+                href="https://gladlabs.lemonsqueezy.com/checkout/buy/ece7930f-f35e-44dc-93d2-6f56709b5f52"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block w-full text-center px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-xl hover:shadow-lg hover:shadow-cyan-500/30 transition-all duration-300 font-medium"
               >
-                Coming Soon
-              </span>
+                Buy Guide — $29
+              </a>
             </div>
 
             {/* Premium Subscription */}
