@@ -22,7 +22,7 @@
 - **Security doc rewrite**: `SECURITY.md` reworked with complete secrets list, threat model section, and explicit DEVELOPMENT_MODE caveat.
 - **Contributing guide**: `CONTRIBUTING.md` with PR workflow, branch naming, and test expectations.
 - **Code of conduct**: `CODE_OF_CONDUCT.md`.
-- **Comprehensive unit test coverage push**: 960+ new unit tests across 30+ files. Total unit test count now 4,957 passing (up from 4,252 at the start of the push). Coverage density closed cold spots on: admin_db, custom_workflows_service, sync_service, error_handler, content_validator, logger_config, embeddings_db, sentry_integration, model_router, quality_scorers, template_execution_service, quality_models, sql_safety, content_router_service (two batches covering canonical title, quality eval, SEO metadata, finalize, capture_training_data, media_scripts), idle_worker (fix_broken_internal_links, fix_broken_external_links, crosspost_to_devto, backup), multi_model_qa (settings overrides, research sources, critic-skipped fallback), tasks_db (bulk_add_tasks, kpi aggregates, status change logging, validation failures), ai_content_generator (\_prepare_generation_context), quality_service (\_detect_artifacts, \_score_llm_patterns), cost_aggregation_service (history trends, budget projection), content_db (cache helpers), cms_routes (pure helpers + update/delete/track/category handlers).
+- **Comprehensive unit test coverage push**: 960+ new unit tests across 30+ files. Total unit test count now 5,097 passing (up from 4,252 at the start of the push). Coverage density closed cold spots on: admin_db, custom_workflows_service, sync_service, error_handler, content_validator, logger_config, embeddings_db, sentry_integration, model_router, quality_scorers, template_execution_service, quality_models, sql_safety, content_router_service (two batches covering canonical title, quality eval, SEO metadata, finalize, capture_training_data, media_scripts), idle_worker (fix_broken_internal_links, fix_broken_external_links, crosspost_to_devto, backup), multi_model_qa (settings overrides, research sources, critic-skipped fallback), tasks_db (bulk_add_tasks, kpi aggregates, status change logging, validation failures), ai_content_generator (\_prepare_generation_context), quality_service (\_detect_artifacts, \_score_llm_patterns), cost_aggregation_service (history trends, budget projection), content_db (cache helpers), cms_routes (pure helpers + update/delete/track/category handlers).
 
 ### Changed
 
@@ -48,8 +48,6 @@
 ### Known issues
 
 - `bootstrap.sh` still has structural rough edges from the dogfood install pass (silent failure cleanup, version checks, schema drift, theater steps). Likely needs a full rewrite to fix properly.
-- `tests/unit/services/test_web_research.py` is `--ignored` in CI pending investigation.
-- `sentry-sdk` is pinned to `^1.40` in `pyproject.toml` — v2.x has been out for a while. Not CVE-flagged but worth a bump for its own reasons.
 
 ---
 
