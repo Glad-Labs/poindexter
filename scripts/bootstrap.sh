@@ -41,6 +41,8 @@ command -v docker >/dev/null 2>&1 || fail "Docker not found. Install: https://do
 command -v node >/dev/null 2>&1 || fail "Node.js not found. Install: https://nodejs.org (v22+)"
 command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1 || fail "Python not found. Install: https://python.org (3.12+)"
 command -v ollama >/dev/null 2>&1 || warn "Ollama not found. Install: https://ollama.com — needed for local LLM inference"
+command -v psql >/dev/null 2>&1 || warn "psql (postgresql-client) not found — the settings-seed step will be skipped. The worker container runs migrations regardless, but you will miss the seeded defaults in app_settings. Install postgresql-client to fix."
+command -v openssl >/dev/null 2>&1 || warn "openssl not found — will fall back to python3 for secret generation"
 
 ok "Prerequisites found"
 
