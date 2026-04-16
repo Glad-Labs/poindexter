@@ -89,32 +89,42 @@ async def from_url(
     # Classify category if not provided
     category = request.category or _guess_category(scraped)
 
-    task_id = str(uuid_lib.uuid4())
-    task_data = {
-        "id": task_id,
-        "task_name": f"URL Seed: {topic[:60]}",
-        "task_type": "blog_post",
-        "topic": topic,
-        "category": category,
+    import json as _json
+    metadata = {
+        "source_url": request.url,
+        "source_type": scraped.get("content_type", "article"),
+        "source_preview": scraped.get("content_preview", "")[:500],
+        "source_author": scraped.get("author"),
+        "source_published_at": scraped.get("published_at"),
+        "angle_hint": request.angle,
+        "discovered_by": "url_seed",
+        "target_length": request.target_length or 1500,
         "style": request.style or "narrative",
         "tone": request.tone or "professional",
-        "target_length": request.target_length or 1500,
-        "status": "pending",
-        "user_id": "operator",
-        "metadata": {
-            "source_url": request.url,
-            "source_type": scraped.get("content_type", "article"),
-            "source_preview": scraped.get("content_preview", "")[:500],
-            "source_author": scraped.get("author"),
-            "source_published_at": scraped.get("published_at"),
-            "angle_hint": request.angle,
-            "discovered_by": "url_seed",
-            "tags": [],
-        },
-        "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    returned_task_id = await db_service.add_task(task_data)
+    # Use direct INSERT (same pattern as topic_discovery.queue_topics)
+    # to avoid the legacy add_task path that references nonexistent columns.
+    pool = db_service.pool
+    returned_task_id = await pool.fetchval(
+        """
+        INSERT INTO content_tasks (
+            task_id, task_type, content_type, topic, category, status,
+            style, tone, target_length, metadata
+        )
+        VALUES (
+            gen_random_uuid()::text, 'blog_post', 'blog_post', $1, $2,
+            'pending', $3, $4, $5, $6::jsonb
+        )
+        RETURNING task_id
+        """,
+        topic,
+        category,
+        request.style or "narrative",
+        request.tone or "professional",
+        request.target_length or 1500,
+        _json.dumps(metadata),
+    )
     logger.info(
         "[URL_SEED] Task created: %s from %s (%d words scraped)",
         returned_task_id, request.url, scraped.get("word_count", 0),
@@ -183,33 +193,39 @@ async def from_urls(
     scraped_ok.sort(key=richness, reverse=True)
     top = scraped_ok[: request.max_topics]
 
-    # Queue each as a content task
+    # Queue each as a content task (direct INSERT to avoid the legacy
+    # add_task path that references columns not in the content_tasks view).
+    import json as _json
+    pool = db_service.pool
     task_ids: list[dict] = []
     for url, data in top:
-        task_id = str(uuid_lib.uuid4())
-        task_data = {
-            "id": task_id,
-            "task_name": f"URL List: {data['title'][:60]}",
-            "task_type": "blog_post",
-            "topic": data["title"],
-            "category": request.category or _guess_category(data),
+        metadata = {
+            "source_url": url,
+            "source_type": data.get("content_type", "article"),
+            "source_preview": data.get("content_preview", "")[:500],
+            "source_author": data.get("author"),
+            "source_published_at": data.get("published_at"),
+            "discovered_by": "url_list",
+            "target_length": 1500,
             "style": "narrative",
             "tone": "professional",
-            "target_length": 1500,
-            "status": "pending",
-            "user_id": "operator",
-            "metadata": {
-                "source_url": url,
-                "source_type": data.get("content_type", "article"),
-                "source_preview": data.get("content_preview", "")[:500],
-                "source_author": data.get("author"),
-                "source_published_at": data.get("published_at"),
-                "discovered_by": "url_list",
-                "tags": [],
-            },
-            "created_at": datetime.now(timezone.utc).isoformat(),
         }
-        returned_task_id = await db_service.add_task(task_data)
+        returned_task_id = await pool.fetchval(
+            """
+            INSERT INTO content_tasks (
+                task_id, task_type, content_type, topic, category, status,
+                style, tone, target_length, metadata
+            )
+            VALUES (
+                gen_random_uuid()::text, 'blog_post', 'blog_post', $1, $2,
+                'pending', 'narrative', 'professional', 1500, $3::jsonb
+            )
+            RETURNING task_id
+            """,
+            data["title"],
+            request.category or _guess_category(data),
+            _json.dumps(metadata),
+        )
         task_ids.append({
             "task_id": returned_task_id,
             "topic": data["title"],
