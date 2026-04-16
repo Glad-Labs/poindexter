@@ -20,14 +20,22 @@ async def run_scheduled_publisher(get_pool):
     Args:
         get_pool: Callable that returns the asyncpg connection pool
     """
-    logger.info("[scheduled_publisher] Started")
+    # Poll interval tunable via app_settings.scheduled_publisher_poll_seconds (#198)
+    try:
+        from services.site_config import site_config as _sc
+        _poll_interval = _sc.get_int("scheduled_publisher_poll_seconds", 60)
+    except Exception:
+        _poll_interval = 60
+    logger.info(
+        "[scheduled_publisher] Started (poll interval: %ds)", _poll_interval
+    )
     first_run = True
     while True:
         try:
             if first_run:
                 first_run = False
             else:
-                await asyncio.sleep(60)
+                await asyncio.sleep(_poll_interval)
             pool = await get_pool()
             if not pool:
                 continue
