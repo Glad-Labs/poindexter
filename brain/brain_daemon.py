@@ -109,6 +109,22 @@ async def _load_config_from_db(pool):
     except Exception as e:
         logger.warning("[BRAIN] Could not load config from DB: %s (using defaults)", e, exc_info=True)
 
+async def _setting_int(pool, key: str, default: int) -> int:
+    """Read an integer app_settings value. Brain daemon is standalone
+    (no site_config) so it hits the DB directly. Falls back to default
+    if the row is missing or unparseable. (#198)
+    """
+    try:
+        val = await pool.fetchval(
+            "SELECT value FROM app_settings WHERE key = $1", key
+        )
+        if val is None:
+            return default
+        return int(val)
+    except (ValueError, TypeError, Exception):
+        return default
+
+
 # Local services always monitored (Poindexter runs on the operator's own machine).
 # In Docker, other containers are on the Docker network; host services use host.docker.internal.
 _local_host = "host.docker.internal" if IS_DOCKER else "localhost"
@@ -602,12 +618,16 @@ async def auto_remediate(pool):
             actions_taken.append(f"cancelled {len(stuck)} stuck task(s): {', '.join(topics)}")
 
         # 2. Auto-expire awaiting_approval tasks older than 7 days
-        expired = await pool.fetch("""
+        # #198: auto-reject stale approval window tunable via app_settings.
+        _approval_days = await _setting_int(
+            pool, "brain_stale_approval_auto_reject_days", 7
+        )
+        expired = await pool.fetch(f"""
             UPDATE pipeline_tasks SET status = 'rejected',
-                error_message = 'Auto-rejected: awaiting_approval > 7 days',
+                error_message = 'Auto-rejected: awaiting_approval > {_approval_days} days',
                 updated_at = NOW()
             WHERE status = 'awaiting_approval'
-              AND updated_at < NOW() - INTERVAL '7 days'
+              AND updated_at < NOW() - INTERVAL '{_approval_days} days'
             RETURNING task_id, topic
         """)
         if expired:
@@ -639,18 +659,22 @@ async def auto_remediate(pool):
                         ON CONFLICT (entity, attribute) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
                     """, f"{hours_idle:.0f}h idle", ["pipeline", "alert"])
 
-        # 4. Detect failed task ratio spike and alert
-        row = await pool.fetchrow("""
+        # 4. Detect failed task ratio spike and alert (#198 tunable window)
+        _fail_win_h = await _setting_int(pool, "brain_failure_rate_window_hours", 24)
+        row = await pool.fetchrow(f"""
             SELECT
                 (SELECT COUNT(*) FROM pipeline_tasks_view
-                 WHERE status = 'failed' AND updated_at > NOW() - INTERVAL '24 hours') as recent_fails,
+                 WHERE status = 'failed' AND updated_at > NOW() - INTERVAL '{_fail_win_h} hours') as recent_fails,
                 (SELECT COUNT(*) FROM pipeline_tasks_view
-                 WHERE updated_at > NOW() - INTERVAL '24 hours') as recent_total
+                 WHERE updated_at > NOW() - INTERVAL '{_fail_win_h} hours') as recent_total
         """)
         if row and row["recent_total"] and row["recent_total"] > 0:
             fail_rate = row["recent_fails"] / row["recent_total"]
             if fail_rate > 0.5 and row["recent_fails"] >= 3:
-                actions_taken.append(f"high failure rate: {row['recent_fails']}/{row['recent_total']} ({fail_rate:.0%}) in 24h")
+                actions_taken.append(
+                    f"high failure rate: {row['recent_fails']}/{row['recent_total']} "
+                    f"({fail_rate:.0%}) in {_fail_win_h}h"
+                )
 
         if actions_taken:
             logger.info("[BRAIN] Auto-remediation: %s", "; ".join(actions_taken))
@@ -688,15 +712,17 @@ async def generate_daily_digest(pool):
         if not (13 <= now.hour < 14):
             return
 
-        # Build digest
-        stats = await pool.fetchrow("""
+        # Build digest — window is tunable for weekly / daily / hourly
+        # digest cadence per operator preference (#198).
+        _digest_h = await _setting_int(pool, "brain_digest_window_hours", 24)
+        stats = await pool.fetchrow(f"""
             SELECT
                 (SELECT COUNT(*) FROM posts WHERE status = 'published') as total_posts,
                 (SELECT COUNT(*) FROM pipeline_tasks_view WHERE status = 'awaiting_approval') as approval_queue,
                 (SELECT COUNT(*) FROM pipeline_tasks_view WHERE status = 'pending') as pending,
                 (SELECT COUNT(*) FROM pipeline_tasks_view WHERE status = 'failed'
-                    AND updated_at > NOW() - INTERVAL '24 hours') as failed_24h,
-                (SELECT COUNT(*) FROM posts WHERE published_at > NOW() - INTERVAL '24 hours') as published_24h,
+                    AND updated_at > NOW() - INTERVAL '{_digest_h} hours') as failed_24h,
+                (SELECT COUNT(*) FROM posts WHERE published_at > NOW() - INTERVAL '{_digest_h} hours') as published_24h,
                 (SELECT COUNT(*) FROM page_views WHERE created_at >= date_trunc('day', NOW())) as views_today,
                 (SELECT COALESCE(SUM(cost_usd), 0) FROM cost_logs
                     WHERE created_at >= date_trunc('month', NOW())) as month_spend

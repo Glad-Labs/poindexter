@@ -618,13 +618,14 @@ class TopicDiscovery:
 
                         # Search across ALL source types — issues, memory, audit, everything
                         # Exclude 'posts' to avoid suggesting topics we already wrote about
+                        _lb_days = site_config.get_int("topic_discovery_ideation_lookback_days", 30)
                         rows = await self.pool.fetch(
-                            """
+                            f"""
                             SELECT source_table, source_id, text_preview,
                                    1 - (embedding <=> $1::vector) as similarity
                             FROM embeddings
                             WHERE source_table != 'posts'
-                              AND created_at > NOW() - INTERVAL '30 days'
+                              AND created_at > NOW() - INTERVAL '{_lb_days} days'
                             ORDER BY embedding <=> $1::vector
                             LIMIT 5
                             """,
