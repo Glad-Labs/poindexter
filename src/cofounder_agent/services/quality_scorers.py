@@ -111,16 +111,26 @@ def score_accuracy(content: str, context: dict[str, Any], cfg: dict | None = Non
     content_lower = content.lower()
 
     # External links: only count links to known reputable domains.
+    # Shares the same settings key (trusted_source_domains) as the
+    # content_router, so one list covers both external-link validation
+    # and citation credibility (#198).
     all_links = re.findall(r"https?://([^\s\)\]\"'>]+)", content)
     from services.site_config import site_config as _sc
     _domain = _sc.get("site_domain", "")
-    reputable_domains = {
+    _override_csv = _sc.get("trusted_source_domains", "")
+    _default_reputable = {
         "github.com", "arxiv.org", "docs.python.org", "docs.rs",
         "developer.mozilla.org", "stackoverflow.com", "wikipedia.org",
         "news.ycombinator.com", "devto.dev", "dev.to", "blog.rust-lang.org",
         "go.dev", "kubernetes.io", "docker.com", "vercel.com", "nextjs.org",
         "react.dev", "pytorch.org", "huggingface.co", "openai.com",
     }
+    if _override_csv:
+        reputable_domains = {
+            d.strip().lower() for d in _override_csv.split(",") if d.strip()
+        }
+    else:
+        reputable_domains = set(_default_reputable)
     if _domain:
         reputable_domains.add(_domain)
         reputable_domains.add(f"www.{_domain}")

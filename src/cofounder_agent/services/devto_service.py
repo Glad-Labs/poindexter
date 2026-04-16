@@ -33,7 +33,10 @@ logger = get_logger(__name__)
 
 from services.site_config import site_config
 
-DEVTO_API_BASE = "https://dev.to/api"
+# Dev.to (or self-hosted Forem) API base. Tunable so customers running a
+# private Forem instance — or pointing at a future Dev.to API version —
+# can swap without a code change (#198). Default matches Dev.to public API.
+DEVTO_API_BASE = site_config.get("devto_api_base", "https://dev.to/api")
 
 
 def _site_url() -> str:

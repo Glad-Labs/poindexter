@@ -208,12 +208,16 @@ async def _scrape_arxiv(url: str, timeout: float) -> dict:
     """Extract abstract from arXiv paper URL.
 
     Handles both /abs/ and /pdf/ URLs.
+    arxiv_base_url setting lets operators point at a mirror or
+    local-proxied instance (#198).
     """
+    from services.site_config import site_config as _sc
+    _arxiv_base = _sc.get("arxiv_base_url", "https://arxiv.org").rstrip("/")
     # Normalize to /abs/ URL for HTML scraping
     m = re.search(r"arxiv\.org/(abs|pdf)/(\d+\.\d+)", url)
     if m:
         arxiv_id = m.group(2)
-        abs_url = f"https://arxiv.org/abs/{arxiv_id}"
+        abs_url = f"{_arxiv_base}/abs/{arxiv_id}"
     else:
         abs_url = url
 

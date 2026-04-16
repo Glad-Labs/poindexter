@@ -181,8 +181,11 @@ def _scrub_fabricated_links(content: str) -> str:
 
     from services.site_config import site_config
 
-    # Domains we trust (our own site + major reference sites)
-    trusted_domains = {
+    # Domains we trust (our own site + major reference sites).
+    # Shipped default is a tech/developer default set; customers in
+    # other niches override via app_settings.trusted_source_domains as
+    # a comma-separated list (#198).
+    _default_trusted = {
         "github.com", "arxiv.org", "docs.python.org", "docs.rs",
         "developer.mozilla.org", "stackoverflow.com", "wikipedia.org",
         "en.wikipedia.org", "news.ycombinator.com", "dev.to",
@@ -193,6 +196,13 @@ def _scrub_fabricated_links(content: str) -> str:
         "pypi.org", "npmjs.com", "www.npmjs.com",
         "youtube.com", "www.youtube.com",
     }
+    _override_csv = site_config.get("trusted_source_domains", "")
+    if _override_csv:
+        trusted_domains = {
+            d.strip().lower() for d in _override_csv.split(",") if d.strip()
+        }
+    else:
+        trusted_domains = set(_default_trusted)
     # Add own domain dynamically from config
     _own_domain = site_config.get("site_domain", "")
     if _own_domain:
