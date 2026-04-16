@@ -66,15 +66,19 @@ class ResearchQualityService:
     RECENCY_WEIGHT = 0.2
     UNIQUENESS_WEIGHT = 0.1
 
-    # Domain credibility tiers
-    TIER_1_DOMAINS = {  # Education, government, major publishers
+    # Domain credibility tiers — shipped defaults matched to a tech /
+    # developer audience. Customers in other niches (legal, medical,
+    # finance) want completely different tier lists. Both tiers are
+    # overridable via app_settings as comma-separated domain lists (#198):
+    #   research_tier1_domains, research_tier2_domains
+    _DEFAULT_TIER_1_DOMAINS = {
         "edu",  # Educational institutions
         "gov",  # Government
         "ac.uk",  # UK academic
         "org",  # Non-profits/trusted orgs
     }
 
-    TIER_2_DOMAINS = {  # Major publications, well-known tech sites
+    _DEFAULT_TIER_2_DOMAINS = {
         "medium.com",
         "dev.to",
         "github.com",
@@ -87,6 +91,10 @@ class ResearchQualityService:
         "microsoft.com",
         "apple.com",
     }
+
+    # Keep class attrs as the default snapshot; __init__ re-resolves per instance.
+    TIER_1_DOMAINS = _DEFAULT_TIER_1_DOMAINS
+    TIER_2_DOMAINS = _DEFAULT_TIER_2_DOMAINS
 
     # Minimum snippet length to be useful — tunable via app_settings.
     MIN_SNIPPET_LENGTH = 50
@@ -114,10 +122,24 @@ class ResearchQualityService:
             self.similarity_threshold = _sc.get_float(
                 "research_dedup_similarity_threshold", self.SIMILARITY_THRESHOLD
             )
+            # Domain tier overrides — comma-separated, lowercased. Empty
+            # setting keeps shipped defaults.
+            _t1 = _sc.get("research_tier1_domains", "")
+            _t2 = _sc.get("research_tier2_domains", "")
+            self.tier1_domains = (
+                {d.strip().lower() for d in _t1.split(",") if d.strip()}
+                if _t1 else set(self._DEFAULT_TIER_1_DOMAINS)
+            )
+            self.tier2_domains = (
+                {d.strip().lower() for d in _t2.split(",") if d.strip()}
+                if _t2 else set(self._DEFAULT_TIER_2_DOMAINS)
+            )
         except Exception:
             self.min_snippet_length = self.MIN_SNIPPET_LENGTH
             self.min_snippet_words = self.MIN_SNIPPET_WORDS
             self.similarity_threshold = self.SIMILARITY_THRESHOLD
+            self.tier1_domains = set(self._DEFAULT_TIER_1_DOMAINS)
+            self.tier2_domains = set(self._DEFAULT_TIER_2_DOMAINS)
 
     def filter_and_score(
         self, results: list[dict], query: str | None = None
@@ -245,12 +267,12 @@ class ResearchQualityService:
         domain_lower = domain.lower()
 
         # Check tier 1 (education, government)
-        for tier1_domain in self.TIER_1_DOMAINS:
+        for tier1_domain in self.tier1_domains:
             if domain_lower.endswith(f".{tier1_domain}"):
                 return 0.95
 
         # Check tier 2 (major publications)
-        if domain_lower in self.TIER_2_DOMAINS:
+        if domain_lower in self.tier2_domains:
             return 0.85
 
         # Check common tech/business domains

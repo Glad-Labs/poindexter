@@ -488,8 +488,10 @@ class TopicDiscovery:
                 url_params = f"per_page={per_page}&top={top_days}"
                 if tag:
                     url_params += f"&tag={tag}"
+                # #198: devto_api_base tunable for self-hosted Forem / API version changes
+                _devto_base = site_config.get("devto_api_base", "https://dev.to/api").rstrip("/")
                 resp = await client.get(
-                    f"https://dev.to/api/articles?{url_params}",
+                    f"{_devto_base}/articles?{url_params}",
                     timeout=10,
                 )
                 articles = resp.json()
