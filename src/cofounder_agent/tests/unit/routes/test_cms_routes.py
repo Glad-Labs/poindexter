@@ -422,11 +422,27 @@ class TestConvertMarkdownToHtml:
         assert "<code" in html or "<pre" in html
 
     def test_already_html_passed_through(self):
-        """Content starting with a tag is treated as already-HTML."""
+        """Content that is pure HTML (no markdown markers) passes through unchanged."""
         from routes.cms_routes import convert_markdown_to_html
         already_html = "<article><p>Hello</p></article>"
         result = convert_markdown_to_html(already_html)
         assert result == already_html
+
+    def test_leading_img_with_markdown_body_converts(self):
+        """#198 regression: posts with leading <img> + markdown body now
+        convert instead of being returned raw. The old early-return
+        shipped `## Heading` and `**bold**` markers to the live site."""
+        from routes.cms_routes import convert_markdown_to_html
+        mixed = (
+            '<img src="x"/>\n\n'
+            "## Heading\n\nSome **bold** text.\n\n"
+            "- item 1\n- item 2"
+        )
+        html = convert_markdown_to_html(mixed)
+        assert "<h2>" in html
+        assert "<strong>" in html
+        assert "<ul>" in html
+        assert '<img src="x"/>' in html  # HTML survived passthrough
 
     def test_comment_block_not_treated_as_html(self):
         """Content starting with <![ is markdown (CDATA), not HTML."""

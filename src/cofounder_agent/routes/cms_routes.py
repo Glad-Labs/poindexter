@@ -42,6 +42,13 @@ def convert_markdown_to_html(markdown_content: str) -> str:
     """Convert markdown content to HTML. Falls back to raw content on error.
 
     Content is stored as markdown in the DB; converted to HTML on read.
+
+    Historical bug (#198 follow-up): this function used to early-return
+    when content started with `<`, assuming the whole thing was already
+    HTML. That broke posts with a leading `<img>` tag followed by
+    markdown — they shipped raw `##` and `**` markers to the frontend.
+    The markdown library passes HTML through unmodified, so we can
+    safely convert mixed content.
     """
     if not markdown_content:
         return ""
@@ -49,9 +56,16 @@ def convert_markdown_to_html(markdown_content: str) -> str:
     try:
         import markdown as md
 
-        # If content already looks like HTML (starts with a tag), return as-is
         stripped = markdown_content.strip()
-        if stripped.startswith("<") and not stripped.startswith("<!["):
+
+        # Only skip conversion if the content has NO markdown markers —
+        # i.e. it's pure HTML / plain text. If markdown is present
+        # anywhere, convert the whole thing; python-markdown passes
+        # existing HTML tags through unchanged.
+        _has_markdown = bool(
+            _MARKDOWN_MARKER_RE.search(stripped)
+        )
+        if stripped.startswith("<") and not _has_markdown:
             return markdown_content
 
         html = md.markdown(
@@ -63,6 +77,21 @@ def convert_markdown_to_html(markdown_content: str) -> str:
     except Exception as e:
         logger.error("Error converting markdown: %s", e, exc_info=True)
         return markdown_content
+
+
+# Cheap heuristic: look for any of `##` headers, `**bold**`, fenced code
+# blocks, markdown links, or list bullets. Much faster than a full parse
+# and good enough to gate the HTML-passthrough shortcut.
+_MARKDOWN_MARKER_RE = __import__("re").compile(
+    r"(?m)"  # multiline
+    r"(?:"
+    r"^\#{1,6}\s"              # headers
+    r"|\*\*[^*\n]{1,200}\*\*"   # bold
+    r"|```"                     # code fence
+    r"|^\s*[-*+]\s+\w"          # bulleted list
+    r"|\[[^\]]+\]\([^)]+\)"    # markdown link
+    r")"
+)
 
 
 def generate_excerpt_from_content(content: str, length: int = 200) -> str:

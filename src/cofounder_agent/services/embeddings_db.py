@@ -40,6 +40,8 @@ class EmbeddingsDatabase(DatabaseServiceMixin):
         embedding: list[float],
         metadata: dict[str, Any] | None = None,
         embedding_model: str | None = None,
+        text_preview: str | None = None,
+        writer: str | None = None,
     ) -> str:
         """
         Store an embedding vector in the database.
@@ -47,11 +49,15 @@ class EmbeddingsDatabase(DatabaseServiceMixin):
         Upserts on (source_type, source_id) so re-embedding replaces the old vector.
 
         Args:
-            source_type: Type of content (e.g. 'post', 'brain_knowledge').
+            source_type: Type of content (e.g. 'posts', 'brain_knowledge').
             source_id: Unique identifier for the source content.
             content_hash: SHA-256 hash of the content that was embedded.
             embedding: The embedding vector as a list of floats.
             metadata: Optional JSON metadata about the embedding.
+            text_preview: First ~500 chars of the embedded text. Required by
+                the DB schema — falls back to the title from `metadata` if
+                omitted, then to the source_id.
+            writer: Origin label (worker, auto-embed, claude-code, etc).
 
         Returns:
             The embedding row ID (string).
@@ -62,17 +68,36 @@ class EmbeddingsDatabase(DatabaseServiceMixin):
         vector_str = "[" + ",".join(str(v) for v in embedding) + "]"
         metadata_json = json.dumps(metadata) if metadata else None
 
+        # text_preview is NOT NULL in the schema. Best-effort derive one
+        # from any text-shaped metadata so old callers keep working (#198
+        # follow-up — caught during the post-embedding backfill).
+        if not text_preview:
+            if metadata:
+                text_preview = str(
+                    metadata.get("title")
+                    or metadata.get("preview")
+                    or metadata.get("text")
+                    or source_id
+                )
+            else:
+                text_preview = source_id
+        text_preview = (text_preview or "")[:500]
+
         try:
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
                     """
                     INSERT INTO embeddings (source_table, source_id, content_hash,
-                                            embedding, embedding_model, metadata, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4::vector, $5, $6::jsonb, $7, $8)
+                                            embedding, embedding_model, metadata,
+                                            text_preview, writer,
+                                            created_at, updated_at)
+                    VALUES ($1, $2, $3, $4::vector, $5, $6::jsonb, $7, $8, $9, $10)
                     ON CONFLICT (source_table, source_id, chunk_index, embedding_model)
                     DO UPDATE SET content_hash = EXCLUDED.content_hash,
                                   embedding   = EXCLUDED.embedding,
                                   metadata    = EXCLUDED.metadata,
+                                  text_preview = EXCLUDED.text_preview,
+                                  writer      = COALESCE(EXCLUDED.writer, embeddings.writer),
                                   updated_at  = EXCLUDED.updated_at
                     RETURNING id
                     """,
@@ -82,6 +107,8 @@ class EmbeddingsDatabase(DatabaseServiceMixin):
                     vector_str,
                     embedding_model or "nomic-embed-text",
                     metadata_json,
+                    text_preview,
+                    writer,
                     now,
                     now,
                 )

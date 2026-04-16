@@ -142,13 +142,35 @@ def _post_summary(post: dict) -> dict:
     }
 
 
+import re as _re_markdown
+
+# Cheap heuristic: any of these markers means the content has markdown
+# that MUST be converted even when the first character is `<` (a leading
+# <img> tag followed by markdown body was shipping raw `##` / `**` to
+# the frontend — #198 follow-up).
+_MARKDOWN_MARKER_RE = _re_markdown.compile(
+    r"(?m)(?:"
+    r"^\#{1,6}\s"              # headers
+    r"|\*\*[^*\n]{1,200}\*\*"   # bold
+    r"|```"                     # code fence
+    r"|^\s*[-*+]\s+\w"          # bulleted list
+    r"|\[[^\]]+\]\([^)]+\)"    # markdown link
+    r")"
+)
+
+
 def _markdown_to_html(content: str) -> str:
-    """Convert markdown content to HTML for static export."""
+    """Convert markdown content to HTML for static export.
+
+    Converts mixed content (leading HTML + markdown body) correctly —
+    python-markdown passes HTML tags through unmodified. Only bypasses
+    conversion when the content is pure HTML with no markdown markers.
+    """
     if not content:
         return ""
     stripped = content.strip()
-    # If already HTML, return as-is
-    if stripped.startswith("<") and not stripped.startswith("<!["):
+    # Only skip when the content has NO markdown markers anywhere.
+    if stripped.startswith("<") and not _MARKDOWN_MARKER_RE.search(stripped):
         return content
     try:
         import markdown as md

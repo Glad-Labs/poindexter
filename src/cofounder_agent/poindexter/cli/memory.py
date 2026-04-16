@@ -247,3 +247,130 @@ def memory_embed(text: tuple[str, ...], json_output: bool) -> None:
     else:
         click.echo(f"dim={len(vec)}")
         click.echo(f"first_5={vec[:5]}")
+
+
+@memory_group.command("backfill-posts")
+@click.option(
+    "--since",
+    default="7d",
+    show_default=True,
+    help="Backfill posts published within this window (e.g. 7d, 30d, 1y, all).",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="List what would be embedded without writing to pgvector.",
+)
+def memory_backfill_posts(since: str, dry_run: bool) -> None:
+    """Re-embed published posts into pgvector (source_table='posts').
+
+    The publish hook's embedder had a namespace bug that wrote to
+    source_table='post' (singular) while every reader queries 'posts'
+    (plural). After fixing the hook, run this once to backfill posts
+    that published while the hook was broken.
+    """
+    # Resolve DB URL through the bootstrap helper so this works on a
+    # fresh clone without a .env file.
+    import os as _os
+    import sys as _sys
+    _here = Path(__file__).resolve()
+    for _p in _here.parents:
+        if (_p / "brain" / "bootstrap.py").is_file():
+            if str(_p) not in _sys.path:
+                _sys.path.insert(0, str(_p))
+            break
+    from brain.bootstrap import resolve_database_url
+
+    dsn = resolve_database_url()
+    if not dsn:
+        raise click.ClickException(
+            "No database URL. Run `poindexter setup` or set DATABASE_URL."
+        )
+
+    # Parse --since → SQL interval
+    if since == "all":
+        where_clause = ""
+    else:
+        # accept 7d, 30d, 1y, 12h, etc.
+        import re as _re
+        m = _re.fullmatch(r"(\d+)([dhmy])", since.strip())
+        if not m:
+            raise click.ClickException(
+                "--since must be 'all' or NUMBER+unit (d/h/m/y), e.g. 7d, 30d, 1y."
+            )
+        n, unit = m.group(1), m.group(2)
+        interval = {"d": "day", "h": "hour", "m": "month", "y": "year"}[unit]
+        where_clause = f"WHERE published_at > NOW() - INTERVAL '{n} {interval}s'"
+
+    async def _backfill() -> None:
+        import asyncpg
+        from services.embedding_service import EmbeddingService
+        from services.embeddings_db import EmbeddingsDatabase
+        from services.ollama_client import OllamaClient
+
+        # We need a DB pool, Ollama, and the embeddings_db + service.
+        # We're standalone (outside the worker process) so we build them
+        # here and close them at the end.
+        pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
+        try:
+            rows = await pool.fetch(
+                f"""
+                SELECT id::text, title, excerpt, content, published_at
+                FROM posts
+                {where_clause}
+                ORDER BY published_at DESC NULLS LAST
+                """
+            )
+            if not rows:
+                click.echo("No posts match — nothing to backfill.")
+                return
+
+            click.secho(
+                f"Found {len(rows)} published posts matching --since={since}.",
+                fg="cyan",
+            )
+
+            if dry_run:
+                for r in rows:
+                    click.echo(f"  {r['published_at']}  {r['title'][:70]}  [{r['id']}]")
+                click.echo()
+                click.echo("(--dry-run — no embeddings written)")
+                return
+
+            embeddings_db = EmbeddingsDatabase(pool)
+
+            # OllamaClient reads OLLAMA_URL or site_config — for a CLI run
+            # from the host, OLLAMA_URL env var is the most reliable path.
+            # If site_config hasn't been loaded, fall back to localhost.
+            ollama_url = _os.getenv("OLLAMA_URL") or "http://localhost:11434"
+            ollama = OllamaClient(base_url=ollama_url)
+            svc = EmbeddingService(ollama_client=ollama, embeddings_db=embeddings_db)
+
+            embedded, skipped, failed = 0, 0, 0
+            with click.progressbar(rows, label="Embedding posts") as bar:
+                for row in bar:
+                    try:
+                        eid = await svc.embed_post({
+                            "id": row["id"],
+                            "title": row["title"],
+                            "excerpt": row["excerpt"] or "",
+                            "content": row["content"] or "",
+                        })
+                        if eid:
+                            embedded += 1
+                        else:
+                            skipped += 1
+                    except Exception as e:
+                        failed += 1
+                        click.echo(f"\n  FAILED for {row['id']}: {e}", err=True)
+
+            await ollama.close()
+            click.secho(
+                f"Done. embedded={embedded}  skipped (unchanged)={skipped}  "
+                f"failed={failed}",
+                fg="green" if failed == 0 else "yellow",
+            )
+        finally:
+            await pool.close()
+
+    _run(_backfill())
