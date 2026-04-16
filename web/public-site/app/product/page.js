@@ -148,9 +148,9 @@ export default function ProductPage() {
           </h1>
 
           <p className="text-xl md:text-2xl text-slate-300 mb-10 max-w-2xl mx-auto leading-relaxed">
-            A plug-and-play content engine that would take a senior dev weeks to
-            build from scratch. Researches, writes, reviews, and publishes —
-            autonomously on your hardware. $0 API fees. 100% data privacy.
+            A plug-and-play content engine. Researches, writes, reviews, and
+            publishes — autonomously on your hardware. $0 API fees. 100% data
+            privacy.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
@@ -306,7 +306,7 @@ export default function ProductPage() {
             <div className="px-6 py-4 border-b border-slate-700/30 text-slate-400">Monitor from your phone — Grafana, Telegram alerts, real metrics</div>
 
             <div className="px-6 py-4 text-slate-200">Integrated Stack</div>
-            <div className="px-6 py-4 text-slate-400">A plug-and-play version of what takes a senior dev weeks to build</div>
+            <div className="px-6 py-4 text-slate-400">Pipeline, QA, dashboards, and monitoring wired up and ready to run</div>
           </div>
         </div>
       </section>
