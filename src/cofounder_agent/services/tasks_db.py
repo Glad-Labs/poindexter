@@ -175,13 +175,44 @@ class TasksDatabase(DatabaseServiceMixin):
             # Use naive UTC datetime for PostgreSQL 'timestamp without time zone' columns
             now = datetime.now(timezone.utc)
 
-            # Build insert columns dict
+            # #231: The content_tasks view does NOT expose these columns,
+            # so previously-hardcoded INSERTs of request_type / agent_id /
+            # writing_style_id / featured_image_data / featured_image_prompt
+            # / tags / model_selection_log / publish_mode / model_selections
+            # / quality_preference / estimated_cost / cost_breakdown would
+            # raise or silently drop the whole row.
+            #
+            # Audit (2026-04-16) showed: 9 of those columns have ZERO readers
+            # anywhere in the codebase, so they're dropped. The remaining 3
+            # (tags, model_selections, quality_preference) are stashed in
+            # task_metadata JSONB where callers can still recover them, and
+            # task_executor.py's existing `task.get("tags", [])` pattern
+            # naturally returns [] when the column doesn't exist.
+            meta_extras: dict[str, Any] = dict(metadata or {})
+            if task_data.get("tags"):
+                meta_extras["tags"] = task_data.get("tags")
+            if task_data.get("model_selections"):
+                meta_extras["model_selections"] = task_data.get("model_selections")
+            if task_data.get("quality_preference"):
+                meta_extras["quality_preference"] = task_data.get("quality_preference")
+            if task_data.get("featured_image_data"):
+                meta_extras["featured_image_data"] = task_data.get("featured_image_data")
+            if task_data.get("featured_image_prompt"):
+                meta_extras["featured_image_prompt"] = task_data.get("featured_image_prompt")
+            if task_data.get("cost_breakdown"):
+                meta_extras["cost_breakdown"] = task_data.get("cost_breakdown")
+            if task_data.get("estimated_cost"):
+                meta_extras["estimated_cost"] = float(task_data.get("estimated_cost", 0.0))
+            if task_data.get("model_selection_log"):
+                meta_extras["model_selection_log"] = task_data.get("model_selection_log")
+
+            # Build insert columns dict — ONLY fields that actually exist
+            # in the content_tasks view. Extras go into task_metadata.
             insert_data = {
                 "task_id": task_id,
                 "content_type": task_data.get("content_type")
                 or task_data.get("task_type", "blog_post"),
                 "task_type": task_data.get("task_type", "blog_post"),
-                "request_type": task_data.get("request_type", "content_generation"),
                 "status": task_data.get("status", "pending"),
                 "topic": task_data.get("topic", ""),
                 "title": task_data.get("title")
@@ -189,23 +220,13 @@ class TasksDatabase(DatabaseServiceMixin):
                 "style": task_data.get("style", "technical"),
                 "tone": task_data.get("tone", "professional"),
                 "target_length": task_data.get("target_length", 1500),
-                "agent_id": task_data.get("agent_id", "content-agent"),
                 "primary_keyword": task_data.get("primary_keyword"),
                 "target_audience": task_data.get("target_audience"),
                 "category": task_data.get("category"),
-                "writing_style_id": task_data.get("writing_style_id"),
                 "content": metadata.get("content") or task_data.get("content"),
                 "excerpt": metadata.get("excerpt") or task_data.get("excerpt"),
                 "featured_image_url": metadata.get("featured_image_url")
                 or task_data.get("featured_image_url"),
-                "featured_image_data": (
-                    json.dumps(
-                        metadata.get("featured_image_data") or task_data.get("featured_image_data")
-                    )
-                    if (metadata.get("featured_image_data") or task_data.get("featured_image_data"))
-                    else None
-                ),
-                "featured_image_prompt": task_data.get("featured_image_prompt"),
                 "qa_feedback": metadata.get("qa_feedback"),
                 "quality_score": metadata.get("quality_score") or task_data.get("quality_score"),
                 "seo_title": metadata.get("seo_title"),
@@ -214,24 +235,13 @@ class TasksDatabase(DatabaseServiceMixin):
                 "stage": metadata.get("stage", "pending"),
                 "percentage": metadata.get("percentage", 0),
                 "message": metadata.get("message"),
-                "tags": json.dumps(task_data.get("tags", [])),
-                "task_metadata": json.dumps(metadata or {}),
+                "task_metadata": json.dumps(meta_extras),
                 "metadata": json.dumps(task_data.get("metadata") or {}),
                 "model_used": task_data.get("model_used"),
                 "models_used_by_phase": json.dumps(task_data.get("models_used_by_phase", {})),
-                "model_selection_log": json.dumps(task_data.get("model_selection_log", {})),
                 "error_message": task_data.get("error_message"),
                 "approval_status": task_data.get("approval_status", "pending"),
-                "publish_mode": task_data.get("publish_mode", "draft"),
-                "model_selections": json.dumps(task_data.get("model_selections", {})),
-                "quality_preference": task_data.get("quality_preference", "balanced"),
                 "site_id": task_data.get("site_id"),
-                "estimated_cost": float(task_data.get("estimated_cost", 0.0)),
-                "cost_breakdown": (
-                    json.dumps(task_data.get("cost_breakdown", {}))
-                    if task_data.get("cost_breakdown")
-                    else None
-                ),
                 "created_at": now,
                 "updated_at": now,
             }
@@ -285,28 +295,31 @@ class TasksDatabase(DatabaseServiceMixin):
             metadata = safe_json_load(metadata, fallback={})
             if "task_name" in task_data and "task_name" not in metadata:
                 metadata["task_name"] = task_data["task_name"]
+            # #231: fields that don't exist as columns get stashed in
+            # task_metadata. See add_task() for the full story.
+            for k in (
+                "tags", "model_selections", "quality_preference",
+                "publish_mode", "estimated_cost", "cost_breakdown",
+                "request_type", "agent_id",
+            ):
+                if task_data.get(k) and k not in metadata:
+                    metadata[k] = task_data.get(k)
 
             rows.append(
                 (
                     task_id,
                     task_data.get("content_type") or task_data.get("task_type", "blog_post"),
                     task_data.get("task_type", "blog_post"),
-                    task_data.get("request_type", "content_generation"),
                     task_data.get("status", "pending"),
                     task_data.get("topic", ""),
                     task_data.get("title") or task_data.get("task_name"),
                     task_data.get("style", "technical"),
                     task_data.get("tone", "professional"),
                     task_data.get("target_length", 1500),
-                    task_data.get("agent_id", "content-agent"),
                     task_data.get("primary_keyword"),
                     task_data.get("target_audience"),
                     task_data.get("category"),
                     task_data.get("approval_status", "pending"),
-                    task_data.get("publish_mode", "draft"),
-                    task_data.get("quality_preference", "balanced"),
-                    float(task_data.get("estimated_cost", 0.0)),
-                    json.dumps(task_data.get("tags", [])),
                     json.dumps(metadata or {}),
                     task_data.get("site_id"),
                     now,
@@ -316,14 +329,13 @@ class TasksDatabase(DatabaseServiceMixin):
 
         sql = """
             INSERT INTO content_tasks (
-                task_id, content_type, task_type, request_type, status, topic,
-                title, style, tone, target_length, agent_id, primary_keyword,
-                target_audience, category, approval_status, publish_mode,
-                quality_preference, estimated_cost, tags, task_metadata,
+                task_id, content_type, task_type, status, topic,
+                title, style, tone, target_length, primary_keyword,
+                target_audience, category, approval_status, task_metadata,
                 site_id, created_at, updated_at
             ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-                $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                $12, $13, $14, $15, $16, $17
             )
         """
 

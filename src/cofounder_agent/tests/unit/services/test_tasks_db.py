@@ -989,9 +989,10 @@ class TestBulkAddTasks:
             "task_metadata": {},
         }])
 
-        # task_metadata is the 20th positional value ($20)
+        # #231: after dropping dead columns, task_metadata moved from
+        # $20 to $14 (positional index 13).
         row = captured["rows"][0]
-        metadata_json = row[19]
+        metadata_json = row[13]
         metadata = json.loads(metadata_json)
         assert metadata.get("task_name") == "My Post"
 
@@ -1010,16 +1011,16 @@ class TestBulkAddTasks:
         await db.bulk_add_tasks([{"topic": "AI"}])
 
         row = captured["rows"][0]
-        # task_type is index 2, defaults to "blog_post"
-        assert row[2] == "blog_post"
-        # status is index 4, defaults to "pending"
-        assert row[4] == "pending"
-        # style is index 7, defaults to "technical"
-        assert row[7] == "technical"
-        # tone is index 8, defaults to "professional"
-        assert row[8] == "professional"
-        # target_length is index 9, defaults to 1500
-        assert row[9] == 1500
+        # #231: column positions shifted after dropping dead columns.
+        # New order: task_id, content_type, task_type, status, topic,
+        #            title, style, tone, target_length, primary_keyword,
+        #            target_audience, category, approval_status,
+        #            task_metadata, site_id, created_at, updated_at.
+        assert row[2] == "blog_post"   # task_type
+        assert row[3] == "pending"     # status
+        assert row[6] == "technical"   # style
+        assert row[7] == "professional"  # tone
+        assert row[8] == 1500          # target_length
 
     @pytest.mark.asyncio
     async def test_db_exception_raised(self):
