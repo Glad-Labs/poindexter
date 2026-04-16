@@ -566,7 +566,11 @@ class ImageService:
         except Exception:
             return None
 
-        client = OllamaClient(timeout=30)
+        # #198: tunable via app_settings so operators can bump timeouts
+        # on slower hardware without a redeploy.
+        from services.site_config import site_config as _sc
+        _client_timeout = _sc.get_int("image_ollama_client_timeout_seconds", 30)
+        client = OllamaClient(timeout=_client_timeout)
         try:
             prompt = (
                 "Convert this blog topic into a 3-5 word Pexels stock photo "
@@ -590,14 +594,19 @@ class ImageService:
                 f"Topic: {topic}\n\n"
                 "Respond with ONLY the search query (3-5 words, no quotes, no explanation):"
             )
+            # Tuning constants via app_settings (#198).
+            _model = _sc.get("image_search_query_model", "gemma3:27b")
+            _max_tokens = _sc.get_int("image_search_query_max_tokens", 30)
+            _temp = _sc.get_float("image_search_query_temperature", 0.4)
+            _generate_timeout = _sc.get_int("image_search_query_timeout_seconds", 20)
             result = await asyncio.wait_for(
                 client.generate(
                     prompt=prompt,
-                    model="gemma3:27b",
-                    temperature=0.4,
-                    max_tokens=30,
+                    model=_model,
+                    temperature=_temp,
+                    max_tokens=_max_tokens,
                 ),
-                timeout=20,
+                timeout=_generate_timeout,
             )
             text = (result.get("text") or "").strip()
             # Strip common LLM quote/markdown wrappers

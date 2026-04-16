@@ -47,13 +47,16 @@ async def _ls_request(url: str, license_key: str, instance_id: str = "") -> dict
 # ---------------------------------------------------------------------------
 
 async def _get_pool():
-    """Get a connection to the local DB."""
+    """Get a connection to the local DB (#198: no hardcoded DSN)."""
     import asyncpg
     import os
-    dsn = (
-        os.getenv("LOCAL_DATABASE_URL")
-        or os.getenv("DATABASE_URL", "postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain")
-    )
+    dsn = os.getenv("LOCAL_DATABASE_URL") or os.getenv("DATABASE_URL")
+    if not dsn:
+        raise click.ClickException(
+            "No database URL configured. Set DATABASE_URL (or LOCAL_DATABASE_URL) "
+            "in the environment. Once the bootstrap wizard lands this will come "
+            "from ~/.poindexter/bootstrap.toml."
+        )
     return await asyncpg.connect(dsn)
 
 

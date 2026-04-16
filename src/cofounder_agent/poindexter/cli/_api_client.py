@@ -4,10 +4,10 @@ Every subcommand group that hits the local FastAPI worker (tasks, posts,
 costs, quality, settings) imports `WorkerClient` from this module so they
 all share authentication, URL resolution, and error handling logic.
 
-URL resolution order:
+URL resolution order (#198: no silent defaults):
     1. POINDEXTER_API_URL env var
     2. WORKER_API_URL env var (legacy)
-    3. http://localhost:8002 (default — worker's exposed port)
+    3. raises RuntimeError loudly — no localhost fallback
 
 Auth token resolution order:
     1. POINDEXTER_KEY env var
@@ -27,12 +27,19 @@ class WorkerClient:
     """Minimal async httpx wrapper around the Poindexter worker API."""
 
     def __init__(self, base_url: str | None = None, token: str | None = None) -> None:
-        self.base_url = (
+        resolved_url = (
             base_url
             or os.getenv("POINDEXTER_API_URL")
             or os.getenv("WORKER_API_URL")
-            or "http://localhost:8002"
-        ).rstrip("/")
+        )
+        if not resolved_url:
+            raise RuntimeError(
+                "No worker API URL configured. Set POINDEXTER_API_URL (preferred) "
+                "or WORKER_API_URL in the environment. For local dev this is "
+                "typically http://localhost:8002, but there is no hardcoded "
+                "default — you must configure it explicitly (#198)."
+            )
+        self.base_url = resolved_url.rstrip("/")
         self.token = token or os.getenv("POINDEXTER_KEY") or os.getenv("GLADLABS_KEY") or ""
         if not self.token:
             raise RuntimeError(

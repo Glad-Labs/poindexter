@@ -60,7 +60,10 @@ class AIContentGenerator:
         self.ollama_available = False
         self.ollama_checked = False  # Track if we've checked Ollama async
         self.generation_attempts = 0
-        self.max_refinement_attempts = 3
+        # #198: tunable via app_settings so operators can widen/tighten
+        # refinement loops without a redeploy.
+        from services.site_config import site_config as _sc
+        self.max_refinement_attempts = _sc.get_int("content_gen_max_refinement_attempts", 3)
 
         logger.info("AIContentGenerator initialized (Ollama check deferred to first async call)")
         logger.debug(
@@ -241,8 +244,12 @@ class AIContentGenerator:
         # This ensures all prompts are versioned, documented, and easy to maintain
         try:
             logger.info("Loading system prompt...")
-            min_words = int(target_length * 0.9)
-            max_words = int(target_length * 1.1)
+            # Word-count window buffers — tunable via app_settings (#198).
+            from services.site_config import site_config as _sc
+            _min_ratio = _sc.get_float("content_gen_min_word_ratio", 0.9)
+            _max_ratio = _sc.get_float("content_gen_max_word_ratio", 1.1)
+            min_words = int(target_length * _min_ratio)
+            max_words = int(target_length * _max_ratio)
             system_prompt = pm.get_prompt(
                 "blog_generation.blog_system_prompt",
                 style=style,
@@ -495,9 +502,13 @@ class AIContentGenerator:
         )
 
         # Try to refine with same model
-        # Calculate max tokens for refinement pass — extra headroom for thinking models
+        # Calculate max tokens for refinement pass — extra headroom for thinking models.
+        # Token multipliers are tunable via app_settings (#198).
+        from services.site_config import site_config as _sc
         _is_thinking_refine = any(t in model_name.lower() for t in ("qwen3", "glm-4", "deepseek-r1"))
-        max_tokens_refinement = int(target_length * (7.0 if _is_thinking_refine else 4.5))
+        _thinking_mult = _sc.get_float("content_gen_token_mult_thinking", 7.0)
+        _standard_mult = _sc.get_float("content_gen_token_mult_standard", 4.5)
+        max_tokens_refinement = int(target_length * (_thinking_mult if _is_thinking_refine else _standard_mult))
         response = await ollama.generate(
             prompt=refinement_prompt,
             system=system_prompt,

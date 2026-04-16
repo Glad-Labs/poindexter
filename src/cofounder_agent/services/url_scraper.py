@@ -23,10 +23,25 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT = 15.0
 MAX_CONTENT_CHARS = 50000  # safety cap on extracted text
-USER_AGENT = (
-    "Mozilla/5.0 (compatible; PoindexterBot/1.0; +https://www.gladlabs.io) "
-    "AI content pipeline topic scraper"
-)
+
+
+def _build_user_agent() -> str:
+    """Build the URL-scraper User-Agent string from site_config (#198).
+
+    Uses site_contact_url for the bot identifier so operators can bring
+    their own brand. Falls back to a neutral generic if unset.
+    """
+    from services.site_config import site_config as _sc
+    contact = _sc.get("site_contact_url", "").strip()
+    bot_name = _sc.get("scraper_bot_name", "PoindexterBot/1.0").strip()
+    identifier = f"+{contact}" if contact else "no-contact-configured"
+    return (
+        f"Mozilla/5.0 (compatible; {bot_name}; {identifier}) "
+        "AI content pipeline topic scraper"
+    )
+
+
+USER_AGENT = _build_user_agent()
 
 
 class URLScrapeError(Exception):

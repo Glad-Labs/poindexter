@@ -135,7 +135,9 @@ class Config:
 
         # --- Local LLM (Ollama) Configuration --
         # For running a local quality assurance model if available.
-        self.LOCAL_LLM_API_URL = os.getenv("LOCAL_LLM_API_URL", "http://localhost:11434")
+        # #198: no hardcoded localhost default. An empty string means
+        # "Ollama not configured" and callers must handle that explicitly.
+        self.LOCAL_LLM_API_URL = os.getenv("LOCAL_LLM_API_URL", "")
         self.LOCAL_LLM_MODEL_NAME = os.getenv("LOCAL_LLM_MODEL_NAME", "auto")
 
         # --- Logging Configuration ---

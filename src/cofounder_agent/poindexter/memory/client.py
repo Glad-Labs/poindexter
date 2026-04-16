@@ -28,21 +28,6 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_EMBED_MODEL = "nomic-embed-text"
 DEFAULT_EMBED_DIM = 768
-def _default_ollama_url() -> str:
-    """Pick a sensible Ollama URL default.
-
-    Inside the worker container the network alias `host.docker.internal`
-    routes back to the host where Ollama runs. From the host (tests, CLI,
-    auto-embed.py) that alias doesn't resolve — use 127.0.0.1 instead.
-    """
-    # If OLLAMA_URL is set explicitly, MemoryClient reads it first anyway,
-    # so this is just the "everything else failed" default.
-    if os.name == "nt" or Path("/.dockerenv").exists() is False:
-        return "http://127.0.0.1:11434"
-    return "http://host.docker.internal:11434"
-
-
-DEFAULT_OLLAMA_URL = _default_ollama_url()
 
 # Known writers — free-form string, but keeping the set small makes the
 # `/memory` dashboard stats easier to read. Callers can pass anything; this
@@ -100,11 +85,11 @@ class MemoryClient:
     call `connect()` / `close()` explicitly. Thread-safe within an asyncio
     event loop (asyncpg handles pooling).
 
-    Connection config is resolved in this order:
+    Connection config is resolved in this order (#198: no hardcoded defaults):
       1. explicit dsn / ollama_url args to __init__
       2. POINDEXTER_MEMORY_DSN env var (or fall back to DATABASE_URL)
       3. OLLAMA_URL env var
-      4. hardcoded defaults (host.docker.internal for container contexts)
+      4. RuntimeError — no silent localhost fallback
     """
 
     def __init__(
@@ -129,9 +114,13 @@ class MemoryClient:
                 "POINDEXTER_MEMORY_DSN, LOCAL_DATABASE_URL, DATABASE_URL "
                 "in the environment."
             )
-        self.ollama_url = (
-            ollama_url or os.getenv("OLLAMA_URL") or DEFAULT_OLLAMA_URL
-        ).rstrip("/")
+        resolved_ollama = ollama_url or os.getenv("OLLAMA_URL")
+        if not resolved_ollama:
+            raise RuntimeError(
+                "MemoryClient requires an Ollama URL. Pass ollama_url= or set "
+                "OLLAMA_URL in the environment (no hardcoded default — #198)."
+            )
+        self.ollama_url = resolved_ollama.rstrip("/")
         self.embed_model = embed_model
         self.embed_dim = embed_dim
         self._pool_min_size = pool_min_size

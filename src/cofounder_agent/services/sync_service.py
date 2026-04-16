@@ -24,10 +24,12 @@ from services.logger_config import get_logger
 logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
-# Connection string defaults (overridable via constructor or env)
+# Connection strings (env-only — #198: no hardcoded DSNs)
+# Empty strings mean "not configured"; the caller / constructor raises
+# before using them.
 # ---------------------------------------------------------------------------
 CLOUD_DATABASE_URL = os.getenv("CLOUD_DATABASE_URL") or os.getenv("DATABASE_URL", "")
-LOCAL_DATABASE_URL = os.getenv("LOCAL_DATABASE_URL", "postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain")
+LOCAL_DATABASE_URL = os.getenv("LOCAL_DATABASE_URL", "")
 
 
 class SyncService:
@@ -74,23 +76,31 @@ class SyncService:
 
     async def connect(self) -> None:
         """Open connection pools to both databases."""
-        try:
-            self._cloud_pool = await asyncpg.create_pool(
-                self.cloud_url, min_size=2, max_size=5, timeout=15, command_timeout=30,
-            )
-            logger.info("Connected to cloud DB")
-        except Exception as exc:
-            logger.error("Failed to connect to cloud DB: %s", exc)
+        if not self.cloud_url:
+            logger.info("Sync disabled — no CLOUD_DATABASE_URL configured (#198)")
             self._cloud_pool = None
+        else:
+            try:
+                self._cloud_pool = await asyncpg.create_pool(
+                    self.cloud_url, min_size=2, max_size=5, timeout=15, command_timeout=30,
+                )
+                logger.info("Connected to cloud DB")
+            except Exception as exc:
+                logger.error("Failed to connect to cloud DB: %s", exc)
+                self._cloud_pool = None
 
-        try:
-            self._local_pool = await asyncpg.create_pool(
-                self.local_url, min_size=2, max_size=5, timeout=15, command_timeout=30,
-            )
-            logger.info("Connected to local DB")
-        except Exception as exc:
-            logger.error("Failed to connect to local DB: %s", exc)
+        if not self.local_url:
+            logger.info("Sync disabled — no LOCAL_DATABASE_URL configured (#198)")
             self._local_pool = None
+        else:
+            try:
+                self._local_pool = await asyncpg.create_pool(
+                    self.local_url, min_size=2, max_size=5, timeout=15, command_timeout=30,
+                )
+                logger.info("Connected to local DB")
+            except Exception as exc:
+                logger.error("Failed to connect to local DB: %s", exc)
+                self._local_pool = None
 
     async def close(self) -> None:
         """Close both connection pools gracefully."""

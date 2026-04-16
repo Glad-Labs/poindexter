@@ -67,7 +67,11 @@ def dsn():
 @pytest.fixture
 async def mem(dsn):
     """Yield a connected MemoryClient, clean up test rows on teardown."""
-    client = MemoryClient(dsn=dsn)
+    # #198: MemoryClient now requires ollama_url — use a local default
+    # for tests that do round-trips against a live Ollama. The skip
+    # guard above ensures this only runs when OLLAMA_URL is set.
+    ollama_url = os.getenv("OLLAMA_URL") or "http://127.0.0.1:11434"
+    client = MemoryClient(dsn=dsn, ollama_url=ollama_url)
     await client.connect()
     yield client
     # Cleanup: delete any test rows we inserted
