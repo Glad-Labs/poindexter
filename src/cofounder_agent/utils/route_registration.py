@@ -52,6 +52,7 @@ _COORDINATOR_ROUTES = [
 _WORKER_ROUTES = [
     ("routes.approval_routes", "router", "approval_router", "task approval workflow"),
     ("routes.task_routes", "router", "task_router", "task management"),
+    ("routes.topics_routes", "router", "topics_router", "URL-based topic seeding (#230)"),
     ("routes.cms_routes", "router", "cms_router", "CMS (posts, preview, categories)"),
     ("routes.newsletter_routes", "router", "newsletter_router", "newsletter subscribe/unsubscribe"),
     ("routes.revalidate_routes", "router", "revalidate_router", "ISR cache invalidation"),
