@@ -146,8 +146,19 @@ class StartupManager:
             raise
 
     async def _initialize_database(self) -> None:
-        """Initialize PostgreSQL database connection"""
+        """Initialize PostgreSQL database connection with retry.
+
+        During `docker compose pull/up`, Postgres and the worker can
+        restart concurrently — the worker's first connect attempt can
+        lose the race and fail. Retry with exponential backoff for up
+        to ~30 seconds before notifying the operator (#198 follow-up).
+        """
         logger.info("  Connecting to PostgreSQL (REQUIRED)...")
+        import asyncio
+
+        max_attempts = 5  # 1 + 2 + 4 + 8 + 16 = 31s max backoff
+        backoff_s = 1.0
+        last_err: Exception | None = None
 
         try:
             from config import get_config
@@ -157,7 +168,23 @@ class StartupManager:
             self.database_service = DatabaseService(
                 local_database_url=config.local_database_url,
             )
-            await self.database_service.initialize()
+
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    await self.database_service.initialize()
+                    last_err = None
+                    break
+                except Exception as e:
+                    last_err = e
+                    if attempt == max_attempts:
+                        raise
+                    logger.warning(
+                        "  PostgreSQL connect attempt %d/%d failed (%s) — "
+                        "retrying in %.0fs", attempt, max_attempts, e, backoff_s,
+                    )
+                    await asyncio.sleep(backoff_s)
+                    backoff_s *= 2
+
             logger.info("   PostgreSQL connected (pool + 5 delegate modules ready)")
 
             # Start connection pool health monitor if pool is available
