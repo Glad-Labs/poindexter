@@ -762,5 +762,5 @@ if __name__ == "__main__":
     # uvicorn.run() here creates nested server conflicts.
     logger.error("ERROR: Do not run 'python main.py' directly.")
     logger.error("Instead, use:")
-    logger.error("  python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000")
+    logger.error("  python -m uvicorn main:app --reload --host 0.0.0.0 --port 8002")
     sys.exit(1)

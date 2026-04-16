@@ -22,7 +22,7 @@ For local Python development (requires Postgres running on port 15432):
 ```bash
 cd src/cofounder_agent
 poetry install
-poetry run uvicorn main:app --reload --port 8000
+poetry run uvicorn main:app --reload --port 8002
 ```
 
 Requires `.env` at project root with `DATABASE_URL` pointing at your local pgvector. Ollama is the default LLM provider — no cloud API keys required. See root `.env.example` for all options.
