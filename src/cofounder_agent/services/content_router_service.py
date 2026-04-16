@@ -480,6 +480,80 @@ async def _check_title_originality(title: str) -> dict:
     return result
 
 
+# Phrases that indicate the LLM deliberated instead of just giving the title.
+# If these appear anywhere in the output, we treat the response as unclean
+# and return None so the caller falls back to a safer source (topic / seo_title).
+_TITLE_DELIBERATION_MARKERS = (
+    "let's go with",
+    "let me choose",
+    "i'll pick",
+    "i'd pick",
+    "the most unique",
+    "the best option",
+    "here are",
+    "here's a",
+    "option 1",
+    "option 2",
+    "option a",
+    "option b",
+    "title 1:",
+    "title 2:",
+)
+
+
+def _sanitize_generated_title(raw: str) -> str | None:
+    """Clean an LLM title response, or return None if it's unsalvageable.
+
+    Real-world failure mode (#198 follow-up): thinking-models sometimes
+    return their reasoning trace instead of a clean title, e.g.:
+
+        "*   Let's go with the **Question**. It is the most unique structure..."
+
+    The old sanitizer only stripped whitespace + quotes and shipped that
+    straight to the `title` column. This version:
+
+    1. Strips <think>…</think> blocks first (some models emit them literally).
+    2. Takes the last non-empty line (models often end with their answer).
+    3. Strips leading list markers (*, -, +, 1.), bold (**), and quotes.
+    4. Rejects anything that still contains deliberation markers.
+    5. Rejects empty, too-short (<5 chars), or too-long (>120) results.
+    """
+    if not raw:
+        return None
+
+    import re as _re
+
+    text = raw.strip()
+    # 1. Strip <think>…</think> blocks — keep only what comes after.
+    text = _re.sub(r"<think>.*?</think>", " ", text, flags=_re.DOTALL | _re.IGNORECASE).strip()
+
+    # 2. If the output has multiple lines, walk from the bottom for the first
+    # line that looks like an actual title (not bullet/deliberation/empty).
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    candidate: str | None = None
+    for line in reversed(lines):
+        # Skip lines that still look like list items or bolded labels
+        stripped = _re.sub(r"^[\s\*\-\+\u2022]+|^\d+[\.\)]\s*", "", line).strip()
+        stripped = _re.sub(r"^#+\s+", "", stripped)  # strip leading # headers
+        stripped = stripped.strip('"').strip("'").strip()
+        stripped = _re.sub(r"\*\*([^*]+)\*\*", r"\1", stripped)  # unwrap **bold**
+        if not stripped or len(stripped) < 5 or len(stripped) > 200:
+            continue
+        lower = stripped.lower()
+        if any(marker in lower for marker in _TITLE_DELIBERATION_MARKERS):
+            continue
+        candidate = stripped
+        break
+
+    if not candidate:
+        return None
+
+    # Final length trim — SEO best practice caps around 60, hard cap at 100.
+    if len(candidate) > 100:
+        candidate = candidate[:97].rstrip() + "..."
+    return candidate
+
+
 async def _generate_canonical_title(
     topic: str, primary_keyword: str, content_excerpt: str, existing_titles: str = ""
 ) -> str | None:
@@ -511,13 +585,14 @@ async def _generate_canonical_title(
         )
 
         if result and result.text:
-            # Clean up the title
-            title = result.text.strip().strip('"').strip("'").strip()
-            # Truncate if too long
-            if len(title) > 100:
-                title = title[:97] + "..."
-            logger.debug("Generated title: %s", title)
-            return title
+            title = _sanitize_generated_title(result.text)
+            if title:
+                logger.debug("Generated title: %s", title)
+                return title
+            logger.warning(
+                "[TITLE_GEN] Sanitizer rejected LLM output as unclean: %r",
+                result.text[:100],
+            )
 
         return None
 

@@ -969,6 +969,66 @@ class TestGetOrCreateDefaultAuthor:
 
 
 @pytest.mark.unit
+class TestSanitizeGeneratedTitle:
+    """Regression tests for the title sanitizer added 2026-04-16.
+
+    A thinking-model rejected a post at publish time because its title
+    was "*   Let's go with the **Question**. It is the most unique
+    structure in..." — raw deliberation leaked as the title. These
+    lock the salvage/reject logic.
+    """
+
+    def test_returns_clean_title_unchanged(self):
+        from services.content_router_service import _sanitize_generated_title
+        assert _sanitize_generated_title("Why Local LLMs Beat the Cloud") \
+            == "Why Local LLMs Beat the Cloud"
+
+    def test_strips_quotes_and_bold(self):
+        from services.content_router_service import _sanitize_generated_title
+        assert _sanitize_generated_title('"**Running Stable Diffusion Locally**"') \
+            == "Running Stable Diffusion Locally"
+
+    def test_strips_leading_list_marker(self):
+        from services.content_router_service import _sanitize_generated_title
+        assert _sanitize_generated_title("* Top 10 FastAPI Patterns") \
+            == "Top 10 FastAPI Patterns"
+
+    def test_strips_heading_hash(self):
+        from services.content_router_service import _sanitize_generated_title
+        assert _sanitize_generated_title("# The AI Agents Handbook") \
+            == "The AI Agents Handbook"
+
+    def test_strips_think_block(self):
+        from services.content_router_service import _sanitize_generated_title
+        raw = "<think>Let me consider the audience.</think>\nPostgres Sharding for Beginners"
+        assert _sanitize_generated_title(raw) == "Postgres Sharding for Beginners"
+
+    def test_rejects_deliberation_trace(self):
+        """This is the exact bug that shipped #8b13ff52 to awaiting_approval."""
+        from services.content_router_service import _sanitize_generated_title
+        raw = "*   Let's go with the **Question**. It is the most unique structure in this set."
+        assert _sanitize_generated_title(raw) is None
+
+    def test_walks_back_to_final_line_when_reasoning_precedes(self):
+        from services.content_router_service import _sanitize_generated_title
+        raw = "Let me think about this.\nOptions:\n1. One\n2. Two\n\nThe GPU Memory Bottleneck"
+        assert _sanitize_generated_title(raw) == "The GPU Memory Bottleneck"
+
+    def test_rejects_empty(self):
+        from services.content_router_service import _sanitize_generated_title
+        assert _sanitize_generated_title("") is None
+        assert _sanitize_generated_title("   \n\n  ") is None
+
+    def test_rejects_too_short(self):
+        from services.content_router_service import _sanitize_generated_title
+        assert _sanitize_generated_title("hi") is None
+
+    def test_truncates_too_long(self):
+        from services.content_router_service import _sanitize_generated_title
+        out = _sanitize_generated_title("x" * 200)
+        assert out is not None and len(out) <= 100 and out.endswith("...")
+
+
 class TestGenerateCanonicalTitle:
     @pytest.mark.asyncio
     async def test_returns_cleaned_title_on_success(self):
