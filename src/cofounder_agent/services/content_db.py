@@ -536,7 +536,9 @@ class ContentDatabase(DatabaseServiceMixin):
                 # may not exist in all environments.
                 total_cost = 0
                 try:
-                    cost_query = "SELECT SUM(cost_usd) as total FROM cost_logs WHERE created_at >= NOW() - INTERVAL '30 days'"
+                    from services.site_config import site_config as _sc
+                    _cost_days = _sc.get_int("cost_summary_window_days", 30)
+                    cost_query = f"SELECT SUM(cost_usd) as total FROM cost_logs WHERE created_at >= NOW() - INTERVAL '{_cost_days} days'"
                     cost_result = await conn.fetchrow(cost_query)
                     if cost_result and cost_result["total"]:
                         total_cost = round(float(cost_result["total"]), 2)

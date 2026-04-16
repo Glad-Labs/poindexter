@@ -319,11 +319,11 @@ class IdleWorker:
                     SELECT DISTINCT task_id FROM audit_log
                     WHERE event_type = 'idle_quality_audit'
                     AND task_id IS NOT NULL
-                    AND timestamp > NOW() - INTERVAL '7 days'
+                    AND timestamp > NOW() - INTERVAL '1 day' * $1
                 )
                 ORDER BY p.published_at ASC
                 LIMIT 5
-            """)
+            """, site_config.get_int("idle_worker_audit_cooldown_days", 7))
 
             if not rows:
                 return {"audited": 0, "note": "all posts recently audited"}
@@ -434,13 +434,14 @@ class IdleWorker:
             low = [f"{r['name']} ({r['posts']})" for r in categories if 0 < r["posts"] < 5]
 
             # Check for topic freshness — how old is the newest post per category?
+            # Tunable for per-customer publishing cadence expectations (#198).
             stale = await self.pool.fetch("""
                 SELECT c.name, MAX(p.published_at) as latest
                 FROM categories c
                 JOIN posts p ON c.id = p.category_id AND p.status = 'published'
                 GROUP BY c.name
-                HAVING MAX(p.published_at) < NOW() - INTERVAL '14 days'
-            """)
+                HAVING MAX(p.published_at) < NOW() - INTERVAL '1 day' * $1
+            """, site_config.get_int("idle_worker_stale_category_days", 14))
 
             suggestions = []
             if empty:
@@ -482,9 +483,9 @@ class IdleWorker:
                     AVG(quality_score) as avg_score,
                     STDDEV(quality_score) as stddev_score
                 FROM content_tasks
-                WHERE created_at > NOW() - INTERVAL '7 days'
+                WHERE created_at > NOW() - INTERVAL '1 day' * $1
                 AND quality_score IS NOT NULL
-            """)
+            """, site_config.get_int("idle_worker_threshold_tune_window_days", 7))
 
             if not stats or stats["total"] < self.THRESHOLD_MIN_SAMPLES:
                 return {"note": f"insufficient data ({stats['total'] if stats else 0} tasks, need {self.THRESHOLD_MIN_SAMPLES})"}
@@ -681,9 +682,10 @@ class IdleWorker:
             streak_threshold = 3
 
         try:
+            _streak_h = site_config.get_int("topic_discovery_streak_window_hours", 6)
             recent = await self.pool.fetch(
                 "SELECT status FROM content_tasks "
-                "WHERE updated_at > NOW() - INTERVAL '6 hours' "
+                f"WHERE updated_at > NOW() - INTERVAL '{_streak_h} hours' "
                 "ORDER BY updated_at DESC LIMIT $1",
                 streak_threshold,
             )
@@ -1382,51 +1384,58 @@ class IdleWorker:
 
             anomalies = []
 
+            # Anomaly detection windows — tunable for per-customer
+            # sensitivity and A/B testing (#198). `current_hours` defines
+            # "recent" (default 24h); `baseline_days` defines the
+            # historical mean+stddev window (default 30d).
+            _current_h = site_config.get_int("brain_anomaly_current_window_hours", 24)
+            _baseline_d = site_config.get_int("brain_anomaly_baseline_window_days", 30)
+
             # Define metrics to monitor: (name, query for recent value, query for historical stats)
             metrics = [
                 (
                     "task_failure_rate",
-                    """SELECT CASE WHEN COUNT(*) = 0 THEN 0
+                    f"""SELECT CASE WHEN COUNT(*) = 0 THEN 0
                         ELSE SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END)::float / COUNT(*)
                         END as val
-                    FROM content_tasks WHERE created_at > NOW() - INTERVAL '24 hours'""",
-                    """SELECT AVG(daily_rate) as mean, STDDEV(daily_rate) as stddev FROM (
+                    FROM content_tasks WHERE created_at > NOW() - INTERVAL '{_current_h} hours'""",
+                    f"""SELECT AVG(daily_rate) as mean, STDDEV(daily_rate) as stddev FROM (
                         SELECT date_trunc('day', created_at) as day,
                             CASE WHEN COUNT(*) = 0 THEN 0
                             ELSE SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END)::float / COUNT(*)
                             END as daily_rate
                         FROM content_tasks
-                        WHERE created_at > NOW() - INTERVAL '30 days'
+                        WHERE created_at > NOW() - INTERVAL '{_baseline_d} days'
                         GROUP BY day
                     ) t""",
                 ),
                 (
                     "avg_quality_score",
-                    "SELECT AVG(quality_score) as val FROM content_tasks WHERE created_at > NOW() - INTERVAL '24 hours' AND quality_score IS NOT NULL",
-                    """SELECT AVG(daily_avg) as mean, STDDEV(daily_avg) as stddev FROM (
+                    f"SELECT AVG(quality_score) as val FROM content_tasks WHERE created_at > NOW() - INTERVAL '{_current_h} hours' AND quality_score IS NOT NULL",
+                    f"""SELECT AVG(daily_avg) as mean, STDDEV(daily_avg) as stddev FROM (
                         SELECT date_trunc('day', created_at) as day, AVG(quality_score) as daily_avg
                         FROM content_tasks
-                        WHERE created_at > NOW() - INTERVAL '30 days' AND quality_score IS NOT NULL
+                        WHERE created_at > NOW() - INTERVAL '{_baseline_d} days' AND quality_score IS NOT NULL
                         GROUP BY day
                     ) t""",
                 ),
                 (
                     "cost_per_day",
-                    "SELECT COALESCE(SUM(cost_usd), 0) as val FROM cost_logs WHERE created_at > NOW() - INTERVAL '24 hours'",
-                    """SELECT AVG(daily_cost) as mean, STDDEV(daily_cost) as stddev FROM (
+                    f"SELECT COALESCE(SUM(cost_usd), 0) as val FROM cost_logs WHERE created_at > NOW() - INTERVAL '{_current_h} hours'",
+                    f"""SELECT AVG(daily_cost) as mean, STDDEV(daily_cost) as stddev FROM (
                         SELECT date_trunc('day', created_at) as day, COALESCE(SUM(cost_usd), 0) as daily_cost
                         FROM cost_logs
-                        WHERE created_at > NOW() - INTERVAL '30 days'
+                        WHERE created_at > NOW() - INTERVAL '{_baseline_d} days'
                         GROUP BY day
                     ) t""",
                 ),
                 (
                     "error_log_rate",
-                    "SELECT COUNT(*) as val FROM audit_log WHERE severity = 'error' AND timestamp > NOW() - INTERVAL '24 hours'",
-                    """SELECT AVG(daily_errors) as mean, STDDEV(daily_errors) as stddev FROM (
+                    f"SELECT COUNT(*) as val FROM audit_log WHERE severity = 'error' AND timestamp > NOW() - INTERVAL '{_current_h} hours'",
+                    f"""SELECT AVG(daily_errors) as mean, STDDEV(daily_errors) as stddev FROM (
                         SELECT date_trunc('day', timestamp) as day, COUNT(*) as daily_errors
                         FROM audit_log WHERE severity = 'error'
-                        AND timestamp > NOW() - INTERVAL '30 days'
+                        AND timestamp > NOW() - INTERVAL '{_baseline_d} days'
                         GROUP BY day
                     ) t""",
                 ),
@@ -1811,10 +1820,11 @@ class IdleWorker:
 
             cloud = await asyncpg.connect(cloud_url)
             try:
-                rows = await cloud.fetch("""
+                _pv_hours = site_config.get_int("publish_verify_window_hours", 24)
+                rows = await cloud.fetch(f"""
                     SELECT id, title, slug FROM posts
                     WHERE status = 'published'
-                    AND published_at > NOW() - INTERVAL '24 hours'
+                    AND published_at > NOW() - INTERVAL '{_pv_hours} hours'
                     ORDER BY published_at DESC
                     LIMIT 20
                 """)

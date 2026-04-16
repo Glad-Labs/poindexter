@@ -1022,12 +1022,13 @@ class TaskExecutor:
             return
         try:
             max_retries = int(await self._get_setting("max_task_retries", str(MAX_TASK_RETRIES)))
-            rows = await self.database_service.pool.fetch("""
+            retry_window_h = int(await self._get_setting("task_retry_window_hours", "24"))
+            rows = await self.database_service.pool.fetch(f"""
                 SELECT task_id, status, topic, task_metadata,
                        COALESCE((task_metadata::jsonb->>'retry_count')::int, 0) as retry_count
                 FROM content_tasks
                 WHERE status IN ('failed', 'rejected_retry', 'failed_revisions_requested')
-                AND created_at > NOW() - INTERVAL '24 hours'
+                AND created_at > NOW() - INTERVAL '{retry_window_h} hours'
                 AND COALESCE((task_metadata::jsonb->>'retry_count')::int, 0) < $1
                 AND COALESCE((metadata::jsonb->>'allow_revisions')::text, 'true') != 'false'
                 LIMIT 3
