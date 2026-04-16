@@ -362,9 +362,30 @@ class TaskExecutor:
             logger.info("   Topic: %s", topic)
             logger.info("   Category: %s", category)
 
-            # Pre-generation brand relevance check — reject off-topic before wasting GPU
+            # Pre-generation brand relevance check — reject off-topic before wasting GPU.
+            # Skip for URL-seeded tasks: the operator explicitly pointed us at that URL,
+            # so "off-brand" isn't our call to make on their behalf.
             from services.topic_discovery import TopicDiscovery
-            if topic and not TopicDiscovery._is_brand_relevant(topic):
+            _task_meta = task.get("metadata") or task.get("task_metadata") or {}
+            if isinstance(_task_meta, str):
+                import json as _json_mod
+                try:
+                    _task_meta = _json_mod.loads(_task_meta)
+                except Exception:
+                    _task_meta = {}
+            # task_metadata from legacy writers wraps under {"metadata": {...}}
+            if isinstance(_task_meta, dict) and "discovered_by" not in _task_meta:
+                _inner = _task_meta.get("metadata")
+                if isinstance(_inner, str):
+                    import json as _json_mod
+                    try:
+                        _inner = _json_mod.loads(_inner)
+                    except Exception:
+                        _inner = None
+                if isinstance(_inner, dict):
+                    _task_meta = _inner
+            _user_seeded = _task_meta.get("discovered_by") in ("url_seed", "url_list")
+            if topic and not _user_seeded and not TopicDiscovery._is_brand_relevant(topic):
                 _reason = (
                     f"Off-brand: topic '{topic[:80]}' did not match any keyword in "
                     f"TopicDiscovery._BRAND_KEYWORDS. Add the relevant niche keyword "
