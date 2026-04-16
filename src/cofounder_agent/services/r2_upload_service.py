@@ -1,14 +1,15 @@
 """
-R2 Upload Service — uploads media files to Cloudflare R2.
+Object Store Upload Service — uploads media files to an S3-compatible bucket.
 
-Handles podcast MP3s, video MP4s, and images.
-Credentials loaded from app_settings (DB-first, no env vars).
+Works with Cloudflare R2, AWS S3, Backblaze B2, MinIO, Wasabi — any
+provider that speaks the S3 API. Reads all config from app_settings
+(DB-first, no env vars) so the operator can swap providers without
+touching code.
 
 Usage:
     from services.r2_upload_service import upload_to_r2
 
     url = await upload_to_r2("/path/to/file.mp3", "podcast/abc123.mp3")
-    # Returns: "https://pub-1432fd...r2.dev/podcast/abc123.mp3"
 """
 
 import os
@@ -20,9 +21,6 @@ from services.site_config import site_config
 
 logger = get_logger(__name__)
 
-_R2_PUBLIC_URL = "https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev"
-_R2_ENDPOINT = "https://01ddb679184ebe59cc7f03f8171d76ee.r2.cloudflarestorage.com"
-_R2_BUCKET = "gladlabs-media"
 
 # Content type mapping
 _CONTENT_TYPES = {
@@ -33,6 +31,30 @@ _CONTENT_TYPES = {
     ".png": "image/png",
     ".webp": "image/webp",
 }
+
+
+def _storage(key: str, default: str = "") -> str:
+    """Read a NON-SECRET object-store setting. Prefers the generic
+    ``storage_*`` namespace; falls back to the legacy ``cloudflare_r2_*``
+    keys so an in-flight deployment keeps working during the rename (#198).
+    """
+    return site_config.get(f"storage_{key}") or site_config.get(
+        f"cloudflare_r2_{key}", default
+    )
+
+
+async def _storage_secret(key: str, default: str = "") -> str:
+    """Read a SECRET object-store setting via on-demand DB query.
+
+    Secrets aren't kept in the in-memory site_config cache (is_secret=true
+    filters them out of load()). This mirrors how revalidate_secret is
+    fetched by routes/revalidate_routes.py.
+    """
+    val = await site_config.get_secret(f"storage_{key}")
+    if val:
+        return val
+    val = await site_config.get_secret(f"cloudflare_r2_{key}")
+    return val or default
 
 
 async def upload_to_r2(
@@ -55,12 +77,27 @@ async def upload_to_r2(
         logger.warning("[R2] File not found: %s", local_path)
         return None
 
-    # Get credentials from DB
-    access_key = site_config.get("cloudflare_r2_access_key", "")
-    secret_key = site_config.get("cloudflare_r2_secret_key", "")
+    # Get credentials from DB (storage_* preferred, cloudflare_r2_* fallback).
+    # access_key is NOT marked is_secret (it's paired with the secret and
+    # can't do damage alone), so site_config has it cached. secret_key
+    # and token ARE secrets — fetched via on-demand DB query.
+    access_key = _storage("access_key")
+    secret_key = await _storage_secret("secret_key")
 
     if not access_key or not secret_key:
-        logger.warning("[R2] No R2 credentials in app_settings — skipping upload")
+        logger.warning(
+            "[STORAGE] No object-store credentials in app_settings "
+            "(storage_access_key / storage_secret_key) — skipping upload"
+        )
+        return None
+
+    endpoint_url = _storage("endpoint")
+    bucket = _storage("bucket")
+    if not endpoint_url or not bucket:
+        logger.warning(
+            "[STORAGE] storage_endpoint or storage_bucket not configured — "
+            "skipping upload"
+        )
         return None
 
     # Auto-detect content type
@@ -72,16 +109,14 @@ async def upload_to_r2(
 
         s3 = boto3.client(
             "s3",
-            endpoint_url=site_config.get("cloudflare_r2_endpoint", _R2_ENDPOINT),
+            endpoint_url=endpoint_url,
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
             region_name="auto",
         )
-
-        bucket = site_config.get("cloudflare_r2_bucket", _R2_BUCKET)
         size = path.stat().st_size
 
-        logger.info("[R2] Uploading %s → %s (%s, %.1fMB)",
+        logger.info("[STORAGE] Uploading %s → %s (%s, %.1fMB)",
                     path.name, r2_key, content_type, size / 1024 / 1024)
 
         s3.upload_file(
@@ -89,16 +124,22 @@ async def upload_to_r2(
             ExtraArgs={"ContentType": content_type},
         )
 
-        public_url = site_config.get("r2_public_url", _R2_PUBLIC_URL)
-        url = f"{public_url}/{r2_key}"
-        logger.info("[R2] Uploaded: %s", url)
+        public_url = _storage("public_url") or site_config.get("r2_public_url", "")
+        if not public_url:
+            logger.warning(
+                "[STORAGE] storage_public_url not set — can't construct "
+                "public link for %s", r2_key
+            )
+            return None
+        url = f"{public_url.rstrip('/')}/{r2_key}"
+        logger.info("[STORAGE] Uploaded: %s", url)
         return url
 
     except ImportError:
-        logger.warning("[R2] boto3 not installed — cannot upload to R2")
+        logger.warning("[STORAGE] boto3 not installed — cannot upload")
         return None
     except Exception as e:
-        logger.error("[R2] Upload failed for %s: %s", r2_key, e)
+        logger.error("[STORAGE] Upload failed for %s: %s", r2_key, e)
         return None
 
 

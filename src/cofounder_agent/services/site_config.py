@@ -38,12 +38,19 @@ class SiteConfig:
     def __init__(self):
         self._config: dict[str, str] = {}
         self._loaded = False
+        self._pool = None  # Stored after load() so get_secret() can DB-query
 
     async def load(self, pool) -> int:
         """Load all non-secret settings from app_settings.
 
         Call once at app startup after the DB pool is ready.
         Returns number of settings loaded.
+
+        Secrets (is_secret=true) are deliberately NOT kept in the
+        in-memory cache — they stay in the DB and callers must use
+        `get_secret()` (async, one query per call) when they need
+        them. This keeps secrets out of any debug dump that calls
+        `site_config.all()`.
         """
         if pool is None:
             logger.warning("[SITE_CONFIG] No DB pool — using env var fallbacks only")
@@ -58,6 +65,7 @@ class SiteConfig:
                     self._config[row["key"]] = row["value"]
 
             self._loaded = True
+            self._pool = pool  # Retain for on-demand get_secret() lookups
             logger.info("[SITE_CONFIG] Loaded %d settings from database", len(self._config))
             return len(self._config)
         except Exception as e:
@@ -85,6 +93,30 @@ class SiteConfig:
         except Exception as e:
             logger.warning("[SITE_CONFIG] Reload failed: %s", e)
             return 0
+
+    async def get_secret(self, key: str, default: str = "") -> str:
+        """Async-fetch a secret value from app_settings.
+
+        Secrets aren't kept in the in-memory ``_config`` dict (load()
+        filters them out), so each call is one DB query. That's fine —
+        secrets are read rarely and at well-defined points (uploads,
+        API calls). Falls back to the uppercase env var, then default.
+        """
+        if self._pool is not None:
+            try:
+                row = await self._pool.fetchrow(
+                    "SELECT value FROM app_settings WHERE key = $1", key
+                )
+                if row and row["value"]:
+                    return str(row["value"])
+            except Exception as e:
+                logger.warning(
+                    "[SITE_CONFIG] get_secret(%s) query failed: %s", key, e
+                )
+        env_val = os.getenv(key.upper())
+        if env_val:
+            return env_val
+        return default
 
     def require(self, key: str) -> str:
         """Get a REQUIRED config value. Raises if not configured.
