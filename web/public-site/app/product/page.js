@@ -514,11 +514,14 @@ export default function ProductPage() {
                   AI Content Pipeline book (chapters as they ship)
                 </li>
               </ul>
-              <span
-                className="block w-full text-center px-6 py-3 border border-slate-600 text-slate-500 rounded-xl cursor-not-allowed font-medium"
+              <a
+                href="https://gladlabs.lemonsqueezy.com/checkout/buy/a5713f22-3c57-47ae-b1ee-5fee3a0b43b9"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block w-full text-center px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-xl hover:shadow-lg hover:shadow-cyan-500/30 transition-all duration-300 font-medium"
               >
-                Coming Soon
-              </span>
+                Subscribe — $9.99/mo
+              </a>
             </div>
           </div>
         </div>
