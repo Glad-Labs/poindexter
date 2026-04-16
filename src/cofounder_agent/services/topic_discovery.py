@@ -163,6 +163,26 @@ class TopicDiscovery:
         logger.info("[TOPIC_DISCOVERY] Discovered %d topics (%d before dedup)", len(result), len(all_topics))
         return result
 
+    async def _get_str_setting(self, key: str, default: str = "") -> str:
+        """Read a string value from app_settings with a default."""
+        if not self.pool:
+            return default
+        try:
+            row = await self.pool.fetchrow(
+                "SELECT value FROM app_settings WHERE key = $1", key
+            )
+            return str(row["value"]) if row and row["value"] is not None else default
+        except Exception:
+            return default
+
+    async def _get_int_setting(self, key: str, default: int) -> int:
+        """Read an integer value from app_settings with a default."""
+        raw = await self._get_str_setting(key, str(default))
+        try:
+            return int(raw)
+        except (ValueError, TypeError):
+            return default
+
     async def _get_enabled_sources(self) -> set[str]:
         """Read enabled_topic_sources from app_settings.
 
@@ -355,8 +375,16 @@ class TopicDiscovery:
         return topics
 
     async def _scrape_hackernews(self) -> list[DiscoveredTopic]:
-        """Scrape top stories from Hacker News API (free, no auth)."""
+        """Scrape top stories from Hacker News API (free, no auth).
+
+        Configurable via app_settings:
+        - hn_top_stories (default 20) — how many to fetch
+        - hn_min_score (default 50) — filter stories below this score
+        """
         topics = []
+        # Load per-source config (Phase 2 of #227)
+        hn_top = await self._get_int_setting("hn_top_stories", 20)
+        hn_min_score = await self._get_int_setting("hn_min_score", 50)
         try:
             async with httpx.AsyncClient(
                 timeout=httpx.Timeout(10.0, connect=3.0)
@@ -366,7 +394,7 @@ class TopicDiscovery:
                     "https://hacker-news.firebaseio.com/v0/topstories.json",
                     timeout=10,
                 )
-                story_ids = resp.json()[:20]  # Top 20
+                story_ids = resp.json()[:hn_top]
 
                 # Fetch story details (concurrent, limited)
                 sem = asyncio.Semaphore(5)
@@ -387,7 +415,7 @@ class TopicDiscovery:
                     url = story.get("url", "")
                     score = story.get("score", 0)
 
-                    if not title or score < 50:
+                    if not title or score < hn_min_score:
                         continue
 
                     # Classify category
@@ -410,14 +438,28 @@ class TopicDiscovery:
         return topics
 
     async def _scrape_devto(self) -> list[DiscoveredTopic]:
-        """Scrape trending articles from Dev.to API (free, no auth)."""
+        """Scrape trending articles from Dev.to API (free, no auth).
+
+        Configurable via app_settings:
+        - devto_per_page (default 15)
+        - devto_top_days (default 7)
+        - devto_min_reactions (default 20)
+        - devto_tag (default empty = all tags; e.g. "ai" or "python")
+        """
         topics = []
+        per_page = await self._get_int_setting("devto_per_page", 15)
+        top_days = await self._get_int_setting("devto_top_days", 7)
+        min_reactions = await self._get_int_setting("devto_min_reactions", 20)
+        tag = (await self._get_str_setting("devto_tag", "")).strip()
         try:
             async with httpx.AsyncClient(
                 timeout=httpx.Timeout(10.0, connect=3.0)
             ) as client:
+                url_params = f"per_page={per_page}&top={top_days}"
+                if tag:
+                    url_params += f"&tag={tag}"
                 resp = await client.get(
-                    "https://dev.to/api/articles?per_page=15&top=7",
+                    f"https://dev.to/api/articles?{url_params}",
                     timeout=10,
                 )
                 articles = resp.json()
@@ -427,7 +469,7 @@ class TopicDiscovery:
                     url = article.get("url", "")
                     reactions = article.get("positive_reactions_count", 0)
 
-                    if not title or reactions < 20:
+                    if not title or reactions < min_reactions:
                         continue
 
                     rewritten = self._rewrite_as_blog_topic(title)
