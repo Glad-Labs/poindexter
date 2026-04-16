@@ -60,9 +60,11 @@ def _get_discord_ops_channel() -> str:
 # LLM defaults — social copy is a simple task, use the fast 8B model
 _SOCIAL_MODEL = _sc.get("social_poster_model", "ollama/llama3:latest")
 
-# Platform character limits (with safety margin)
-TWITTER_CHAR_LIMIT = 280
-LINKEDIN_CHAR_LIMIT = 700
+# Platform character limits (with safety margin). Defaults match current
+# public limits; tune via app_settings keys social_twitter_char_limit,
+# social_linkedin_char_limit when platforms change. (#198)
+TWITTER_CHAR_LIMIT = _sc.get_int("social_twitter_char_limit", 280)
+LINKEDIN_CHAR_LIMIT = _sc.get_int("social_linkedin_char_limit", 700)
 
 
 # ---------------------------------------------------------------------------

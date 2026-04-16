@@ -206,15 +206,34 @@ class TopicDiscovery:
 
     async def queue_topics(self, topics: list[DiscoveredTopic]) -> int:
         """Queue discovered topics as content tasks."""
+        import json as _json
         import random
-        # Vary post lengths: 60% short (800-1200), 30% medium (1500-2000), 10% deep dive (2500-3500)
+
+        # Vary post lengths: default 60% short / 30% medium / 10% deep dive.
+        # Customers tune the mix via app_settings.topic_discovery_length_distribution
+        # as JSON: [[800, 1200, 0.6], [1500, 2000, 0.3], [2500, 3500, 0.1]]. (#198)
         _LENGTH_WEIGHTS = [
             (800, 1200, 0.6),    # Short reads (3-5 min)
             (1500, 2000, 0.3),   # Medium reads (6-8 min)
             (2500, 3500, 0.1),   # Deep dives (10-15 min)
         ]
+        _raw_lengths = site_config.get("topic_discovery_length_distribution", "")
+        if _raw_lengths:
+            try:
+                _parsed = _json.loads(_raw_lengths)
+                if isinstance(_parsed, list) and _parsed:
+                    _LENGTH_WEIGHTS = [
+                        (int(lo), int(hi), float(w)) for lo, hi, w in _parsed
+                    ]
+            except (ValueError, TypeError) as _e:
+                logger.warning(
+                    "[TOPIC_DISCOVERY] topic_discovery_length_distribution "
+                    "invalid JSON, using defaults: %s", _e,
+                )
 
-        # Vary writing styles to mimic a multi-writer newsroom
+        # Vary writing styles to mimic a multi-writer newsroom.
+        # Customers tune via app_settings.topic_discovery_style_distribution
+        # as JSON: [["technical","professional"], ["narrative","casual"], ...]. (#198)
         _STYLES = [
             ("technical", "professional"),    # Deep technical analysis
             ("narrative", "professional"),    # Story-driven reporting
@@ -222,6 +241,17 @@ class TopicDiscovery:
             ("educational", "professional"),  # How-to / explainer
             ("narrative", "casual"),          # Conversational analysis
         ]
+        _raw_styles = site_config.get("topic_discovery_style_distribution", "")
+        if _raw_styles:
+            try:
+                _parsed_styles = _json.loads(_raw_styles)
+                if isinstance(_parsed_styles, list) and _parsed_styles:
+                    _STYLES = [(str(s), str(t)) for s, t in _parsed_styles]
+            except (ValueError, TypeError) as _e:
+                logger.warning(
+                    "[TOPIC_DISCOVERY] topic_discovery_style_distribution "
+                    "invalid JSON, using defaults: %s", _e,
+                )
 
         def _pick_length() -> int:
             r = random.random()
