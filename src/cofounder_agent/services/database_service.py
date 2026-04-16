@@ -71,14 +71,37 @@ class DatabaseService:
         if database_url:
             self.database_url = database_url
         else:
-            database_url_env = os.getenv("DATABASE_URL")
-            if not database_url_env:
+            # #198: check ~/.poindexter/bootstrap.toml FIRST so worker can
+            # start on a fresh clone without a .env file. Falls back to
+            # DATABASE_URL env var for Docker/CI contexts.
+            resolved = None
+            try:
+                import sys as _sys
+                from pathlib import Path as _Path
+
+                _here = _Path(__file__).resolve()
+                for _p in _here.parents:
+                    if (_p / "brain" / "bootstrap.py").is_file():
+                        if str(_p) not in _sys.path:
+                            _sys.path.insert(0, str(_p))
+                        break
+                from brain.bootstrap import resolve_database_url as _resolve
+
+                resolved = _resolve()
+            except Exception:
+                # Bootstrap module unavailable (odd) — fall through to env.
+                resolved = None
+
+            if not resolved:
+                resolved = os.getenv("DATABASE_URL")
+
+            if not resolved:
                 raise ValueError(
-                    "DATABASE_URL environment variable is required. "
-                    "PostgreSQL is REQUIRED for all development and production environments. "
-                    "Local development must use a PostgreSQL database (poindexter_brain)."
+                    "DATABASE_URL is not configured. PostgreSQL is REQUIRED. "
+                    "Run `poindexter setup` to create ~/.poindexter/bootstrap.toml, "
+                    "or set DATABASE_URL in the environment."
                 )
-            self.database_url = database_url_env
+            self.database_url = resolved
 
         # Local database URL (optional — falls back to primary pool when unset)
         self.local_database_url = local_database_url or os.getenv("LOCAL_DATABASE_URL") or None

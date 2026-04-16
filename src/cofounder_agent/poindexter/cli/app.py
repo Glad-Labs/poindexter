@@ -11,6 +11,7 @@ from .memory import memory_group
 from .posts import posts_group
 from .premium import premium_group
 from .settings import settings_group
+from .setup import setup_command
 from .sprint import sprint_group
 from .tasks import tasks_group
 from .vercel import vercel_group
@@ -37,6 +38,7 @@ def main(ctx: click.Context, verbose: bool) -> None:
         logging.getLogger().setLevel(logging.INFO)
 
 
+main.add_command(setup_command, name="setup")
 main.add_command(memory_group, name="memory")
 main.add_command(tasks_group, name="tasks")
 main.add_command(posts_group, name="posts")
