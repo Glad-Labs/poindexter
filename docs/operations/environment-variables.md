@@ -1,12 +1,18 @@
 # Environment variables
 
-> **Important:** Poindexter runs most of its configuration out of the
+> **Important:** Poindexter runs virtually ALL configuration out of the
 > `app_settings` Postgres table, not environment variables. Env vars
-> exist only to **bootstrap** the stack (enough config to connect to
-> the database) and to inject **secrets** that can't live in the DB
-> (API tokens, passwords, third-party keys). Everything else — model
-> thresholds, prompt templates, QA weights, auto-publish settings —
-> is changed with SQL against `app_settings`, no redeploy needed.
+> and `~/.poindexter/bootstrap.toml` exist only to **bootstrap** the
+> stack (enough config to connect to the database). Once the worker
+> connects, everything — model thresholds, prompt templates, QA
+> weights, auto-publish rules, algorithm windows, SEO pinging
+> endpoints — is changed with SQL against `app_settings` (200+ keys
+> as of April 2026), no redeploy needed.
+>
+> **Preferred path:** run `poindexter setup` once on first install.
+> It writes `~/.poindexter/bootstrap.toml` with the single value you
+> need to reach the database. Env vars below are for Docker / CI
+> deployments where bootstrap.toml isn't ideal.
 >
 > See [reference/app-settings.md](../reference/app-settings.md) for
 > the full list of DB-backed settings.
@@ -35,21 +41,22 @@ first run and written to `.env.local`. Do not commit that file.
 
 ## Optional (with sensible defaults)
 
-| Variable               | Default                             | Purpose                                                    |
-| ---------------------- | ----------------------------------- | ---------------------------------------------------------- |
-| `API_BASE_URL`         | `http://localhost:8002`             | Base URL clients use to reach the worker                   |
-| `COMPANY_NAME`         | `Glad Labs`                         | Publisher name used in generated content's `<author>` tag  |
-| `DEFAULT_OLLAMA_MODEL` | `auto`                              | Ollama model the router picks when no override             |
-| `DEVELOPMENT_MODE`     | `true`                              | Enables dev bypasses (token, CORS). **Never set in prod.** |
-| `ENVIRONMENT`          | `production`                        | Log tag + Sentry environment                               |
-| `GRAFANA_USER`         | `admin`                             | Grafana admin username                                     |
-| `LOCAL_POSTGRES_USER`  | `poindexter`                        | Local Postgres user                                        |
-| `LOCAL_POSTGRES_DB`    | `poindexter_brain`                  | Local Postgres database name                               |
-| `OLLAMA_BASE_URL`      | `http://host.docker.internal:11434` | Where the worker reaches Ollama                            |
-| `PORT`                 | `8002`                              | Worker HTTP port                                           |
-| `SITE_DOMAIN`          | `gladlabs.io`                       | The operator's public site domain                          |
-| `SITE_NAME`            | `Glad Labs`                         | Site name in feeds + metadata                              |
-| `SITE_URL`             | `https://www.gladlabs.io`           | Canonical site URL                                         |
+| Variable               | Default                             | Purpose                                                                                                               |
+| ---------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `API_BASE_URL`         | `http://localhost:8002`             | Base URL clients use to reach the worker                                                                              |
+| `COMPANY_NAME`         | `Glad Labs`                         | Publisher name used in generated content's `<author>` tag                                                             |
+| `DEFAULT_OLLAMA_MODEL` | `auto`                              | Ollama model the router picks when no override                                                                        |
+| `DEVELOPMENT_MODE`     | `true`                              | Enables dev bypasses (token, CORS). **Never set in prod.**                                                            |
+| `ENVIRONMENT`          | `production`                        | Log tag + Sentry environment                                                                                          |
+| `GRAFANA_USER`         | `admin`                             | Grafana admin username                                                                                                |
+| `LOCAL_POSTGRES_USER`  | `poindexter`                        | Local Postgres user                                                                                                   |
+| `LOCAL_POSTGRES_DB`    | `poindexter_brain`                  | Local Postgres database name                                                                                          |
+| `OLLAMA_BASE_URL`      | `http://host.docker.internal:11434` | Where `OllamaClient` reaches Ollama (pipeline generation)                                                             |
+| `OLLAMA_URL`           | `http://host.docker.internal:11434` | Where `MemoryClient` / `auto-embed.py` reaches Ollama (embeddings). Must be set to the same value as OLLAMA_BASE_URL. |
+| `PORT`                 | `8002`                              | Worker HTTP port                                                                                                      |
+| `SITE_DOMAIN`          | `gladlabs.io`                       | The operator's public site domain                                                                                     |
+| `SITE_NAME`            | `Glad Labs`                         | Site name in feeds + metadata                                                                                         |
+| `SITE_URL`             | `https://www.gladlabs.io`           | Canonical site URL                                                                                                    |
 
 ## Optional (no default — feature off unless set)
 
