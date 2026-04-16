@@ -101,31 +101,50 @@ class TopicDiscovery:
         Brain knowledge is the primary source (works offline).
         Web scraping enriches with trending signals when available.
 
+        Sources can be toggled via the `enabled_topic_sources` app_setting
+        (comma-separated).  Default: all 5 enabled.  Valid source names:
+        knowledge, codebase, hackernews, devto, web_search.
+
         Returns deduplicated, scored topics ready for queuing.
         """
         all_topics: list[DiscoveredTopic] = []
+        enabled = await self._get_enabled_sources()
 
         # Primary: generate topics from brain knowledge (always available)
-        knowledge_topics = await self._discover_from_knowledge(categories)
-        all_topics.extend(knowledge_topics)
+        if "knowledge" in enabled:
+            knowledge_topics = await self._discover_from_knowledge(categories)
+            all_topics.extend(knowledge_topics)
 
         # Codebase-driven topics (Poindexter's differentiator — #213)
-        codebase_topics = await self._discover_from_codebase()
-        all_topics.extend(codebase_topics)
+        if "codebase" in enabled:
+            codebase_topics = await self._discover_from_codebase()
+            all_topics.extend(codebase_topics)
 
         # Enrichment: scrape from web sources concurrently
-        sources = await asyncio.gather(
-            self._scrape_hackernews(),
-            self._scrape_devto(),
-            self._search_by_category(categories),
-            return_exceptions=True,
-        )
+        web_tasks = []
+        web_source_names: list[str] = []
+        if "hackernews" in enabled:
+            web_tasks.append(self._scrape_hackernews())
+            web_source_names.append("hackernews")
+        if "devto" in enabled:
+            web_tasks.append(self._scrape_devto())
+            web_source_names.append("devto")
+        if "web_search" in enabled:
+            web_tasks.append(self._search_by_category(categories))
+            web_source_names.append("web_search")
 
-        for result in sources:
-            if isinstance(result, list):
-                all_topics.extend(result)
-            elif isinstance(result, Exception):
-                logger.warning("[TOPIC_DISCOVERY] Source failed: %s", result)
+        if web_tasks:
+            sources = await asyncio.gather(*web_tasks, return_exceptions=True)
+            for name, result in zip(web_source_names, sources):
+                if isinstance(result, list):
+                    all_topics.extend(result)
+                elif isinstance(result, Exception):
+                    logger.warning("[TOPIC_DISCOVERY] Source %s failed: %s", name, result)
+
+        logger.info(
+            "[TOPIC_DISCOVERY] Enabled sources: %s — %d raw topics before dedup",
+            ",".join(sorted(enabled)), len(all_topics),
+        )
 
         # Deduplicate against published posts
         all_topics = await self._deduplicate(all_topics)
@@ -143,6 +162,27 @@ class TopicDiscovery:
         result = [t for t in all_topics if not t.is_duplicate][:max_topics]
         logger.info("[TOPIC_DISCOVERY] Discovered %d topics (%d before dedup)", len(result), len(all_topics))
         return result
+
+    async def _get_enabled_sources(self) -> set[str]:
+        """Read enabled_topic_sources from app_settings.
+
+        Returns a set of source names. Defaults to all 5 enabled.
+        Customers can toggle sources for their niche via:
+          UPDATE app_settings SET value = 'knowledge,codebase,hackernews'
+          WHERE key = 'enabled_topic_sources';
+        """
+        default = "knowledge,codebase,hackernews,devto,web_search"
+        if not self.pool:
+            return set(default.split(","))
+        try:
+            row = await self.pool.fetchrow(
+                "SELECT value FROM app_settings WHERE key = 'enabled_topic_sources'"
+            )
+            raw = str(row["value"]).strip() if row and row["value"] else default
+            return {s.strip().lower() for s in raw.split(",") if s.strip()}
+        except Exception as e:
+            logger.warning("[TOPIC_DISCOVERY] Failed to read enabled_topic_sources: %s", e)
+            return set(default.split(","))
 
     async def queue_topics(self, topics: list[DiscoveredTopic]) -> int:
         """Queue discovered topics as content tasks."""
