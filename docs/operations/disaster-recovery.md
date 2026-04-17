@@ -1,5 +1,7 @@
 # Disaster Recovery Runbook
 
+**Last Updated:** 2026-04-17
+
 Recovery procedures for each critical Poindexter service. Ordered by severity.
 
 ## 1. PostgreSQL (Spine — highest priority)
@@ -38,13 +40,15 @@ powershell -File scripts/db-restore.ps1 -BackupFile <latest_backup.sql.gz>
 # Check heartbeat freshness
 cat ~/.poindexter/heartbeat
 
-# Check if process is running
-tasklist | findstr brain_daemon  # Windows
-ps aux | grep brain_daemon      # Linux
+# The brain daemon runs as a Docker container
+docker ps | grep brain-daemon
 
-# Restart manually
-pythonw brain/brain_daemon.py   # Windows (background)
-nohup python3 brain/brain_daemon.py &  # Linux
+# Restart
+docker compose -f docker-compose.local.yml up -d brain-daemon
+
+# If running standalone (non-Docker):
+# Windows: pythonw brain/brain_daemon.py
+# Linux:   nohup python3 brain/brain_daemon.py &
 
 # The OS-level watchdog (Task Scheduler/cron) should auto-restart
 # within 10 minutes. Check:
@@ -64,10 +68,13 @@ nohup python3 brain/brain_daemon.py &  # Linux
 
 ```bash
 # Check worker status
-curl http://localhost:8002/api/health | python -m json.tool
+curl http://localhost:8002/api/health | python3 -m json.tool
 
-# Restart worker
-powershell -File scripts/start-worker.ps1  # Windows
+# Restart worker container
+docker compose -f docker-compose.local.yml up -d worker
+
+# Or restart the entire stack from bootstrap.toml
+bash scripts/start-stack.sh
 
 # Verify tasks resume
 curl http://localhost:8002/api/health
@@ -93,15 +100,42 @@ ollama serve  # or restart the service
 # Verify models are available
 ollama list
 
-# Required models: nomic-embed-text, glm-4.7-5090 (or configured writer model)
-ollama pull nomic-embed-text
+# Required models (configurable via app_settings):
+ollama pull nomic-embed-text   # embeddings
+ollama pull gemma3:27b          # QA critic
+ollama pull qwen3:8b            # fast tasks
 ```
 
 **Prevention:** Grafana "Ollama Unresponsive" alert (only fires when tasks are pending). Brain health probes test Ollama every cycle.
 
 ---
 
-## 5. Vercel (Frontend)
+## 5. SDXL Server (Image Generation)
+
+**Symptoms:** Posts publish with Pexels stock photos instead of SDXL-generated images. Health endpoint returns `degraded`.
+
+**Recovery:**
+
+```bash
+# Check health
+curl http://localhost:9836/health | python3 -m json.tool
+
+# If degraded, check error reason in the response
+# Common: torch/torchvision mismatch, PEFT missing
+
+# Restart container
+docker compose -f docker-compose.local.yml up -d sdxl-server
+
+# If dependency issue persists, fix inside container:
+docker exec poindexter-sdxl-server pip install --upgrade torchvision peft
+docker restart poindexter-sdxl-server
+```
+
+**Prevention:** Pipeline falls back to Pexels stock photos if SDXL is degraded — content still publishes, just with generic images.
+
+---
+
+## 6. Vercel (Frontend)
 
 **Symptoms:** Site returns 500 or blank page, "Site DOWN" brain alert.
 
@@ -112,23 +146,23 @@ ollama pull nomic-embed-text
 curl -sf https://www.gladlabs.io
 
 # Check Vercel deployment status
-gh run list --repo Glad-Labs/glad-labs-stack --limit 3
+gh run list --repo Glad-Labs/poindexter --limit 3
 
 # Redeploy latest
-gh run rerun <run_id> --repo Glad-Labs/glad-labs-stack
+gh run rerun <run_id> --repo Glad-Labs/poindexter
 
 # If Vercel token expired, generate new one at vercel.com/account/tokens
 # Update GitHub secret:
-gh secret set VERCEL_TOKEN --repo Glad-Labs/glad-labs-stack --body "<new_token>"
+gh secret set VERCEL_TOKEN --repo Glad-Labs/poindexter --body "<new_token>"
 ```
 
 **Prevention:** GitHub Actions deploys on every push to main. Smoke test after each deploy.
 
 ---
 
-## 6. Gitea (Source of Truth)
+## 7. Gitea (Source of Truth)
 
-**Symptoms:** Can't push code, mirror stops syncing, Woodpecker/Actions fail.
+**Symptoms:** Can't push code, mirror stops syncing, Gitea Actions fail.
 
 **Recovery:**
 
@@ -137,20 +171,20 @@ gh secret set VERCEL_TOKEN --repo Glad-Labs/glad-labs-stack --body "<new_token>"
 docker ps | grep gitea
 
 # Restart
-docker compose -f docker-compose.local.yml up -d gitea
+docker compose -f docker-compose.local.yml up -d gitea gitea-runner
 
 # Verify
 curl http://localhost:3001/api/v1/version
 
 # If data lost, Gitea stores everything in the gitea-data Docker volume
-# The GitHub mirror (glad-labs-stack) is a full backup of all code
+# The GitHub mirror (Glad-Labs/poindexter) is a full backup of all code
 ```
 
-**Prevention:** Push mirror to GitHub syncs every commit + hourly.
+**Prevention:** Sync script pushes sanitized copy to GitHub on every push.
 
 ---
 
-## 7. Grafana (Monitoring)
+## 8. Grafana (Monitoring)
 
 **Symptoms:** Can't access dashboards, alerts stop evaluating.
 
@@ -171,9 +205,9 @@ curl http://localhost:3000/api/health
 
 ---
 
-## 8. OpenClaw (Messaging Gateway)
+## 9. OpenClaw (Messaging Gateway)
 
-**Symptoms:** Can't reach bot via Discord/Telegram/WhatsApp, gateway health check fails.
+**Symptoms:** Can't reach bot via Discord/Telegram, gateway health check fails.
 
 **Recovery:**
 
@@ -183,32 +217,34 @@ curl http://127.0.0.1:18789/
 
 # Restart
 # Windows: run the startup shortcut or:
-start "OpenClaw Gateway" cmd /d /c C:\Users\mattm\.openclaw\gateway.cmd
+start "OpenClaw Gateway" cmd /d /c %USERPROFILE%\.openclaw\gateway.cmd
 
 # Verify MCP servers loaded
-# Check OpenClaw logs for "gladlabs" and "poindexter" server entries
+# Check OpenClaw logs for "poindexter" and "gladlabs" server entries
 ```
 
 **Prevention:** openclaw-watchdog.ps1 monitors gateway health and auto-restarts.
 
 ---
 
-## 9. GPU Metrics Scraper
+## 10. GPU Metrics (nvidia-smi-exporter)
 
 **Symptoms:** GPU panels in Grafana show stale data, "GPU Metrics Stale" alert fires.
 
 **Recovery:**
 
 ```bash
-# Check if scraper is running
-tasklist | findstr gpu-scraper  # Windows
+# Check if exporter is running (serves on port 9835)
+curl http://localhost:9835/metrics | head -5
 
-# Restart
-pythonw scripts/gpu-scraper.py  # Windows background
+# Check if HWiNFO shared memory is enabled (for PSU metrics)
+curl http://localhost:9835/metrics | grep hwinfo
 
-# Verify data flowing
-docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain \
-  -c "SELECT max(timestamp) FROM gpu_metrics"
+# If "shared memory not available", enable in HWiNFO64 Settings
+# Verify SensorsSM=1 in C:\Program Files\HWiNFO64\HWiNFO64.INI
+
+# Restart scraper
+# Windows: taskkill /IM python.exe /FI "WINDOWTITLE eq nvidia-smi-exporter" && pythonw scripts/nvidia-smi-exporter.py
 ```
 
 **Prevention:** Grafana "GPU Metrics Stale" alert fires if no data for 30 minutes.
@@ -220,32 +256,28 @@ docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain \
 If everything is down and you need to rebuild from scratch:
 
 ```bash
-# 1. Start core infrastructure
-docker compose -f docker-compose.local.yml up -d postgres-local grafana
+# 1. Ensure bootstrap.toml exists
+cat ~/.poindexter/bootstrap.toml
+# If missing: poindexter setup --auto
 
-# 2. Wait for Postgres to be healthy
-docker compose -f docker-compose.local.yml up -d --wait postgres-local
+# 2. Start the entire stack from bootstrap.toml
+bash scripts/start-stack.sh
 
-# 3. Start Gitea + CI runner
-docker compose -f docker-compose.local.yml up -d gitea gitea-runner
+# 3. Wait for all containers to be healthy
+docker ps --format "table {{.Names}}\t{{.Status}}"
 
-# 4. Start brain daemon
-pythonw brain/brain_daemon.py
+# 4. Start standalone services (not in Docker)
+pythonw scripts/nvidia-smi-exporter.py   # GPU metrics
 
-# 5. Start worker
-powershell -File scripts/start-worker.ps1
+# 5. Start OpenClaw (if using)
+start "" cmd /d /c %USERPROFILE%\.openclaw\gateway.cmd
 
-# 6. Start GPU scraper
-pythonw scripts/gpu-scraper.py
-
-# 7. Start OpenClaw
-start "" cmd /d /c C:\Users\mattm\.openclaw\gateway.cmd
-
-# 8. Verify everything
-curl http://localhost:8002/api/health
-curl http://localhost:3001/api/v1/version
-curl http://localhost:3000/api/health
-curl http://127.0.0.1:18789/
+# 6. Verify everything
+curl http://localhost:8002/api/health      # Worker
+curl http://localhost:3001/api/v1/version   # Gitea
+curl http://localhost:3000/api/health       # Grafana
+curl http://localhost:9836/health           # SDXL
+curl http://localhost:9835/metrics | head -3 # GPU metrics
 ```
 
 ## Contact
