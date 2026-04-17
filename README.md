@@ -33,7 +33,7 @@ Run it on your machine. Own your data. No cloud lock-in.
 
 ## Quick Start
 
-> **Windows users:** run these commands from Git Bash or WSL. The bootstrap script needs `bash` (not native cmd or PowerShell).
+> **Windows users:** run these commands from Git Bash or WSL. The start script needs `bash` (not native cmd or PowerShell).
 
 ```bash
 # 1. Clone
