@@ -490,13 +490,15 @@ class TaskExecutor:
 
             # 1. Update task status to 'in_progress'
             logger.info("[TASK_SINGLE] Marking task as in_progress...")
+            _now = datetime.now(timezone.utc)
             await self.database_service.update_task(
                 task_id,
                 {
                     "status": "in_progress",
+                    "started_at": _now,
                     "task_metadata": {
                         "status": "processing",
-                        "started_at": datetime.now(timezone.utc).isoformat(),
+                        "started_at": _now.isoformat(),
                     },
                 },
             )
