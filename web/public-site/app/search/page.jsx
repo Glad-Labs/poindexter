@@ -1,48 +1,71 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import * as Sentry from '@sentry/nextjs';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { searchPosts } from '../../lib/api-fastapi';
 import PostCard from '../../components/PostCard';
 
-export default function SearchPage() {
+const STATIC_URL =
+  process.env.NEXT_PUBLIC_STATIC_URL ||
+  'https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/static';
+
+function SearchContent() {
   const searchParams = useSearchParams();
   const query = searchParams.get('q') || '';
   const [results, setResults] = useState([]);
+  const [allPosts, setAllPosts] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!query.trim()) {
+    const loadPosts = async () => {
+      if (allPosts.length > 0) return;
+      try {
+        const resp = await fetch(`${STATIC_URL}/posts/index.json`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        setAllPosts(data.posts || data);
+      } catch (err) {
+        setError('Failed to load articles.');
+      }
+    };
+    loadPosts();
+  }, [allPosts.length]);
+
+  useEffect(() => {
+    if (!query.trim() || allPosts.length === 0) {
       setResults([]);
       return;
     }
 
-    const performSearch = async () => {
-      setIsLoading(true);
-      setError('');
-      try {
-        const posts = await searchPosts(query, 50);
-        setResults(posts || []);
-        if (!posts || posts.length === 0) {
-          setError(`No articles found for "${query}"`);
-        }
-      } catch (err) {
-        Sentry.captureException(err);
-        setError('Failed to search articles. Please try again.');
-      } finally {
-        setIsLoading(false);
-      }
-    };
+    setIsLoading(true);
+    setError('');
 
-    performSearch();
-  }, [query]);
+    const q = query.toLowerCase();
+    const matched = allPosts.filter((post) => {
+      const title = (post.title || '').toLowerCase();
+      const excerpt = (post.excerpt || '').toLowerCase();
+      const seoTitle = (post.seo_title || '').toLowerCase();
+      const seoDesc = (post.seo_description || '').toLowerCase();
+      const keywords = (post.seo_keywords || '').toLowerCase();
+      return (
+        title.includes(q) ||
+        excerpt.includes(q) ||
+        seoTitle.includes(q) ||
+        seoDesc.includes(q) ||
+        keywords.includes(q)
+      );
+    });
+
+    setResults(matched);
+    if (matched.length === 0) {
+      setError(`No articles found for "${query}"`);
+    }
+    setIsLoading(false);
+  }, [query, allPosts]);
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-      {/* Background Grid */}
       <div
         className="fixed inset-0 opacity-[0.03] pointer-events-none"
         style={{
@@ -53,33 +76,33 @@ export default function SearchPage() {
       />
 
       <div className="relative z-10">
-        {/* Header */}
         <div className="border-b border-cyan-900/30 bg-slate-900/50 backdrop-blur-sm">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             <Link
               href="/"
               className="text-cyan-400 hover:text-cyan-300 mb-4 inline-block"
             >
-              ← Back to Home
+              &larr; Back to Home
             </Link>
             <h1 className="text-4xl font-bold text-white">Search Results</h1>
             {query && (
               <p className="text-slate-300 mt-2">
                 Found {results.length} article{results.length !== 1 ? 's' : ''}{' '}
                 for{' '}
-                <span className="text-cyan-400 font-semibold">"{query}"</span>
+                <span className="text-cyan-400 font-semibold">
+                  &ldquo;{query}&rdquo;
+                </span>
               </p>
             )}
           </div>
         </div>
 
-        {/* Content */}
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
               <div className="text-center">
                 <div className="inline-block animate-spin text-4xl text-cyan-400 mb-4">
-                  ⟳
+                  &#x27F3;
                 </div>
                 <p className="text-slate-300">Searching articles...</p>
               </div>
@@ -118,5 +141,19 @@ export default function SearchPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function SearchPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+          <p className="text-slate-300">Loading search...</p>
+        </div>
+      }
+    >
+      <SearchContent />
+    </Suspense>
   );
 }
