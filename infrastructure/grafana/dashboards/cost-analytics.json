@@ -442,7 +442,35 @@
         }
       ],
       "title": "By Provider",
-      "type": "bargauge"
+      "type": "piechart",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value",
+            "percent"
+          ]
+        },
+        "pieType": "donut",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      }
     },
     {
       "datasource": {
@@ -464,7 +492,35 @@
         }
       ],
       "title": "By Phase",
-      "type": "bargauge"
+      "type": "piechart",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value",
+            "percent"
+          ]
+        },
+        "pieType": "donut",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      }
     },
     {
       "datasource": {
@@ -525,7 +581,7 @@
     },
     {
       "id": 15,
-      "type": "bargauge",
+      "type": "piechart",
       "title": "Calls by Model",
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -535,7 +591,7 @@
         "x": 0,
         "y": 37,
         "w": 12,
-        "h": 5
+        "h": 8
       },
       "fieldConfig": {
         "defaults": {
@@ -555,16 +611,23 @@
         "overrides": []
       },
       "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value",
+            "percent"
+          ]
+        },
+        "pieType": "donut",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
-          ],
-          "fields": "",
-          "values": true
+          ]
         },
-        "orientation": "horizontal",
-        "displayMode": "gradient",
-        "showUnfilled": true
+        "tooltip": {
+          "mode": "single"
+        }
       },
       "targets": [
         {
@@ -574,14 +637,14 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT model as metric, COUNT(*) as value FROM cost_logs WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 2 DESC",
+          "rawSql": "SELECT model as metric, COUNT(*) as value FROM cost_logs WHERE model != 'system' AND $__timeFilter(created_at) GROUP BY 1 ORDER BY 2 DESC",
           "refId": "A"
         }
       ]
     },
     {
       "id": 16,
-      "type": "bargauge",
+      "type": "piechart",
       "title": "Tokens by Model",
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -591,7 +654,7 @@
         "x": 12,
         "y": 37,
         "w": 12,
-        "h": 5
+        "h": 8
       },
       "fieldConfig": {
         "defaults": {
@@ -611,16 +674,23 @@
         "overrides": []
       },
       "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value",
+            "percent"
+          ]
+        },
+        "pieType": "donut",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
-          ],
-          "fields": "",
-          "values": true
+          ]
         },
-        "orientation": "horizontal",
-        "displayMode": "gradient",
-        "showUnfilled": true
+        "tooltip": {
+          "mode": "single"
+        }
       },
       "targets": [
         {
@@ -630,7 +700,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT model as metric, SUM(input_tokens+output_tokens) as value FROM cost_logs WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 2 DESC",
+          "rawSql": "SELECT model as metric, SUM(input_tokens+output_tokens) as value FROM cost_logs WHERE model != 'system' AND $__timeFilter(created_at) GROUP BY 1 ORDER BY 2 DESC",
           "refId": "A"
         }
       ]
@@ -677,7 +747,7 @@
     },
     {
       "id": 18,
-      "type": "bargauge",
+      "type": "piechart",
       "title": "Cost by Provider",
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -687,7 +757,7 @@
         "x": 0,
         "y": 50,
         "w": 8,
-        "h": 5
+        "h": 8
       },
       "fieldConfig": {
         "defaults": {
@@ -702,21 +772,29 @@
                 "value": null
               }
             ]
-          }
+          },
+          "unit": "currencyUSD"
         },
         "overrides": []
       },
       "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value",
+            "percent"
+          ]
+        },
+        "pieType": "donut",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
-          ],
-          "fields": "",
-          "values": true
+          ]
         },
-        "orientation": "horizontal",
-        "displayMode": "gradient",
-        "showUnfilled": true
+        "tooltip": {
+          "mode": "single"
+        }
       },
       "targets": [
         {
@@ -733,7 +811,7 @@
     },
     {
       "id": 19,
-      "type": "bargauge",
+      "type": "piechart",
       "title": "Cost by Phase",
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -743,7 +821,7 @@
         "x": 8,
         "y": 50,
         "w": 8,
-        "h": 5
+        "h": 8
       },
       "fieldConfig": {
         "defaults": {
@@ -758,21 +836,29 @@
                 "value": null
               }
             ]
-          }
+          },
+          "unit": "currencyUSD"
         },
         "overrides": []
       },
       "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value",
+            "percent"
+          ]
+        },
+        "pieType": "donut",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
-          ],
-          "fields": "",
-          "values": true
+          ]
         },
-        "orientation": "horizontal",
-        "displayMode": "gradient",
-        "showUnfilled": true
+        "tooltip": {
+          "mode": "single"
+        }
       },
       "targets": [
         {
@@ -881,5 +967,7 @@
     "to": "now"
   },
   "title": "Cost & Analytics",
-  "uid": "cost-analytics"
+  "uid": "cost-analytics",
+  "version": 1,
+  "id": null
 }
