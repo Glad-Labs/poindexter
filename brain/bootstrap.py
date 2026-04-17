@@ -20,11 +20,14 @@ bootstrap.toml format:
 
     # ~/.poindexter/bootstrap.toml
     database_url = "postgresql://..."
-    # Optional — used for graceful degradation when the DB is down and
-    # the system still needs to email/page you.
-    telegram_bot_token = "..."
-    telegram_chat_id = "..."
-    discord_ops_webhook_url = "..."
+    api_token = "poindexter-..."
+    local_postgres_password = "..."
+    grafana_password = "..."
+    pgadmin_password = "..."
+
+Only infrastructure secrets needed to bootstrap the Docker stack.
+No API keys, webhook URLs, or notification tokens — those belong in
+app_settings (set via the settings API after first boot).
 
 The file is written by `poindexter setup` on first run. No tool should
 read or write it except through this module.
