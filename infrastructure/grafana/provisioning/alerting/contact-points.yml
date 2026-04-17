@@ -1,23 +1,8 @@
-# Grafana Contact Points — Telegram + Discord fallback for Glad Labs alerts
-# Mounted into Grafana via docker-compose at /etc/grafana/provisioning/alerting/
+# Grafana Contact Points
+# Configure alert destinations via the Grafana UI after first boot.
+# Tokens are stored in app_settings, not env vars — Grafana can't
+# read them from provisioning files without causing crash loops
+# when the env vars are empty.
 apiVersion: 1
 
-contactPoints:
-  - orgId: 1
-    name: Glad Labs Telegram
-    receivers:
-      - uid: gladlabs-telegram
-        type: telegram
-        settings:
-          bottoken: $__env{TELEGRAM_BOT_TOKEN}
-          chatid: "5318613610"
-          parse_mode: HTML
-          disable_notifications: false
-  - orgId: 1
-    name: Glad Labs Discord
-    receivers:
-      - uid: gladlabs-discord-ops
-        type: discord
-        settings:
-          url: $__env{DISCORD_OPS_WEBHOOK_URL}
-          use_discord_username: true
+contactPoints: []
