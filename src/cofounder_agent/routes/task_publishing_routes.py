@@ -171,6 +171,7 @@ async def approve_task(
     featured_image_url: str | None = None,
     image_source: str | None = None,
     auto_publish: bool = True,
+    publish_at: str | None = None,
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
@@ -324,6 +325,20 @@ async def approve_task(
         # reserved for a future scheduling / release-time-optimization feature
         # that will honor pacing and scheduled slots instead of the previous
         # "create a draft and wait for a second publish step" semantics.
+
+        # Scheduled publish: write publish_at to scheduled_at, skip immediate publish
+        if approved and publish_at:
+            try:
+                from datetime import datetime as _dt
+                _pa = _dt.fromisoformat(publish_at.replace("Z", "+00:00"))
+                await db_service.pool.execute(
+                    "UPDATE pipeline_tasks SET scheduled_at = $1 WHERE task_id = $2::uuid OR id = $3",
+                    _pa, task_id if len(task_id) > 10 else None, int(task_id) if task_id.isdigit() else 0,
+                )
+                logger.info("Scheduled task %s for publish at %s", task_id, _pa.isoformat())
+                auto_publish = False
+            except Exception as e:
+                logger.warning("Failed to parse publish_at '%s': %s — publishing immediately", publish_at, e)
 
         if approved and auto_publish:
             logger.info("Publishing approved task %s (approve → go-live)", task_id)
