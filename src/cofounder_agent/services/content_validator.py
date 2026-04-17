@@ -545,6 +545,27 @@ def validate_content(title: str, content: str, topic: str = "") -> ValidationRes
                     matched_text=stripped_content[-100:],
                 ))
 
+    # 11. Title diversity — detect repetitive opener patterns
+    _BANNED_OPENERS = [
+        "beyond the", "beyond", "unlocking", "the ultimate", "the hidden",
+        "the silent", "the invisible", "the secret", "mastering",
+        "revolutionizing", "the complete", "the definitive",
+    ]
+    if title:
+        title_lower = title.lower().strip()
+        for opener in _BANNED_OPENERS:
+            if title_lower.startswith(opener):
+                issues.append(ValidationIssue(
+                    severity="warning",
+                    category="title_diversity",
+                    description=(
+                        f"Title starts with overused opener '{opener}'. "
+                        "Rotate title structure for better variety."
+                    ),
+                    matched_text=title[:60],
+                ))
+                break
+
     # Calculate score penalty
     score_penalty = sum(10 for i in issues if i.severity == "critical")
     score_penalty += sum(3 for i in issues if i.severity == "warning")
