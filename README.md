@@ -40,15 +40,19 @@ Run it on your machine. Own your data. No cloud lock-in.
 git clone https://github.com/Glad-Labs/poindexter.git
 cd poindexter
 
-# 2. Bootstrap (creates config, starts DB, pulls models, seeds settings)
-bash scripts/bootstrap.sh
+# 2. Setup (generates secrets, tests DB, writes ~/.poindexter/bootstrap.toml)
+pip install -e src/cofounder_agent
+poindexter setup --auto    # spins up local Postgres automatically
 
-# 3. Start the full stack
-docker compose -f docker-compose.local.yml up -d
+# 3. Pull AI models
+ollama pull gemma3:27b && ollama pull qwen3:8b && ollama pull nomic-embed-text
 
-# 4. Your first post
+# 4. Start the full stack
+bash scripts/start-stack.sh
+
+# 5. Your first post
 curl -X POST http://localhost:8002/api/tasks \
-  -H "Authorization: Bearer $(grep ^API_TOKEN .env.local | cut -d= -f2)" \
+  -H "Authorization: Bearer $(grep api_token ~/.poindexter/bootstrap.toml | cut -d'"' -f2)" \
   -H "Content-Type: application/json" \
   -d '{"topic": "Why Docker changed everything", "category": "technology"}'
 ```
@@ -78,7 +82,7 @@ Poindexter is in **alpha**. Honestly:
 
 - The full content pipeline end-to-end on the author's daily-driver setup (RTX 5090, 64GB RAM, Windows 11 + WSL2). Single-operator content business, a few published posts per day.
 - 5,000+ unit tests passing in CI on every push.
-- Bootstrap script that takes a fresh clone to a healthy local stack with auto-generated secrets.
+- `poindexter setup` takes a fresh clone to a healthy local stack — generates secrets, tests DB, runs migrations, writes `~/.poindexter/bootstrap.toml`. No `.env` file needed.
 - Live in-place upgrades — database renames, container renames, and env var migrations have been applied to a running instance with zero data loss and no downtime for in-flight tasks.
 - Customer-facing Docker containers with healthchecks, restart policies, and log aggregation baked in.
 - Multi-model QA scoring with deterministic validators, an LLM critic chain, and a programmatic anti-hallucination layer.
@@ -86,11 +90,10 @@ Poindexter is in **alpha**. Honestly:
 
 **What doesn't work yet (or has known rough edges):**
 
-- The `bootstrap.sh` script has structural rough edges from recent fresh-install passes — silent failure modes, missing prereq checks, schema drift between bootstrap and migrations. The P0 blockers from the dogfood pass are fixed; the remaining issues need a structural rewrite. See the "Known issues" section of [CHANGELOG.md](CHANGELOG.md) for the current list.
-- One test file (`tests/unit/services/test_web_research.py`) is `--ignored` in CI pending investigation — flagged in the CHANGELOG.
+- The legacy `bootstrap.sh` has been replaced by `poindexter setup` (interactive wizard with `--auto` mode). If you're using bootstrap.sh from an older clone, switch to the new flow.
 - No managed/hosted Poindexter offering. Self-host only.
 - No multi-tenant deployment recipe. One operator, one machine.
-- Not all dashboards ship publicly — two of the Grafana dashboards (cost-analytics, infrastructure-data) are kept as premium artifacts and aren't in the public repo.
+- All 6 Grafana dashboards ship with the product. Premium dashboards are no longer gated.
 - Native Windows cmd / PowerShell is not supported. Use Git Bash or WSL.
 - Database schema is not yet considered stable across releases. Read the CHANGELOG before upgrading.
 
