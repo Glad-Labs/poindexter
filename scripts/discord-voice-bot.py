@@ -46,7 +46,7 @@ def _load_config_from_db() -> dict:
     import asyncpg
     from brain.bootstrap import resolve_database_url
 
-    db_url = resolve_database_url()
+    db_url = os.getenv("DATABASE_URL") or resolve_database_url()
     if not db_url:
         print("ERROR: No database URL found. Run `poindexter setup` first.")
         sys.exit(1)

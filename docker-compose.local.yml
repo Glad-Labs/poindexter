@@ -318,6 +318,33 @@ services:
       postgres-local:
         condition: service_healthy
 
+  # ===========================================
+  # Discord Voice Bot — hands-free voice meetings with Claude
+  # ===========================================
+  voice-bot:
+    build:
+      context: .
+      dockerfile: scripts/Dockerfile.voice-bot
+    container_name: poindexter-voice-bot
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
+    volumes:
+      - ./scripts/discord-voice-bot.py:/app/discord-voice-bot.py:ro
+      - ./brain:/brain:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+
 # Volumes deliberately keep the gladlabs-* prefix from the pre-rebrand era.
 # Renaming a docker volume in compose creates a fresh empty volume and
 # orphans the old one — that means data loss for any existing instance.
