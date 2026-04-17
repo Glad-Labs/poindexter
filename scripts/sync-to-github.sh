@@ -49,6 +49,7 @@ git rm --cached --quiet .github/COMMIT_MESSAGE_*.txt 2>/dev/null || true
 git rm --cached --quiet .github/create-tech-debt-issues.sh 2>/dev/null || true
 git rm --cached --quiet .github/tech-debt-issues.json 2>/dev/null || true
 git rm -r --cached --quiet .github/workflows-disabled/ 2>/dev/null || true
+git rm --cached --quiet .github/workflows/ci.yml 2>/dev/null || true          # Deploy runs from glad-labs-stack, not poindexter
 
 # Commit the removal (temporary — never pushed to Gitea)
 git commit -m "sync: exclude private files for public repo" --allow-empty 2>/dev/null
