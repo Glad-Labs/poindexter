@@ -12,7 +12,12 @@
 set -euo pipefail
 
 BOOTSTRAP="${USERPROFILE:-$HOME}/.poindexter/bootstrap.toml"
-COMPOSE_FILE="docker-compose.local.yml"
+# Use the operator stack if available, otherwise the customer stack
+if [ -f "docker-compose.local.yml" ]; then
+    COMPOSE_FILE="docker-compose.local.yml"
+else
+    COMPOSE_FILE="docker-compose.yml"
+fi
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
