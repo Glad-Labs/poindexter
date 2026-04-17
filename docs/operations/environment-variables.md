@@ -36,7 +36,7 @@ stack to fail fast with a clear error — no silent fallbacks.
 | `GRAFANA_PASSWORD`        | Grafana admin password                    | random 32-char hex          |
 | `PGADMIN_PASSWORD`        | pgAdmin admin password                    | random 32-char hex          |
 
-All four are generated automatically by `scripts/bootstrap.sh` on
+All four are generated automatically by `poindexter setup` on
 first run and written to `.env.local`. Do not commit that file.
 
 ## Optional (with sensible defaults)

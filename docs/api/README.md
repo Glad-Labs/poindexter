@@ -80,7 +80,7 @@ Check if system is operational.
 **Request:**
 
 ```bash
-curl https://api.glad-labs.com/api/health
+curl http://localhost:8002/api/health
 ```
 
 **Response (200 OK):**
@@ -149,7 +149,7 @@ Create a new task.
 **Request:**
 
 ```bash
-curl -X POST https://api.glad-labs.com/api/tasks \
+curl -X POST http://localhost:8002/api/tasks \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -223,13 +223,13 @@ Get execution result.
 
 ```bash
 # Create task
-TASK_ID=$(curl -X POST https://api.glad-labs.com/api/tasks \
+TASK_ID=$(curl -X POST http://localhost:8002/api/tasks \
   -H "Authorization: Bearer KEY" \
   -d '...' | jq -r '.id')
 
 # Poll for completion
 while true; do
-  STATUS=$(curl https://api.glad-labs.com/api/tasks/$TASK_ID \
+  STATUS=$(curl http://localhost:8002/api/tasks/$TASK_ID \
     -H "Authorization: Bearer KEY" | jq -r '.status')
 
   if [ "$STATUS" = "completed" ]; then
@@ -245,7 +245,7 @@ done
 
 ```bash
 # Create task with webhook
-curl -X POST https://api.glad-labs.com/api/tasks \
+curl -X POST http://localhost:8002/api/tasks \
   -H "Authorization: Bearer KEY" \
   -d '{
     "title": "...",

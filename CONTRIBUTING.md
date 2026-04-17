@@ -6,8 +6,8 @@ Thanks for your interest in contributing. Poindexter is built by Glad Labs LLC a
 
 1. Fork the repository
 2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/poindexter.git`
-3. Run the bootstrap: `bash scripts/bootstrap.sh` — this creates `.env.local` with auto-generated secrets, starts the local Postgres + Grafana, installs dependencies, and pulls the minimum required Ollama models.
-4. Bring up the full stack: `docker compose -f docker-compose.local.yml up -d`
+3. Run the bootstrap: `poindexter setup` — this creates `bootstrap.toml` with auto-generated secrets, starts the local Postgres + Grafana, installs dependencies, and pulls the minimum required Ollama models.
+4. Bring up the full stack: `bash scripts/start-stack.sh`
 5. Run tests: `cd src/cofounder_agent && python -m pytest tests/unit/ -q --ignore=tests/unit/services/test_web_research.py`
 
 The `--ignore` flag is a known temporary workaround for a flaky test dependency.

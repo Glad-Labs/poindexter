@@ -81,7 +81,7 @@
 | Brain Daemon    | WORKING | Self-healing monitor. 24 health probes. Auto-remediation. PSU sensor watchdog.   |
 | GPU Scheduler   | WORKING | Manages Ollama ↔ SDXL switching. Gaming detection (pauses AI when gaming).       |
 | SDXL Server     | WORKING | Standalone FastAPI on port 9836. Auto-unloads after 1 min idle.                  |
-| Woodpecker CI   | WORKING | Runs tests on Gitea push. Local CI/CD.                                           |
+| Gitea Actions   | WORKING | Runs tests on Gitea push. Local CI/CD.                                           |
 | GitHub Actions  | WORKING | Runs tests on GitHub push. Deploys to Vercel.                                    |
 | Gitea           | WORKING | Self-hosted Git at localhost:3001. Push mirror to GitHub private repo.           |
 | Headscale VPN   | WORKING | Self-hosted Tailscale alternative. PC connected.                                 |
