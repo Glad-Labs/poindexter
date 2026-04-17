@@ -127,6 +127,9 @@ class IdleWorker:
             results["sync_newsletter_subscribers"] = await self._sync_newsletter_subscribers()
             await self._persist_mark_run("sync_newsletter_subscribers")
 
+        # Publish scheduled posts whose publish_at time has arrived
+        results["scheduled_publishes"] = await self._publish_scheduled_posts()
+
         # Expire stale approval queue items (every 6 hours)
         if self._is_due("expire_stale_approvals", 360):
             results["expire_stale_approvals"] = await self._expire_stale_approvals()
@@ -272,6 +275,55 @@ class IdleWorker:
                         len(results), ", ".join(results.keys()))
 
         return results
+
+    async def _publish_scheduled_posts(self) -> dict:
+        """Publish approved tasks whose scheduled_at has arrived."""
+        if not self.pool:
+            return {"published": 0}
+        try:
+            rows = await self.pool.fetch(
+                "SELECT task_id::text, id FROM pipeline_tasks "
+                "WHERE status = 'approved' AND scheduled_at IS NOT NULL AND scheduled_at <= NOW()"
+            )
+            if not rows:
+                return {"published": 0}
+
+            published = 0
+            for row in rows:
+                task_id = row["task_id"]
+                numeric_id = row["id"]
+                try:
+                    from services.database_service import DatabaseService
+                    from services.publish_service import publish_post_from_task
+
+                    db = DatabaseService()
+                    db._pool = self.pool
+                    task = await db.get_task(str(task_id))
+                    if not task:
+                        continue
+                    result = await publish_post_from_task(
+                        db, task, str(task_id),
+                        publisher="scheduled",
+                        trigger_revalidation=True,
+                        queue_social=True,
+                        draft_mode=False,
+                        honor_pacing=False,
+                    )
+                    if result.success:
+                        await self.pool.execute(
+                            "UPDATE pipeline_tasks SET scheduled_at = NULL WHERE task_id = $1",
+                            task_id,
+                        )
+                        published += 1
+                        logger.info("[SCHEDULED] Published task %s (id %s)", task_id, numeric_id)
+                    else:
+                        logger.warning("[SCHEDULED] Publish failed for %s: %s", task_id, result.error)
+                except Exception as e:
+                    logger.error("[SCHEDULED] Error publishing %s: %s", task_id, e)
+            return {"published": published, "checked": len(rows)}
+        except Exception as e:
+            logger.error("[SCHEDULED] Error checking scheduled posts: %s", e)
+            return {"published": 0, "error": str(e)}
 
     async def _expire_stale_approvals(self) -> dict:
         """Auto-expire tasks stuck in awaiting_approval beyond the configurable TTL (default 7 days)."""
