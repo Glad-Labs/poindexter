@@ -183,6 +183,7 @@ services:
       IN_DOCKER: "true"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./brain:/brain:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
