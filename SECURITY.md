@@ -48,7 +48,6 @@ The following are gitignored and must never appear in commits, public dashboards
 - `API_TOKEN` — API authentication
 - `LOCAL_POSTGRES_PASSWORD` — local Postgres password
 - `GRAFANA_PASSWORD`, `PGADMIN_PASSWORD` — admin UI passwords
-- `WOODPECKER_SECRET` — woodpecker CI shared secret (only relevant if you run the optional Woodpecker CI service)
 - `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY` — optional cloud LLM provider keys
 - `PEXELS_API_KEY` — optional stock-image search key
 - Any cloud `DATABASE_URL` if you connect Poindexter to an external Postgres

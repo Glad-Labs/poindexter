@@ -16,7 +16,7 @@ up -d` on a single machine. CI is a Poindexter-development concern,
 ```
 Gitea main (source of truth, local to Matt)
     │
-    ├─→ Woodpecker CI (local, .woodpecker.yml)
+    ├─→ Gitea Actions (local, .woodpecker.yml)
     │       runs backend pytest + frontend tests + lint
     │       on every push to main
     │       notifies Telegram on pass/fail
@@ -101,7 +101,7 @@ import time.
   on pass/fail. No deploy step.
 - `.github/workflows/ci.yml` — GitHub Actions, the
   `deploy: needs: test` cascade.
-- `src/cofounder_agent/tests/` — Python unit tests (pytest), ~4,900
+- `src/cofounder_agent/tests/` — Python unit tests (pytest), ~5,097
   cases.
 - `web/public-site/__tests__/` — frontend Jest tests.
 - `web/public-site/next.config.js` — has a `validateEnv` check that

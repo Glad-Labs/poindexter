@@ -4,7 +4,7 @@ FastAPI orchestrator for the Poindexter AI content pipeline. Coordinates special
 
 **Version:** 0.1.0
 **Runtime:** Python 3.10+ with FastAPI
-**Port:** 8002 (Docker) / 8000 (uvicorn default)
+**Port:** 8002
 **Database:** PostgreSQL via asyncpg (raw SQL, no ORM)
 **Dependencies:** Poetry (`pyproject.toml`)
 
@@ -25,7 +25,7 @@ poetry install
 poetry run uvicorn main:app --reload --port 8002
 ```
 
-Requires `.env` at project root with `DATABASE_URL` pointing at your local pgvector. Ollama is the default LLM provider — no cloud API keys required. See root `.env.example` for all options.
+Requires `~/.poindexter/bootstrap.toml` with `database_url` (created by `poindexter setup`). Ollama is the default LLM provider — no cloud API keys required. All other config lives in the `app_settings` DB table.
 
 ## Directory Structure
 
@@ -51,7 +51,7 @@ src/cofounder_agent/
 ├── middleware/                 # 5 middleware modules (auth, validation, etc.)
 ├── utils/                     # 20 utility modules
 └── tests/                     # pytest suite
-    └── unit/                  # Unit tests (~6,000 passing)
+    └── unit/                  # Unit tests (~5,097 passing)
 ```
 
 ## Key Architecture
@@ -84,10 +84,8 @@ Markers: `unit`, `integration`, `api`, `e2e`, `performance`, `slow`, `voice`, `w
 
 ## Configuration
 
-Environment variables loaded from root `.env.local` via `config/__init__.py`. Key vars:
+Bootstrap config loaded from `~/.poindexter/bootstrap.toml` (created by `poindexter setup`). Runtime config from `app_settings` DB table (200+ keys).
 
-- `DATABASE_URL` — PostgreSQL connection string (required)
-- `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY` / `OLLAMA_BASE_URL` — LLM providers (at least one required)
-- `DEVELOPMENT_MODE=true` — Enables dev bypasses (dev-token auth, etc.)
-- `SENTRY_DSN` — Error tracking
-- `REDIS_URL` — Optional caching layer
+- `database_url` — in bootstrap.toml (the only disk-based config)
+- `api_token` — in bootstrap.toml (auto-generated)
+- Everything else — in app_settings via the settings API

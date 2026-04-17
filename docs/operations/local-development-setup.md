@@ -36,7 +36,7 @@ Not practical for daily use.
 ```bash
 git clone https://github.com/Glad-Labs/poindexter.git
 cd poindexter
-bash scripts/bootstrap.sh
+poindexter setup
 ```
 
 The bootstrap script is idempotent and does the following:
@@ -78,7 +78,7 @@ This starts 10 containers:
 | `poindexter-prometheus`     | Metric scraper                      | 9091  |
 | `poindexter-pgadmin`        | DB GUI                              | 5051  |
 | `gladlabs-gitea`            | Self-hosted git (optional)          | 3002  |
-| `gladlabs-woodpecker`       | CI runner (optional)                | 8003  |
+| `gladlabs-gitea-runner`     | CI runner (optional)                | 8003  |
 | `gladlabs-adminer`          | DB GUI alternative                  | 8081  |
 | `gladlabs-openclaw`         | Multi-channel ops bridge (optional) | 18789 |
 
@@ -133,7 +133,7 @@ poetry install
 poetry run pytest tests/unit/ -q
 ```
 
-Expected: ~4,900 passing. A single `test_web_research.py` file is
+Expected: ~5,097 passing. A single `test_web_research.py` file is
 currently `--ignored` in CI (known issue, tracked in CHANGELOG).
 
 ## 7. What to do when something breaks
