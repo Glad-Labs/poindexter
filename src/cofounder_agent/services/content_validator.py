@@ -533,7 +533,7 @@ def validate_content(title: str, content: str, topic: str = "") -> ValidationRes
             last_line = stripped_content.split('\n')[-1].strip()
             _in_code = last_line.startswith('```') or last_line.startswith('    ')
             _is_heading = last_line.startswith('#')
-            _is_list_item = re.match(r'^[-*\d]+[.)]\s', last_line)
+            _is_list_item = re.match(r'^[-*\d]+[.)]\s', last_line) or re.match(r'^[-*]\s', last_line)
             if not (_in_code or _is_heading or _is_list_item):
                 issues.append(ValidationIssue(
                     severity="critical",
