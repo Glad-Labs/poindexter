@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Runbook for issues that have bitten us in production. Each entry has a symptom, a root cause, a fix, and a link to the Gitea issue or commit where it was addressed. When you hit something new, add it here instead of just fixing it — the next person (or next-you) will thank you.
+Runbook for issues that have bitten us in production. Each entry has a symptom, a root cause, a fix, and a link to the Gitea issue or commit where it was addressed. When you hit something new, add it here instead of just fixing it — the next person (or next-you) will thank you. Link to GitHub issues for product bugs, Gitea for operator-specific items.
 
 Entries are ordered by frequency of occurrence, not severity.
 
@@ -24,7 +24,7 @@ Entries are ordered by frequency of occurrence, not severity.
 
 **Root cause.** The GitHub Actions workflow at `.github/workflows/ci.yml` declares `deploy: needs: test`. When the `test` job fails, the `deploy` job is _skipped_, not retried, not failed-for-an-unrelated-reason. In the GitHub Actions UI and downstream notifications this shows up as "CI failed AND Vercel didn't deploy." The Vercel failure is a consequence of the upstream test failure, not an independent Vercel issue.
 
-**Fix.** Check the test job first. Look at the specific failing test. If it's a Python unit test failure, reproduce with `docker exec -w /app poindexter-worker python -m pytest tests/unit/ -q --ignore=tests/unit/services/test_web_research.py`. If it's a frontend test, `cd web/public-site && npm run test:ci`. Fix the test, push, CI re-runs, deploy unblocks automatically.
+**Fix.** Check the test job first. Look at the specific failing test. If it's a Python unit test failure, reproduce with `docker exec poindexter-worker python -m pytest tests/unit/ -q`. If it's a frontend test, `cd web/public-site && npm run test:ci`. Fix the test, push, CI re-runs, deploy unblocks automatically.
 
 **Debugging anti-pattern.** Do NOT go poking at Vercel settings, env vars, build commands, or the `next.config.js` first. The Vercel deploy step almost certainly never ran.
 
@@ -161,6 +161,72 @@ Both layers clear on their own within 5 minutes.
 
 ---
 
+## SDXL server "degraded" — posts publish with Pexels stock photos
+
+**Symptom.** `curl http://localhost:9836/health` returns `"status":"degraded"` with a `degraded_reason` mentioning `CLIPImageProcessor` or `PEFT backend`. Posts publish with generic Pexels stock images instead of SDXL-generated ones. The pipeline doesn't fail — it silently falls back.
+
+**Root cause.** torch/torchvision version mismatch inside the SDXL container. When torch gets upgraded (e.g., base image update) but torchvision stays pinned at an older version, `torchvision::nms` operator doesn't exist and CLIPImageProcessor fails to import. Similarly, the `peft` package may be missing if the container was rebuilt.
+
+**Fix.**
+
+```bash
+docker exec poindexter-sdxl-server pip install --upgrade torchvision peft
+docker restart poindexter-sdxl-server
+curl http://localhost:9836/health  # should show "status":"idle"
+```
+
+**Prevention.** `scripts/Dockerfile.sdxl` now includes both `torchvision` and `peft` in the explicit pip install list, so container rebuilds pick them up.
+
+---
+
+## OpenClaw MCP tools fail — "tool execution failed" from Discord
+
+**Symptom.** Using `#reject_post` or other MCP tools from Discord via OpenClaw reports success in the chat message but the action didn't actually happen (e.g., tasks still show `awaiting_approval` in the DB). The LLM fabricates a success response.
+
+**Root cause.** The Claude Desktop MCP config (`claude_desktop_config.json`) has wrong values:
+
+1. `POINDEXTER_API_URL` pointing at a dead Railway URL instead of `http://localhost:8002`
+2. `POINDEXTER_API_TOKEN` is stale (doesn't match the current `api_token` in bootstrap.toml)
+3. `OPENCLAW_GATEWAY_TOKEN` is missing from the gladlabs MCP env
+
+**Fix.** Edit `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\claude_desktop_config.json`:
+
+- Set `POINDEXTER_API_URL` to `http://localhost:8002`
+- Set `POINDEXTER_API_TOKEN` to the value from `~/.poindexter/bootstrap.toml`
+- Add `OPENCLAW_GATEWAY_TOKEN` matching the token in `~/.openclaw/openclaw.json`
+
+Restart Claude Desktop after editing.
+
+---
+
+## Search page returns no results on the live site
+
+**Symptom.** Visiting `https://www.gladlabs.io/search?q=anything` shows "No articles found" or "Failed to search articles."
+
+**Root cause.** The search page was a `'use client'` component calling the FastAPI backend at `localhost:8002` via `fetchAPI()`. On the live Vercel site, visitors' browsers can't reach a local-only server.
+
+**Fix (shipped).** The search page now fetches `posts/index.json` from R2 and filters client-side. No backend dependency. If it breaks again, check that R2 has a current `static/posts/index.json` — trigger a rebuild via `curl -X POST localhost:8002/api/export/rebuild -H "Authorization: Bearer $TOKEN"`.
+
+---
+
+## Topic discovery keeps generating the same rejected topic genre
+
+**Symptom.** The pipeline generates 5+ variations of the same topic (e.g., "Bootstrap Your SaaS") in a 24-hour period. QA rejects all of them for the same reasons (internal consistency, unlinked references). The rejection rate climbs above 80%.
+
+**Root cause.** Topic discovery sources (HN, Dev.to, web search) surface trending topics that map to the same genre. The dedup check prevents exact title matches but not thematic duplicates. The `_should_trigger_discovery` rejection-streak signal fires after 3 consecutive rejections, but if the next discovery pull finds the same trending topic, the cycle repeats.
+
+**Fix.** Check `enabled_topic_sources` — temporarily disable the source producing the repetitive topics:
+
+```bash
+curl -X PUT localhost:8002/api/settings/enabled_topic_sources \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"value": "knowledge,codebase,hackernews"}'  # dropped devto,web_search
+```
+
+Re-enable after the trend passes. Long-term fix: pgvector-based thematic dedup (GitHub #44).
+
+---
+
 ## How to add a new entry to this doc
 
 1. You hit an issue that took more than 10 minutes to diagnose.
@@ -169,7 +235,7 @@ Both layers clear on their own within 5 minutes.
    - `## Symptom` (what you saw)
    - `## Root cause` (what was actually wrong)
    - `## Fix` (what you did to unstick it)
-   - `## Related` (commit hashes, Gitea issue numbers, memory files)
+   - `## Related` (commit hashes, GitHub issue numbers, memory files)
 4. Commit it with a message like `docs(troubleshooting): add <symptom>` so the commit history is searchable.
 
 The point is to stop paying rediscovery tax.
