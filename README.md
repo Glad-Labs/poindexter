@@ -18,7 +18,7 @@ One engine that runs your entire content operation:
 5. **Validates** against hallucinations — catches fake people, stats, quotes, and impossible claims
 6. **Publishes** to any frontend via static JSON export (push-only headless CMS)
 7. **Generates** podcast episodes and AI images from each article
-8. **Monitors** itself with 7 Grafana dashboards, auto-heals via brain daemon
+8. **Monitors** itself with Grafana monitoring dashboard, auto-heals via brain daemon
 
 Run it on your machine. Own your data. No cloud lock-in.
 
@@ -93,7 +93,7 @@ Poindexter is in **alpha**. Honestly:
 - The legacy `bootstrap.sh` has been replaced by `poindexter setup` (interactive wizard with `--auto` mode). If you're using bootstrap.sh from an older clone, switch to the new flow.
 - No managed/hosted Poindexter offering. Self-host only.
 - No multi-tenant deployment recipe. One operator, one machine.
-- All 6 Grafana dashboards ship with the product. Premium dashboards are no longer gated.
+- 1 Grafana dashboard ships free (Pipeline Operations). 5 additional dashboards (Cost Analytics, Quality, Infrastructure, Approval Queue, Link Registry) available with the Seed Package.
 - Native Windows cmd / PowerShell is not supported. Use Git Bash or WSL.
 - Database schema is not yet considered stable across releases. Read the CHANGELOG before upgrading.
 
@@ -117,7 +117,7 @@ Your PC (the engine)
 ├── Brain Daemon                   — monitors health, self-heals, auto-restarts
 ├── MCP Server                     — control from Claude Desktop / Telegram
 ├── Static Export                  — pushes JSON/RSS/Feed to any S3-compatible storage
-├── Grafana + Prometheus           — 7 dashboards, 90+ panels, alerting
+├── Grafana + Prometheus           — 1 free dashboard + 5 premium, alerting
 └── PostgreSQL + pgvector          — config, content, embeddings, knowledge graph
 
 Any Frontend (reads static JSON from CDN)
@@ -135,7 +135,7 @@ Any Frontend (reads static JSON from CDN)
 | **DB-as-Config**          | Every setting, prompt, and threshold in PostgreSQL. Change with SQL, no deploys. |
 | **Multi-Site**            | One daemon manages N sites. Each site = config row + storage bucket.             |
 | **Self-Healing**          | Brain daemon monitors all services, restarts failures, alerts via Telegram       |
-| **Production Monitoring** | 7 Grafana dashboards included out of the box                                     |
+| **Production Monitoring** | Grafana monitoring dashboard included out of the box                             |
 | **5,000+ Tests**          | Comprehensive unit test coverage across all services                             |
 
 ## Stack
@@ -188,8 +188,8 @@ The engine is free and open-source. For production-quality output:
 
 | Tier                  | Price        | What You Get                                                                                                                                       |
 | --------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Free**              | $0           | Full pipeline engine, basic prompts, 7 Grafana dashboards                                                                                          |
-| **Quick Start Guide** | $29 one-time | Production-tuned config (200+ settings), anti-hallucination rules, writing samples, 2 premium dashboards, Matt's exact deploy steps                |
+| **Free**              | $0           | Full pipeline engine, basic prompts, 1 Grafana dashboard (Pipeline Operations)                                                                     |
+| **Quick Start Guide** | $29 one-time | Production-tuned config (235+ settings), anti-hallucination rules, writing samples, 5 premium dashboards, Matt's exact deploy steps                |
 | **Premium**           | $9.99/mo     | Everything in Quick Start + monthly updated prompts, private repo access, new fact-check rules, premium Discord, AI Content Pipeline book chapters |
 
 The free tier runs the pipeline end-to-end. The paid tiers give you months of tuning in a single install — the difference between default output and content that actually ranks.
