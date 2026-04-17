@@ -45,7 +45,7 @@
   "panels": [
     {
       "id": 100,
-      "title": "--- POSTGRES DATABASE ---",
+      "title": "Postgres Database",
       "type": "text",
       "gridPos": {
         "h": 2,
@@ -384,7 +384,7 @@
     },
     {
       "id": 200,
-      "title": "--- TABLE STATISTICS ---",
+      "title": "Table Statistics",
       "type": "text",
       "gridPos": {
         "h": 2,
@@ -1015,7 +1015,25 @@
           "unit": "percent",
           "min": 0,
           "max": 100
-        }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Temp C"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "celsius"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          }
+        ]
       }
     },
     {
@@ -1047,7 +1065,25 @@
       "fieldConfig": {
         "defaults": {
           "unit": "MiB"
-        }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Power W"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "watt"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          }
+        ]
       }
     },
     {
@@ -1166,7 +1202,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT utilization FROM gpu_metrics ORDER BY \"timestamp\" DESC LIMIT 1",
+          "rawSql": "SELECT utilization FROM gpu_metrics WHERE $__timeFilter(\"timestamp\") ORDER BY \"timestamp\" DESC LIMIT 1",
           "refId": "A"
         }
       ]
@@ -1227,7 +1263,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT temperature FROM gpu_metrics ORDER BY \"timestamp\" DESC LIMIT 1",
+          "rawSql": "SELECT temperature FROM gpu_metrics WHERE $__timeFilter(\"timestamp\") ORDER BY \"timestamp\" DESC LIMIT 1",
           "refId": "A"
         }
       ]
@@ -1288,7 +1324,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT power_draw FROM gpu_metrics ORDER BY \"timestamp\" DESC LIMIT 1",
+          "rawSql": "SELECT power_draw FROM gpu_metrics WHERE $__timeFilter(\"timestamp\") ORDER BY \"timestamp\" DESC LIMIT 1",
           "refId": "A"
         }
       ]
@@ -1349,7 +1385,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT ROUND(((memory_used/NULLIF(memory_total,0))*100)::numeric,1) FROM gpu_metrics ORDER BY \"timestamp\" DESC LIMIT 1",
+          "rawSql": "SELECT ROUND(((memory_used/NULLIF(memory_total,0))*100)::numeric,1) FROM gpu_metrics WHERE $__timeFilter(\"timestamp\") ORDER BY \"timestamp\" DESC LIMIT 1",
           "refId": "A"
         }
       ]
@@ -1906,7 +1942,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT date_trunc('day',\"timestamp\")::date as day, ROUND(AVG(utilization)::numeric,1) as util, ROUND(AVG(temperature)::numeric,1) as temp, ROUND(AVG(power_draw)::numeric) as watts, COUNT(*) as samples FROM gpu_metrics GROUP BY 1 ORDER BY 1 DESC LIMIT 7",
+          "rawSql": "SELECT date_trunc('day',\"timestamp\")::date as day, ROUND(AVG(utilization)::numeric,1) as util, ROUND(AVG(temperature)::numeric,1) as temp, ROUND(AVG(power_draw)::numeric) as watts, COUNT(*) as samples FROM gpu_metrics WHERE $__timeFilter(\"timestamp\") GROUP BY 1 ORDER BY 1 DESC",
           "refId": "A"
         }
       ]
@@ -2267,7 +2303,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) FROM audit_log",
+          "rawSql": "SELECT COUNT(*) FROM audit_log WHERE $__timeFilter(\"timestamp\")",
           "refId": "A"
         }
       ]
@@ -2318,7 +2354,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) FROM audit_log WHERE severity='error'",
+          "rawSql": "SELECT COUNT(*) FROM audit_log WHERE severity='error' AND $__timeFilter(\"timestamp\")",
           "refId": "A"
         }
       ]
@@ -2369,7 +2405,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(DISTINCT source) FROM audit_log",
+          "rawSql": "SELECT COUNT(DISTINCT source) FROM audit_log WHERE $__timeFilter(\"timestamp\")",
           "refId": "A"
         }
       ]
@@ -2420,7 +2456,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(DISTINCT task_id) FROM audit_log WHERE task_id IS NOT NULL",
+          "rawSql": "SELECT COUNT(DISTINCT task_id) FROM audit_log WHERE task_id IS NOT NULL AND $__timeFilter(\"timestamp\")",
           "refId": "A"
         }
       ]
@@ -2476,7 +2512,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT severity as metric, COUNT(*) as value FROM audit_log GROUP BY 1 ORDER BY 2 DESC",
+          "rawSql": "SELECT severity as metric, COUNT(*) as value FROM audit_log WHERE $__timeFilter(\"timestamp\") GROUP BY 1 ORDER BY 2 DESC",
           "refId": "A"
         }
       ]
@@ -2532,7 +2568,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT source as metric, COUNT(*) as value FROM audit_log GROUP BY 1 ORDER BY 2 DESC",
+          "rawSql": "SELECT source as metric, COUNT(*) as value FROM audit_log WHERE $__timeFilter(\"timestamp\") GROUP BY 1 ORDER BY 2 DESC",
           "refId": "A"
         }
       ]
@@ -2588,7 +2624,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT event_type as metric, COUNT(*) as value FROM audit_log GROUP BY 1 ORDER BY 2 DESC",
+          "rawSql": "SELECT event_type as metric, COUNT(*) as value FROM audit_log WHERE $__timeFilter(\"timestamp\") GROUP BY 1 ORDER BY 2 DESC",
           "refId": "A"
         }
       ]
@@ -2628,7 +2664,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT id, to_char(\"timestamp\",'MM-DD HH24:MI') as event_time, event_type, source, task_id, severity, LEFT(details::text,100) as details FROM audit_log ORDER BY \"timestamp\" DESC LIMIT 20",
+          "rawSql": "SELECT id, to_char(\"timestamp\",'MM-DD HH24:MI') as event_time, event_type, source, task_id, severity, LEFT(details::text,100) as details FROM audit_log WHERE $__timeFilter(\"timestamp\") ORDER BY \"timestamp\" DESC LIMIT 20",
           "refId": "A"
         }
       ]
@@ -2668,7 +2704,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT to_char(\"timestamp\",'MM-DD HH24:MI') as event_time, event_type, source, LEFT(details::text,120) as details FROM audit_log WHERE severity='error' ORDER BY \"timestamp\" DESC LIMIT 10",
+          "rawSql": "SELECT to_char(\"timestamp\",'MM-DD HH24:MI') as event_time, event_type, source, LEFT(details::text,120) as details FROM audit_log WHERE severity='error' AND $__timeFilter(\"timestamp\") ORDER BY \"timestamp\" DESC LIMIT 10",
           "refId": "A"
         }
       ]
@@ -2767,7 +2803,7 @@
             "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT LEFT(topic, 50) as topic, status, quality_score, created_at::timestamp(0) FROM pipeline_tasks_view ORDER BY created_at DESC LIMIT 20",
+          "rawSql": "SELECT LEFT(topic, 50) as topic, status, quality_score, created_at::timestamp(0) FROM pipeline_tasks_view WHERE $__timeFilter(created_at) ORDER BY created_at DESC LIMIT 20",
           "refId": "A"
         }
       ],
@@ -2814,7 +2850,7 @@
             "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT LEFT(title, 50) as title, slug, published_at::date FROM posts WHERE status='published' ORDER BY published_at DESC LIMIT 20",
+          "rawSql": "SELECT LEFT(title, 50) as title, slug, published_at::date FROM posts WHERE status='published' AND $__timeFilter(published_at) ORDER BY published_at DESC LIMIT 20",
           "refId": "A"
         }
       ],
@@ -2861,7 +2897,7 @@
             "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT model, provider, ROUND(cost_usd::numeric, 6) as cost, total_tokens, created_at::timestamp(0) FROM cost_logs ORDER BY created_at DESC LIMIT 20",
+          "rawSql": "SELECT model, provider, ROUND(cost_usd::numeric, 6) as cost, total_tokens, created_at::timestamp(0) FROM cost_logs WHERE $__timeFilter(created_at) ORDER BY created_at DESC LIMIT 20",
           "refId": "A"
         }
       ],
@@ -2908,7 +2944,7 @@
             "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT entity, attribute, LEFT(value::text, 60) as value, confidence, updated_at::timestamp(0) FROM brain_knowledge ORDER BY updated_at DESC LIMIT 20",
+          "rawSql": "SELECT entity, attribute, LEFT(value::text, 60) as value, confidence, updated_at::timestamp(0) FROM brain_knowledge WHERE $__timeFilter(updated_at) ORDER BY updated_at DESC LIMIT 20",
           "refId": "A"
         }
       ],
@@ -2955,58 +2991,11 @@
             "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT LEFT(decision, 30) as type, LEFT(reasoning, 80) as reasoning, created_at::timestamp(0) FROM brain_decisions ORDER BY created_at DESC LIMIT 20",
+          "rawSql": "SELECT LEFT(decision, 30) as type, LEFT(reasoning, 80) as reasoning, created_at::timestamp(0) FROM brain_decisions WHERE $__timeFilter(created_at) ORDER BY created_at DESC LIMIT 20",
           "refId": "A"
         }
       ],
       "title": "Brain Decisions",
-      "type": "table"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 156,
-        "w": 24,
-        "h": 8
-      },
-      "id": 335,
-      "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "show": false
-        },
-        "showHeader": true
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawSql": "SELECT timestamp::timestamp(0), event_type, source, severity, LEFT(details::text, 80) as details FROM audit_log ORDER BY timestamp DESC LIMIT 20",
-          "refId": "A"
-        }
-      ],
-      "title": "Audit Log",
       "type": "table"
     },
     {
@@ -3096,7 +3085,7 @@
             "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT path, referrer, created_at::timestamp(0) FROM page_views ORDER BY created_at DESC LIMIT 20",
+          "rawSql": "SELECT path, referrer, created_at::timestamp(0) FROM page_views WHERE $__timeFilter(created_at) ORDER BY created_at DESC LIMIT 20",
           "refId": "A"
         }
       ],
@@ -3118,7 +3107,7 @@
       "targets": [
         {
           "format": "table",
-          "rawSql": "SELECT LEFT(content_id, 12) as content_id, ROUND(overall_score::numeric, 1) as score, ROUND(clarity::numeric, 1) as clarity, ROUND(accuracy::numeric, 1) as accuracy, ROUND(completeness::numeric, 1) as completeness, evaluation_timestamp::timestamp(0) FROM quality_evaluations ORDER BY evaluation_timestamp DESC LIMIT 20",
+          "rawSql": "SELECT LEFT(content_id, 12) as content_id, ROUND(overall_score::numeric, 1) as score, ROUND(clarity::numeric, 1) as clarity, ROUND(accuracy::numeric, 1) as accuracy, ROUND(completeness::numeric, 1) as completeness, evaluation_timestamp::timestamp(0) FROM quality_evaluations WHERE $__timeFilter(evaluation_timestamp) ORDER BY evaluation_timestamp DESC LIMIT 20",
           "refId": "A"
         }
       ],
@@ -3184,7 +3173,7 @@
       "targets": [
         {
           "format": "table",
-          "rawSql": "SELECT LEFT(task_id, 12) as task_id, old_status, new_status, changed_by, LEFT(reason, 60) as reason, created_at::timestamp(0) FROM task_status_history ORDER BY created_at DESC LIMIT 20",
+          "rawSql": "SELECT LEFT(task_id, 12) as task_id, old_status, new_status, changed_by, LEFT(reason, 60) as reason, created_at::timestamp(0) FROM task_status_history WHERE $__timeFilter(created_at) ORDER BY created_at DESC LIMIT 20",
           "refId": "A"
         }
       ],
@@ -3206,58 +3195,12 @@
       "targets": [
         {
           "format": "table",
-          "rawSql": "SELECT email, status, source, created_at::timestamp(0) FROM newsletter_subscribers ORDER BY created_at DESC LIMIT 20",
+          "rawSql": "SELECT email, status, source, created_at::timestamp(0) FROM newsletter_subscribers WHERE $__timeFilter(created_at) ORDER BY created_at DESC LIMIT 20",
           "refId": "A"
         }
       ],
       "title": "Newsletter Subscribers",
       "type": "table"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "description": "Quick overview of all table sizes",
-      "gridPos": {
-        "x": 0,
-        "y": 208,
-        "w": 12,
-        "h": 10
-      },
-      "id": 343,
-      "targets": [
-        {
-          "format": "table",
-          "rawSql": "SELECT relname AS table_name, n_live_tup AS row_count FROM pg_stat_user_tables WHERE schemaname = 'public' ORDER BY n_live_tup DESC",
-          "refId": "A"
-        }
-      ],
-      "title": "Table Row Counts",
-      "type": "table"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "description": "Database size and active connections",
-      "gridPos": {
-        "x": 12,
-        "y": 208,
-        "w": 12,
-        "h": 4
-      },
-      "id": 344,
-      "targets": [
-        {
-          "format": "table",
-          "rawSql": "SELECT pg_size_pretty(pg_database_size(current_database())) AS db_size",
-          "refId": "A"
-        }
-      ],
-      "title": "DB Size & Connections",
-      "type": "stat"
     },
     {
       "datasource": {
@@ -3597,46 +3540,6 @@
           "format": "table",
           "rawQuery": true,
           "rawSql": "SELECT COUNT(*) FROM alert_actions WHERE enabled=true",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 353,
-      "type": "table",
-      "title": "Settings",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 230,
-        "w": 12,
-        "h": 8
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "displayMode": "auto"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "showHeader": true,
-        "cellHeight": "sm"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT key, value, category FROM app_settings WHERE is_secret=false ORDER BY category, key",
           "refId": "A"
         }
       ]
