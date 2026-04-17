@@ -37,7 +37,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install poetry
-RUN pip install --no-cache-dir poetry
+RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir poetry
 
 # Copy dependency files first (cache layer)
 COPY pyproject.toml poetry.lock ./
