@@ -9,7 +9,8 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir \
     faster-whisper \
     edge-tts \
     asyncpg \
-    httpx
+    httpx \
+    webrtcvad
 
 WORKDIR /app
 
