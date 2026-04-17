@@ -267,10 +267,14 @@ export default async function PostPage({
                 )}
               </div>
 
-              {/* Excerpt */}
+              {/* Excerpt — strip stale markdown artifacts from older posts */}
               {post.excerpt && (
                 <p className="text-xl text-slate-300 mb-8 leading-relaxed">
-                  {post.excerpt}
+                  {post.excerpt
+                    .replace(/^\s*[*\-#]+\s*/gm, '')
+                    .replace(/\*\*/g, '')
+                    .replace(/\n+/g, ' ')
+                    .trim()}
                 </p>
               )}
             </div>
