@@ -4,7 +4,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+_has_sentry = False
+try:
+    import sentry_sdk  # noqa: F401
+    _has_sentry = True
+except ImportError:
+    pass
 
+
+@pytest.mark.skipif(not _has_sentry, reason="sentry-sdk not installed")
 class TestSentryIntegration:
     """Tests for the SentryIntegration class."""
 
