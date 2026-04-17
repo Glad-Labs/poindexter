@@ -175,7 +175,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Total posts generated this week",
+      "description": "Total posts generated in the selected time range",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -285,7 +285,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Published\" FROM posts WHERE status = 'published';",
+          "rawSql": "SELECT COUNT(*) AS \"Published\" FROM posts WHERE status = 'published' AND $__timeFilter(published_at);",
           "refId": "A"
         }
       ],
@@ -788,7 +788,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT title AS \"Title\", quality_score AS \"Score\", category AS \"Category\" FROM pipeline_tasks_view WHERE status = 'published' AND quality_score IS NOT NULL ORDER BY quality_score DESC, created_at DESC LIMIT 10;",
+          "rawSql": "SELECT title AS \"Title\", quality_score AS \"Score\", category AS \"Category\" FROM pipeline_tasks_view WHERE status = 'published' AND quality_score IS NOT NULL AND $__timeFilter(created_at) ORDER BY quality_score DESC, created_at DESC LIMIT 10;",
           "refId": "A"
         }
       ],

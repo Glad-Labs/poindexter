@@ -822,7 +822,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT cl.model, COUNT(*) as tasks, ROUND(AVG(ct.quality_score)::numeric,1) as avg_q, MIN(ct.quality_score) as min_q, MAX(ct.quality_score) as max_q FROM cost_logs cl JOIN pipeline_tasks_view ct ON cl.task_id=ct.task_id::text WHERE ct.quality_score IS NOT NULL AND $__timeFilter(created_at) GROUP BY 1 ORDER BY 3 DESC",
+          "rawSql": "SELECT cl.model, COUNT(*) as tasks, ROUND(AVG(ct.quality_score)::numeric,1) as avg_q, MIN(ct.quality_score) as min_q, MAX(ct.quality_score) as max_q FROM cost_logs cl JOIN pipeline_tasks_view ct ON cl.task_id=ct.task_id::text WHERE ct.quality_score IS NOT NULL AND $__timeFilter(cl.created_at) GROUP BY 1 ORDER BY 3 DESC",
           "refId": "A"
         }
       ]
@@ -862,7 +862,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT status, COUNT(*) as count, ROUND(AVG(quality_score)::numeric,1) as avg_score FROM pipeline_tasks_view WHERE quality_score IS NOT NULL GROUP BY 1 ORDER BY 2 DESC",
+          "rawSql": "SELECT status, COUNT(*) as count, ROUND(AVG(quality_score)::numeric,1) as avg_score FROM pipeline_tasks_view WHERE quality_score IS NOT NULL AND $__timeFilter(created_at) GROUP BY 1 ORDER BY 2 DESC",
           "refId": "A"
         }
       ]

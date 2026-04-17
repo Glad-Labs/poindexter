@@ -159,7 +159,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Tasks completed in the last hour",
+      "description": "Tasks completed in the selected time range",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -220,7 +220,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Failed tasks in the last 24 hours",
+      "description": "Failed tasks in the selected time range",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -422,7 +422,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT LEFT(COALESCE(title, topic, '(no title)'), 70) AS \"Title\", status AS \"Status\", stage AS \"Stage\", quality_score AS \"Score\", category AS \"Category\", to_char(updated_at, 'HH24:MI:SS') AS \"Updated\" FROM pipeline_tasks_view ORDER BY updated_at DESC LIMIT 30;",
+          "rawSql": "SELECT LEFT(COALESCE(title, topic, '(no title)'), 70) AS \"Title\", status AS \"Status\", stage AS \"Stage\", quality_score AS \"Score\", category AS \"Category\", to_char(updated_at, 'HH24:MI:SS') AS \"Updated\" FROM pipeline_tasks_view WHERE $__timeFilter(updated_at) ORDER BY updated_at DESC LIMIT 30;",
           "refId": "A"
         }
       ],
@@ -521,7 +521,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "GPU activity \u2014 when SDXL is generating images",
+      "description": "GPU activity during content generation",
       "fieldConfig": {
         "defaults": {
           "color": {
