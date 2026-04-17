@@ -11,7 +11,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN pip install --no-cache-dir asyncpg
 
-COPY brain_daemon.py health_probes.py ./
+COPY brain_daemon.py health_probes.py business_probes.py bootstrap.py operator_notifier.py ./
+
+# Non-root user with docker group (needs socket access for container restarts)
+RUN groupadd -g 999 docker 2>/dev/null || true && \
+    adduser --system --uid 1001 --ingroup docker --home /home/appuser appuser && \
+    chown -R appuser /app
+USER appuser
 
 HEALTHCHECK --interval=60s --timeout=10s --retries=3 \
     CMD python -c "import os, time; assert time.time() - os.path.getmtime('/tmp/brain_heartbeat') < 600" || exit 1

@@ -27,10 +27,14 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir \
 
 COPY sdxl-server.py /app/server.py
 
-EXPOSE 9836
+# Non-root user (GPU access via group, not root)
+RUN addgroup --system --gid 1001 appgroup && \
+    adduser --system --uid 1001 --ingroup appgroup --home /home/appuser appuser && \
+    mkdir -p /home/appuser/.poindexter/generated-images && \
+    chown -R appuser:appgroup /app /home/appuser
+USER appuser
 
-# Generated images stored in volume
-RUN mkdir -p /root/.poindexter/generated-images
+EXPOSE 9836
 
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
     CMD wget -qO /dev/null http://localhost:9836/health || exit 1
