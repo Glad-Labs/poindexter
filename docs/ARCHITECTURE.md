@@ -118,8 +118,8 @@ execution and multi-agent orchestration.
 - **Driver**: `asyncpg` (Full Async)
 - **Schema Management**: Managed via `DatabaseService` delegates (`TasksDatabase`, `UsersDatabase`, etc.).
 │  ┌────────────┐ ┌────────────┐ ┌──────────┐ ┌──────────┐       │
-│  │  PostgreSQL│ │            │ │  Redis   │ │ Storage  │       │
-│  │ (Production)│ │            │ │  Cache   │ │ (Media)  │       │
+│  │  PostgreSQL│ │            │ │ pgvector │ │ Storage  │       │
+│  │ (Production)│ │            │ │  Vector  │ │ (Media)  │       │
 │  └────────────┘ └────────────┘ └──────────┘ └──────────┘       │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -186,25 +186,25 @@ execution and multi-agent orchestration.
 
 ### Infrastructure & Services
 
-| Service        | Provider/Tech                                      | Purpose                        | Status       |
-| -------------- | -------------------------------------------------- | ------------------------------ | ------------ |
-| **Database**   | PostgreSQL only (no SQLite fallback)               | Content and operational data   | ✅ Active    |
-| **Cache**      | Redis                                              | Session management and caching | ✅ Available |
-| **Storage**    | File system / Cloud Storage                        | Media files and assets         | ✅ Active    |
-| **Task Queue** | REST API + async workers (dev/prod)                | Async task processing          | ✅ Active    |
-| **Deployment** | Local docker-compose (backend) / Vercel (frontend) | Self-hosted on your machine    | ✅ Active    |
-| **Monitoring** | Grafana + Prometheus (self-hosted)                 | 6 dashboards, 361 panels       | ✅ Active    |
+| Service        | Provider/Tech                                      | Purpose                      | Status    |
+| -------------- | -------------------------------------------------- | ---------------------------- | --------- |
+| **Database**   | PostgreSQL only (no SQLite fallback)               | Content and operational data | ✅ Active |
+| **Embeddings** | pgvector (in PostgreSQL)                           | Semantic search and RAG      | ✅ Active |
+| **Storage**    | File system / Cloud Storage                        | Media files and assets       | ✅ Active |
+| **Task Queue** | REST API + async workers (dev/prod)                | Async task processing        | ✅ Active |
+| **Deployment** | Local docker-compose (backend) / Vercel (frontend) | Self-hosted on your machine  | ✅ Active |
+| **Monitoring** | Grafana + Prometheus (self-hosted)                 | 6 dashboards, ~90 panels     | ✅ Active |
 
 ### AI Model Providers (Multi-Provider Support)
 
-| Provider      | Models                         | Cost         | Setup          | Speed   | Priority |
-| ------------- | ------------------------------ | ------------ | -------------- | ------- | -------- |
-| **Ollama**    | Mistral, Llama3.2, Phi, etc.   | 🟢 Free      | Easy (Local)   | 🟡 Vary | 🥇 #1    |
-| **Anthropic** | Claude 3 (Opus, Sonnet, Haiku) | 🟠 Paid      | Easy (API key) | 🟢 Fast | 🥈 #2    |
-| **OpenAI**    | GPT-4, GPT-4o, GPT-3.5         | 🟠 Paid      | Easy (API key) | 🟢 Fast | 🥉 #3    |
-| **Google**    | Gemini Pro, Gemini 2.0         | 🟡 Free+Paid | Easy (API key) | 🟢 Fast | #4       |
+| Provider      | Models (production)                  | Cost | Priority |
+| ------------- | ------------------------------------ | ---- | -------- |
+| **Ollama**    | gemma3:27b, qwen3:8b, phi4:14b, etc. | Free | #1       |
+| **Anthropic** | Claude (via app_settings key)        | Paid | #2       |
+| **OpenAI**    | GPT (via app_settings key)           | Paid | #3       |
+| **Google**    | Gemini (via app_settings key)        | Paid | #4       |
 
-**Fallback Chain (Automatic):** Ollama (local) → Claude 3 Opus → GPT-4 → Gemini → Fallback model
+**Fallback Chain (Automatic):** Ollama (local, free) → Anthropic → OpenAI → Google → echo/mock. Use cost tiers (`free`/`budget`/`standard`/`premium`), never hardcode model names.
 
 ---
 
@@ -555,179 +555,34 @@ CREATE TABLE memories (
 
 ---
 
-## 🎯 Roadmap
+## Roadmap
 
-### Phase 1: Foundation Enhancement (Current - Weeks 1-4)
+The roadmap is tracked via GitHub milestones at
+[Glad-Labs/poindexter/milestones](https://github.com/Glad-Labs/poindexter/milestones).
 
-**Goal:** Strengthen existing infrastructure and prepare for expansion
-
-#### 1.1 Backend API Completion
-
-- [x] Core endpoints (tasks, models)
-- [ ] Advanced filtering and pagination
-- [ ] WebSocket support
-- [ ] Rate limiting improvements
-- [ ] Comprehensive error handling
-
-**Status:** 🔄 In Progress
-
-#### 1.2 Database & CMS Optimization
-
-- [x] Content types setup (PostgreSQL tables)
-- [ ] Direct database access optimization
-- [ ] Performance tuning (indexing, query optimization)
-- [ ] Backup and recovery procedures
-- [ ] Multi-language support (optional)
-
-**Status:** 🔄 In Progress
-
-**Estimated Time:** 2-3 weeks  
-**Effort:** 40-50 hours
+| Milestone           | Status      | Description                                             |
+| ------------------- | ----------- | ------------------------------------------------------- |
+| M1: Stabilize       | Done        | Pipeline runs end-to-end, fresh clone works, tests pass |
+| M3: Ship the Guide  | In progress | $29 Quick Start Guide on Lemon Squeezy                  |
+| M4: Premium Prompts | Planned     | $9/mo recurring subscription                            |
+| Backlog             | Ongoing     | 30+ issues for post-revenue features                    |
 
 ---
 
-### Phase 2: Agent Specialization (Weeks 5-8)
+## Security
 
-**Goal:** Expand agent capabilities and integrate external services
-
-#### 2.1 Specialized Agents
-
-- [ ] Financial Agent - Cost tracking, projections, budget management
-- [ ] Market Insight Agent - Competitor analysis, trend detection
-- [ ] Compliance Agent - Legal review, risk assessment
-- [ ] Enhanced Content Agent - Multi-format support
-
-#### 2.2 External Integrations
-
-- [ ] Social media APIs (Twitter, LinkedIn, Instagram, TikTok)
-- [ ] CRM integration (HubSpot, Salesforce, Zoho)
-- [ ] Accounting tools (QuickBooks, Xero, Wave)
-- [ ] Email platforms (SendGrid, Mailchimp)
-
-#### 2.3 Advanced Features
-
-- [ ] Multi-modal content (images, videos)
-- [ ] A/B testing framework
-- [ ] Predictive analytics
-- [ ] Recommendation engine
-
-**Status:** 📋 Planned  
-**Estimated Time:** 3-4 weeks  
-**Effort:** 60-80 hours
+- **Bearer token auth** for all API access (single `api_token` in bootstrap.toml + app_settings)
+- **Dev-token bypass** blocked in production (`DEVELOPMENT_MODE` check)
+- **Secrets in DB** (`is_secret=true` keys fetched via `site_config.get_secret()`, filtered from in-memory cache)
+- **No cloud keys in env** — LLM API keys set via settings API, not env vars
+- See [SECURITY.md](../SECURITY.md) for the full model.
 
 ---
 
-### Phase 3: Scaling & Automation (Weeks 9-12)
+## Related Documentation
 
-**Goal:** Production-ready system with advanced automation
-
-#### 3.1 Scaling Infrastructure
-
-- [ ] Kubernetes deployment
-- [ ] Auto-scaling configuration
-- [ ] Multi-region support
-- [ ] Load balancing optimization
-
-#### 3.2 Advanced Automation
-
-- [ ] Workflow builder UI
-- [ ] Custom automation rules
-- [ ] Trigger-based actions
-- [ ] Multi-step sequences
-
-#### 3.3 Analytics & Reporting
-
-- [ ] Custom reports
-- [ ] Performance dashboards
-- [ ] ROI calculations
-- [ ] Predictive insights
-
-**Status:** 📋 Planned  
-**Estimated Time:** 4-5 weeks  
-**Effort:** 80-100 hours
-
----
-
-## 🔐 Security Architecture
-
-### Authentication
-
-- **JWT tokens** for API authentication
-- **API keys** for service-to-service communication
-- **OAuth 2.0** for third-party integrations
-- **Role-based access control (RBAC)**
-
-### Data Protection
-
-- **HTTPS/TLS** for all communications
-- **Encryption at rest** for sensitive data
-- **Rate limiting** on all APIs
-- **CORS restrictions** for web requests
-
-### Compliance
-
-- **GDPR** compliant data handling
-- **CCPA** privacy policy implementation
-- **SOC 2** audit readiness
-- **Regular security audits**
-
----
-
-## 📊 Performance Design
-
-### Caching Strategy
-
-- **Redis cache** for frequently accessed data
-- **CDN** for static assets
-- **Browser caching** with proper headers
-- **API response caching** where appropriate
-
-### Database Optimization
-
-- **Indexed queries** for performance
-- **Connection pooling** for efficiency
-- **Query optimization** and monitoring
-- **Automatic backups** and recovery
-
-### Frontend Optimization
-
-- **Code splitting** and lazy loading
-- **Image optimization** with next/image
-- **CSS-in-JS** minimization
-- **Service workers** for offline support
-
----
-
-## 🚀 Next Steps
-
-1. **Understand the architecture:**
-   - Review this document thoroughly
-   - Explore component READMEs in docs/components/
-
-2. **Set up your development environment:**
-   - Follow the [Setup Guide](../01-Getting-Started/)
-   - Run all services locally
-
-3. **Learn the codebase:**
-   - Start with public-site/ (Next.js basics)
-   - Study cofounder_agent/ (FastAPI patterns)
-
-4. **Contribute to development:**
-   - Check [Development-Workflow.md](../04-Development/Development-Workflow.md)
-   - Review [Multi-Agent-Pipeline.md](./Multi-Agent-Pipeline.md)
-
----
-
-## 📚 Related Documentation
-
-- **[Setup Guide](../01-Getting-Started/)** - Getting started
-- **[Deployment Guide](../05-Operations/Operations-Maintenance.md)** - Production setup
-- **[Development Workflow](../04-Development/Development-Workflow.md)** - Git and testing
-- **[AI Agents & Integration](./Multi-Agent-Pipeline.md)** - Agent details
-- **[Operations Guide](../05-Operations/Operations-Maintenance.md)** - Production support
-
----
-
-**[← Back to Documentation Hub](../00-README.md)**
-
-[Setup](../01-Getting-Started/) • [Deployment](../05-Operations/Operations-Maintenance.md) • [Development](../04-Development/Development-Workflow.md)
+- **[Multi-Agent Pipeline](architecture/multi-agent-pipeline.md)** — content pipeline + cross-model QA
+- **[Database Schema](architecture/database-schema.md)** — every table + migration system
+- **[API Reference](api/README.md)** — REST endpoints
+- **[Local Development](operations/local-development-setup.md)** — setup walkthrough
+- **[Feature Status](feature-status.md)** — honest inventory of what works

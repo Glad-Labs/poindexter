@@ -61,29 +61,29 @@ Poindexter uses an intelligent fallback routing system to ensure high availabili
 
 ### Provider Priority Chain
 
-The system attempts providers in the following order (based on keys available in `.env.local`):
+The system attempts providers in the following order (based on keys in `app_settings`):
 
-1. **Ollama** (Local, Zero-Cost, Highest Speed)
-2. **Anthropic Claude** (Claude 3.5 Sonnet / Opus)
-3. **OpenAI** (GPT-4o / GPT-4 Turbo)
-4. **Google Gemini** (Gemini 1.5 Pro)
+1. **Ollama** (Local, Zero-Cost)
+2. **Anthropic Claude** (cloud fallback)
+3. **OpenAI** (cloud fallback)
+4. **Google Gemini** (cloud fallback)
 
 ### Cost-Tier Execution Logic
 
 Instead of hardcoding model names, the system uses **Cost Tiers** for intelligent execution:
 
-| Tier            | Primary Model          | Usage Case                      |
-| --------------- | ---------------------- | ------------------------------- |
-| **Ultra Cheap** | Ollama (Llama 3)       | Drafting, Initial Research      |
-| **Cheap**       | Gemini 1.5 Flash       | Classification, Tagging         |
-| **Balanced**    | Claude 3.5 Sonnet      | Writing, QA (Standard)          |
-| **Premium**     | Claude 3 Opus / GPT-4o | Complex Reasoning, Final Review |
+| Tier         | Production Models                 | Usage Case                      |
+| ------------ | --------------------------------- | ------------------------------- |
+| **Free**     | Ollama: qwen3:8b, phi4:14b        | SEO, image decisions, summaries |
+| **Budget**   | Ollama: gemma3:27b                | QA reviews, fallback critic     |
+| **Standard** | Ollama: qwen3:30b, glm-4.7        | Writing, content generation     |
+| **Premium**  | Cloud: Claude Haiku (via API key) | Cross-model QA review           |
 
 ---
 
 ## 🛠️ Model Context Protocol (MCP)
 
-**Location:** `src/mcp/`
+**Location:** `mcp-server/`
 
 The MCP provides a standardized interface for agents to interact with external tools and resources:
 
@@ -397,10 +397,10 @@ Poindexter uses MCP (Model Context Protocol) for:
 ### MCP Server Setup
 
 ```python
-# src/mcp/base_server.py
+# mcp-server/base_server.py
 from mcp.server import Server
 
-class GladLabsMCPServer(Server):
+class PoinexterMCPServer(Server):
     def __init__(self):
         super().__init__("Poindexter")
         self.register_tool("create_content", self.create_content)
