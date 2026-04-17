@@ -51,6 +51,10 @@ git rm --cached --quiet .github/tech-debt-issues.json 2>/dev/null || true
 git rm -r --cached --quiet .github/workflows-disabled/ 2>/dev/null || true
 git rm --cached --quiet .github/workflows/ci.yml 2>/dev/null || true          # Deploy runs from glad-labs-stack, not poindexter
 
+# === Operator-specific files (Glad Labs internal, not customer-facing) ===
+git rm --cached --quiet docker-compose.local.yml 2>/dev/null || true          # Matt's full stack with Gitea, pgAdmin, SDXL, etc.
+git rm --cached --quiet .env.example 2>/dev/null || true                      # Legacy; customers use poindexter setup
+
 # Commit the removal (temporary — never pushed to Gitea)
 git commit -m "sync: exclude private files for public repo" --allow-empty 2>/dev/null
 
