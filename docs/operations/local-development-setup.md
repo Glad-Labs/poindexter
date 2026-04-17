@@ -1,94 +1,111 @@
 # Local development setup
 
-**Last Updated:** 2026-04-11
+**Last Updated:** 2026-04-17
 **Status:** Alpha
 
 This is the end-to-end walkthrough for getting Poindexter running on
 your own machine. If you only want "one command to a working
-pipeline," the `bootstrap.sh` script does most of this for you —
-read [Quick Start in the README](../../README.md#quick-start) first.
+pipeline," run `poindexter setup --auto` — read
+[Quick Start in the README](../../README.md#quick-start) first.
 
-This document covers the longer form: what the bootstrap is doing
+This document covers the longer form: what the setup wizard does
 under the hood, how to verify each layer, and how to troubleshoot
 when something doesn't come up.
 
 ## 1. Prerequisites
 
-| Tool           | Version  | Purpose                                          | Required?   |
-| -------------- | -------- | ------------------------------------------------ | ----------- |
-| Docker Desktop | 4.26+    | Runs the entire backend stack                    | Yes         |
-| Ollama         | 0.1.40+  | Local LLM inference                              | Yes         |
-| Node.js        | 22+      | Frontend (Next.js) and lint-staged hooks         | Yes         |
-| Git + Git Bash | any      | Bootstrap scripts use `bash`                     | Yes         |
-| Python         | 3.12     | Only needed if running the worker outside Docker | No          |
-| GPU            | 8GB VRAM | Ollama inference is far faster with CUDA         | Recommended |
+| Tool           | Version  | Purpose                                  | Required?   |
+| -------------- | -------- | ---------------------------------------- | ----------- |
+| Docker Desktop | 4.26+    | Runs the entire backend stack            | Yes         |
+| Ollama         | 0.1.40+  | Local LLM inference                      | Yes         |
+| Node.js        | 22+      | Frontend (Next.js) and lint-staged hooks | Yes         |
+| Git + Git Bash | any      | start-stack.sh uses `bash`               | Yes         |
+| Python         | 3.12+    | CLI + running worker outside Docker      | Yes         |
+| GPU            | 8GB VRAM | Ollama inference is far faster with CUDA | Recommended |
 
 **Windows note.** Run all commands from Git Bash or WSL. Native
-`cmd.exe` and PowerShell do not work with the bootstrap script.
+`cmd.exe` and PowerShell do not work with the start scripts.
 Docker Desktop must be configured to use WSL2 backend.
 
 **GPU note.** You can run Poindexter on CPU, but content generation
 that takes 30 seconds on an RTX 4090 can take 10+ minutes on CPU.
 Not practical for daily use.
 
-## 2. Clone and bootstrap
+## 2. Clone and setup
 
 ```bash
 git clone https://github.com/Glad-Labs/poindexter.git
 cd poindexter
-poindexter setup
+pip install -e src/cofounder_agent
+poindexter setup          # interactive wizard
+# or: poindexter setup --auto   (spins up a local Docker Postgres)
+# or: poindexter setup --db-url "postgresql://..."  (non-interactive)
 ```
 
-The bootstrap script is idempotent and does the following:
+The setup wizard does the following:
 
-1. **Generates secrets** — if `.env.local` is missing, writes one
-   with random `API_TOKEN`, `LOCAL_POSTGRES_PASSWORD`,
-   `GRAFANA_PASSWORD`, and `PGADMIN_PASSWORD`.
-2. **Starts the local Postgres container** and waits for its health
-   check to pass.
-3. **Applies migrations** via `alembic` (through the
-   `apply_migrations.py` wrapper). Safe to re-run — migrations are
-   idempotent.
-4. **Seeds `app_settings`** with the default configuration used in
-   production on gladlabs.io. You can override any of these later
-   via the settings API.
-5. **Pulls required Ollama models** (`qwen3:8b`, `gemma3:27b`,
-   `nomic-embed-text`). This is the longest step on first run —
-   roughly 25GB of download.
-6. **Runs a health check** against the worker's `/api/health`
-   endpoint and reports status for each subsystem.
+1. **Prompts for a database URL** (or auto-provisions a local Docker
+   Postgres with `--auto`).
+2. **Tests the database connection** and reports success/failure.
+3. **Runs migrations** against the target database. Safe to re-run —
+   migrations are idempotent.
+4. **Generates secrets** — creates a random `api_token`,
+   `local_postgres_password`, `grafana_password`, and
+   `pgadmin_password`.
+5. **Writes `~/.poindexter/bootstrap.toml`** with the database URL +
+   generated secrets. This is the only config file on disk.
+6. **Seeds `api_token` into `app_settings`** so the worker can read
+   it from the database at runtime.
 
-If any step fails, the script exits with a non-zero status and
-prints which step hit the error. Re-run after fixing.
+No `.env` file is created. All secrets live in `bootstrap.toml`
+(safe permissions, never committed to git).
 
-## 3. Bring up the full stack
+## 3. Pull AI models
 
 ```bash
-docker compose -f docker-compose.local.yml up -d
+ollama pull gemma3:27b       # 16GB — QA reviews, fallback critic
+ollama pull qwen3:8b         # 5GB — fast tasks (SEO, image decisions)
+ollama pull nomic-embed-text # 274MB — embeddings for semantic search
 ```
 
-This starts 10 containers:
-
-| Container                   | Purpose                             | Port  |
-| --------------------------- | ----------------------------------- | ----- |
-| `poindexter-worker`         | FastAPI backend, content pipeline   | 8002  |
-| `poindexter-brain-daemon`   | Health probes + self-healing loop   | -     |
-| `poindexter-postgres-local` | Local Postgres 15 + pgvector        | 5433  |
-| `poindexter-grafana`        | Monitoring dashboards               | 3001  |
-| `poindexter-prometheus`     | Metric scraper                      | 9091  |
-| `poindexter-pgadmin`        | DB GUI                              | 5051  |
-| `gladlabs-gitea`            | Self-hosted git (optional)          | 3002  |
-| `gladlabs-gitea-runner`     | CI runner (optional)                | 8003  |
-| `gladlabs-adminer`          | DB GUI alternative                  | 8081  |
-| `gladlabs-openclaw`         | Multi-channel ops bridge (optional) | 18789 |
-
-The `optional` containers can be stopped if you don't need them:
+Total first-run download: ~21GB. For better writing quality, also pull
+a larger writer model:
 
 ```bash
-docker compose -f docker-compose.local.yml stop gitea woodpecker adminer openclaw
+ollama pull qwen3:30b        # 18GB — good balance of speed and quality
 ```
 
-## 4. Verify
+## 4. Bring up the full stack
+
+```bash
+bash scripts/start-stack.sh
+```
+
+This reads `~/.poindexter/bootstrap.toml`, exports the values as env
+vars, and runs `docker compose -f docker-compose.local.yml up -d`.
+No `.env` file needed.
+
+This starts 9 containers:
+
+| Container                   | Purpose                            | Port  |
+| --------------------------- | ---------------------------------- | ----- |
+| `poindexter-worker`         | FastAPI backend, content pipeline  | 8002  |
+| `poindexter-brain-daemon`   | Health probes + self-healing loop  | —     |
+| `poindexter-postgres-local` | PostgreSQL 16 + pgvector           | 15432 |
+| `poindexter-grafana`        | Monitoring dashboards (6 included) | 3000  |
+| `poindexter-prometheus`     | Metric scraper                     | 9091  |
+| `poindexter-sdxl-server`    | SDXL image generation (GPU)        | 9836  |
+| `poindexter-pgadmin`        | Database GUI                       | 5480  |
+| `gladlabs-gitea`            | Self-hosted git (optional)         | 3001  |
+| `gladlabs-gitea-runner`     | Gitea Actions CI runner (optional) | —     |
+
+Stop optional containers if you don't need them:
+
+```bash
+docker compose -f docker-compose.local.yml stop gladlabs-gitea gladlabs-gitea-runner poindexter-pgadmin
+```
+
+## 5. Verify
 
 ```bash
 # Worker health (expect "healthy" for every subsystem)
@@ -96,9 +113,9 @@ curl http://localhost:8002/api/health
 
 # Create a task end-to-end
 curl -X POST http://localhost:8002/api/tasks \
-  -H "Authorization: Bearer $(grep ^API_TOKEN .env.local | cut -d= -f2)" \
+  -H "Authorization: Bearer $(grep api_token ~/.poindexter/bootstrap.toml | cut -d'"' -f2)" \
   -H "Content-Type: application/json" \
-  -d '{"task_name":"Blog post: test","topic":"Why Docker changed everything","category":"technology","target_audience":"developers"}'
+  -d '{"topic": "Why Docker changed everything", "category": "technology"}'
 ```
 
 The task should move through `pending → in_progress → awaiting_approval`
@@ -108,7 +125,7 @@ within a few minutes. Follow along via:
 docker logs -f poindexter-worker
 ```
 
-## 5. Frontend (optional for backend dev)
+## 6. Frontend (optional for backend dev)
 
 If you're only iterating on the backend, skip the frontend — the
 worker's API and the Grafana dashboards are all you need. If you do
@@ -120,12 +137,9 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Note that
-`web/public-site/` is in a separate git-managed dir on Matt's main
-setup; in the public repo it's not tracked (the site is deployed on
-Vercel and consumes the JSON output of the backend).
+Open [http://localhost:3000](http://localhost:3000).
 
-## 6. Run the tests
+## 7. Run the tests
 
 ```bash
 cd src/cofounder_agent
@@ -133,17 +147,18 @@ poetry install
 poetry run pytest tests/unit/ -q
 ```
 
-Expected: ~5,097 passing. A single `test_web_research.py` file is
-currently `--ignored` in CI (known issue, tracked in CHANGELOG).
+Expected: ~5,097 passing. Some tests that depend on the `brain`
+module or `sentry-sdk` are skipped when running inside Docker
+(these pass on the host where all modules are available).
 
-## 7. What to do when something breaks
+## 8. What to do when something breaks
 
 See [troubleshooting.md](troubleshooting.md).
 
 ## Configuration
 
 All runtime configuration lives in the `app_settings` Postgres
-table, not env vars. After bootstrap, change settings with:
+table, not env vars. After setup, change settings with:
 
 ```bash
 # View all settings
@@ -158,6 +173,6 @@ curl -X PUT http://localhost:8002/api/settings/auto_publish_threshold \
 ```
 
 See [environment-variables.md](environment-variables.md) for the
-env-var-layer reference, and
+bootstrap-layer reference (the few env vars Docker still needs), and
 [reference/app-settings.md](../reference/app-settings.md) for the
-DB-layer reference.
+full DB-layer settings catalog.
