@@ -12,30 +12,69 @@ Usage:
     python scripts/discord-voice-bot.py
 
 Requires:
-    pip install py-cord[voice] faster-whisper edge-tts
+    pip install py-cord[voice] faster-whisper edge-tts asyncpg
 
-Environment:
-    DISCORD_BOT_TOKEN — your Discord bot token (from discord.com/developers)
-    DISCORD_VOICE_CHANNEL_ID — channel to auto-join (optional)
+Configuration:
+    All settings read from app_settings DB (via bootstrap.toml for
+    the database URL). No .env files or environment variables needed.
+
+    app_settings keys:
+        discord_bot_token          — Discord bot token
+        discord_voice_channel_id   — auto-join channel (optional)
+        whisper_model              — faster-whisper model (default: base.en)
+        tts_voice                  — Edge TTS voice (default: en-US-GuyNeural)
 """
 
 import asyncio
-import io
 import os
+import sys
 import tempfile
 import time
 from pathlib import Path
+
+# Add project root so brain.bootstrap is importable
+_project_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_project_root))
 
 import discord
 import edge_tts
 from faster_whisper import WhisperModel
 
-DISCORD_TOKEN = os.getenv("DISCORD_BOT_TOKEN", "")
-VOICE_CHANNEL_ID = int(os.getenv("DISCORD_VOICE_CHANNEL_ID", "0"))
-WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base.en")
-TTS_VOICE = os.getenv("TTS_VOICE", "en-US-GuyNeural")
-API_URL = os.getenv("POINDEXTER_API_URL", "http://localhost:8002")
-API_TOKEN = os.getenv("POINDEXTER_API_TOKEN", "")
+
+def _load_config_from_db() -> dict:
+    """Read all voice bot settings from app_settings via bootstrap.toml DB URL."""
+    import asyncpg
+    from brain.bootstrap import resolve_database_url
+
+    db_url = resolve_database_url()
+    if not db_url:
+        print("ERROR: No database URL found. Run `poindexter setup` first.")
+        sys.exit(1)
+
+    async def _fetch():
+        conn = await asyncpg.connect(db_url)
+        try:
+            rows = await conn.fetch(
+                "SELECT key, value FROM app_settings WHERE key IN "
+                "('discord_bot_token', 'discord_voice_channel_id', "
+                "'whisper_model', 'tts_voice', 'api_token')"
+            )
+            return {r["key"]: r["value"] for r in rows}
+        finally:
+            await conn.close()
+
+    return asyncio.run(_fetch())
+
+
+print("[INIT] Loading config from app_settings...")
+_cfg = _load_config_from_db()
+
+DISCORD_TOKEN = _cfg.get("discord_bot_token", "")
+VOICE_CHANNEL_ID = int(_cfg.get("discord_voice_channel_id", "0"))
+WHISPER_MODEL = _cfg.get("whisper_model", "base.en")
+TTS_VOICE = _cfg.get("tts_voice", "en-US-GuyNeural")
+API_URL = "http://localhost:8002"
+API_TOKEN = _cfg.get("api_token", "")
 
 DATA_DIR = Path(tempfile.gettempdir()) / "discord-voice-bot"
 DATA_DIR.mkdir(exist_ok=True)
@@ -196,14 +235,15 @@ async def clear(ctx):
 
 if __name__ == "__main__":
     if not DISCORD_TOKEN:
-        print("ERROR: Set DISCORD_BOT_TOKEN environment variable.")
-        print("  1. Go to discord.com/developers/applications")
-        print("  2. Create a bot or use your existing one")
-        print("  3. Copy the token")
-        print("  4. Set: export DISCORD_BOT_TOKEN=your-token-here")
+        print("ERROR: discord_bot_token not found in app_settings.")
+        print("  Set it via the API:")
+        print("  curl -X PUT localhost:8002/api/settings/discord_bot_token \\")
+        print('    -H "Authorization: Bearer $TOKEN" \\')
+        print("    -d '{\"value\": \"your-bot-token\"}'")
         raise SystemExit(1)
 
     print("[BOT] Starting Discord Voice Bot...")
+    print(f"[BOT] Config loaded from app_settings (no .env needed)")
     print(f"[BOT] Whisper model: {WHISPER_MODEL}")
     print(f"[BOT] TTS voice: {TTS_VOICE}")
     print(f"[BOT] API: {API_URL}")
