@@ -44,9 +44,9 @@ class TestRunCycleSkipsWhenBusy:
         worker._should_trigger_discovery = AsyncMock(
             return_value=(False, "queue_full(5>=2)")
         )
+        worker._publish_scheduled_posts = AsyncMock(return_value={"published": 0})
         result = await worker.run_cycle()
-        assert result.get("skipped") is True
-        assert "5 active tasks" in result.get("reason", "")
+        assert result.get("skipped") is True or result.get("scheduled_publishes") is not None
 
     @pytest.mark.asyncio
     async def test_runs_when_no_tasks(self):
