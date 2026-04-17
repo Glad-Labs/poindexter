@@ -610,7 +610,7 @@ async def auto_remediate(pool):
                 error_message = 'Auto-cancelled: stuck in_progress > {stale_minutes}m',
                 updated_at = NOW()
             WHERE status = 'in_progress'
-              AND updated_at < NOW() - INTERVAL '{stale_minutes} minutes'
+              AND COALESCE(started_at, updated_at) < NOW() - INTERVAL '{stale_minutes} minutes'
             RETURNING task_id, topic
         """)
         if stuck:

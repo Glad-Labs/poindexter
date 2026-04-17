@@ -454,6 +454,9 @@ class TasksDatabase(DatabaseServiceMixin):
 
             updates = {"status": status, "updated_at": now}
 
+            if status in ("awaiting_approval", "approved", "published"):
+                updates["error_message"] = None
+
             if result:
                 updates["result"] = result
 
