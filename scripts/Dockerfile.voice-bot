@@ -1,0 +1,21 @@
+FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg libffi-dev libsodium-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir \
+    "py-cord[voice]" \
+    faster-whisper \
+    edge-tts \
+    asyncpg \
+    httpx
+
+WORKDIR /app
+
+COPY scripts/discord-voice-bot.py /app/discord-voice-bot.py
+COPY brain/ /brain/
+
+ENV PYTHONPATH="/app:/:/brain"
+
+CMD ["python", "discord-voice-bot.py"]
