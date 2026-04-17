@@ -56,6 +56,12 @@ RUN python -m playwright install chromium && \
 # Copy application code
 COPY . .
 
+# Non-root user
+RUN addgroup --system --gid 1001 appgroup && \
+    adduser --system --uid 1001 --ingroup appgroup --home /home/appuser appuser && \
+    chown -R appuser:appgroup /app
+USER appuser
+
 # Health check endpoint
 HEALTHCHECK --interval=60s --timeout=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8002/api/health')" || exit 1
