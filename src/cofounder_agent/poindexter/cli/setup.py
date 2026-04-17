@@ -453,41 +453,22 @@ def _prompt_defaults() -> dict[str, str]:
         show_default=True,
     ).strip()
 
-    click.echo()
-    click.echo(
-        "Operator notifications (optional — Poindexter will notify you here\n"
-        "when the system can't start cleanly). Leave blank to skip."
-    )
-    telegram_bot_token = click.prompt(
-        "Telegram bot token", default="", show_default=False
-    ).strip()
-    telegram_chat_id = (
-        click.prompt("Telegram chat ID", default="", show_default=False).strip()
-        if telegram_bot_token
-        else ""
-    )
-    discord_ops_webhook_url = click.prompt(
-        "Discord ops webhook URL", default="", show_default=False
-    ).strip()
-    discord_lab_logs_webhook_url = click.prompt(
-        "Discord lab-logs webhook URL", default="", show_default=False
-    ).strip()
-
     secrets = _generate_secrets()
     click.echo()
     click.secho("Generated secrets (stored in bootstrap.toml):", fg="cyan")
-    click.echo(f"  API token:  {secrets['api_token'][:20]}…")
-    click.echo(f"  Postgres:   {secrets['local_postgres_password'][:12]}…")
-    click.echo(f"  Grafana:    {secrets['grafana_password'][:12]}…")
-    click.echo(f"  pgAdmin:    {secrets['pgadmin_password'][:12]}…")
+    click.echo(f"  API token:  {secrets['api_token'][:20]}...")
+    click.echo(f"  Postgres:   {secrets['local_postgres_password'][:12]}...")
+    click.echo(f"  Grafana:    {secrets['grafana_password'][:12]}...")
+    click.echo(f"  pgAdmin:    {secrets['pgadmin_password'][:12]}...")
+    click.echo()
+    click.echo(
+        "Notification channels (Telegram, Discord) are set via the\n"
+        "settings API after first boot — not in bootstrap.toml."
+    )
 
     return {
         "database_url": db_url,
         **secrets,
-        "telegram_bot_token": telegram_bot_token,
-        "telegram_chat_id": telegram_chat_id,
-        "discord_ops_webhook_url": discord_ops_webhook_url,
-        "discord_lab_logs_webhook_url": discord_lab_logs_webhook_url,
     }
 
 
@@ -531,20 +512,12 @@ def setup_command(db_url: str | None, auto: bool, check: bool, force: bool) -> N
         values = {
             "database_url": provisioned_dsn,
             **secrets,
-            "telegram_bot_token": "",
-            "telegram_chat_id": "",
-            "discord_ops_webhook_url": "",
-            "discord_lab_logs_webhook_url": "",
         }
     elif db_url:
         secrets = _generate_secrets()
         values = {
             "database_url": db_url,
             **secrets,
-            "telegram_bot_token": "",
-            "telegram_chat_id": "",
-            "discord_ops_webhook_url": "",
-            "discord_lab_logs_webhook_url": "",
         }
     else:
         values = _prompt_defaults()
@@ -585,10 +558,6 @@ def setup_command(db_url: str | None, auto: bool, check: bool, force: bool) -> N
     if migrations_ok:
         seed = {
             "api_token": values.get("api_token", ""),
-            "telegram_bot_token": values["telegram_bot_token"],
-            "telegram_chat_id": values["telegram_chat_id"],
-            "discord_ops_webhook_url": values["discord_ops_webhook_url"],
-            "discord_lab_logs_webhook_url": values.get("discord_lab_logs_webhook_url", ""),
         }
         try:
             n = asyncio.run(_seed_minimum_settings(values["database_url"], seed))
