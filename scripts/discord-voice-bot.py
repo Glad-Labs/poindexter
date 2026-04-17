@@ -56,7 +56,7 @@ def _load_config_from_db() -> dict:
         try:
             rows = await conn.fetch(
                 "SELECT key, value FROM app_settings WHERE key IN "
-                "('discord_bot_token', 'discord_voice_channel_id', "
+                "('discord_voice_bot_token', 'discord_voice_channel_id', "
                 "'whisper_model', 'tts_voice', 'api_token')"
             )
             return {r["key"]: r["value"] for r in rows}
@@ -69,7 +69,7 @@ def _load_config_from_db() -> dict:
 print("[INIT] Loading config from app_settings...")
 _cfg = _load_config_from_db()
 
-DISCORD_TOKEN = _cfg.get("discord_bot_token", "")
+DISCORD_TOKEN = _cfg.get("discord_voice_bot_token", "")
 VOICE_CHANNEL_ID = int(_cfg.get("discord_voice_channel_id", "0"))
 WHISPER_MODEL = _cfg.get("whisper_model", "base.en")
 TTS_VOICE = _cfg.get("tts_voice", "en-US-GuyNeural")
