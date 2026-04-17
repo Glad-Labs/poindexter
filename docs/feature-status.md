@@ -1,6 +1,6 @@
 # Poindexter — Feature Status
 
-> Last updated: 2026-04-12. This is the honest inventory of what
+> Last updated: 2026-04-17. This is the honest inventory of what
 > works, what doesn't, and what's needed for each feature. No
 > marketing gloss. If something's broken or not built, it says so
 > here before anywhere else.
@@ -69,94 +69,46 @@
 
 ## Infrastructure & Monitoring
 
-| Feature         | Status  | Notes                                                                            |
-| --------------- | ------- | -------------------------------------------------------------------------------- |
-| Docker Compose  | WORKING | 10 containers, all with health checks and restart policies.                      |
-| PostgreSQL      | WORKING | Local brain DB (port 15432) with pgvector for embeddings.                        |
-| Grafana         | WORKING | 6 dashboards (approval, pipeline, quality, cost, infrastructure, link registry). |
-| Prometheus      | WORKING | Scrapes GPU (nvidia-smi), worker, and system metrics (windows_exporter).         |
-| Telegram Alerts | WORKING | Brain daemon sends alerts on failures. Bot token configured.                     |
-| Discord Alerts  | WORKING | Grafana alerts fire to both Telegram and Discord #ops as fallback.               |
-| Discord Digest  | WORKING | Daily digest at ~9 AM ET to #lab-logs channel via webhook.                       |
-| Brain Daemon    | WORKING | Self-healing monitor. 24 health probes. Auto-remediation. PSU sensor watchdog.   |
-| GPU Scheduler   | WORKING | Manages Ollama ↔ SDXL switching. Gaming detection (pauses AI when gaming).       |
-| SDXL Server     | WORKING | Standalone FastAPI on port 9836. Auto-unloads after 1 min idle.                  |
-| Gitea Actions   | WORKING | Runs tests on Gitea push. Local CI/CD.                                           |
-| GitHub Actions  | WORKING | Runs tests on GitHub push. Deploys to Vercel.                                    |
-| Gitea           | WORKING | Self-hosted Git at localhost:3001. Push mirror to GitHub private repo.           |
-| Headscale VPN   | WORKING | Self-hosted Tailscale alternative. PC connected.                                 |
+| Feature         | Status  | Notes                                                                                  |
+| --------------- | ------- | -------------------------------------------------------------------------------------- |
+| Docker Compose  | WORKING | 9 containers, all with health checks and restart policies.                             |
+| PostgreSQL      | WORKING | Local brain DB (port 15432) with pgvector for embeddings.                              |
+| Grafana         | WORKING | 6 dashboards (approval, pipeline, quality, cost, infrastructure, link registry).       |
+| Prometheus      | WORKING | Scrapes GPU (nvidia-smi), worker, and system metrics (windows_exporter).               |
+| Telegram Alerts | WORKING | Brain daemon sends alerts on failures. Bot token configured.                           |
+| Discord Alerts  | WORKING | Grafana alerts fire to both Telegram and Discord #ops as fallback.                     |
+| Discord Digest  | WORKING | Daily digest at ~9 AM ET to #lab-logs channel via webhook.                             |
+| Brain Daemon    | WORKING | Self-healing monitor. 24 health probes. Auto-remediation. PSU sensor watchdog.         |
+| GPU Scheduler   | WORKING | Manages Ollama ↔ SDXL switching. Gaming detection (pauses AI when gaming).             |
+| SDXL Server     | WORKING | Standalone FastAPI on port 9836. Auto-unloads after 1 min idle.                        |
+| Gitea Actions   | WORKING | Runs tests on Gitea push. Local CI/CD.                                                 |
+| GitHub Actions  | WORKING | Release Please for versioning. Deploy runs from private mirror via Vercel integration. |
+| Gitea           | WORKING | Self-hosted Git at localhost:3001. Push mirror to GitHub private repo.                 |
+| Tailscale VPN   | WORKING | Cloud Tailscale for remote access. Headscale removed.                                  |
 
 ---
 
 ## Configuration System
 
-| Feature             | Status  | Notes                                                                                             |
-| ------------------- | ------- | ------------------------------------------------------------------------------------------------- |
-| DB-as-Config        | WORKING | 238+ keys in app_settings. All runtime-configurable via SQL or API. Old `settings` table dropped. |
-| Golden Seed Script  | WORKING | scripts/seed-database.sql — 185 keys with sensible defaults.                                      |
-| Verify Setup Script | WORKING | scripts/verify-setup.sh — 24-point health check.                                                  |
-| Bootstrap Script    | WORKING | Auto-generates secrets, pulls models, seeds DB.                                                   |
-| Premium Prompts     | WORKING | 27 templates in prompt_templates DB table. Import script available.                               |
-| Site Config         | WORKING | Frontend site.config.js reads from NEXT*PUBLIC*\* env vars.                                       |
+| Feature             | Status  | Notes                                                                                    |
+| ------------------- | ------- | ---------------------------------------------------------------------------------------- |
+| DB-as-Config        | WORKING | 256 keys in app_settings. All runtime-configurable via SQL or API.                       |
+| Golden Seed Script  | WORKING | scripts/seed-database.sql — seeds defaults for new installs.                             |
+| Verify Setup Script | WORKING | scripts/verify-setup.sh — 24-point health check.                                         |
+| Setup Wizard        | WORKING | `poindexter setup` — generates secrets, tests DB, writes bootstrap.toml. No .env needed. |
+| Premium Prompts     | WORKING | 27 templates in prompt_templates DB table. Import script available.                      |
+| Site Config         | WORKING | Frontend site.config.js reads from NEXT*PUBLIC*\* env vars.                              |
 
 ---
 
-## What's Needed to Sell
+## Commercial Add-Ons
 
-### $29 Quick Start Guide (Content Engine)
+| Tier              | Status  | Notes                                                                |
+| ----------------- | ------- | -------------------------------------------------------------------- |
+| Quick Start Guide | SHIPPED | $29 one-time via Lemon Squeezy. Production config + walkthrough.     |
+| Premium Prompts   | SHIPPED | $9/mo or $89/yr. Monthly updated prompt packs + private repo access. |
+| SaaS Hosting      | FUTURE  | Architecture exists (multi-site table, per-site config). Not built.  |
 
-**Status: 90% ready**
-
-What works:
-
-- Content generation, quality control, images, publishing ✅
-- Monitoring, self-healing, alerts ✅
-- Configuration, seed scripts, verification ✅
-- Guide draft written (docs/quick-start-guide.md) ✅
-
-What's missing:
-
-- [ ] Lemon Squeezy account + product setup (#95)
-- [ ] Guide needs Matt's voice and war stories (currently reads like docs)
-- [ ] Topic discovery not configurable for other niches (#157)
-- [ ] Landing page CTA buttons still say "Coming Soon"
-- [ ] Fresh clone test on a clean machine (never done)
-
-### $9/mo Premium Prompts
-
-**Status: 70% ready**
-
-What works:
-
-- 27 premium prompts exported to JSON ✅
-- Import script (scripts/import-premium-prompts.py) ✅
-- Prompts override basic yaml automatically ✅
-- glad-labs-prompts private repo exists ✅
-
-What's missing:
-
-- [ ] Lemon Squeezy subscription product setup
-- [ ] Delivery mechanism (repo access on purchase? download link?)
-- [ ] Documentation for customers ("how to install premium prompts")
-- [ ] More prompt packs (currently 1 set — need monthly updates for subscription value)
-
-### SaaS Hosting (Future)
-
-**Status: 20% ready — architecture exists, nothing customer-facing**
-
-What exists:
-
-- Multi-site table (sites, migration 0055)
-- DB-driven config (per-site settings possible)
-- Push-only output (each site = different R2 bucket)
-
-What's needed:
-
-- [ ] User authentication
-- [ ] Billing (Stripe/Lemon Squeezy webhooks)
-- [ ] Tenant isolation
-- [ ] Onboarding wizard
-- [ ] Admin dashboard
 - [ ] Everything in the "Dreams & Future" milestone
 
 ---
